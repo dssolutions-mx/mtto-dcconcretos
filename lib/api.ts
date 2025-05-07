@@ -150,6 +150,91 @@ export const modelsApi = {
     
     if (error) throw error;
     return data;
+  },
+  
+  // Actualizar un intervalo de mantenimiento
+  updateMaintenanceInterval: async (id: string, updates: {
+    interval_value?: number;
+    name?: string;
+    description?: string | null;
+    type?: string;
+    estimated_duration?: number | null;
+  }): Promise<any> => {
+    const { data, error } = await supabase
+      .from('maintenance_intervals')
+      .update(updates)
+      .eq('id', id)
+      .select()
+      .single();
+    
+    if (error) throw error;
+    return data;
+  },
+  
+  // Eliminar un intervalo de mantenimiento
+  deleteMaintenanceInterval: async (id: string): Promise<void> => {
+    const { error } = await supabase
+      .from('maintenance_intervals')
+      .delete()
+      .eq('id', id);
+    
+    if (error) throw error;
+  },
+  
+  // Actualizar una tarea de mantenimiento
+  updateMaintenanceTask: async (id: string, updates: {
+    description?: string;
+    type?: string;
+    estimated_time?: number;
+    requires_specialist?: boolean;
+  }): Promise<any> => {
+    const { data, error } = await supabase
+      .from('maintenance_tasks')
+      .update(updates)
+      .eq('id', id)
+      .select()
+      .single();
+    
+    if (error) throw error;
+    return data;
+  },
+  
+  // Eliminar una tarea de mantenimiento
+  deleteMaintenanceTask: async (id: string): Promise<void> => {
+    const { error } = await supabase
+      .from('maintenance_tasks')
+      .delete()
+      .eq('id', id);
+    
+    if (error) throw error;
+  },
+  
+  // Actualizar una parte de una tarea
+  updateTaskPart: async (id: string, updates: {
+    name?: string;
+    part_number?: string;
+    quantity?: number;
+    cost?: string | null;
+  }): Promise<any> => {
+    const { data, error } = await supabase
+      .from('task_parts')
+      .update(updates)
+      .eq('id', id)
+      .select()
+      .single();
+    
+    if (error) throw error;
+    return data;
+  },
+  
+  // Eliminar una parte de una tarea
+  deleteTaskPart: async (id: string): Promise<void> => {
+    const { error } = await supabase
+      .from('task_parts')
+      .delete()
+      .eq('id', id);
+    
+    if (error) throw error;
   }
 };
 

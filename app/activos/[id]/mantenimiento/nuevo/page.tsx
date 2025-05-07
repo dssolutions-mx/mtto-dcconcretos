@@ -26,6 +26,7 @@ interface MaintenancePart {
   partNumber?: string;
   quantity: number;
   cost?: string;
+  source?: string;
 }
 
 interface NewMaintenancePageProps {
@@ -79,7 +80,10 @@ export default function NewMaintenancePage({ params }: NewMaintenancePageProps) 
           .from("maintenance_intervals")
           .select(`
             *,
-            maintenance_tasks(*)
+            maintenance_tasks(
+              *,
+              task_parts(*)
+            )
           `)
           .eq("id", planId)
           .single();
@@ -94,6 +98,29 @@ export default function NewMaintenancePage({ params }: NewMaintenancePageProps) 
           // Establecer horas a las horas actuales del activo
           if (asset?.current_hours) {
             setHours(asset.current_hours.toString());
+          }
+          
+          // Cargar los repuestos asociados a las tareas de mantenimiento
+          if (data.maintenance_tasks && data.maintenance_tasks.length > 0) {
+            const taskParts: MaintenancePart[] = [];
+            
+            data.maintenance_tasks.forEach(task => {
+              if (task.task_parts && task.task_parts.length > 0) {
+                task.task_parts.forEach(part => {
+                  taskParts.push({
+                    name: part.name,
+                    partNumber: part.part_number || undefined,
+                    quantity: part.quantity,
+                    cost: part.cost || undefined,
+                    source: 'Tarea de Mantenimiento'
+                  });
+                });
+              }
+            });
+            
+            if (taskParts.length > 0) {
+              setParts(taskParts);
+            }
           }
         }
       } catch (err) {
@@ -425,6 +452,11 @@ export default function NewMaintenancePage({ params }: NewMaintenancePageProps) 
             <CardTitle>Repuestos Utilizados</CardTitle>
             <CardDescription>
               Registre los repuestos utilizados durante el mantenimiento
+              {maintenancePlan && parts.length > 0 && (
+                <span className="block mt-1 text-sm text-blue-600">
+                  Se han cargado automáticamente los repuestos asociados a las tareas de este mantenimiento
+                </span>
+              )}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -437,6 +469,7 @@ export default function NewMaintenancePage({ params }: NewMaintenancePageProps) 
                       <th className="text-left py-2">Número</th>
                       <th className="text-left py-2">Cantidad</th>
                       <th className="text-left py-2">Costo</th>
+                      <th className="text-left py-2">Origen</th>
                       <th className="text-left py-2">Acciones</th>
                     </tr>
                   </thead>
@@ -447,6 +480,7 @@ export default function NewMaintenancePage({ params }: NewMaintenancePageProps) 
                         <td className="py-2">{part.partNumber || "-"}</td>
                         <td className="py-2">{part.quantity}</td>
                         <td className="py-2">{part.cost || "-"}</td>
+                        <td className="py-2">{part.source || "-"}</td>
                         <td className="py-2">
                           <Button
                             variant="ghost"

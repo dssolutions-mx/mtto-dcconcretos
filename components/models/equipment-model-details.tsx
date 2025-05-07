@@ -231,9 +231,11 @@ export function EquipmentModelDetails({ id }: EquipmentModelDetailsProps) {
                 <CardTitle>Programas de Mantenimiento</CardTitle>
                 <CardDescription>Intervalos y tareas de mantenimiento recomendados</CardDescription>
               </div>
-              <Button size="sm">
-                <Plus className="h-4 w-4 mr-2" />
-                Nuevo Intervalo
+              <Button size="sm" asChild>
+                <Link href={`/modelos/${id}/editar?action=addInterval`}>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Nuevo Intervalo
+                </Link>
               </Button>
             </CardHeader>
             <CardContent>

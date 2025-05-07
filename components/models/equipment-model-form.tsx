@@ -68,6 +68,7 @@ interface MaintenancePart {
   name: string
   partNumber: string
   quantity: number
+  cost?: string
 }
 
 // Interfaz para los intervalos de mantenimiento
@@ -340,7 +341,7 @@ export function EquipmentModelForm() {
                     name: part.name,
                     part_number: part.partNumber,
                     quantity: part.quantity,
-                    cost: null, // No tenemos información de costo en el formulario
+                    cost: part.cost || null,
                   });
                 }
               }
@@ -764,90 +765,121 @@ export function EquipmentModelForm() {
               <Label htmlFor="requiresSpecialist">Requiere técnico especialista</Label>
             </div>
 
-            {currentTask && currentIntervalIndex !== null && (
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <Label>Repuestos Requeridos</Label>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label>Repuestos Requeridos</Label>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    // Si es una tarea nueva, primero creamos una tarea temporal
+                    if (!isEditingTask) {
+                      const newTask: MaintenanceTask = {
+                        id: `task-${Date.now()}`,
+                        description: (document.getElementById("taskDescription") as HTMLInputElement).value,
+                        type:
+                          (document.querySelector("[data-value]") as HTMLElement)?.getAttribute("data-value") || "Inspección",
+                        estimatedTime:
+                          Number.parseFloat((document.getElementById("taskTime") as HTMLInputElement).value) || 1,
+                        requiresSpecialist: (document.getElementById("requiresSpecialist") as HTMLInputElement).checked,
+                        parts: [],
+                      }
+                      setCurrentTask(newTask);
+                      
+                      // Ahora que tenemos una tarea temporal, podemos abrir el diálogo de repuestos
+                      if (currentIntervalIndex !== null) {
+                        const taskIndex = maintenanceIntervals[currentIntervalIndex].tasks.length;
+                        openPartDialog(currentIntervalIndex, taskIndex);
+                      }
+                    } else if (currentTask && currentIntervalIndex !== null) {
+                      // Para tareas existentes, hacemos lo mismo que antes
                       const taskIndex = maintenanceIntervals[currentIntervalIndex].tasks.findIndex(
                         (t) => t.id === currentTask.id,
-                      )
+                      );
                       if (taskIndex !== -1) {
-                        openPartDialog(currentIntervalIndex, taskIndex)
+                        openPartDialog(currentIntervalIndex, taskIndex);
                       }
-                    }}
-                  >
-                    <Plus className="mr-2 h-3.5 w-3.5" />
-                    Agregar
-                  </Button>
-                </div>
-                <div className="rounded-md border">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Nombre</TableHead>
-                        <TableHead>Número de Parte</TableHead>
-                        <TableHead>Cantidad</TableHead>
-                        <TableHead className="w-[50px]"></TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {currentTask.parts.map((part, partIndex) => (
-                        <TableRow key={part.id}>
-                          <TableCell>{part.name}</TableCell>
-                          <TableCell>{part.partNumber}</TableCell>
-                          <TableCell>{part.quantity}</TableCell>
-                          <TableCell>
-                            <div className="flex gap-1">
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-6 w-6 p-0"
-                                onClick={() => {
+                    }
+                  }}
+                >
+                  <Plus className="mr-2 h-3.5 w-3.5" />
+                  Agregar
+                </Button>
+              </div>
+              <div className="rounded-md border">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Nombre</TableHead>
+                      <TableHead>Número de Parte</TableHead>
+                      <TableHead>Cantidad</TableHead>
+                      <TableHead>Costo</TableHead>
+                      <TableHead className="w-[50px]"></TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {(currentTask?.parts || []).map((part, partIndex) => (
+                      <TableRow key={part.id}>
+                        <TableCell>{part.name}</TableCell>
+                        <TableCell>{part.partNumber}</TableCell>
+                        <TableCell>{part.quantity}</TableCell>
+                        <TableCell>{part.cost ? `$${part.cost}` : "N/A"}</TableCell>
+                        <TableCell>
+                          <div className="flex gap-1">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 w-6 p-0"
+                              onClick={() => {
+                                if (currentTask && currentIntervalIndex !== null) {
                                   const taskIndex = maintenanceIntervals[currentIntervalIndex].tasks.findIndex(
                                     (t) => t.id === currentTask.id,
                                   )
                                   if (taskIndex !== -1) {
                                     openPartDialog(currentIntervalIndex, taskIndex, part)
                                   }
-                                }}
-                              >
-                                <Edit className="h-3 w-3" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-6 w-6 p-0 text-red-500"
-                                onClick={() => {
+                                }
+                              }}
+                            >
+                              <Edit className="h-3 w-3" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 w-6 p-0 text-red-500"
+                              onClick={() => {
+                                if (currentTask && currentIntervalIndex !== null) {
                                   const taskIndex = maintenanceIntervals[currentIntervalIndex].tasks.findIndex(
                                     (t) => t.id === currentTask.id,
                                   )
                                   if (taskIndex !== -1) {
                                     removePart(currentIntervalIndex, taskIndex, part.id)
+                                    // Actualizar la tarea actual para reflejar el cambio
+                                    setCurrentTask({
+                                      ...currentTask,
+                                      parts: currentTask.parts.filter(p => p.id !== part.id)
+                                    })
                                   }
-                                }}
-                              >
-                                <Trash className="h-3 w-3" />
-                              </Button>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                      {currentTask.parts.length === 0 && (
-                        <TableRow>
-                          <TableCell colSpan={4} className="text-center text-sm text-muted-foreground py-4">
-                            No hay repuestos registrados para esta tarea
-                          </TableCell>
-                        </TableRow>
-                      )}
-                    </TableBody>
-                  </Table>
-                </div>
+                                }
+                              }}
+                            >
+                              <Trash className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                    {(!currentTask?.parts || currentTask.parts.length === 0) && (
+                      <TableRow>
+                        <TableCell colSpan={5} className="text-center text-sm text-muted-foreground py-4">
+                          No hay repuestos registrados para esta tarea
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
               </div>
-            )}
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsTaskDialogOpen(false)}>
@@ -855,8 +887,7 @@ export function EquipmentModelForm() {
             </Button>
             <Button
               onClick={() => {
-                // Aquí normalmente guardaríamos la tarea
-                // Para este ejemplo, simulamos guardar una tarea con datos de ejemplo
+                // Guardar la tarea con los datos actualizados
                 const newTask: MaintenanceTask = {
                   id: currentTask?.id || `task-${Date.now()}`,
                   description: (document.getElementById("taskDescription") as HTMLInputElement).value,
@@ -900,6 +931,10 @@ export function EquipmentModelForm() {
               <Label htmlFor="partQuantity">Cantidad</Label>
               <Input id="partQuantity" type="number" min="1" defaultValue={currentPart?.quantity || "1"} />
             </div>
+            <div className="space-y-2">
+              <Label htmlFor="partCost">Costo Unitario ($)</Label>
+              <Input id="partCost" placeholder="Ej: 25.50" defaultValue={currentPart?.cost || ""} />
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsPartDialogOpen(false)}>
@@ -907,15 +942,23 @@ export function EquipmentModelForm() {
             </Button>
             <Button
               onClick={() => {
-                // Aquí normalmente guardaríamos el repuesto
-                // Para este ejemplo, simulamos guardar un repuesto con datos de ejemplo
+                // Guardar el repuesto con los datos actualizados
                 const newPart: MaintenancePart = {
                   id: currentPart?.id || `part-${Date.now()}`,
                   name: (document.getElementById("partName") as HTMLInputElement).value,
                   partNumber: (document.getElementById("partNumber") as HTMLInputElement).value,
                   quantity: Number.parseInt((document.getElementById("partQuantity") as HTMLInputElement).value) || 1,
+                  cost: (document.getElementById("partCost") as HTMLInputElement).value,
                 }
                 savePart(newPart)
+                
+                // Si estamos añadiendo un repuesto a una tarea nueva, actualizamos la tarea actual
+                if (currentTask && !isEditingTask) {
+                  setCurrentTask({
+                    ...currentTask,
+                    parts: [...(currentTask.parts || []), newPart]
+                  })
+                }
               }}
             >
               {isEditingPart ? "Actualizar" : "Agregar"}

@@ -1,24 +1,26 @@
-// Categorías de equipos
+// Categorías de equipos para el selector
 export const equipmentCategories = [
+  "Mezcladora de Concreto",
+  "Grúa Torre",
+  "Generador Eléctrico",
+  "Montacargas Eléctrico",
+  "Compresor Industrial",
   "Excavadora",
+  "Cargador Frontal",
+  "Retroexcavadora",
+  "Bomba de Concreto",
+  "Plataforma Elevadora",
   "Cargadora",
   "Bulldozer",
-  "Retroexcavadora",
   "Compactadora",
-  "Grúa",
-  "Generador Eléctrico",
-  "Bomba de Concreto",
-  "Mezcladora de Concreto",
   "Pavimentadora",
   "Perforadora",
-  "Montacargas",
   "Dumper",
   "Camión Articulado",
   "Trituradora",
   "Equipo de Soldadura",
   "Compresor de Aire",
   "Martillo Hidráulico",
-  "Plataforma Elevadora",
   "Equipo de Iluminación",
   "Otro"
 ]
@@ -28,9 +30,10 @@ export const fuelTypes = [
   "Diésel",
   "Gasolina",
   "Eléctrico",
+  "Híbrido",
+  "Gas",
   "Gas Natural",
   "GLP (Gas Licuado de Petróleo)",
-  "Híbrido",
   "Biodiesel",
   "Hidrógeno",
   "No Aplica"
@@ -55,12 +58,14 @@ export const measurementUnits = [
 
 // Tipos de mantenimiento
 export const maintenanceTypes = [
-  "Preventivo",
-  "Correctivo",
-  "Predictivo",
-  "Overhaul",
   "Inspección",
-  "Calibración"
+  "Lubricación",
+  "Ajuste",
+  "Limpieza",
+  "Reemplazo",
+  "Calibración",
+  "Prueba",
+  "Overhaul",
 ]
 
 // Prioridades
