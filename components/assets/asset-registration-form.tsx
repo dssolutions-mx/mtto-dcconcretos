@@ -23,6 +23,7 @@ import {
   CheckCircle2,
   ClipboardList,
   Info,
+  Pencil,
 } from "lucide-react"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
@@ -249,6 +250,22 @@ interface MaintenanceHistoryRecord {
   completedTasks?: Record<string, boolean>
 }
 
+interface IncidentRecord {
+  date: Date
+  type: string
+  reportedBy: string
+  description: string
+  impact?: string
+  resolution?: string
+  downtime?: string
+  laborHours?: string
+  laborCost?: string
+  parts?: MaintenanceHistoryPart[]
+  totalCost?: string
+  workOrder?: string
+  status?: string
+}
+
 interface InsuranceDocument {
   name: string
   file: File | null
@@ -292,6 +309,23 @@ export function AssetRegistrationForm() {
   const [searchMaintenancePlan, setSearchMaintenancePlan] = useState("")
   const [showMaintenanceTasksDialog, setShowMaintenanceTasksDialog] = useState(false)
   const [showMaintenanceRecordDialog, setShowMaintenanceRecordDialog] = useState(false)
+  const [incidents, setIncidents] = useState<IncidentRecord[]>([])
+  const [incidentDate, setIncidentDate] = useState<Date | undefined>(new Date())
+  const [incidentType, setIncidentType] = useState("")
+  const [incidentReportedBy, setIncidentReportedBy] = useState("")
+  const [incidentDescription, setIncidentDescription] = useState("")
+  const [incidentImpact, setIncidentImpact] = useState("")
+  const [incidentResolution, setIncidentResolution] = useState("")
+  const [incidentDowntime, setIncidentDowntime] = useState("")
+  const [incidentLaborHours, setIncidentLaborHours] = useState("")
+  const [incidentLaborCost, setIncidentLaborCost] = useState("")
+  const [incidentTotalCost, setIncidentTotalCost] = useState("")
+  const [incidentWorkOrder, setIncidentWorkOrder] = useState("")
+  const [incidentStatus, setIncidentStatus] = useState("Resuelto")
+  const [incidentParts, setIncidentParts] = useState<MaintenanceHistoryPart[]>([])
+  const [editingIncidentIndex, setEditingIncidentIndex] = useState<number | null>(null)
+  const [showIncidentDialog, setShowIncidentDialog] = useState(false)
+  const [showMaintenanceDialog, setShowMaintenanceDialog] = useState(false)
   const { toast } = useToast()
 
   const form = useForm<FormValues>({
@@ -727,98 +761,57 @@ export function AssetRegistrationForm() {
     : maintenanceSchedule
 
   const onSubmit = async (data: FormValues) => {
-    setIsSubmitting(true)
-    
     try {
-      // Validar que los campos numéricos no excedan los límites de la base de datos
-      // El campo purchase_cost tiene una precisión de 10 dígitos con 2 decimales
-      // por lo que el valor máximo es 99,999,999.99
-      if (data.purchaseCost && parseFloat(data.purchaseCost) > 99999999.99) {
-        toast({
-          title: "Error en campo costo",
-          description: "El costo de adquisición no puede exceder 99,999,999.99",
-          variant: "destructive",
-        });
-        setIsSubmitting(false);
-        return;
-      }
+      setIsSubmitting(true)
       
-      // Combine form data with selected model and maintenance history
-      const assetData = {
-        ...data,
-        model: selectedModel,
-        maintenanceHistory: maintenanceHistory,
-        completedMaintenances: completedMaintenances,
-        maintenanceSchedule: maintenanceSchedule,
-      }
-
-      console.log("Datos del activo:", assetData)
-
-      // Upload photos to Supabase Storage
       const supabase = createClient()
       const user = (await supabase.auth.getUser()).data.user
-
+      
       if (!user) {
         throw new Error("Usuario no autenticado")
       }
-
+      
+      // Subir fotos primero si hay algunas
       const assetId = data.assetId
       const photoUrls: string[] = []
-
+      
       // Upload each photo
       for (const photo of uploadedPhotos) {
         const fileName = `${assetId}/${Date.now()}-${photo.file.name}`
         const { data: uploadData, error } = await supabase.storage.from("asset-photos").upload(fileName, photo.file)
-
+        
         if (error) {
           throw error
         }
-
+        
         // Get public URL
         const { data: publicUrlData } = supabase.storage.from("asset-photos").getPublicUrl(fileName)
-
+        
         photoUrls.push(publicUrlData.publicUrl)
       }
-
+      
       // Upload insurance documents
       const insuranceDocUrls: string[] = []
-
+      
       for (const doc of insuranceDocuments) {
         if (doc.file) {
           const fileName = `${assetId}/insurance/${Date.now()}-${doc.file.name}`
           const { data: uploadData, error } = await supabase.storage.from("asset-documents").upload(fileName, doc.file)
-
+          
           if (error) {
             throw error
           }
-
+          
           // Get public URL
           const { data: publicUrlData } = supabase.storage.from("asset-documents").getPublicUrl(fileName)
-
+          
           insuranceDocUrls.push(publicUrlData.publicUrl)
         }
       }
-
-      // Validate asset ID doesn't already exist
-      const { data: existingAsset, error: checkError } = await supabase
-        .from("assets")
-        .select("asset_id")
-        .eq("asset_id", data.assetId)
-        .single();
-
-      if (existingAsset) {
-        toast({
-          title: "Error al registrar activo",
-          description: `El activo con ID ${data.assetId} ya existe en el sistema.`,
-          variant: "destructive",
-        });
-        setIsSubmitting(false);
-        return;
-      }
-
-      // Preparar los datos para guardar, asegurando que los valores numéricos estén en el formato correcto
+      
+      // Preparar los datos para guardar
       const assetDataToSave = {
-        asset_id: data.assetId, // Asegurarse de que tiene el formato correcto
+        asset_id: data.assetId,
         name: data.name,
         status: data.status,
         serial_number: data.serialNumber,
@@ -831,7 +824,7 @@ export function AssetRegistrationForm() {
         current_hours: Number(data.currentHours),
         is_new: data.isNew,
         notes: data.notes,
-        purchase_cost: data.purchaseCost ? data.purchaseCost : null, // Mantener como string para compatibilidad
+        purchase_cost: data.purchaseCost ? data.purchaseCost : null,
         registration_info: data.registrationInfo,
         insurance_policy: data.insurancePolicy,
         insurance_start_date: data.insuranceCoverage?.startDate?.toISOString(),
@@ -843,113 +836,219 @@ export function AssetRegistrationForm() {
         created_at: new Date().toISOString(),
       };
       
-      console.log("Datos a guardar:", assetDataToSave);
-
-      // Save asset data
-      // Type casting to avoid TypeScript errors - we're handling the data types manually
-      const { data: insertedAsset, error: insertError } = await supabase
+      // Crear el activo en la base de datos
+      const { data: insertedAsset, error } = await supabase
         .from("assets")
-        .insert(assetDataToSave as any)
-        .select("id")  // Obtener el UUID generado por Supabase, no el asset_id
-        .single();
-
-      if (insertError) {
-        console.error("Error al insertar activo:", insertError);
-        throw insertError;
+        .insert([assetDataToSave])
+        .select()
+        .single()
+        
+      if (error) {
+        throw error
       }
-
-      console.log("Activo insertado:", insertedAsset);
-
-      // Save maintenance history separately
+      
+      // Guardar historial de mantenimiento si existe
       if (maintenanceHistory.length > 0 && insertedAsset?.id) {
-        try {
-          // Process each maintenance history record individually to avoid batch insert issues
-          for (const record of maintenanceHistory) {
-            try {
-              // Convertir los costos a números si es posible
-              let laborCost = null;
-              let totalCost = null;
-              
-              try {
-                if (record.laborCost) laborCost = Number(record.laborCost);
-                if (record.cost) totalCost = Number(record.cost);
-              } catch (e) {
-                console.warn("Error al convertir costos a números:", e);
-              }
-              
-              const maintenanceData = {
-                asset_id: insertedAsset.id,  // Usar el UUID del activo, no el asset_id
-                date: record.date.toISOString(),
-                type: record.type,
-                description: record.description,
-                technician: record.technician,
-                findings: record.findings || null,
-                actions: record.actions || null,
-                hours: record.hours || null, // Keep as string for database compatibility
-                labor_hours: record.laborHours || null, // Keep as string for database compatibility
-                labor_cost: laborCost !== null ? String(laborCost) : null, // Convert to string for database compatibility
-                total_cost: totalCost !== null ? String(totalCost) : null, // Convert to string for database compatibility
-                work_order: record.workOrder || null,
-                parts: record.parts ? JSON.stringify(record.parts) : null,
-                maintenance_plan_id: record.maintenancePlanId || null,
-                completed_tasks: record.completedTasks ? JSON.stringify(record.completedTasks) : null,
-                created_by: user.id,
-                created_at: new Date().toISOString(),
-                updated_at: new Date().toISOString(),
-              };
-              
-              // We know we have type issues, but we're casting to any to avoid typescript errors
-              // since we're making sure the fields match what the database expects
-              const { error: recordError } = await supabase
-                .from("maintenance_history")
-                .insert(maintenanceData as any);
-
-              if (recordError) {
-                console.error("Error al guardar historial de mantenimiento:", recordError);
-                // Continue with other records even if one fails
-              }
-            } catch (err) {
-              console.error("Error inesperado al procesar registro de mantenimiento:", err);
-            }
-          }
+        for (const record of maintenanceHistory) {
+          const maintenanceData = {
+            asset_id: insertedAsset.id,
+            date: record.date.toISOString(),
+            type: record.type,
+            description: record.description,
+            technician: record.technician,
+            findings: record.findings || null,
+            actions: record.actions || null,
+            hours: record.hours ? parseInt(record.hours) : null,
+            labor_hours: record.laborHours ? parseFloat(record.laborHours) : null,
+            labor_cost: record.laborCost || null,
+            total_cost: record.cost || null,
+            work_order: record.workOrder || null,
+            parts: record.parts ? JSON.stringify(record.parts) : null,
+            maintenance_plan_id: record.maintenancePlanId || null,
+            completed_tasks: record.completedTasks ? JSON.stringify(record.completedTasks) : null,
+            created_by: user.id,
+            created_at: new Date().toISOString()
+          };
           
-          console.log("Procesamiento de historial completado");
-        } catch (error) {
-          console.error("Error al procesar historial de mantenimiento:", error);
-          toast({
-            title: "Error al guardar historial",
-            description: "Se ha guardado el activo pero hubo problemas al registrar el historial de mantenimiento.",
-            variant: "destructive",
-          });
+          const { error: recordError } = await supabase
+            .from("maintenance_history")
+            .insert(maintenanceData);
+            
+          if (recordError) {
+            console.error("Error al guardar historial de mantenimiento:", recordError);
+          }
         }
       }
-
-      // Redirect to the assets list page instead of individual asset page
+      
+      // Guardar incidentes si existen
+      if (incidents.length > 0 && insertedAsset?.id) {
+        for (const incident of incidents) {
+          const incidentData = {
+            asset_id: insertedAsset.id,
+            date: incident.date.toISOString(),
+            type: incident.type,
+            reported_by: incident.reportedBy,
+            description: incident.description,
+            impact: incident.impact || null,
+            resolution: incident.resolution || null,
+            downtime: incident.downtime ? parseFloat(incident.downtime) : null,
+            labor_hours: incident.laborHours ? parseFloat(incident.laborHours) : null,
+            labor_cost: incident.laborCost || null,
+            parts: incident.parts ? JSON.stringify(incident.parts) : null,
+            total_cost: incident.totalCost || null,
+            work_order: incident.workOrder || null,
+            status: incident.status || "Resuelto",
+            created_by: user.id,
+            created_at: new Date().toISOString()
+          };
+          
+          const { error: incidentError } = await supabase
+            .from("incident_history")
+            .insert(incidentData);
+            
+          if (incidentError) {
+            console.error("Error al guardar historial de incidentes:", incidentError);
+          }
+        }
+      }
+      
       toast({
-        title: "Activo registrado",
-        description: "El activo ha sido registrado correctamente.",
-      });
-      router.push("/activos");  // Redirigir a la lista de activos en lugar de a la página de detalle
-    } catch (error) {
-      console.error("Error al guardar el activo:", error);
+        title: "Activo registrado con éxito",
+        description: `${data.name} ha sido registrado correctamente.`,
+        variant: "default",
+      })
+      
+      // Redireccionar a la lista de activos después de un éxito
+      router.push("/activos")
+      router.refresh()
+    } catch (error: any) {
+      console.error("Error al registrar activo:", error)
       toast({
-        title: "Error al guardar el activo", 
-        description: "Ocurrió un error al guardar el activo. Por favor, inténtelo de nuevo.",
+        title: "Error al registrar el activo",
+        description: error.message || "Ha ocurrido un error inesperado.",
         variant: "destructive",
-      });
+      })
     } finally {
-      setIsSubmitting(false);
+      setIsSubmitting(false)
     }
+  }
+
+  // Función para agregar incidente
+  const addIncident = () => {
+    if (!incidentDate || !incidentType || !incidentReportedBy || !incidentDescription) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Por favor complete los campos obligatorios: fecha, tipo, reportado por y descripción.",
+      })
+      return
+    }
+
+    const newIncident: IncidentRecord = {
+      date: incidentDate,
+      type: incidentType,
+      reportedBy: incidentReportedBy,
+      description: incidentDescription,
+      impact: incidentImpact || undefined,
+      resolution: incidentResolution || undefined,
+      downtime: incidentDowntime || undefined,
+      laborHours: incidentLaborHours || undefined,
+      laborCost: incidentLaborCost || undefined,
+      parts: incidentParts.length > 0 ? [...incidentParts] : undefined,
+      totalCost: incidentTotalCost || undefined,
+      workOrder: incidentWorkOrder || undefined,
+      status: incidentStatus,
+    }
+
+    if (editingIncidentIndex !== null) {
+      const updatedIncidents = [...incidents]
+      updatedIncidents[editingIncidentIndex] = newIncident
+      setIncidents(updatedIncidents)
+      setEditingIncidentIndex(null)
+    } else {
+      setIncidents([...incidents, newIncident])
+    }
+
+    resetIncidentForm()
+    setShowIncidentDialog(false)
+  }
+
+  // Función para eliminar incidente
+  const removeIncident = (index: number) => {
+    const updatedIncidents = [...incidents]
+    updatedIncidents.splice(index, 1)
+    setIncidents(updatedIncidents)
+  }
+
+  // Función para editar incidente
+  const editIncident = (index: number) => {
+    const incident = incidents[index]
+    setIncidentDate(incident.date)
+    setIncidentType(incident.type)
+    setIncidentReportedBy(incident.reportedBy)
+    setIncidentDescription(incident.description)
+    setIncidentImpact(incident.impact || "")
+    setIncidentResolution(incident.resolution || "")
+    setIncidentDowntime(incident.downtime || "")
+    setIncidentLaborHours(incident.laborHours || "")
+    setIncidentLaborCost(incident.laborCost || "")
+    setIncidentTotalCost(incident.totalCost || "")
+    setIncidentWorkOrder(incident.workOrder || "")
+    setIncidentStatus(incident.status || "Resuelto")
+    setIncidentParts(incident.parts || [])
+    setEditingIncidentIndex(index)
+    setShowIncidentDialog(true)
+  }
+
+  // Función para resetear el formulario de incidentes
+  const resetIncidentForm = () => {
+    setIncidentDate(new Date())
+    setIncidentType("")
+    setIncidentReportedBy("")
+    setIncidentDescription("")
+    setIncidentImpact("")
+    setIncidentResolution("")
+    setIncidentDowntime("")
+    setIncidentLaborHours("")
+    setIncidentLaborCost("")
+    setIncidentTotalCost("")
+    setIncidentWorkOrder("")
+    setIncidentStatus("Resuelto")
+    setIncidentParts([])
+    setEditingIncidentIndex(null)
+  }
+
+  // Función para agregar repuesto a incidente
+  const addIncidentPart = () => {
+    const newPart: MaintenanceHistoryPart = {
+      name: newPartName,
+      partNumber: newPartNumber || undefined,
+      quantity: Number(newPartQuantity) || 1,
+      cost: newPartCost || undefined,
+    }
+    setIncidentParts([...incidentParts, newPart])
+    setNewPartName("")
+    setNewPartNumber("")
+    setNewPartQuantity(1)
+    setNewPartCost("")
+    setIsPartDialogOpen(false)
+  }
+
+  const removeIncidentPart = (index: number) => {
+    const updatedParts = [...incidentParts]
+    updatedParts.splice(index, 1)
+    setIncidentParts(updatedParts)
   }
 
   return (
     <Tabs defaultValue="general" className="w-full">
-      <TabsList className="grid w-full grid-cols-6">
+      <TabsList className="grid w-full grid-cols-7">
         <TabsTrigger value="general">Información General</TabsTrigger>
         <TabsTrigger value="technical">Información Técnica</TabsTrigger>
         <TabsTrigger value="financial">Información Financiera</TabsTrigger>
         <TabsTrigger value="maintenance">Plan de Mantenimiento</TabsTrigger>
         <TabsTrigger value="history">Historial</TabsTrigger>
+        <TabsTrigger value="incidents">Incidentes</TabsTrigger>
         <TabsTrigger value="documents">Documentación</TabsTrigger>
       </TabsList>
 
@@ -2162,6 +2261,82 @@ export function AssetRegistrationForm() {
             </Card>
           </TabsContent>
 
+          <TabsContent value="incidents" className="space-y-4">
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle>Incidentes</CardTitle>
+                <CardDescription>
+                  Registre incidentes ocurridos con este equipo, como fallas, averías o problemas reportados.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex justify-between items-center">
+                  <div className="text-sm text-muted-foreground">
+                    {incidents.length === 0 ? "No hay incidentes registrados para este activo." : `${incidents.length} incidente(s) registrado(s).`}
+                  </div>
+                  <Button onClick={() => {
+                    resetIncidentForm()
+                    setShowIncidentDialog(true)
+                  }} size="sm">
+                    <Plus className="mr-1 h-4 w-4" /> Registrar Incidente
+                  </Button>
+                </div>
+
+                {incidents.length > 0 && (
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Fecha</TableHead>
+                          <TableHead>Tipo</TableHead>
+                          <TableHead>Reportado por</TableHead>
+                          <TableHead>Descripción</TableHead>
+                          <TableHead>Estado</TableHead>
+                          <TableHead className="w-[100px]">Acciones</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {incidents.map((incident, index) => (
+                          <TableRow key={index}>
+                            <TableCell>{format(incident.date, "dd/MM/yyyy")}</TableCell>
+                            <TableCell>{incident.type}</TableCell>
+                            <TableCell>{incident.reportedBy}</TableCell>
+                            <TableCell className="max-w-[200px] truncate">{incident.description}</TableCell>
+                            <TableCell>
+                              <Badge variant={incident.status === "Resuelto" ? "outline" : "secondary"}>
+                                {incident.status}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex space-x-1">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => editIncident(index)}
+                                  className="h-8 w-8 p-0"
+                                >
+                                  <Pencil className="h-4 w-4" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => removeIncident(index)}
+                                  className="h-8 w-8 p-0 text-red-500 hover:text-red-700 hover:bg-red-100"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
           <TabsContent value="documents" className="space-y-6">
             <Card>
               <CardHeader>
@@ -2807,6 +2982,229 @@ export function AssetRegistrationForm() {
               disabled={!historyDate || !historyType || !historyDescription || !historyTechnician}
             >
               Registrar Mantenimiento
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Diálogo para registrar incidente */}
+      <Dialog open={showIncidentDialog} onOpenChange={setShowIncidentDialog}>
+        <DialogContent className="max-w-[95vw] w-full md:max-w-[700px] max-h-[90vh] overflow-y-auto" onSubmit={(e) => e.preventDefault()} onClick={(e) => e.stopPropagation()}>
+          <DialogHeader>
+            <DialogTitle>Registrar Incidente</DialogTitle>
+            <DialogDescription>
+              Registre los detalles del incidente o falla en el equipo
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4 space-y-5 overflow-y-auto">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="space-y-2">
+                <Label>Fecha</Label>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant={"outline"}
+                      className={cn("w-full pl-3 text-left font-normal", !incidentDate && "text-muted-foreground")}
+                    >
+                      {incidentDate ? format(incidentDate, "PPP", { locale: es }) : <span>Seleccionar fecha</span>}
+                      <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <Calendar mode="single" selected={incidentDate} onSelect={setIncidentDate} initialFocus />
+                  </PopoverContent>
+                </Popover>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Tipo de Incidente</Label>
+                <Select onValueChange={setIncidentType} value={incidentType}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Seleccionar tipo" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Falla eléctrica">Falla eléctrica</SelectItem>
+                    <SelectItem value="Falla mecánica">Falla mecánica</SelectItem>
+                    <SelectItem value="Falla hidráulica">Falla hidráulica</SelectItem>
+                    <SelectItem value="Falla de software">Falla de software</SelectItem>
+                    <SelectItem value="Accidente">Accidente</SelectItem>
+                    <SelectItem value="Otro">Otro</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Reportado por</Label>
+                <Input
+                  placeholder="Nombre de quien reporta"
+                  value={incidentReportedBy}
+                  onChange={(e) => setIncidentReportedBy(e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Descripción</Label>
+                <Textarea
+                  placeholder="Describa el incidente detalladamente"
+                  value={incidentDescription}
+                  onChange={(e) => setIncidentDescription(e.target.value)}
+                  rows={3}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label>Impacto</Label>
+                <Textarea
+                  placeholder="Impacto en la operación o producción"
+                  value={incidentImpact}
+                  onChange={(e) => setIncidentImpact(e.target.value)}
+                  rows={3}
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Resolución</Label>
+                <Textarea
+                  placeholder="Cómo se resolvió el incidente"
+                  value={incidentResolution}
+                  onChange={(e) => setIncidentResolution(e.target.value)}
+                  rows={3}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label>Estado</Label>
+                <Select onValueChange={setIncidentStatus} value={incidentStatus}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Seleccionar estado" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Pendiente">Pendiente</SelectItem>
+                    <SelectItem value="En progreso">En progreso</SelectItem>
+                    <SelectItem value="Resuelto">Resuelto</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="space-y-2">
+                <Label>Tiempo de Inactividad (horas)</Label>
+                <Input
+                  type="number"
+                  placeholder="Ej: 8"
+                  value={incidentDowntime}
+                  onChange={(e) => setIncidentDowntime(e.target.value)}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label>Horas de Trabajo</Label>
+                <Input
+                  type="number"
+                  placeholder="Ej: 4"
+                  value={incidentLaborHours}
+                  onChange={(e) => setIncidentLaborHours(e.target.value)}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label>Costo de Mano de Obra</Label>
+                <div className="relative">
+                  <DollarSign className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="0.00"
+                    className="pl-8"
+                    value={incidentLaborCost}
+                    onChange={(e) => setIncidentLaborCost(e.target.value)}
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Costo Total</Label>
+                <div className="relative">
+                  <DollarSign className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="0.00"
+                    className="pl-8"
+                    value={incidentTotalCost}
+                    onChange={(e) => setIncidentTotalCost(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Orden de Trabajo</Label>
+                <Input
+                  placeholder="Ej: OT-12345"
+                  value={incidentWorkOrder}
+                  onChange={(e) => setIncidentWorkOrder(e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label>Repuestos Utilizados</Label>
+                <Button type="button" variant="outline" size="sm" onClick={() => setIsPartDialogOpen(true)}>
+                  <Plus className="mr-1 h-4 w-4" /> Agregar Repuesto
+                </Button>
+              </div>
+
+              {incidentParts.length > 0 ? (
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Nombre</TableHead>
+                        <TableHead>Número de Parte</TableHead>
+                        <TableHead>Cantidad</TableHead>
+                        <TableHead>Costo</TableHead>
+                        <TableHead className="w-[50px]"></TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {incidentParts.map((part, index) => (
+                        <TableRow key={index}>
+                          <TableCell>{part.name}</TableCell>
+                          <TableCell>{part.partNumber || "-"}</TableCell>
+                          <TableCell>{part.quantity}</TableCell>
+                          <TableCell>{part.cost || "-"}</TableCell>
+                          <TableCell>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => removeIncidentPart(index)}
+                              className="h-8 w-8 p-0 text-red-500 hover:text-red-700 hover:bg-red-100"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              ) : (
+                <div className="text-center py-4 text-muted-foreground border rounded-md">
+                  No hay repuestos registrados para este incidente.
+                </div>
+              )}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setShowIncidentDialog(false)}>
+              Cancelar
+            </Button>
+            <Button type="button" onClick={addIncident}>
+              {editingIncidentIndex !== null ? "Actualizar" : "Registrar"} Incidente
             </Button>
           </DialogFooter>
         </DialogContent>
