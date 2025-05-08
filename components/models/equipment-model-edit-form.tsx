@@ -109,6 +109,7 @@ export function EquipmentModelEditForm({ modelId }: EquipmentModelEditFormProps)
   const [currentIntervalIndex, setCurrentIntervalIndex] = useState<number | null>(null)
   const [currentTask, setCurrentTask] = useState<MaintenanceTask | null>(null)
   const [isEditingTask, setIsEditingTask] = useState(false)
+  const [selectedTaskType, setSelectedTaskType] = useState<string>("Inspección")
 
   // Estado para el diálogo de repuestos
   const [isPartDialogOpen, setIsPartDialogOpen] = useState(false)
@@ -260,6 +261,7 @@ export function EquipmentModelEditForm({ modelId }: EquipmentModelEditFormProps)
     setCurrentIntervalIndex(intervalIndex)
     setCurrentTask(task)
     setIsEditingTask(!!task)
+    setSelectedTaskType(task?.type || "Inspección")
     setIsTaskDialogOpen(true)
   }
 
@@ -964,7 +966,11 @@ export function EquipmentModelEditForm({ modelId }: EquipmentModelEditFormProps)
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="taskType">Tipo</Label>
-                <Select defaultValue={currentTask?.type || ""}>
+                <Select 
+                  defaultValue={currentTask?.type || "Inspección"} 
+                  onValueChange={setSelectedTaskType} 
+                  value={selectedTaskType}
+                >
                   <SelectTrigger id="taskType">
                     <SelectValue placeholder="Seleccionar tipo" />
                   </SelectTrigger>
@@ -1009,8 +1015,7 @@ export function EquipmentModelEditForm({ modelId }: EquipmentModelEditFormProps)
                       const newTask: MaintenanceTask = {
                         id: `task-${Date.now()}`,
                         description: (document.getElementById("taskDescription") as HTMLInputElement).value,
-                        type:
-                          (document.querySelector("[data-value]") as HTMLElement)?.getAttribute("data-value") || "Inspección",
+                        type: selectedTaskType,
                         estimatedTime:
                           Number.parseFloat((document.getElementById("taskTime") as HTMLInputElement).value) || 1,
                         requiresSpecialist: (document.getElementById("requiresSpecialist") as HTMLInputElement).checked,
@@ -1123,8 +1128,7 @@ export function EquipmentModelEditForm({ modelId }: EquipmentModelEditFormProps)
                 const newTask: MaintenanceTask = {
                   id: currentTask?.id || `task-${Date.now()}`,
                   description: (document.getElementById("taskDescription") as HTMLInputElement).value,
-                  type:
-                    (document.querySelector("[data-value]") as HTMLElement)?.getAttribute("data-value") || "Inspección",
+                  type: selectedTaskType,
                   estimatedTime:
                     Number.parseFloat((document.getElementById("taskTime") as HTMLInputElement).value) || 1,
                   requiresSpecialist: (document.getElementById("requiresSpecialist") as HTMLInputElement).checked,
