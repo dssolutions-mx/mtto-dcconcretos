@@ -20,7 +20,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Separator } from "@/components/ui/separator"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
-import { Plus, Save, Trash, Edit, FileText, Loader2 } from "lucide-react"
+import { Plus, Save, Trash, Edit, FileText, Loader2, Download, Copy } from "lucide-react"
 import { useEquipmentModel } from "@/hooks/useSupabase"
 
 // Interfaz para las tareas de mantenimiento
@@ -255,6 +255,83 @@ export function EquipmentModelEditForm({ modelId }: EquipmentModelEditFormProps)
       });
     }
   }
+
+  // Función para duplicar un intervalo de mantenimiento
+  const duplicateMaintenanceInterval = async (index: number) => {
+    const sourceInterval = maintenanceIntervals[index];
+    if (!sourceInterval) return;
+    
+    try {
+      // Crear un nuevo intervalo en la base de datos
+      const newIntervalData = {
+        model_id: modelId,
+        interval_value: sourceInterval.hours,
+        name: `${sourceInterval.name} (Copia)`,
+        description: sourceInterval.description || null,
+        type: "Preventivo",
+        estimated_duration: 0,
+      };
+      
+      const newInterval = await modelsApi.createMaintenanceInterval(newIntervalData);
+      
+      // Crear un objeto para mapear los IDs de tareas originales a las nuevas
+      const taskIdMap = new Map();
+      
+      // Duplicar todas las tareas
+      for (const task of sourceInterval.tasks) {
+        const newTaskData = {
+          interval_id: newInterval.id,
+          description: task.description,
+          type: task.type,
+          estimated_time: task.estimatedTime,
+          requires_specialist: task.requiresSpecialist,
+        };
+        
+        const newTask = await modelsApi.createMaintenanceTask(newTaskData);
+        taskIdMap.set(task.id, newTask.id);
+        
+        // Duplicar todas las partes de cada tarea
+        for (const part of task.parts || []) {
+          const newPartData = {
+            task_id: newTask.id,
+            name: part.name,
+            part_number: part.partNumber,
+            quantity: part.quantity,
+            cost: part.cost || null,
+          };
+          
+          await modelsApi.createTaskPart(newPartData);
+        }
+      }
+      
+      // Actualizar el estado local con el nuevo intervalo
+      // Mejor que volver a cargar la página: obtener el intervalo recién creado
+      const newIntervalWithTasks = {
+        id: newInterval.id,
+        hours: sourceInterval.hours,
+        name: `${sourceInterval.name} (Copia)`,
+        description: sourceInterval.description,
+        tasks: sourceInterval.tasks.map(task => ({
+          ...task,
+          id: taskIdMap.get(task.id) || `new-${Date.now()}`,
+        })),
+      };
+      
+      setMaintenanceIntervals([...maintenanceIntervals, newIntervalWithTasks]);
+      
+      toast({
+        title: "Intervalo duplicado",
+        description: "Se ha duplicado el intervalo con todas sus tareas y repuestos",
+      });
+    } catch (err) {
+      console.error("Error al duplicar intervalo:", err);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "No se pudo duplicar el intervalo de mantenimiento",
+      });
+    }
+  };
 
   // Función para abrir el diálogo de tareas
   const openTaskDialog = (intervalIndex: number, task: MaintenanceTask | null = null) => {
@@ -880,9 +957,24 @@ export function EquipmentModelEditForm({ modelId }: EquipmentModelEditFormProps)
                         </div>
                       </TableCell>
                       <TableCell className="text-right">
-                        <Button variant="ghost" size="sm" onClick={() => removeMaintenanceInterval(intervalIndex)}>
-                          <Trash className="h-4 w-4" />
-                        </Button>
+                        <div className="flex justify-end gap-2">
+                          <Button 
+                            variant="ghost" 
+                            size="sm" 
+                            onClick={() => duplicateMaintenanceInterval(intervalIndex)}
+                            title="Duplicar intervalo"
+                          >
+                            <Copy className="h-4 w-4" />
+                          </Button>
+                          <Button 
+                            variant="ghost" 
+                            size="sm" 
+                            onClick={() => removeMaintenanceInterval(intervalIndex)}
+                            title="Eliminar intervalo"
+                          >
+                            <Trash className="h-4 w-4" />
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}
