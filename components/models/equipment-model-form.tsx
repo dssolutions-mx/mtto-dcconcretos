@@ -25,32 +25,7 @@ import { modelsApi } from "@/lib/api"
 import { toast } from "@/components/ui/use-toast"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { InsertEquipmentModel } from "@/types"
-
-// Categorías de equipos para el selector
-const equipmentCategories = [
-  "Mezcladora de Concreto",
-  "Grúa Torre",
-  "Generador Eléctrico",
-  "Montacargas Eléctrico",
-  "Compresor Industrial",
-  "Excavadora",
-  "Cargador Frontal",
-  "Retroexcavadora",
-  "Bomba de Concreto",
-  "Plataforma Elevadora",
-]
-
-// Tipos de mantenimiento
-const maintenanceTypes = [
-  "Inspección",
-  "Lubricación",
-  "Ajuste",
-  "Limpieza",
-  "Reemplazo",
-  "Calibración",
-  "Prueba",
-  "Overhaul",
-]
+import { equipmentCategories, fuelTypes, maintenanceTypes, measurementUnits } from "@/lib/constants"
 
 // Interfaz para las tareas de mantenimiento
 interface MaintenanceTask {
@@ -158,6 +133,9 @@ export function EquipmentModelForm() {
   const [currentTaskIndex, setCurrentTaskIndex] = useState<number | null>(null)
   const [currentPart, setCurrentPart] = useState<MaintenancePart | null>(null)
   const [isEditingPart, setIsEditingPart] = useState(false)
+
+  // Estado para la unidad de mantenimiento
+  const [maintenanceUnit, setMaintenanceUnit] = useState<string>("hours")
 
   // Función para agregar un nuevo intervalo de mantenimiento
   const addMaintenanceInterval = () => {
@@ -274,7 +252,7 @@ export function EquipmentModelForm() {
         description: (document.getElementById("description") as HTMLTextAreaElement).value,
         year_introduced: Number((document.getElementById("yearIntroduced") as HTMLInputElement).value) || null,
         expected_lifespan: Number((document.getElementById("expectedLifespan") as HTMLInputElement).value) || null,
-        maintenance_unit: "hours", // Por defecto en horas
+        maintenance_unit: maintenanceUnit,
         specifications: {
           general: {
             engineType: (document.getElementById("engineType") as HTMLInputElement)?.value,
@@ -419,7 +397,7 @@ export function EquipmentModelForm() {
             <Textarea id="description" placeholder="Descripción general del modelo" rows={3} />
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="space-y-2">
               <Label htmlFor="yearIntroduced">Año de Introducción</Label>
               <Input id="yearIntroduced" type="number" placeholder="Ej: 2020" />
@@ -428,6 +406,25 @@ export function EquipmentModelForm() {
             <div className="space-y-2">
               <Label htmlFor="expectedLifespan">Vida Útil Esperada (años)</Label>
               <Input id="expectedLifespan" type="number" placeholder="Ej: 10" />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="maintenanceUnit">Unidad de Mantenimiento</Label>
+              <Select
+                value={maintenanceUnit}
+                onValueChange={setMaintenanceUnit}
+              >
+                <SelectTrigger id="maintenanceUnit">
+                  <SelectValue placeholder="Seleccionar unidad" />
+                </SelectTrigger>
+                <SelectContent>
+                  {measurementUnits.map((unit) => (
+                    <SelectItem key={unit.value} value={unit.value}>
+                      {unit.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </div>
         </CardContent>
@@ -551,7 +548,7 @@ export function EquipmentModelForm() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Horas</TableHead>
+                    <TableHead>{maintenanceUnit === 'hours' ? 'Horas' : 'Kilómetros'}</TableHead>
                     <TableHead>Nombre</TableHead>
                     <TableHead>Descripción</TableHead>
                     <TableHead>Tareas</TableHead>
@@ -626,11 +623,11 @@ export function EquipmentModelForm() {
               <h4 className="text-sm font-medium">Agregar Nuevo Intervalo de Mantenimiento</h4>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="intervalHours">Horas</Label>
+                  <Label htmlFor="intervalHours">{maintenanceUnit === 'hours' ? 'Horas' : 'Kilómetros'}</Label>
                   <Input
                     id="intervalHours"
                     type="number"
-                    placeholder="Ej: 500"
+                    placeholder={maintenanceUnit === 'hours' ? "Ej: 500" : "Ej: 10000"}
                     value={newInterval.hours || ""}
                     onChange={(e) => setNewInterval({ ...newInterval, hours: Number.parseInt(e.target.value) || 0 })}
                   />

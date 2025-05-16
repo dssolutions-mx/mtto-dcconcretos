@@ -39,7 +39,13 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
           throw new Error("No se encontró el registro de mantenimiento");
         }
         
-        setMaintenance(data);
+        // Ensure parts is always an array to prevent "reduce is not a function" error
+        const processedData = {
+          ...data,
+          parts: Array.isArray(data.parts) ? data.parts : []
+        };
+        
+        setMaintenance(processedData);
       } catch (err) {
         setError(err instanceof Error ? err : new Error(String(err)));
       } finally {

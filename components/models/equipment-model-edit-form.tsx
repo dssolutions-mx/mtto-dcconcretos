@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Spinner } from "@/components/ui/spinner"
 import { modelsApi } from "@/lib/api"
-import { equipmentCategories, fuelTypes, maintenanceTypes } from "@/lib/constants"
+import { equipmentCategories, fuelTypes, maintenanceTypes, measurementUnits } from "@/lib/constants"
 import { toast } from "@/components/ui/use-toast"
 import { EquipmentModel, UpdateEquipmentModel } from "@/types"
 import { Json } from "@/lib/database.types"
@@ -95,6 +95,7 @@ export function EquipmentModelEditForm({ modelId }: EquipmentModelEditFormProps)
   const [error, setError] = useState<Error | null>(null)
   const [selectedCategory, setSelectedCategory] = useState<string>("")
   const [selectedFuelType, setSelectedFuelType] = useState<string>("")
+  const [maintenanceUnit, setMaintenanceUnit] = useState<string>("hours")
   
   // Estados para mantenimientos
   const [maintenanceIntervals, setMaintenanceIntervals] = useState<MaintenanceInterval[]>([])
@@ -117,6 +118,10 @@ export function EquipmentModelEditForm({ modelId }: EquipmentModelEditFormProps)
   const [currentPart, setCurrentPart] = useState<MaintenancePart | null>(null)
   const [isEditingPart, setIsEditingPart] = useState(false)
 
+  // Estado para el diálogo de edición de intervalos
+  const [isIntervalDialogOpen, setIsIntervalDialogOpen] = useState(false)
+  const [currentInterval, setCurrentInterval] = useState<MaintenanceInterval | null>(null)
+
   // Usar el hook personalizado para obtener los intervalos de mantenimiento
   const { maintenanceIntervals: fetchedIntervals } = useEquipmentModel(modelId);
 
@@ -130,6 +135,7 @@ export function EquipmentModelEditForm({ modelId }: EquipmentModelEditFormProps)
         if (modelData) {
           setModel(modelData)
           setSelectedCategory(modelData.category)
+          setMaintenanceUnit(modelData.maintenance_unit || "hours")
           
           // Extraer el tipo de combustible si existe en las especificaciones
           if (
@@ -317,12 +323,16 @@ export function EquipmentModelEditForm({ modelId }: EquipmentModelEditFormProps)
         })),
       };
       
-      setMaintenanceIntervals([...maintenanceIntervals, newIntervalWithTasks]);
+      const updatedIntervals = [...maintenanceIntervals, newIntervalWithTasks];
+      setMaintenanceIntervals(updatedIntervals);
       
       toast({
         title: "Intervalo duplicado",
         description: "Se ha duplicado el intervalo con todas sus tareas y repuestos",
       });
+      
+      // Abrir inmediatamente el diálogo de edición para el nuevo intervalo
+      openIntervalDialog(newIntervalWithTasks, updatedIntervals.length - 1);
     } catch (err) {
       console.error("Error al duplicar intervalo:", err);
       toast({
@@ -546,6 +556,47 @@ export function EquipmentModelEditForm({ modelId }: EquipmentModelEditFormProps)
     }
   }
 
+  // Función para editar un intervalo de mantenimiento
+  const openIntervalDialog = (interval: MaintenanceInterval, index: number) => {
+    setCurrentInterval(interval);
+    setCurrentIntervalIndex(index);
+    setIsIntervalDialogOpen(true);
+  };
+
+  // Función para guardar los cambios en un intervalo de mantenimiento
+  const updateMaintenanceInterval = async () => {
+    if (!currentInterval || currentIntervalIndex === null || !currentInterval.id) return;
+    
+    try {
+      // Actualizar en la base de datos
+      await modelsApi.updateMaintenanceInterval(currentInterval.id, {
+        name: currentInterval.name,
+        description: currentInterval.description,
+        interval_value: currentInterval.hours
+      });
+      
+      // Actualizar en el estado local
+      const updatedIntervals = [...maintenanceIntervals];
+      updatedIntervals[currentIntervalIndex] = currentInterval;
+      setMaintenanceIntervals(updatedIntervals);
+      
+      // Cerrar el diálogo
+      setIsIntervalDialogOpen(false);
+      
+      toast({
+        title: "Intervalo actualizado",
+        description: "Se han guardado los cambios en el intervalo",
+      });
+    } catch (err) {
+      console.error("Error al actualizar intervalo:", err);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "No se pudo actualizar el intervalo de mantenimiento",
+      });
+    }
+  };
+
   // Función para actualizar el modelo
   const handleUpdateModel = async () => {
     try {
@@ -560,6 +611,7 @@ export function EquipmentModelEditForm({ modelId }: EquipmentModelEditFormProps)
         description: (document.getElementById("description") as HTMLTextAreaElement).value,
         year_introduced: Number((document.getElementById("yearIntroduced") as HTMLInputElement).value) || null,
         expected_lifespan: Number((document.getElementById("expectedLifespan") as HTMLInputElement).value) || null,
+        maintenance_unit: maintenanceUnit,
         specifications: {
           general: {
             engineType: (document.getElementById("engineType") as HTMLInputElement)?.value,
@@ -704,7 +756,7 @@ export function EquipmentModelEditForm({ modelId }: EquipmentModelEditFormProps)
             />
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="space-y-2">
               <Label htmlFor="yearIntroduced">Año de Introducción</Label>
               <Input 
@@ -723,6 +775,25 @@ export function EquipmentModelEditForm({ modelId }: EquipmentModelEditFormProps)
                 placeholder="Ej: 10" 
                 defaultValue={model.expected_lifespan || ''}
               />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="maintenanceUnit">Unidad de Mantenimiento</Label>
+              <Select 
+                value={maintenanceUnit} 
+                onValueChange={setMaintenanceUnit}
+              >
+                <SelectTrigger id="maintenanceUnit">
+                  <SelectValue placeholder="Seleccionar unidad" />
+                </SelectTrigger>
+                <SelectContent>
+                  {measurementUnits.map((unit) => (
+                    <SelectItem key={unit.value} value={unit.value}>
+                      {unit.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </div>
         </CardContent>
@@ -898,7 +969,7 @@ export function EquipmentModelEditForm({ modelId }: EquipmentModelEditFormProps)
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Horas</TableHead>
+                    <TableHead>{maintenanceUnit === 'hours' ? 'Horas' : 'Kilómetros'}</TableHead>
                     <TableHead>Nombre</TableHead>
                     <TableHead>Descripción</TableHead>
                     <TableHead>Tareas</TableHead>
@@ -961,6 +1032,14 @@ export function EquipmentModelEditForm({ modelId }: EquipmentModelEditFormProps)
                           <Button 
                             variant="ghost" 
                             size="sm" 
+                            onClick={() => openIntervalDialog(interval, intervalIndex)}
+                            title="Editar intervalo"
+                          >
+                            <Edit className="h-4 w-4" />
+                          </Button>
+                          <Button 
+                            variant="ghost" 
+                            size="sm" 
                             onClick={() => duplicateMaintenanceInterval(intervalIndex)}
                             title="Duplicar intervalo"
                           >
@@ -995,11 +1074,11 @@ export function EquipmentModelEditForm({ modelId }: EquipmentModelEditFormProps)
               <h4 className="text-sm font-medium">Agregar Nuevo Intervalo de Mantenimiento</h4>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="intervalHours">Horas</Label>
+                  <Label htmlFor="intervalHours">{maintenanceUnit === 'hours' ? 'Horas' : 'Kilómetros'}</Label>
                   <Input
                     id="intervalHours"
                     type="number"
-                    placeholder="Ej: 500"
+                    placeholder={maintenanceUnit === 'hours' ? "Ej: 500" : "Ej: 10000"}
                     value={newInterval.hours || ""}
                     onChange={(e) => setNewInterval({ ...newInterval, hours: Number.parseInt(e.target.value) || 0 })}
                   />
@@ -1290,6 +1369,62 @@ export function EquipmentModelEditForm({ modelId }: EquipmentModelEditFormProps)
               }}
             >
               {isEditingPart ? "Actualizar" : "Agregar"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Diálogo para editar intervalo de mantenimiento */}
+      <Dialog open={isIntervalDialogOpen} onOpenChange={setIsIntervalDialogOpen}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle>Editar Intervalo de Mantenimiento</DialogTitle>
+            <DialogDescription>
+              Modifica los detalles del intervalo de mantenimiento
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="editIntervalHours">{maintenanceUnit === 'hours' ? 'Horas' : 'Kilómetros'}</Label>
+              <Input
+                id="editIntervalHours"
+                type="number"
+                placeholder={maintenanceUnit === 'hours' ? "Ej: 500" : "Ej: 10000"}
+                value={currentInterval?.hours || 0}
+                onChange={(e) => setCurrentInterval(prev => 
+                  prev ? { ...prev, hours: Number.parseInt(e.target.value) || 0 } : null
+                )}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="editIntervalName">Nombre</Label>
+              <Input
+                id="editIntervalName"
+                placeholder="Ej: Mantenimiento 500 horas"
+                value={currentInterval?.name || ""}
+                onChange={(e) => setCurrentInterval(prev => 
+                  prev ? { ...prev, name: e.target.value } : null
+                )}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="editIntervalDescription">Descripción</Label>
+              <Input
+                id="editIntervalDescription"
+                placeholder="Descripción breve"
+                value={currentInterval?.description || ""}
+                onChange={(e) => setCurrentInterval(prev => 
+                  prev ? { ...prev, description: e.target.value } : null
+                )}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsIntervalDialogOpen(false)}>
+              Cancelar
+            </Button>
+            <Button onClick={updateMaintenanceInterval}>
+              Guardar
             </Button>
           </DialogFooter>
         </DialogContent>
