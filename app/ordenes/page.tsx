@@ -4,6 +4,7 @@ import { DashboardHeader } from "@/components/dashboard/dashboard-header"
 import { DashboardShell } from "@/components/dashboard/dashboard-shell"
 import { WorkOrdersList } from "@/components/work-orders/work-orders-list"
 import { Plus, FileDown } from "lucide-react"
+import Link from "next/link"
 
 export const metadata: Metadata = {
   title: "Órdenes de Trabajo | Sistema de Gestión de Mantenimiento",
@@ -22,9 +23,11 @@ export default function WorkOrdersPage() {
             <FileDown className="mr-2 h-4 w-4" />
             Exportar
           </Button>
-          <Button>
+          <Button asChild>
+            <Link href="/ordenes/crear">
             <Plus className="mr-2 h-4 w-4" />
             Nueva OT
+            </Link>
           </Button>
         </div>
       </DashboardHeader>

@@ -70,10 +70,41 @@ export type CompletedChecklist = DbTables['completed_checklists']['Row'];
 export type InsertCompletedChecklist = DbTables['completed_checklists']['Insert'];
 export type UpdateCompletedChecklist = DbTables['completed_checklists']['Update'];
 
+// Tipos para problemas detectados en checklists
+export type ChecklistIssue = DbTables['checklist_issues']['Row'];
+export type InsertChecklistIssue = DbTables['checklist_issues']['Insert'];
+export type UpdateChecklistIssue = DbTables['checklist_issues']['Update'];
+
+// Tipos para órdenes de trabajo
+export type WorkOrder = DbTables['work_orders']['Row'];
+export type InsertWorkOrder = DbTables['work_orders']['Insert'];
+export type UpdateWorkOrder = DbTables['work_orders']['Update'];
+
+// Tipos para órdenes de compra
+export type PurchaseOrder = DbTables['purchase_orders']['Row'];
+export type InsertPurchaseOrder = DbTables['purchase_orders']['Insert'];
+export type UpdatePurchaseOrder = DbTables['purchase_orders']['Update'];
+
 // Tipos para órdenes de servicio
 export type ServiceOrder = DbTables['service_orders']['Row'];
 export type InsertServiceOrder = DbTables['service_orders']['Insert'];
 export type UpdateServiceOrder = DbTables['service_orders']['Update'];
+
+// Tipo para completar órdenes de trabajo
+export interface WorkOrderCompletion {
+  id?: string;
+  work_order_id: string;
+  completion_date: string;
+  completion_time: string;
+  downtime_hours: number;
+  technician_notes?: string;
+  resolution_details: string;
+  parts_used?: any[];
+  labor_hours: number;
+  labor_cost: number;
+  total_cost: number;
+  created_at?: string;
+}
 
 // Tipos para perfiles de usuario
 export type Profile = DbTables['profiles']['Row'];
@@ -113,6 +144,27 @@ export enum ServiceOrderStatus {
   Cancelled = 'Cancelado'
 }
 
+export enum WorkOrderStatus {
+  Pending = 'Pendiente',
+  Quoted = 'Cotizada',
+  Approved = 'Aprobada',
+  InProgress = 'En ejecución',
+  Completed = 'Completada'
+}
+
+export enum PurchaseOrderStatus {
+  Pending = 'Pendiente',
+  Approved = 'Aprobada',
+  Rejected = 'Rechazada',
+  Ordered = 'Pedida',
+  Received = 'Recibida'
+}
+
+export enum ChecklistIssueStatus {
+  Flag = 'flag',
+  Fail = 'fail'
+}
+
 export enum UserRole {
   User = 'user',
   MaintenanceManager = 'ENCARGADO DE MANTENIMIENTO',
@@ -128,11 +180,41 @@ export interface AssetWithModel extends Asset {
 // Interfaz extendida para historiales con activo incluido
 export interface MaintenanceHistoryWithAsset extends MaintenanceHistory {
   asset?: Asset;
+  related_work_order?: WorkOrder;
+  related_service_order?: ServiceOrder;
 }
 
 // Interfaz extendida para órdenes de servicio con activo incluido
 export interface ServiceOrderWithAsset extends ServiceOrder {
   asset?: Asset;
+  work_order?: WorkOrder;
+}
+
+// Interfaz extendida para órdenes de trabajo con activo incluido
+export interface WorkOrderWithAsset extends WorkOrder {
+  asset?: Asset;
+}
+
+// Interfaz extendida para órdenes de trabajo con orden de compra incluida
+export interface WorkOrderWithPurchaseOrder extends WorkOrder {
+  purchase_order?: PurchaseOrder;
+}
+
+// Interfaz extendida para órdenes de trabajo completas
+export interface WorkOrderComplete extends WorkOrder {
+  asset?: Asset;
+  purchase_order?: PurchaseOrder;
+  service_order?: ServiceOrder;
+  issues?: ChecklistIssue[];
+  completion_date?: string;
+  completion_time?: string;
+  downtime_hours?: number;
+  technician_notes?: string;
+  resolution_details?: string;
+  parts_used?: any[];
+  labor_hours?: number;
+  labor_cost?: number;
+  total_cost?: number;
 }
 
 // Interfaz extendida para checklist con secciones e items
@@ -181,6 +263,18 @@ export interface MaintenancePart {
   quantity: number;
   unitCost?: number;
   totalCost?: number;
+}
+
+// Interfaz para items de órdenes de compra
+export interface PurchaseOrderItem {
+  id?: string;
+  name: string;
+  partNumber?: string;
+  quantity: number;
+  unit_price: number;
+  total_price: number;
+  supplier?: string;
+  estimated_delivery?: string;
 }
 
 // Interfaz extendida para modelos con sus intervalos de mantenimiento

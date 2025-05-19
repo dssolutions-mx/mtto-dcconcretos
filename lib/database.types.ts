@@ -333,11 +333,14 @@ export interface Database {
           findings: string | null
           actions: string | null
           technician: string
+          technician_id: string | null
           labor_hours: number | null
           labor_cost: string | null
           parts: Json | null
           total_cost: string | null
           work_order: string | null
+          work_order_id: string | null
+          service_order_id: string | null
           maintenance_plan_id: string | null
           completed_tasks: Json | null
           documents: string[] | null
@@ -356,11 +359,14 @@ export interface Database {
           findings?: string | null
           actions?: string | null
           technician: string
+          technician_id?: string | null
           labor_hours?: number | null
           labor_cost?: string | null
           parts?: Json | null
           total_cost?: string | null
           work_order?: string | null
+          work_order_id?: string | null
+          service_order_id?: string | null
           maintenance_plan_id?: string | null
           completed_tasks?: Json | null
           documents?: string[] | null
@@ -379,11 +385,14 @@ export interface Database {
           findings?: string | null
           actions?: string | null
           technician?: string
+          technician_id?: string | null
           labor_hours?: number | null
           labor_cost?: string | null
           parts?: Json | null
           total_cost?: string | null
           work_order?: string | null
+          work_order_id?: string | null
+          service_order_id?: string | null
           maintenance_plan_id?: string | null
           completed_tasks?: Json | null
           documents?: string[] | null
@@ -407,6 +416,7 @@ export interface Database {
           date: string
           type: string
           reported_by: string
+          reported_by_id: string | null
           description: string
           impact: string | null
           resolution: string | null
@@ -415,7 +425,10 @@ export interface Database {
           labor_cost: string | null
           parts: Json | null
           total_cost: string | null
-          work_order: string | null
+          work_order_text: string | null
+          work_order_id: string | null
+          service_order_id: string | null
+          checklist_id: string | null
           status: string | null
           documents: string[] | null
           created_by: string | null
@@ -428,6 +441,7 @@ export interface Database {
           date: string
           type: string
           reported_by: string
+          reported_by_id?: string | null
           description: string
           impact?: string | null
           resolution?: string | null
@@ -436,7 +450,10 @@ export interface Database {
           labor_cost?: string | null
           parts?: Json | null
           total_cost?: string | null
-          work_order?: string | null
+          work_order_text?: string | null
+          work_order_id?: string | null
+          service_order_id?: string | null
+          checklist_id?: string | null
           status?: string | null
           documents?: string[] | null
           created_by?: string | null
@@ -449,6 +466,7 @@ export interface Database {
           date?: string
           type?: string
           reported_by?: string
+          reported_by_id?: string | null
           description?: string
           impact?: string | null
           resolution?: string | null
@@ -457,7 +475,10 @@ export interface Database {
           labor_cost?: string | null
           parts?: Json | null
           total_cost?: string | null
-          work_order?: string | null
+          work_order_text?: string | null
+          work_order_id?: string | null
+          service_order_id?: string | null
+          checklist_id?: string | null
           status?: string | null
           documents?: string[] | null
           created_by?: string | null
@@ -705,15 +726,22 @@ export interface Database {
           status: string | null
           date: string
           technician: string
+          technician_id: string | null
           description: string
+          findings: string | null
+          actions: string | null
           notes: string | null
           parts: Json | null
+          labor_hours: number | null
+          labor_cost: string | null
+          parts_cost: string | null
           checklist_id: string | null
           total_cost: string | null
           documents: string[] | null
           created_by: string | null
           created_at: string
           updated_at: string
+          work_order_id: string | null
         }
         Insert: {
           id?: string
@@ -725,15 +753,22 @@ export interface Database {
           status?: string | null
           date: string
           technician: string
+          technician_id?: string | null
           description: string
+          findings?: string | null
+          actions?: string | null
           notes?: string | null
           parts?: Json | null
+          labor_hours?: number | null
+          labor_cost?: string | null
+          parts_cost?: string | null
           checklist_id?: string | null
           total_cost?: string | null
           documents?: string[] | null
           created_by?: string | null
           created_at?: string
           updated_at?: string
+          work_order_id?: string | null
         }
         Update: {
           id?: string
@@ -745,15 +780,22 @@ export interface Database {
           status?: string | null
           date?: string
           technician?: string
+          technician_id?: string | null
           description?: string
+          findings?: string | null
+          actions?: string | null
           notes?: string | null
           parts?: Json | null
+          labor_hours?: number | null
+          labor_cost?: string | null
+          parts_cost?: string | null
           checklist_id?: string | null
           total_cost?: string | null
           documents?: string[] | null
           created_by?: string | null
           created_at?: string
           updated_at?: string
+          work_order_id?: string | null
         }
         Relationships: [
           {
@@ -813,6 +855,213 @@ export interface Database {
           }
         ]
       }
+      work_orders: {
+        Row: {
+          id: string
+          order_id: string
+          asset_id: string | null
+          description: string
+          type: string
+          requested_by: string | null
+          assigned_to: string | null
+          planned_date: string | null
+          estimated_duration: number | null
+          priority: string | null
+          status: string | null
+          required_parts: Json | null
+          estimated_cost: string | null
+          checklist_id: string | null
+          maintenance_plan_id: string | null
+          issue_items: Json | null
+          purchase_order_id: string | null
+          approval_status: string | null
+          approved_by: string | null
+          approval_date: string | null
+          created_at: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          id?: string
+          order_id?: string
+          asset_id?: string | null
+          description: string
+          type?: string
+          requested_by?: string | null
+          assigned_to?: string | null
+          planned_date?: string | null
+          estimated_duration?: number | null
+          priority?: string | null
+          status?: string | null
+          required_parts?: Json | null
+          estimated_cost?: string | null
+          checklist_id?: string | null
+          maintenance_plan_id?: string | null
+          issue_items?: Json | null
+          purchase_order_id?: string | null
+          approval_status?: string | null
+          approved_by?: string | null
+          approval_date?: string | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          id?: string
+          order_id?: string
+          asset_id?: string | null
+          description?: string
+          type?: string
+          requested_by?: string | null
+          assigned_to?: string | null
+          planned_date?: string | null
+          estimated_duration?: number | null
+          priority?: string | null
+          status?: string | null
+          required_parts?: Json | null
+          estimated_cost?: string | null
+          checklist_id?: string | null
+          maintenance_plan_id?: string | null
+          issue_items?: Json | null
+          purchase_order_id?: string | null
+          approval_status?: string | null
+          approved_by?: string | null
+          approval_date?: string | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "work_orders_asset_id_fkey"
+            columns: ["asset_id"]
+            referencedRelation: "assets"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      purchase_orders: {
+        Row: {
+          id: string
+          order_id: string
+          work_order_id: string | null
+          supplier: string | null
+          total_amount: string | null
+          requested_by: string | null
+          approved_by: string | null
+          approval_date: string | null
+          expected_delivery_date: string | null
+          actual_delivery_date: string | null
+          status: string | null
+          items: Json | null
+          notes: string | null
+          invoice_number: string | null
+          invoice_date: string | null
+          payment_status: string | null
+          created_at: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          id?: string
+          order_id?: string
+          work_order_id?: string | null
+          supplier?: string | null
+          total_amount?: string | null
+          requested_by?: string | null
+          approved_by?: string | null
+          approval_date?: string | null
+          expected_delivery_date?: string | null
+          actual_delivery_date?: string | null
+          status?: string | null
+          items?: Json | null
+          notes?: string | null
+          invoice_number?: string | null
+          invoice_date?: string | null
+          payment_status?: string | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          id?: string
+          order_id?: string
+          work_order_id?: string | null
+          supplier?: string | null
+          total_amount?: string | null
+          requested_by?: string | null
+          approved_by?: string | null
+          approval_date?: string | null
+          expected_delivery_date?: string | null
+          actual_delivery_date?: string | null
+          status?: string | null
+          items?: Json | null
+          notes?: string | null
+          invoice_number?: string | null
+          invoice_date?: string | null
+          payment_status?: string | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "purchase_orders_work_order_id_fkey"
+            columns: ["work_order_id"]
+            referencedRelation: "work_orders"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      checklist_issues: {
+        Row: {
+          id: string
+          checklist_id: string | null
+          item_id: string
+          status: string
+          description: string
+          notes: string | null
+          photo_url: string | null
+          work_order_id: string | null
+          resolved: boolean | null
+          resolution_date: string | null
+          created_at: string | null
+        }
+        Insert: {
+          id?: string
+          checklist_id?: string | null
+          item_id: string
+          status: string
+          description: string
+          notes?: string | null
+          photo_url?: string | null
+          work_order_id?: string | null
+          resolved?: boolean | null
+          resolution_date?: string | null
+          created_at?: string | null
+        }
+        Update: {
+          id?: string
+          checklist_id?: string | null
+          item_id?: string
+          status?: string
+          description?: string
+          notes?: string | null
+          photo_url?: string | null
+          work_order_id?: string | null
+          resolved?: boolean | null
+          resolution_date?: string | null
+          created_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "checklist_issues_checklist_id_fkey"
+            columns: ["checklist_id"]
+            referencedRelation: "completed_checklists"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "checklist_issues_work_order_id_fkey"
+            columns: ["work_order_id"]
+            referencedRelation: "work_orders"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
     }
     Views: {
       [_ in never]: never
@@ -854,6 +1103,62 @@ export interface Database {
           p_completion_date: string
         }
         Returns: undefined
+      }
+      generate_next_id: {
+        Args: {
+          prefix: string
+        }
+        Returns: string
+      }
+      generate_preventive_work_order: {
+        Args: {
+          p_asset_id: string
+          p_maintenance_plan_id: string
+        }
+        Returns: string
+      }
+      generate_corrective_work_order: {
+        Args: {
+          p_checklist_id: string
+        }
+        Returns: string
+      }
+      generate_purchase_order: {
+        Args: {
+          p_work_order_id: string
+          p_supplier: string
+          p_items: Json
+          p_requested_by: string
+          p_expected_delivery_date: string
+        }
+        Returns: string
+      }
+      approve_purchase_order: {
+        Args: {
+          p_purchase_order_id: string
+          p_approved_by: string
+        }
+        Returns: undefined
+      }
+      complete_work_order: {
+        Args: {
+          p_work_order_id: string
+          p_completion_data: Json
+        }
+        Returns: string
+      }
+      check_maintenance_due_assets: {
+        Args: Record<string, never>
+        Returns: {
+          asset_id: string
+          asset_name: string
+          maintenance_plan_id: string
+          plan_name: string
+          next_due: string
+          days_remaining: number
+          value_remaining: number
+          maintenance_unit: string
+        }[]
       }
     }
     Enums: {
