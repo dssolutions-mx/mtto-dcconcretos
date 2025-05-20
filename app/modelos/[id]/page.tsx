@@ -7,6 +7,7 @@ import { ArrowLeft, Edit } from "lucide-react"
 import Link from "next/link"
 import { createClient } from "@/lib/supabase-server"
 import { notFound } from "next/navigation"
+import { use } from "react"
 
 export const revalidate = 3600 // Revalidate this page every hour
 
@@ -31,12 +32,21 @@ export async function generateMetadata({ params }: { params: { id: string } }): 
   }
 }
 
-export default async function EquipmentModelDetailsPage({ params }: { params: { id: string } }) {
+export default function EquipmentModelDetailsPage({ params }: { params: Promise<{ id: string }> }) {
+  // Unwrap params using React.use()
+  const resolvedParams = use(params);
+  const id = resolvedParams.id;
+  
+  return <EquipmentModelDetailsPageContent id={id} />;
+}
+
+// Create an async server component for the content
+async function EquipmentModelDetailsPageContent({ id }: { id: string }) {
   const supabase = await createClient()
   const { data: model } = await supabase
     .from('equipment_models')
     .select('name, manufacturer')
-    .eq('id', params.id)
+    .eq('id', id)
     .single()
     
   if (!model) {
@@ -57,14 +67,14 @@ export default async function EquipmentModelDetailsPage({ params }: { params: { 
             </Link>
           </Button>
           <Button variant="outline" asChild>
-            <Link href={`/modelos/${params.id}/editar`}>
+            <Link href={`/modelos/${id}/editar`}>
               <Edit className="mr-2 h-4 w-4" />
               Editar
             </Link>
           </Button>
         </div>
       </DashboardHeader>
-      <EquipmentModelDetails id={params.id} />
+      <EquipmentModelDetails id={id} />
     </DashboardShell>
   )
 }

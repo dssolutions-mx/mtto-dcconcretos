@@ -8,7 +8,10 @@ export const metadata = {
 export default function PurchaseOrdersPage() {
   return (
     <div className="container py-4 md:py-8">
-      <h1 className="text-2xl font-bold mb-6">Órdenes de Compra</h1>
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-2xl font-bold">Órdenes de Compra</h1>
+      </div>
+      
       <PurchaseOrdersList />
     </div>
   )

@@ -1,16 +1,16 @@
-import { createClient } from "@/lib/supabase"
+import { createClient } from "@/lib/supabase-server"
 import { PurchaseOrderStatus } from "@/types"
 import { cn } from "@/lib/utils"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
-import { ArrowLeft, FileCheck, Package, ShoppingCart, Truck } from "lucide-react"
+import { ArrowLeft, FileCheck, Package, ShoppingCart, Truck, FileText, Download, ExternalLink } from "lucide-react"
 import Link from "next/link"
 import { notFound } from "next/navigation"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
-import { ReactNode } from "react"
+import { ReactNode, use } from "react"
 
 // Helper function to format currency
 function formatCurrency(amount: string | null): string {
@@ -51,12 +51,40 @@ function getStatusVariant(status: string | null): "outline" | "secondary" | "def
   }
 }
 
-export default async function PurchaseOrderDetailsPage({
+// Helper function to get file extension from URL
+function getFileExtension(url: string): string {
+  if (!url) return '';
+  return url.split('.').pop()?.toLowerCase() || '';
+}
+
+// Helper function to check if a file is an image
+function isImageFile(url: string): boolean {
+  const imageExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'];
+  const extension = getFileExtension(url);
+  return imageExtensions.includes(extension);
+}
+
+// Helper function to check if a file is a PDF
+function isPdfFile(url: string): boolean {
+  return getFileExtension(url) === 'pdf';
+}
+
+export default function PurchaseOrderDetailsPage({
   params,
 }: {
-  params: { id: string }
+  params: Promise<{ id: string }>;
 }) {
-  const supabase = createClient()
+  // Unwrap params using React.use()
+  const resolvedParams = use(params);
+  const id = resolvedParams.id;
+  
+  // Return the content component with the id
+  return <PurchaseOrderDetailsContent id={id} />;
+}
+
+// Create an async server component for the content
+async function PurchaseOrderDetailsContent({ id }: { id: string }) {
+  const supabase = await createClient();
   
   // Get the purchase order details
   const { data: order, error } = await supabase
@@ -65,11 +93,11 @@ export default async function PurchaseOrderDetailsPage({
       *,
       work_order:work_orders (*)
     `)
-    .eq("id", params.id)
-    .single()
+    .eq("id", id)
+    .single();
     
   if (error || !order) {
-    notFound()
+    notFound();
   }
   
   // Parse JSON items if it's a string
@@ -256,6 +284,65 @@ export default async function PurchaseOrderDetailsPage({
           </CardContent>
         </Card>
       </div>
+      
+      {/* File Viewer Section */}
+      {order.quotation_url && (
+        <Card className="mb-6">
+          <CardHeader>
+            <CardTitle>Documentos Adjuntos</CardTitle>
+            <CardDescription>
+              Archivos relacionados con esta orden de compra
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              <div className="flex items-center gap-4 p-4 border rounded-md bg-slate-50">
+                <FileText className="h-8 w-8 text-blue-500" />
+                <div className="flex-1">
+                  <p className="font-medium">Cotización de Proveedor</p>
+                  <p className="text-sm text-muted-foreground">
+                    {order.quotation_url.split('/').pop()}
+                  </p>
+                </div>
+                <div className="flex gap-2">
+                  <Button variant="outline" size="sm" asChild>
+                    <a href={order.quotation_url} target="_blank" rel="noopener noreferrer">
+                      <ExternalLink className="h-4 w-4 mr-2" />
+                      Ver
+                    </a>
+                  </Button>
+                  <Button variant="outline" size="sm" asChild>
+                    <a href={order.quotation_url} download>
+                      <Download className="h-4 w-4 mr-2" />
+                      Descargar
+                    </a>
+                  </Button>
+                </div>
+              </div>
+              
+              {isPdfFile(order.quotation_url) && (
+                <div className="border rounded-md p-4 bg-white">
+                  <iframe
+                    src={`${order.quotation_url}#toolbar=0&navpanes=0`}
+                    className="w-full h-[400px] rounded border"
+                    title="PDF Viewer"
+                  />
+                </div>
+              )}
+              
+              {isImageFile(order.quotation_url) && (
+                <div className="border rounded-md p-4 bg-white">
+                  <img 
+                    src={order.quotation_url} 
+                    alt="Documento adjunto" 
+                    className="max-w-full max-h-[400px] mx-auto rounded" 
+                  />
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
       
       <Card className="mb-6">
         <CardHeader>

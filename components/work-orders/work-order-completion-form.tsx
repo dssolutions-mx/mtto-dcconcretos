@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { ArrowLeft, CalendarCheck, CheckCircle, Clock, CalendarIcon } from "lucide-react"
+import { ArrowLeft, CalendarCheck, CheckCircle, Clock, CalendarIcon, Plus, Trash2, ShoppingCart } from "lucide-react"
 import { createClient } from "@/lib/supabase"
 import { Separator } from "@/components/ui/separator"
 import { toast } from "@/components/ui/use-toast"
@@ -22,6 +22,7 @@ import { es } from "date-fns/locale"
 import { Calendar } from "@/components/ui/calendar"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { cn } from "@/lib/utils"
+import { Switch } from "@/components/ui/switch"
 
 // Date picker component
 function DatePicker({ date, setDate }: { date: Date | undefined, setDate: (date: Date | undefined) => void }) {
@@ -65,7 +66,11 @@ const workOrderCompletionSchema = z.object({
   resolution_details: z.string().min(1, "Los detalles de resolución son requeridos"),
   parts_used: z.array(
     z.object({
-      part_id: z.string(),
+      part_id: z.string().optional(),
+      id: z.string().optional(),
+      name: z.string().optional(),
+      part_name: z.string().optional(),
+      description: z.string().optional(),
       quantity: z.coerce.number().int().min(1),
       unit_price: z.coerce.number().min(0),
       total_price: z.coerce.number().min(0),
@@ -74,6 +79,15 @@ const workOrderCompletionSchema = z.object({
   labor_hours: z.coerce.number().min(0, "Las horas de trabajo no pueden ser negativas"),
   labor_cost: z.coerce.number().min(0, "El costo de mano de obra no puede ser negativo"),
   total_cost: z.coerce.number().min(0, "El costo total no puede ser negativo"),
+  has_additional_expenses: z.boolean(),
+  additional_expenses: z.array(
+    z.object({
+      description: z.string().min(1, "La descripción es requerida"),
+      amount: z.coerce.number().min(0.01, "El monto debe ser mayor a cero"),
+      justification: z.string().min(1, "La justificación es requerida")
+    })
+  ),
+  additional_expenses_total: z.coerce.number().min(0, "El total de gastos adicionales no puede ser negativo")
 })
 
 type WorkOrderCompletionFormValues = z.infer<typeof workOrderCompletionSchema>
@@ -100,6 +114,9 @@ export function WorkOrderCompletionForm({ workOrderId, initialData }: WorkOrderC
     labor_cost: initialData?.labor_cost || 0,
     total_cost: initialData?.total_cost || 0,
     parts_used: [],
+    has_additional_expenses: false,
+    additional_expenses: [],
+    additional_expenses_total: 0
   }
 
   const form = useForm<WorkOrderCompletionFormValues>({
@@ -130,23 +147,71 @@ export function WorkOrderCompletionForm({ workOrderId, initialData }: WorkOrderC
 
         // Parse required parts if they exist
         if (orderData.required_parts) {
-          const parts = typeof orderData.required_parts === "string" 
-            ? JSON.parse(orderData.required_parts) 
-            : orderData.required_parts
+          let parts = [];
+          try {
+            parts = typeof orderData.required_parts === "string" 
+              ? JSON.parse(orderData.required_parts) 
+              : orderData.required_parts;
+            
+            // Ensure parts is always an array
+            parts = Array.isArray(parts) ? parts : [];
+            
+            console.log('Raw required_parts data:', JSON.stringify(parts));
+            
+            // Ensure all numeric properties are properly parsed as numbers
+            parts = parts.map((part: any) => {
+              console.log('Processing part raw data:', part);
+              return {
+                ...part,
+                // Asegurar que se capture el nombre correctamente de donde venga
+                name: part.name, // Mantener el nombre original si existe
+                part_name: part.part_name || part.description || "Repuesto sin nombre",
+                quantity: Number(part.quantity) || 0,
+                unit_price: Number(part.unit_price) || 0,
+                total_price: Number(part.total_price) || 0,
+              };
+            });
+            
+            console.log('Parsed parts details:', JSON.stringify(parts));
+            
+            // Inspeccionar la estructura y contenido de cada parte
+            parts.forEach((part, index) => {
+              console.log(`Part ${index}:`, {
+                part_id: part.part_id,
+                name: part.name,
+                part_name: part.part_name,
+                description: part.description,
+                quantity: Number(part.quantity),
+                unit_price: Number(part.unit_price),
+                total_price: Number(part.total_price),
+                original: part
+              });
+            });
+          } catch (e) {
+            console.error('Error parsing parts:', e);
+            parts = [];
+          }
           
-          setRequiredParts(parts)
+          setRequiredParts(parts);
           
           // Set parts_used with the required parts
           form.setValue("parts_used", parts.map((part: any) => ({
             part_id: part.part_id,
-            quantity: part.quantity,
-            unit_price: part.unit_price,
-            total_price: part.total_price
-          })))
+            name: part.name,
+            part_name: part.part_name,
+            description: part.description,
+            quantity: Number(part.quantity) || 0,
+            unit_price: Number(part.unit_price) || 0,
+            total_price: Number(part.total_price) || 0
+          })));
           
           // Calculate total cost including parts
-          const partsCost = parts.reduce((sum: number, part: any) => sum + (part.total_price || 0), 0)
-          form.setValue("total_cost", partsCost)
+          const partsCost = parts.reduce((sum: number, part: any) => {
+            return sum + (Number(part.total_price) || 0);
+          }, 0);
+          
+          console.log('Parts cost calculated:', partsCost);
+          form.setValue("total_cost", partsCost);
         }
       } catch (error) {
         console.error("Error loading work order:", error)
@@ -163,87 +228,388 @@ export function WorkOrderCompletionForm({ workOrderId, initialData }: WorkOrderC
     loadWorkOrder()
   }, [workOrderId, form])
 
-  // Update total cost when labor cost changes
+  // Update total cost when labor cost or additional expenses change
   useEffect(() => {
-    const subscription = form.watch((value, { name }) => {
-      if (name === "labor_cost" || name === "parts_used") {
-        const partsCost = requiredParts.reduce((sum, part) => sum + (part.total_price || 0), 0)
-        const laborCost = value.labor_cost || 0
-        form.setValue("total_cost", partsCost + laborCost)
+    let isUpdating = false;
+
+    // Iniciar con el cálculo correcto al montar el componente
+    if (!isUpdating) {
+      isUpdating = true;
+      try {
+        const partsCost = requiredParts.reduce((sum, part) => sum + (Number(part.total_price) || 0), 0);
+        const formValues = form.getValues();
+        const laborCost = Number(formValues.labor_cost) || 0;
+        const additionalExpensesTotal = Number(formValues.additional_expenses_total) || 0;
+        
+        const totalCost = partsCost + laborCost + additionalExpensesTotal;
+        console.log('Cálculo inicial del total:', {partsCost, laborCost, additionalExpensesTotal, totalCost});
+        
+        form.setValue("total_cost", totalCost, { shouldDirty: true });
+      } finally {
+        isUpdating = false;
       }
-    })
+    }
+
+    const subscription = form.watch((value, { name }) => {
+      // Prevent recursive updates that cause infinite loops
+      if (isUpdating) return;
+      
+      console.log('Watch triggered by:', name, 'with value:', value && typeof value === 'object' ? JSON.stringify(value) : value);
+      
+      if (name === "labor_cost" || name === "parts_used" || name?.startsWith("additional_expenses") || name === "has_additional_expenses") {
+        isUpdating = true;
+        
+        try {
+          // Ensure numeric values
+          const partsCost = requiredParts.reduce((sum, part) => sum + (Number(part.total_price) || 0), 0);
+          const laborCost = Number(value.labor_cost) || 0;
+          
+          // Calculate additional expenses total
+          let additionalExpensesTotal = 0;
+          if (value.has_additional_expenses && Array.isArray(value.additional_expenses) && value.additional_expenses.length > 0) {
+            additionalExpensesTotal = value.additional_expenses.reduce(
+              (sum, expense) => sum + (parseFloat(expense?.amount?.toString() || "0")), 
+              0
+            );
+            // Update additional_expenses_total field
+            form.setValue("additional_expenses_total", additionalExpensesTotal, { shouldDirty: true });
+          } else {
+            // Reset the additional expenses if has_additional_expenses is false
+            if (name === "has_additional_expenses" && !value.has_additional_expenses) {
+              form.setValue("additional_expenses", [], { shouldDirty: true });
+              form.setValue("additional_expenses_total", 0, { shouldDirty: true });
+              additionalExpensesTotal = 0;
+            }
+          }
+          
+          // Perform explicit addition to avoid string concatenation
+          const totalCost = partsCost + laborCost + additionalExpensesTotal;
+          console.log('Calculating total:', {
+            partsCost: Number(partsCost), 
+            laborCost: Number(laborCost), 
+            additionalExpensesTotal: Number(additionalExpensesTotal), 
+            totalCost: Number(totalCost),
+            laborCostType: typeof laborCost,
+            valueLabor: value.labor_cost
+          });
+          
+          // Update total cost
+          form.setValue("total_cost", totalCost, { shouldDirty: true });
+        } finally {
+          // Always reset the flag to allow future updates
+          isUpdating = false;
+        }
+      }
+    });
     
-    return () => subscription.unsubscribe()
-  }, [form, requiredParts])
+    return () => subscription.unsubscribe();
+  }, [form, requiredParts]);
+
+  // Add a new additional expense
+  const addAdditionalExpense = () => {
+    const currentExpenses = form.getValues("additional_expenses") || [];
+    const newExpense = { description: "", amount: 0, justification: "" };
+    form.setValue("additional_expenses", [...currentExpenses, newExpense], { shouldDirty: true });
+    
+    // Recalculate totals
+    const additionalExpensesTotal = [...currentExpenses, newExpense].reduce(
+      (sum, expense) => sum + (parseFloat(expense.amount.toString()) || 0), 
+      0
+    );
+    form.setValue("additional_expenses_total", additionalExpensesTotal, { shouldDirty: true });
+  }
+
+  // Remove an additional expense
+  const removeAdditionalExpense = (index: number) => {
+    const currentExpenses = form.getValues("additional_expenses") || [];
+    const updatedExpenses = currentExpenses.filter((_, i) => i !== index);
+    
+    form.setValue("additional_expenses", updatedExpenses, { shouldDirty: true });
+    
+    // Recalculate totals
+    const additionalExpensesTotal = updatedExpenses.reduce(
+      (sum, expense) => sum + (parseFloat(expense.amount.toString()) || 0), 
+      0
+    );
+    form.setValue("additional_expenses_total", additionalExpensesTotal, { shouldDirty: true });
+    
+    // If no expenses left, reset has_additional_expenses if needed
+    if (updatedExpenses.length === 0) {
+      form.setValue("has_additional_expenses", false, { shouldDirty: true });
+    }
+  }
 
   // Handle form submission
   async function onSubmit(data: WorkOrderCompletionFormValues) {
     try {
-      setIsLoading(true)
+      console.log("Iniciando envío del formulario con datos:", data);
+      setIsLoading(true);
       
-      // Preparar datos para la API
+      // Asegurarnos de que requiredParts tenga el formato correcto
+      const formattedParts = requiredParts.map(part => ({
+        part_id: part.id || part.part_id || '',  // Asegurar que part_id siempre tiene un valor
+        id: part.id || part.part_id || '',       // Incluir id también para compatibilidad
+        name: part.name || part.part_name || part.description || "Repuesto sin nombre", 
+        quantity: Number(part.quantity) || 0,
+        partNumber: part.partNumber || '',
+        unit_price: Number(part.unit_price) || 0,
+        total_price: Number(part.total_price) || 0
+      }));
+      
+      console.log("Repuestos formateados:", formattedParts);
+      
+      // Aquí vamos a asegurarnos que parts_used en data esté actualizado antes de enviarlo
+      const updatedData = {
+        ...data,
+        parts_used: formattedParts
+      };
+      
+      // Preparar datos para la API - ajustar según lo que el backend realmente acepta
       const formattedData = {
         workOrderId,
         completionData: {
-          resolution_details: data.resolution_details,
-          technician_notes: data.technician_notes || '',
-          downtime_hours: data.downtime_hours || 0,
-          labor_hours: data.labor_hours || 0,
-          labor_cost: data.labor_cost || 0,
-          completion_date: data.completion_date.toISOString(),
-          completion_time: data.completion_time
+          resolution_details: updatedData.resolution_details,
+          technician_notes: updatedData.technician_notes || '',
+          downtime_hours: updatedData.downtime_hours || 0,
+          labor_hours: updatedData.labor_hours || 0,
+          labor_cost: updatedData.labor_cost || 0,
+          completion_date: updatedData.completion_date.toISOString(),
+          completion_time: updatedData.completion_time,
+          parts_used: formattedParts // Incluir los repuestos formateados
         },
         maintenanceHistoryData: workOrder?.asset?.id ? {
           asset_id: workOrder.asset.id,
-          date: data.completion_date.toISOString(),
+          date: updatedData.completion_date.toISOString(),
           type: workOrder.type,
           description: workOrder.description,
           technician_id: workOrder.assigned_to,
-          labor_hours: data.labor_hours,
-          labor_cost: data.labor_cost.toString(),
-          parts: requiredParts.length > 0 ? requiredParts : null,
-          total_cost: data.total_cost.toString(),
+          labor_hours: updatedData.labor_hours,
+          labor_cost: updatedData.labor_cost.toString(),
+          parts: formattedParts.length > 0 ? JSON.stringify(formattedParts) : null, // Convertir a cadena JSON
+          total_cost: updatedData.total_cost.toString(),
           work_order_id: workOrderId,
-          findings: data.technician_notes || null,
-          actions: data.resolution_details
-        } : null
-      }
+          findings: updatedData.technician_notes || null,
+          actions: updatedData.resolution_details,
+          // Incluir todos los campos de completion que no van en work_orders
+          downtime_hours: updatedData.downtime_hours,
+          resolution_details: updatedData.resolution_details,
+          technician_notes: updatedData.technician_notes || ''
+        } : null,
+        additionalExpenses: updatedData.has_additional_expenses && Array.isArray(updatedData.additional_expenses) && updatedData.additional_expenses.length > 0 
+          ? updatedData.additional_expenses.filter(expense => 
+              expense.description.trim() !== '' && 
+              parseFloat(expense.amount.toString()) > 0 &&
+              expense.justification.trim() !== ''
+            )
+          : null
+      };
+      
+      console.log("Datos formateados para enviar a API:", JSON.stringify(formattedData));
       
       // Llamar a la API
+      console.log("Realizando llamada a /api/maintenance/work-completions");
       const response = await fetch('/api/maintenance/work-completions', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
+        credentials: 'include',
         body: JSON.stringify(formattedData),
-      })
+      });
       
-      if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || 'Error al completar la orden de trabajo')
+      // Verificar los códigos de estado para errores comunes
+      if (response.status === 401) {
+        throw new Error("No autorizado. Por favor, vuelva a iniciar sesión.");
+      } else if (response.status === 404) {
+        throw new Error("El endpoint de API no existe.");
+      } else if (response.status === 500) {
+        throw new Error("Error interno del servidor al procesar la solicitud.");
       }
       
-      toast({
-        title: "Orden completada",
-        description: "La orden de trabajo se ha marcado como completada",
-      })
+      // Capturar la respuesta como texto primero para analizarla
+      const responseText = await response.text();
+      console.log("Respuesta recibida (texto):", responseText);
+      
+      // Si la respuesta está vacía, manejar el caso especialmente
+      if (!responseText) {
+        throw new Error("La respuesta del servidor está vacía");
+      }
+      
+      // Luego parseamos el texto a JSON
+      let responseData;
+      try {
+        responseData = JSON.parse(responseText);
+      } catch (e) {
+        console.error("Error al parsear la respuesta como JSON:", e);
+        throw new Error("La respuesta del servidor no es un JSON válido");
+      }
+      
+      if (!response.ok) {
+        console.error("Error en la respuesta de la API:", responseData);
+        throw new Error(responseData.error || 'Error al completar la orden de trabajo');
+      }
+      
+      console.log("Respuesta exitosa de la API:", responseData);
+      
+      // Guardar los IDs de gastos adicionales para posible generación de OC
+      if (formattedData.additionalExpenses && 
+          formattedData.additionalExpenses.length > 0 && 
+          responseData.additionalExpenseIds && 
+          responseData.additionalExpenseIds.length > 0) {
+        
+        // Generar automáticamente la orden de compra para gastos adicionales
+        try {
+          // Get purchase order ID from work order if exists
+          let originalPurchaseOrderId = null;
+          if (workOrder && workOrder.purchase_order_id) {
+            originalPurchaseOrderId = workOrder.purchase_order_id;
+          }
+          
+          console.log("Generando automáticamente orden de compra para gastos adicionales");
+          const poResponse = await fetch('/api/maintenance/generate-adjustment-po', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            credentials: 'include',
+            body: JSON.stringify({
+              workOrderId,
+              originalPurchaseOrderId,
+              additionalExpenses: formattedData.additionalExpenses,
+              supplier: "Gastos Adicionales"
+            }),
+          });
+          
+          if (!poResponse.ok) {
+            const errorData = await poResponse.json();
+            console.error("Error al generar orden de compra de ajuste:", errorData);
+            // No interrumpimos el flujo principal si falla la generación de OC
+          } else {
+            const poData = await poResponse.json();
+            toast({
+              title: "Orden completada",
+              description: `La orden de trabajo se ha marcado como completada y se ha generado la orden de compra ${poData.orderId} para los gastos adicionales.`,
+            });
+            
+            // Almacenar el ID de la OC generada para posible redirección posterior
+            sessionStorage.setItem('generatedAdjustmentPOId', poData.purchaseOrderId);
+          }
+        } catch (poError) {
+          console.error("Error al generar orden de compra de ajuste:", poError);
+          // No interrumpimos el flujo principal si falla la generación de OC
+          toast({
+            title: "Orden completada",
+            description: "La orden de trabajo se ha marcado como completada. No se pudo generar automáticamente la orden de compra para gastos adicionales.",
+          });
+        }
+      } else {
+        toast({
+          title: "Orden completada",
+          description: "La orden de trabajo se ha marcado como completada",
+        });
+      }
 
       // Redirect to the work order details page
-      router.push(`/ordenes/${workOrderId}`)
-      router.refresh()
+      console.log("Redirigiendo a la página de detalles de la orden");
+      router.push(`/ordenes/${workOrderId}`);
+      router.refresh();
     } catch (error) {
-      console.error("Error completing work order:", error)
+      console.error("Error completing work order:", error);
       toast({
         variant: "destructive",
         title: "Error",
         description: typeof error === 'object' && error instanceof Error 
           ? error.message 
           : "No se pudo completar la orden de trabajo",
-      })
+      });
     } finally {
-      setIsLoading(false)
+      setIsLoading(false);
     }
   }
+
+  // Generate adjustment purchase order for additional expenses
+  const generateAdjustmentPO = async () => {
+    try {
+      setIsLoading(true);
+      
+      // Get form data for additional expenses
+      const formData = form.getValues();
+      
+      if (!formData.has_additional_expenses || !formData.additional_expenses || formData.additional_expenses.length === 0) {
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: "No hay gastos adicionales para generar una orden de compra"
+        });
+        return;
+      }
+      
+      // Filter valid expenses
+      const validExpenses = formData.additional_expenses.filter(expense => 
+        expense.description.trim() !== '' && 
+        parseFloat(expense.amount.toString()) > 0 &&
+        expense.justification.trim() !== ''
+      );
+      
+      if (validExpenses.length === 0) {
+        toast({
+          variant: "destructive",
+          title: "Error", 
+          description: "No hay gastos adicionales válidos para generar una orden de compra"
+        });
+        return;
+      }
+      
+      // Get purchase order ID from work order if exists
+      let originalPurchaseOrderId = null;
+      if (workOrder && workOrder.purchase_order_id) {
+        originalPurchaseOrderId = workOrder.purchase_order_id;
+      }
+      
+      // Call API to generate adjustment PO
+      const response = await fetch('/api/maintenance/generate-adjustment-po', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          workOrderId,
+          originalPurchaseOrderId,
+          additionalExpenses: validExpenses,
+          supplier: "Gastos Adicionales"
+        }),
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Error al generar orden de compra de ajuste");
+      }
+      
+      const responseData = await response.json();
+      
+      toast({
+        title: "Orden de compra generada",
+        description: `Se ha generado la orden de compra de ajuste ${responseData.orderId} para los gastos adicionales`
+      });
+      
+      // Redirect to the new purchase order
+      router.push(`/compras/${responseData.purchaseOrderId}`);
+      router.refresh();
+      
+    } catch (error) {
+      console.error("Error generando orden de compra de ajuste:", error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: typeof error === 'object' && error instanceof Error 
+          ? error.message 
+          : "No se pudo generar la orden de compra de ajuste"
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   if (isLoading && !workOrder) {
     return (
@@ -395,7 +761,7 @@ export function WorkOrderCompletionForm({ workOrderId, initialData }: WorkOrderC
               <div className="flex justify-between items-center">
                 <h3 className="text-md font-medium">Repuestos utilizados</h3>
                 <div className="text-right">
-                  <p className="text-md font-medium">Costo total: ${form.watch("total_cost").toFixed(2)}</p>
+                  <p className="text-md font-medium">Costo total: ${(Number(form.watch("total_cost")) || 0).toFixed(2)}</p>
                 </div>
               </div>
 
@@ -410,10 +776,10 @@ export function WorkOrderCompletionForm({ workOrderId, initialData }: WorkOrderC
                   
                   {requiredParts.map((part, index) => (
                     <div key={index} className="grid grid-cols-12 gap-2 text-sm py-2 border-t">
-                      <div className="col-span-5">{part.part_name}</div>
+                      <div className="col-span-5">{part.name || "Repuesto sin nombre"}</div>
                       <div className="col-span-2">{part.quantity}</div>
-                      <div className="col-span-2">${part.unit_price.toFixed(2)}</div>
-                      <div className="col-span-3 text-right">${part.total_price.toFixed(2)}</div>
+                      <div className="col-span-2">${(Number(part.unit_price) || 0).toFixed(2)}</div>
+                      <div className="col-span-3 text-right">${(Number(part.total_price) || 0).toFixed(2)}</div>
                     </div>
                   ))}
                 </div>
@@ -422,23 +788,165 @@ export function WorkOrderCompletionForm({ workOrderId, initialData }: WorkOrderC
               )}
             </div>
             
-            <CardFooter className="px-0 pt-4 flex justify-end gap-2">
-              <Button variant="outline" asChild>
-                <Link href={`/ordenes/${workOrderId}`}>Cancelar</Link>
-              </Button>
-              <Button type="submit" disabled={isLoading}>
-                {isLoading ? (
-                  <>
-                    <Clock className="mr-2 h-4 w-4 animate-spin" />
-                    Procesando...
-                  </>
-                ) : (
-                  <>
-                    <CheckCircle className="mr-2 h-4 w-4" />
-                    Marcar como completada
-                  </>
+            <Separator />
+            
+            {/* Gastos adicionales */}
+            <div className="space-y-4">
+              <FormField
+                control={form.control}
+                name="has_additional_expenses"
+                render={({ field }) => (
+                  <FormItem className="flex flex-row items-center justify-between">
+                    <div className="space-y-0.5">
+                      <FormLabel>¿Hubo gastos adicionales?</FormLabel>
+                      <FormDescription>
+                        Registre gastos adicionales no contemplados en la orden original
+                      </FormDescription>
+                    </div>
+                    <FormControl>
+                      <Switch
+                        checked={field.value}
+                        onCheckedChange={field.onChange}
+                      />
+                    </FormControl>
+                  </FormItem>
                 )}
-              </Button>
+              />
+
+              {form.watch("has_additional_expenses") && (
+                <div className="space-y-4 border rounded-md p-4">
+                  <div className="flex justify-between items-center">
+                    <h3 className="text-md font-medium">Detalle de gastos adicionales</h3>
+                    <div className="text-right">
+                      <p className="text-sm">
+                        Costo de repuestos: ${requiredParts.reduce((sum, part) => sum + (Number(part.total_price) || 0), 0).toFixed(2)}
+                      </p>
+                      <p className="text-sm">
+                        Costo de mano de obra: ${(Number(form.watch("labor_cost")) || 0).toFixed(2)}
+                      </p>
+                      <p className="text-sm text-muted-foreground">
+                        Total adicional: ${(Number(form.watch("additional_expenses_total")) || 0).toFixed(2)}
+                      </p>
+                    </div>
+                  </div>
+                  
+                  {form.watch("additional_expenses")?.map((_, index) => (
+                    <div key={index} className="grid grid-cols-1 gap-4 pt-4 border-t">
+                      <div className="flex justify-between items-center">
+                        <h4 className="text-sm font-medium">Gasto adicional #{index + 1}</h4>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => removeAdditionalExpense(index)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                      
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <FormField
+                          control={form.control}
+                          name={`additional_expenses.${index}.description`}
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Descripción</FormLabel>
+                              <FormControl>
+                                <Input placeholder="Descripción del gasto" {...field} />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        
+                        <FormField
+                          control={form.control}
+                          name={`additional_expenses.${index}.amount`}
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Monto</FormLabel>
+                              <FormControl>
+                                <Input 
+                                  type="number" 
+                                  min="0.01" 
+                                  step="0.01" 
+                                  placeholder="0.00" 
+                                  {...field} 
+                                />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      </div>
+                      
+                      <FormField
+                        control={form.control}
+                        name={`additional_expenses.${index}.justification`}
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Justificación</FormLabel>
+                            <FormControl>
+                              <Textarea
+                                placeholder="Explique por qué fue necesario este gasto adicional"
+                                className="min-h-[80px]"
+                                {...field}
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                  ))}
+                  
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="w-full mt-2"
+                    onClick={addAdditionalExpense}
+                  >
+                    <Plus className="h-4 w-4 mr-2" />
+                    Agregar gasto adicional
+                  </Button>
+                </div>
+              )}
+            </div>
+            
+            <CardFooter className="px-0 pt-4 flex flex-col">
+              <div className="flex justify-end gap-2 w-full">
+                <Button variant="outline" asChild>
+                  <Link href={`/ordenes/${workOrderId}`}>Cancelar</Link>
+                </Button>
+                <Button 
+                  type="submit" 
+                  disabled={isLoading}
+                >
+                  {isLoading ? (
+                    <>
+                      <Clock className="mr-2 h-4 w-4 animate-spin" />
+                      Procesando...
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle className="mr-2 h-4 w-4" />
+                      Marcar como completada
+                    </>
+                  )}
+                </Button>
+              </div>
+              {Object.keys(form.formState.errors).length > 0 && (
+                <div className="mt-4 p-3 border border-destructive rounded-md bg-destructive/10 text-sm">
+                  <p className="font-semibold mb-1">Por favor, corrige los siguientes errores:</p>
+                  <ul className="list-disc list-inside">
+                    {Object.entries(form.formState.errors).map(([field, error]) => (
+                      <li key={field}>
+                        {field}: {error?.message}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </CardFooter>
           </form>
         </Form>

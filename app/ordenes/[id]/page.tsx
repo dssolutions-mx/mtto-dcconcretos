@@ -5,11 +5,12 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
 import { Badge } from "@/components/ui/badge"
-import { createClient } from "@/lib/supabase"
+import { createClient } from "@/lib/supabase-server"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
 import { notFound } from "next/navigation"
 import Link from "next/link"
+import { use } from "react"
 import { 
   ArrowLeft, ShoppingCart, CalendarCheck, CheckCircle, Edit, Clock, 
   User, Wrench, Plus, CalendarDays, ChevronDown 
@@ -81,12 +82,22 @@ function getTypeVariant(type: string | null) {
   }
 }
 
-export default async function WorkOrderDetailsPage({
+export default function WorkOrderDetailsPage({
   params,
 }: {
-  params: { id: string }
+  params: Promise<{ id: string }>;
 }) {
-  const supabase = createClient()
+  // Unwrap params using React.use()
+  const resolvedParams = use(params);
+  const id = resolvedParams.id;
+  
+  // Return the content component with the id
+  return <WorkOrderDetailsContent id={id} />;
+}
+
+// Create an async server component for the content
+async function WorkOrderDetailsContent({ id }: { id: string }) {
+  const supabase = await createClient();
   
   // Fetch work order with related data
   const { data: workOrder, error } = await supabase
@@ -96,15 +107,15 @@ export default async function WorkOrderDetailsPage({
       asset:assets (*),
       purchase_order:purchase_orders (*)
     `)
-    .eq("id", params.id)
-    .single()
+    .eq("id", id)
+    .single();
     
   if (error || !workOrder) {
-    notFound()
+    notFound();
   }
   
   // Cast to our extended type to handle completed_at
-  const extendedWorkOrder = workOrder as unknown as ExtendedWorkOrder
+  const extendedWorkOrder = workOrder as unknown as ExtendedWorkOrder;
   
   // Handle purchase_order whether it's a single object or array
   const purchaseOrder = Array.isArray(extendedWorkOrder.purchase_order) 
@@ -191,6 +202,35 @@ export default async function WorkOrderDetailsPage({
     ? requiredParts.reduce((total: number, part: any) => total + (part.total_price || 0), 0)
     : 0
     
+  // Fetch additional expenses if the work order is completed
+  let additionalExpenses = [];
+  let hasAdjustmentPO = false;
+  
+  if (workOrder && workOrder.status === WorkOrderStatus.Completed) {
+    // Check for additional expenses
+    const { data: expensesData } = await supabase
+      .from("additional_expenses")
+      .select("*, adjustment_po:purchase_orders(*)")
+      .eq("work_order_id", id);
+      
+    if (expensesData && expensesData.length > 0) {
+      additionalExpenses = expensesData;
+      // Check if any expense has an adjustment PO already
+      hasAdjustmentPO = expensesData.some(expense => expense.adjustment_po_id !== null);
+    }
+  }
+  
+  // Check for adjustment purchase orders
+  const { data: adjustmentPOData } = await supabase
+    .from("purchase_orders")
+    .select("*")
+    .eq("work_order_id", id)
+    .eq("is_adjustment", true);
+    
+  if (adjustmentPOData && adjustmentPOData.length > 0) {
+    hasAdjustmentPO = true;
+  }
+  
   return (
     <div className="container py-4 md:py-8">
       <div className="flex items-center justify-between mb-6">
@@ -208,7 +248,7 @@ export default async function WorkOrderDetailsPage({
         
         <div className="flex gap-2">
           <Button variant="outline" asChild>
-            <Link href={`/ordenes/${params.id}/editar`}>
+            <Link href={`/ordenes/${id}/editar`}>
               <Edit className="mr-2 h-4 w-4" />
               Editar
             </Link>
@@ -216,7 +256,7 @@ export default async function WorkOrderDetailsPage({
           
           {!extendedWorkOrder.purchase_order_id && extendedWorkOrder.required_parts && (
             <Button asChild>
-              <Link href={`/ordenes/${params.id}/generar-oc`}>
+              <Link href={`/ordenes/${id}/generar-oc`}>
                 <ShoppingCart className="mr-2 h-4 w-4" />
                 Generar OC
               </Link>
@@ -225,7 +265,7 @@ export default async function WorkOrderDetailsPage({
           
           {extendedWorkOrder.status !== WorkOrderStatus.Completed && (
             <Button asChild>
-              <Link href={`/ordenes/${params.id}/completar`}>
+              <Link href={`/ordenes/${id}/completar`}>
                 <CheckCircle className="mr-2 h-4 w-4" />
                 Completar
               </Link>
@@ -245,20 +285,20 @@ export default async function WorkOrderDetailsPage({
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-1">
                   <p className="text-sm font-medium text-muted-foreground">Tipo</p>
-                  <p className="flex items-center">
+                  <div className="flex items-center">
                     <Badge variant={getTypeVariant(extendedWorkOrder.type)} className="capitalize mr-2">
                       {extendedWorkOrder.type || "N/A"}
                     </Badge>
-                  </p>
+                  </div>
                 </div>
                 
                 <div className="space-y-1">
                   <p className="text-sm font-medium text-muted-foreground">Prioridad</p>
-                  <p className="flex items-center">
+                  <div className="flex items-center">
                     <Badge variant={getPriorityVariant(extendedWorkOrder.priority)} className="capitalize mr-2">
                       {extendedWorkOrder.priority || "N/A"}
                     </Badge>
-                  </p>
+                  </div>
                 </div>
               </div>
               
@@ -367,7 +407,7 @@ export default async function WorkOrderDetailsPage({
                 {!extendedWorkOrder.purchase_order_id && extendedWorkOrder.type === MaintenanceType.Preventive && (
                   <div className="mt-4">
                     <Button asChild>
-                      <Link href={`/ordenes/${params.id}/generar-oc`}>
+                      <Link href={`/ordenes/${id}/generar-oc`}>
                         <ShoppingCart className="mr-2 h-4 w-4" />
                         Generar orden de compra
                       </Link>
@@ -464,7 +504,7 @@ export default async function WorkOrderDetailsPage({
             <CardContent className="space-y-2">
               {extendedWorkOrder.status !== WorkOrderStatus.Completed && (
                 <Button asChild className="w-full">
-                  <Link href={`/ordenes/${params.id}/completar`}>
+                  <Link href={`/ordenes/${id}/completar`}>
                     <CheckCircle className="mr-2 h-4 w-4" />
                     Completar OT
                   </Link>
@@ -472,7 +512,7 @@ export default async function WorkOrderDetailsPage({
               )}
               
               <Button variant="outline" asChild className="w-full">
-                <Link href={`/ordenes/${params.id}/editar`}>
+                <Link href={`/ordenes/${id}/editar`}>
                   <Edit className="mr-2 h-4 w-4" />
                   Editar
                 </Link>
@@ -480,7 +520,7 @@ export default async function WorkOrderDetailsPage({
               
               {!extendedWorkOrder.purchase_order_id && requiredParts.length > 0 && (
                 <Button variant="outline" asChild className="w-full">
-                  <Link href={`/ordenes/${params.id}/generar-oc`}>
+                  <Link href={`/ordenes/${id}/generar-oc`}>
                     <ShoppingCart className="mr-2 h-4 w-4" />
                     Generar OC
                   </Link>
@@ -555,6 +595,78 @@ export default async function WorkOrderDetailsPage({
                 )}
               </CardContent>
             </Card>
+          )}
+          
+          {/* Additional expenses section */}
+          {workOrder.status === WorkOrderStatus.Completed && (
+            <div className="mt-6">
+              <h2 className="text-lg font-semibold mb-2">Gastos Adicionales</h2>
+              <div className="space-y-4">
+                {additionalExpenses && additionalExpenses.length > 0 ? (
+                  <>
+                    <div className="grid grid-cols-12 gap-2 bg-muted/30 p-2 rounded font-medium text-sm">
+                      <div className="col-span-4">Descripción</div>
+                      <div className="col-span-3">Monto</div>
+                      <div className="col-span-3">Estado</div>
+                      <div className="col-span-2">Acciones</div>
+                    </div>
+                    
+                    {additionalExpenses.map((expense) => (
+                      <div key={expense.id} className="grid grid-cols-12 gap-2 p-2 border-b">
+                        <div className="col-span-4">
+                          <div>{expense.description}</div>
+                          <div className="text-xs text-muted-foreground">{expense.justification}</div>
+                        </div>
+                        <div className="col-span-3">${parseFloat(expense.amount).toFixed(2)}</div>
+                        <div className="col-span-3">
+                          <Badge variant={
+                            expense.status === "aprobado" ? "default" : 
+                            expense.status === "rechazado" ? "destructive" : 
+                            "outline"
+                          }>
+                            {expense.status === "pendiente_aprobacion" ? "Pendiente" : 
+                             expense.status === "aprobado" ? "Aprobado" : 
+                             expense.status === "rechazado" ? "Rechazado" : 
+                             expense.status}
+                          </Badge>
+                          
+                          {expense.adjustment_po_id && (
+                            <div className="mt-1">
+                              <Link href={`/compras/${expense.adjustment_po_id}`} className="text-xs hover:underline">
+                                OC de Ajuste
+                              </Link>
+                            </div>
+                          )}
+                        </div>
+                        <div className="col-span-2">
+                          {!expense.adjustment_po_id && expense.status === "aprobado" && (
+                            <Button variant="outline" size="sm" asChild>
+                              <Link href={`/ordenes/${id}/generar-oc-ajuste`}>
+                                <ShoppingCart className="h-3.5 w-3.5 mr-1" />
+                                <span className="text-xs">Generar OC</span>
+                              </Link>
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                    
+                    {!hasAdjustmentPO && additionalExpenses.some(e => e.status === "aprobado" && !e.adjustment_po_id) && (
+                      <div className="mt-4">
+                        <Button variant="default" asChild>
+                          <Link href={`/ordenes/${id}/generar-oc-ajuste`}>
+                            <ShoppingCart className="h-4 w-4 mr-2" />
+                            Generar OC para Gastos Adicionales
+                          </Link>
+                        </Button>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <p className="text-muted-foreground italic">No hay gastos adicionales registrados para esta orden</p>
+                )}
+              </div>
+            </div>
           )}
         </div>
       </div>

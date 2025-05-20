@@ -8,17 +8,22 @@ import { MaintenanceChecklist } from "@/components/preventive/maintenance-checkl
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ArrowLeft, Wrench } from "lucide-react"
 import Link from "next/link"
+import { use } from "react"
 
 export const metadata: Metadata = {
   title: "Detalles de Mantenimiento Preventivo | Sistema de Gestión de Mantenimiento",
   description: "Detalles del programa de mantenimiento preventivo",
 }
 
-export default function PreventiveMaintenanceDetailsPage({ params }: { params: { id: string } }) {
+export default function PreventiveMaintenanceDetailsPage({ params }: { params: Promise<{ id: string }> }) {
+  // Unwrap params using React.use()
+  const resolvedParams = use(params);
+  const id = resolvedParams.id;
+  
   return (
     <DashboardShell>
       <DashboardHeader
-        heading={`Programa de Mantenimiento Preventivo: ${params.id}`}
+        heading={`Programa de Mantenimiento Preventivo: ${id}`}
         text="Detalles del programa de mantenimiento preventivo y checklist asociado."
       >
         <div className="flex gap-2">
@@ -42,13 +47,13 @@ export default function PreventiveMaintenanceDetailsPage({ params }: { params: {
           <TabsTrigger value="history">Historial</TabsTrigger>
         </TabsList>
         <TabsContent value="details">
-          <AssetDetails id={params.id} />
+          <AssetDetails id={id} />
         </TabsContent>
         <TabsContent value="checklist">
-          <MaintenanceChecklist id={params.id} />
+          <MaintenanceChecklist id={id} />
         </TabsContent>
         <TabsContent value="history">
-          <MaintenanceHistory id={params.id} />
+          <MaintenanceHistory id={id} />
         </TabsContent>
       </Tabs>
     </DashboardShell>

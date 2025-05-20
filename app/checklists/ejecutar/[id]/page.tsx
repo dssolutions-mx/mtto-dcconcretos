@@ -5,17 +5,22 @@ import { DashboardShell } from "@/components/dashboard/dashboard-shell"
 import { ChecklistExecution } from "@/components/checklists/checklist-execution"
 import { ArrowLeft } from "lucide-react"
 import Link from "next/link"
+import { use } from "react"
 
 export const metadata: Metadata = {
   title: "Ejecutar Checklist | Sistema de Gestión de Mantenimiento",
   description: "Ejecutar un checklist de mantenimiento",
 }
 
-export default function ExecuteChecklistPage({ params }: { params: { id: string } }) {
+export default function ExecuteChecklistPage({ params }: { params: Promise<{ id: string }> }) {
+  // Unwrap params using React.use()
+  const resolvedParams = use(params);
+  const id = resolvedParams.id;
+  
   return (
     <DashboardShell>
       <DashboardHeader
-        heading={`Ejecutar Checklist: ${params.id}`}
+        heading={`Ejecutar Checklist: ${id}`}
         text="Complete el checklist de mantenimiento para el equipo seleccionado."
       >
         <Button variant="outline" asChild>
@@ -25,7 +30,7 @@ export default function ExecuteChecklistPage({ params }: { params: { id: string 
           </Link>
         </Button>
       </DashboardHeader>
-      <ChecklistExecution id={params.id} />
+      <ChecklistExecution id={id} />
     </DashboardShell>
   )
 }

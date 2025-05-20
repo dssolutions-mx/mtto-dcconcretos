@@ -21,7 +21,7 @@ import {
 } from "lucide-react"
 import { createClient } from "@/lib/supabase"
 import Link from "next/link"
-import { WorkOrder, WorkOrderWithAsset, WorkOrderStatus, MaintenanceType, ServiceOrderPriority, Asset, Profile } from "@/types"
+import { WorkOrder, WorkOrderWithAsset, WorkOrderStatus, MaintenanceType, ServiceOrderPriority, Asset, Profile, PurchaseOrderStatus } from "@/types"
 import { 
   Select, 
   SelectContent, 
@@ -125,6 +125,42 @@ function getTypeVariant(type: string | null) {
   }
 }
 
+// Función para obtener la variante del badge para estados de OC
+function getPurchaseOrderStatusVariant(status: string | null) {
+  switch (status) {
+    case PurchaseOrderStatus.Pending:
+      return "outline"
+    case PurchaseOrderStatus.Approved:
+      return "secondary"
+    case PurchaseOrderStatus.Ordered:
+      return "default"
+    case PurchaseOrderStatus.Received:
+      return "default"
+    case PurchaseOrderStatus.Rejected:
+      return "destructive"
+    default:
+      return "outline"
+  }
+}
+
+// Función para obtener el color personalizado para estados de OC
+function getPurchaseOrderStatusClass(status: string | null) {
+  switch (status) {
+    case PurchaseOrderStatus.Pending:
+      return "bg-yellow-50 text-yellow-800"
+    case PurchaseOrderStatus.Approved:
+      return "bg-blue-50 text-blue-800"
+    case PurchaseOrderStatus.Ordered:
+      return "bg-indigo-50 text-indigo-800"
+    case PurchaseOrderStatus.Received:
+      return "bg-green-100 text-green-800"
+    case PurchaseOrderStatus.Rejected:
+      return "bg-red-50 text-red-800"
+    default:
+      return ""
+  }
+}
+
 export function WorkOrdersList() {
   const [searchTerm, setSearchTerm] = useState("")
   const [workOrders, setWorkOrders] = useState<WorkOrderWithAsset[]>([]) 
@@ -132,6 +168,7 @@ export function WorkOrdersList() {
   const [activeTab, setActiveTab] = useState<string>("all")
   const [typeFilter, setTypeFilter] = useState<string>("all")
   const [technicians, setTechnicians] = useState<Record<string, Profile>>({})
+  const [purchaseOrderStatuses, setPurchaseOrderStatuses] = useState<Record<string, string>>({})
 
   useEffect(() => {
     async function loadWorkOrders() {
@@ -175,6 +212,35 @@ export function WorkOrdersList() {
         // Supabase data should already match WorkOrderWithAsset if select is correct
         setWorkOrders(data as WorkOrderWithAsset[]); 
 
+        // Get all purchase orders statuses for the work orders that have purchase_order_id
+        // Create a list of purchase order IDs
+        const poIds = [] as string[];
+        
+        // Only add non-null purchase order IDs
+        for (const order of data) {
+          if (typeof order.purchase_order_id === 'string') {
+            poIds.push(order.purchase_order_id);
+          }
+        }
+        
+        // If we have any purchase order IDs, fetch their statuses
+        if (poIds.length > 0) {
+          const { data: poData, error: poError } = await supabase
+            .from("purchase_orders")
+            .select("id, status")
+            .in("id", poIds)
+            
+          if (poError) {
+            console.error("Error al cargar estados de órdenes de compra:", poError)
+          } else if (poData) {
+            const statusMap: Record<string, string> = {}
+            poData.forEach(po => {
+              statusMap[po.id] = po.status
+            })
+            setPurchaseOrderStatuses(statusMap)
+          }
+        }
+
       } catch (error) {
         console.error("Error al cargar órdenes de trabajo:", error)
         setWorkOrders([]) 
@@ -217,6 +283,12 @@ export function WorkOrdersList() {
     return tech.nombre && tech.apellido 
       ? `${tech.nombre} ${tech.apellido}`
       : tech.nombre || techId;
+  };
+
+  // Function to get purchase order status
+  const getPurchaseOrderStatus = (poId: string | null) => {
+    if (!poId) return null;
+    return purchaseOrderStatuses[poId] || null;
   };
 
   return (
@@ -268,6 +340,7 @@ export function WorkOrdersList() {
                orders={filteredOrders} 
                isLoading={isLoading} 
                getTechnicianName={getTechnicianName}
+               getPurchaseOrderStatus={getPurchaseOrderStatus}
              />
           </TabsContent>
           <TabsContent value="pending" className="mt-0">
@@ -275,6 +348,7 @@ export function WorkOrdersList() {
               orders={filteredOrders} 
               isLoading={isLoading} 
               getTechnicianName={getTechnicianName}
+              getPurchaseOrderStatus={getPurchaseOrderStatus}
             />
           </TabsContent>
           <TabsContent value="approved" className="mt-0">
@@ -282,6 +356,7 @@ export function WorkOrdersList() {
               orders={filteredOrders} 
               isLoading={isLoading} 
               getTechnicianName={getTechnicianName}
+              getPurchaseOrderStatus={getPurchaseOrderStatus}
             />
           </TabsContent>
           <TabsContent value="inprogress" className="mt-0">
@@ -289,6 +364,7 @@ export function WorkOrdersList() {
               orders={filteredOrders} 
               isLoading={isLoading} 
               getTechnicianName={getTechnicianName}
+              getPurchaseOrderStatus={getPurchaseOrderStatus}
             />
           </TabsContent>
           <TabsContent value="completed" className="mt-0">
@@ -296,6 +372,7 @@ export function WorkOrdersList() {
               orders={filteredOrders} 
               isLoading={isLoading} 
               getTechnicianName={getTechnicianName}
+              getPurchaseOrderStatus={getPurchaseOrderStatus}
             />
           </TabsContent>
         </Tabs>
@@ -313,9 +390,10 @@ interface RenderTableProps {
   orders: WorkOrderWithAsset[];
   isLoading: boolean;
   getTechnicianName: (techId: string | null) => string;
+  getPurchaseOrderStatus: (poId: string | null) => string | null;
 }
 
-function RenderTable({ orders, isLoading, getTechnicianName }: RenderTableProps) {
+function RenderTable({ orders, isLoading, getTechnicianName, getPurchaseOrderStatus }: RenderTableProps) {
   if (isLoading) {
     return (
       <div className="flex justify-center items-center h-64">
@@ -375,7 +453,12 @@ function RenderTable({ orders, isLoading, getTechnicianName }: RenderTableProps)
                         </TableCell>
                         <TableCell>
                 {order.purchase_order_id ? (
-                  <Badge variant="default" className="bg-green-100 text-green-800">OC Generada</Badge>
+                  <Badge 
+                    variant={getPurchaseOrderStatusVariant(getPurchaseOrderStatus(order.purchase_order_id))} 
+                    className={getPurchaseOrderStatusClass(getPurchaseOrderStatus(order.purchase_order_id))}
+                  >
+                    {getPurchaseOrderStatus(order.purchase_order_id) || 'OC Generada'}
+                  </Badge>
                 ) : (
                   order.type === MaintenanceType.Preventive && order.required_parts ? (
                     <Badge variant="outline" className="bg-yellow-50 text-yellow-800">Pendiente</Badge>

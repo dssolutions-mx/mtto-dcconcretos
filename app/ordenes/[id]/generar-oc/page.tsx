@@ -1,39 +1,49 @@
 import { PurchaseOrderForm } from "@/components/work-orders/purchase-order-form"
-import { createClient } from "@/lib/supabase"
+import { createClient } from "@/lib/supabase-server"
 import { redirect } from "next/navigation"
+import { use } from "react"
 
-export default async function GeneratePurchaseOrderPage({
+export default function GeneratePurchaseOrderPage({
   params,
 }: {
-  params: { id: string }
+  params: Promise<{ id: string }>;
 }) {
-  const supabase = createClient()
+  // Unwrap the params promise using React.use()
+  const resolvedParams = use(params);
+  const id = resolvedParams.id;
+  
+  return <GeneratePurchaseOrderContent id={id} />;
+}
+
+// Async server component
+async function GeneratePurchaseOrderContent({ id }: { id: string }) {
+  const supabase = await createClient();
   
   // Check if work order exists and doesn't already have a purchase order
   const { data: workOrder, error } = await supabase
     .from("work_orders")
     .select("id, purchase_order_id, type, required_parts")
-    .eq("id", params.id)
-    .single()
+    .eq("id", id)
+    .single();
     
   if (error || !workOrder) {
     // Work order not found, redirect to work orders list
-    redirect("/ordenes")
+    redirect("/ordenes");
   }
   
   // If work order already has a purchase order, redirect to it
   if (workOrder.purchase_order_id) {
-    redirect(`/compras/${workOrder.purchase_order_id}`)
+    redirect(`/compras/${workOrder.purchase_order_id}`);
   }
   
   // If work order doesn't have required parts, redirect to edit it
   if (!workOrder.required_parts) {
-    redirect(`/ordenes/${params.id}/editar`)
+    redirect(`/ordenes/${id}/editar`);
   }
   
   return (
     <div className="container py-4 md:py-8">
-      <PurchaseOrderForm workOrderId={params.id} />
+      <PurchaseOrderForm workOrderId={id} />
     </div>
-  )
+  );
 } 

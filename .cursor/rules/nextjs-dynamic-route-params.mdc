@@ -1,0 +1,59 @@
+---
+description: for configuring routes and params handling
+globs: 
+alwaysApply: false
+---
+# NextJS Dynamic Route Params Handling
+
+## Overview
+NextJS has changed how route params are handled in App Router. Params is now a Promise and must be unwrapped with `React.use()` before accessing properties.
+
+## Client Components
+For client components with dynamic routes:
+
+```typescript
+"use client"
+
+import { use } from "react"
+
+export default function PageComponent({ params }: { params: Promise<{ id: string }> }) {
+  // Unwrap params using React.use()
+  const resolvedParams = use(params);
+  const id = resolvedParams.id;
+  
+  // Use id instead of params.id throughout the component
+  return <div>ID: {id}</div>
+}
+```
+
+## Server Components
+For server components with async operations:
+
+```typescript
+import { use } from "react"
+
+export default function PageComponent({ params }: { params: Promise<{ id: string }> }) {
+  // Unwrap params using React.use()
+  const resolvedParams = use(params);
+  const id = resolvedParams.id;
+  
+  return <ServerContent id={id} />;
+}
+
+// Create an async server component for the content
+async function ServerContent({ id }: { id: string }) {
+  // Perform async operations here
+  const data = await fetchData(id);
+  
+  return <div>Data: {data}</div>
+}
+```
+
+## Important Notes
+- **Always** import `use` from React
+- **Always** type params as a Promise: `params: Promise<{ id: string }>`
+- **Always** unwrap with `use(params)` and extract the needed property
+- **Never** access params properties directly (e.g., `params.id`)
+- Update all link href references from `params.id` to `id`
+
+This pattern must be applied to all dynamic route files in the codebase to prevent warnings and future errors.

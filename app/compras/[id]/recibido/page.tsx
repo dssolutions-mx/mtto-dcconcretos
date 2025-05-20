@@ -17,8 +17,13 @@ import { Calendar } from "@/components/ui/calendar"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
 import { cn } from "@/lib/utils"
+import { use } from "react"
 
-export default function ReceiveOrderPage({ params }: { params: { id: string } }) {
+export default function ReceiveOrderPage({ params }: { params: Promise<{ id: string }> }) {
+  // Unwrap params using React.use()
+  const resolvedParams = use(params);
+  const id = resolvedParams.id;
+  
   const router = useRouter()
   const [isLoading, setIsLoading] = useState(false)
   const [deliveryDate, setDeliveryDate] = useState<Date>(new Date())
@@ -43,6 +48,15 @@ export default function ReceiveOrderPage({ params }: { params: { id: string } })
         return
       }
       
+      // Primero obtener la orden de compra para conseguir la work_order_id
+      const { data: purchaseOrder, error: getError } = await supabase
+        .from("purchase_orders")
+        .select("work_order_id")
+        .eq("id", id)
+        .single()
+      
+      if (getError) throw getError
+      
       // Actualizar el estado de la orden a "Recibida"
       const { error } = await supabase
         .from("purchase_orders")
@@ -53,9 +67,32 @@ export default function ReceiveOrderPage({ params }: { params: { id: string } })
           notes: notes ? notes : undefined,
           updated_at: new Date().toISOString()
         })
-        .eq("id", params.id)
+        .eq("id", id)
       
       if (error) throw error
+      
+      // Si hay una orden de trabajo asociada, actualizar su estado
+      if (purchaseOrder?.work_order_id) {
+        try {
+          // Llamar al endpoint para actualizar el estado de la orden de trabajo
+          const response = await fetch(`/api/maintenance/work-orders/${purchaseOrder.work_order_id}/update-status`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              purchaseOrderStatus: PurchaseOrderStatus.Received
+            }),
+          })
+          
+          if (!response.ok) {
+            console.error('Error updating work order status', await response.text())
+          }
+        } catch (workOrderError) {
+          console.error('Error updating work order status:', workOrderError)
+          // No interrumpimos el flujo principal si falla la actualización de la OT
+        }
+      }
       
       toast({
         title: "Orden recibida",
@@ -63,7 +100,7 @@ export default function ReceiveOrderPage({ params }: { params: { id: string } })
       })
       
       // Redireccionar a la página de detalles
-      router.push(`/compras/${params.id}`)
+      router.push(`/compras/${id}`)
       router.refresh()
       
     } catch (error) {
@@ -83,7 +120,7 @@ export default function ReceiveOrderPage({ params }: { params: { id: string } })
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold">Registrar Recepción</h1>
         <Button variant="outline" size="icon" asChild>
-          <Link href={`/compras/${params.id}`}>
+          <Link href={`/compras/${id}`}>
             <ArrowLeft className="h-4 w-4" />
           </Link>
         </Button>
@@ -144,7 +181,7 @@ export default function ReceiveOrderPage({ params }: { params: { id: string } })
         </CardContent>
         <CardFooter className="flex justify-between">
           <Button variant="outline" asChild>
-            <Link href={`/compras/${params.id}`}>
+            <Link href={`/compras/${id}`}>
               Cancelar
             </Link>
           </Button>

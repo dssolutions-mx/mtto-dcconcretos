@@ -17,7 +17,7 @@ import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/componen
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { 
   Check, CheckCircle, Edit, Eye, FileText, MoreHorizontal, Search, Trash, User, 
-  AlertTriangle, Wrench, CalendarDays, ShoppingCart, Package, FileCheck, X
+  AlertTriangle, Wrench, CalendarDays, ShoppingCart, Package, FileCheck, X, PlusCircle
 } from "lucide-react"
 import { createClient } from "@/lib/supabase"
 import Link from "next/link"
@@ -37,6 +37,8 @@ import {
 
 interface PurchaseOrderWithWorkOrder extends PurchaseOrder {
   work_order?: WorkOrder;
+  is_adjustment?: boolean;
+  original_purchase_order_id?: string;
 }
 
 // Helper function to get badge variant based on status
@@ -120,10 +122,11 @@ export function PurchaseOrdersList() {
   // Filter orders by status tab
   const filteredOrdersByTab = orders.filter(order => {
     if (activeTab === "all") return true;
-    if (activeTab === "pending") return order.status === PurchaseOrderStatus.Pending;
-    if (activeTab === "approved") return order.status === PurchaseOrderStatus.Approved;
-    if (activeTab === "ordered") return order.status === PurchaseOrderStatus.Ordered;
-    if (activeTab === "received") return order.status === PurchaseOrderStatus.Received;
+    if (activeTab === "pending") return order.status === PurchaseOrderStatus.Pending && !order.is_adjustment;
+    if (activeTab === "approved") return order.status === PurchaseOrderStatus.Approved && !order.is_adjustment;
+    if (activeTab === "ordered") return order.status === PurchaseOrderStatus.Ordered && !order.is_adjustment;
+    if (activeTab === "received") return order.status === PurchaseOrderStatus.Received && !order.is_adjustment;
+    if (activeTab === "adjustments") return order.is_adjustment === true;
     return true;
   });
 
@@ -171,13 +174,28 @@ export function PurchaseOrdersList() {
       </CardHeader>
       <CardContent>
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="mb-4 grid w-full grid-cols-2 sm:grid-cols-5">
+          <TabsList className="mb-4 grid w-full grid-cols-2 sm:grid-cols-6">
             <TabsTrigger value="all">Todas</TabsTrigger>
             <TabsTrigger value="pending">Pendientes</TabsTrigger>
             <TabsTrigger value="approved">Aprobadas</TabsTrigger>
             <TabsTrigger value="ordered">Pedidas</TabsTrigger>
             <TabsTrigger value="received">Recibidas</TabsTrigger>
+            <TabsTrigger value="adjustments" className="relative">
+              Ajustes
+              <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-green-500 text-[10px] text-white">
+                {orders.filter(o => o.is_adjustment).length}
+              </span>
+            </TabsTrigger>
           </TabsList>
+          
+          {activeTab === "adjustments" && (
+            <div className="mb-4 p-3 text-sm bg-blue-50 border border-blue-200 rounded-md flex items-start gap-2">
+              <Check className="h-4 w-4 text-blue-600 mt-0.5 flex-shrink-0" />
+              <p className="text-blue-700">
+                Los gastos adicionales generan automáticamente órdenes de compra de ajuste que se marcan directamente como recibidas, ya que representan costos ya incurridos que no requieren aprobación ni proceso de compra.
+              </p>
+            </div>
+          )}
           
           <TabsContent value="all" className="mt-0"> 
              <RenderTable 
@@ -212,6 +230,14 @@ export function PurchaseOrdersList() {
             />
           </TabsContent>
           <TabsContent value="received" className="mt-0">
+            <RenderTable 
+              orders={filteredOrders} 
+              isLoading={isLoading} 
+              getTechnicianName={getTechnicianName}
+              formatCurrency={formatCurrency}
+            />
+          </TabsContent>
+          <TabsContent value="adjustments" className="mt-0">
             <RenderTable 
               orders={filteredOrders} 
               isLoading={isLoading} 
@@ -273,8 +299,18 @@ function RenderTable({ orders, isLoading, getTechnicianName, formatCurrency }: R
         </TableHeader>
         <TableBody>
           {orders.map((order) => (
-            <TableRow key={order.id}>
-              <TableCell className="font-medium">{order.order_id}</TableCell>
+            <TableRow 
+              key={order.id}
+              className={order.is_adjustment ? "bg-yellow-50/50" : ""}
+            >
+              <TableCell>
+                <Link href={`/compras/${order.id}`} className="font-medium hover:underline">
+                  {order.order_id}
+                </Link>
+                {order.is_adjustment && (
+                  <Badge variant="secondary" className="ml-2 bg-yellow-100 hover:bg-yellow-200 text-yellow-800">Ajuste</Badge>
+                )}
+              </TableCell>
               <TableCell>{order.supplier || 'N/A'}</TableCell>
               <TableCell>
                 {order.work_order ? (
@@ -314,8 +350,8 @@ function RenderTable({ orders, isLoading, getTechnicianName, formatCurrency }: R
                       </Link>
                     </DropdownMenuItem>
                     
-                    {/* Only show approve options for pending orders */}
-                    {order.status === PurchaseOrderStatus.Pending && (
+                    {/* Only show approve options for pending orders and not adjustments */}
+                    {order.status === PurchaseOrderStatus.Pending && !order.is_adjustment && (
                       <>
                         <DropdownMenuItem asChild>
                           <Link href={`/compras/${order.id}/aprobar`}>
@@ -332,8 +368,8 @@ function RenderTable({ orders, isLoading, getTechnicianName, formatCurrency }: R
                       </>
                     )}
                     
-                    {/* Show mark as ordered option for approved orders */}
-                    {order.status === PurchaseOrderStatus.Approved && (
+                    {/* Show mark as ordered option for approved orders and not adjustments */}
+                    {order.status === PurchaseOrderStatus.Approved && !order.is_adjustment && (
                       <DropdownMenuItem asChild>
                         <Link href={`/compras/${order.id}/pedido`}>
                           <ShoppingCart className="mr-2 h-4 w-4" />
@@ -342,8 +378,8 @@ function RenderTable({ orders, isLoading, getTechnicianName, formatCurrency }: R
                       </DropdownMenuItem>
                     )}
                     
-                    {/* Show mark as received option for ordered orders */}
-                    {order.status === PurchaseOrderStatus.Ordered && (
+                    {/* Show mark as received option for ordered orders and not adjustments */}
+                    {order.status === PurchaseOrderStatus.Ordered && !order.is_adjustment && (
                       <DropdownMenuItem asChild>
                         <Link href={`/compras/${order.id}/recibido`}>
                           <Package className="mr-2 h-4 w-4" />
@@ -352,23 +388,32 @@ function RenderTable({ orders, isLoading, getTechnicianName, formatCurrency }: R
                       </DropdownMenuItem>
                     )}
                     
-                    <DropdownMenuItem asChild>
-                      <Link href={`/compras/${order.id}/editar`}>
-                        <Edit className="mr-2 h-4 w-4" />
-                        <span>Editar</span>
-                      </Link>
-                    </DropdownMenuItem>
+                    {/* No edit option for adjustment orders */}
+                    {!order.is_adjustment && (
+                      <DropdownMenuItem asChild>
+                        <Link href={`/compras/${order.id}/editar`}>
+                          <Edit className="mr-2 h-4 w-4" />
+                          <span>Editar</span>
+                        </Link>
+                      </DropdownMenuItem>
+                    )}
                     
-                    <DropdownMenuItem>
-                      <FileCheck className="mr-2 h-4 w-4" />
-                      <span>Registrar Factura</span>
-                    </DropdownMenuItem>
+                    {/* Register invoice option for non-adjustment orders */}
+                    {!order.is_adjustment && (
+                      <DropdownMenuItem>
+                        <FileCheck className="mr-2 h-4 w-4" />
+                        <span>Registrar Factura</span>
+                      </DropdownMenuItem>
+                    )}
                     
                     <DropdownMenuSeparator />
-                    <DropdownMenuItem className="text-red-600 hover:bg-red-50 hover:text-red-700">
-                      <Trash className="mr-2 h-4 w-4" />
-                      <span>Cancelar OC</span>
-                    </DropdownMenuItem>
+                    {/* No cancelation option for adjustment orders */}
+                    {!order.is_adjustment && (
+                      <DropdownMenuItem className="text-red-600 hover:bg-red-50 hover:text-red-700">
+                        <Trash className="mr-2 h-4 w-4" />
+                        <span>Cancelar OC</span>
+                      </DropdownMenuItem>
+                    )}
                   </DropdownMenuContent>
                 </DropdownMenu>
               </TableCell>

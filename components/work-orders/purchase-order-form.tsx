@@ -299,7 +299,7 @@ export function PurchaseOrderForm({ workOrderId }: PurchaseOrderFormProps) {
         {
           p_work_order_id: workOrderId,
           p_supplier: formData.supplier || "",
-          p_items: JSON.parse(JSON.stringify(parts)), // Convert to JSON format
+          p_items: parts,
           p_requested_by: formData.requested_by as any,
           p_expected_delivery_date: formData.expected_delivery_date || new Date().toISOString(),
           p_quotation_url: quotationFileUrl
@@ -600,6 +600,7 @@ export function PurchaseOrderForm({ workOrderId }: PurchaseOrderFormProps) {
                         <Button
                           variant="ghost"
                           size="icon"
+                          type="button"
                           onClick={addNewPart}
                           className="h-8 w-8"
                         >

@@ -44,7 +44,12 @@ export async function middleware(request: NextRequest) {
   // Si la ruta es la raíz, redirigir a /dashboard
   if (pathname === "/") {
     const dashboardUrl = new URL("/dashboard", request.url)
-    return NextResponse.redirect(dashboardUrl)
+    const response = NextResponse.redirect(dashboardUrl)
+    // Copy Supabase cookies to the new response
+    supabaseResponse.cookies.getAll().forEach(cookie => {
+      response.cookies.set(cookie.name, cookie.value, cookie)
+    })
+    return response
   }
 
   // Si no hay sesión y no es una ruta pública, redirigir al login
@@ -52,7 +57,12 @@ export async function middleware(request: NextRequest) {
     const redirectUrl = request.nextUrl.clone()
     redirectUrl.pathname = "/login"
     redirectUrl.searchParams.set("redirectedFrom", request.nextUrl.pathname)
-    return NextResponse.redirect(redirectUrl)
+    const response = NextResponse.redirect(redirectUrl)
+    // Copy Supabase cookies to the new response
+    supabaseResponse.cookies.getAll().forEach(cookie => {
+      response.cookies.set(cookie.name, cookie.value, cookie)
+    })
+    return response
   }
 
   // IMPORTANT: You must return the response as is for the Auth cookies to work correctly
