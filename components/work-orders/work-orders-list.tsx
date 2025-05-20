@@ -126,7 +126,7 @@ function getTypeVariant(type: string | null) {
 }
 
 // Función para obtener la variante del badge para estados de OC
-function getPurchaseOrderStatusVariant(status: string | null) {
+function getPurchaseOrderStatusVariant(status: string) {
   switch (status) {
     case PurchaseOrderStatus.Pending:
       return "outline"
@@ -144,7 +144,7 @@ function getPurchaseOrderStatusVariant(status: string | null) {
 }
 
 // Función para obtener el color personalizado para estados de OC
-function getPurchaseOrderStatusClass(status: string | null) {
+function getPurchaseOrderStatusClass(status: string) {
   switch (status) {
     case PurchaseOrderStatus.Pending:
       return "bg-yellow-50 text-yellow-800"
@@ -286,26 +286,25 @@ export function WorkOrdersList() {
   };
 
   // Function to get purchase order status
-  const getPurchaseOrderStatus = (poId: string | null) => {
-    if (!poId) return null;
-    return purchaseOrderStatuses[poId] || null;
+  const getPurchaseOrderStatus = (poId: string | null): string => {
+    if (!poId) return 'N/A';
+    return purchaseOrderStatuses[poId] || 'N/A';
   };
 
   return (
     <Card>
-      <CardHeader>
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-          <CardTitle>Órdenes de Trabajo</CardTitle>
+      <CardContent className="pt-6">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
           <div className="flex flex-col md:flex-row items-center gap-2">
-          <div className="relative w-full md:w-64">
-            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input
-              type="search"
+            <div className="relative w-full md:w-64">
+              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input
+                type="search"
                 placeholder="Buscar OT, activo, asignado..."
-              className="pl-8"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
+                className="pl-8"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
             </div>
             <Select value={typeFilter} onValueChange={setTypeFilter}>
               <SelectTrigger className="w-full md:w-40">
@@ -317,15 +316,8 @@ export function WorkOrdersList() {
                 <SelectItem value="corrective">Correctivos</SelectItem>
               </SelectContent>
             </Select>
-            <Button asChild>
-              <Link href="/ordenes/crear">
-                <Plus className="mr-2 h-4 w-4" /> Nueva OT
-              </Link>
-            </Button>
           </div>
         </div>
-      </CardHeader>
-      <CardContent>
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
           <TabsList className="mb-4 grid w-full grid-cols-2 sm:grid-cols-5">
             <TabsTrigger value="all">Todas</TabsTrigger>
@@ -390,7 +382,7 @@ interface RenderTableProps {
   orders: WorkOrderWithAsset[];
   isLoading: boolean;
   getTechnicianName: (techId: string | null) => string;
-  getPurchaseOrderStatus: (poId: string | null) => string | null;
+  getPurchaseOrderStatus: (poId: string | null) => string;
 }
 
 function RenderTable({ orders, isLoading, getTechnicianName, getPurchaseOrderStatus }: RenderTableProps) {
@@ -457,7 +449,7 @@ function RenderTable({ orders, isLoading, getTechnicianName, getPurchaseOrderSta
                     variant={getPurchaseOrderStatusVariant(getPurchaseOrderStatus(order.purchase_order_id))} 
                     className={getPurchaseOrderStatusClass(getPurchaseOrderStatus(order.purchase_order_id))}
                   >
-                    {getPurchaseOrderStatus(order.purchase_order_id) || 'OC Generada'}
+                    {getPurchaseOrderStatus(order.purchase_order_id)}
                   </Badge>
                 ) : (
                   order.type === MaintenanceType.Preventive && order.required_parts ? (

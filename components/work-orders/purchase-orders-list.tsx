@@ -157,9 +157,8 @@ export function PurchaseOrdersList() {
 
   return (
     <Card>
-      <CardHeader>
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-          <CardTitle>Órdenes de Compra</CardTitle>
+      <CardContent className="pt-6">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
           <div className="relative w-full md:w-64">
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
@@ -171,8 +170,6 @@ export function PurchaseOrdersList() {
             />
           </div>
         </div>
-      </CardHeader>
-      <CardContent>
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
           <TabsList className="mb-4 grid w-full grid-cols-2 sm:grid-cols-6">
             <TabsTrigger value="all">Todas</TabsTrigger>

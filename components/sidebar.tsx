@@ -17,6 +17,7 @@ import {
   ShoppingCart,
   PenToolIcon as Tool,
   Truck,
+  CreditCard,
 } from "lucide-react"
 import { UserNav } from "@/components/user-nav"
 import { ModeToggle } from "@/components/mode-toggle"
@@ -110,6 +111,16 @@ export function Sidebar({ className }: SidebarProps) {
               <Link href="/inventario">
                 <ShoppingCart className="mr-2 h-4 w-4" />
                 Inventario
+              </Link>
+            </Button>
+            <Button
+              variant={pathname === "/compras" || pathname.startsWith("/compras/") ? "secondary" : "ghost"}
+              className="w-full justify-start"
+              asChild
+            >
+              <Link href="/compras">
+                <CreditCard className="mr-2 h-4 w-4" />
+                Compras
               </Link>
             </Button>
           </div>
