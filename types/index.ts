@@ -283,4 +283,24 @@ export interface EquipmentModelWithIntervals extends EquipmentModel {
     hours: number;
     type: string;
   }[];
+}
+
+// Purchase Order Receipt
+export interface PurchaseOrderReceipt {
+  id: string;
+  purchase_order_id: string;
+  file_url: string;
+  expense_type: 'materials' | 'labor'; 
+  description?: string;
+  is_adjustment_receipt: boolean;
+  receipt_date?: string;
+  uploaded_by?: string;
+  created_at: string;
+  updated_at?: string;
+}
+
+// Receipt expense types 
+export enum ExpenseType {
+  Materials = 'materials',
+  Labor = 'labor'
 } 

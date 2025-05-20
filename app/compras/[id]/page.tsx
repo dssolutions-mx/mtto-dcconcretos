@@ -11,6 +11,7 @@ import { notFound } from "next/navigation"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
 import { ReactNode, use } from "react"
+import { ReceiptSection } from "@/components/work-orders/receipt-section"
 
 // Helper function to format currency
 function formatCurrency(amount: string | null): string {
@@ -392,6 +393,14 @@ async function PurchaseOrderDetailsContent({ id }: { id: string }) {
           </div>
         </CardContent>
       </Card>
+      
+      {/* Add Receipt Section for completed orders */}
+      {(order.status === PurchaseOrderStatus.Received || order.is_adjustment) && (
+        <ReceiptSection 
+          purchaseOrderId={order.id} 
+          isAdjustment={Boolean(order.is_adjustment)} 
+        />
+      )}
       
       <div className="flex justify-end gap-4 mt-6">
         <Button variant="outline" asChild>
