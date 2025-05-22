@@ -12,10 +12,34 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import Link from "next/link";
-import { ArrowLeft, FileText, History, Wrench, Calendar, Edit } from "lucide-react";
+import { ArrowLeft, FileText, History, Wrench, Calendar, Edit, Camera, ExternalLink } from "lucide-react";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { Asset, AssetWithModel, EquipmentModel } from "@/types";
+
+// Define category type
+type CategoryInfo = {
+  label: string;
+  color: string;
+  icon: string;
+};
+
+type CategoryMap = {
+  [key: string]: CategoryInfo;
+};
+
+// Map of category codes to more readable names and styling
+const PHOTO_CATEGORIES: CategoryMap = {
+  'frontal': { label: 'Vista Frontal', color: 'bg-blue-500', icon: '🔍' },
+  'trasera': { label: 'Vista Trasera', color: 'bg-green-500', icon: '🔍' },
+  'lateral': { label: 'Vista Lateral', color: 'bg-yellow-500', icon: '🔍' },
+  'interior': { label: 'Interior', color: 'bg-purple-500', icon: '🏠' },
+  'motor': { label: 'Motor', color: 'bg-red-500', icon: '⚙️' },
+  'placa': { label: 'Placa/Serial', color: 'bg-indigo-500', icon: '🔢' },
+  'detalles': { label: 'Detalles', color: 'bg-orange-500', icon: '🔎' },
+  'daños': { label: 'Daños/Problemas', color: 'bg-red-700', icon: '⚠️' },
+  'otros': { label: 'Otros', color: 'bg-gray-500', icon: '📷' },
+};
 
 export default function AssetDetailsPage({ params }: { params: { id: string } }) {
   const assetId = params.id;
@@ -278,6 +302,55 @@ export default function AssetDetailsPage({ params }: { params: { id: string } })
                       </div>
                     </>
                   )}
+                  
+                  {asset?.photos && asset.photos.length > 0 && (
+                    <>
+                      <Separator className="my-6" />
+                      <div>
+                        <h4 className="text-sm font-medium text-muted-foreground mb-4">Fotografías del Activo</h4>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                          {asset.photos.map((photoUrl, index) => {
+                            // Extract category from filename (if present)
+                            const categoryMatch = photoUrl.match(/\/(\d+)-([^\/]+)-([^\/]+\.[^\/]+)$/);
+                            const categoryCode = categoryMatch ? categoryMatch[2] : "otros";
+                            const categoryInfo = PHOTO_CATEGORIES[categoryCode] || PHOTO_CATEGORIES.otros;
+                            
+                            // Extract original filename for additional context
+                            const filename = categoryMatch ? categoryMatch[3] : photoUrl.split('/').pop() || "";
+                            
+                            return (
+                              <div key={index} className="relative border rounded-lg overflow-hidden group">
+                                <div className="absolute top-2 left-2 z-10">
+                                  <Badge className={`${categoryInfo.color} text-white px-2 py-1`}>
+                                    <span className="mr-1">{categoryInfo.icon}</span>
+                                    {categoryInfo.label}
+                                  </Badge>
+                                </div>
+                                <img 
+                                  src={photoUrl} 
+                                  alt={`${categoryInfo.label} - ${filename}`} 
+                                  className="w-full h-40 object-cover"
+                                />
+                                <div className="absolute bottom-0 left-0 right-0 bg-black/70 text-white p-2 text-xs">
+                                  <div className="flex items-center justify-between">
+                                    <span className="truncate">{filename}</span>
+                                    <a 
+                                      href={photoUrl} 
+                                      target="_blank" 
+                                      rel="noopener noreferrer"
+                                      className="text-white hover:text-blue-300 transition-colors"
+                                    >
+                                      <ExternalLink className="h-4 w-4" />
+                                    </a>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </>
+                  )}
                 </CardContent>
               </Card>
             </TabsContent>
@@ -289,20 +362,52 @@ export default function AssetDetailsPage({ params }: { params: { id: string } })
                   <CardDescription>Manuales y documentación técnica relacionada</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-center py-8">
-                    <FileText className="mx-auto h-12 w-12 text-muted-foreground opacity-50" />
-                    <h3 className="mt-4 text-lg font-medium">No hay documentos disponibles</h3>
-                    <p className="mt-2 text-sm text-muted-foreground">
-                      Los documentos técnicos se encuentran asociados al modelo de equipo.
-                    </p>
-                    {asset?.model && (
-                      <Button variant="outline" className="mt-4" asChild>
-                        <Link href={`/modelos/${asset.model.id}`}>
-                          Ver documentación del modelo
-                        </Link>
-                      </Button>
-                    )}
-                  </div>
+                  {asset?.insurance_documents && asset.insurance_documents.length > 0 ? (
+                    <div className="space-y-4">
+                      <h4 className="text-sm font-medium text-muted-foreground">Documentos de Seguro</h4>
+                      <div className="space-y-2">
+                        {asset.insurance_documents.map((docUrl, index) => {
+                          // Extract filename from URL
+                          const filename = docUrl.split('/').pop() || `Documento ${index + 1}`;
+                          
+                          return (
+                            <div key={index} className="flex items-center justify-between p-3 border rounded-md">
+                              <div className="flex items-center gap-2">
+                                <FileText className="h-4 w-4 text-muted-foreground" />
+                                <span className="text-sm">{filename}</span>
+                              </div>
+                              <a
+                                href={docUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-blue-600 hover:text-blue-800"
+                              >
+                                <Button variant="ghost" size="sm">
+                                  <ExternalLink className="h-4 w-4 mr-1" />
+                                  Ver
+                                </Button>
+                              </a>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-center py-8">
+                      <FileText className="mx-auto h-12 w-12 text-muted-foreground opacity-50" />
+                      <h3 className="mt-4 text-lg font-medium">No hay documentos disponibles</h3>
+                      <p className="mt-2 text-sm text-muted-foreground">
+                        Los documentos técnicos se encuentran asociados al modelo de equipo.
+                      </p>
+                      {asset?.model && (
+                        <Button variant="outline" className="mt-4" asChild>
+                          <Link href={`/modelos/${asset.model.id}`}>
+                            Ver documentación del modelo
+                          </Link>
+                        </Button>
+                      )}
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             </TabsContent>

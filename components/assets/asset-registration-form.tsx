@@ -336,18 +336,19 @@ export function AssetRegistrationForm() {
       serialNumber: "",
       location: "",
       department: "",
+      purchaseDate: new Date(),
+      installationDate: undefined,
       initialHours: "0",
       currentHours: "0",
       status: "operational",
       notes: "",
+      warrantyExpiration: undefined,
       isNew: true,
       purchaseCost: "",
       registrationInfo: "",
       insurancePolicy: "",
-      insuranceCoverage: {
-        startDate: undefined,
-        endDate: undefined,
-      },
+      insuranceCoverage: { startDate: undefined, endDate: undefined },
+      maintenanceHistory: [],
     },
   })
 
@@ -1054,10 +1055,11 @@ export function AssetRegistrationForm() {
 
       <Form {...form}>
         <form 
-          onSubmit={(e) => {
+          onSubmit={(e: React.FormEvent<HTMLFormElement>) => {
             // Solo enviar si el usuario realmente hizo clic en el botón de envío
-            if (e.nativeEvent.submitter?.getAttribute('type') === 'submit' && 
-                !e.nativeEvent.submitter?.classList.contains('prevent-submit')) {
+            const submitEvent = e.nativeEvent as SubmitEvent;
+            if (submitEvent.submitter && submitEvent.submitter.getAttribute('type') === 'submit' && 
+                !submitEvent.submitter.classList.contains('prevent-submit')) {
               form.handleSubmit(onSubmit)(e);
             } else {
               e.preventDefault();
