@@ -76,12 +76,15 @@ export function useEquipmentModel(id: string) {
       if (assetsError) throw assetsError;
       setAssets(assetsData || []);
 
-      // Obtener intervalos de mantenimiento
+      // Obtener intervalos de mantenimiento con tareas y partes
       const { data: intervalsData, error: intervalsError } = await supabase
         .from('maintenance_intervals')
         .select(`
           *,
-          maintenance_tasks(*)
+          maintenance_tasks(
+            *,
+            task_parts(*)
+          )
         `)
         .eq('model_id', id);
 

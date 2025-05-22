@@ -17,6 +17,7 @@ import { toast } from "@/components/ui/use-toast"
 import { EquipmentModel, UpdateEquipmentModel } from "@/types"
 import { Json } from "@/lib/database.types"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { MaintenanceTask as DbMaintenanceTask } from "@/types"
 import { Separator } from "@/components/ui/separator"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
@@ -177,13 +178,19 @@ export function EquipmentModelEditForm({ modelId }: EquipmentModelEditFormProps)
           hours: interval.interval_value,
           name: interval.name,
           description: interval.description || '',
-          tasks: tasks.map(task => ({
+          tasks: tasks.map((task: DbMaintenanceTask) => ({
             id: task.id,
             description: task.description,
             type: task.type,
             estimatedTime: task.estimated_time || 1,
             requiresSpecialist: task.requires_specialist || false,
-            parts: [] // En este nivel no tenemos las partes cargadas
+            parts: (task.task_parts || []).map(part => ({
+              id: part.id,
+              name: part.name,
+              partNumber: part.part_number || '',
+              quantity: part.quantity,
+              cost: part.cost || undefined
+            }))
           }))
         };
       });
@@ -1116,7 +1123,7 @@ export function EquipmentModelEditForm({ modelId }: EquipmentModelEditFormProps)
 
       {/* Diálogo para agregar/editar tareas */}
       <Dialog open={isTaskDialogOpen} onOpenChange={setIsTaskDialogOpen}>
-        <DialogContent className="sm:max-w-[500px]">
+        <DialogContent className="sm:max-w-[500px] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{isEditingTask ? "Editar Tarea" : "Agregar Nueva Tarea"}</DialogTitle>
             <DialogDescription>
@@ -1317,7 +1324,7 @@ export function EquipmentModelEditForm({ modelId }: EquipmentModelEditFormProps)
 
       {/* Diálogo para agregar/editar repuestos */}
       <Dialog open={isPartDialogOpen} onOpenChange={setIsPartDialogOpen}>
-        <DialogContent className="sm:max-w-[425px]">
+        <DialogContent className="sm:max-w-[425px] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{isEditingPart ? "Editar Repuesto" : "Agregar Repuesto"}</DialogTitle>
             <DialogDescription>
@@ -1377,7 +1384,7 @@ export function EquipmentModelEditForm({ modelId }: EquipmentModelEditFormProps)
 
       {/* Diálogo para editar intervalo de mantenimiento */}
       <Dialog open={isIntervalDialogOpen} onOpenChange={setIsIntervalDialogOpen}>
-        <DialogContent className="sm:max-w-[500px]">
+        <DialogContent className="sm:max-w-[500px] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Editar Intervalo de Mantenimiento</DialogTitle>
             <DialogDescription>

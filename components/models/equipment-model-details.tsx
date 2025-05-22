@@ -19,10 +19,21 @@ interface ModelSpecifications {
   performance?: Record<string, string>;
 }
 
+interface MaintenancePart {
+  id: string;
+  name: string;
+  part_number: string;
+  quantity: number;
+  cost: string | null;
+}
+
 interface MaintenanceTask {
   id: string;
   description: string;
   type: string;
+  estimated_time: number;
+  requires_specialist: boolean;
+  task_parts?: MaintenancePart[];
 }
 
 interface MaintenanceIntervalWithTasks {
@@ -264,11 +275,30 @@ export function EquipmentModelDetails({ id }: EquipmentModelDetailsProps) {
                           <div>
                             <h4 className="font-medium mb-2">Tareas</h4>
                             {interval.maintenance_tasks && interval.maintenance_tasks.length > 0 ? (
-                              <ul className="list-disc pl-5 space-y-1">
+                              <div className="space-y-3">
                                 {interval.maintenance_tasks.map((task, idx) => (
-                                  <li key={idx}>{task.description}</li>
+                                  <div key={idx} className="pl-5 border-l-2 border-gray-200">
+                                    <div className="font-medium">{task.description}</div>
+                                    <div className="text-sm text-muted-foreground mb-1">
+                                      {task.type} • {task.estimated_time}h • 
+                                      {task.requires_specialist ? ' Requiere especialista' : ' No requiere especialista'}
+                                    </div>
+                                    {task.task_parts && task.task_parts.length > 0 ? (
+                                      <div className="mt-2">
+                                        <div className="text-xs font-medium mb-1">Repuestos requeridos:</div>
+                                        <ul className="list-disc pl-5 text-xs space-y-1">
+                                          {task.task_parts.map((part, pidx) => (
+                                            <li key={pidx}>
+                                              {part.name} ({part.quantity}) - {part.part_number}
+                                              {part.cost && ` - $${part.cost}`}
+                                            </li>
+                                          ))}
+                                        </ul>
+                                      </div>
+                                    ) : null}
+                                  </div>
                                 ))}
-                              </ul>
+                              </div>
                             ) : (
                               <p className="text-muted-foreground">No hay tareas definidas</p>
                             )}

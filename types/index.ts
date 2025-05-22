@@ -15,8 +15,12 @@ export type MaintenanceInterval = DbTables['maintenance_intervals']['Row'] & {
 export type InsertMaintenanceInterval = DbTables['maintenance_intervals']['Insert'];
 export type UpdateMaintenanceInterval = DbTables['maintenance_intervals']['Update'];
 
+// Ya definidos más abajo
+
 // Tipos para tareas de mantenimiento
-export type MaintenanceTask = DbTables['maintenance_tasks']['Row'];
+export type MaintenanceTask = DbTables['maintenance_tasks']['Row'] & {
+  task_parts?: TaskPart[];
+};
 export type InsertMaintenanceTask = DbTables['maintenance_tasks']['Insert'];
 export type UpdateMaintenanceTask = DbTables['maintenance_tasks']['Update'];
 
