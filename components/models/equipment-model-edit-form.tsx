@@ -98,6 +98,10 @@ export function EquipmentModelEditForm({ modelId }: EquipmentModelEditFormProps)
   const [selectedFuelType, setSelectedFuelType] = useState<string>("")
   const [maintenanceUnit, setMaintenanceUnit] = useState<string>("hours")
   
+  // Estado para lista de repuestos existentes
+  const [existingParts, setExistingParts] = useState<any[]>([])
+  const [isLoadingParts, setIsLoadingParts] = useState(false)
+  
   // Estados para mantenimientos
   const [maintenanceIntervals, setMaintenanceIntervals] = useState<MaintenanceInterval[]>([])
   const [newInterval, setNewInterval] = useState({
@@ -148,6 +152,9 @@ export function EquipmentModelEditForm({ modelId }: EquipmentModelEditFormProps)
           ) {
             setSelectedFuelType((modelData.specifications as any).general.fuelType as string)
           }
+          
+          // Cargar también los repuestos existentes en el modelo
+          await loadExistingParts()
         }
       } catch (err) {
         console.error("Error al cargar el modelo:", err)
@@ -160,6 +167,18 @@ export function EquipmentModelEditForm({ modelId }: EquipmentModelEditFormProps)
         })
       } finally {
         setIsLoading(false)
+      }
+    }
+
+    async function loadExistingParts() {
+      try {
+        setIsLoadingParts(true)
+        const parts = await modelsApi.getAllParts(modelId)
+        setExistingParts(parts)
+      } catch (err) {
+        console.error("Error al cargar repuestos existentes:", err)
+      } finally {
+        setIsLoadingParts(false)
       }
     }
 
@@ -1334,6 +1353,46 @@ export function EquipmentModelEditForm({ modelId }: EquipmentModelEditFormProps)
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
+            {!isEditingPart && existingParts.length > 0 && (
+              <div className="space-y-2">
+                <Label htmlFor="existingPart">Seleccionar repuesto existente</Label>
+                <Select
+                  onValueChange={(value) => {
+                    // Encontrar el repuesto seleccionado
+                    const selectedPart = existingParts.find(part => part.id === value);
+                    if (selectedPart) {
+                      // Rellenar automáticamente los campos del formulario
+                      const nameInput = document.getElementById("partName") as HTMLInputElement;
+                      const partNumberInput = document.getElementById("partNumber") as HTMLInputElement;
+                      const quantityInput = document.getElementById("partQuantity") as HTMLInputElement;
+                      const costInput = document.getElementById("partCost") as HTMLInputElement;
+                      
+                      if (nameInput) nameInput.value = selectedPart.name;
+                      if (partNumberInput) partNumberInput.value = selectedPart.part_number || "";
+                      if (quantityInput) quantityInput.value = selectedPart.quantity.toString();
+                      if (costInput) costInput.value = selectedPart.cost || "";
+                    }
+                  }}
+                >
+                  <SelectTrigger id="existingPart">
+                    <SelectValue placeholder="Seleccione un repuesto existente" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {existingParts.map((part) => (
+                      <SelectItem key={part.id} value={part.id}>
+                        {part.name} ({part.part_number}) - {part.task_description ? `Usado en: ${part.task_description}` : ''}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Seleccione un repuesto existente o ingrese uno nuevo
+                </p>
+              </div>
+            )}
+            
+            <Separator className={!isEditingPart && existingParts.length > 0 ? "my-2" : "hidden"} />
+            
             <div className="space-y-2">
               <Label htmlFor="partName">Nombre del Repuesto</Label>
               <Input id="partName" placeholder="Ej: Filtro de aceite" defaultValue={currentPart?.name || ""} />

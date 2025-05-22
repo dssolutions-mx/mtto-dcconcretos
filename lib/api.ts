@@ -21,6 +21,44 @@ const supabase = createClient<Database>(supabaseUrl, supabaseKey);
 
 // API de Modelos de Equipos
 export const modelsApi = {
+  // Obtener todos los repuestos usados en un modelo
+  getAllParts: async (modelId: string): Promise<any[]> => {
+    const { data, error } = await supabase
+      .from('maintenance_intervals')
+      .select(`
+        maintenance_tasks(
+          id,
+          description,
+          task_parts(*)
+        )
+      `)
+      .eq('model_id', modelId);
+    
+    if (error) throw error;
+    
+    // Extraer y aplanar los repuestos de todas las tareas
+    const allParts: any[] = [];
+    if (data) {
+      data.forEach(interval => {
+        if (interval.maintenance_tasks) {
+          interval.maintenance_tasks.forEach((task: any) => {
+            if (task.task_parts) {
+              task.task_parts.forEach((part: any) => {
+                // Añadimos referencia a la tarea para contexto
+                allParts.push({
+                  ...part,
+                  task_description: task.description
+                });
+              });
+            }
+          });
+        }
+      });
+    }
+    
+    return allParts;
+  },
+
   // Obtener todos los modelos
   getAll: async (): Promise<EquipmentModel[]> => {
     const { data, error } = await supabase
