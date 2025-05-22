@@ -1128,10 +1128,11 @@ export function EquipmentModelEditForm({ modelId }: EquipmentModelEditFormProps)
           <div className="grid gap-4 py-4">
             <div className="space-y-2">
               <Label htmlFor="taskDescription">Descripción</Label>
-              <Input
+              <Textarea
                 id="taskDescription"
                 placeholder="Ej: Cambio de aceite y filtro"
                 defaultValue={currentTask?.description || ""}
+                className="min-h-[100px]"
               />
             </div>
             <div className="grid grid-cols-2 gap-4">
