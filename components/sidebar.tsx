@@ -237,7 +237,7 @@ export function SidebarWrapper({ children }: { children: React.ReactNode }) {
                   <span className="sr-only">Toggle Menu</span>
                 </Button>
               </SheetTrigger>
-              <SheetContent side="left" className="p-0 w-64" onInteractOutside={() => setIsOpen(false)}>
+              <SheetContent side="left" className="p-0 w-64 [&>button]:hidden" onInteractOutside={() => setIsOpen(false)}>
                 <div className="flex h-16 items-center border-b px-4">
                   <Link href="/" className="flex items-center gap-2 font-semibold" onClick={() => setIsOpen(false)}>
                     <Truck className="h-6 w-6" />
