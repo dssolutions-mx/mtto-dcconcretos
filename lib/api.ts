@@ -177,7 +177,7 @@ export const modelsApi = {
     task_id: string;
     name: string;
     part_number: string;
-    quantity: number;
+    quantity: number; // Puede ser decimal, se guarda como float
     cost?: string | null;
   }): Promise<any> => {
     const { data, error } = await supabase

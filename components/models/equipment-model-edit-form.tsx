@@ -1403,7 +1403,13 @@ export function EquipmentModelEditForm({ modelId }: EquipmentModelEditFormProps)
             </div>
             <div className="space-y-2">
               <Label htmlFor="partQuantity">Cantidad</Label>
-              <Input id="partQuantity" type="number" min="1" defaultValue={currentPart?.quantity || "1"} />
+              <Input 
+                id="partQuantity" 
+                type="number" 
+                min="0.1" 
+                step="0.1" 
+                defaultValue={currentPart?.quantity || "1"} 
+              />
             </div>
             <div className="space-y-2">
               <Label htmlFor="partCost">Costo Unitario ($)</Label>
@@ -1421,7 +1427,7 @@ export function EquipmentModelEditForm({ modelId }: EquipmentModelEditFormProps)
                   id: currentPart?.id || `part-${Date.now()}`,
                   name: (document.getElementById("partName") as HTMLInputElement).value,
                   partNumber: (document.getElementById("partNumber") as HTMLInputElement).value,
-                  quantity: Number.parseInt((document.getElementById("partQuantity") as HTMLInputElement).value) || 1,
+                  quantity: Number.parseFloat((document.getElementById("partQuantity") as HTMLInputElement).value) || 1,
                   cost: (document.getElementById("partCost") as HTMLInputElement).value,
                 }
                 savePart(newPart)

@@ -144,7 +144,7 @@ export interface Database {
           task_id: string | null
           name: string
           part_number: string | null
-          quantity: number
+          quantity: number // Este campo debe guardar valores decimales como 0.5, 0.2, etc.
           cost: string | null
           created_at: string
           updated_at: string
