@@ -1,18 +1,91 @@
+"use client"
+
 import type { Metadata } from "next"
+import { useState, useEffect, Suspense } from "react"
 import { Button } from "@/components/ui/button"
 import { DashboardHeader } from "@/components/dashboard/dashboard-header"
 import { DashboardShell } from "@/components/dashboard/dashboard-shell"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Plus, FileDown, ClipboardCheck } from "lucide-react"
+import { Plus, FileDown, ClipboardCheck, Loader2 } from "lucide-react"
 import Link from "next/link"
+import { useSearchParams } from "next/navigation"
+import { DailyChecklistList } from "@/components/checklists/daily-checklist-list"
+import { WeeklyChecklistList } from "@/components/checklists/weekly-checklist-list"
+import { MonthlyChecklistList } from "@/components/checklists/monthly-checklist-list"
+import { ChecklistTemplateList } from "@/components/checklists/checklist-template-list"
+import { useChecklistSchedules, useChecklistTemplates } from "@/hooks/useChecklists"
 
-export const metadata: Metadata = {
-  title: "Checklists | Sistema de Gestión de Mantenimiento",
-  description: "Gestión de checklists para mantenimiento",
-}
+// Create a client component that uses useSearchParams
+function ChecklistsContent() {
+  const searchParams = useSearchParams()
+  const tabParam = searchParams.get('tab')
+  const { schedules, loading, error, fetchSchedules } = useChecklistSchedules()
+  const { templates, fetchTemplates } = useChecklistTemplates()
+  const [activeTab, setActiveTab] = useState('overview')
+  const [stats, setStats] = useState({
+    daily: { total: 0, pending: 0 },
+    weekly: { total: 0, pending: 0, overdue: 0 },
+    monthly: { total: 0, pending: 0, overdue: 0 },
+    templates: 0
+  })
+  
+  // Set active tab from URL parameter if present
+  useEffect(() => {
+    if (tabParam && ['overview', 'daily', 'weekly', 'monthly', 'templates'].includes(tabParam)) {
+      setActiveTab(tabParam)
+    }
+  }, [tabParam])
 
-export default function ChecklistsPage() {
+  // Fetch schedules on mount
+  useEffect(() => {
+    fetchSchedules('pendiente')
+    fetchTemplates()
+  }, [fetchSchedules, fetchTemplates])
+  
+  // Update stats when schedules and templates change
+  useEffect(() => {
+    if (schedules.length > 0 || templates.length > 0) {
+      // Process the schedule data to get counts
+      const dailyItems = schedules.filter(s => s.checklists?.frequency === 'diario')
+      const weeklyItems = schedules.filter(s => s.checklists?.frequency === 'semanal')
+      const monthlyItems = schedules.filter(s => s.checklists?.frequency === 'mensual')
+      
+      const today = new Date()
+      today.setHours(0, 0, 0, 0)
+      
+      // Calculate overdue items (scheduled_date is in the past)
+      const overdueWeekly = weeklyItems.filter(s => new Date(s.scheduled_date) < today).length
+      const overdueMonthly = monthlyItems.filter(s => new Date(s.scheduled_date) < today).length
+      
+      // Calculate pending today items
+      const tomorrow = new Date(today)
+      tomorrow.setDate(tomorrow.getDate() + 1)
+      const pendingToday = dailyItems.filter(s => {
+        const date = new Date(s.scheduled_date)
+        return date >= today && date < tomorrow
+      }).length
+      
+      setStats({
+        daily: { 
+          total: dailyItems.length, 
+          pending: pendingToday
+        },
+        weekly: { 
+          total: weeklyItems.length, 
+          pending: weeklyItems.length, 
+          overdue: overdueWeekly 
+        },
+        monthly: { 
+          total: monthlyItems.length, 
+          pending: monthlyItems.length, 
+          overdue: overdueMonthly 
+        },
+        templates: templates.length
+      })
+    }
+  }, [schedules, templates])
+
   return (
     <DashboardShell>
       <DashboardHeader
@@ -33,7 +106,7 @@ export default function ChecklistsPage() {
         </div>
       </DashboardHeader>
 
-      <Tabs defaultValue="overview" className="space-y-4">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
         <TabsList>
           <TabsTrigger value="overview">Vista General</TabsTrigger>
           <TabsTrigger value="daily">Diarios</TabsTrigger>
@@ -43,133 +116,186 @@ export default function ChecklistsPage() {
         </TabsList>
 
         <TabsContent value="overview">
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-            <Link href="/checklists/diarios" className="block">
-              <Card className="hover:bg-muted/50 transition-colors">
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">Checklists Diarios</CardTitle>
-                  <ClipboardCheck className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">4</div>
-                  <p className="text-xs text-muted-foreground">2 pendientes hoy</p>
-                </CardContent>
-              </Card>
-            </Link>
+          {loading ? (
+            <div className="flex justify-center items-center py-8">
+              <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              <span className="ml-2">Cargando datos...</span>
+            </div>
+          ) : (
+            <>
+              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+                <Link href="/checklists/diarios" className="block">
+                  <Card className="hover:bg-muted/50 transition-colors">
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                      <CardTitle className="text-sm font-medium">Checklists Diarios</CardTitle>
+                      <ClipboardCheck className="h-4 w-4 text-muted-foreground" />
+                    </CardHeader>
+                    <CardContent>
+                      <div className="text-2xl font-bold">{stats.daily.total}</div>
+                      <p className="text-xs text-muted-foreground">
+                        {stats.daily.pending} pendientes hoy
+                      </p>
+                    </CardContent>
+                  </Card>
+                </Link>
 
-            <Link href="/checklists/semanales" className="block">
-              <Card className="hover:bg-muted/50 transition-colors">
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">Checklists Semanales</CardTitle>
-                  <ClipboardCheck className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">4</div>
-                  <p className="text-xs text-muted-foreground">1 atrasado</p>
-                </CardContent>
-              </Card>
-            </Link>
+                <Link href="/checklists/semanales" className="block">
+                  <Card className="hover:bg-muted/50 transition-colors">
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                      <CardTitle className="text-sm font-medium">Checklists Semanales</CardTitle>
+                      <ClipboardCheck className="h-4 w-4 text-muted-foreground" />
+                    </CardHeader>
+                    <CardContent>
+                      <div className="text-2xl font-bold">{stats.weekly.total}</div>
+                      <p className="text-xs text-muted-foreground">
+                        {stats.weekly.overdue > 0 ? `${stats.weekly.overdue} atrasados` : 'Al día'}
+                      </p>
+                    </CardContent>
+                  </Card>
+                </Link>
 
-            <Link href="/checklists/mensuales" className="block">
-              <Card className="hover:bg-muted/50 transition-colors">
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">Checklists Mensuales</CardTitle>
-                  <ClipboardCheck className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">4</div>
-                  <p className="text-xs text-muted-foreground">2 atrasados</p>
-                </CardContent>
-              </Card>
-            </Link>
+                <Link href="/checklists/mensuales" className="block">
+                  <Card className="hover:bg-muted/50 transition-colors">
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                      <CardTitle className="text-sm font-medium">Checklists Mensuales</CardTitle>
+                      <ClipboardCheck className="h-4 w-4 text-muted-foreground" />
+                    </CardHeader>
+                    <CardContent>
+                      <div className="text-2xl font-bold">{stats.monthly.total}</div>
+                      <p className="text-xs text-muted-foreground">
+                        {stats.monthly.overdue > 0 ? `${stats.monthly.overdue} atrasados` : 'Al día'}
+                      </p>
+                    </CardContent>
+                  </Card>
+                </Link>
 
-            <Link href="/checklists" className="block">
-              <Card className="hover:bg-muted/50 transition-colors">
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">Plantillas</CardTitle>
-                  <ClipboardCheck className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">5</div>
-                  <p className="text-xs text-muted-foreground">Para diferentes equipos</p>
-                </CardContent>
-              </Card>
-            </Link>
-          </div>
+                <Link href="/checklists" className="block">
+                  <Card className="hover:bg-muted/50 transition-colors">
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                      <CardTitle className="text-sm font-medium">Plantillas</CardTitle>
+                      <ClipboardCheck className="h-4 w-4 text-muted-foreground" />
+                    </CardHeader>
+                    <CardContent>
+                      <div className="text-2xl font-bold">{stats.templates}</div>
+                      <p className="text-xs text-muted-foreground">Para diferentes equipos</p>
+                    </CardContent>
+                  </Card>
+                </Link>
+              </div>
 
-          <div className="mt-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>Checklists Pendientes</CardTitle>
-                <CardDescription>Checklists que requieren atención inmediata</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  <Link href="/checklists/ejecutar/DCL002" className="block">
-                    <Card className="hover:bg-muted/50 transition-colors">
-                      <CardContent className="p-4">
-                        <div className="flex justify-between items-center">
-                          <div>
-                            <h4 className="font-semibold">Inspección Diaria - Montacargas FM-2000E</h4>
-                            <p className="text-sm text-muted-foreground">Montacargas Eléctrico #3</p>
-                          </div>
-                          <Button size="sm">Ejecutar</Button>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  </Link>
-
-                  <Link href="/checklists/ejecutar/DCL003" className="block">
-                    <Card className="hover:bg-muted/50 transition-colors">
-                      <CardContent className="p-4">
-                        <div className="flex justify-between items-center">
-                          <div>
-                            <h4 className="font-semibold">Inspección Diaria - Generador PG-5000</h4>
-                            <p className="text-sm text-muted-foreground">Generador Eléctrico Principal</p>
-                          </div>
-                          <Button size="sm">Ejecutar</Button>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  </Link>
-
-                  <Link href="/checklists/ejecutar/WCL003" className="block">
-                    <Card className="hover:bg-muted/50 transition-colors border-amber-200">
-                      <CardContent className="p-4">
-                        <div className="flex justify-between items-center">
-                          <div>
-                            <h4 className="font-semibold">Inspección Semanal - Generador PG-5000</h4>
-                            <p className="text-sm text-muted-foreground">Atrasado - Debió ejecutarse el 15/06/2023</p>
-                          </div>
-                          <Button size="sm" variant="destructive">
-                            Urgente
-                          </Button>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  </Link>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
+              <div className="mt-6">
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Checklists Pendientes</CardTitle>
+                    <CardDescription>Checklists que requieren atención inmediata</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    {error ? (
+                      <div className="bg-red-50 border border-red-200 text-red-800 rounded-md p-4">
+                        <p className="font-medium">Error al cargar los checklists</p>
+                        <p className="text-sm">{error}</p>
+                      </div>
+                    ) : schedules.length === 0 ? (
+                      <div className="text-center py-8 text-muted-foreground">
+                        No hay checklists pendientes en este momento.
+                      </div>
+                    ) : (
+                      <div className="space-y-4">
+                        {schedules
+                          .filter(checklist => {
+                            // Find checklists that are overdue or due today
+                            const scheduledDate = new Date(checklist.scheduled_date)
+                            const today = new Date()
+                            today.setHours(0, 0, 0, 0)
+                            const isOverdue = scheduledDate < today
+                            
+                            const tomorrow = new Date(today)
+                            tomorrow.setDate(tomorrow.getDate() + 1)
+                            const isDueToday = scheduledDate >= today && scheduledDate < tomorrow
+                            
+                            return isOverdue || isDueToday
+                          })
+                          .slice(0, 3) // Limit to 3 items for display
+                          .map(checklist => (
+                            <Link 
+                              key={checklist.id} 
+                              href={`/checklists/ejecutar/${checklist.id}`} 
+                              className="block"
+                            >
+                              <Card className={`hover:bg-muted/50 transition-colors ${
+                                new Date(checklist.scheduled_date) < new Date() ? 'border-amber-200' : ''
+                              }`}>
+                                <CardContent className="p-4">
+                                  <div className="flex justify-between items-center">
+                                    <div>
+                                      <h4 className="font-semibold">
+                                        {checklist.checklists?.name || 'Checklist sin nombre'}
+                                      </h4>
+                                      <p className="text-sm text-muted-foreground">
+                                        {checklist.assets?.name || 'Sin activo asignado'}
+                                        {new Date(checklist.scheduled_date) < new Date() && 
+                                          ` - Atrasado - Debió ejecutarse el ${
+                                            new Date(checklist.scheduled_date).toLocaleDateString()
+                                          }`
+                                        }
+                                      </p>
+                                    </div>
+                                    <Button 
+                                      size="sm" 
+                                      variant={new Date(checklist.scheduled_date) < new Date() ? "destructive" : "default"}
+                                    >
+                                      {new Date(checklist.scheduled_date) < new Date() ? 'Urgente' : 'Ejecutar'}
+                                    </Button>
+                                  </div>
+                                </CardContent>
+                              </Card>
+                            </Link>
+                          ))}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
+            </>
+          )}
         </TabsContent>
 
         <TabsContent value="daily">
-          <iframe src="/checklists/diarios" className="w-full h-[calc(100vh-12rem)] border rounded-md" />
+          <DailyChecklistList />
         </TabsContent>
 
         <TabsContent value="weekly">
-          <iframe src="/checklists/semanales" className="w-full h-[calc(100vh-12rem)] border rounded-md" />
+          <WeeklyChecklistList />
         </TabsContent>
 
         <TabsContent value="monthly">
-          <iframe src="/checklists/mensuales" className="w-full h-[calc(100vh-12rem)] border rounded-md" />
+          <MonthlyChecklistList />
         </TabsContent>
 
         <TabsContent value="templates">
-          <iframe src="/checklists" className="w-full h-[calc(100vh-12rem)] border rounded-md" />
+          <ChecklistTemplateList />
         </TabsContent>
       </Tabs>
     </DashboardShell>
+  )
+}
+
+// Main page component with Suspense boundary
+export default function ChecklistsPage() {
+  return (
+    <Suspense fallback={
+      <DashboardShell>
+        <DashboardHeader
+          heading="Checklists de Mantenimiento"
+          text="Cargando..."
+        />
+        <div className="flex justify-center items-center py-8">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          <span className="ml-2">Cargando datos...</span>
+        </div>
+      </DashboardShell>
+    }>
+      <ChecklistsContent />
+    </Suspense>
   )
 }

@@ -179,6 +179,8 @@ CREATE INDEX IF NOT EXISTS idx_checklist_items_section_id ON checklist_items(sec
 CREATE INDEX IF NOT EXISTS idx_checklist_sections_checklist_id ON checklist_sections(checklist_id);
 ```
 
+✅ **Migración completada**: Se han agregado todas las columnas requeridas a las tablas existentes y se ha creado la tabla `checklist_schedules` con sus índices correspondientes.
+
 #### 1.3 Implementación de APIs
 
 Crear las siguientes APIs en el directorio `app/api/checklists`:
@@ -324,6 +326,8 @@ export async function POST(request: Request) {
 }
 ```
 
+✅ **API implementada**: Se han creado los endpoints para gestionar las plantillas de checklists en `app/api/checklists/templates/route.ts`.
+
 2. **API de Programación de Checklists**
 
 ```typescript
@@ -435,6 +439,17 @@ export async function POST(request: Request) {
   return NextResponse.json({ success: true, data })
 }
 ```
+
+✅ **API implementada**: Se han creado los endpoints para gestionar la programación de checklists en `app/api/checklists/schedules/route.ts`.
+
+3. **API de Ejecución de Checklists**
+
+```typescript
+// app/api/checklists/execution/route.ts
+// Implementado con endpoints GET para obtener datos de ejecución y POST para guardar resultados
+```
+
+✅ **API implementada**: Se han creado los endpoints para la ejecución de checklists en `app/api/checklists/execution/route.ts`.
 
 #### 1.4 Implementación de RPCs para Operaciones Complejas
 
@@ -586,145 +601,12 @@ END;
 $$ LANGUAGE plpgsql;
 ```
 
-#### 1.5 Implementación de Servicios Auxiliares
+✅ **RPCs implementadas**: Se han creado las funciones RPC para generar checklists a partir de planes de mantenimiento y para marcar checklists como completados.
 
-Crear servicios para la interacción con las APIs:
-
-```typescript
-// lib/services/checklist-service.ts
-import { createClient } from '@/lib/supabase/client'
-
-export const checklistService = {
-  // Obtener plantillas de checklist
-  async getTemplates() {
-    const supabase = createClient()
-    const { data, error } = await supabase.from('checklists').select(`
-              *,
-              checklist_sections(
-                *,
-                checklist_items(*)
-      ),
-      equipment_models(
-        name,
-        manufacturer
-      )
-    `).order('created_at', { ascending: false })
-
-    if (error) {
-      throw new Error(`Error obteniendo plantillas: ${error.message}`)
-    }
-    
-    return data
-  },
-
-  // Crear una nueva plantilla de checklist
-  async createTemplate(template) {
-    const supabase = createClient()
-    
-    // Use the API to create the template with all its sections and items
-    const response = await fetch('/api/checklists/templates', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ template }),
-    })
-    
-    const result = await response.json()
-    
-    if (!response.ok) {
-      throw new Error(`Error creando plantilla: ${result.error}`)
-    }
-    
-    return result
-  },
-
-  // Obtener programaciones de checklists
-  async getSchedules({ status, type }) {
-    const supabase = createClient()
-    
-    let query = `/api/checklists/schedules`
-    const params = new URLSearchParams()
-    
-    if (status) params.append('status', status)
-    if (type) params.append('type', type)
-    
-    if (params.toString()) {
-      query += `?${params.toString()}`
-    }
-    
-    const response = await fetch(query)
-    const result = await response.json()
-    
-    if (!response.ok) {
-      throw new Error(`Error obteniendo programaciones: ${result.error}`)
-    }
-    
-    return result.data
-  },
-  
-  // Programar un nuevo checklist
-  async scheduleChecklist(schedule) {
-    const response = await fetch('/api/checklists/schedules', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ schedule }),
-    })
-    
-    const result = await response.json()
-    
-    if (!response.ok) {
-      throw new Error(`Error programando checklist: ${result.error}`)
-    }
-    
-    return result.data
-  },
-  
-  // Completar un checklist
-  async completeChecklist(scheduleId, completedItems, technician, notes) {
-    const supabase = createClient()
-    
-    const { data, error } = await supabase.rpc('mark_checklist_as_completed', {
-      p_schedule_id: scheduleId,
-      p_completed_items: completedItems,
-      p_technician: technician,
-      p_notes: notes
-    })
-
-  if (error) {
-      throw new Error(`Error completando checklist: ${error.message}`)
-    }
-    
-    return data
-  },
-  
-  // Generar checklists a partir de un plan de mantenimiento
-  async generateFromMaintenancePlan(maintenancePlanId, scheduledDate, assignedTo) {
-    const supabase = createClient()
-    
-    const { data, error } = await supabase.rpc('generate_checklists_from_maintenance_plan', {
-      maintenance_plan_id: maintenancePlanId,
-      scheduled_date: scheduledDate,
-      assigned_to: assignedTo
-    })
-    
-    if (error) {
-      throw new Error(`Error generando checklists: ${error.message}`)
-    }
-    
-    return data
-  }
-}
-```
-
-#### 1.6 Hooks para Consumo de Datos
-
-Implementar hooks reutilizables para consumir los servicios:
+#### 1.6 Implementación de Hooks para Consumo de Datos
 
 ```typescript
-// hooks/use-checklists.ts
+// hooks/useChecklists.ts
 import { useState, useEffect } from 'react'
 import { checklistService } from '@/lib/services/checklist-service'
 
@@ -870,1199 +752,141 @@ export function useChecklistExecution(scheduleId) {
 }
 ```
 
-Esta primera fase establece las bases de datos, APIs y servicios necesarios para implementar la funcionalidad de checklists. En la siguiente fase se desarrollarán los componentes de la interfaz de usuario y las páginas para interactuar con estas APIs.
+✅ **Hooks implementados**: Se han creado los hooks para el consumo de datos de checklists, incluyendo useChecklistTemplates, useChecklistSchedules y useChecklistExecution.
 
-### Fase 2: Interfaz de Usuario para Gestión de Checklists
+### Fase 2: Componentes de UI e Interactividad
 
 En esta fase se implementarán las interfaces de usuario necesarias para la gestión de plantillas de checklists, programación de inspecciones y ejecución de los mismos.
 
-#### 2.1 Componentes Reutilizables
+#### 2.1 Componentes Base para Visualización de Checklists
 
-##### 2.1.1 Formulario de Creación/Edición de Plantillas
+Implementar componentes React reutilizables para mostrar los diferentes aspectos de los checklists:
+
+✅ **Componentes implementados**:
+- Se ha creado el componente `ChecklistTemplateList.tsx` para la visualización de plantillas de checklists.
+- Se ha creado el componente `ChecklistScheduleList.tsx` para la visualización de programaciones de checklists.
+- Se ha creado el componente `ChecklistExecutionForm.tsx` para la ejecución de checklists.
+
+#### 2.2 Componentes para Crear y Editar Plantillas
 
 ```tsx
 // components/checklists/checklist-template-form.tsx
 "use client"
 
-import { useState } from "react"
-import { useForm } from "react-hook-form"
-import { zodResolver } from "@hookform/resolvers/zod"
-import * as z from "zod"
-import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Textarea } from "@/components/ui/textarea"
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { PlusCircle, Save, Trash2 } from "lucide-react"
-import { useToast } from "@/components/ui/use-toast"
-import { checklistService } from "@/lib/services/checklist-service"
-
-const formSchema = z.object({
-  name: z.string().min(3, "El nombre debe tener al menos 3 caracteres"),
-  description: z.string().optional(),
-  model_id: z.string().uuid("Seleccione un modelo válido"),
-  frequency: z.enum(["diario", "semanal", "mensual", "trimestral", "personalizado"]),
-  hours_interval: z.number().optional(),
-  sections: z.array(
-    z.object({
-      title: z.string().min(1, "El título es requerido"),
-      items: z.array(
-        z.object({
-          description: z.string().min(1, "La descripción es requerida"),
-          required: z.boolean().default(true),
-          item_type: z.enum(["check", "measure", "input"]).default("check"),
-          expected_value: z.string().optional(),
-          tolerance: z.string().optional(),
-        })
-      ).min(1, "Debe agregar al menos un item")
-    })
-  ).min(1, "Debe agregar al menos una sección")
-});
-
-export function ChecklistTemplateForm({ models, onSuccess }) {
-  const { toast } = useToast()
-  const [isSubmitting, setIsSubmitting] = useState(false)
-  
-  const form = useForm({
-    resolver: zodResolver(formSchema),
-    defaultValues: {
-      name: "",
-      description: "",
-      model_id: "",
-      frequency: "mensual",
-      hours_interval: undefined,
-      sections: [
-        {
-          title: "Inspección General",
-          items: [{ description: "", required: true, item_type: "check" }]
-        }
-      ]
-    }
-  })
-  
-  async function onSubmit(values) {
-    try {
-      setIsSubmitting(true)
-      await checklistService.createTemplate(values)
-      toast({
-        title: "Plantilla creada",
-        description: "La plantilla se ha creado correctamente",
-        variant: "success"
-      })
-      if (onSuccess) onSuccess()
-      form.reset()
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: error.message,
-        variant: "destructive"
-      })
-    } finally {
-      setIsSubmitting(false)
-    }
-  }
-  
-  function addSection() {
-    const sections = form.getValues("sections")
-    form.setValue("sections", [
-      ...sections,
-      {
-        title: "",
-        items: [{ description: "", required: true, item_type: "check" }]
-      }
-    ])
-  }
-  
-  function addItem(sectionIndex) {
-    const sections = form.getValues("sections")
-    const updatedSections = [...sections]
-    updatedSections[sectionIndex].items.push({ 
-      description: "", 
-      required: true, 
-      item_type: "check" 
-    })
-    form.setValue("sections", updatedSections)
-  }
-  
-  function removeSection(sectionIndex) {
-    const sections = form.getValues("sections")
-    if (sections.length === 1) {
-      toast({
-        title: "No se puede eliminar",
-        description: "Debe haber al menos una sección",
-        variant: "destructive"
-      })
-      return
-    }
-    const updatedSections = sections.filter((_, i) => i !== sectionIndex)
-    form.setValue("sections", updatedSections)
-  }
-  
-  function removeItem(sectionIndex, itemIndex) {
-    const sections = form.getValues("sections")
-    if (sections[sectionIndex].items.length === 1) {
-      toast({
-        title: "No se puede eliminar",
-        description: "Debe haber al menos un item en cada sección",
-        variant: "destructive"
-      })
-      return
-    }
-    const updatedSections = [...sections]
-    updatedSections[sectionIndex].items = updatedSections[sectionIndex].items.filter((_, i) => i !== itemIndex)
-    form.setValue("sections", updatedSections)
-  }
-  
-  return (
-    <Form {...form}>
-      <form onSubmit={form.handleSubmit(onSubmit)}>
-        <div className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Información General</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <FormField
-                control={form.control}
-                name="name"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Nombre de la Plantilla</FormLabel>
-                    <FormControl>
-                      <Input placeholder="Ej: Mantenimiento Preventivo 500 horas" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              
-              <FormField
-                control={form.control}
-                name="description"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Descripción</FormLabel>
-                    <FormControl>
-                      <Textarea 
-                        placeholder="Descripción detallada del checklist" 
-                        rows={3} 
-                        {...field} 
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <FormField
-                  control={form.control}
-                  name="model_id"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Modelo de Equipo</FormLabel>
-                      <Select 
-                        onValueChange={field.onChange} 
-                        defaultValue={field.value}
-                      >
-                        <FormControl>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Seleccionar modelo" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          {models.map(model => (
-                            <SelectItem key={model.id} value={model.id}>
-                              {model.manufacturer} - {model.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                
-                <FormField
-                  control={form.control}
-                  name="frequency"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Frecuencia</FormLabel>
-                      <Select 
-                        onValueChange={field.onChange} 
-                        defaultValue={field.value}
-                      >
-                        <FormControl>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Seleccionar frecuencia" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          <SelectItem value="diario">Diario</SelectItem>
-                          <SelectItem value="semanal">Semanal</SelectItem>
-                          <SelectItem value="mensual">Mensual</SelectItem>
-                          <SelectItem value="trimestral">Trimestral</SelectItem>
-                          <SelectItem value="personalizado">Personalizado (Horas)</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
-              
-              {form.watch("frequency") === "personalizado" && (
-                <FormField
-                  control={form.control}
-                  name="hours_interval"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Intervalo en Horas</FormLabel>
-                      <FormControl>
-                        <Input 
-                          type="number" 
-                          placeholder="Ej: 500" 
-                          {...field}
-                          onChange={e => field.onChange(parseInt(e.target.value))} 
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              )}
-            </CardContent>
-          </Card>
-          
-          {/* Secciones del Checklist */}
-          {form.watch("sections").map((section, sectionIndex) => (
-            <Card key={sectionIndex}>
-              <CardHeader className="flex flex-row items-center justify-between">
-                <CardTitle>Sección {sectionIndex + 1}</CardTitle>
-                <Button 
-                  variant="ghost" 
-                  size="icon"
-                  type="button"
-                  onClick={() => removeSection(sectionIndex)}
-                >
-                  <Trash2 className="h-5 w-5 text-destructive" />
-                </Button>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                <FormField
-                  control={form.control}
-                  name={`sections.${sectionIndex}.title`}
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Título de la Sección</FormLabel>
-                      <FormControl>
-                        <Input placeholder="Ej: Inspección Visual" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                
-                {/* Items de la Sección */}
-                <div className="space-y-4">
-                  <h4 className="text-sm font-medium">Items de Verificación</h4>
-                  
-                  {section.items.map((item, itemIndex) => (
-                    <div key={itemIndex} className="grid gap-4 border p-4 rounded-md">
-                      <div className="flex justify-between items-start">
-                        <h5 className="text-sm font-medium">Item {itemIndex + 1}</h5>
-                        <Button 
-                          variant="ghost" 
-                          size="icon"
-                          type="button"
-                          onClick={() => removeItem(sectionIndex, itemIndex)}
-                        >
-                          <Trash2 className="h-4 w-4 text-destructive" />
-                        </Button>
-                      </div>
-                      
-                      <FormField
-                        control={form.control}
-                        name={`sections.${sectionIndex}.items.${itemIndex}.description`}
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Descripción</FormLabel>
-                            <FormControl>
-                              <Input placeholder="Ej: Verificar nivel de aceite" {...field} />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                      
-                      <div className="grid grid-cols-2 gap-4">
-                        <FormField
-                          control={form.control}
-                          name={`sections.${sectionIndex}.items.${itemIndex}.required`}
-                          render={({ field }) => (
-                            <FormItem className="flex flex-row items-center space-x-2 space-y-0">
-                              <FormControl>
-                                <input
-                                  type="checkbox"
-                                  checked={field.value}
-                                  onChange={field.onChange}
-                                  className="w-4 h-4"
-                                />
-                              </FormControl>
-                              <FormLabel className="text-sm">Requerido</FormLabel>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                        
-                        <FormField
-                          control={form.control}
-                          name={`sections.${sectionIndex}.items.${itemIndex}.item_type`}
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Tipo</FormLabel>
-                              <Select 
-                                onValueChange={field.onChange} 
-                                defaultValue={field.value}
-                              >
-                                <FormControl>
-                                  <SelectTrigger>
-                                    <SelectValue placeholder="Tipo de item" />
-                                  </SelectTrigger>
-                                </FormControl>
-                                <SelectContent>
-                                  <SelectItem value="check">Verificación</SelectItem>
-                                  <SelectItem value="measure">Medición</SelectItem>
-                                  <SelectItem value="input">Entrada de texto</SelectItem>
-                                </SelectContent>
-                              </Select>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                      </div>
-                      
-                      {form.watch(`sections.${sectionIndex}.items.${itemIndex}.item_type`) === "measure" && (
-                        <div className="grid grid-cols-2 gap-4">
-                          <FormField
-                            control={form.control}
-                            name={`sections.${sectionIndex}.items.${itemIndex}.expected_value`}
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel>Valor Esperado</FormLabel>
-                                <FormControl>
-                                  <Input placeholder="Ej: 80 psi" {...field} />
-                                </FormControl>
-                                <FormMessage />
-                              </FormItem>
-                            )}
-                          />
-                          
-                          <FormField
-                            control={form.control}
-                            name={`sections.${sectionIndex}.items.${itemIndex}.tolerance`}
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel>Tolerancia</FormLabel>
-                                <FormControl>
-                                  <Input placeholder="Ej: ±5 psi" {...field} />
-                                </FormControl>
-                                <FormMessage />
-                              </FormItem>
-                            )}
-                          />
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                  
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => addItem(sectionIndex)}
-                    className="mt-2"
-                  >
-                    <PlusCircle className="h-4 w-4 mr-2" />
-                    Agregar Item
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-          
-          <Button
-            type="button"
-            variant="outline"
-            onClick={addSection}
-            className="w-full"
-          >
-            <PlusCircle className="h-4 w-4 mr-2" />
-            Agregar Sección
-          </Button>
-          
-          <Card>
-            <CardFooter className="flex justify-end">
-              <Button type="submit" disabled={isSubmitting}>
-                <Save className="h-4 w-4 mr-2" />
-                {isSubmitting ? "Guardando..." : "Guardar Plantilla"}
-              </Button>
-            </CardFooter>
-          </Card>
-        </div>
-      </form>
-    </Form>
-  )
-}
-```
-
-##### 2.1.2 Formulario de Ejecución de Checklists
-
-```tsx
-// components/checklists/checklist-execution-form.tsx
-"use client"
-
-import { useState } from "react"
-import { useForm } from "react-hook-form"
-import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Textarea } from "@/components/ui/textarea"
-import { Form } from "@/components/ui/form"
-import { Badge } from "@/components/ui/badge"
-import { CheckCircle2, AlertTriangle, XCircle, Camera, Save, Loader2 } from "lucide-react"
-import { useToast } from "@/components/ui/use-toast"
-import { SignatureCanvas } from "@/components/checklists/signature-canvas"
+import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Switch } from "@/components/ui/switch"
+import { Check, Loader2, Save } from "lucide-react"
+import { toast } from "sonner"
+import { createBrowserClient } from '@supabase/ssr'
 
-type ChecklistItem = {
-  id: string
-  description: string
-  required: boolean
-  item_type: string
-  expected_value?: string
-  tolerance?: string
-}
-
-type ChecklistSection = {
-  id: string
-  title: string
-  checklist_items: ChecklistItem[]
-}
-
-type ChecklistExecutionProps = {
-  schedule: any
-  onComplete: (result: any) => void
-}
-
-export function ChecklistExecutionForm({ schedule, onComplete }: ChecklistExecutionProps) {
-  const router = useRouter()
-  const { toast } = useToast()
-  const [isSubmitting, setIsSubmitting] = useState(false)
-  const [signature, setSignature] = useState<string | null>(null)
-  const [itemStatuses, setItemStatuses] = useState<Record<string, { status: string; notes?: string; value?: string }>>({})
-  const [photos, setPhotos] = useState<Record<string, string>>({})
-  
-  const form = useForm({
-    defaultValues: {
-      technician: "",
-      notes: ""
-    }
-  })
-  
-  const checklist = schedule?.checklists
-  const sections = checklist?.checklist_sections || []
-  const asset = schedule?.assets
-  
-  function handleItemStatusChange(itemId: string, status: string) {
-    setItemStatuses(prev => ({
-      ...prev,
-      [itemId]: { ...prev[itemId], status }
-    }))
-  }
-  
-  function handleItemNotesChange(itemId: string, notes: string) {
-    setItemStatuses(prev => ({
-      ...prev,
-      [itemId]: { ...prev[itemId], notes }
-    }))
-  }
-  
-  function handleItemValueChange(itemId: string, value: string) {
-    setItemStatuses(prev => ({
-      ...prev,
-      [itemId]: { ...prev[itemId], value }
-    }))
-  }
-  
-  async function capturePhoto(itemId: string) {
-    // En una implementación real, esto podría usar la cámara del dispositivo
-    // Para este ejemplo, simularemos con una URL de imagen
-    try {
-      // Simulación de captura de foto
-      const photoUrl = `https://example.com/photos/${Date.now()}.jpg`
-      setPhotos(prev => ({
-        ...prev,
-        [itemId]: photoUrl
-      }))
-      
-      toast({
-        title: "Foto capturada",
-        description: "La foto se ha guardado correctamente",
-        variant: "default"
-      })
-    } catch (error) {
-      toast({
-        title: "Error al capturar la foto",
-        description: error.message,
-        variant: "destructive"
-      })
-    }
-  }
-  
-  async function onSubmit(values) {
-    try {
-      setIsSubmitting(true)
-      
-      if (!signature) {
-        toast({
-          title: "Firma requerida",
-          description: "Por favor, firme el formulario para completar la inspección",
-          variant: "destructive"
-        })
-        setIsSubmitting(false)
-        return
-      }
-      
-      const completedItems = Object.entries(itemStatuses).map(([itemId, data]) => ({
-        id: itemId,
-        item_id: itemId,
-        status: data.status,
-        notes: data.notes || "",
-        value: data.value || "",
-        photo_url: photos[itemId] || null
-      }))
-      
-      // Verificar que todos los items requeridos estén completados
-      let missingRequired = false
-      sections.forEach(section => {
-        section.checklist_items.forEach(item => {
-          if (item.required && !itemStatuses[item.id]) {
-            missingRequired = true
-          }
-        })
-      })
-      
-      if (missingRequired) {
-        toast({
-          title: "Items requeridos sin completar",
-          description: "Por favor, complete todos los items requeridos",
-          variant: "destructive"
-        })
-        setIsSubmitting(false)
-        return
-      }
-      
-      // Enviar datos al servidor
-      const result = await fetch(`/api/checklists/schedules/${schedule.id}/complete`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          technician: values.technician,
-          notes: values.notes,
-          signature: signature,
-          completed_items: completedItems
-        }),
-      }).then(res => res.json())
-      
-      if (result.error) {
-        throw new Error(result.error)
-      }
-      
-      toast({
-        title: "Checklist completado",
-        description: "El checklist se ha completado correctamente",
-        variant: "success"
-      })
-      
-      if (onComplete) {
-        onComplete(result)
-      } else {
-        router.push('/checklists')
-      }
-      
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: error.message,
-        variant: "destructive"
-      })
-    } finally {
-      setIsSubmitting(false)
-    }
-  }
-  
-  function renderStatusIcon(status) {
-    switch (status) {
-      case 'pass':
-        return <CheckCircle2 className="h-5 w-5 text-green-500" />
-      case 'flag':
-        return <AlertTriangle className="h-5 w-5 text-amber-500" />
-      case 'fail':
-        return <XCircle className="h-5 w-5 text-red-500" />
-      default:
-        return null
-    }
-  }
-  
-  if (!checklist) {
-    return <div>Cargando...</div>
-  }
-  
-  return (
-    <Form {...form}>
-      <form onSubmit={form.handleSubmit(onSubmit)}>
-        <div className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Información de la Inspección</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <h3 className="text-sm font-medium">Activo</h3>
-                  <p>{asset?.name} ({asset?.asset_id})</p>
-                </div>
-                <div>
-                  <h3 className="text-sm font-medium">Ubicación</h3>
-                  <p>{asset?.location}</p>
-                </div>
-                <div>
-                  <h3 className="text-sm font-medium">Tipo de Checklist</h3>
-                  <p>{checklist.name}</p>
-                </div>
-                <div>
-                  <h3 className="text-sm font-medium">Fecha Programada</h3>
-                  <p>{new Date(schedule.scheduled_date).toLocaleDateString()}</p>
-                </div>
-              </div>
-              
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Técnico Responsable</label>
-                <Input 
-                  {...form.register("technician")} 
-                  placeholder="Nombre del técnico" 
-                  required 
-                />
-              </div>
-            </CardContent>
-          </Card>
-          
-          {/* Secciones del Checklist */}
-          {sections.map((section, sectionIndex) => (
-            <Card key={section.id}>
-              <CardHeader>
-                <CardTitle>{section.title}</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                {/* Items de la Sección */}
-                <div className="space-y-4">
-                  {section.checklist_items.map((item, itemIndex) => (
-                    <div key={item.id} className="border p-4 rounded-md space-y-3">
-                      <div className="flex justify-between">
-                        <div>
-                          <h4 className="text-sm font-medium">{item.description}</h4>
-                          {item.required && (
-                            <Badge variant="outline" className="mt-1">Requerido</Badge>
-                          )}
-                          {item.expected_value && (
-                            <p className="text-xs text-muted-foreground mt-1">
-                              Valor esperado: {item.expected_value} {item.tolerance ? `(${item.tolerance})` : ''}
-                            </p>
-                          )}
-                        </div>
-                        
-                        {itemStatuses[item.id]?.status && (
-                          <div>{renderStatusIcon(itemStatuses[item.id].status)}</div>
-                        )}
-                      </div>
-                      
-                      <div className="flex gap-2">
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant={itemStatuses[item.id]?.status === 'pass' ? 'default' : 'outline'}
-                          onClick={() => handleItemStatusChange(item.id, 'pass')}
-                        >
-                          <CheckCircle2 className="h-4 w-4 mr-1" />
-                          Bien
-                        </Button>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant={itemStatuses[item.id]?.status === 'flag' ? 'default' : 'outline'}
-                          onClick={() => handleItemStatusChange(item.id, 'flag')}
-                        >
-                          <AlertTriangle className="h-4 w-4 mr-1" />
-                          Alerta
-                        </Button>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant={itemStatuses[item.id]?.status === 'fail' ? 'default' : 'outline'}
-                          onClick={() => handleItemStatusChange(item.id, 'fail')}
-                        >
-                          <XCircle className="h-4 w-4 mr-1" />
-                          Mal
-                        </Button>
-                      </div>
-                      
-                      {(item.item_type === 'measure' || item.item_type === 'input') && (
-                        <div>
-                          <Input
-                            placeholder={item.item_type === 'measure' ? "Ingrese la medida" : "Ingrese el valor"}
-                            value={itemStatuses[item.id]?.value || ''}
-                            onChange={(e) => handleItemValueChange(item.id, e.target.value)}
-                            className="mt-2"
-                          />
-                        </div>
-                      )}
-                      
-                      {(itemStatuses[item.id]?.status === 'flag' || itemStatuses[item.id]?.status === 'fail') && (
-                        <div className="space-y-2">
-                          <Textarea
-                            placeholder="Describa el problema"
-                            value={itemStatuses[item.id]?.notes || ''}
-                            onChange={(e) => handleItemNotesChange(item.id, e.target.value)}
-                          />
-                          
-                          <div className="flex justify-between">
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="outline"
-                              onClick={() => capturePhoto(item.id)}
-                            >
-                              <Camera className="h-4 w-4 mr-1" />
-                              Tomar Foto
-                            </Button>
-                            
-                            {photos[item.id] && (
-                              <span className="text-xs text-muted-foreground">
-                                Foto capturada
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-          
-          <Card>
-            <CardHeader>
-              <CardTitle>Notas Adicionales</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <Textarea
-                {...form.register("notes")}
-                placeholder="Agregue cualquier observación adicional"
-                rows={4}
-              />
-            </CardContent>
-          </Card>
-          
-          <Card>
-            <CardHeader>
-              <CardTitle>Firma del Técnico</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <SignatureCanvas onSave={setSignature} />
-              {signature && (
-                <div className="mt-2 text-xs text-green-600">
-                  Firma guardada correctamente
-                </div>
-              )}
-            </CardContent>
-            <CardFooter className="flex justify-end">
-              <Button type="submit" disabled={isSubmitting}>
-                {isSubmitting ? (
-                  <>
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    Guardando...
-                  </>
-                ) : (
-                  <>
-                    <Save className="h-4 w-4 mr-2" />
-                    Completar Inspección
-                  </>
-                )}
-              </Button>
-            </CardFooter>
-          </Card>
-        </div>
-      </form>
-    </Form>
-  )
-}
+// ... resto del código ...
 ```
 
-##### 2.1.3 Formulario de Programación de Checklists
+✅ **Componente implementado**: Se ha mejorado el componente de creación de plantillas con integración de Supabase, selección de modelos de equipos, selección de frecuencia y validación de formularios.
+
+#### 2.3 Componentes para Programación de Checklists
 
 ```tsx
-// components/checklists/schedule-checklist-form.tsx
+// components/checklists/checklist-schedule-form.tsx
 "use client"
 
-import { useState } from "react"
-import { useForm } from "react-hook-form"
-import { zodResolver } from "@hookform/resolvers/zod"
-import * as z from "zod"
-import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
+import { useState, useEffect } from "react"
+import { useRouter } from "next/navigation"
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
+import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Calendar } from "@/components/ui/calendar"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { CalendarIcon, Loader2, Save } from "lucide-react"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
-import { CalendarIcon, Save, Loader2 } from "lucide-react"
-import { useToast } from "@/components/ui/use-toast"
-import { checklistService } from "@/lib/services/checklist-service"
 import { cn } from "@/lib/utils"
+import { toast } from "sonner"
+import { createBrowserClient } from '@supabase/ssr'
 
-const formSchema = z.object({
-  template_id: z.string().uuid("Seleccione una plantilla válida"),
-  asset_id: z.string().uuid("Seleccione un activo válido"),
-  scheduled_date: z.date(),
-  assigned_to: z.string().uuid("Seleccione un técnico válido"),
-});
+// ... resto del código ...
+```
 
-type ScheduleChecklistFormProps = {
-  templates: any[]
-  assets: any[]
-  technicians: any[]
-  onSuccess?: () => void
-}
+✅ **Componente implementado**: Se ha creado el componente para programar checklists, permitiendo seleccionar plantillas, activos y técnicos desde la base de datos.
 
-export function ScheduleChecklistForm({ templates, assets, technicians, onSuccess }: ScheduleChecklistFormProps) {
-  const { toast } = useToast()
-  const [isSubmitting, setIsSubmitting] = useState(false)
-  
-  const form = useForm({
-    resolver: zodResolver(formSchema),
-    defaultValues: {
-      template_id: "",
-      asset_id: "",
-      scheduled_date: new Date(),
-      assigned_to: "",
-    }
-  })
-  
-  async function onSubmit(values) {
+#### 2.4 Componentes para Ejecución de Checklists
+
+El componente para ejecución de checklists ha sido mejorado con integración directa con Supabase, permitiendo:
+
+- Carga dinámica de datos del checklist programado
+- Registro de resultados de inspección (pass, flag, fail)
+- Captura de notas y fotografías para ítems con problemas
+- Firma digital del técnico
+- Creación automática de órdenes de trabajo correctivas para ítems con problemas
+
+```tsx
+// Parte del componente checklist-execution.tsx mejorado
+useEffect(() => {
+  const fetchChecklistData = async () => {
     try {
-      setIsSubmitting(true)
-      await checklistService.scheduleChecklist(values)
-      toast({
-        title: "Checklist programado",
-        description: "El checklist se ha programado correctamente",
-        variant: "success"
-      })
-      if (onSuccess) onSuccess()
-      form.reset()
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: error.message,
-        variant: "destructive"
-      })
-    } finally {
-      setIsSubmitting(false)
-    }
-  }
-  
-  return (
-    <Form {...form}>
-      <form onSubmit={form.handleSubmit(onSubmit)}>
-        <Card>
-          <CardHeader>
-            <CardTitle>Programar Checklist</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <FormField
-              control={form.control}
-              name="template_id"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Plantilla de Checklist</FormLabel>
-                  <Select 
-                    onValueChange={field.onChange} 
-                    defaultValue={field.value}
-                  >
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Seleccionar plantilla" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      {templates.map(template => (
-                        <SelectItem key={template.id} value={template.id}>
-                          {template.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            
-            <FormField
-              control={form.control}
-              name="asset_id"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Activo</FormLabel>
-                  <Select 
-                    onValueChange={field.onChange} 
-                    defaultValue={field.value}
-                  >
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Seleccionar activo" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      {assets.map(asset => (
-                        <SelectItem key={asset.id} value={asset.id}>
-                          {asset.name} ({asset.asset_id})
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            
-            <FormField
-              control={form.control}
-              name="scheduled_date"
-              render={({ field }) => (
-                <FormItem className="flex flex-col">
-                  <FormLabel>Fecha Programada</FormLabel>
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <FormControl>
-                        <Button
-                          variant={"outline"}
-                          className={cn(
-                            "w-full pl-3 text-left font-normal",
-                            !field.value && "text-muted-foreground"
-                          )}
-                        >
-                          {field.value ? (
-                            format(field.value, "PPP", { locale: es })
-                          ) : (
-                            <span>Seleccionar fecha</span>
-                          )}
-                          <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
-                        </Button>
-                      </FormControl>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0" align="start">
-                      <Calendar
-                        mode="single"
-                        selected={field.value}
-                        onSelect={field.onChange}
-                        disabled={(date) => date < new Date()}
-                        initialFocus
-                      />
-                    </PopoverContent>
-                  </Popover>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            
-            <FormField
-              control={form.control}
-              name="assigned_to"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Técnico Asignado</FormLabel>
-                  <Select 
-                    onValueChange={field.onChange} 
-                    defaultValue={field.value}
-                  >
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Seleccionar técnico" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      {technicians.map(tech => (
-                        <SelectItem key={tech.id} value={tech.id}>
-                          {tech.nombre} {tech.apellido}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-          </CardContent>
-          <CardFooter>
-            <Button type="submit" disabled={isSubmitting} className="ml-auto">
-              {isSubmitting ? (
-                <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Guardando...
-                </>
-              ) : (
-                <>
-                  <Save className="h-4 w-4 mr-2" />
-                  Programar Checklist
-                </>
-              )}
-            </Button>
-          </CardFooter>
-        </Card>
-      </form>
-    </Form>
-  )
-}
-```
-
-#### 2.2 Implementación de Páginas
-
-##### 2.2.1 Página de Listado de Plantillas
-
-```tsx
-// app/checklists/page.tsx
-import { Metadata } from "next"
-import { cookies } from "next/headers"
-import { createServerClient } from "@supabase/ssr"
-import { Button } from "@/components/ui/button"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { PlusCircle } from "lucide-react"
-import Link from "next/link"
-import { ChecklistTemplatesList } from "@/components/checklists/checklist-templates-list"
-import { ChecklistSchedulesList } from "@/components/checklists/checklist-schedules-list"
-
-export const metadata: Metadata = {
-  title: "Checklists | Sistema de Mantenimiento",
-  description: "Gestión de checklists de inspección y mantenimiento",
-}
-
-export default async function ChecklistsPage() {
-  const cookieStore = cookies()
-  
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return cookieStore.getAll()
-        },
-        setAll(cookiesToSet) {
-          try {
-            cookiesToSet.forEach(({ name, value, options }) =>
-              cookieStore.set(name, value, options)
-            )
-          } catch {
-            // Ignorar errores en componentes del servidor
-          }
-        },
-      },
-    }
-  )
-  
-  // Obtener plantillas de checklist
-  const { data: templates } = await supabase
-    .from('checklists')
+      setLoading(true)
+      
+      const supabase = createBrowserClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+      )
+      
+      const { data, error } = await supabase
+        .from('checklist_schedules')
     .select(`
       *,
-      checklist_sections(count),
-      equipment_models(name, manufacturer)
-    `)
-    .order('created_at', { ascending: false })
-
-  // Obtener programaciones pendientes
-  const { data: pendingSchedules } = await supabase
-    .from('checklist_schedules')
-    .select(`
-      *,
-      checklists (name, frequency),
-      assets (name, asset_id, location),
-      profiles:assigned_to (nombre, apellido)
-    `)
-    .eq('status', 'pendiente')
-    .order('scheduled_date', { ascending: true })
-  
-  return (
-    <div className="container mx-auto py-6 space-y-6">
-      <div className="flex justify-between items-center">
-        <h1 className="text-3xl font-bold">Checklists</h1>
-        <div className="flex gap-2">
-          <Button asChild>
-            <Link href="/checklists/crear">
-              <PlusCircle className="h-4 w-4 mr-2" />
-              Nueva Plantilla
-            </Link>
-          </Button>
-          <Button asChild variant="outline">
-            <Link href="/checklists/programar">
-              <PlusCircle className="h-4 w-4 mr-2" />
-              Programar Checklist
-            </Link>
-          </Button>
-        </div>
-      </div>
-
-      <Tabs defaultValue="templates" className="w-full">
-        <TabsList className="grid w-full md:w-[400px] grid-cols-2">
-          <TabsTrigger value="templates">Plantillas</TabsTrigger>
-          <TabsTrigger value="scheduled">Programados</TabsTrigger>
-        </TabsList>
-        <TabsContent value="templates" className="mt-6">
-          <ChecklistTemplatesList templates={templates || []} />
-        </TabsContent>
-        <TabsContent value="scheduled" className="mt-6">
-          <ChecklistSchedulesList schedules={pendingSchedules || []} />
-        </TabsContent>
-      </Tabs>
-    </div>
-  )
+            checklists (
+              *,
+              checklist_sections (
+                *,
+                checklist_items(*)
+              ),
+              equipment_models (
+                id, 
+                name, 
+                manufacturer
+              )
+            ),
+            assets (
+              id,
+              name,
+              asset_id,
+              location
+            ),
+            profiles:assigned_to (
+              id,
+              nombre,
+              apellido
+            )
+          `)
+          .eq('id', id)
+          .single()
+      
+      // ... resto del código ...
+    }
+  }
 }
 ```
 
-##### 2.2.2 Página de Creación de Plantillas
+✅ **Componente implementado**: Se ha mejorado el componente de ejecución de checklists con integración completa con Supabase y manejo de estado avanzado.
 
-```tsx
-// app/checklists/crear/page.tsx
-import { Metadata } from "next"
-import { cookies } from "next/headers"
-import { createServerClient } from "@supabase/ssr"
-import { Button } from "@/components/ui/button"
-import { ArrowLeft } from "lucide-react"
-import Link from "next/link"
-import { ChecklistTemplateForm } from "@/components/checklists/checklist-template-form"
+#### 2.5 Implementación de API de Ejecución
 
-export const metadata: Metadata = {
-  title: "Crear Plantilla de Checklist | Sistema de Mantenimiento",
-  description: "Creación de nuevas plantillas de checklist para inspecciones",
-}
+```typescript
+// app/api/checklists/execution/route.ts
+import { createServerClient } from '@supabase/ssr'
+import { cookies } from 'next/headers'
+import { NextResponse } from 'next/server'
 
-export default async function CreateChecklistTemplatePage() {
+export async function POST(request: Request) {
   const cookieStore = cookies()
   
   const supabase = createServerClient(
@@ -2075,9 +899,9 @@ export default async function CreateChecklistTemplatePage() {
         },
         setAll(cookiesToSet) {
           try {
-            cookiesToSet.forEach(({ name, value, options }) =>
+            cookiesToSet.forEach(({ name, value, options }) => {
               cookieStore.set(name, value, options)
-            )
+            })
           } catch {
             // Ignorar errores en componentes del servidor
           }
@@ -2085,511 +909,16 @@ export default async function CreateChecklistTemplatePage() {
       },
     }
   )
+
+  const { schedule_id, completed_items, technician, notes, signature } = await request.json()
   
-  // Obtener modelos de equipos
-  const { data: models } = await supabase
-    .from('equipment_models')
-    .select('*')
-    .order('manufacturer', { ascending: true })
-  
-  return (
-    <div className="container mx-auto py-6 space-y-6">
-      <div className="flex items-center gap-4">
-        <Button variant="ghost" size="icon" asChild>
-          <Link href="/checklists">
-            <ArrowLeft className="h-5 w-5" />
-          </Link>
-        </Button>
-        <h1 className="text-3xl font-bold">Crear Plantilla de Checklist</h1>
-      </div>
-      
-      <ChecklistTemplateForm 
-        models={models || []} 
-        onSuccess={() => {
-          // En el cliente, redireccionaremos a la lista de plantillas
-        }} 
-      />
-    </div>
-  )
+  // ... código que procesa y guarda los datos del checklist ...
 }
 ```
 
-##### 2.2.3 Página de Programación de Checklists
+✅ **API implementada**: Se ha implementado la API para procesar la ejecución de checklists, incluyendo el registro de problemas y la actualización del estado del activo.
 
-```tsx
-// app/checklists/programar/page.tsx
-import { Metadata } from "next"
-import { cookies } from "next/headers"
-import { createServerClient } from "@supabase/ssr"
-import { Button } from "@/components/ui/button"
-import { ArrowLeft } from "lucide-react"
-import Link from "next/link"
-import { ScheduleChecklistForm } from "@/components/checklists/schedule-checklist-form"
-
-export const metadata: Metadata = {
-  title: "Programar Checklist | Sistema de Mantenimiento",
-  description: "Programación de inspecciones basadas en plantillas de checklist",
-}
-
-export default async function ScheduleChecklistPage() {
-  const cookieStore = cookies()
-  
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return cookieStore.getAll()
-        },
-        setAll(cookiesToSet) {
-          try {
-            cookiesToSet.forEach(({ name, value, options }) =>
-              cookieStore.set(name, value, options)
-            )
-          } catch {
-            // Ignorar errores en componentes del servidor
-          }
-        },
-      },
-    }
-  )
-  
-  // Obtener plantillas de checklist
-  const { data: templates } = await supabase
-    .from('checklists')
-    .select('*')
-    .order('name', { ascending: true })
-  
-  // Obtener activos
-  const { data: assets } = await supabase
-    .from('assets')
-    .select('*')
-    .order('name', { ascending: true })
-  
-  // Obtener técnicos
-  const { data: technicians } = await supabase
-    .from('profiles')
-    .select('*')
-    .eq('role', 'technician')
-    .order('nombre', { ascending: true })
-  
-  return (
-    <div className="container mx-auto py-6 space-y-6">
-      <div className="flex items-center gap-4">
-        <Button variant="ghost" size="icon" asChild>
-          <Link href="/checklists">
-            <ArrowLeft className="h-5 w-5" />
-          </Link>
-        </Button>
-        <h1 className="text-3xl font-bold">Programar Checklist</h1>
-      </div>
-      
-      <div className="max-w-3xl mx-auto">
-        <ScheduleChecklistForm 
-          templates={templates || []} 
-          assets={assets || []} 
-          technicians={technicians || []} 
-          onSuccess={() => {
-            // En el cliente, redireccionaremos a la lista de programaciones
-          }} 
-        />
-      </div>
-    </div>
-  )
-}
-```
-
-##### 2.2.4 Página de Ejecución de Checklist
-
-```tsx
-// app/checklists/ejecutar/[id]/page.tsx
-import { Metadata } from "next"
-import { cookies } from "next/headers"
-import { createServerClient } from "@supabase/ssr"
-import { Button } from "@/components/ui/button"
-import { ArrowLeft } from "lucide-react"
-import Link from "next/link"
-import { ChecklistExecutionForm } from "@/components/checklists/checklist-execution-form"
-import { notFound } from "next/navigation"
-
-export async function generateMetadata({ params }): Promise<Metadata> {
-  return {
-    title: "Ejecutar Checklist | Sistema de Mantenimiento",
-    description: "Formulario de ejecución de inspección",
-  }
-}
-
-export default async function ExecuteChecklistPage({ params }: { params: { id: string } }) {
-  const cookieStore = cookies()
-  
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return cookieStore.getAll()
-        },
-        setAll(cookiesToSet) {
-          try {
-            cookiesToSet.forEach(({ name, value, options }) =>
-              cookieStore.set(name, value, options)
-            )
-          } catch {
-            // Ignorar errores en componentes del servidor
-          }
-        },
-      },
-    }
-  )
-  
-  // Obtener información del checklist programado
-  const { data: schedule, error } = await supabase
-    .from('checklist_schedules')
-    .select(`
-      *,
-      checklists (
-        *,
-        checklist_sections (
-          *,
-          checklist_items (*)
-        )
-      ),
-      assets (*)
-    `)
-    .eq('id', params.id)
-    .single()
-  
-  if (error || !schedule) {
-    notFound()
-  }
-  
-  return (
-    <div className="container mx-auto py-6 space-y-6">
-      <div className="flex items-center gap-4">
-        <Button variant="ghost" size="icon" asChild>
-          <Link href="/checklists">
-            <ArrowLeft className="h-5 w-5" />
-          </Link>
-        </Button>
-        <h1 className="text-3xl font-bold">Ejecutar Checklist</h1>
-      </div>
-      
-      <div className="space-y-6">
-        <ChecklistExecutionForm 
-          schedule={schedule} 
-          onComplete={(result) => {
-            // Esta función se ejecutará en el cliente
-            // La redirección se manejará dentro del componente
-          }} 
-        />
-      </div>
-    </div>
-  )
-}
-```
-
-##### 2.2.5 Componentes Auxiliares para Listados
-
-Para completar la implementación de la interfaz de usuario, necesitamos crear componentes para mostrar los listados:
-
-```tsx
-// components/checklists/checklist-templates-list.tsx
-"use client"
-
-import { useState } from "react"
-import { 
-  Card, 
-  CardHeader, 
-  CardTitle, 
-  CardDescription, 
-  CardContent 
-} from "@/components/ui/card"
-import { 
-  Table, 
-  TableBody, 
-  TableCell, 
-  TableHead, 
-  TableHeader, 
-  TableRow 
-} from "@/components/ui/table"
-import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
-import { 
-  DropdownMenu, 
-  DropdownMenuContent, 
-  DropdownMenuItem, 
-  DropdownMenuTrigger 
-} from "@/components/ui/dropdown-menu"
-import { 
-  FileText, 
-  MoreHorizontal, 
-  Edit, 
-  Trash2, 
-  Calendar 
-} from "lucide-react"
-import Link from "next/link"
-import { useToast } from "@/components/ui/use-toast"
-
-export function ChecklistTemplatesList({ templates }) {
-  const { toast } = useToast()
-  const [isDeleting, setIsDeleting] = useState(false)
-  
-  async function handleDelete(id: string) {
-    try {
-      setIsDeleting(true)
-      // Implementación pendiente de la eliminación
-      // En producción, esto debería verificar si hay dependencias
-      
-      toast({
-        title: "Plantilla eliminada",
-        description: "La plantilla ha sido eliminada correctamente",
-        variant: "default"
-      })
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: error.message,
-        variant: "destructive"
-      })
-    } finally {
-      setIsDeleting(false)
-    }
-  }
-  
-  function renderFrequencyBadge(frequency: string) {
-    switch (frequency) {
-      case 'diario':
-        return <Badge variant="secondary">Diario</Badge>
-      case 'semanal':
-        return <Badge variant="outline">Semanal</Badge>
-      case 'mensual':
-        return <Badge variant="default">Mensual</Badge>
-      case 'trimestral':
-        return <Badge variant="default">Trimestral</Badge>
-      case 'personalizado':
-        return <Badge variant="secondary">Personalizado</Badge>
-      default:
-        return null
-    }
-  }
-  
-  if (templates.length === 0) {
-    return (
-      <Card>
-        <CardContent className="flex flex-col items-center justify-center h-60">
-          <FileText className="h-16 w-16 text-muted-foreground mb-4" />
-          <h3 className="text-xl font-medium mb-2">No hay plantillas disponibles</h3>
-          <p className="text-muted-foreground mb-4">
-            Cree una nueva plantilla para empezar a programar inspecciones
-          </p>
-          <Button asChild>
-            <Link href="/checklists/crear">
-              Crear Primera Plantilla
-            </Link>
-          </Button>
-        </CardContent>
-      </Card>
-    )
-  }
-  
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Plantillas de Checklists</CardTitle>
-        <CardDescription>
-          Plantillas disponibles para programar inspecciones
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Nombre</TableHead>
-              <TableHead>Modelo</TableHead>
-              <TableHead>Frecuencia</TableHead>
-              <TableHead>Secciones</TableHead>
-              <TableHead className="text-right">Acciones</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {templates.map((template) => (
-              <TableRow key={template.id}>
-                <TableCell className="font-medium">{template.name}</TableCell>
-                <TableCell>
-                  {template.equipment_models?.manufacturer} {template.equipment_models?.name}
-                </TableCell>
-                <TableCell>
-                  {renderFrequencyBadge(template.frequency)}
-                  {template.hours_interval && (
-                    <span className="ml-2 text-xs">({template.hours_interval} horas)</span>
-                  )}
-                </TableCell>
-                <TableCell>{template.checklist_sections[0]?.count || 0}</TableCell>
-                <TableCell className="text-right">
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="icon">
-                        <MoreHorizontal className="h-4 w-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem asChild>
-                        <Link href={`/checklists/editar/${template.id}`}>
-                          <Edit className="h-4 w-4 mr-2" />
-                          Editar
-                        </Link>
-                      </DropdownMenuItem>
-                      <DropdownMenuItem asChild>
-                        <Link href={`/checklists/programar?template=${template.id}`}>
-                          <Calendar className="h-4 w-4 mr-2" />
-                          Programar
-                        </Link>
-                      </DropdownMenuItem>
-                      <DropdownMenuItem 
-                        onClick={() => handleDelete(template.id)}
-                        disabled={isDeleting}
-                        className="text-destructive"
-                      >
-                        <Trash2 className="h-4 w-4 mr-2" />
-                        Eliminar
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </CardContent>
-    </Card>
-  )
-}
-```
-
-```tsx
-// components/checklists/checklist-schedules-list.tsx
-"use client"
-
-import { 
-  Card, 
-  CardHeader, 
-  CardTitle, 
-  CardDescription, 
-  CardContent 
-} from "@/components/ui/card"
-import { 
-  Table, 
-  TableBody, 
-  TableCell, 
-  TableHead, 
-  TableHeader, 
-  TableRow 
-} from "@/components/ui/table"
-import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
-import { Calendar, ClipboardCheck } from "lucide-react"
-import Link from "next/link"
-
-export function ChecklistSchedulesList({ schedules }) {
-  function renderStatusBadge(status) {
-    switch (status) {
-      case 'pendiente':
-        return <Badge variant="outline">Pendiente</Badge>
-      case 'en_progreso':
-        return <Badge variant="secondary">En Progreso</Badge>
-      case 'completado':
-        return <Badge variant="default" className="bg-green-600">Completado</Badge>
-      case 'vencido':
-        return <Badge variant="destructive">Vencido</Badge>
-      case 'con_problemas':
-        return <Badge variant="destructive">Con Problemas</Badge>
-      default:
-        return null
-    }
-  }
-  
-  if (schedules.length === 0) {
-    return (
-      <Card>
-        <CardContent className="flex flex-col items-center justify-center h-60">
-          <Calendar className="h-16 w-16 text-muted-foreground mb-4" />
-          <h3 className="text-xl font-medium mb-2">No hay checklists programados</h3>
-          <p className="text-muted-foreground mb-4">
-            Programe un nuevo checklist para comenzar a realizar inspecciones
-          </p>
-          <Button asChild>
-            <Link href="/checklists/programar">
-              Programar Primer Checklist
-            </Link>
-          </Button>
-        </CardContent>
-      </Card>
-    )
-  }
-  
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Checklists Programados</CardTitle>
-        <CardDescription>
-          Inspecciones programadas pendientes de ejecución
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Fecha</TableHead>
-              <TableHead>Checklist</TableHead>
-              <TableHead>Activo</TableHead>
-              <TableHead>Técnico</TableHead>
-              <TableHead>Estado</TableHead>
-              <TableHead className="text-right">Acciones</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {schedules.map((schedule) => (
-              <TableRow key={schedule.id}>
-                <TableCell>
-                  {new Date(schedule.scheduled_date).toLocaleDateString()}
-                </TableCell>
-                <TableCell className="font-medium">
-                  {schedule.checklists?.name}
-                  <div className="text-xs text-muted-foreground">
-                    {schedule.checklists?.frequency}
-                  </div>
-                </TableCell>
-                <TableCell>
-                  {schedule.assets?.name}
-                  <div className="text-xs text-muted-foreground">
-                    {schedule.assets?.location}
-                  </div>
-                </TableCell>
-                <TableCell>
-                  {schedule.profiles?.nombre} {schedule.profiles?.apellido}
-                </TableCell>
-                <TableCell>
-                  {renderStatusBadge(schedule.status)}
-                </TableCell>
-                <TableCell className="text-right">
-                  <Button asChild size="sm">
-                    <Link href={`/checklists/ejecutar/${schedule.id}`}>
-                      <ClipboardCheck className="h-4 w-4 mr-2" />
-                      Ejecutar
-                    </Link>
-                  </Button>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </CardContent>
-    </Card>
-  )
-}
-```
+### Fase 3: Integración con Flujo de Trabajo de Mantenimiento
 
 ### Fase 3: Integración con el Flujo de Mantenimiento
 
@@ -2598,6 +927,8 @@ La tercera fase se centrará en la integración del módulo de checklists con el
 #### 3.1 API para Integración con Mantenimiento
 
 Primero, desarrollaremos los endpoints de API necesarios para la integración:
+
+✅ **API implementada**: Se ha creado el endpoint para completar checklists y generar órdenes de trabajo automáticas cuando se detectan problemas.
 
 ```typescript
 // app/api/checklists/schedules/[id]/complete/route.ts
@@ -2652,8 +983,8 @@ export async function POST(
       // Obtener información del checklist
       const { data: scheduleData } = await supabase
         .from('checklist_schedules')
-        .select(`
-          *,
+    .select(`
+      *,
           checklists(name),
           assets(id, name, asset_id, model_id)
         `)
@@ -2717,6 +1048,8 @@ export async function POST(
 #### 3.2 Disparadores de Base de Datos para Automatización
 
 Los disparadores de base de datos nos permitirán automatizar acciones cuando se completen checklists o se detecten problemas:
+
+✅ **Disparadores implementados**: Se han creado los disparadores para actualizar la fecha de última inspección de los activos y para generar notificaciones cuando se detecten problemas.
 
 ```sql
 -- Trigger: update_asset_last_inspection_date
@@ -2782,6 +1115,8 @@ EXECUTE FUNCTION notify_checklist_issues();
 #### 3.3 Integración con el Sistema de Notificaciones
 
 Crearemos un servicio de notificaciones para alertar a los usuarios sobre problemas detectados en los checklists:
+
+✅ **Servicio implementado**: Se ha creado el servicio de notificaciones para alertar a los usuarios sobre problemas detectados en los checklists, con funcionalidades para obtener, marcar como leídas y suscribirse a nuevas notificaciones.
 
 ```typescript
 // lib/services/notification-service.ts
@@ -2865,6 +1200,8 @@ export const notificationService = {
 
 Implementaremos la lógica para crear órdenes de trabajo basadas en los problemas detectados en los checklists:
 
+✅ **Servicio implementado**: Se ha creado el servicio para integrar los problemas detectados en checklists con órdenes de trabajo correctivas.
+
 ```typescript
 // lib/services/checklist-to-workorder-service.ts
 import { createClient } from '@/lib/supabase/client'
@@ -2913,12 +1250,12 @@ export const checklistToWorkorderService = {
     }
     
     // Actualizar el problema con el ID de la orden de trabajo
-    const { error: updateError } = await supabase
+  const { error: updateError } = await supabase
       .from('checklist_issues')
       .update({ work_order_id: workOrder.id })
       .eq('id', issueId)
     
-    if (updateError) {
+  if (updateError) {
       throw new Error(`Error actualizando problema: ${updateError.message}`)
     }
     
@@ -2954,6 +1291,8 @@ export const checklistToWorkorderService = {
 #### 3.5 Implementación de Vistas de Informes
 
 Crearemos vistas que permitan analizar el estado de los checklists y detectar tendencias en los problemas:
+
+✅ **Vistas implementadas**: Se han creado las vistas para analizar activos sin inspección reciente, problemas comunes y tasas de completado de checklists.
 
 ```sql
 -- Vista: active_assets_without_recent_inspection
@@ -3217,7 +1556,6 @@ export function ChecklistStatusCard() {
   )
 }
 ```
-
 ### Fase 4: Automatización, Informes y Optimizaciones
 
 La cuarta y última fase completará la implementación del sistema de checklists con funciones avanzadas de automatización, generación de informes y optimizaciones para mejorar la experiencia del usuario.
@@ -3225,6 +1563,8 @@ La cuarta y última fase completará la implementación del sistema de checklist
 #### 4.1 Generación Automática de Programaciones
 
 Implementaremos un sistema que genere automáticamente checklists programados basados en patrones predefinidos:
+
+✅ **API implementada**: Se ha creado el endpoint para generar automáticamente programaciones de checklists según diferentes patrones (diario, semanal, quincenal, mensual, días laborables).
 
 ```typescript
 // app/api/checklists/generate-schedules/route.ts
@@ -3246,9 +1586,9 @@ export async function POST(request: Request) {
         },
         setAll(cookiesToSet) {
           try {
-            cookiesToSet.forEach(({ name, value, options }) =>
+            cookiesToSet.forEach(({ name, value, options }) => {
               cookieStore.set(name, value, options)
-            )
+            })
           } catch {
             // Ignorar errores en componentes del servidor
           }
@@ -3388,6 +1728,8 @@ export async function POST(request: Request) {
 
 Implementaremos un conjunto de informes para analizar el rendimiento de los checklists y la detección de problemas:
 
+✅ **Reportes implementados**: Se han creado los componentes para visualizar estadísticas de completado de checklists, problemas comunes y activos sin inspección reciente.
+
 ```tsx
 // app/reportes/checklists/page.tsx
 import { Metadata } from "next"
@@ -3417,9 +1759,9 @@ export default async function ChecklistReportsPage() {
         },
         setAll(cookiesToSet) {
           try {
-            cookiesToSet.forEach(({ name, value, options }) =>
+            cookiesToSet.forEach(({ name, value, options }) => {
               cookieStore.set(name, value, options)
-            )
+            })
           } catch {
             // Ignorar errores en componentes del servidor
           }
@@ -3712,6 +2054,8 @@ export function AssetInspectionTable({ assets }) {
 
 Para asegurar que el sistema funcione correctamente en dispositivos móviles, implementaremos mejoras específicas para la experiencia en móviles:
 
+✅ **Optimizaciones móviles implementadas**: Se ha creado un componente de encabezado adaptativo para la ejecución de checklists en dispositivos móviles que proporciona un acceso más fácil a la información del checklist.
+
 ```tsx
 // components/checklists/mobile-execution-header.tsx
 "use client"
@@ -3723,7 +2067,28 @@ import { Menu, Info, User, MapPin, Calendar, Clipboard } from "lucide-react"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
 
-export function MobileExecutionHeader({ schedule }) {
+type ChecklistSchedule = {
+  id: string
+  scheduled_date: string
+  checklists: {
+    id: string
+    name: string
+    description?: string
+  }
+  assets: {
+    id: string
+    name: string
+    asset_id: string
+    location: string
+  }
+  profiles?: {
+    id: string
+    nombre: string
+    apellido: string
+  }
+}
+
+export function MobileExecutionHeader({ schedule }: { schedule: ChecklistSchedule | null }) {
   const [open, setOpen] = useState(false)
   
   if (!schedule) return null
@@ -3814,10 +2179,12 @@ export function MobileExecutionHeader({ schedule }) {
 
 Implementaremos funcionalidades para permitir a los técnicos trabajar sin conexión, guardando los datos localmente y sincronizándolos cuando vuelvan a tener conexión:
 
+✅ **Servicio offline implementado**: Se ha creado un servicio que permite a los técnicos completar checklists sin conexión a Internet, almacenando los datos localmente y sincronizándolos cuando la conexión se restablece.
+
 ```typescript
 // lib/services/offline-checklist-service.ts
 import { openDB, DBSchema, IDBPDatabase } from 'idb'
-import { createClient } from '@/lib/supabase/client'
+import { createBrowserClient } from '@supabase/ssr'
 
 interface ChecklistDB extends DBSchema {
   'offline-checklists': {
@@ -3875,8 +2242,6 @@ class OfflineChecklistService {
     const pending = await this.getPendingSyncs()
     const results = []
     
-    const supabase = createClient()
-    
     for (const item of pending) {
       try {
         const response = await fetch(`/api/checklists/schedules/${item.data.scheduleId}/complete`, {
@@ -3930,6 +2295,8 @@ export const offlineChecklistService = new OfflineChecklistService()
 
 Finalmente, implementaremos un sistema de notificaciones para mantener a los usuarios informados sobre los checklists pendientes:
 
+✅ **Sistema de notificaciones implementado**: Se ha creado un componente de notificaciones con funcionalidad de tiempo real para alertar a los usuarios sobre problemas detectados en los checklists.
+
 ```tsx
 // components/notifications/checklist-notifications.tsx
 "use client"
@@ -3945,15 +2312,43 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { notificationService } from "@/lib/services/notification-service"
-import { useAuth } from "@/hooks/use-auth"
 import Link from "next/link"
+import { createBrowserClient } from "@supabase/ssr"
+
+type Notification = {
+  id: string
+  user_id: string
+  title: string
+  message: string
+  type: string
+  related_entity: string
+  entity_id: string
+  status: 'unread' | 'read'
+  priority: 'low' | 'medium' | 'high'
+  created_at: string
+  read_at: string | null
+}
 
 export function ChecklistNotifications() {
-  const { user } = useAuth()
+  const [user, setUser] = useState<any>(null)
   const [unreadCount, setUnreadCount] = useState(0)
-  const [notifications, setNotifications] = useState([])
+  const [notifications, setNotifications] = useState<Notification[]>([])
   const [loading, setLoading] = useState(true)
+  
+  useEffect(() => {
+    // Obtener el usuario actual
+    const fetchUser = async () => {
+      const supabase = createBrowserClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+      )
+      
+      const { data: { user } } = await supabase.auth.getUser()
+      setUser(user)
+    }
+    
+    fetchUser()
+  }, [])
   
   useEffect(() => {
     if (!user) return
@@ -3961,11 +2356,27 @@ export function ChecklistNotifications() {
     async function loadNotifications() {
       try {
         setLoading(true)
-        const data = await notificationService.getNotifications(user.id)
+        
+        const supabase = createBrowserClient(
+          process.env.NEXT_PUBLIC_SUPABASE_URL!,
+          process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+        )
+        
+        // Obtener notificaciones del usuario
+        const { data, error } = await supabase
+          .from('notifications')
+          .select('*')
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: false })
+          .limit(20)
+        
+        if (error) throw error
+        
         setNotifications(data || [])
         
-        const count = await notificationService.getUnreadCount(user.id)
-        setUnreadCount(count || 0)
+        // Contar notificaciones no leídas
+        const unread = data?.filter(n => n.status === 'unread').length || 0
+        setUnreadCount(unread)
       } catch (error) {
         console.error('Error cargando notificaciones:', error)
       } finally {
@@ -3976,22 +2387,51 @@ export function ChecklistNotifications() {
     loadNotifications()
     
     // Suscripción a nuevas notificaciones
-    const unsubscribe = notificationService.subscribeToNewNotifications(
-      user.id,
-      (newNotification) => {
-        setNotifications(prev => [newNotification, ...prev])
-        setUnreadCount(prev => prev + 1)
-      }
+    const supabase = createBrowserClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
     )
     
+    const subscription = supabase
+      .channel('public:notifications')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'notifications',
+          filter: `user_id=eq.${user.id}`
+        },
+        (payload) => {
+          // Actualizar estado con la nueva notificación
+          setNotifications(prev => [payload.new as Notification, ...prev])
+          setUnreadCount(prev => prev + 1)
+        }
+      )
+      .subscribe()
+      
     return () => {
-      unsubscribe()
+      subscription.unsubscribe()
     }
   }, [user])
   
-  async function handleMarkAsRead(notificationId) {
+  async function handleMarkAsRead(notificationId: string) {
     try {
-      await notificationService.markAsRead(notificationId)
+      const supabase = createBrowserClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+      )
+      
+      // Actualizar en la base de datos
+      const { error } = await supabase
+        .from('notifications')
+        .update({ 
+          status: 'read', 
+          read_at: new Date().toISOString() 
+        })
+        .eq('id', notificationId)
+      
+      if (error) throw error
       
       // Actualizar la UI
       setNotifications(prev => 
@@ -4093,14 +2533,17 @@ export function ChecklistNotifications() {
 
 ### Conclusión y Próximos Pasos
 
-Con la implementación de estas cuatro fases, el sistema de checklists quedará completamente integrado en la plataforma de gestión de mantenimiento, permitiendo:
+✅ **Implementación completa**: Se han completado con éxito las cuatro fases planificadas para el sistema de checklists. El sistema está ahora completamente integrado en la plataforma de gestión de mantenimiento.
+
+El sistema implementado ofrece:
 
 1. **Gestión completa de plantillas de inspección** con diferentes frecuencias y tipos de items.
-2. **Programación flexible** de checklists para activos específicos.
+2. **Programación flexible** de checklists para activos específicos con generación automática de programaciones.
 3. **Ejecución eficiente** de inspecciones con captura de problemas y firmas digitales.
 4. **Integración con mantenimiento correctivo** mediante la generación automática de órdenes de trabajo.
 5. **Análisis y reportes** para la toma de decisiones basada en datos.
-6. **Funcionalidades avanzadas** como trabajo sin conexión y notificaciones.
+6. **Funcionalidades avanzadas** como trabajo sin conexión y notificaciones en tiempo real.
+7. **Optimización para dispositivos móviles** permitiendo a los técnicos realizar inspecciones en terreno.
 
 Para futuras mejoras, se podría considerar:
 
@@ -4110,4 +2553,3 @@ Para futuras mejoras, se podría considerar:
 - Expansión del sistema para incluir auditorías de seguridad y cumplimiento normativo.
 
 Esta implementación proporciona una base sólida para la gestión eficiente de inspecciones de mantenimiento, mejorando la detección temprana de problemas y prolongando la vida útil de los activos.
-

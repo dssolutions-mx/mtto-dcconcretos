@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button"
 import { DashboardHeader } from "@/components/dashboard/dashboard-header"
 import { DashboardShell } from "@/components/dashboard/dashboard-shell"
 import { EquipmentModelDetails } from "@/components/models/equipment-model-details"
-import { ArrowLeft, Edit } from "lucide-react"
+import { ArrowLeft, Edit, Copy, Trash2 } from "lucide-react"
 import Link from "next/link"
 import { createClient } from "@/lib/supabase-server"
 import { notFound } from "next/navigation"
@@ -70,6 +70,18 @@ async function EquipmentModelDetailsPageContent({ id }: { id: string }) {
             <Link href={`/modelos/${id}/editar`}>
               <Edit className="mr-2 h-4 w-4" />
               Editar
+            </Link>
+          </Button>
+          <Button variant="outline" asChild>
+            <Link href={`/modelos/${id}/copiar`}>
+              <Copy className="mr-2 h-4 w-4" />
+              Copiar
+            </Link>
+          </Button>
+          <Button variant="destructive" asChild>
+            <Link href={`/modelos/${id}/eliminar`}>
+              <Trash2 className="mr-2 h-4 w-4" />
+              Eliminar
             </Link>
           </Button>
         </div>

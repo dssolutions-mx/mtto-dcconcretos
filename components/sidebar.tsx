@@ -18,6 +18,7 @@ import {
   PenToolIcon as Tool,
   Truck,
   CreditCard,
+  CheckCircle,
 } from "lucide-react"
 import { UserNav } from "@/components/user-nav"
 import { ModeToggle } from "@/components/mode-toggle"
@@ -71,6 +72,16 @@ export function Sidebar({ className }: SidebarProps) {
               <Link href="/ordenes">
                 <ClipboardCheck className="mr-2 h-4 w-4" />
                 Órdenes de Trabajo
+              </Link>
+            </Button>
+            <Button
+              variant={pathname === "/servicios" || pathname.startsWith("/servicios/") ? "secondary" : "ghost"}
+              className="w-full justify-start"
+              asChild
+            >
+              <Link href="/servicios">
+                <CheckCircle className="mr-2 h-4 w-4" />
+                Órdenes de Servicio
               </Link>
             </Button>
             <Button

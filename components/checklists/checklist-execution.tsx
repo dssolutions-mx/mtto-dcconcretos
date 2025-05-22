@@ -1,6 +1,7 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
+import { useRouter } from "next/navigation"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
@@ -17,70 +18,124 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import { Camera, Check, Clock, FileText, Flag, Save, Upload, X } from "lucide-react"
+import { Camera, Check, Clock, FileText, Flag, Loader2, Save, Upload, X } from "lucide-react"
 import { SignatureCanvas } from "@/components/checklists/signature-canvas"
-
-// Datos de ejemplo para el checklist
-const checklistData = {
-  id: "CL001",
-  name: "Mantenimiento Mensual HVAC",
-  assetId: "A003",
-  asset: "Sistema HVAC Planta 2",
-  modelId: "MOD003",
-  model: "PG-5000",
-  manufacturer: "PowerGen",
-  frequency: "monthly",
-  sections: [
-    {
-      title: "Inspección Visual",
-      items: [
-        { id: "1.1", description: "Limpiar filtros de entrada de campana exterior", required: true },
-        { id: "1.2", description: "Inspeccionar estado de conductos", required: true },
-        { id: "1.3", description: "Verificar ausencia de fugas", required: true },
-        { id: "1.4", description: "Comprobar estado de aislamiento", required: true },
-      ],
-    },
-    {
-      title: "Sistema de Refrigeración",
-      items: [
-        { id: "2.1", description: "Verificar nivel de refrigerante", required: true },
-        { id: "2.2", description: "Comprobar presión del sistema", required: true },
-        { id: "2.3", description: "Inspeccionar condensador", required: true },
-        { id: "2.4", description: "Verificar funcionamiento de ventiladores", required: true },
-      ],
-    },
-    {
-      title: "Sistema Eléctrico",
-      items: [
-        { id: "3.1", description: "Verificar conexiones eléctricas", required: true },
-        { id: "3.2", description: "Comprobar consumo eléctrico", required: true },
-        { id: "3.3", description: "Inspeccionar termostatos", required: true },
-        { id: "3.4", description: "Verificar sistema de control", required: true },
-      ],
-    },
-  ],
-  technician: "",
-  completionDate: new Date().toISOString().split("T")[0],
-  notes: "",
-}
+import { toast } from "sonner"
+import { createBrowserClient } from '@supabase/ssr'
 
 interface ChecklistExecutionProps {
   id: string
 }
 
 export function ChecklistExecution({ id }: ChecklistExecutionProps) {
-  // En una aplicación real, buscaríamos los datos del checklist por su ID
-  // const checklist = getChecklistById(id);
-  const checklist = checklistData // Usamos datos de ejemplo
-
+  const router = useRouter()
+  const [loading, setLoading] = useState(true)
+  const [submitting, setSubmitting] = useState(false)
+  const [checklist, setChecklist] = useState<any>(null)
+  
   const [itemStatus, setItemStatus] = useState<Record<string, "pass" | "flag" | "fail" | null>>({})
   const [itemNotes, setItemNotes] = useState<Record<string, string>>({})
   const [itemPhotos, setItemPhotos] = useState<Record<string, string | null>>({})
-  const [notes, setNotes] = useState(checklist.notes)
-  const [technician, setTechnician] = useState(checklist.technician)
+  const [notes, setNotes] = useState('')
+  const [technician, setTechnician] = useState('')
   const [signature, setSignature] = useState<string | null>(null)
   const [showCorrective, setShowCorrective] = useState(false)
   const [selectedItem, setSelectedItem] = useState<string | null>(null)
+  
+  useEffect(() => {
+    const fetchChecklistData = async () => {
+      try {
+        setLoading(true)
+        
+        const supabase = createBrowserClient(
+          process.env.NEXT_PUBLIC_SUPABASE_URL!,
+          process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+        )
+        
+        const { data, error } = await supabase
+          .from('checklist_schedules')
+          .select(`
+            *,
+            checklists (
+              *,
+              checklist_sections (
+                *,
+                checklist_items(*)
+              ),
+              equipment_models (
+                id, 
+                name, 
+                manufacturer
+              )
+            ),
+            assets (
+              id,
+              name,
+              asset_id,
+              location
+            )
+          `)
+          .eq('id', id)
+          .single()
+        
+        if (error) throw error
+        
+        if (!data) throw new Error('Checklist no encontrado')
+        
+        // Formatear los datos del checklist para usar en el componente
+        const formattedData = {
+          id: data.id,
+          name: data.checklists.name,
+          assetId: data.assets.id,
+          asset: data.assets.name,
+          modelId: data.checklists.model_id,
+          model: data.checklists.equipment_models?.name || 'N/A',
+          manufacturer: data.checklists.equipment_models?.manufacturer || 'N/A',
+          frequency: data.checklists.frequency,
+          sections: data.checklists.checklist_sections.map((section: any) => ({
+            id: section.id,
+            title: section.title,
+            items: section.checklist_items.map((item: any) => ({
+              id: item.id,
+              description: item.description,
+              required: item.required,
+              item_type: item.item_type || 'check',
+              expected_value: item.expected_value,
+              tolerance: item.tolerance
+            }))
+          })),
+          scheduledDate: new Date(data.scheduled_date).toLocaleDateString(),
+          technicianId: data.assigned_to,
+          technician: ''
+        }
+        
+        // Fetch technician info separately 
+        if (data.assigned_to) {
+          const { data: profileData } = await supabase
+            .from('profiles')
+            .select('nombre, apellido')
+            .eq('id', data.assigned_to)
+            .single()
+            
+          if (profileData) {
+            formattedData.technician = `${profileData.nombre || ''} ${profileData.apellido || ''}`.trim() || 'Técnico asignado'
+          }
+        }
+        
+        setChecklist(formattedData)
+        setTechnician(formattedData.technician)
+      } catch (error: any) {
+        console.error('Error loading checklist:', error)
+        toast.error(`Error al cargar el checklist: ${error.message}`)
+      } finally {
+        setLoading(false)
+      }
+    }
+    
+    if (id) {
+      fetchChecklistData()
+    }
+  }, [id])
 
   const handleStatusChange = (itemId: string, status: "pass" | "flag" | "fail") => {
     setItemStatus((prev) => ({ ...prev, [itemId]: status }))
@@ -91,53 +146,187 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
     }
   }
 
-  const handlePhotoUpload = (itemId: string, file: File) => {
-    // En una aplicación real, subiríamos la foto a un servidor
-    // Aquí simplemente simulamos la URL de la foto
-    const photoUrl = URL.createObjectURL(file)
-    setItemPhotos((prev) => ({ ...prev, [itemId]: photoUrl }))
-  }
-
-  const handleSubmit = () => {
-    // Verificar si hay algún item con estado flag o fail
-    const hasIssues = Object.values(itemStatus).some((status) => status === "flag" || status === "fail")
-
-    if (hasIssues) {
-      setShowCorrective(true)
-    } else {
-      // Enviar el checklist completado
-      console.log("Checklist completado:", {
-        id: checklist.id,
-        itemStatus,
-        itemNotes,
-        itemPhotos,
-        notes,
-        technician,
-        signature,
-        completionDate: checklist.completionDate,
-      })
-
-      // Redirigir a la página de checklists
-      // router.push("/checklists");
+  const handlePhotoUpload = async (itemId: string, file: File) => {
+    try {
+      // En una aplicación real, subiríamos la foto a Supabase Storage
+      // Aquí temporalmente usamos URL.createObjectURL para simular
+      const photoUrl = URL.createObjectURL(file)
+      setItemPhotos((prev) => ({ ...prev, [itemId]: photoUrl }))
+      
+      // Implementación real (descomentada cuando se implemente el almacenamiento)
+      /*
+      const supabase = createBrowserClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+      )
+      
+      const fileName = `checklist_${id}_item_${itemId}_${Date.now()}.jpg`
+      
+      const { data, error } = await supabase.storage
+        .from('checklist-photos')
+        .upload(fileName, file)
+      
+      if (error) throw error
+      
+      const { data: urlData } = supabase.storage
+        .from('checklist-photos')
+        .getPublicUrl(fileName)
+      
+      setItemPhotos((prev) => ({ ...prev, [itemId]: urlData.publicUrl }))
+      */
+    } catch (error: any) {
+      console.error('Error uploading photo:', error)
+      toast.error(`Error al subir la foto: ${error.message}`)
     }
   }
 
-  const createCorrectiveAction = () => {
-    // Crear una acción correctiva basada en los items con flag o fail
-    console.log(
-      "Creando acción correctiva para los items:",
-      Object.entries(itemStatus)
-        .filter(([_, status]) => status === "flag" || status === "fail")
-        .map(([itemId]) => itemId),
-    )
+  const prepareCompletedItems = () => {
+    const completedItems = []
+    
+    if (!checklist) return []
+    
+    for (const section of checklist.sections) {
+      for (const item of section.items) {
+        if (itemStatus[item.id]) {
+          completedItems.push({
+            id: crypto.randomUUID(),
+            item_id: item.id,
+            status: itemStatus[item.id],
+            notes: itemNotes[item.id] || null,
+            photo_url: itemPhotos[item.id] || null
+          })
+        }
+      }
+    }
+    
+    return completedItems
+  }
+  
+  const handleSubmit = async () => {
+    if (!isChecklistComplete()) {
+      toast.error('Por favor complete todos los campos requeridos')
+      return
+    }
+    
+    setSubmitting(true)
+    
+    try {
+      const completedItems = prepareCompletedItems()
+      
+      // En una implementación real, llamaríamos a la API para guardar el checklist completado
+      const response = await fetch('/api/checklists/execution', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          schedule_id: id,
+          completed_items: completedItems,
+          technician: checklist.technicianId,
+          notes: notes,
+          signature: signature
+        }),
+      })
+      
+      const result = await response.json()
+      
+      if (result.error) {
+        throw new Error(result.error)
+      }
+      
+      // Verificar si hay algún item con estado flag o fail
+      const hasIssues = Object.values(itemStatus).some((status) => status === "flag" || status === "fail")
+  
+      if (hasIssues) {
+        setShowCorrective(true)
+      } else {
+        toast.success('Checklist completado exitosamente')
+        
+        // Redirigir a la página de checklists según la frecuencia
+        let redirectPath = '/checklists/diarios'
+        
+        if (checklist.frequency === 'semanal') {
+          redirectPath = '/checklists/semanales'
+        } else if (checklist.frequency === 'mensual') {
+          redirectPath = '/checklists/mensuales'
+        }
+        
+        router.push(redirectPath)
+      }
+    } catch (error: any) {
+      console.error('Error submitting checklist:', error)
+      toast.error(`Error al guardar el checklist: ${error.message}`)
+    } finally {
+      setSubmitting(false)
+    }
+  }
 
-    // Redirigir a la página de órdenes de trabajo
-    // router.push("/ordenes/crear?type=corrective");
+  const createCorrectiveAction = async () => {
+    try {
+      // Crear una orden de trabajo correctiva basada en los items con flag o fail
+      const itemsWithIssues = Object.entries(itemStatus)
+        .filter(([_, status]) => status === "flag" || status === "fail")
+        .map(([itemId]) => {
+          const sectionAndItem = findSectionAndItemById(itemId)
+          return {
+            id: itemId,
+            description: sectionAndItem?.item?.description || '',
+            notes: itemNotes[itemId] || '',
+            photo: itemPhotos[itemId] || null,
+            status: itemStatus[itemId]
+          }
+        })
+      
+      // Llamar a la API para crear una orden de trabajo correctiva
+      const response = await fetch('/api/maintenance/work-orders', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          type: 'corrective',
+          asset_id: checklist.assetId,
+          description: `Acciones correctivas generadas desde checklist: ${checklist.name}`,
+          issues: itemsWithIssues,
+          checklist_id: id
+        }),
+      })
+      
+      const result = await response.json()
+      
+      if (result.error) {
+        throw new Error(result.error)
+      }
+      
+      toast.success('Orden de trabajo correctiva creada exitosamente')
+      
+      // Redirigir a la página de órdenes de trabajo
+      router.push(`/ordenes/${result.data.id}`)
+    } catch (error: any) {
+      console.error('Error creating corrective action:', error)
+      toast.error(`Error al crear acción correctiva: ${error.message}`)
+    }
+  }
+  
+  const findSectionAndItemById = (itemId: string) => {
+    if (!checklist) return null
+    
+    for (const section of checklist.sections) {
+      for (const item of section.items) {
+        if (item.id === itemId) {
+          return { section, item }
+        }
+      }
+    }
+    
+    return null
   }
 
   const getTotalItems = () => {
+    if (!checklist) return 0
+    
     let total = 0
-    checklist.sections.forEach((section) => {
+    checklist.sections.forEach((section: any) => {
       total += section.items.length
     })
     return total
@@ -148,16 +337,41 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
   }
 
   const isChecklistComplete = () => {
+    if (!checklist) return false
+    
     // Verificar si todos los items requeridos tienen un estado
     let complete = true
-    checklist.sections.forEach((section) => {
-      section.items.forEach((item) => {
+    checklist.sections.forEach((section: any) => {
+      section.items.forEach((item: any) => {
         if (item.required && !itemStatus[item.id]) {
           complete = false
         }
       })
     })
     return complete && technician.trim() !== "" && signature !== null
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <div className="text-center">
+          <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4 text-blue-500" />
+          <p className="text-muted-foreground">Cargando checklist...</p>
+        </div>
+      </div>
+    )
+  }
+  
+  if (!checklist) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <div className="text-center">
+          <p className="text-lg font-semibold mb-2">Checklist no encontrado</p>
+          <p className="text-muted-foreground mb-4">No se pudo encontrar el checklist solicitado</p>
+          <Button onClick={() => router.back()}>Volver</Button>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -173,18 +387,18 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
           <div className="flex justify-between items-center mb-4">
             <div className="flex items-center gap-2">
               <Clock className="h-5 w-5 text-muted-foreground" />
-              <span className="text-sm text-muted-foreground">Fecha: {new Date().toLocaleDateString()}</span>
+              <span className="text-sm text-muted-foreground">Fecha: {checklist.scheduledDate}</span>
             </div>
             <div className="text-sm text-muted-foreground">
               Completado: {getCompletedItems()}/{getTotalItems()}
             </div>
           </div>
 
-          {checklist.sections.map((section, sectionIndex) => (
+          {checklist.sections.map((section: any, sectionIndex: number) => (
             <div key={sectionIndex} className="mb-8">
               <h3 className="text-lg font-semibold mb-4">{section.title}</h3>
               <div className="space-y-6">
-                {section.items.map((item) => (
+                {section.items.map((item: any) => (
                   <Card key={item.id} className="overflow-hidden">
                     <CardHeader className="py-3">
                       <CardTitle className="text-base">{item.description}</CardTitle>
@@ -250,23 +464,19 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
                                   className="absolute top-2 right-2"
                                   onClick={() => setItemPhotos((prev) => ({ ...prev, [item.id]: null }))}
                                 >
-                                  <X className="h-4 w-4" />
+                                  Eliminar
                                 </Button>
                               </div>
                             ) : (
-                              <div className="border-2 border-dashed border-muted-foreground/25 rounded-md p-8 text-center">
-                                <div className="flex flex-col items-center gap-2">
+                              <div className="border-2 border-dashed border-muted-foreground/50 rounded-md p-8 text-center">
+                                <Label
+                                  htmlFor={`photo-upload-${item.id}`}
+                                  className="flex flex-col items-center gap-2 cursor-pointer"
+                                >
                                   <Camera className="h-8 w-8 text-muted-foreground" />
-                                  <p className="text-sm text-muted-foreground">Sube una foto del problema</p>
-                                  <Label
-                                    htmlFor={`photo-${item.id}`}
-                                    className="cursor-pointer bg-blue-500 text-white px-4 py-2 rounded-md hover:bg-blue-600 transition-colors"
-                                  >
-                                    <Upload className="h-4 w-4 inline mr-2" />
-                                    Subir foto
-                                  </Label>
-                                  <Input
-                                    id={`photo-${item.id}`}
+                                  <span className="text-sm text-muted-foreground">Agregar Foto</span>
+                                  <input
+                                    id={`photo-upload-${item.id}`}
                                     type="file"
                                     accept="image/*"
                                     className="hidden"
@@ -276,7 +486,7 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
                                       }
                                     }}
                                   />
-                                </div>
+                                </Label>
                               </div>
                             )}
                           </div>
@@ -289,57 +499,46 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
             </div>
           ))}
 
-          <Separator className="my-6" />
-
-          <div className="space-y-4">
+          <div className="space-y-6 pt-4">
             <div className="space-y-2">
               <Label htmlFor="notes">Notas Generales</Label>
               <Textarea
                 id="notes"
-                placeholder="Ingrese observaciones o comentarios adicionales"
+                placeholder="Agregue notas generales sobre el mantenimiento realizado"
+                rows={3}
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
-                rows={4}
               />
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="technician">
-                Técnico Responsable <span className="text-red-500">*</span>
-              </Label>
-              <Input
-                id="technician"
-                value={technician}
-                onChange={(e) => setTechnician(e.target.value)}
-                placeholder="Nombre del técnico"
-              />
+              <Label htmlFor="technician">Técnico Responsable</Label>
+              <Input id="technician" value={technician} readOnly />
             </div>
 
             <div className="space-y-2">
-              <Label>
-                Firma Digital <span className="text-red-500">*</span>
-              </Label>
-              <div className="border rounded-md p-2">
-                <SignatureCanvas onSave={setSignature} />
-              </div>
-              {signature && (
-                <div className="mt-2">
-                  <Button variant="outline" size="sm" onClick={() => setSignature(null)}>
-                    Borrar firma
-                  </Button>
-                </div>
-              )}
+              <Label htmlFor="signature">Firma</Label>
+              <SignatureCanvas onSave={setSignature} />
+              {signature && <p className="text-sm text-green-600 mt-1">Firma guardada</p>}
             </div>
           </div>
         </CardContent>
-        <CardFooter className="flex justify-between">
-          <Button variant="outline">
-            <Save className="mr-2 h-4 w-4" />
-            Guardar Borrador
+        <CardFooter className="justify-between">
+          <Button variant="outline" onClick={() => router.back()}>
+            Cancelar
           </Button>
-          <Button disabled={!isChecklistComplete()} onClick={handleSubmit}>
-            <FileText className="mr-2 h-4 w-4" />
-            Completar Checklist
+          <Button onClick={handleSubmit} disabled={!isChecklistComplete() || submitting}>
+            {submitting ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Guardando...
+              </>
+            ) : (
+              <>
+                <Save className="mr-2 h-4 w-4" />
+                Completar Checklist
+              </>
+            )}
           </Button>
         </CardFooter>
       </Card>
@@ -347,14 +546,15 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
       <AlertDialog open={showCorrective} onOpenChange={setShowCorrective}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Acción Correctiva</AlertDialogTitle>
+            <AlertDialogTitle>Crear Acción Correctiva</AlertDialogTitle>
             <AlertDialogDescription>
-              Se han detectado problemas en este checklist. ¿Desea crear una acción correctiva?
+              Se han detectado problemas en este checklist. ¿Desea crear una Orden de Trabajo correctiva para solucionar
+              estos problemas?
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>No</AlertDialogCancel>
-            <AlertDialogAction onClick={createCorrectiveAction}>Sí</AlertDialogAction>
+            <AlertDialogCancel>No, solo guardar</AlertDialogCancel>
+            <AlertDialogAction onClick={createCorrectiveAction}>Sí, crear orden correctiva</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
