@@ -1,6 +1,7 @@
 "use client"
 
 import type React from "react"
+import { useState } from "react"
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
@@ -19,14 +20,25 @@ import {
   Truck,
   CreditCard,
   CheckCircle,
+  Menu,
+  X,
 } from "lucide-react"
 import { UserNav } from "@/components/user-nav"
 import { ModeToggle } from "@/components/mode-toggle"
+import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
 
-interface SidebarProps extends React.HTMLAttributes<HTMLDivElement> {}
+interface SidebarProps extends React.HTMLAttributes<HTMLDivElement> {
+  onLinkClick?: () => void
+}
 
-export function Sidebar({ className }: SidebarProps) {
+export function Sidebar({ className, onLinkClick }: SidebarProps) {
   const pathname = usePathname()
+
+  const handleLinkClick = () => {
+    if (onLinkClick) {
+      onLinkClick()
+    }
+  }
 
   return (
     <div className={cn("pb-12", className)}>
@@ -38,6 +50,7 @@ export function Sidebar({ className }: SidebarProps) {
               variant={pathname === "/dashboard" ? "secondary" : "ghost"}
               className="w-full justify-start"
               asChild
+              onClick={handleLinkClick}
             >
               <Link href="/dashboard">
                 <Home className="mr-2 h-4 w-4" />
@@ -48,6 +61,7 @@ export function Sidebar({ className }: SidebarProps) {
               variant={pathname === "/activos" || pathname.startsWith("/activos/") ? "secondary" : "ghost"}
               className="w-full justify-start"
               asChild
+              onClick={handleLinkClick}
             >
               <Link href="/activos">
                 <Boxes className="mr-2 h-4 w-4" />
@@ -58,6 +72,7 @@ export function Sidebar({ className }: SidebarProps) {
               variant={pathname === "/modelos" || pathname.startsWith("/modelos/") ? "secondary" : "ghost"}
               className="w-full justify-start"
               asChild
+              onClick={handleLinkClick}
             >
               <Link href="/modelos">
                 <Package className="mr-2 h-4 w-4" />
@@ -68,6 +83,7 @@ export function Sidebar({ className }: SidebarProps) {
               variant={pathname === "/ordenes" || pathname.startsWith("/ordenes/") ? "secondary" : "ghost"}
               className="w-full justify-start"
               asChild
+              onClick={handleLinkClick}
             >
               <Link href="/ordenes">
                 <ClipboardCheck className="mr-2 h-4 w-4" />
@@ -78,6 +94,7 @@ export function Sidebar({ className }: SidebarProps) {
               variant={pathname === "/servicios" || pathname.startsWith("/servicios/") ? "secondary" : "ghost"}
               className="w-full justify-start"
               asChild
+              onClick={handleLinkClick}
             >
               <Link href="/servicios">
                 <CheckCircle className="mr-2 h-4 w-4" />
@@ -88,6 +105,7 @@ export function Sidebar({ className }: SidebarProps) {
               variant={pathname === "/preventivo" || pathname.startsWith("/preventivo/") ? "secondary" : "ghost"}
               className="w-full justify-start"
               asChild
+              onClick={handleLinkClick}
             >
               <Link href="/preventivo">
                 <Tool className="mr-2 h-4 w-4" />
@@ -98,6 +116,7 @@ export function Sidebar({ className }: SidebarProps) {
               variant={pathname === "/checklists" || pathname.startsWith("/checklists/") ? "secondary" : "ghost"}
               className="w-full justify-start"
               asChild
+              onClick={handleLinkClick}
             >
               <Link href="/checklists">
                 <ClipboardCheck className="mr-2 h-4 w-4" />
@@ -108,6 +127,7 @@ export function Sidebar({ className }: SidebarProps) {
               variant={pathname === "/calendario" ? "secondary" : "ghost"}
               className="w-full justify-start"
               asChild
+              onClick={handleLinkClick}
             >
               <Link href="/calendario">
                 <Calendar className="mr-2 h-4 w-4" />
@@ -118,6 +138,7 @@ export function Sidebar({ className }: SidebarProps) {
               variant={pathname === "/inventario" ? "secondary" : "ghost"}
               className="w-full justify-start"
               asChild
+              onClick={handleLinkClick}
             >
               <Link href="/inventario">
                 <ShoppingCart className="mr-2 h-4 w-4" />
@@ -128,6 +149,7 @@ export function Sidebar({ className }: SidebarProps) {
               variant={pathname === "/compras" || pathname.startsWith("/compras/") ? "secondary" : "ghost"}
               className="w-full justify-start"
               asChild
+              onClick={handleLinkClick}
             >
               <Link href="/compras">
                 <CreditCard className="mr-2 h-4 w-4" />
@@ -139,13 +161,18 @@ export function Sidebar({ className }: SidebarProps) {
         <div className="px-4 py-2">
           <h2 className="mb-2 px-2 text-lg font-semibold tracking-tight">Análisis</h2>
           <div className="space-y-1">
-            <Button variant={pathname === "/reportes" ? "secondary" : "ghost"} className="w-full justify-start" asChild>
+            <Button 
+              variant={pathname === "/reportes" ? "secondary" : "ghost"} 
+              className="w-full justify-start" 
+              asChild
+              onClick={handleLinkClick}
+            >
               <Link href="/reportes">
                 <BarChart3 className="mr-2 h-4 w-4" />
                 Reportes
               </Link>
             </Button>
-            <Button variant="ghost" className="w-full justify-start">
+            <Button variant="ghost" className="w-full justify-start" onClick={handleLinkClick}>
               <BarChart3 className="mr-2 h-4 w-4" />
               KPIs
             </Button>
@@ -154,11 +181,11 @@ export function Sidebar({ className }: SidebarProps) {
         <div className="px-4 py-2">
           <h2 className="mb-2 px-2 text-lg font-semibold tracking-tight">Configuración</h2>
           <div className="space-y-1">
-            <Button variant="ghost" className="w-full justify-start">
+            <Button variant="ghost" className="w-full justify-start" onClick={handleLinkClick}>
               <Settings className="mr-2 h-4 w-4" />
               Configuración
             </Button>
-            <Button variant="ghost" className="w-full justify-start">
+            <Button variant="ghost" className="w-full justify-start" onClick={handleLinkClick}>
               <Truck className="mr-2 h-4 w-4" />
               Proveedores
             </Button>
@@ -172,6 +199,11 @@ export function Sidebar({ className }: SidebarProps) {
 export function SidebarWrapper({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const isAuthRoute = pathname?.startsWith("/login") || pathname?.startsWith("/register")
+  const [isOpen, setIsOpen] = useState(false)
+
+  const handleCloseMobileMenu = () => {
+    setIsOpen(false)
+  }
 
   if (isAuthRoute) {
     return <>{children}</>
@@ -198,7 +230,30 @@ export function SidebarWrapper({ children }: { children: React.ReactNode }) {
       <div className="flex flex-col w-full">
         <header className="sticky top-0 z-40 border-b bg-background">
           <div className="container flex h-16 items-center">
-            <div className="md:hidden flex items-center">
+            <Sheet open={isOpen} onOpenChange={setIsOpen}>
+              <SheetTrigger asChild>
+                <Button variant="ghost" size="icon" className="md:hidden">
+                  <Menu className="h-5 w-5" />
+                  <span className="sr-only">Toggle Menu</span>
+                </Button>
+              </SheetTrigger>
+              <SheetContent side="left" className="p-0 w-64" onInteractOutside={() => setIsOpen(false)}>
+                <div className="flex h-16 items-center border-b px-4">
+                  <Link href="/" className="flex items-center gap-2 font-semibold" onClick={() => setIsOpen(false)}>
+                    <Truck className="h-6 w-6" />
+                    <span className="">Mantenimiento</span>
+                  </Link>
+                  <Button variant="ghost" size="icon" className="ml-auto" onClick={() => setIsOpen(false)}>
+                    <X className="h-5 w-5" />
+                    <span className="sr-only">Close Menu</span>
+                  </Button>
+                </div>
+                <div className="overflow-y-auto">
+                  <Sidebar onLinkClick={handleCloseMobileMenu} />
+                </div>
+              </SheetContent>
+            </Sheet>
+            <div className="md:hidden flex items-center ml-2">
               <Truck className="h-6 w-6 mr-2" />
               <span className="font-semibold">Mantenimiento</span>
             </div>
