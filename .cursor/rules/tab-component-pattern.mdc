@@ -1,0 +1,147 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# Tab Component Pattern
+
+## Purpose
+
+Tab components help organize complex forms and data displays into manageable sections. This rule provides guidelines for structuring tab components to maintain modularity and readability.
+
+## When to Use Tab Components
+
+Use tab components when:
+
+1. A form has multiple logical sections
+2. You need to display different categories of information
+3. The total content would exceed 500 lines in a single component
+4. Users need to navigate between related but distinct views
+
+## Tab Component Structure
+
+### Folder Organization
+
+```
+components/
+├── feature/                  
+│   ├── tabs/                 # All tab components for this feature
+│   │   ├── general-tab.tsx   # Individual tab content components 
+│   │   ├── details-tab.tsx
+│   │   └── history-tab.tsx
+│   └── feature-component.tsx # Main component with tab container
+```
+
+### Tab Component Pattern
+
+```tsx
+// Tab content component pattern
+export function FeatureTabContent({
+  // Props required for this tab's functionality
+  control,              // Form control for forms
+  data,                 // Data specific to this tab
+  // Event handlers
+  onAction,             // Any actions this tab might trigger
+  // Additional props
+}) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Tab Title</CardTitle>
+        <CardDescription>Tab description</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {/* Tab content here */}
+      </CardContent>
+      <CardFooter>
+        {/* Optional tab-specific actions */}
+      </CardFooter>
+    </Card>
+  );
+}
+```
+
+### Parent Component Integration
+
+```tsx
+// Parent component with tabs container
+export function FeatureComponent() {
+  // Shared state and handlers
+  
+  return (
+    <Tabs defaultValue="tab1">
+      <TabsList>
+        <TabsTrigger value="tab1">General</TabsTrigger>
+        <TabsTrigger value="tab2">Details</TabsTrigger>
+        <TabsTrigger value="tab3">History</TabsTrigger>
+      </TabsList>
+      
+      <Form {...form}>
+        <form onSubmit={...}>
+          <TabsContent value="tab1">
+            <Tab1Content 
+              control={form.control} 
+              data={tab1Data}
+              onAction={handleTab1Action} 
+            />
+          </TabsContent>
+          
+          <TabsContent value="tab2">
+            <Tab2Content 
+              control={form.control} 
+              data={tab2Data}
+              onAction={handleTab2Action} 
+            />
+          </TabsContent>
+          
+          {/* More tabs as needed */}
+          
+          <div className="flex justify-end space-x-4 mt-6">
+            <Button type="submit">Submit</Button>
+          </div>
+        </form>
+      </Form>
+    </Tabs>
+  );
+}
+```
+
+## State Management in Tab Components
+
+1. **Form State**: Form state should be managed in the parent component
+2. **Tab-specific State**: Local state that's only relevant to one tab should stay in that tab
+3. **Shared State**: State needed across tabs should be lifted to the parent component
+4. **Tab Navigation**: Consider using a state variable for programmatic tab navigation
+
+## Examples from Codebase
+
+### Good Tab Examples
+
+- [components/assets/tabs/general-info-tab.tsx](mdc:components/assets/tabs/general-info-tab.tsx): Clean tab component for asset general information
+- [components/assets/tabs/technical-info-tab.tsx](mdc:components/assets/tabs/technical-info-tab.tsx): Technical information tab with focused responsibility
+- [components/assets/tabs/maintenance-history-tab.tsx](mdc:components/assets/tabs/maintenance-history-tab.tsx): Maintenance history tab with specific functionality
+
+## Best Practices
+
+1. **Consistent Naming**: Use consistent naming patterns like `feature-name-tab.tsx`
+2. **Prop Interfaces**: Define clear TypeScript interfaces for tab component props
+3. **Size Limits**: Each tab component should ideally be under 200-250 lines
+4. **Balanced Tabs**: Try to balance content across tabs for better user experience
+5. **Focused Responsibility**: Each tab should handle one specific aspect of the feature
+6. **Progressive Disclosure**: Use tabs to implement progressive disclosure of complex forms
+7. **Conditional Tabs**: Consider conditionally rendering tabs based on user permissions or feature flags
+
+## Tab Component Testing
+
+- Test tab content rendering
+- Test tab-specific form field validation
+- Test interactions between tabs (if applicable)
+- Test tab navigation (if programmatically controlled)
+
+## Final Considerations
+
+- Ensure tab order is logical and intuitive
+- Consider keyboard navigation and accessibility
+- Use consistent styling across tabs
+- Provide visual feedback for validation errors within tabs
+- Consider mobile responsiveness of tab interfaces

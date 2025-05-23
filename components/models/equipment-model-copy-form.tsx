@@ -236,11 +236,52 @@ export function EquipmentModelCopyForm({ sourceModelId }: { sourceModelId: strin
               });
               
               if (newTasks.length > 0) {
-                const { error: insertTasksError } = await supabase
+                const { data: createdTasks, error: insertTasksError } = await supabase
                   .from('maintenance_tasks')
                   .insert(newTasks)
+                  .select()
                 
                 if (insertTasksError) throw insertTasksError
+                
+                // Create a mapping between old task IDs and new task IDs
+                if (createdTasks && createdTasks.length > 0) {
+                  const taskMapping: Record<string, string> = {}
+                  tasks.forEach((oldTask, index) => {
+                    if (createdTasks[index]) {
+                      taskMapping[oldTask.id] = createdTasks[index].id
+                    }
+                  })
+                  
+                  // Get all task_parts for the source tasks
+                  const taskIds = tasks.map(task => task.id)
+                  const { data: taskParts, error: taskPartsError } = await supabase
+                    .from('task_parts')
+                    .select('*')
+                    .in('task_id', taskIds)
+                  
+                  if (taskPartsError) throw taskPartsError
+                  
+                  if (taskParts && taskParts.length > 0) {
+                    // Create new task_parts mapped to the new tasks
+                    const newTaskParts = taskParts
+                      .filter(part => part.task_id && taskMapping[part.task_id])
+                      .map(part => ({
+                        task_id: taskMapping[part.task_id!],
+                        name: part.name,
+                        part_number: part.part_number,
+                        quantity: part.quantity,
+                        cost: part.cost
+                      }))
+                    
+                    if (newTaskParts.length > 0) {
+                      const { error: insertPartsError } = await supabase
+                        .from('task_parts')
+                        .insert(newTaskParts)
+                      
+                      if (insertPartsError) throw insertPartsError
+                    }
+                  }
+                }
               }
             }
           }

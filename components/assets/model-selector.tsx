@@ -79,10 +79,41 @@ export function ModelSelector({ onModelSelect }: ModelSelectorProps) {
                     <CommandItem
                       key={model.id}
                       value={model.id}
-                      onSelect={(currentValue) => {
+                      onSelect={async (currentValue) => {
                         const selectedModel = models.find((model) => model.id === currentValue) || null
                         setValue(currentValue === value ? "" : currentValue)
-                        onModelSelect(selectedModel)
+                        
+                        if (selectedModel) {
+                          // Cargar los intervalos de mantenimiento para el modelo seleccionado
+                          try {
+                            const response = await fetch(`/api/models/${selectedModel.id}/maintenance-intervals`)
+                            
+                            if (response.ok) {
+                              const maintenanceActivities = await response.json()
+                              
+                              // Actualizar el modelo con los intervalos de mantenimiento
+                              const updatedModel = { ...selectedModel }
+                              updatedModel.maintenanceIntervals = maintenanceActivities.map((activity: any) => ({
+                                hours: activity.interval_value,
+                                type: activity.type,
+                                id: activity.id,
+                                name: activity.name,
+                                description: activity.description || ''
+                              }))
+                              
+                              onModelSelect(updatedModel)
+                            } else {
+                              console.error(`Error fetching maintenance intervals: ${response.status}`)
+                              onModelSelect(selectedModel)
+                            }
+                          } catch (error) {
+                            console.error('Error loading maintenance intervals:', error)
+                            onModelSelect(selectedModel)
+                          }
+                        } else {
+                          onModelSelect(null)
+                        }
+                        
                         setOpen(false)
                       }}
                     >

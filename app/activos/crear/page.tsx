@@ -1,17 +1,13 @@
-import { AssetRegistrationForm } from "@/components/assets/asset-registration-form"
-import { DashboardHeader } from "@/components/dashboard/dashboard-header"
-import { DashboardShell } from "@/components/dashboard/dashboard-shell"
+import { AssetRegistrationFormModular } from "@/components/assets/asset-registration-form-modular"
 
 export default function CreateAssetPage() {
   return (
-    <DashboardShell>
-      <DashboardHeader
-        heading="Registrar Nuevo Activo"
-        text="Complete el formulario para registrar un nuevo activo en el sistema"
-      />
-      <div className="grid gap-8">
-        <AssetRegistrationForm />
+    <div className="container mx-auto py-6">
+      <div className="mb-6">
+        <h1 className="text-3xl font-bold">Registrar Nuevo Activo</h1>
+        <p className="text-muted-foreground">Complete la información del nuevo activo</p>
       </div>
-    </DashboardShell>
+      <AssetRegistrationFormModular />
+    </div>
   )
 }

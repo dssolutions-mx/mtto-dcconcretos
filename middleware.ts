@@ -38,6 +38,9 @@ export async function middleware(request: NextRequest) {
   // Rutas públicas que no requieren autenticación
   const publicRoutes = ["/login", "/register", "/auth/callback"]
   const isPublicRoute = publicRoutes.some((route) => request.nextUrl.pathname.startsWith(route))
+  
+  // Rutas de API que permiten acceso con sesión existente
+  const isApiRoute = request.nextUrl.pathname.startsWith("/api/")
 
   const pathname = request.nextUrl.pathname
 
@@ -54,6 +57,11 @@ export async function middleware(request: NextRequest) {
 
   // Si no hay sesión y no es una ruta pública, redirigir al login
   if (!user && !isPublicRoute) {
+    // Para rutas de API, devolver 401 en lugar de redirigir
+    if (isApiRoute) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
+    
     const redirectUrl = request.nextUrl.clone()
     redirectUrl.pathname = "/login"
     redirectUrl.searchParams.set("redirectedFrom", request.nextUrl.pathname)

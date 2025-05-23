@@ -1,0 +1,91 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# Modular Code Structure Guidelines
+
+## Principles
+
+1. **Single Responsibility**: Each component should do one thing and do it well
+2. **Folder Organization**: Group related components by feature/domain
+3. **Size Limits**: Keep components under 300-400 lines of code
+4. **Prop Simplification**: Use composition over complex prop drilling
+5. **State Management**: Keep state as close as possible to where it's used
+
+## Component Structure
+
+### Folder Organization
+
+```
+components/
+├── feature/                 # Feature-specific components
+│   ├── dialogs/             # Dialogs related to this feature
+│   ├── tabs/                # Tab components 
+│   └── feature-component.tsx # Main component that composes smaller ones
+├── ui/                      # Reusable UI components
+└── shared/                  # Shared components used across features
+```
+
+### Component Size Guidelines
+
+- **UI Components**: 50-150 lines
+- **Container Components**: 150-250 lines
+- **Form Components**: Split into tabs/sections if over 300 lines
+- **Page Components**: Should primarily compose other components, < 100 lines
+
+## State Management
+
+1. **Local State**: Use `useState` for component-specific state
+2. **Form State**: Use libraries like `react-hook-form` to manage form state
+3. **Shared State**: Pass state/handlers via props for closely related components
+4. **Context**: Use React Context for deeply nested component trees
+5. **Global State**: External state management only when truly necessary
+
+## When to Split Components
+
+Split a component when:
+
+1. It exceeds 300-400 lines of code
+2. It manages multiple different responsibilities
+3. Parts of it could be reused elsewhere
+4. It has complex conditional rendering logic
+5. It contains multiple sections or tabs
+
+## Examples from Codebase
+
+### Good Examples
+
+- [components/assets/tabs/general-info-tab.tsx](mdc:components/assets/tabs/general-info-tab.tsx): Focused on a specific section
+- [components/assets/dialogs/photo-upload-dialog.tsx](mdc:components/assets/dialogs/photo-upload-dialog.tsx): Encapsulated dialog functionality
+
+### Needs Improvement
+
+- Any file approaching 500+ lines should be refactored
+- Components with multiple unrelated responsibilities
+- Components with excessive prop drilling (>7-8 props)
+
+## Best Practices
+
+1. **Composability**: Build larger components by composing smaller ones
+2. **Smart vs Dumb**: Separate data/logic handling from presentation
+3. **Selective Rendering**: Use memoization to prevent unnecessary re-renders
+4. **Custom Hooks**: Extract complex logic into reusable hooks
+5. **Interfaces**: Define clear TypeScript interfaces for props
+6. **Documentation**: Add JSDoc comments for complex components
+
+## Testing Considerations
+
+Modular components are easier to test because:
+- They have fewer responsibilities
+- They have clearer inputs and outputs
+- They can be tested in isolation
+
+## Final Checklist
+
+Before committing code, ask:
+- Does this component do one thing well?
+- Could parts of this component be reused elsewhere?
+- Is the component too large (>300-400 lines)?
+- Is the component's purpose clear from its name and structure?
+- Are there clear interfaces for the component's inputs and outputs?

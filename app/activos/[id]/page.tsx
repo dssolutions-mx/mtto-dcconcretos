@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, use } from "react";
 import { useAsset } from "@/hooks/useSupabase";
 import { DashboardHeader } from "@/components/dashboard/dashboard-header";
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
@@ -41,8 +41,10 @@ const PHOTO_CATEGORIES: CategoryMap = {
   'otros': { label: 'Otros', color: 'bg-gray-500', icon: '📷' },
 };
 
-export default function AssetDetailsPage({ params }: { params: { id: string } }) {
-  const assetId = params.id;
+export default function AssetDetailsPage({ params }: { params: Promise<{ id: string }> }) {
+  // Unwrap params using React.use()
+  const resolvedParams = use(params);
+  const assetId = resolvedParams.id;
   
   const { asset: rawAsset, loading, error } = useAsset(assetId);
   const [activeTab, setActiveTab] = useState("general");
@@ -94,12 +96,20 @@ export default function AssetDetailsPage({ params }: { params: { id: string } })
             </Link>
           </Button>
           {!loading && (
-            <Button asChild>
-              <Link href={`/activos/${assetId}/mantenimiento`}>
-                <Wrench className="mr-2 h-4 w-4" />
-                Mantenimiento
-              </Link>
-            </Button>
+            <>
+              <Button variant="outline" asChild>
+                <Link href={`/activos/${assetId}/editar`}>
+                  <Edit className="mr-2 h-4 w-4" />
+                  Editar
+                </Link>
+              </Button>
+              <Button asChild>
+                <Link href={`/activos/${assetId}/mantenimiento`}>
+                  <Wrench className="mr-2 h-4 w-4" />
+                  Mantenimiento
+                </Link>
+              </Button>
+            </>
           )}
         </div>
       </DashboardHeader>

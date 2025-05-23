@@ -286,6 +286,23 @@ export interface EquipmentModelWithIntervals extends EquipmentModel {
   maintenanceIntervals?: {
     hours: number;
     type: string;
+    id: string;
+    name: string;
+    description: string;
+    tasks?: {
+      id: string;
+      description: string;
+      type: string;
+      estimatedTime: number;
+      requiresSpecialist: boolean;
+      parts: {
+        id: string;
+        name: string;
+        partNumber: string;
+        quantity: number;
+        cost?: number;
+      }[];
+    }[];
   }[];
 }
 

@@ -1,0 +1,112 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# Dialog Component Extraction
+
+## Purpose
+
+Dialog extraction is crucial for maintaining modularity in larger React applications. This rule provides guidelines for identifying when to extract dialogs into separate components and how to structure them properly.
+
+## When to Extract Dialog Components
+
+Extract a dialog component when:
+
+1. The dialog contains complex forms or multiple input fields
+2. The dialog is used in multiple places
+3. The dialog's content is longer than 50-70 lines
+4. The dialog has its own state management needs
+5. The dialog handles complex user interactions
+
+## How to Structure Dialog Components
+
+### Folder Organization
+
+```
+components/
+├── feature/                  
+│   ├── dialogs/               # All dialogs related to this feature
+│   │   ├── create-dialog.tsx  # Individual dialog components
+│   │   └── edit-dialog.tsx    
+│   └── feature-component.tsx  
+```
+
+### Dialog Component Pattern
+
+```tsx
+// Dialog component template
+export function FeatureDialog({
+  open,                      // Required
+  onOpenChange,              // Required
+  initialData,               // Optional, for edit dialogs
+  onSubmit,                  // Optional, callback function
+  // Other props as needed
+}) {
+  // Local state management
+  const [localState, setLocalState] = useState(initialData || {});
+  
+  // Dialog content and handlers
+  
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Title</DialogTitle>
+          <DialogDescription>Description</DialogDescription>
+        </DialogHeader>
+        
+        {/* Dialog content here */}
+        
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button onClick={handleSubmit}>
+            Submit
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+```
+
+## State Management in Dialogs
+
+1. **Local State**: Use `useState` for form fields and UI state
+2. **Form State**: Consider `react-hook-form` for complex forms
+3. **Parent State**: Use callbacks (`onSubmit`, `onCancel`) to communicate with parent
+
+## Examples from Codebase
+
+### Good Dialog Examples
+
+- [components/assets/dialogs/photo-upload-dialog.tsx](mdc:components/assets/dialogs/photo-upload-dialog.tsx): Properly encapsulated dialog functionality
+- The maintenance task dialog in the asset registration form
+
+## Best Practices
+
+1. **Single Responsibility**: Each dialog should handle one specific task
+2. **Controlled Component**: Always make dialogs controlled (open/onOpenChange props)
+3. **Careful with Context**: Don't overuse context in dialogs
+4. **Cache Form State**: For large forms, consider caching state between dialog opens
+5. **Loading States**: Include loading states for async operations
+6. **Error Handling**: Handle errors gracefully within the dialog
+7. **Accessibility**: Ensure dialogs are fully accessible (focus management, ARIA)
+
+## Dialog Testing
+
+- Test dialog open/close behavior
+- Test form submission
+- Test validation logic
+- Test error states
+
+## Dialog Size Guideline
+
+A dialog component should ideally not exceed 200-250 lines of code. If it does:
+
+1. Split into multiple dialogs if the dialog has multiple steps
+2. Extract form sections into separate components
+3. Move complex logic to custom hooks
+4. Consider wizard pattern for multi-step processes

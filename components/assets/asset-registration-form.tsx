@@ -272,6 +272,12 @@ interface InsuranceDocument {
   url?: string
 }
 
+interface PhotoWithDescription {
+  file: File
+  preview: string
+  description: string
+}
+
 export function AssetRegistrationForm() {
   const router = useRouter()
   const [selectedModel, setSelectedModel] = useState<EquipmentModelWithIntervals | null>(null)
@@ -294,7 +300,8 @@ export function AssetRegistrationForm() {
   const [newPartNumber, setNewPartNumber] = useState("")
   const [newPartQuantity, setNewPartQuantity] = useState(1)
   const [newPartCost, setNewPartCost] = useState("")
-  const [uploadedPhotos, setUploadedPhotos] = useState<{ file: File; preview: string }[]>([])
+  const [uploadedPhotos, setUploadedPhotos] = useState<PhotoWithDescription[]>([])
+  const [currentPhotoDescription, setCurrentPhotoDescription] = useState("")
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [historyHours, setHistoryHours] = useState("")
   const [historyFindings, setHistoryFindings] = useState("")
@@ -681,8 +688,10 @@ export function AssetRegistrationForm() {
           {
             file,
             preview: reader.result as string,
+            description: currentPhotoDescription || `Foto ${uploadedPhotos.length + 1}`,
           },
         ])
+        setCurrentPhotoDescription("")
       }
 
       reader.readAsDataURL(file)
@@ -1427,22 +1436,44 @@ export function AssetRegistrationForm() {
 
                 <div className="space-y-4">
                   <Label>Fotografías del Equipo</Label>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     {uploadedPhotos.map((photo, index) => (
                       <div key={index} className="relative border rounded-lg overflow-hidden">
                         <img
                           src={photo.preview || "/placeholder.svg"}
-                          alt={`Foto ${index + 1}`}
+                          alt={photo.description || `Foto ${index + 1}`}
                           className="w-full h-40 object-cover"
                         />
-                        <Button
-                          variant="destructive"
-                          size="icon"
-                          className="absolute top-2 right-2 h-8 w-8 rounded-full"
-                          onClick={() => removePhoto(index)}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                        <div className="absolute bottom-0 left-0 right-0 bg-black bg-opacity-75 text-white p-2">
+                          <p className="text-xs truncate" title={photo.description}>
+                            {photo.description || `Foto ${index + 1}`}
+                          </p>
+                        </div>
+                        <div className="absolute top-2 right-2 flex gap-1">
+                          <Button
+                            variant="secondary"
+                            size="icon"
+                            className="h-8 w-8 rounded-full bg-white/90 hover:bg-white"
+                            onClick={() => {
+                              const newDescription = prompt("Ingrese nueva descripción:", photo.description);
+                              if (newDescription !== null) {
+                                const updatedPhotos = [...uploadedPhotos];
+                                updatedPhotos[index] = { ...photo, description: newDescription };
+                                setUploadedPhotos(updatedPhotos);
+                              }
+                            }}
+                          >
+                            <Pencil className="h-4 w-4 text-gray-600" />
+                          </Button>
+                          <Button
+                            variant="destructive"
+                            size="icon"
+                            className="h-8 w-8 rounded-full"
+                            onClick={() => removePhoto(index)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
                       </div>
                     ))}
                     <div
@@ -2688,19 +2719,40 @@ export function AssetRegistrationForm() {
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="photoUpload">Seleccionar archivo</Label>
-              <Input id="photoUpload" type="file" accept="image/*" onChange={handlePhotoUpload} />
+              <Label htmlFor="photoDescription">Descripción de la fotografía</Label>
+              <Input 
+                id="photoDescription" 
+                placeholder="Ej: Vista frontal del equipo, Panel de control, Estado actual..." 
+                value={currentPhotoDescription}
+                onChange={(e) => setCurrentPhotoDescription(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">
+                Ingrese una descripción que ayude a identificar qué muestra esta fotografía
+              </p>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="photoDescription">Descripción</Label>
-              <Input id="photoDescription" placeholder="Ej: Vista frontal del equipo" />
+              <Label htmlFor="photoUpload">Seleccionar archivo</Label>
+              <Input id="photoUpload" type="file" accept="image/*" onChange={handlePhotoUpload} />
+              <p className="text-xs text-muted-foreground">
+                Formatos admitidos: JPG, PNG, GIF. Tamaño máximo: 10MB
+              </p>
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setPhotoUploadOpen(false)}>
+            <Button variant="outline" onClick={() => {
+              setPhotoUploadOpen(false)
+              setCurrentPhotoDescription("")
+            }}>
               Cancelar
             </Button>
-            <Button onClick={() => setPhotoUploadOpen(false)}>Subir fotografía</Button>
+            <Button 
+              disabled={!currentPhotoDescription.trim()} 
+              onClick={() => {
+                document.getElementById("photoUpload")?.click()
+              }}
+            >
+              Continuar con la fotografía
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
