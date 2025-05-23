@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { ArrowLeft, CalendarCheck, CheckCircle, Clock, CalendarIcon, Plus, Trash2, ShoppingCart } from "lucide-react"
+import { ArrowLeft, CalendarCheck, CheckCircle, Clock, CalendarIcon, Plus, Trash2, ShoppingCart, Camera, FileText } from "lucide-react"
 import { createClient } from "@/lib/supabase"
 import { Separator } from "@/components/ui/separator"
 import { toast } from "@/components/ui/use-toast"
@@ -23,6 +23,8 @@ import { Calendar } from "@/components/ui/calendar"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { cn } from "@/lib/utils"
 import { Switch } from "@/components/ui/switch"
+import { EvidenceUpload, type EvidencePhoto } from "@/components/ui/evidence-upload"
+import { Badge } from "@/components/ui/badge"
 
 // Date picker component
 function DatePicker({ date, setDate }: { date: Date | undefined, setDate: (date: Date | undefined) => void }) {
@@ -102,6 +104,8 @@ export function WorkOrderCompletionForm({ workOrderId, initialData }: WorkOrderC
   const [isLoading, setIsLoading] = useState(false)
   const [workOrder, setWorkOrder] = useState<any>(null)
   const [requiredParts, setRequiredParts] = useState<any[]>([])
+  const [completionEvidence, setCompletionEvidence] = useState<EvidencePhoto[]>([])
+  const [showEvidenceDialog, setShowEvidenceDialog] = useState(false)
 
   // Default form values
   const defaultValues: Partial<WorkOrderCompletionFormValues> = {
@@ -364,19 +368,26 @@ export function WorkOrderCompletionForm({ workOrderId, initialData }: WorkOrderC
         parts_used: formattedParts
       };
       
-      // Preparar datos para la API - ajustar según lo que el backend realmente acepta
-      const formattedData = {
-        workOrderId,
-        completionData: {
-          resolution_details: updatedData.resolution_details,
-          technician_notes: updatedData.technician_notes || '',
-          downtime_hours: updatedData.downtime_hours || 0,
-          labor_hours: updatedData.labor_hours || 0,
-          labor_cost: updatedData.labor_cost || 0,
-          completion_date: updatedData.completion_date.toISOString(),
-          completion_time: updatedData.completion_time,
-          parts_used: formattedParts // Incluir los repuestos formateados
-        },
+              // Preparar datos para la API - ajustar según lo que el backend realmente acepta
+        const formattedData = {
+          workOrderId,
+          completionData: {
+            resolution_details: updatedData.resolution_details,
+            technician_notes: updatedData.technician_notes || '',
+            downtime_hours: updatedData.downtime_hours || 0,
+            labor_hours: updatedData.labor_hours || 0,
+            labor_cost: updatedData.labor_cost || 0,
+            completion_date: updatedData.completion_date.toISOString(),
+            completion_time: updatedData.completion_time,
+            parts_used: formattedParts, // Incluir los repuestos formateados
+            completion_photos: completionEvidence.map(evidence => ({
+              url: evidence.url,
+              description: evidence.description,
+              category: evidence.category,
+              uploaded_at: evidence.uploaded_at,
+              bucket_path: evidence.bucket_path
+            }))
+          },
         maintenanceHistoryData: workOrder?.asset?.id ? {
           asset_id: workOrder.asset.id,
           date: updatedData.completion_date.toISOString(),
@@ -912,6 +923,77 @@ export function WorkOrderCompletionForm({ workOrderId, initialData }: WorkOrderC
                 </div>
               )}
             </div>
+
+            <Separator />
+
+            {/* Evidence Section */}
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-md font-medium">Evidencia de Finalización</h3>
+                  <p className="text-sm text-muted-foreground">
+                    Suba fotografías y documentos que demuestren la finalización exitosa del trabajo
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setShowEvidenceDialog(true)}
+                  className="flex items-center gap-2"
+                >
+                  <Camera className="h-4 w-4" />
+                  Agregar Evidencia
+                </Button>
+              </div>
+
+              {completionEvidence.length > 0 && (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {completionEvidence.map((evidence) => (
+                    <Card key={evidence.id} className="overflow-hidden">
+                      <div className="aspect-video relative bg-muted">
+                        {evidence.url.includes('image') || evidence.url.match(/\.(jpeg|jpg|gif|png|webp)$/i) ? (
+                          <img
+                            src={evidence.url}
+                            alt={evidence.description}
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center">
+                            <FileText className="h-8 w-8 text-muted-foreground" />
+                          </div>
+                        )}
+                        <Badge 
+                          variant="secondary" 
+                          className="absolute top-2 left-2 text-xs"
+                        >
+                          {evidence.category}
+                        </Badge>
+                      </div>
+                      <CardContent className="p-3">
+                        <p className="text-sm font-medium truncate">
+                          {evidence.description}
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {new Date(evidence.uploaded_at).toLocaleDateString()}
+                        </p>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              )}
+
+              {completionEvidence.length === 0 && (
+                <div className="border-2 border-dashed border-muted-foreground/25 rounded-lg p-8 text-center">
+                  <Camera className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
+                  <p className="text-sm text-muted-foreground">
+                    No se ha agregado evidencia de finalización
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Se recomienda incluir fotos del trabajo completado
+                  </p>
+                </div>
+              )}
+            </div>
             
             <CardFooter className="px-0 pt-4 flex flex-col">
               <div className="flex justify-end gap-2 w-full">
@@ -951,6 +1033,17 @@ export function WorkOrderCompletionForm({ workOrderId, initialData }: WorkOrderC
           </form>
         </Form>
       </CardContent>
+
+      <EvidenceUpload
+        open={showEvidenceDialog}
+        onOpenChange={setShowEvidenceDialog}
+        evidence={completionEvidence}
+        setEvidence={setCompletionEvidence}
+        context="completion"
+        workOrderId={workOrderId}
+        title="Evidencia de Finalización"
+        description="Suba fotografías del trabajo completado, partes reemplazadas, recibos y cualquier documentación relevante"
+      />
     </Card>
   )
 } 

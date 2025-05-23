@@ -169,6 +169,11 @@ export async function POST(request: Request) {
       updateFields.used_parts = formattedPartsUsed;
     }
     
+    // Add completion photos if provided
+    if (completionData.completion_photos && Array.isArray(completionData.completion_photos)) {
+      updateFields.completion_photos = JSON.stringify(completionData.completion_photos);
+    }
+    
     console.log("API: Campos a actualizar en work_orders:", JSON.stringify(updateFields));
     
     try {

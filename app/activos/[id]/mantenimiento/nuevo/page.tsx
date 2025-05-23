@@ -13,7 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import { Badge } from "@/components/ui/badge";
-import { CalendarIcon, ArrowLeft, PlusCircle, Minus, Check, Loader2, Wrench, Clock, AlertTriangle } from "lucide-react";
+import { CalendarIcon, ArrowLeft, PlusCircle, Minus, Check, Loader2, Wrench, Clock, AlertTriangle, Camera, FileText } from "lucide-react";
 import { format, differenceInDays } from "date-fns";
 import { es } from "date-fns/locale";
 import { cn } from "@/lib/utils";
@@ -21,6 +21,8 @@ import Link from "next/link";
 import { useToast } from "@/components/ui/use-toast";
 import { useAsset } from "@/hooks/useSupabase";
 import { createClient } from "@/lib/supabase";
+import { EvidenceUpload, type EvidencePhoto } from "@/components/ui/evidence-upload";
+import { Separator } from "@/components/ui/separator";
 
 interface MaintenancePart {
   name: string;
@@ -106,6 +108,10 @@ export default function NewMaintenancePage({ params }: NewMaintenancePageProps) 
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<Error | null>(null);
+  
+  // Evidence state
+  const [maintenanceEvidence, setMaintenanceEvidence] = useState<EvidencePhoto[]>([]);
+  const [showEvidenceDialog, setShowEvidenceDialog] = useState(false);
   
   // Cargar el plan de mantenimiento si se proporcionó un ID
   useEffect(() => {
@@ -319,7 +325,14 @@ export default function NewMaintenancePage({ params }: NewMaintenancePageProps) 
         estimated_duration: laborHours ? Number(laborHours) : 0,
         priority: 'Media',
         status: 'Pendiente',
-        maintenance_plan_id: planId || null
+        maintenance_plan_id: planId || null,
+        creation_photos: maintenanceEvidence.length > 0 ? maintenanceEvidence.map(evidence => ({
+          url: evidence.url,
+          description: evidence.description,
+          category: evidence.category,
+          uploaded_at: evidence.uploaded_at,
+          bucket_path: evidence.bucket_path
+        })) : []
       };
 
       const { data: workOrderResult, error: workOrderError } = await supabase
@@ -812,6 +825,85 @@ export default function NewMaintenancePage({ params }: NewMaintenancePageProps) 
             </div>
           </CardContent>
         </Card>
+
+        {/* Evidence Section */}
+        <Card className="mt-6">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Camera className="h-5 w-5" />
+              Evidencia del Mantenimiento
+            </CardTitle>
+            <CardDescription>
+              Suba fotografías que documenten el proceso de mantenimiento y el estado del equipo
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-muted-foreground">
+                  Incluya fotos del estado inicial, proceso de trabajo, partes reemplazadas y estado final
+                </p>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setShowEvidenceDialog(true)}
+                className="flex items-center gap-2"
+              >
+                <Camera className="h-4 w-4" />
+                Agregar Evidencia
+              </Button>
+            </div>
+
+            {maintenanceEvidence.length > 0 && (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {maintenanceEvidence.map((evidence) => (
+                  <Card key={evidence.id} className="overflow-hidden">
+                    <div className="aspect-video relative bg-muted">
+                      {evidence.url.includes('image') || evidence.url.match(/\.(jpeg|jpg|gif|png|webp)$/i) ? (
+                        <img
+                          src={evidence.url}
+                          alt={evidence.description}
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center">
+                          <FileText className="h-8 w-8 text-muted-foreground" />
+                        </div>
+                      )}
+                      <Badge 
+                        variant="secondary" 
+                        className="absolute top-2 left-2 text-xs"
+                      >
+                        {evidence.category}
+                      </Badge>
+                    </div>
+                    <CardContent className="p-3">
+                      <p className="text-sm font-medium truncate">
+                        {evidence.description}
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {new Date(evidence.uploaded_at).toLocaleDateString()}
+                      </p>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+
+            {maintenanceEvidence.length === 0 && (
+              <div className="border-2 border-dashed border-muted-foreground/25 rounded-lg p-8 text-center">
+                <Camera className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
+                <p className="text-sm text-muted-foreground">
+                  No se ha agregado evidencia de mantenimiento
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Opcional: Agregue fotos para documentar el proceso
+                </p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
         
         <Card className="mt-6">
           <CardFooter className="flex justify-between pt-6">
@@ -842,6 +934,17 @@ export default function NewMaintenancePage({ params }: NewMaintenancePageProps) 
           </CardFooter>
         </Card>
       </form>
+
+      <EvidenceUpload
+        open={showEvidenceDialog}
+        onOpenChange={setShowEvidenceDialog}
+        evidence={maintenanceEvidence}
+        setEvidence={setMaintenanceEvidence}
+        context="maintenance"
+        assetId={assetId}
+        title="Evidencia de Mantenimiento"
+        description="Suba fotografías del proceso de mantenimiento, estado del equipo antes/después, partes reemplazadas y cualquier documentación relevante"
+      />
     </DashboardShell>
   );
 } 

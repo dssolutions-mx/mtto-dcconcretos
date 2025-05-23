@@ -14,11 +14,14 @@ import { Calendar } from "@/components/ui/calendar"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
-import { CalendarIcon, Save, Plus, Trash2 } from "lucide-react"
+import { CalendarIcon, Save, Plus, Trash2, Camera, FileText } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { createClient } from "@/lib/supabase"
 import { InsertWorkOrder, MaintenanceType, ServiceOrderPriority, WorkOrderStatus, Profile, PurchaseOrderItem } from "@/types"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { EvidenceUpload, type EvidencePhoto } from "@/components/ui/evidence-upload"
+import { Separator } from "@/components/ui/separator"
+import { Badge } from "@/components/ui/badge"
 
 // Simpler types for select dropdowns
 interface AssetForSelect {
@@ -62,6 +65,10 @@ export function WorkOrderForm() {
     unit_price: 0,
     total_price: 0
   })
+
+  // Add state for evidence
+  const [creationEvidence, setCreationEvidence] = useState<EvidencePhoto[]>([])
+  const [showEvidenceDialog, setShowEvidenceDialog] = useState(false)
 
   useEffect(() => {
     const fetchData = async () => {
@@ -275,7 +282,14 @@ export function WorkOrderForm() {
           status: WorkOrderStatus.Pending,
           checklist_id: formData.checklist_id || null,
           required_parts: requiredParts.length > 0 ? JSON.parse(JSON.stringify(requiredParts)) : null, // Convert to JSON
-          estimated_cost: requiredParts.reduce((total, part) => total + part.total_price, 0).toString() // Calculate estimated cost
+          estimated_cost: requiredParts.reduce((total, part) => total + part.total_price, 0).toString(), // Calculate estimated cost
+          creation_photos: creationEvidence.length > 0 ? creationEvidence.map(evidence => ({
+            url: evidence.url,
+            description: evidence.description,
+            category: evidence.category,
+            uploaded_at: evidence.uploaded_at,
+            bucket_path: evidence.bucket_path
+          })) : []
         };
         
         console.log("Submitting work order:", workOrderData);
@@ -600,6 +614,82 @@ export function WorkOrderForm() {
         </CardContent>
       </Card>
 
+      {/* Evidence Section */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Evidencia Inicial</CardTitle>
+          <CardDescription>
+            Suba fotografías que documenten el estado inicial del equipo y el problema identificado
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-muted-foreground">
+                Incluya fotos del problema, estado del equipo, herramientas necesarias, etc.
+              </p>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setShowEvidenceDialog(true)}
+              className="flex items-center gap-2"
+            >
+              <Camera className="h-4 w-4" />
+              Agregar Evidencia
+            </Button>
+          </div>
+
+          {creationEvidence.length > 0 && (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {creationEvidence.map((evidence) => (
+                <Card key={evidence.id} className="overflow-hidden">
+                  <div className="aspect-video relative bg-muted">
+                    {evidence.url.includes('image') || evidence.url.match(/\.(jpeg|jpg|gif|png|webp)$/i) ? (
+                      <img
+                        src={evidence.url}
+                        alt={evidence.description}
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center">
+                        <FileText className="h-8 w-8 text-muted-foreground" />
+                      </div>
+                    )}
+                    <Badge 
+                      variant="secondary" 
+                      className="absolute top-2 left-2 text-xs"
+                    >
+                      {evidence.category}
+                    </Badge>
+                  </div>
+                  <CardContent className="p-3">
+                    <p className="text-sm font-medium truncate">
+                      {evidence.description}
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {new Date(evidence.uploaded_at).toLocaleDateString()}
+                    </p>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+
+          {creationEvidence.length === 0 && (
+            <div className="border-2 border-dashed border-muted-foreground/25 rounded-lg p-8 text-center">
+              <Camera className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
+              <p className="text-sm text-muted-foreground">
+                No se ha agregado evidencia inicial
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Opcional: Agregue fotos para documentar el estado inicial
+              </p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
       {error && (
         <Card className="border-red-500 bg-red-50">
           <CardContent className="pt-6">
@@ -607,6 +697,17 @@ export function WorkOrderForm() {
           </CardContent>
         </Card>
       )}
+
+      <EvidenceUpload
+        open={showEvidenceDialog}
+        onOpenChange={setShowEvidenceDialog}
+        evidence={creationEvidence}
+        setEvidence={setCreationEvidence}
+        context="creation"
+        assetId={formData.asset_id || undefined}
+        title="Evidencia Inicial"
+        description="Suba fotografías del problema identificado, estado del equipo y cualquier documentación relevante"
+      />
 
       <CardFooter className="flex justify-end space-x-2 fixed bottom-0 right-0 w-full bg-background p-4 border-t md:relative md:bg-transparent md:p-0 md:border-none">
         <Button type="button" variant="outline" onClick={() => router.back()} disabled={isLoading}>Cancelar</Button>

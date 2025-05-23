@@ -13,7 +13,7 @@ import Link from "next/link"
 import { use } from "react"
 import { 
   ArrowLeft, ShoppingCart, CalendarCheck, CheckCircle, Edit, Clock, 
-  User, Wrench, Plus, CalendarDays, ChevronDown 
+  User, Wrench, Plus, CalendarDays, ChevronDown, Camera, FileText 
 } from "lucide-react"
 import { 
   MaintenanceType, 
@@ -24,10 +24,14 @@ import {
   Profile,
   MaintenanceHistory  
 } from "@/types"
+import { EvidenceViewer, type EvidenceItem } from "@/components/ui/evidence-viewer"
 
 // Extended type for work order with completed_at field
 interface ExtendedWorkOrder extends WorkOrderComplete {
   completed_at?: string;
+  creation_photos?: string | EvidenceItem[];
+  completion_photos?: string | EvidenceItem[];
+  progress_photos?: string | EvidenceItem[];
 }
 
 export const metadata: Metadata = {
@@ -201,6 +205,27 @@ async function WorkOrderDetailsContent({ id }: { id: string }) {
   const totalPartsCost = requiredParts.length > 0
     ? requiredParts.reduce((total: number, part: any) => total + (part.total_price || 0), 0)
     : 0
+    
+  // Parse evidence photos
+  const creationPhotos: EvidenceItem[] = extendedWorkOrder.creation_photos 
+    ? typeof extendedWorkOrder.creation_photos === 'string'
+      ? JSON.parse(extendedWorkOrder.creation_photos)
+      : extendedWorkOrder.creation_photos
+    : []
+    
+  const completionPhotos: EvidenceItem[] = extendedWorkOrder.completion_photos 
+    ? typeof extendedWorkOrder.completion_photos === 'string'
+      ? JSON.parse(extendedWorkOrder.completion_photos)
+      : extendedWorkOrder.completion_photos
+    : []
+    
+  const progressPhotos: EvidenceItem[] = extendedWorkOrder.progress_photos 
+    ? typeof extendedWorkOrder.progress_photos === 'string'
+      ? JSON.parse(extendedWorkOrder.progress_photos)
+      : extendedWorkOrder.progress_photos
+    : []
+    
+  const allEvidence = [...creationPhotos, ...progressPhotos, ...completionPhotos]
     
   // Fetch additional expenses if the work order is completed
   let additionalExpenses = [];
@@ -414,6 +439,63 @@ async function WorkOrderDetailsContent({ id }: { id: string }) {
                     </Button>
                   </div>
                 )}
+              </CardContent>
+            </Card>
+          )}
+          
+          {/* Evidence Section */}
+          {allEvidence.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Camera className="h-5 w-5" />
+                  Evidencia Fotográfica
+                </CardTitle>
+                <CardDescription>
+                  Documentación visual del proceso de trabajo
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-6">
+                  {creationPhotos.length > 0 && (
+                    <div>
+                      <h4 className="text-sm font-medium mb-3 text-muted-foreground">
+                        Evidencia de Creación ({creationPhotos.length})
+                      </h4>
+                      <EvidenceViewer 
+                        evidence={creationPhotos} 
+                        showCategories={true}
+                        maxItems={6}
+                      />
+                    </div>
+                  )}
+                  
+                  {progressPhotos.length > 0 && (
+                    <div>
+                      <h4 className="text-sm font-medium mb-3 text-muted-foreground">
+                        Evidencia de Progreso ({progressPhotos.length})
+                      </h4>
+                      <EvidenceViewer 
+                        evidence={progressPhotos} 
+                        showCategories={true}
+                        maxItems={6}
+                      />
+                    </div>
+                  )}
+                  
+                  {completionPhotos.length > 0 && (
+                    <div>
+                      <h4 className="text-sm font-medium mb-3 text-muted-foreground">
+                        Evidencia de Finalización ({completionPhotos.length})
+                      </h4>
+                      <EvidenceViewer 
+                        evidence={completionPhotos} 
+                        showCategories={true}
+                        maxItems={6}
+                      />
+                    </div>
+                  )}
+                </div>
               </CardContent>
             </Card>
           )}

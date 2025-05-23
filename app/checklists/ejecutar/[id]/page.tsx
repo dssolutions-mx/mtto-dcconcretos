@@ -5,8 +5,8 @@ import { ChecklistExecution } from "@/components/checklists/checklist-execution"
 import { ArrowLeft } from "lucide-react"
 import Link from "next/link"
 
-export default async function ExecuteChecklistPage({ params }: { params: { id: string } }) {
-  const id = params.id;
+export default async function ExecuteChecklistPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
 
   return (
     <DashboardShell>

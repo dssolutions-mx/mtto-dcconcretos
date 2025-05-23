@@ -148,19 +148,12 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
 
   const handlePhotoUpload = async (itemId: string, file: File) => {
     try {
-      // En una aplicación real, subiríamos la foto a Supabase Storage
-      // Aquí temporalmente usamos URL.createObjectURL para simular
-      const photoUrl = URL.createObjectURL(file)
-      setItemPhotos((prev) => ({ ...prev, [itemId]: photoUrl }))
-      
-      // Implementación real (descomentada cuando se implemente el almacenamiento)
-      /*
       const supabase = createBrowserClient(
         process.env.NEXT_PUBLIC_SUPABASE_URL!,
         process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
       )
       
-      const fileName = `checklist_${id}_item_${itemId}_${Date.now()}.jpg`
+      const fileName = `checklist_${id}_item_${itemId}_${Date.now()}.${file.name.split('.').pop()}`
       
       const { data, error } = await supabase.storage
         .from('checklist-photos')
@@ -172,8 +165,12 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
         .from('checklist-photos')
         .getPublicUrl(fileName)
       
-      setItemPhotos((prev) => ({ ...prev, [itemId]: urlData.publicUrl }))
-      */
+      setItemPhotos((prev) => ({ 
+        ...prev, 
+        [itemId]: urlData.publicUrl 
+      }))
+      
+      toast.success('Foto subida exitosamente')
     } catch (error: any) {
       console.error('Error uploading photo:', error)
       toast.error(`Error al subir la foto: ${error.message}`)
@@ -222,7 +219,7 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
         body: JSON.stringify({
           schedule_id: id,
           completed_items: completedItems,
-          technician: checklist.technicianId,
+          technician: checklist.technician || 'Técnico',
           notes: notes,
           signature: signature
         }),
@@ -288,7 +285,18 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
           asset_id: checklist.assetId,
           description: `Acciones correctivas generadas desde checklist: ${checklist.name}`,
           issues: itemsWithIssues,
-          checklist_id: id
+          checklist_id: id,
+          creation_photos: itemsWithIssues
+            .filter(item => item.photo)
+            .map(item => ({
+              url: item.photo!,
+              description: `Evidencia de problema: ${item.description}`,
+              category: item.status === 'fail' ? 'problema_cumplimiento' : 'elemento_marcado',
+              uploaded_at: new Date().toISOString(),
+              bucket_path: item.photo!.includes('checklist-photos') ? 
+                item.photo!.split('/').pop() || '' : 
+                `checklist-photos/${item.id}`
+            }))
         }),
       })
       
@@ -298,7 +306,7 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
         throw new Error(result.error)
       }
       
-      toast.success('Orden de trabajo correctiva creada exitosamente')
+      toast.success(result.data.message || 'Orden de trabajo correctiva creada exitosamente')
       
       // Redirigir a la página de órdenes de trabajo
       router.push(`/ordenes/${result.data.id}`)
