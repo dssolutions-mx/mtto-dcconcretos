@@ -19,7 +19,6 @@ import {
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
 import Link from "next/link"
-import { ServiceOrderPrintReport } from "./service-order-print-report"
 
 interface ServiceOrderDetailProps {
   id: string
@@ -71,8 +70,6 @@ export function ServiceOrderDetail({ id }: ServiceOrderDetailProps) {
   const [serviceOrder, setServiceOrder] = useState<ServiceOrderData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [showPrintView, setShowPrintView] = useState(false)
-  const [showPrintReport, setShowPrintReport] = useState(false)
   const router = useRouter()
 
   useEffect(() => {
@@ -246,15 +243,586 @@ export function ServiceOrderDetail({ id }: ServiceOrderDetailProps) {
   }
 
   const handlePrint = () => {
-    setShowPrintView(true)
-    setTimeout(() => {
-      window.print()
-      setShowPrintView(false)
-    }, 100)
+    window.print()
   }
 
   const handleDetailedPrint = () => {
-    setShowPrintReport(true)
+    // Crear una nueva ventana para el reporte
+    const printWindow = window.open('', '_blank', 'width=800,height=600')
+    
+    if (!printWindow) {
+      alert('Por favor permita las ventanas emergentes para imprimir el reporte')
+      return
+    }
+
+    // Generar el HTML del reporte
+    const reportHTML = generatePrintReportHTML()
+    
+    printWindow.document.write(reportHTML)
+    printWindow.document.close()
+    
+    // Esperar a que se cargue y luego imprimir
+    printWindow.onload = () => {
+      setTimeout(() => {
+        printWindow.print()
+        printWindow.close()
+      }, 500)
+    }
+  }
+
+  const generatePrintReportHTML = () => {
+    return `
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reporte de Servicio - ${serviceOrder?.order_id}</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.4;
+            color: #333;
+            background: white;
+        }
+        
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            border-bottom: 2px solid #333;
+            padding-bottom: 20px;
+        }
+        
+        .header-content {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+        
+        .logo {
+            width: 60px;
+            height: 60px;
+            background: #f0f0f0;
+            border: 1px solid #ccc;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 10px;
+            color: #666;
+        }
+        
+        .title {
+            flex: 1;
+            margin: 0 20px;
+        }
+        
+        .title h1 {
+            font-size: 24px;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        
+        .title p {
+            font-size: 14px;
+            color: #666;
+        }
+        
+        .order-number {
+            text-align: right;
+        }
+        
+        .order-number p:first-child {
+            font-size: 10px;
+            color: #666;
+        }
+        
+        .order-number p:last-child {
+            font-size: 16px;
+            font-weight: bold;
+        }
+        
+        .summary {
+            background: #e3f2fd;
+            padding: 15px;
+            margin-bottom: 25px;
+            border-left: 4px solid #2196f3;
+            border-radius: 4px;
+        }
+        
+        .summary h3 {
+            font-size: 16px;
+            margin-bottom: 10px;
+        }
+        
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        
+        .section {
+            margin-bottom: 25px;
+        }
+        
+        .section h3 {
+            font-size: 16px;
+            border-bottom: 1px solid #333;
+            padding-bottom: 5px;
+            margin-bottom: 15px;
+        }
+        
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+            font-size: 12px;
+        }
+        
+        .info-row .label {
+            font-weight: bold;
+        }
+        
+        .work-details {
+            margin-bottom: 25px;
+        }
+        
+        .work-box {
+            border: 1px solid #ddd;
+            padding: 10px;
+            margin-bottom: 10px;
+            border-radius: 4px;
+        }
+        
+        .work-box.description {
+            background: #f9f9f9;
+        }
+        
+        .work-box.findings {
+            background: #e8f4f8;
+        }
+        
+        .work-box.actions {
+            background: #e8f8e8;
+        }
+        
+        .work-box h4 {
+            font-size: 12px;
+            margin-bottom: 5px;
+            color: #666;
+        }
+        
+        .parts-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 15px 0;
+        }
+        
+        .parts-table th,
+        .parts-table td {
+            border: 1px solid #333;
+            padding: 8px;
+            text-align: left;
+            font-size: 11px;
+        }
+        
+        .parts-table th {
+            background: #f0f0f0;
+            font-weight: bold;
+            text-align: center;
+        }
+        
+        .parts-table .text-center {
+            text-align: center;
+        }
+        
+        .parts-table .text-right {
+            text-align: right;
+        }
+        
+        .cost-summary {
+            background: #f9f9f9;
+            padding: 15px;
+            border-radius: 4px;
+            margin: 20px 0;
+        }
+        
+        .certification {
+            background: #e8f5e8;
+            padding: 15px;
+            margin: 25px 0;
+            border-left: 4px solid #4caf50;
+            border-radius: 4px;
+        }
+        
+        .signatures {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 20px;
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 2px solid #333;
+        }
+        
+        .signature-box {
+            text-align: center;
+        }
+        
+        .signature-box h4 {
+            font-size: 12px;
+            margin-bottom: 10px;
+        }
+        
+        .signature-line {
+            border-bottom: 1px solid #333;
+            height: 40px;
+            margin-bottom: 10px;
+        }
+        
+        .signature-box p {
+            font-size: 10px;
+            color: #666;
+            margin-bottom: 3px;
+        }
+        
+        .footer {
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 2px solid #333;
+            background: #f9f9f9;
+            padding: 15px;
+            border-radius: 4px;
+        }
+        
+        .footer-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 15px;
+            font-size: 10px;
+            color: #666;
+        }
+        
+        .footer h4 {
+            font-size: 11px;
+            margin-bottom: 5px;
+            color: #333;
+        }
+        
+        .footer-note {
+            text-align: center;
+            margin-top: 15px;
+            padding-top: 10px;
+            border-top: 1px solid #ddd;
+            font-size: 9px;
+            font-style: italic;
+            color: #666;
+        }
+        
+        @media print {
+            body { margin: 0; }
+            .container { padding: 15px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <div class="header-content">
+                <div class="logo">LOGO</div>
+                <div class="title">
+                    <h1>REPORTE DE SERVICIO DE MANTENIMIENTO</h1>
+                    <p>Sistema de Gestión de Mantenimiento Industrial</p>
+                </div>
+                <div class="order-number">
+                    <p>Orden:</p>
+                    <p>${serviceOrder?.order_id}</p>
+                </div>
+            </div>
+            <div style="background: #f0f0f0; padding: 8px; border-radius: 4px;">
+                <p style="font-size: 12px; color: #666;">
+                    Documento generado el ${format(new Date(), "dd 'de' MMMM 'de' yyyy 'a las' HH:mm", { locale: es })}
+                </p>
+            </div>
+        </div>
+
+        <!-- Resumen Ejecutivo -->
+        <div class="summary">
+            <h3>Resumen Ejecutivo del Servicio</h3>
+            <div class="grid">
+                <div>
+                    <p><strong>Tipo de Intervención:</strong> ${serviceOrder?.type === 'preventive' ? 'Mantenimiento Preventivo Programado' : 'Mantenimiento Correctivo de Emergencia'}</p>
+                    <p><strong>Activo Intervenido:</strong> ${serviceOrder?.asset_name} (${serviceOrder?.asset?.asset_id})</p>
+                    <p><strong>Ubicación:</strong> ${serviceOrder?.asset?.location || 'Instalaciones principales'}</p>
+                </div>
+                <div>
+                    <p><strong>Duración Total:</strong> ${serviceOrder?.labor_hours || 0} horas de trabajo</p>
+                    <p><strong>Inversión Total:</strong> ${formatCurrency(serviceOrder?.total_cost)}</p>
+                    <p><strong>Estado Final:</strong> <span style="color: #4caf50; font-weight: bold;">SERVICIO COMPLETADO</span></p>
+                </div>
+            </div>
+            <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #bbb;">
+                <p style="font-style: italic;">${serviceOrder?.description}</p>
+            </div>
+        </div>
+
+        <!-- Información General -->
+        <div class="grid">
+            <div class="section">
+                <h3>Información General del Servicio</h3>
+                <div class="info-row">
+                    <span class="label">Orden ID:</span>
+                    <span>${serviceOrder?.order_id}</span>
+                </div>
+                <div class="info-row">
+                    <span class="label">Fecha de Servicio:</span>
+                    <span>${formatDate(serviceOrder?.date)}</span>
+                </div>
+                <div class="info-row">
+                    <span class="label">Tipo de Mantenimiento:</span>
+                    <span>${serviceOrder?.type === 'preventive' ? 'Mantenimiento Preventivo' : serviceOrder?.type === 'corrective' ? 'Mantenimiento Correctivo' : serviceOrder?.type}</span>
+                </div>
+                <div class="info-row">
+                    <span class="label">Estado:</span>
+                    <span>${serviceOrder?.status || 'N/A'}</span>
+                </div>
+                <div class="info-row">
+                    <span class="label">Prioridad:</span>
+                    <span>${serviceOrder?.priority || 'Media'}</span>
+                </div>
+                <div class="info-row">
+                    <span class="label">Técnico Responsable:</span>
+                    <span style="color: #2196f3; font-weight: bold;">${serviceOrder?.technician}</span>
+                </div>
+                <div class="info-row">
+                    <span class="label">Duración del Trabajo:</span>
+                    <span>${serviceOrder?.labor_hours || 0} horas</span>
+                </div>
+            </div>
+
+            <div class="section">
+                <h3>Información del Activo</h3>
+                <div class="info-row">
+                    <span class="label">Nombre del Activo:</span>
+                    <span>${serviceOrder?.asset_name}</span>
+                </div>
+                <div class="info-row">
+                    <span class="label">ID del Activo:</span>
+                    <span>${serviceOrder?.asset?.asset_id || serviceOrder?.asset_id}</span>
+                </div>
+                ${serviceOrder?.asset?.equipment_model?.manufacturer ? `
+                <div class="info-row">
+                    <span class="label">Fabricante:</span>
+                    <span>${serviceOrder.asset.equipment_model.manufacturer}</span>
+                </div>
+                ` : ''}
+                ${serviceOrder?.asset?.equipment_model?.name ? `
+                <div class="info-row">
+                    <span class="label">Modelo:</span>
+                    <span>${serviceOrder.asset.equipment_model.name}</span>
+                </div>
+                ` : ''}
+                <div class="info-row">
+                    <span class="label">Ubicación:</span>
+                    <span>${serviceOrder?.asset?.location || 'No especificada'}</span>
+                </div>
+                ${serviceOrder?.asset?.serial_number ? `
+                <div class="info-row">
+                    <span class="label">Número de Serie:</span>
+                    <span>${serviceOrder.asset.serial_number}</span>
+                </div>
+                ` : ''}
+            </div>
+        </div>
+
+        <!-- Detalles del Trabajo -->
+        <div class="work-details">
+            <h3>Detalles del Trabajo Realizado</h3>
+            
+            <div class="work-box description">
+                <h4>Descripción del Trabajo:</h4>
+                <p>${serviceOrder?.description || 'Sin descripción disponible'}</p>
+            </div>
+
+            ${serviceOrder?.findings ? `
+            <div class="work-box findings">
+                <h4>Hallazgos Durante la Inspección:</h4>
+                <p>${serviceOrder.findings}</p>
+            </div>
+            ` : ''}
+
+            ${serviceOrder?.actions ? `
+            <div class="work-box actions">
+                <h4>Acciones Correctivas Realizadas:</h4>
+                <p>${serviceOrder.actions}</p>
+            </div>
+            ` : ''}
+        </div>
+
+        <!-- Repuestos -->
+        ${serviceOrder?.parts && serviceOrder.parts.length > 0 ? `
+        <div class="section">
+            <h3>Repuestos y Materiales Utilizados</h3>
+            <table class="parts-table">
+                <thead>
+                    <tr>
+                        <th>Descripción</th>
+                        <th>Cantidad</th>
+                        <th>Costo Unitario</th>
+                        <th>Subtotal</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${serviceOrder.parts.map((part: any) => {
+                        const partName = part.name || part.part_name || part.description || 'Repuesto sin nombre';
+                        const partNumber = part.part_number || part.partNumber || part.part_id || '';
+                        const quantity = part.quantity || 1;
+                        const unitCost = part.cost || part.unit_cost || part.unit_price || 0;
+                        const totalCost = part.total_price || part.total_cost || (quantity * unitCost);
+                        
+                        return `
+                        <tr>
+                            <td>
+                                <strong>${partName}</strong>
+                                ${partNumber ? `<br><small style="color: #666;">P/N: ${partNumber}</small>` : ''}
+                            </td>
+                            <td class="text-center">${quantity}</td>
+                            <td class="text-right">${formatCurrency(unitCost)}</td>
+                            <td class="text-right"><strong>${formatCurrency(totalCost)}</strong></td>
+                        </tr>
+                        `;
+                    }).join('')}
+                </tbody>
+                <tfoot>
+                    <tr style="background: #f0f0f0; border-top: 2px solid #333;">
+                        <td colspan="3" style="text-align: right; font-weight: bold;">Total Repuestos:</td>
+                        <td style="text-align: right; font-weight: bold;">${formatCurrency(serviceOrder.parts_cost)}</td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+        ` : ''}
+
+        <!-- Resumen de Costos -->
+        <div class="cost-summary">
+            <h3 style="margin-bottom: 15px;">Resumen de Costos del Servicio</h3>
+            <div class="grid" style="margin-bottom: 15px;">
+                <div>
+                    <div class="info-row">
+                        <span>Horas de Trabajo:</span>
+                        <span><strong>${serviceOrder?.labor_hours || 0} horas</strong></span>
+                    </div>
+                    <div class="info-row">
+                        <span>Costo de Mano de Obra:</span>
+                        <span><strong>${formatCurrency(serviceOrder?.labor_cost)}</strong></span>
+                    </div>
+                </div>
+                <div>
+                    <div class="info-row">
+                        <span>Cantidad de Repuestos:</span>
+                        <span><strong>${serviceOrder?.parts?.length || 0} items</strong></span>
+                    </div>
+                    <div class="info-row">
+                        <span>Costo de Repuestos:</span>
+                        <span><strong>${formatCurrency(serviceOrder?.parts_cost)}</strong></span>
+                    </div>
+                </div>
+            </div>
+            <div style="border-top: 1px solid #333; padding-top: 15px;">
+                <div style="display: flex; justify-content: space-between; font-size: 18px; font-weight: bold;">
+                    <span>COSTO TOTAL DEL SERVICIO:</span>
+                    <span>${formatCurrency(serviceOrder?.total_cost)}</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Certificación -->
+        <div class="certification">
+            <h3 style="margin-bottom: 15px;">Certificación del Servicio</h3>
+            <div class="grid">
+                <div>
+                    <p style="margin-bottom: 10px;"><strong>✓ Trabajo Realizado Conforme:</strong> El servicio fue ejecutado siguiendo los procedimientos establecidos.</p>
+                    <p><strong>✓ Calidad Verificada:</strong> Todos los componentes cumplen con los estándares requeridos.</p>
+                </div>
+                <div>
+                    <p style="margin-bottom: 10px;"><strong>✓ Seguridad Garantizada:</strong> El equipo se encuentra en condiciones seguras de operación.</p>
+                    <p><strong>✓ Documentación Completa:</strong> Se ha registrado toda la información necesaria.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Firmas -->
+        <div class="signatures">
+            <div class="signature-box">
+                <h4>Técnico Responsable</h4>
+                <div class="signature-line"></div>
+                <p>Nombre: <strong>${serviceOrder?.technician}</strong></p>
+                <p>Fecha: ${formatDate(serviceOrder?.date)}</p>
+                <p>Firma: _______________</p>
+                <p style="margin-top: 5px; font-size: 9px;">Certifico que el trabajo fue realizado según especificaciones</p>
+            </div>
+            <div class="signature-box">
+                <h4>Supervisor de Mantenimiento</h4>
+                <div class="signature-line"></div>
+                <p>Nombre: _______________</p>
+                <p>Fecha: _______________</p>
+                <p>Firma: _______________</p>
+                <p style="margin-top: 5px; font-size: 9px;">Valido la calidad y conformidad del servicio</p>
+            </div>
+            <div class="signature-box">
+                <h4>Recibido Conforme - Cliente</h4>
+                <div class="signature-line"></div>
+                <p>Nombre: _______________</p>
+                <p>Cargo: _______________</p>
+                <p>Fecha: _______________</p>
+                <p>Firma: _______________</p>
+                <p style="margin-top: 5px; font-size: 9px;">Acepto el servicio y verifico su conformidad</p>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="footer">
+            <div class="footer-grid">
+                <div>
+                    <h4>Información del Documento</h4>
+                    <p>Orden de Servicio: <strong>${serviceOrder?.order_id}</strong></p>
+                    <p>Generado: ${format(new Date(), "dd/MM/yyyy 'a las' HH:mm")}</p>
+                    <p>Versión: 1.0</p>
+                </div>
+                <div>
+                    <h4>Sistema de Gestión</h4>
+                    <p>Plataforma: Sistema de Mantenimiento Industrial</p>
+                    <p>Módulo: Órdenes de Servicio</p>
+                    <p>Estado: Documento Oficial</p>
+                </div>
+                <div>
+                    <h4>Confidencialidad</h4>
+                    <p>Clasificación: Uso Interno</p>
+                    <p>Distribución: Autorizada</p>
+                    <p>Archivo: Departamento de Mantenimiento</p>
+                </div>
+            </div>
+            <div class="footer-note">
+                Este documento constituye un registro oficial del servicio de mantenimiento realizado y debe ser conservado según las políticas de la empresa.
+            </div>
+        </div>
+    </div>
+</body>
+</html>
+    `
   }
 
   const generateDetailedReport = () => {
@@ -400,7 +968,7 @@ Documento confidencial - Solo para uso interno de la organización
   }
 
   return (
-    <div className={`space-y-6 ${showPrintView ? 'print-view' : ''}`}>
+    <div className="space-y-6">
       {/* Print Styles */}
       <style jsx global>{`
         @media print {
@@ -940,15 +1508,7 @@ Documento confidencial - Solo para uso interno de la organización
                  </TabsContent>
        </Tabs>
 
-       {/* Print Report Modal */}
-       {showPrintReport && serviceOrder && (
-         <div className="fixed inset-0 z-50 bg-white">
-           <ServiceOrderPrintReport
-             serviceOrder={serviceOrder}
-             onClose={() => setShowPrintReport(false)}
-           />
-         </div>
-       )}
+
      </div>
    )
 } 
