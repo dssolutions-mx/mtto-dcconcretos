@@ -284,31 +284,211 @@ export function MaintenanceSchedule() {
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
-            <Calendar
-              mode="single"
-              selected={date}
-              onSelect={setDate}
-              onDayClick={handleDayClick}
-              className="rounded-md border"
-            />
+            {/* Calendario con mantenimientos directamente visualizados */}
+            <div className="border rounded-md p-3">
+              <div className="mb-4 flex items-center justify-between">
+                <h3 className="font-medium">Calendario de Mantenimientos</h3>
+                <div className="flex items-center gap-2">
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={() => {
+                      const prevMonth = new Date(date || new Date())
+                      prevMonth.setMonth(prevMonth.getMonth() - 1)
+                      setDate(prevMonth)
+                    }}
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                    Mes anterior
+                  </Button>
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={() => {
+                      const nextMonth = new Date(date || new Date())
+                      nextMonth.setMonth(nextMonth.getMonth() + 1)
+                      setDate(nextMonth)
+                    }}
+                  >
+                    Mes siguiente
+                    <ChevronRight className="h-4 w-4 ml-1" />
+                  </Button>
+                </div>
+              </div>
+              
+              <div className="grid grid-cols-7 gap-1">
+                {/* Nombres de días */}
+                {['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'].map(day => (
+                  <div key={day} className="text-center py-2 font-medium text-sm">
+                    {day}
+                  </div>
+                ))}
+                
+                {/* Días del mes actual con indicadores de mantenimiento */}
+                {(() => {
+                  // Generar los días del mes actual
+                  const currentDate = date || new Date();
+                  const firstDay = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
+                  const lastDay = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0);
+                  
+                  // Ajustar al primer día de la semana (lunes = 1)
+                  let firstDayOfGrid = new Date(firstDay);
+                  const dayOfWeek = firstDay.getDay(); // 0 = domingo, 1 = lunes, ..., 6 = sábado
+                  const daysToPrepend = dayOfWeek === 0 ? 6 : dayOfWeek - 1; // Si es domingo, retroceder 6 días
+                  firstDayOfGrid.setDate(firstDayOfGrid.getDate() - daysToPrepend);
+                  
+                  // Total de días a mostrar (42 = 6 semanas completas)
+                  const totalDays = 42;
+                  const days = [];
+                  
+                  for (let i = 0; i < totalDays; i++) {
+                    const currentDay = new Date(firstDayOfGrid);
+                    currentDay.setDate(firstDayOfGrid.getDate() + i);
+                    
+                    // Verificar si es del mes actual
+                    const isCurrentMonth = currentDay.getMonth() === currentDate.getMonth();
+                    
+                    // Verificar si es hoy
+                    const isToday = currentDay.toDateString() === new Date().toDateString();
+                    
+                    // Mantenimientos para este día
+                    const dateKey = format(currentDay, 'yyyy-MM-dd');
+                    const maintenancesOnDay = maintenancesByDate[dateKey] || [];
+                    
+                    days.push(
+                      <div 
+                        key={i} 
+                        className={`
+                          relative p-1 min-h-[100px] border rounded 
+                          ${isCurrentMonth ? '' : 'opacity-50 bg-gray-50'}
+                          ${isToday ? 'border-blue-500 ring-1 ring-blue-500' : ''}
+                          ${maintenancesOnDay.length > 0 ? 'cursor-pointer hover:bg-gray-50' : ''}
+                          ${date && isSameDay(currentDay, date) ? 'bg-blue-50' : ''}
+                        `}
+                        onClick={() => maintenancesOnDay.length > 0 && setDate(currentDay)}
+                      >
+                        <div className={`text-right text-sm ${isToday ? 'font-bold text-blue-600' : 'font-medium'}`}>
+                          {currentDay.getDate()}
+                        </div>
+                        
+                        {/* Mostrar mantenimientos del día */}
+                        <div className="mt-1 text-xs overflow-y-auto max-h-[80px]">
+                          {maintenancesOnDay.slice(0, 3).map((maintenance, idx) => (
+                            <div 
+                              key={maintenance.id} 
+                              className={`mb-1 px-1 py-0.5 rounded truncate border-l-2 ${
+                                maintenance.status === 'overdue' ? 'bg-red-50 border-l-red-500' :
+                                maintenance.status === 'upcoming' ? 'bg-amber-50 border-l-amber-500' :
+                                'bg-blue-50 border-l-blue-500'
+                              }`}
+                              title={`${maintenance.assetName} - ${maintenance.intervalType} (${maintenance.targetValue}${maintenance.unit})`}
+                            >
+                              {maintenance.assetName.substring(0, 12)}{maintenance.assetName.length > 12 ? '...' : ''}
+                            </div>
+                          ))}
+                          
+                          {/* Indicador de más mantenimientos */}
+                          {maintenancesOnDay.length > 3 && (
+                            <div className="text-xs text-center text-gray-500">
+                              + {maintenancesOnDay.length - 3} más
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  }
+                  
+                  return days;
+                })()}
+              </div>
+            </div>
             
-            {/* Legend for calendar dots */}
-            <div className="flex flex-wrap gap-4 text-xs">
+            {/* Detalles del día seleccionado */}
+            {date && (() => {
+              const dateKey = format(date, 'yyyy-MM-dd');
+              const maintenancesOnDay = maintenancesByDate[dateKey] || [];
+              
+              if (maintenancesOnDay.length === 0) {
+                return (
+                  <div className="border rounded-lg p-4 text-center">
+                    <h3 className="font-medium mb-2">
+                      {format(date, "d 'de' MMMM 'de' yyyy", { locale: es })}
+                    </h3>
+                    <p className="text-gray-500">No hay mantenimientos programados para este día</p>
+                  </div>
+                );
+              }
+              
+              return (
+                <div className="border rounded-lg p-3">
+                  <h3 className="font-medium mb-3 border-b pb-2">
+                    Mantenimientos para el {format(date, "d 'de' MMMM 'de' yyyy", { locale: es })}
+                  </h3>
+                  
+                  <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
+                    {maintenancesOnDay.map(maintenance => (
+                      <div 
+                        key={maintenance.id} 
+                        className={`p-3 rounded-md border-l-4 ${
+                          maintenance.status === 'overdue' ? 'bg-red-50 border-l-red-500' :
+                          maintenance.status === 'upcoming' ? 'bg-amber-50 border-l-amber-500' :
+                          'bg-blue-50 border-l-blue-500'
+                        }`}
+                        onClick={() => setSelectedMaintenance(maintenance)}
+                      >
+                        <div className="flex justify-between items-start mb-1">
+                          <div className="font-medium">{maintenance.assetName}</div>
+                          {getStatusBadge(maintenance.status, maintenance.urgency)}
+                        </div>
+                        <div className="flex justify-between text-sm">
+                          <span>Código: {maintenance.assetCode}</span>
+                          <span>{maintenance.targetValue} {maintenance.unit}</span>
+                        </div>
+                        <div className="mt-1 text-sm font-medium">{maintenance.intervalType}</div>
+                        <div className="mt-2 flex justify-end">
+                          <Button 
+                            size="sm" 
+                            variant={maintenance.status === 'covered' ? "outline" : "default"}
+                            disabled={maintenance.status === 'covered'}
+                            asChild
+                          >
+                            <Link href={`/activos/${maintenance.assetId}/mantenimiento/nuevo?planId=${maintenance.intervalId}`}>
+                              <Wrench className="h-3 w-3 mr-2" />
+                              {maintenance.status === 'covered' ? 'Cubierto' : 
+                               maintenance.status === 'overdue' ? "Registrar" : "Programar"}
+                            </Link>
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
+            
+            {/* Leyenda para el calendario */}
+            <div className="flex flex-wrap gap-4 text-xs justify-center p-2 border rounded-lg">
               <div className="flex items-center gap-2">
-                <Badge variant="destructive" className="h-2 w-2 rounded-full p-0" />
+                <div className="h-4 w-4 flex items-center justify-center">
+                  <span className="h-2 w-2 rounded-full bg-red-500"></span>
+                </div>
                 <span>Vencidos</span>
               </div>
               <div className="flex items-center gap-2">
-                <Badge variant="default" className="h-2 w-2 rounded-full p-0" />
-                <span>Urgentes</span>
+                <div className="h-4 w-4 flex items-center justify-center">
+                  <span className="h-2 w-2 rounded-full bg-amber-500"></span>
+                </div>
+                <span>Próximos</span>
               </div>
               <div className="flex items-center gap-2">
-                <Badge variant="outline" className="h-2 w-2 rounded-full p-0 bg-blue-100" />
+                <div className="h-4 w-4 flex items-center justify-center">
+                  <span className="h-2 w-2 rounded-full bg-blue-500"></span>
+                </div>
                 <span>Cubiertos</span>
               </div>
-              <div className="flex items-center gap-2">
-                <Badge variant="secondary" className="h-2 w-2 rounded-full p-0" />
-                <span>Próximos</span>
+              
+              <div className="flex items-center ml-4 text-xs text-gray-500 w-full mt-2 justify-center">
+                <Info className="h-3 w-3 mr-1" /> Haz clic en un día para ver detalles de los mantenimientos programados
               </div>
             </div>
           </div>
