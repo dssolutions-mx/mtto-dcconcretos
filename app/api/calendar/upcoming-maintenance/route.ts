@@ -88,7 +88,7 @@ export async function GET(request: Request) {
     if (!assets || assets.length === 0) {
       return NextResponse.json({ 
         upcomingMaintenances: [],
-        summary: { overdue: 0, upcoming: 0, highUrgency: 0, mediumUrgency: 0 }
+        summary: { overdue: 0, upcoming: 0, covered: 0, scheduled: 0, highUrgency: 0, mediumUrgency: 0 }
       })
     }
 
@@ -228,9 +228,9 @@ export async function GET(request: Request) {
           }
         }
 
-        // Solo incluir mantenimientos que requieren atención: overdue, upcoming, covered
-        // NO incluir: completed (ya realizados) ni scheduled (muy lejanos)
-        if (['overdue', 'upcoming', 'covered'].includes(status)) {
+        // Incluir TODOS los mantenimientos para mostrar una vista completa del calendario
+        // Incluir: overdue, upcoming, covered, scheduled (todos menos completed)
+        if (['overdue', 'upcoming', 'covered', 'scheduled'].includes(status)) {
           upcomingMaintenances.push({
             id: `${asset.id}-${interval.id}`,
             assetId: asset.id,
@@ -312,6 +312,7 @@ export async function GET(request: Request) {
         overdue: filteredMaintenances.filter(m => m.status === 'overdue').length,
         upcoming: filteredMaintenances.filter(m => m.status === 'upcoming').length,
         covered: filteredMaintenances.filter(m => m.status === 'covered').length,
+        scheduled: filteredMaintenances.filter(m => m.status === 'scheduled').length,
         highUrgency: filteredMaintenances.filter(m => m.urgency === 'high').length,
         mediumUrgency: filteredMaintenances.filter(m => m.urgency === 'medium').length
       }

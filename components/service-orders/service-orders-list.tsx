@@ -24,7 +24,7 @@ import Link from "next/link"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
 
-// Esta interfaz debe coincidir con la estructura de las órdenes de servicio en la base de datos
+// Enhanced interface to match the comprehensive service order structure
 interface ServiceOrder {
   id: string;
   order_id: string;
@@ -35,20 +35,34 @@ interface ServiceOrder {
   status: string;
   date: string;
   technician: string;
+  technician_id: string | null;
   description: string;
-  total_cost?: string;
+  findings: string | null;
+  actions: string | null;
+  notes: string | null;
+  parts: any[] | null;
+  labor_hours: number | null;
+  labor_cost: string | null;
+  parts_cost: string | null;
+  total_cost: string | null;
   work_order_id?: string;
-  completion_date?: string;
+  checklist_id?: string | null;
+  documents?: string[] | null;
   created_at?: string;
   updated_at?: string;
 }
 
-// Ampliamos la interfaz para incluir el nombre del activo para la visualización
+// Enhanced interface with asset details
 interface ServiceOrderWithAssetDetails extends ServiceOrder {
   asset_name: string;
   assetData?: {
     name: string;
     asset_id: string;
+    location: string | null;
+    equipment_model?: {
+      name: string;
+      manufacturer: string;
+    } | null;
   }
 }
 
@@ -57,6 +71,7 @@ export function ServiceOrdersList() {
   const [filteredOrders, setFilteredOrders] = useState<ServiceOrderWithAssetDetails[]>([])
   const [searchQuery, setSearchQuery] = useState("")
   const [statusFilter, setStatusFilter] = useState<string | null>(null)
+  const [typeFilter, setTypeFilter] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -66,21 +81,29 @@ export function ServiceOrdersList() {
       try {
         const supabase = createClient()
         
-        // Obtenemos las órdenes de servicio con información básica del activo
+        // Get service orders with comprehensive asset information
         const { data, error } = await supabase
           .from("service_orders")
           .select(`
             *,
-            asset:asset_id (name, asset_id)
+            asset:asset_id (
+              name, 
+              asset_id, 
+              location,
+              equipment_model:model_id (
+                name,
+                manufacturer
+              )
+            )
           `)
-          .order("created_at", { ascending: false })
+          .order("date", { ascending: false })
         
         if (error) throw error
         
-        // Transformamos los datos para incluir el nombre del activo para mostrar
+        // Transform data to include asset details
         const formattedOrders: ServiceOrderWithAssetDetails[] = data.map((order: any) => ({
           ...order,
-          asset_name: order.asset?.name || 'Activo no encontrado',
+          asset_name: order.asset?.name || order.asset_name || 'Activo no encontrado',
           assetData: order.asset
         }))
         
@@ -97,42 +120,65 @@ export function ServiceOrdersList() {
     fetchServiceOrders()
   }, [])
 
-  // Aplicar filtros cuando cambian los criterios de búsqueda o filtros
+  // Apply filters when search criteria or filters change
   useEffect(() => {
     let result = [...serviceOrders]
     
-    // Aplicar filtro de búsqueda
+    // Apply search filter
     if (searchQuery) {
       const query = searchQuery.toLowerCase()
       result = result.filter(order => 
         order.order_id.toLowerCase().includes(query) ||
         order.asset_name.toLowerCase().includes(query) ||
         order.description.toLowerCase().includes(query) ||
-        order.technician.toLowerCase().includes(query)
+        order.technician.toLowerCase().includes(query) ||
+        (order.assetData?.asset_id && order.assetData.asset_id.toLowerCase().includes(query))
       )
     }
     
-    // Aplicar filtro de estado
+    // Apply status filter
     if (statusFilter) {
       result = result.filter(order => order.status.toLowerCase() === statusFilter.toLowerCase())
     }
     
-    setFilteredOrders(result)
-  }, [searchQuery, statusFilter, serviceOrders])
-
-  const getStatusBadge = (status: string) => {
-    const statusMap: Record<string, { variant: "default" | "outline" | "secondary" | "destructive", label: string }> = {
-      "pendiente": { variant: "outline", label: "Pendiente" },
-      "en_proceso": { variant: "secondary", label: "En Proceso" },
-      "completado": { variant: "default", label: "Completado" },
-      "cancelado": { variant: "destructive", label: "Cancelado" }
+    // Apply type filter
+    if (typeFilter) {
+      result = result.filter(order => order.type.toLowerCase() === typeFilter.toLowerCase())
     }
     
-    const statusInfo = statusMap[status.toLowerCase()] || { variant: "default", label: status }
+    setFilteredOrders(result)
+  }, [searchQuery, statusFilter, typeFilter, serviceOrders])
+
+  const getStatusBadge = (status: string) => {
+    const statusMap: Record<string, { variant: "default" | "outline" | "secondary" | "destructive", label: string, color: string }> = {
+      "pendiente": { variant: "outline", label: "Pendiente", color: "bg-yellow-100 text-yellow-800" },
+      "en_proceso": { variant: "secondary", label: "En Proceso", color: "bg-blue-100 text-blue-800" },
+      "completado": { variant: "default", label: "Completado", color: "bg-green-100 text-green-800" },
+      "cancelado": { variant: "destructive", label: "Cancelado", color: "bg-red-100 text-red-800" }
+    }
+    
+    const statusInfo = statusMap[status.toLowerCase()] || { variant: "default", label: status, color: "bg-gray-100 text-gray-800" }
     
     return (
-      <Badge variant={statusInfo.variant}>
+      <Badge variant={statusInfo.variant} className={statusInfo.color}>
         {statusInfo.label}
+      </Badge>
+    )
+  }
+
+  const getPriorityBadge = (priority: string) => {
+    const priorityMap: Record<string, { variant: "default" | "outline" | "secondary" | "destructive", color: string }> = {
+      "baja": { variant: "outline", color: "bg-green-100 text-green-800" },
+      "media": { variant: "secondary", color: "bg-blue-100 text-blue-800" },
+      "alta": { variant: "default", color: "bg-orange-100 text-orange-800" },
+      "crítica": { variant: "destructive", color: "bg-red-100 text-red-800" }
+    }
+    
+    const priorityInfo = priorityMap[priority.toLowerCase()] || { variant: "secondary", color: "bg-blue-100 text-blue-800" }
+    
+    return (
+      <Badge variant={priorityInfo.variant} className={priorityInfo.color}>
+        {priority}
       </Badge>
     )
   }
@@ -140,6 +186,7 @@ export function ServiceOrdersList() {
   const clearFilters = () => {
     setSearchQuery("")
     setStatusFilter(null)
+    setTypeFilter(null)
     setFilteredOrders(serviceOrders)
   }
 
@@ -149,6 +196,18 @@ export function ServiceOrdersList() {
       return format(new Date(dateStr), "dd/MM/yyyy", { locale: es })
     } catch (error) {
       return dateStr
+    }
+  }
+
+  const formatCurrency = (amount: string | null | undefined) => {
+    if (!amount) return "N/A"
+    try {
+      return new Intl.NumberFormat("es-MX", {
+        style: "currency",
+        currency: "MXN"
+      }).format(parseFloat(amount))
+    } catch (error) {
+      return amount
     }
   }
 
@@ -171,7 +230,7 @@ export function ServiceOrdersList() {
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
                 type="search"
-                placeholder="Buscar por ID, activo, descripción..."
+                placeholder="Buscar por ID, activo, descripción, técnico..."
                 className="pl-8"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
@@ -203,6 +262,26 @@ export function ServiceOrdersList() {
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
+              
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" className="flex items-center gap-1">
+                    <Wrench className="h-4 w-4" />
+                    Tipo
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={() => setTypeFilter(null)}>
+                    Todos
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setTypeFilter("preventive")}>
+                    Preventivo
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setTypeFilter("corrective")}>
+                    Correctivo
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
           </div>
           
@@ -229,6 +308,8 @@ export function ServiceOrdersList() {
                     <TableHead>Tipo</TableHead>
                     <TableHead>Técnico</TableHead>
                     <TableHead>Fecha</TableHead>
+                    <TableHead>Duración</TableHead>
+                    <TableHead>Costo Total</TableHead>
                     <TableHead>Estado</TableHead>
                     <TableHead>Acciones</TableHead>
                   </TableRow>
@@ -237,10 +318,49 @@ export function ServiceOrdersList() {
                   {filteredOrders.map((order) => (
                     <TableRow key={order.id}>
                       <TableCell className="font-medium">{order.order_id}</TableCell>
-                      <TableCell>{order.asset_name}</TableCell>
-                      <TableCell>{order.type === 'corrective' ? 'Correctivo' : order.type === 'preventive' ? 'Preventivo' : order.type}</TableCell>
-                      <TableCell>{order.technician}</TableCell>
+                      <TableCell>
+                        <div>
+                          <p className="font-medium">{order.asset_name}</p>
+                          <p className="text-xs text-muted-foreground">{order.assetData?.asset_id}</p>
+                          {order.assetData?.location && (
+                            <p className="text-xs text-muted-foreground">{order.assetData.location}</p>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          {order.type === 'corrective' ? (
+                            <>
+                              <Wrench className="h-4 w-4 text-red-500" />
+                              <span>Correctivo</span>
+                            </>
+                          ) : order.type === 'preventive' ? (
+                            <>
+                              <CalendarDays className="h-4 w-4 text-blue-500" />
+                              <span>Preventivo</span>
+                            </>
+                          ) : (
+                            <span>{order.type}</span>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div>
+                          <p className="font-medium">{order.technician}</p>
+                          {order.priority && (
+                            <div className="mt-1">
+                              {getPriorityBadge(order.priority)}
+                            </div>
+                          )}
+                        </div>
+                      </TableCell>
                       <TableCell>{formatDate(order.date)}</TableCell>
+                      <TableCell>
+                        {order.labor_hours ? `${order.labor_hours}h` : 'N/A'}
+                      </TableCell>
+                      <TableCell className="font-medium">
+                        {formatCurrency(order.total_cost)}
+                      </TableCell>
                       <TableCell>{getStatusBadge(order.status)}</TableCell>
                       <TableCell>
                         <DropdownMenu>
@@ -263,6 +383,14 @@ export function ServiceOrdersList() {
                                 <Link href={`/ordenes/${order.work_order_id}`}>
                                   <ClipboardCheck className="mr-2 h-4 w-4" />
                                   Ver Orden de Trabajo
+                                </Link>
+                              </DropdownMenuItem>
+                            )}
+                            {order.asset_id && (
+                              <DropdownMenuItem asChild>
+                                <Link href={`/activos/${order.asset_id}`}>
+                                  <FileText className="mr-2 h-4 w-4" />
+                                  Ver Activo
                                 </Link>
                               </DropdownMenuItem>
                             )}

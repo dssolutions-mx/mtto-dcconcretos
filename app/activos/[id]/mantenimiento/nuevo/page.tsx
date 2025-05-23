@@ -308,62 +308,102 @@ export default function NewMaintenancePage({ params }: NewMaintenancePageProps) 
       if (!user) {
         throw new Error("Usuario no autenticado");
       }
+
+      // Paso 1: Crear Orden de Trabajo siguiendo el proceso administrativo correcto
+      let workOrderId: string;
       
-      // Preparar los datos del mantenimiento
-      const maintenanceData = {
-        asset_id: assetId,
-        date: date.toISOString().split('T')[0],
-        type,
-        hours: hours ? Number(hours) : null,
-        description,
-        findings: findings || null,
-        actions: actions || null,
-        technician,
-        labor_hours: laborHours ? Number(laborHours) : null,
-        labor_cost: laborCost ? laborCost : null,
-        total_cost: totalCost ? totalCost : null,
-        work_order: workOrder || null,
-        parts: parts.length > 0 ? JSON.stringify(parts) : null,
-        maintenance_plan_id: planId || null,
-        created_by: user.id,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      };
-      
-      // Insertar el registro de mantenimiento
-      const { data, error: insertError } = await supabase
-        .from("maintenance_history")
-        .insert(maintenanceData)
-        .select()
-        .single();
+      if (planId) {
+        // Mantenimiento Preventivo - usar función específica que requiere solo asset_id y maintenance_plan_id
+        const { data: workOrderData, error: workOrderError } = await supabase.rpc('generate_preventive_work_order', {
+          p_asset_id: assetId,
+          p_maintenance_plan_id: planId
+        });
         
-      if (insertError) throw insertError;
-      
-      // Si se proporcionaron horas, actualizar las horas actuales del activo
-      if (hours) {
-        const { error: updateError } = await supabase
-          .from("assets")
-          .update({ 
-            current_hours: Number(hours),
-            last_maintenance_date: date.toISOString().split('T')[0],
-            updated_at: new Date().toISOString() 
-          })
-          .eq("id", assetId);
-          
-        if (updateError) {
-          console.error("Error al actualizar las horas del activo:", updateError);
-          // No lanzar error, seguir con el flujo normal
-        }
+        if (workOrderError) throw workOrderError;
+        workOrderId = workOrderData;
+      } else {
+        // Mantenimiento Correctivo - crear directamente ya que no hay checklist asociado
+        const workOrderData = {
+          asset_id: assetId,
+          description: description,
+          type: 'corrective',
+          requested_by: user.id,
+          assigned_to: user.id,
+          planned_date: date.toISOString(),
+          estimated_duration: laborHours ? Number(laborHours) : 0,
+          priority: 'Media',
+          status: 'Pendiente'
+        };
+
+        const { data: workOrderResult, error: workOrderError } = await supabase
+          .from('work_orders')
+          .insert(workOrderData)
+          .select('id')
+          .single();
+        
+        if (workOrderError) throw workOrderError;
+        workOrderId = workOrderResult.id;
       }
-      
+
+      // Paso 2: Agregar repuestos a la orden de trabajo si hay partes
+      if (parts.length > 0) {
+        const requiredParts = parts.map(part => ({
+          name: part.name,
+          part_number: part.partNumber || '',
+          quantity: part.quantity,
+          unit_price: part.cost ? Number(part.cost) : 0,
+          total_price: part.cost ? Number(part.cost) * part.quantity : 0
+        }));
+
+        // Actualizar la orden de trabajo con los repuestos requeridos
+        const { error: updateError } = await supabase
+          .from('work_orders')
+          .update({ required_parts: requiredParts })
+          .eq('id', workOrderId);
+
+        if (updateError) throw updateError;
+      }
+
+      // Paso 3: Completar la Orden de Trabajo - esto genera automáticamente todo lo demás
+      const completionData = {
+        completion_date: date.toISOString(),
+        technician_id: user.id,
+        technician_name: technician,
+        findings: findings || '',
+        actions: actions || '',
+        notes: `Registro de mantenimiento ${type.toLowerCase()} realizado`,
+        labor_hours: laborHours ? Number(laborHours) : 0,
+        labor_cost: laborCost ? Number(laborCost) : 0,
+        parts_used: parts.map(part => ({
+          name: part.name,
+          part_number: part.partNumber || '',
+          quantity: part.quantity,
+          cost: part.cost ? Number(part.cost) : 0
+        })),
+        photos: [], // En el futuro se pueden agregar fotos
+        asset_hours: hours ? Number(hours) : null,
+        asset_kilometers: null,
+        created_by: user.id,
+        reported_by_id: user.id,
+        reported_by_name: technician
+      };
+
+      const { data: completionResult, error: completionError } = await supabase.rpc('complete_work_order', {
+        p_work_order_id: workOrderId,
+        p_completion_data: completionData
+      });
+
+      if (completionError) throw completionError;
+
       toast({
         title: "¡Mantenimiento registrado exitosamente!",
-        description: `El mantenimiento ${maintenancePlan ? 'programado' : ''} ha sido registrado correctamente en el sistema.`,
+        description: `El mantenimiento ${planId ? 'programado' : 'correctivo'} ha sido procesado siguiendo el flujo administrativo completo. Se ha generado automáticamente la orden de trabajo y orden de servicio correspondientes.`,
       });
-      
-      // Redirigir a la página de detalles del mantenimiento
-      if (data?.id) {
-        router.push(`/activos/${assetId}/mantenimiento/${data.id}`);
+
+      // Redirigir a la página del mantenimiento o a la lista
+      if (completionResult) {
+        // El resultado debería ser el service_order_id
+        router.push(`/activos/${assetId}/mantenimiento`);
       } else {
         router.push(`/activos/${assetId}/mantenimiento`);
       }
@@ -372,7 +412,7 @@ export default function NewMaintenancePage({ params }: NewMaintenancePageProps) 
       console.error("Error al registrar mantenimiento:", err);
       toast({
         title: "Error al registrar mantenimiento",
-        description: err instanceof Error ? err.message : "Ha ocurrido un error inesperado",
+        description: err instanceof Error ? err.message : "Ha ocurrido un error inesperado en el proceso administrativo",
         variant: "destructive",
       });
     } finally {

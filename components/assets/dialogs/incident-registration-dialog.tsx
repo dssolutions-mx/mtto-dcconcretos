@@ -1,20 +1,21 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { Button } from "@/components/ui/button";
+import { useState } from "react";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Calendar } from "@/components/ui/calendar";
-import { CalendarIcon, Loader2, Plus, Minus } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { CalendarIcon, Loader2, Plus, Minus, Trash2 } from "lucide-react";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { cn } from "@/lib/utils";
+import { useToast } from "@/hooks/use-toast";
 import { createClient } from "@/lib/supabase";
-import { useToast } from "@/components/ui/use-toast";
 
 interface IncidentPart {
   name: string;
@@ -126,43 +127,116 @@ export function IncidentRegistrationDialog({
         throw new Error("Usuario no autenticado");
       }
 
-      const incidentData = {
+      // Step 1: Create corrective work order manually (since incidents may not be tied to checklists)
+      const workOrderData = {
         asset_id: assetId,
-        date: date.toISOString().split('T')[0],
-        type,
-        reported_by: reportedBy,
-        description,
-        impact: impact || null,
-        resolution: resolution || null,
-        downtime: downtime ? parseFloat(downtime) : null,
-        labor_hours: laborHours ? parseFloat(laborHours) : null,
-        labor_cost: laborCost || null,
-        parts: parts.length > 0 ? JSON.stringify(parts) : null,
-        total_cost: totalCost || null,
-        work_order: workOrder || null,
-        status: status || "Resuelto",
-        created_by: user.id,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
+        description: `Incidente reportado: ${description}`,
+        type: 'corrective',
+        requested_by: user.id,
+        assigned_to: user.id,
+        planned_date: date.toISOString(),
+        priority: type.toLowerCase().includes('falla') ? 'Alta' : 'Media',
+        status: 'Pendiente',
+        required_parts: parts.length > 0 ? parts.map(part => ({
+          name: part.name,
+          part_number: part.partNumber || '',
+          quantity: part.quantity,
+          unit_price: part.cost ? parseFloat(part.cost) : 0,
+          total_price: part.cost ? parseFloat(part.cost) * part.quantity : 0
+        })) : null
       };
 
-      const { error } = await supabase
-        .from("incident_history")
-        .insert(incidentData);
+      console.log("Creating corrective work order:", workOrderData);
 
-      if (error) throw error;
+      const { data: workOrderResult, error: workOrderError } = await supabase
+        .from('work_orders')
+        .insert(workOrderData)
+        .select('id')
+        .single();
+
+      if (workOrderError) {
+        console.error("Error creating corrective work order:", workOrderError);
+        throw new Error(`Error al crear orden de trabajo: ${workOrderError.message}`);
+      }
+
+      if (!workOrderResult?.id) {
+        throw new Error("No se pudo crear la orden de trabajo");
+      }
+
+      const workOrderId = workOrderResult.id;
+      console.log("Created work order ID:", workOrderId);
+
+      // Step 2: Add parts to work order if needed
+      if (parts.length > 0) {
+        const requiredParts = parts.map(part => ({
+          name: part.name,
+          part_number: part.partNumber || '',
+          quantity: part.quantity,
+          unit_price: part.cost ? parseFloat(part.cost) : 0,
+          total_price: part.cost ? parseFloat(part.cost) * part.quantity : 0
+        }));
+
+        console.log("Adding required parts to work order:", requiredParts);
+
+        const { error: updateError } = await supabase
+          .from('work_orders')
+          .update({ required_parts: requiredParts })
+          .eq('id', workOrderId);
+
+        if (updateError) {
+          console.error("Error updating work order with parts:", updateError);
+          // Continue anyway
+        }
+      }
+
+      // Step 3: Complete the work order to trigger all downstream processes
+      const completionData = {
+        completion_date: date.toISOString(),
+        technician_id: user.id,
+        technician_name: reportedBy,
+        findings: `Incidente tipo: ${type}. Impacto: ${impact || 'No especificado'}`,
+        actions: resolution || 'Incidente registrado y resuelto',
+        notes: `Tiempo inactivo: ${downtime || '0'} horas. Estado: ${status}`,
+        labor_hours: laborHours ? parseFloat(laborHours) : 0,
+        labor_cost: laborCost || '0',
+        parts_used: parts.map(part => ({
+          name: part.name,
+          part_number: part.partNumber || '',
+          quantity: part.quantity,
+          cost: part.cost || '0'
+        })),
+        photos: [],
+        created_by: user.id,
+        reported_by_id: user.id,
+        reported_by_name: reportedBy
+      };
+
+      console.log("Completing work order with data:", completionData);
+
+      const { data: serviceOrderId, error: completionError } = await supabase
+        .rpc('complete_work_order', {
+          p_work_order_id: workOrderId,
+          p_completion_data: completionData
+        });
+
+      if (completionError) {
+        console.error("Error completing work order:", completionError);
+        throw new Error(`Error al completar orden de trabajo: ${completionError.message}`);
+      }
+
+      console.log("Work order completed successfully. Service order ID:", serviceOrderId);
 
       toast({
-        title: "¡Incidente registrado exitosamente!",
-        description: "El incidente ha sido registrado correctamente en el sistema.",
+        title: "¡Incidente procesado exitosamente!",
+        description: "Se ha creado la orden de trabajo y registrado el incidente siguiendo el proceso administrativo.",
       });
 
       resetForm();
       onSuccess();
     } catch (err) {
-      console.error("Error al registrar incidente:", err);
+      console.error("Error al procesar incidente:", err);
       toast({
-        title: "Error al registrar incidente",
+        title: "Error al procesar incidente",
         description: err instanceof Error ? err.message : "Ha ocurrido un error inesperado",
         variant: "destructive",
       });
@@ -398,7 +472,7 @@ export function IncidentRegistrationDialog({
                             onClick={() => removePart(index)}
                             className="text-red-600 hover:text-red-700"
                           >
-                            <Minus className="h-4 w-4" />
+                            <Trash2 className="h-4 w-4" />
                           </Button>
                         </td>
                       </tr>
@@ -475,7 +549,7 @@ export function IncidentRegistrationDialog({
             {isSubmitting ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Registrando...
+                Procesando...
               </>
             ) : (
               "Registrar Incidente"

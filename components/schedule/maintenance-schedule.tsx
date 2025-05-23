@@ -51,6 +51,7 @@ interface MaintenanceSummary {
   overdue: number
   upcoming: number
   covered: number
+  scheduled: number
   highUrgency: number
   mediumUrgency: number
 }
@@ -63,6 +64,7 @@ export function MaintenanceSchedule() {
     overdue: 0, 
     upcoming: 0, 
     covered: 0, 
+    scheduled: 0,
     highUrgency: 0, 
     mediumUrgency: 0 
   })
@@ -71,7 +73,7 @@ export function MaintenanceSchedule() {
   const [page, setPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
   const [totalCount, setTotalCount] = useState(0)
-  const itemsPerPage = 15
+  const itemsPerPage = 50
   const [statusFilter, setStatusFilter] = useState<string | null>(null)
   const [sortBy, setSortBy] = useState<string>('default')
 
@@ -100,7 +102,7 @@ export function MaintenanceSchedule() {
       
       const data = await response.json()
       setUpcomingMaintenances(data.upcomingMaintenances || [])
-      setSummary(data.summary || { overdue: 0, upcoming: 0, covered: 0, highUrgency: 0, mediumUrgency: 0 })
+      setSummary(data.summary || { overdue: 0, upcoming: 0, covered: 0, scheduled: 0, highUrgency: 0, mediumUrgency: 0 })
       setTotalCount(data.totalCount || 0)
       setTotalPages(Math.ceil((data.totalCount || 0) / itemsPerPage))
     } catch (err) {
@@ -152,10 +154,15 @@ export function MaintenanceSchedule() {
           <Info className="h-3 w-3" />
           Cubierto
         </Badge>
+      case 'scheduled':
+        return <Badge variant="outline" className="flex items-center gap-1 text-green-600 border-green-600">
+          <CheckCircle2 className="h-3 w-3" />
+          Programado
+        </Badge>
       default:
         return <Badge variant="secondary" className="flex items-center gap-1">
           <Clock className="h-3 w-3" />
-          Programado
+          Sin Estado
         </Badge>
     }
   }
@@ -258,8 +265,43 @@ export function MaintenanceSchedule() {
   }
 
   return (
-    <div className="grid gap-4 md:grid-cols-7">
-      <Card className="md:col-span-5">
+    <div className="space-y-4">
+      {/* Summary Cards */}
+      <div className="grid gap-4 grid-cols-2 md:grid-cols-5">
+        <Card className="p-4">
+          <div className="text-center">
+            <div className="text-2xl font-bold text-red-600">{summary.overdue}</div>
+            <div className="text-sm text-gray-600">Vencidos</div>
+          </div>
+        </Card>
+        <Card className="p-4">
+          <div className="text-center">
+            <div className="text-2xl font-bold text-orange-600">{summary.upcoming}</div>
+            <div className="text-sm text-gray-600">Próximos</div>
+          </div>
+        </Card>
+        <Card className="p-4">
+          <div className="text-center">
+            <div className="text-2xl font-bold text-blue-600">{summary.covered}</div>
+            <div className="text-sm text-gray-600">Cubiertos</div>
+          </div>
+        </Card>
+        <Card className="p-4">
+          <div className="text-center">
+            <div className="text-2xl font-bold text-green-600">{summary.scheduled}</div>
+            <div className="text-sm text-gray-600">Programados</div>
+          </div>
+        </Card>
+        <Card className="p-4">
+          <div className="text-center">
+            <div className="text-2xl font-bold text-gray-600">{totalCount}</div>
+            <div className="text-sm text-gray-600">Total</div>
+          </div>
+        </Card>
+      </div>
+      
+      <div className="grid gap-4 md:grid-cols-7">
+        <Card className="md:col-span-5">
         <CardHeader>
           <div className="flex items-center justify-between">
             <CardTitle>Calendario de Mantenimientos Proyectados</CardTitle>
@@ -279,8 +321,49 @@ export function MaintenanceSchedule() {
             </div>
           </div>
           <CardDescription>
-            Mantenimientos calculados según la misma lógica de la página individual de cada activo. Incluye mantenimientos vencidos, próximos y cubiertos.
+            Mantenimientos calculados según la misma lógica de la página individual de cada activo. Incluye todos los mantenimientos: vencidos, próximos, cubiertos y programados.
           </CardDescription>
+          
+          {/* Filtros */}
+          <div className="flex flex-wrap gap-2 mt-4">
+            <Button 
+              variant={statusFilter === null ? "default" : "outline"}
+              size="sm"
+              onClick={() => setStatusFilter(null)}
+            >
+              Todos ({totalCount})
+            </Button>
+            <Button 
+              variant={statusFilter === 'overdue' ? "destructive" : "outline"}
+              size="sm"
+              onClick={() => setStatusFilter('overdue')}
+            >
+              Vencidos ({summary.overdue})
+            </Button>
+            <Button 
+              variant={statusFilter === 'upcoming' ? "default" : "outline"}
+              size="sm"
+              onClick={() => setStatusFilter('upcoming')}
+            >
+              Próximos ({summary.upcoming})
+            </Button>
+            <Button 
+              variant={statusFilter === 'covered' ? "outline" : "outline"}
+              size="sm"
+              onClick={() => setStatusFilter('covered')}
+              className={statusFilter === 'covered' ? 'text-blue-600 border-blue-600' : ''}
+            >
+              Cubiertos ({summary.covered})
+            </Button>
+            <Button 
+              variant={statusFilter === 'scheduled' ? "outline" : "outline"}
+              size="sm"
+              onClick={() => setStatusFilter('scheduled')}
+              className={statusFilter === 'scheduled' ? 'text-green-600 border-green-600' : ''}
+            >
+              Programados ({summary.scheduled})
+            </Button>
+          </div>
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
@@ -379,11 +462,15 @@ export function MaintenanceSchedule() {
                               className={`mb-1 px-1 py-0.5 rounded truncate border-l-2 ${
                                 maintenance.status === 'overdue' ? 'bg-red-50 border-l-red-500' :
                                 maintenance.status === 'upcoming' ? 'bg-amber-50 border-l-amber-500' :
+                                maintenance.status === 'scheduled' ? 'bg-green-50 border-l-green-500' :
                                 'bg-blue-50 border-l-blue-500'
                               }`}
-                              title={`${maintenance.assetName} - ${maintenance.intervalType} (${maintenance.targetValue}${maintenance.unit})`}
+                              title={`[${maintenance.assetCode}] ${maintenance.assetName} - ${maintenance.intervalType} (${maintenance.targetValue}${maintenance.unit})`}
                             >
-                              {maintenance.assetName.substring(0, 12)}{maintenance.assetName.length > 12 ? '...' : ''}
+                              <div className="font-semibold">{maintenance.assetCode}</div>
+                              <div className="text-gray-600 truncate">
+                                {maintenance.intervalType.substring(0, 8)}{maintenance.intervalType.length > 8 ? '...' : ''}
+                              </div>
                             </div>
                           ))}
                           
@@ -429,22 +516,26 @@ export function MaintenanceSchedule() {
                     {maintenancesOnDay.map(maintenance => (
                       <div 
                         key={maintenance.id} 
-                        className={`p-3 rounded-md border-l-4 ${
+                        className={`p-3 rounded-md border-l-4 cursor-pointer hover:shadow-md transition-shadow ${
                           maintenance.status === 'overdue' ? 'bg-red-50 border-l-red-500' :
                           maintenance.status === 'upcoming' ? 'bg-amber-50 border-l-amber-500' :
+                          maintenance.status === 'scheduled' ? 'bg-green-50 border-l-green-500' :
                           'bg-blue-50 border-l-blue-500'
                         }`}
                         onClick={() => setSelectedMaintenance(maintenance)}
                       >
-                        <div className="flex justify-between items-start mb-1">
-                          <div className="font-medium">{maintenance.assetName}</div>
+                        <div className="flex justify-between items-start mb-2">
+                          <div>
+                            <div className="font-bold text-lg text-blue-700">{maintenance.assetCode}</div>
+                            <div className="font-medium text-gray-700">{maintenance.assetName}</div>
+                          </div>
                           {getStatusBadge(maintenance.status, maintenance.urgency)}
                         </div>
-                        <div className="flex justify-between text-sm">
-                          <span>Código: {maintenance.assetCode}</span>
-                          <span>{maintenance.targetValue} {maintenance.unit}</span>
+                        <div className="flex justify-between text-sm text-gray-600 mb-1">
+                          <span>Meta: {maintenance.targetValue} {maintenance.unit}</span>
+                          <span>Actual: {maintenance.currentValue} {maintenance.unit}</span>
                         </div>
-                        <div className="mt-1 text-sm font-medium">{maintenance.intervalType}</div>
+                        <div className="text-sm font-medium text-gray-800">{maintenance.intervalType}</div>
                         <div className="mt-2 flex justify-end">
                           <Button 
                             size="sm" 
@@ -485,6 +576,12 @@ export function MaintenanceSchedule() {
                   <span className="h-2 w-2 rounded-full bg-blue-500"></span>
                 </div>
                 <span>Cubiertos</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="h-4 w-4 flex items-center justify-center">
+                  <span className="h-2 w-2 rounded-full bg-green-500"></span>
+                </div>
+                <span>Programados</span>
               </div>
               
               <div className="flex items-center ml-4 text-xs text-gray-500 w-full mt-2 justify-center">
@@ -630,6 +727,7 @@ export function MaintenanceSchedule() {
                 <option value="overdue">Vencidos</option>
                 <option value="upcoming">Próximos</option>
                 <option value="covered">Cubiertos</option>
+                <option value="scheduled">Programados</option>
               </select>
               
               <select 
@@ -660,7 +758,8 @@ export function MaintenanceSchedule() {
                   <h3 className="text-lg font-medium">No hay mantenimientos {
                     statusFilter === 'overdue' ? 'vencidos' : 
                     statusFilter === 'upcoming' ? 'próximos' : 
-                    'cubiertos'
+                    statusFilter === 'covered' ? 'cubiertos' :
+                    statusFilter === 'scheduled' ? 'programados' : 'de este tipo'
                   }</h3>
                   <p className="text-muted-foreground">Prueba con un filtro diferente o verifica otro activo</p>
                 </>
@@ -675,7 +774,7 @@ export function MaintenanceSchedule() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Activo</TableHead>
+                  <TableHead>Activo (ID/Nombre)</TableHead>
                   <TableHead>Checkpoint</TableHead>
                   <TableHead>Descripción</TableHead>
                   <TableHead>Intervalo</TableHead>
@@ -685,17 +784,18 @@ export function MaintenanceSchedule() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {upcomingMaintenances.slice(0, 20).map((maintenance) => (
+                {upcomingMaintenances.map((maintenance) => (
                   <TableRow key={maintenance.id} className={
                     maintenance.status === 'overdue' && maintenance.urgency === 'high' ? "bg-red-50" : 
                     maintenance.status === 'overdue' ? "bg-orange-50" :
                     maintenance.status === 'upcoming' ? "bg-amber-50" : 
-                    maintenance.status === 'covered' ? "bg-blue-50" : ""
+                    maintenance.status === 'covered' ? "bg-blue-50" : 
+                    maintenance.status === 'scheduled' ? "bg-green-50" : ""
                   }>
                     <TableCell>
                       <div>
-                        <div className="font-medium">{maintenance.assetName}</div>
-                        <div className="text-sm text-muted-foreground">{maintenance.assetCode}</div>
+                        <div className="font-bold text-lg text-blue-700">{maintenance.assetCode}</div>
+                        <div className="font-medium text-gray-700">{maintenance.assetName}</div>
                       </div>
                     </TableCell>
                     <TableCell>
@@ -704,7 +804,8 @@ export function MaintenanceSchedule() {
                           maintenance.status === 'overdue' && maintenance.urgency === 'high' ? "destructive" :
                           maintenance.status === 'overdue' ? "default" :
                           maintenance.status === 'upcoming' ? "default" : 
-                          maintenance.status === 'covered' ? "secondary" : "outline"
+                          maintenance.status === 'covered' ? "secondary" : 
+                          maintenance.status === 'scheduled' ? "outline" : "outline"
                         }
                         className="whitespace-nowrap"
                       >
@@ -755,7 +856,8 @@ export function MaintenanceSchedule() {
                             maintenance.status === 'overdue' && maintenance.urgency === 'high' ? 'bg-red-600' :
                             maintenance.status === 'overdue' ? 'bg-orange-500' :
                             maintenance.status === 'upcoming' ? 'bg-amber-500' : 
-                            maintenance.status === 'covered' ? 'bg-blue-400' : 'bg-gray-400'
+                            maintenance.status === 'covered' ? 'bg-blue-400' : 
+                            maintenance.status === 'scheduled' ? 'bg-green-400' : 'bg-gray-400'
                           }`}
                           style={{ width: `${Math.min(Math.round((maintenance.currentValue / maintenance.targetValue) * 100), 100)}%` }}
                         ></div>
@@ -827,7 +929,8 @@ export function MaintenanceSchedule() {
                             <Wrench className="h-4 w-4 mr-2" />
                             {maintenance.status === 'overdue' && maintenance.urgency === 'high' ? "¡Urgente!" :
                             maintenance.status === 'overdue' ? "Registrar" : 
-                            maintenance.status === 'upcoming' ? "Programar" : "Registrar"}
+                            maintenance.status === 'upcoming' ? "Programar" : 
+                            maintenance.status === 'scheduled' ? "Programar" : "Registrar"}
                           </Link>
                         </Button>
                       )}
@@ -875,7 +978,7 @@ export function MaintenanceSchedule() {
           <CardTitle className="text-lg">Explicación de Estados</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-sm">
             <div className="space-y-2">
               <div className="flex items-center gap-2">
                 <Badge variant="destructive" className="flex items-center gap-1">
@@ -909,9 +1012,21 @@ export function MaintenanceSchedule() {
                 Mantenimientos que nunca se realizaron individualmente, pero fueron cubiertos por un mantenimiento posterior de mayor intervalo.
               </p>
             </div>
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <Badge variant="outline" className="flex items-center gap-1 text-green-600 border-green-600">
+                  <CheckCircle2 className="h-3 w-3" />
+                  Programado
+                </Badge>
+              </div>
+              <p className="text-muted-foreground">
+                Mantenimientos futuros que están programados para realizarse en el futuro según el plan de mantenimiento.
+              </p>
+            </div>
           </div>
         </CardContent>
       </Card>
+      </div>
     </div>
   )
 }

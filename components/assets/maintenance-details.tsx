@@ -5,40 +5,158 @@ import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { ArrowLeft, Calendar, CheckCircle2, Clock, FileText, Printer, User, Wrench, Settings } from "lucide-react"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { ArrowLeft, Calendar, CheckCircle2, Clock, FileText, Printer, User, Wrench, Settings, Save, X, Plus, Edit, Trash2, Loader2 } from "lucide-react"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
+import { useState, useEffect } from "react"
+import { useToast } from "@/components/ui/use-toast"
 
 interface MaintenanceDetailsProps {
   maintenance: any
   asset?: any
   maintenancePlan?: any
   onBack: () => void
+  isEditMode?: boolean
+  onSave?: (updatedMaintenance: any) => Promise<void>
+  onCancelEdit?: () => void
+  saving?: boolean
 }
 
-export function MaintenanceDetails({ maintenance, asset, maintenancePlan, onBack }: MaintenanceDetailsProps) {
+interface MaintenancePart {
+  name: string
+  partNumber?: string
+  quantity: number
+  cost?: string
+}
+
+export function MaintenanceDetails({ 
+  maintenance, 
+  asset, 
+  maintenancePlan, 
+  onBack, 
+  isEditMode = false,
+  onSave,
+  onCancelEdit,
+  saving = false
+}: MaintenanceDetailsProps) {
+  const [editedMaintenance, setEditedMaintenance] = useState(maintenance)
+  const [isPartDialogOpen, setIsPartDialogOpen] = useState(false)
+  const [currentPart, setCurrentPart] = useState<MaintenancePart | null>(null)
+  const [isEditingPart, setIsEditingPart] = useState(false)
+  const { toast } = useToast()
+
+  // Update editedMaintenance when maintenance prop changes
+  useEffect(() => {
+    setEditedMaintenance(maintenance)
+  }, [maintenance])
+
   // Formatear la fecha
   const formatDate = (dateString: string) => {
     const date = new Date(dateString)
     return format(date, "PPP", { locale: es })
   }
 
+  const formatDateForInput = (dateString: string) => {
+    const date = new Date(dateString)
+    return format(date, "yyyy-MM-dd")
+  }
+
+  const handleSave = async () => {
+    if (!onSave) return
+    
+    try {
+      await onSave(editedMaintenance)
+      toast({
+        title: "Éxito",
+        description: "Mantenimiento actualizado correctamente",
+      })
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "No se pudo guardar el mantenimiento. Inténtalo de nuevo.",
+      })
+    }
+  }
+
+  const addPart = () => {
+    setCurrentPart({ name: "", partNumber: "", quantity: 1, cost: "" })
+    setIsEditingPart(false)
+    setIsPartDialogOpen(true)
+  }
+
+  const editPart = (part: MaintenancePart, index: number) => {
+    setCurrentPart({ ...part, index } as any)
+    setIsEditingPart(true)
+    setIsPartDialogOpen(true)
+  }
+
+  const savePart = () => {
+    if (!currentPart) return
+
+    const parts = [...(editedMaintenance.parts || [])]
+    
+    if (isEditingPart && 'index' in currentPart) {
+      parts[(currentPart as any).index] = currentPart
+    } else {
+      parts.push(currentPart)
+    }
+
+    setEditedMaintenance({ ...editedMaintenance, parts })
+    setIsPartDialogOpen(false)
+    setCurrentPart(null)
+  }
+
+  const removePart = (index: number) => {
+    const parts = [...(editedMaintenance.parts || [])]
+    parts.splice(index, 1)
+    setEditedMaintenance({ ...editedMaintenance, parts })
+  }
+
+  const displayMaintenance = isEditMode ? editedMaintenance : maintenance
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight">Detalles del Mantenimiento</h2>
-          <p className="text-muted-foreground">{maintenance.description}</p>
+          <h2 className="text-2xl font-bold tracking-tight">
+            {isEditMode ? "Editar Mantenimiento" : "Detalles del Mantenimiento"}
+          </h2>
+          <p className="text-muted-foreground">{displayMaintenance.description}</p>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={onBack}>
-            <ArrowLeft className="mr-2 h-4 w-4" />
-            Volver
-          </Button>
-          <Button variant="outline" onClick={() => window.print()}>
-            <Printer className="mr-2 h-4 w-4" />
-            Imprimir
-          </Button>
+          {isEditMode ? (
+            <>
+              <Button variant="outline" onClick={onCancelEdit} disabled={saving}>
+                <X className="mr-2 h-4 w-4" />
+                Cancelar
+              </Button>
+              <Button onClick={handleSave} disabled={saving}>
+                {saving ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Save className="mr-2 h-4 w-4" />
+                )}
+                {saving ? "Guardando..." : "Guardar"}
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button variant="outline" onClick={onBack}>
+                <ArrowLeft className="mr-2 h-4 w-4" />
+                Volver
+              </Button>
+              <Button variant="outline" onClick={() => window.print()}>
+                <Printer className="mr-2 h-4 w-4" />
+                Imprimir
+              </Button>
+            </>
+          )}
         </div>
       </div>
 
@@ -95,40 +213,101 @@ export function MaintenanceDetails({ maintenance, asset, maintenancePlan, onBack
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <h4 className="text-sm font-medium text-muted-foreground mb-1">Fecha</h4>
-                <div className="flex items-center">
-                  <Calendar className="h-4 w-4 mr-1 text-muted-foreground" />
-                  <span>{formatDate(maintenance.date)}</span>
-                </div>
+                {isEditMode ? (
+                  <Input
+                    type="date"
+                    value={formatDateForInput(editedMaintenance.date)}
+                    onChange={(e) => setEditedMaintenance({ ...editedMaintenance, date: e.target.value })}
+                  />
+                ) : (
+                  <div className="flex items-center">
+                    <Calendar className="h-4 w-4 mr-1 text-muted-foreground" />
+                    <span>{formatDate(displayMaintenance.date)}</span>
+                  </div>
+                )}
               </div>
               <div>
                 <h4 className="text-sm font-medium text-muted-foreground mb-1">Tipo</h4>
-                <Badge variant={maintenance.type === "Preventivo" ? "default" : "secondary"}>{maintenance.type}</Badge>
+                {isEditMode ? (
+                  <Select 
+                    value={editedMaintenance.type} 
+                    onValueChange={(value) => setEditedMaintenance({ ...editedMaintenance, type: value })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Preventivo">Preventivo</SelectItem>
+                      <SelectItem value="Correctivo">Correctivo</SelectItem>
+                      <SelectItem value="Predictivo">Predictivo</SelectItem>
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <Badge variant={displayMaintenance.type === "Preventivo" ? "default" : "secondary"}>
+                    {displayMaintenance.type}
+                  </Badge>
+                )}
               </div>
               <div>
                 <h4 className="text-sm font-medium text-muted-foreground mb-1">Horas del Equipo</h4>
-                <div className="flex items-center">
-                  <Clock className="h-4 w-4 mr-1 text-muted-foreground" />
-                  <span>{maintenance.hours} horas</span>
-                </div>
+                {isEditMode ? (
+                  <Input
+                    type="number"
+                    value={editedMaintenance.hours || ""}
+                    onChange={(e) => setEditedMaintenance({ ...editedMaintenance, hours: e.target.value })}
+                    placeholder="Horas"
+                  />
+                ) : (
+                  <div className="flex items-center">
+                    <Clock className="h-4 w-4 mr-1 text-muted-foreground" />
+                    <span>{displayMaintenance.hours} horas</span>
+                  </div>
+                )}
               </div>
               <div>
                 <h4 className="text-sm font-medium text-muted-foreground mb-1">Técnico</h4>
-                <div className="flex items-center">
-                  <User className="h-4 w-4 mr-1 text-muted-foreground" />
-                  <span>{maintenance.technician}</span>
-                </div>
+                {isEditMode ? (
+                  <Input
+                    value={editedMaintenance.technician || ""}
+                    onChange={(e) => setEditedMaintenance({ ...editedMaintenance, technician: e.target.value })}
+                    placeholder="Nombre del técnico"
+                  />
+                ) : (
+                  <div className="flex items-center">
+                    <User className="h-4 w-4 mr-1 text-muted-foreground" />
+                    <span>{displayMaintenance.technician}</span>
+                  </div>
+                )}
               </div>
               <div>
                 <h4 className="text-sm font-medium text-muted-foreground mb-1">Horas de Trabajo</h4>
-                <span>{maintenance.labor_hours || '-'} horas</span>
+                {isEditMode ? (
+                  <Input
+                    type="number"
+                    step="0.5"
+                    value={editedMaintenance.labor_hours || ""}
+                    onChange={(e) => setEditedMaintenance({ ...editedMaintenance, labor_hours: e.target.value })}
+                    placeholder="Horas de trabajo"
+                  />
+                ) : (
+                  <span>{displayMaintenance.labor_hours || '-'} horas</span>
+                )}
               </div>
-              {maintenance.work_order && (
+              {displayMaintenance.work_order && (
                 <div>
                   <h4 className="text-sm font-medium text-muted-foreground mb-1">Orden de Trabajo</h4>
-                  <span>{maintenance.work_order}</span>
+                  {isEditMode ? (
+                    <Input
+                      value={editedMaintenance.work_order || ""}
+                      onChange={(e) => setEditedMaintenance({ ...editedMaintenance, work_order: e.target.value })}
+                      placeholder="Número de orden"
+                    />
+                  ) : (
+                    <span>{displayMaintenance.work_order}</span>
+                  )}
                 </div>
               )}
-              {!maintenance.work_order && (
+              {!displayMaintenance.work_order && !isEditMode && (
                 <div>
                   <h4 className="text-sm font-medium text-muted-foreground mb-1">Estado</h4>
                   <Badge variant="outline" className="bg-green-100 text-green-800">
@@ -142,20 +321,47 @@ export function MaintenanceDetails({ maintenance, asset, maintenancePlan, onBack
 
             <div>
               <h4 className="text-sm font-medium text-muted-foreground mb-1">Descripción</h4>
-              <p className="text-sm">{maintenance.description}</p>
+              {isEditMode ? (
+                <Textarea
+                  value={editedMaintenance.description || ""}
+                  onChange={(e) => setEditedMaintenance({ ...editedMaintenance, description: e.target.value })}
+                  placeholder="Descripción del mantenimiento"
+                  rows={3}
+                />
+              ) : (
+                <p className="text-sm">{displayMaintenance.description}</p>
+              )}
             </div>
 
-            {maintenance.findings && (
+            {(displayMaintenance.findings || isEditMode) && (
               <div>
                 <h4 className="text-sm font-medium text-muted-foreground mb-1">Hallazgos</h4>
-                <p className="text-sm">{maintenance.findings}</p>
+                {isEditMode ? (
+                  <Textarea
+                    value={editedMaintenance.findings || ""}
+                    onChange={(e) => setEditedMaintenance({ ...editedMaintenance, findings: e.target.value })}
+                    placeholder="Hallazgos durante el mantenimiento"
+                    rows={3}
+                  />
+                ) : (
+                  <p className="text-sm">{displayMaintenance.findings}</p>
+                )}
               </div>
             )}
 
-            {maintenance.actions && (
+            {(displayMaintenance.actions || isEditMode) && (
               <div>
                 <h4 className="text-sm font-medium text-muted-foreground mb-1">Acciones Realizadas</h4>
-                <p className="text-sm">{maintenance.actions}</p>
+                {isEditMode ? (
+                  <Textarea
+                    value={editedMaintenance.actions || ""}
+                    onChange={(e) => setEditedMaintenance({ ...editedMaintenance, actions: e.target.value })}
+                    placeholder="Acciones realizadas durante el mantenimiento"
+                    rows={3}
+                  />
+                ) : (
+                  <p className="text-sm">{displayMaintenance.actions}</p>
+                )}
               </div>
             )}
           </CardContent>
@@ -172,8 +378,8 @@ export function MaintenanceDetails({ maintenance, asset, maintenancePlan, onBack
                 <span className="text-sm text-muted-foreground">Costo de Repuestos</span>
                 <span className="font-medium">
                   $
-                  {maintenance.parts
-                    ? maintenance.parts.reduce(
+                  {displayMaintenance.parts
+                    ? displayMaintenance.parts.reduce(
                         (total: number, part: any) => total + part.quantity * (parseFloat(part.cost) || 0),
                         0,
                       )
@@ -182,12 +388,34 @@ export function MaintenanceDetails({ maintenance, asset, maintenancePlan, onBack
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-sm text-muted-foreground">Costo de Mano de Obra</span>
-                <span className="font-medium">${maintenance.labor_cost || 0}</span>
+                {isEditMode ? (
+                  <Input
+                    type="number"
+                    step="0.01"
+                    value={editedMaintenance.labor_cost || ""}
+                    onChange={(e) => setEditedMaintenance({ ...editedMaintenance, labor_cost: e.target.value })}
+                    placeholder="0.00"
+                    className="w-24 text-right"
+                  />
+                ) : (
+                  <span className="font-medium">${displayMaintenance.labor_cost || 0}</span>
+                )}
               </div>
               <Separator />
               <div className="flex items-center justify-between">
                 <span className="text-sm font-medium">Costo Total</span>
-                <span className="font-bold">${maintenance.total_cost || 0}</span>
+                {isEditMode ? (
+                  <Input
+                    type="number"
+                    step="0.01"
+                    value={editedMaintenance.total_cost || ""}
+                    onChange={(e) => setEditedMaintenance({ ...editedMaintenance, total_cost: e.target.value })}
+                    placeholder="0.00"
+                    className="w-32 text-right font-bold"
+                  />
+                ) : (
+                  <span className="font-bold">${displayMaintenance.total_cost || 0}</span>
+                )}
               </div>
             </div>
           </CardContent>
@@ -208,11 +436,21 @@ export function MaintenanceDetails({ maintenance, asset, maintenancePlan, onBack
         <TabsContent value="parts" className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle>Repuestos Utilizados</CardTitle>
-              <CardDescription>Repuestos utilizados durante el mantenimiento</CardDescription>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle>Repuestos Utilizados</CardTitle>
+                  <CardDescription>Repuestos utilizados durante el mantenimiento</CardDescription>
+                </div>
+                {isEditMode && (
+                  <Button onClick={addPart} size="sm">
+                    <Plus className="mr-2 h-4 w-4" />
+                    Agregar Repuesto
+                  </Button>
+                )}
+              </div>
             </CardHeader>
             <CardContent>
-              {maintenance.parts && maintenance.parts.length > 0 ? (
+              {displayMaintenance.parts && displayMaintenance.parts.length > 0 ? (
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -221,16 +459,37 @@ export function MaintenanceDetails({ maintenance, asset, maintenancePlan, onBack
                       <TableHead className="text-center">Cantidad</TableHead>
                       <TableHead className="text-right">Costo Unitario</TableHead>
                       <TableHead className="text-right">Subtotal</TableHead>
+                      {isEditMode && <TableHead className="text-center">Acciones</TableHead>}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {maintenance.parts.map((part: any, index: number) => (
+                    {displayMaintenance.parts.map((part: any, index: number) => (
                       <TableRow key={index}>
                         <TableCell>{part.name}</TableCell>
                         <TableCell>{part.partNumber || '-'}</TableCell>
                         <TableCell className="text-center">{part.quantity}</TableCell>
                         <TableCell className="text-right">${part.cost || 0}</TableCell>
                         <TableCell className="text-right">${((parseFloat(part.cost) || 0) * part.quantity).toFixed(2)}</TableCell>
+                        {isEditMode && (
+                          <TableCell className="text-center">
+                            <div className="flex items-center justify-center gap-1">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => editPart(part, index)}
+                              >
+                                <Edit className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => removePart(index)}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        )}
                       </TableRow>
                     ))}
                   </TableBody>
@@ -238,6 +497,14 @@ export function MaintenanceDetails({ maintenance, asset, maintenancePlan, onBack
               ) : (
                 <div className="text-center py-8 text-muted-foreground">
                   No hay repuestos registrados para este mantenimiento.
+                  {isEditMode && (
+                    <div className="mt-4">
+                      <Button onClick={addPart} variant="outline">
+                        <Plus className="mr-2 h-4 w-4" />
+                        Agregar Primer Repuesto
+                      </Button>
+                    </div>
+                  )}
                 </div>
               )}
             </CardContent>
@@ -284,6 +551,69 @@ export function MaintenanceDetails({ maintenance, asset, maintenancePlan, onBack
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* Dialog for adding/editing parts */}
+      <Dialog open={isPartDialogOpen} onOpenChange={setIsPartDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{isEditingPart ? "Editar Repuesto" : "Agregar Repuesto"}</DialogTitle>
+            <DialogDescription>
+              {isEditingPart ? "Modifica los detalles del repuesto" : "Ingresa los detalles del nuevo repuesto"}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="partName">Nombre del Repuesto</Label>
+              <Input
+                id="partName"
+                value={currentPart?.name || ""}
+                onChange={(e) => setCurrentPart(prev => prev ? { ...prev, name: e.target.value } : null)}
+                placeholder="Ej: Filtro de aceite"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="partNumber">Número de Parte (Opcional)</Label>
+              <Input
+                id="partNumber"
+                value={currentPart?.partNumber || ""}
+                onChange={(e) => setCurrentPart(prev => prev ? { ...prev, partNumber: e.target.value } : null)}
+                placeholder="Ej: ABC-123"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="partQuantity">Cantidad</Label>
+                <Input
+                  id="partQuantity"
+                  type="number"
+                  min="1"
+                  value={currentPart?.quantity || 1}
+                  onChange={(e) => setCurrentPart(prev => prev ? { ...prev, quantity: parseInt(e.target.value) || 1 } : null)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="partCost">Costo Unitario</Label>
+                <Input
+                  id="partCost"
+                  type="number"
+                  step="0.01"
+                  value={currentPart?.cost || ""}
+                  onChange={(e) => setCurrentPart(prev => prev ? { ...prev, cost: e.target.value } : null)}
+                  placeholder="0.00"
+                />
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsPartDialogOpen(false)}>
+              Cancelar
+            </Button>
+            <Button onClick={savePart} disabled={!currentPart?.name}>
+              {isEditingPart ? "Actualizar" : "Agregar"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

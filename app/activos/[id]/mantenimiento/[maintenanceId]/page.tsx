@@ -2,30 +2,34 @@
 
 import { MaintenanceDetails } from "@/components/assets/maintenance-details"
 import { useRouter } from "next/navigation"
-import { useEffect, useState } from "react"
+import { useEffect, useState, use } from "react"
 import { createClient } from "@/lib/supabase"
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
 import { DashboardHeader } from "@/components/dashboard/dashboard-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { ArrowLeft, Loader2 } from "lucide-react";
+import { ArrowLeft, Loader2, Edit } from "lucide-react";
 import Link from "next/link";
 
 interface MaintenancePageProps {
-  params: {
+  params: Promise<{
     id: string
     maintenanceId: string
-  }
+  }>
 }
 
 export default function MaintenancePage({ params }: MaintenancePageProps) {
-  const { id, maintenanceId } = params;
+  // Unwrap params using React.use()
+  const resolvedParams = use(params);
+  const { id, maintenanceId } = resolvedParams;
   
   const [maintenance, setMaintenance] = useState<any>(null);
   const [asset, setAsset] = useState<any>(null);
   const [maintenancePlan, setMaintenancePlan] = useState<any>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<Error | null>(null);
+  const [isEditMode, setIsEditMode] = useState<boolean>(false);
+  const [saving, setSaving] = useState<boolean>(false);
   const router = useRouter();
 
   // Fetch maintenance data on the client side
@@ -97,6 +101,50 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
 
   const handleBack = () => {
     router.back();
+  };
+
+  const handleSave = async (updatedMaintenance: any) => {
+    setSaving(true);
+    try {
+      const supabase = createClient();
+      
+      const { data, error } = await supabase
+        .from("maintenance_history")
+        .update({
+          date: updatedMaintenance.date,
+          type: updatedMaintenance.type,
+          hours: updatedMaintenance.hours,
+          description: updatedMaintenance.description,
+          findings: updatedMaintenance.findings,
+          actions: updatedMaintenance.actions,
+          technician: updatedMaintenance.technician,
+          labor_hours: updatedMaintenance.labor_hours,
+          labor_cost: updatedMaintenance.labor_cost,
+          total_cost: updatedMaintenance.total_cost,
+          work_order: updatedMaintenance.work_order,
+          parts: updatedMaintenance.parts,
+        })
+        .eq("id", maintenanceId)
+        .select()
+        .single();
+
+      if (error) {
+        throw error;
+      }
+
+      // Update local state with the saved data
+      setMaintenance({
+        ...data,
+        parts: Array.isArray(data.parts) ? data.parts : 
+               (typeof data.parts === 'string' ? JSON.parse(data.parts) : [])
+      });
+      setIsEditMode(false);
+    } catch (err) {
+      console.error("Error al guardar:", err);
+      throw err;
+    } finally {
+      setSaving(false);
+    }
   };
 
   if (error) {
@@ -174,6 +222,12 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
               Ver Activo
             </Link>
           </Button>
+          {!isEditMode && (
+            <Button variant="outline" onClick={() => setIsEditMode(true)}>
+              <Edit className="mr-2 h-4 w-4" />
+              Editar
+            </Button>
+          )}
         </div>
       </DashboardHeader>
       
@@ -182,6 +236,10 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
         asset={asset}
         maintenancePlan={maintenancePlan}
         onBack={handleBack}
+        isEditMode={isEditMode}
+        onSave={handleSave}
+        onCancelEdit={() => setIsEditMode(false)}
+        saving={saving}
       />
     </DashboardShell>
   )

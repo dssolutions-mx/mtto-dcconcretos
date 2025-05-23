@@ -811,7 +811,7 @@ export function AssetRegistrationFormModular() {
         }
       }
       
-      // Save incidents if exist
+      // Process incidents following administrative workflow if they exist
       if (incidents.length > 0 && insertedAsset?.id) {
         for (const incident of incidents) {
           const incidentData = {
@@ -829,16 +829,15 @@ export function AssetRegistrationFormModular() {
             total_cost: incident.totalCost || null,
             work_order: incident.workOrder || null,
             status: incident.status || "Resuelto",
-            created_by: user.id,
-            created_at: new Date().toISOString()
-          }
-          
+            created_by: user.id
+          };
+
           const { error: incidentError } = await supabase
             .from("incident_history")
-            .insert(incidentData)
-            
+            .insert(incidentData);
+
           if (incidentError) {
-            console.error("Error al guardar historial de incidentes:", incidentError)
+            console.error("Error saving incident:", incidentError);
           }
         }
       }
