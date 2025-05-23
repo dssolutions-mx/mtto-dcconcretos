@@ -287,15 +287,17 @@ export function ServiceOrderDetail({ id }: ServiceOrderDetailProps) {
         
         body {
             font-family: Arial, sans-serif;
-            line-height: 1.4;
+            line-height: 1.3;
             color: #333;
             background: white;
+            margin: 0;
+            padding: 0;
         }
         
         .container {
-            max-width: 800px;
-            margin: 0 auto;
-            padding: 20px;
+            max-width: 100%;
+            margin: 0;
+            padding: 15mm;
         }
         
         .header {
@@ -468,34 +470,67 @@ export function ServiceOrderDetail({ id }: ServiceOrderDetailProps) {
             border-radius: 4px;
         }
         
-        .signatures {
-            display: grid;
-            grid-template-columns: 1fr 1fr 1fr;
-            gap: 20px;
-            margin-top: 40px;
+        .validation-section {
+            margin-top: 30px;
             padding-top: 20px;
             border-top: 2px solid #333;
         }
         
-        .signature-box {
-            text-align: center;
+        .validation-box {
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 15px;
+            background: #f9f9f9;
         }
         
-        .signature-box h4 {
+        .validation-box h4 {
+            font-size: 14px;
+            margin-bottom: 10px;
+            color: #333;
+            border-bottom: 1px solid #ddd;
+            padding-bottom: 5px;
+        }
+        
+        .validation-info p {
+            margin-bottom: 8px;
             font-size: 12px;
+            color: #333;
+        }
+        
+        .timeline-section {
+            margin: 25px 0;
+        }
+        
+        .timeline-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 15px;
+        }
+        
+        .timeline-item {
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            padding: 15px;
+            background: #fafafa;
+        }
+        
+        .timeline-icon {
+            font-size: 24px;
+            text-align: center;
             margin-bottom: 10px;
         }
         
-        .signature-line {
-            border-bottom: 1px solid #333;
-            height: 40px;
-            margin-bottom: 10px;
+        .timeline-content h4 {
+            font-size: 13px;
+            font-weight: bold;
+            margin-bottom: 8px;
+            color: #333;
         }
         
-        .signature-box p {
-            font-size: 10px;
+        .timeline-content p {
+            font-size: 11px;
+            margin-bottom: 4px;
             color: #666;
-            margin-bottom: 3px;
         }
         
         .footer {
@@ -532,8 +567,73 @@ export function ServiceOrderDetail({ id }: ServiceOrderDetailProps) {
         }
         
         @media print {
-            body { margin: 0; }
-            .container { padding: 15px; }
+            @page {
+                margin: 15mm;
+                size: A4;
+            }
+            
+            body { 
+                margin: 0 !important;
+                padding: 0 !important;
+                font-size: 12px !important;
+            }
+            
+            .container { 
+                padding: 0 !important;
+                margin: 0 !important;
+                max-width: 100% !important;
+            }
+            
+            .header {
+                margin-bottom: 20px !important;
+            }
+            
+            .section {
+                margin-bottom: 15px !important;
+                page-break-inside: avoid;
+            }
+            
+            .parts-table {
+                page-break-inside: avoid;
+            }
+            
+            .grid {
+                margin-bottom: 15px !important;
+            }
+            
+            h1 {
+                font-size: 18px !important;
+            }
+            
+            h3 {
+                font-size: 14px !important;
+                margin-bottom: 8px !important;
+            }
+            
+            .info-row {
+                font-size: 11px !important;
+                margin-bottom: 6px !important;
+            }
+            
+            .timeline-grid {
+                display: grid !important;
+                grid-template-columns: 1fr 1fr 1fr !important;
+                gap: 10px !important;
+                margin-bottom: 15px !important;
+            }
+            
+            .timeline-item {
+                page-break-inside: avoid;
+                margin-bottom: 8px !important;
+            }
+            
+            .timeline-content p {
+                font-size: 10px !important;
+            }
+            
+            .validation-section {
+                page-break-inside: avoid;
+            }
         }
     </style>
 </head>
@@ -749,47 +849,81 @@ export function ServiceOrderDetail({ id }: ServiceOrderDetailProps) {
             </div>
         </div>
 
-        <!-- Certificación -->
-        <div class="certification">
-            <h3 style="margin-bottom: 15px;">Certificación del Servicio</h3>
-            <div class="grid">
-                <div>
-                    <p style="margin-bottom: 10px;"><strong>✓ Trabajo Realizado Conforme:</strong> El servicio fue ejecutado siguiendo los procedimientos establecidos.</p>
-                    <p><strong>✓ Calidad Verificada:</strong> Todos los componentes cumplen con los estándares requeridos.</p>
+        <!-- Cronología Detallada -->
+        <div class="timeline-section">
+            <h3 style="margin-bottom: 15px;">Cronología del Servicio</h3>
+            <div class="timeline-grid">
+                <div class="timeline-item">
+                    <div class="timeline-icon">📅</div>
+                    <div class="timeline-content">
+                        <h4>Orden de Servicio Creada</h4>
+                        <p><strong>Fecha:</strong> ${formatDateTime(serviceOrder?.created_at)}</p>
+                        <p><strong>Estado inicial:</strong> Programado</p>
+                    </div>
                 </div>
-                <div>
-                    <p style="margin-bottom: 10px;"><strong>✓ Seguridad Garantizada:</strong> El equipo se encuentra en condiciones seguras de operación.</p>
-                    <p><strong>✓ Documentación Completa:</strong> Se ha registrado toda la información necesaria.</p>
+                <div class="timeline-item">
+                    <div class="timeline-icon">🔧</div>
+                    <div class="timeline-content">
+                        <h4>Servicio Ejecutado</h4>
+                        <p><strong>Fecha:</strong> ${formatDateTime(serviceOrder?.date)}</p>
+                        <p><strong>Técnico:</strong> ${serviceOrder?.technician}</p>
+                        <p><strong>Duración:</strong> ${serviceOrder?.labor_hours || 0} horas</p>
+                    </div>
+                </div>
+                <div class="timeline-item">
+                    <div class="timeline-icon">✅</div>
+                    <div class="timeline-content">
+                        <h4>Servicio Completado</h4>
+                        <p><strong>Estado final:</strong> <span style="color: #4caf50; font-weight: bold;">COMPLETADO</span></p>
+                        <p><strong>Documento generado:</strong> ${format(new Date(), "dd/MM/yyyy 'a las' HH:mm")}</p>
+                    </div>
                 </div>
             </div>
         </div>
 
-        <!-- Firmas -->
-        <div class="signatures">
-            <div class="signature-box">
-                <h4>Técnico Responsable</h4>
-                <div class="signature-line"></div>
-                <p>Nombre: <strong>${serviceOrder?.technician}</strong></p>
-                <p>Fecha: ${formatDate(serviceOrder?.date)}</p>
-                <p>Firma: _______________</p>
-                <p style="margin-top: 5px; font-size: 9px;">Certifico que el trabajo fue realizado según especificaciones</p>
+        <!-- Certificación Digital -->
+        <div class="certification">
+            <h3 style="margin-bottom: 15px;">Certificación Digital del Servicio</h3>
+            <div class="grid">
+                <div>
+                    <p style="margin-bottom: 10px;"><strong>✓ Trabajo Completado:</strong> El servicio fue ejecutado y registrado en el sistema.</p>
+                    <p><strong>✓ Documentación Completa:</strong> Toda la información ha sido capturada digitalmente.</p>
+                </div>
+                <div>
+                    <p style="margin-bottom: 10px;"><strong>✓ Trazabilidad Completa:</strong> El registro permite seguimiento completo de la intervención.</p>
+                    <p><strong>✓ Evidencia Digital:</strong> Este documento sirve como evidencia oficial del servicio.</p>
+                </div>
             </div>
-            <div class="signature-box">
-                <h4>Supervisor de Mantenimiento</h4>
-                <div class="signature-line"></div>
-                <p>Nombre: _______________</p>
-                <p>Fecha: _______________</p>
-                <p>Firma: _______________</p>
-                <p style="margin-top: 5px; font-size: 9px;">Valido la calidad y conformidad del servicio</p>
+        </div>
+
+        <!-- Validación del Servicio -->
+        <div class="validation-section">
+            <h3 style="margin-bottom: 15px;">Validación del Servicio Completado</h3>
+            <div class="grid">
+                <div class="validation-box">
+                    <h4>Técnico Responsable</h4>
+                    <div class="validation-info">
+                        <p><strong>Nombre:</strong> ${serviceOrder?.technician}</p>
+                        <p><strong>Fecha de Ejecución:</strong> ${formatDate(serviceOrder?.date)}</p>
+                        <p><strong>Hora de Finalización:</strong> ${formatDateTime(serviceOrder?.date)}</p>
+                        <p><strong>Estado:</strong> <span style="color: #4caf50; font-weight: bold;">SERVICIO COMPLETADO</span></p>
+                    </div>
+                </div>
+                <div class="validation-box">
+                    <h4>Detalles de la Intervención</h4>
+                    <div class="validation-info">
+                        <p><strong>Duración Total:</strong> ${serviceOrder?.labor_hours || 0} horas</p>
+                        <p><strong>Tipo de Mantenimiento:</strong> ${serviceOrder?.type === 'preventive' ? 'Preventivo' : 'Correctivo'}</p>
+                        <p><strong>Prioridad:</strong> ${serviceOrder?.priority || 'Media'}</p>
+                        <p><strong>Costo Total:</strong> ${formatCurrency(serviceOrder?.total_cost)}</p>
+                    </div>
+                </div>
             </div>
-            <div class="signature-box">
-                <h4>Recibido Conforme - Cliente</h4>
-                <div class="signature-line"></div>
-                <p>Nombre: _______________</p>
-                <p>Cargo: _______________</p>
-                <p>Fecha: _______________</p>
-                <p>Firma: _______________</p>
-                <p style="margin-top: 5px; font-size: 9px;">Acepto el servicio y verifico su conformidad</p>
+            <div style="background: #f0f8ff; padding: 15px; margin-top: 15px; border-radius: 4px; border-left: 4px solid #2196f3;">
+                <p style="margin: 0; font-size: 12px; text-align: center;">
+                    <strong>Registro Digital de Servicio:</strong> Este documento constituye evidencia digital del servicio de mantenimiento ejecutado.
+                    Generado automáticamente por el sistema el ${format(new Date(), "dd 'de' MMMM 'de' yyyy 'a las' HH:mm", { locale: es })}.
+                </p>
             </div>
         </div>
 
@@ -816,7 +950,9 @@ export function ServiceOrderDetail({ id }: ServiceOrderDetailProps) {
                 </div>
             </div>
             <div class="footer-note">
-                Este documento constituye un registro oficial del servicio de mantenimiento realizado y debe ser conservado según las políticas de la empresa.
+                <strong>DOCUMENTO OFICIAL DE EVIDENCIA:</strong> Este reporte constituye evidencia digital oficial del servicio de mantenimiento ejecutado. 
+                La información contenida ha sido registrada automáticamente por el sistema y puede ser utilizada para auditorías, 
+                seguimiento de mantenimiento, análisis de costos y como respaldo legal de los trabajos realizados.
             </div>
         </div>
     </div>
