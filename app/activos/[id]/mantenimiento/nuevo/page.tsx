@@ -284,21 +284,6 @@ export default function NewMaintenancePage({ params }: NewMaintenancePageProps) 
       });
       return;
     }
-
-    // Validar que las horas sean coherentes
-    if (hours && asset?.current_hours) {
-      const enteredHours = Number(hours);
-      const currentHours = asset.current_hours;
-      
-      if (enteredHours < currentHours - 100) {
-        toast({
-          title: "Horas inconsistentes",
-          description: `Las horas ingresadas (${enteredHours}) son muy menores a las actuales (${currentHours}). Verifique el valor.`,
-          variant: "destructive",
-        });
-        return;
-      }
-    }
     
     try {
       setIsSubmitting(true);

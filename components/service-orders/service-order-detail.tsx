@@ -107,10 +107,39 @@ export function ServiceOrderDetail({ id }: ServiceOrderDetailProps) {
         
         if (error) throw error
         
+        // Debug logging to understand the data structure
+        console.log("Raw service order data from database:", data)
+        console.log("Parts data (raw):", data.parts)
+        console.log("Parts data type:", typeof data.parts)
+        
+        // Parse parts data properly
+        let parsedParts = [];
+        if (data.parts) {
+          try {
+            // If it's a string, parse it as JSON
+            if (typeof data.parts === 'string') {
+              parsedParts = JSON.parse(data.parts);
+            } 
+            // If it's already an object/array, use it directly
+            else if (Array.isArray(data.parts)) {
+              parsedParts = data.parts;
+            }
+            // If it's an object but not an array, try to convert it
+            else if (typeof data.parts === 'object') {
+              parsedParts = Array.isArray(data.parts) ? data.parts : [data.parts];
+            }
+          } catch (error) {
+            console.error("Error parsing parts data:", error);
+            parsedParts = [];
+          }
+        }
+        
+        console.log("Parsed parts array:", parsedParts)
+        
         // Initialize with proper data structure
         const initialServiceOrder: ServiceOrderData = {
           ...data,
-          parts: Array.isArray(data.parts) ? data.parts : [],
+          parts: parsedParts,
           asset: data.asset || undefined
         }
 
@@ -684,17 +713,26 @@ Generado el: ${format(new Date(), "dd/MM/yyyy 'a las' HH:mm", { locale: es })}
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {serviceOrder.parts.map((part: any, index: number) => (
-                        <TableRow key={index}>
-                          <TableCell className="font-medium">{part.name}</TableCell>
-                          <TableCell className="text-muted-foreground">{part.part_number || 'N/A'}</TableCell>
-                          <TableCell className="text-center">{part.quantity}</TableCell>
-                          <TableCell className="text-right">{formatCurrency(part.cost)}</TableCell>
-                          <TableCell className="text-right font-medium">
-                            {formatCurrency(part.quantity * (part.cost || 0))}
-                          </TableCell>
-                        </TableRow>
-                      ))}
+                      {serviceOrder.parts.map((part: any, index: number) => {
+                        // Handle different possible property names for the same data
+                        const partName = part.name || part.part_name || part.description || 'Repuesto sin nombre';
+                        const partNumber = part.part_number || part.partNumber || part.part_id || 'N/A';
+                        const quantity = part.quantity || 1;
+                        const unitCost = part.cost || part.unit_cost || part.unit_price || 0;
+                        const totalCost = part.total_price || part.total_cost || (quantity * unitCost);
+                        
+                        return (
+                          <TableRow key={index}>
+                            <TableCell className="font-medium">{partName}</TableCell>
+                            <TableCell className="text-muted-foreground">{partNumber}</TableCell>
+                            <TableCell className="text-center">{quantity}</TableCell>
+                            <TableCell className="text-right">{formatCurrency(unitCost)}</TableCell>
+                            <TableCell className="text-right font-medium">
+                              {formatCurrency(totalCost)}
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
                     </TableBody>
                     <tfoot>
                       <tr className="bg-muted/50">
