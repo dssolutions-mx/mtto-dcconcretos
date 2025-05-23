@@ -61,7 +61,7 @@ export function ServiceOrderPrintReport({ serviceOrder, onClose }: ServiceOrderP
         
         {/* Header */}
         <div className="text-center mb-8 border-b-2 border-gray-200 pb-6">
-          <h1 className="text-3xl font-bold text-gray-800 mb-2">REPORTE DE ORDEN DE SERVICIO</h1>
+          <h1 className="text-3xl font-bold text-gray-800 mb-2">REPORTE DETALLADO DE ORDEN DE SERVICIO</h1>
           <p className="text-lg text-gray-600">Sistema de Gestión de Mantenimiento</p>
           <p className="text-sm text-gray-500 mt-2">
             Generado el {format(new Date(), "dd 'de' MMMM 'de' yyyy 'a las' HH:mm", { locale: es })}
@@ -72,7 +72,7 @@ export function ServiceOrderPrintReport({ serviceOrder, onClose }: ServiceOrderP
         <div className="grid grid-cols-2 gap-8 mb-8">
           <div>
             <h3 className="text-lg font-semibold text-gray-800 border-b border-gray-200 pb-2 mb-4">
-              Información General
+              Información General del Servicio
             </h3>
             <div className="space-y-3 text-sm">
               <div className="flex justify-between">
@@ -84,7 +84,7 @@ export function ServiceOrderPrintReport({ serviceOrder, onClose }: ServiceOrderP
                 <span>{formatDate(serviceOrder.date)}</span>
               </div>
               <div className="flex justify-between">
-                <span className="font-medium">Tipo:</span>
+                <span className="font-medium">Tipo de Mantenimiento:</span>
                 <span>
                   {serviceOrder.type === 'preventive' ? 'Mantenimiento Preventivo' : 
                    serviceOrder.type === 'corrective' ? 'Mantenimiento Correctivo' : 
@@ -99,6 +99,14 @@ export function ServiceOrderPrintReport({ serviceOrder, onClose }: ServiceOrderP
                 <span className="font-medium">Prioridad:</span>
                 <span>{serviceOrder.priority || 'Media'}</span>
               </div>
+              <div className="flex justify-between">
+                <span className="font-medium">Técnico Responsable:</span>
+                <span>{serviceOrder.technician}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="font-medium">Duración del Trabajo:</span>
+                <span>{serviceOrder.labor_hours || 0} horas</span>
+              </div>
             </div>
           </div>
 
@@ -108,7 +116,7 @@ export function ServiceOrderPrintReport({ serviceOrder, onClose }: ServiceOrderP
             </h3>
             <div className="space-y-3 text-sm">
               <div className="flex justify-between">
-                <span className="font-medium">Activo:</span>
+                <span className="font-medium">Nombre del Activo:</span>
                 <span>{serviceOrder.asset_name}</span>
               </div>
               <div className="flex justify-between">
@@ -137,6 +145,18 @@ export function ServiceOrderPrintReport({ serviceOrder, onClose }: ServiceOrderP
                   <span>{serviceOrder.asset.serial_number}</span>
                 </div>
               )}
+              {serviceOrder.asset?.current_hours && (
+                <div className="flex justify-between">
+                  <span className="font-medium">Horas Actuales:</span>
+                  <span>{serviceOrder.asset.current_hours.toLocaleString()} hrs</span>
+                </div>
+              )}
+              {serviceOrder.asset?.current_kilometers && (
+                <div className="flex justify-between">
+                  <span className="font-medium">Kilómetros Actuales:</span>
+                  <span>{serviceOrder.asset.current_kilometers.toLocaleString()} km</span>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -146,19 +166,8 @@ export function ServiceOrderPrintReport({ serviceOrder, onClose }: ServiceOrderP
           <h3 className="text-lg font-semibold text-gray-800 border-b border-gray-200 pb-2 mb-4">
             Detalles del Trabajo Realizado
           </h3>
-          
-          <div className="grid grid-cols-2 gap-6 mb-6">
-            <div>
-              <p className="font-medium text-sm text-gray-600">Técnico Responsable:</p>
-              <p className="text-base">{serviceOrder.technician}</p>
-            </div>
-            <div>
-              <p className="font-medium text-sm text-gray-600">Horas de Trabajo:</p>
-              <p className="text-base">{serviceOrder.labor_hours || 0} horas</p>
-            </div>
-          </div>
 
-          <div className="space-y-4">
+          <div className="space-y-6">
             <div>
               <p className="font-medium text-sm text-gray-600 mb-2">Descripción del Trabajo:</p>
               <div className="border border-gray-200 rounded p-3 bg-gray-50">
@@ -248,22 +257,34 @@ export function ServiceOrderPrintReport({ serviceOrder, onClose }: ServiceOrderP
         {/* Cost Summary */}
         <div className="mb-8">
           <h3 className="text-lg font-semibold text-gray-800 border-b border-gray-200 pb-2 mb-4">
-            Resumen de Costos
+            Resumen de Costos del Servicio
           </h3>
-          <div className="bg-gray-50 rounded p-4">
-            <div className="grid grid-cols-2 gap-4 text-sm">
-              <div className="flex justify-between">
-                <span>Costo de Mano de Obra:</span>
-                <span className="font-medium">{formatCurrency(serviceOrder.labor_cost)}</span>
+          <div className="bg-gray-50 rounded p-6">
+            <div className="grid grid-cols-2 gap-6 text-sm mb-4">
+              <div className="space-y-2">
+                <div className="flex justify-between">
+                  <span>Horas de Trabajo:</span>
+                  <span className="font-medium">{serviceOrder.labor_hours || 0} horas</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Costo de Mano de Obra:</span>
+                  <span className="font-medium">{formatCurrency(serviceOrder.labor_cost)}</span>
+                </div>
               </div>
-              <div className="flex justify-between">
-                <span>Costo de Repuestos:</span>
-                <span className="font-medium">{formatCurrency(serviceOrder.parts_cost)}</span>
+              <div className="space-y-2">
+                <div className="flex justify-between">
+                  <span>Cantidad de Repuestos:</span>
+                  <span className="font-medium">{serviceOrder.parts?.length || 0} items</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Costo de Repuestos:</span>
+                  <span className="font-medium">{formatCurrency(serviceOrder.parts_cost)}</span>
+                </div>
               </div>
             </div>
-            <div className="border-t border-gray-300 mt-4 pt-4">
-              <div className="flex justify-between text-lg font-bold">
-                <span>TOTAL:</span>
+            <div className="border-t border-gray-300 pt-4">
+              <div className="flex justify-between text-xl font-bold">
+                <span>COSTO TOTAL DEL SERVICIO:</span>
                 <span>{formatCurrency(serviceOrder.total_cost)}</span>
               </div>
             </div>
@@ -275,37 +296,83 @@ export function ServiceOrderPrintReport({ serviceOrder, onClose }: ServiceOrderP
           <h3 className="text-lg font-semibold text-gray-800 border-b border-gray-200 pb-2 mb-4">
             Cronología del Servicio
           </h3>
-          <div className="space-y-3 text-sm">
-            <div className="flex justify-between">
-              <span>Orden Creada:</span>
-              <span>{formatDateTime(serviceOrder.created_at)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span>Servicio Completado:</span>
-              <span>{formatDateTime(serviceOrder.date)}</span>
-            </div>
-            {serviceOrder.updated_at && serviceOrder.updated_at !== serviceOrder.created_at && (
+          <div className="bg-gray-50 rounded p-4">
+            <div className="space-y-3 text-sm">
               <div className="flex justify-between">
-                <span>Última Actualización:</span>
-                <span>{formatDateTime(serviceOrder.updated_at)}</span>
+                <span className="font-medium">Orden de Servicio Creada:</span>
+                <span>{formatDateTime(serviceOrder.created_at)}</span>
               </div>
-            )}
+              <div className="flex justify-between">
+                <span className="font-medium">Servicio Ejecutado:</span>
+                <span>{formatDateTime(serviceOrder.date)}</span>
+              </div>
+              {serviceOrder.updated_at && serviceOrder.updated_at !== serviceOrder.created_at && (
+                <div className="flex justify-between">
+                  <span className="font-medium">Última Actualización:</span>
+                  <span>{formatDateTime(serviceOrder.updated_at)}</span>
+                </div>
+              )}
+              {serviceOrder.work_order_id && (
+                <div className="flex justify-between">
+                  <span className="font-medium">Orden de Trabajo Relacionada:</span>
+                  <span>{serviceOrder.work_order_id}</span>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Quality Control Section */}
+        <div className="mb-8">
+          <h3 className="text-lg font-semibold text-gray-800 border-b border-gray-200 pb-2 mb-4">
+            Control de Calidad y Verificación
+          </h3>
+          <div className="grid grid-cols-2 gap-6">
+            <div className="border border-gray-200 rounded p-4">
+              <h4 className="font-medium text-gray-700 mb-3">Verificación del Técnico</h4>
+              <div className="space-y-2 text-sm">
+                <p>☐ Trabajo completado según especificaciones</p>
+                <p>☐ Repuestos instalados correctamente</p>
+                <p>☐ Pruebas de funcionamiento realizadas</p>
+                <p>☐ Área de trabajo limpia y ordenada</p>
+                <p>☐ Documentación completada</p>
+              </div>
+            </div>
+            <div className="border border-gray-200 rounded p-4">
+              <h4 className="font-medium text-gray-700 mb-3">Verificación del Supervisor</h4>
+              <div className="space-y-2 text-sm">
+                <p>☐ Calidad del trabajo verificada</p>
+                <p>☐ Cumplimiento de procedimientos</p>
+                <p>☐ Seguridad durante la ejecución</p>
+                <p>☐ Costos dentro del presupuesto</p>
+                <p>☐ Cliente/Usuario satisfecho</p>
+              </div>
+            </div>
           </div>
         </div>
 
         {/* Signatures */}
-        <div className="grid grid-cols-2 gap-8 mt-12 pt-8 border-t-2 border-gray-200">
+        <div className="grid grid-cols-3 gap-8 mt-12 pt-8 border-t-2 border-gray-200">
           <div>
             <h4 className="font-medium text-gray-700 mb-4">Técnico Responsable</h4>
-            <div className="border-b border-gray-400 mb-2 h-12"></div>
+            <div className="border-b border-gray-400 mb-2 h-16"></div>
             <p className="text-sm text-gray-600">Nombre: {serviceOrder.technician}</p>
             <p className="text-sm text-gray-600">Fecha: _______________</p>
+            <p className="text-sm text-gray-600">Firma: _______________</p>
           </div>
           <div>
-            <h4 className="font-medium text-gray-700 mb-4">Supervisor/Aprobación</h4>
-            <div className="border-b border-gray-400 mb-2 h-12"></div>
+            <h4 className="font-medium text-gray-700 mb-4">Supervisor de Mantenimiento</h4>
+            <div className="border-b border-gray-400 mb-2 h-16"></div>
             <p className="text-sm text-gray-600">Nombre: _______________</p>
             <p className="text-sm text-gray-600">Fecha: _______________</p>
+            <p className="text-sm text-gray-600">Firma: _______________</p>
+          </div>
+          <div>
+            <h4 className="font-medium text-gray-700 mb-4">Recibido Conforme</h4>
+            <div className="border-b border-gray-400 mb-2 h-16"></div>
+            <p className="text-sm text-gray-600">Nombre: _______________</p>
+            <p className="text-sm text-gray-600">Fecha: _______________</p>
+            <p className="text-sm text-gray-600">Firma: _______________</p>
           </div>
         </div>
 
@@ -313,6 +380,7 @@ export function ServiceOrderPrintReport({ serviceOrder, onClose }: ServiceOrderP
         <div className="text-center mt-8 pt-4 border-t border-gray-200 text-xs text-gray-500">
           <p>Este documento fue generado automáticamente por el Sistema de Gestión de Mantenimiento</p>
           <p>Orden de Servicio: {serviceOrder.order_id} | Generado: {format(new Date(), "dd/MM/yyyy HH:mm")}</p>
+          <p>Documento confidencial - Solo para uso interno de la organización</p>
         </div>
       </div>
 
@@ -363,6 +431,11 @@ export function ServiceOrderPrintReport({ serviceOrder, onClose }: ServiceOrderP
           
           .bg-yellow-50 {
             background-color: #fefce8 !important;
+          }
+          
+          /* Ensure proper spacing for signatures */
+          .grid-cols-3 > div {
+            min-height: 120px;
           }
         }
       `}</style>

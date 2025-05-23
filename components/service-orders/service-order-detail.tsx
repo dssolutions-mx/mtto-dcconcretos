@@ -99,11 +99,7 @@ export function ServiceOrderDetail({ id }: ServiceOrderDetailProps) {
               )
             ),
             work_order:work_order_id (
-              *,
-              maintenance_plan:maintenance_plan_id (
-                name,
-                description
-              )
+              *
             )
           `)
           .eq("id", id)
