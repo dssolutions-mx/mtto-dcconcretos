@@ -92,9 +92,11 @@ const formSchema = z.object({
     invalid_type_error: "La fecha de vencimiento de garantía debe ser una fecha válida",
   }).optional(),
   isNew: z.boolean(),
-  purchaseCost: z.number()
-    .min(0, "El costo de adquisición debe ser mayor o igual a 0")
-    .optional(),
+  purchaseCost: z.string()
+    .optional()
+    .refine((val) => !val || (!isNaN(Number(val)) && Number(val) >= 0), { 
+      message: "El costo de adquisición debe ser un número válido mayor o igual a 0" 
+    }),
   registrationInfo: z.string().optional(),
   insurancePolicy: z.string().optional(),
   insuranceCoverage: z
@@ -146,7 +148,7 @@ export function AssetEditForm({ assetId }: AssetEditFormProps) {
       notes: "",
       warrantyExpiration: undefined,
       isNew: true,
-      purchaseCost: undefined,
+      purchaseCost: "",
       registrationInfo: "",
       insurancePolicy: "",
       insuranceCoverage: { startDate: undefined, endDate: undefined },
@@ -266,7 +268,7 @@ export function AssetEditForm({ assetId }: AssetEditFormProps) {
             warrantyExpiration: asset.warranty_expiration ? new Date(asset.warranty_expiration) : undefined,
             isNew: asset.is_new || false,
             registrationInfo: asset.registration_info || "",
-            purchaseCost: typeof asset.purchase_cost === 'number' ? asset.purchase_cost : (asset.purchase_cost ? parseFloat(asset.purchase_cost) : undefined),
+            purchaseCost: asset.purchase_cost ? asset.purchase_cost.toString() : "",
             insurancePolicy: asset.insurance_policy || "",
             insuranceCoverage: {
               startDate: asset.insurance_start_date ? new Date(asset.insurance_start_date) : undefined,
@@ -317,7 +319,7 @@ export function AssetEditForm({ assetId }: AssetEditFormProps) {
         current_hours: Number(data.currentHours),
         is_new: data.isNew,
         notes: data.notes,
-        purchase_cost: data.purchaseCost?.toString() || null,
+        purchase_cost: data.purchaseCost || null,
         registration_info: data.registrationInfo,
         insurance_policy: data.insurancePolicy,
         insurance_start_date: data.insuranceCoverage?.startDate?.toISOString(),

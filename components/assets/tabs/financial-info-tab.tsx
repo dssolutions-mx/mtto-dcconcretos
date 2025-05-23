@@ -26,7 +26,7 @@ interface FormValues {
   warrantyExpiration?: Date
   isNew: boolean
   registrationInfo?: string
-  purchaseCost?: string
+  purchaseCost?: number
   insurancePolicy?: string
   insuranceCoverage?: {
     startDate?: Date
@@ -82,7 +82,18 @@ export function FinancialInfoTab({
               <FormControl>
                 <div className="relative">
                   <DollarSign className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-                  <Input placeholder="0.00" className="pl-8" {...field} />
+                  <Input 
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    placeholder="0.00" 
+                    className="pl-8" 
+                    value={field.value || ""}
+                    onChange={(e) => {
+                      const value = e.target.value
+                      field.onChange(value === "" ? undefined : parseFloat(value))
+                    }}
+                  />
                 </div>
               </FormControl>
               <FormDescription>Costo de adquisición del activo</FormDescription>
