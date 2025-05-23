@@ -229,6 +229,43 @@ export function useMaintenanceHistory(assetId: string | null) {
   return { history, loading, error, refetch: fetchHistory };
 }
 
+// Hook para obtener el historial de incidentes de un activo
+export function useIncidents(assetId: string | null) {
+  const [incidents, setIncidents] = useState<any[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<Error | null>(null);
+
+  const fetchIncidents = async () => {
+    if (!assetId) {
+      setIncidents([]);
+      setLoading(false);
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const { data, error } = await supabase
+        .from('incident_history')
+        .select('*')
+        .eq('asset_id', assetId)
+        .order('date', { ascending: false });
+
+      if (error) throw error;
+      setIncidents(data || []);
+    } catch (err) {
+      setError(err instanceof Error ? err : new Error(String(err)));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchIncidents();
+  }, [assetId]);
+
+  return { incidents, loading, error, refetch: fetchIncidents };
+}
+
 // Hook para obtener órdenes de servicio
 export function useServiceOrders() {
   const [serviceOrders, setServiceOrders] = useState<ServiceOrder[]>([]);

@@ -5,16 +5,18 @@ import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { ArrowLeft, Calendar, CheckCircle2, Clock, FileText, Printer, User } from "lucide-react"
+import { ArrowLeft, Calendar, CheckCircle2, Clock, FileText, Printer, User, Wrench, Settings } from "lucide-react"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
 
 interface MaintenanceDetailsProps {
   maintenance: any
+  asset?: any
+  maintenancePlan?: any
   onBack: () => void
 }
 
-export function MaintenanceDetails({ maintenance, onBack }: MaintenanceDetailsProps) {
+export function MaintenanceDetails({ maintenance, asset, maintenancePlan, onBack }: MaintenanceDetailsProps) {
   // Formatear la fecha
   const formatDate = (dateString: string) => {
     const date = new Date(dateString)
@@ -39,6 +41,49 @@ export function MaintenanceDetails({ maintenance, onBack }: MaintenanceDetailsPr
           </Button>
         </div>
       </div>
+
+      {maintenancePlan && (
+        <Card className="border-blue-200 bg-blue-50">
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center gap-2">
+              <Wrench className="h-5 w-5" />
+              Checkpoint de Mantenimiento
+              <Badge 
+                variant="outline" 
+                className="ml-2 whitespace-nowrap"
+              >
+                {maintenancePlan.type}
+                {maintenancePlan.interval_value && ` ${maintenancePlan.interval_value}h`}
+              </Badge>
+            </CardTitle>
+            <CardDescription>
+              Este mantenimiento fue registrado como parte del plan de mantenimiento
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="bg-white rounded-md border p-3 space-y-1">
+                <div className="text-sm font-medium text-muted-foreground">Nombre del Checkpoint</div>
+                <div className="font-medium">{maintenancePlan.description}</div>
+              </div>
+              
+              <div className="bg-white rounded-md border p-3 space-y-1">
+                <div className="text-sm font-medium text-muted-foreground">Frecuencia</div>
+                <div className="font-medium">
+                  {maintenancePlan.interval_value && `Cada ${maintenancePlan.interval_value} horas`}
+                </div>
+              </div>
+              
+              <div className="bg-white rounded-md border p-3 space-y-1">
+                <div className="text-sm font-medium text-muted-foreground">Equipo</div>
+                <div className="font-medium">
+                  {asset?.name} ({asset?.asset_id})
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <Card className="md:col-span-2">
@@ -75,14 +120,22 @@ export function MaintenanceDetails({ maintenance, onBack }: MaintenanceDetailsPr
               </div>
               <div>
                 <h4 className="text-sm font-medium text-muted-foreground mb-1">Horas de Trabajo</h4>
-                <span>{maintenance.laborHours} horas</span>
+                <span>{maintenance.labor_hours || '-'} horas</span>
               </div>
-              <div>
-                <h4 className="text-sm font-medium text-muted-foreground mb-1">Estado</h4>
-                <Badge variant="outline" className="bg-green-100 text-green-800">
-                  {maintenance.status}
-                </Badge>
-              </div>
+              {maintenance.work_order && (
+                <div>
+                  <h4 className="text-sm font-medium text-muted-foreground mb-1">Orden de Trabajo</h4>
+                  <span>{maintenance.work_order}</span>
+                </div>
+              )}
+              {!maintenance.work_order && (
+                <div>
+                  <h4 className="text-sm font-medium text-muted-foreground mb-1">Estado</h4>
+                  <Badge variant="outline" className="bg-green-100 text-green-800">
+                    Completado
+                  </Badge>
+                </div>
+              )}
             </div>
 
             <Separator />
@@ -121,7 +174,7 @@ export function MaintenanceDetails({ maintenance, onBack }: MaintenanceDetailsPr
                   $
                   {maintenance.parts
                     ? maintenance.parts.reduce(
-                        (total: number, part: any) => total + part.quantity * (part.cost || 0),
+                        (total: number, part: any) => total + part.quantity * (parseFloat(part.cost) || 0),
                         0,
                       )
                     : 0}
@@ -129,12 +182,12 @@ export function MaintenanceDetails({ maintenance, onBack }: MaintenanceDetailsPr
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-sm text-muted-foreground">Costo de Mano de Obra</span>
-                <span className="font-medium">${maintenance.laborCost || 0}</span>
+                <span className="font-medium">${maintenance.labor_cost || 0}</span>
               </div>
               <Separator />
               <div className="flex items-center justify-between">
                 <span className="text-sm font-medium">Costo Total</span>
-                <span className="font-bold">${maintenance.totalCost || 0}</span>
+                <span className="font-bold">${maintenance.total_cost || 0}</span>
               </div>
             </div>
           </CardContent>
@@ -164,6 +217,7 @@ export function MaintenanceDetails({ maintenance, onBack }: MaintenanceDetailsPr
                   <TableHeader>
                     <TableRow>
                       <TableHead>Repuesto</TableHead>
+                      <TableHead>Número de Parte</TableHead>
                       <TableHead className="text-center">Cantidad</TableHead>
                       <TableHead className="text-right">Costo Unitario</TableHead>
                       <TableHead className="text-right">Subtotal</TableHead>
@@ -173,9 +227,10 @@ export function MaintenanceDetails({ maintenance, onBack }: MaintenanceDetailsPr
                     {maintenance.parts.map((part: any, index: number) => (
                       <TableRow key={index}>
                         <TableCell>{part.name}</TableCell>
+                        <TableCell>{part.partNumber || '-'}</TableCell>
                         <TableCell className="text-center">{part.quantity}</TableCell>
                         <TableCell className="text-right">${part.cost || 0}</TableCell>
-                        <TableCell className="text-right">${((part.cost || 0) * part.quantity).toFixed(2)}</TableCell>
+                        <TableCell className="text-right">${((parseFloat(part.cost) || 0) * part.quantity).toFixed(2)}</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -192,28 +247,36 @@ export function MaintenanceDetails({ maintenance, onBack }: MaintenanceDetailsPr
           <Card>
             <CardHeader>
               <CardTitle>Tareas Completadas</CardTitle>
-              <CardDescription>Tareas realizadas durante el mantenimiento</CardDescription>
+              <CardDescription>Tareas completadas durante el mantenimiento</CardDescription>
             </CardHeader>
             <CardContent>
-              {maintenance.completedTasks ? (
-                <div className="space-y-2">
-                  {Object.entries(maintenance.completedTasks).map(([taskId, completed]: [string, any]) => {
-                    // Buscar la tarea correspondiente (en una aplicación real, tendríamos los datos completos)
-                    const taskDescription = `Tarea ${taskId}`
-                    return (
-                      <div key={taskId} className="flex items-center gap-2 p-2 border rounded-md">
-                        {completed ? (
-                          <CheckCircle2 className="h-4 w-4 text-green-600" />
-                        ) : (
-                          <div className="h-4 w-4 rounded-full border border-muted-foreground" />
-                        )}
-                        <span className={completed ? "font-medium" : "text-muted-foreground"}>{taskDescription}</span>
-                      </div>
-                    )
-                  })}
-                </div>
+              {maintenancePlan?.maintenance_tasks && maintenancePlan.maintenance_tasks.length > 0 ? (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Tarea</TableHead>
+                      <TableHead>Tipo</TableHead>
+                      <TableHead className="text-center">Estado</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {maintenancePlan.maintenance_tasks.map((task: any, index: number) => (
+                      <TableRow key={index}>
+                        <TableCell>{task.description}</TableCell>
+                        <TableCell>{task.type || '-'}</TableCell>
+                        <TableCell className="text-center">
+                          <Badge variant="outline" className="bg-green-100 text-green-800">
+                            <CheckCircle2 className="mr-1 h-3 w-3" />
+                            Completado
+                          </Badge>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
               ) : (
                 <div className="text-center py-8 text-muted-foreground">
+                  <Settings className="h-12 w-12 mx-auto text-muted-foreground/50 mb-2" />
                   No hay tareas registradas para este mantenimiento.
                 </div>
               )}

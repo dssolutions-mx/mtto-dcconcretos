@@ -24,6 +24,7 @@ import {
   CheckCircle2,
   Trash2,
   Loader2,
+  AlertTriangle,
 } from "lucide-react"
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts"
 import {
@@ -41,10 +42,11 @@ import { format } from "date-fns"
 import { es } from "date-fns/locale"
 import { cn } from "@/lib/utils"
 import { createClient } from "@/lib/supabase"
-import { useAsset, useMaintenanceHistory } from "@/hooks/useSupabase"
+import { useAsset, useMaintenanceHistory, useIncidents } from "@/hooks/useSupabase"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { MaintenanceHistory, AssetWithModel } from "@/types"
+import { toast } from "@/components/ui/use-toast"
 
 interface AssetHistoryProps {
   id: string
@@ -108,7 +110,8 @@ export function AssetHistory({ id }: AssetHistoryProps) {
   // Fetch real data from Supabase
   const { asset, loading: assetLoading, error: assetError } = useAsset(id) as 
     { asset: AssetWithModel | null, loading: boolean, error: Error | null };
-  const { history: maintenanceHistory, loading: historyLoading, error: historyError } = useMaintenanceHistory(id);
+  const { history: maintenanceHistory, loading: historyLoading, error: historyError, refetch: refetchMaintenanceHistory } = useMaintenanceHistory(id);
+  const { incidents, loading: incidentsLoading, error: incidentsError, refetch: refetchIncidents } = useIncidents(id);
   
   const [costHistory, setCostHistory] = useState<CostDataPoint[]>([]);
   const [metrics, setMetrics] = useState<any>({
@@ -404,9 +407,92 @@ export function AssetHistory({ id }: AssetHistoryProps) {
   };
   
   const handleSubmitIncident = async () => {
-    // This would be implemented similar to handleSubmitMaintenance
-    // For now, just close the dialog
-    setShowAddIncidentDialog(false);
+    try {
+      setIsSubmitting(true);
+      
+      // Validate required fields
+      if (!newIncident.date || !newIncident.type || !newIncident.reportedBy || !newIncident.description) {
+        toast({
+          title: "Campos incompletos",
+          description: "Por favor complete todos los campos obligatorios",
+          variant: "destructive"
+        });
+        return;
+      }
+      
+      const supabase = createClient();
+      const user = (await supabase.auth.getUser()).data.user;
+      
+      if (!user) {
+        throw new Error("Usuario no autenticado");
+      }
+      
+      // Process parts to string format
+      const parts = newIncident.parts && newIncident.parts.length > 0 
+        ? newIncident.parts.filter(part => part.name.trim())
+        : null;
+        
+      // Create incident record
+      const { data, error } = await supabase
+        .from("incident_history")
+        .insert({
+          asset_id: id,
+          date: newIncident.date.toISOString(),
+          type: newIncident.type,
+          reported_by: newIncident.reportedBy,
+          description: newIncident.description,
+          impact: newIncident.impact || null,
+          resolution: newIncident.resolution || null,
+          downtime: newIncident.downtime ? parseFloat(newIncident.downtime) : null,
+          labor_hours: newIncident.laborHours ? parseFloat(newIncident.laborHours) : null,
+          labor_cost: newIncident.laborCost || null,
+          parts: parts ? JSON.stringify(parts) : null,
+          work_order_text: newIncident.workOrder || null,
+          status: newIncident.status || "Pendiente",
+          created_by: user.id,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        })
+        .select();
+        
+      if (error) throw error;
+      
+      // Reset form and close dialog
+      setNewIncident({
+        date: new Date(),
+        type: "Falla",
+        reportedBy: "",
+        description: "",
+        impact: "",
+        resolution: "",
+        downtime: "",
+        laborHours: "",
+        laborCost: "",
+        workOrder: "",
+        status: "Pendiente",
+        parts: [{ id: "new-part-1", name: "", quantity: "1", cost: "" }],
+      });
+      
+      setShowAddIncidentDialog(false);
+      
+      // Refresh incidents data
+      await refetchIncidents();
+      
+      toast({
+        title: "Incidente registrado",
+        description: "El incidente ha sido registrado exitosamente",
+        variant: "default"
+      });
+    } catch (error: any) {
+      console.error("Error al registrar incidente:", error);
+      toast({
+        title: "Error al registrar incidente",
+        description: error.message || "Ha ocurrido un error",
+        variant: "destructive"
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
   
   const handleCompleteMaintenance = async (e: React.MouseEvent) => {
@@ -463,7 +549,7 @@ export function AssetHistory({ id }: AssetHistoryProps) {
     });
   };
 
-  if (assetLoading || historyLoading) {
+  if (assetLoading || historyLoading || incidentsLoading) {
     return (
       <div className="space-y-6">
         <Card>
@@ -482,11 +568,11 @@ export function AssetHistory({ id }: AssetHistoryProps) {
     );
   }
   
-  if (assetError || historyError) {
+  if (assetError || historyError || incidentsError) {
     return (
       <Alert variant="destructive">
         <AlertDescription>
-          {assetError?.message || historyError?.message || "Error al cargar el historial del activo"}
+          {assetError?.message || historyError?.message || incidentsError?.message || "Error al cargar el historial del activo"}
         </AlertDescription>
       </Alert>
     );
@@ -499,8 +585,13 @@ export function AssetHistory({ id }: AssetHistoryProps) {
       item.type.toLowerCase().includes(searchTerm.toLowerCase())
     );
     
-  // Since we may not have incident history yet, let's just use an empty array
-  const filteredIncidents: any[] = [];
+  // Filter incidents based on search term and date
+  const filteredIncidents = filterByDate(incidents || [])
+    .filter((item) =>
+      item.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      item.reported_by.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      item.type.toLowerCase().includes(searchTerm.toLowerCase())
+    );
   
   // For now, we'll have empty parts replacement history
   const partsReplacementHistory: any[] = [];
@@ -596,10 +687,9 @@ export function AssetHistory({ id }: AssetHistoryProps) {
               <SelectValue placeholder="Filtrar por fecha" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">Todo el historial</SelectItem>
-              <SelectItem value="month">Último mes</SelectItem>
-              <SelectItem value="three-months">Últimos 3 meses</SelectItem>
-              <SelectItem value="six-months">Últimos 6 meses</SelectItem>
+              <SelectItem value="all">Todos los registros</SelectItem>
+              <SelectItem value="30days">Últimos 30 días</SelectItem>
+              <SelectItem value="90days">Últimos 90 días</SelectItem>
               <SelectItem value="year">Último año</SelectItem>
             </SelectContent>
           </Select>
@@ -610,86 +700,158 @@ export function AssetHistory({ id }: AssetHistoryProps) {
         </div>
       </div>
 
-      <Tabs defaultValue="maintenance" className="w-full">
-        <TabsList className="mb-4">
+      <Tabs defaultValue="all" className="w-full">
+        <TabsList className="grid grid-cols-5 mb-4">
+          <TabsTrigger value="all">Todos los registros</TabsTrigger>
           <TabsTrigger value="maintenance">Mantenimientos</TabsTrigger>
           <TabsTrigger value="incidents">Incidentes</TabsTrigger>
-          <TabsTrigger value="parts">Reemplazo de Partes</TabsTrigger>
-          <TabsTrigger value="costs">Costos</TabsTrigger>
-          <TabsTrigger value="plan">Plan de Mantenimiento</TabsTrigger>
+          <TabsTrigger value="parts">Reemplazo de partes</TabsTrigger>
+          <TabsTrigger value="metrics">Métricas y costos</TabsTrigger>
         </TabsList>
-
-        <TabsContent value="maintenance">
+        
+        <TabsContent value="all" className="space-y-4">
           <Card>
-            <CardHeader className="flex flex-row items-center justify-between">
-              <div>
-                <CardTitle>Historial de Mantenimientos</CardTitle>
-                <CardDescription>Registro de todos los mantenimientos realizados</CardDescription>
-              </div>
-              <Button onClick={() => setShowAddMaintenanceDialog(true)}>
-                <Plus className="mr-2 h-4 w-4" />
-                Registrar Mantenimiento
-              </Button>
+            <CardHeader>
+              <CardTitle>Historial completo</CardTitle>
+              <CardDescription>
+                Todos los registros de mantenimientos e incidentes ordenados por fecha
+              </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="rounded-md border">
+              {historyLoading || incidentsLoading ? (
+                <div className="space-y-2">
+                  <Skeleton className="h-8 w-full" />
+                  <Skeleton className="h-8 w-full" />
+                  <Skeleton className="h-8 w-full" />
+                </div>
+              ) : filteredMaintenance.length === 0 && filteredIncidents.length === 0 ? (
+                <div className="text-center py-6">
+                  <p className="text-muted-foreground">No hay registros que mostrar</p>
+                </div>
+              ) : (
                 <Table>
                   <TableHeader>
                     <TableRow>
                       <TableHead>Fecha</TableHead>
                       <TableHead>Tipo</TableHead>
-                      <TableHead>Horas</TableHead>
-                      <TableHead>Descripción</TableHead>
-                      <TableHead>Técnico</TableHead>
-                      <TableHead>Hallazgos</TableHead>
-                      <TableHead>Costo</TableHead>
-                      <TableHead>OT</TableHead>
+                      <TableHead>Evento</TableHead>
+                      <TableHead>Detalles</TableHead>
+                      <TableHead>Realizado por</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filteredMaintenance.map((item) => (
-                      <TableRow key={item.id}>
-                        <TableCell>{formatDate(item.date)}</TableCell>
-                        <TableCell>
-                          <Badge variant={item.type === "Preventivo" ? "default" : "secondary"}>{item.type}</Badge>
-                        </TableCell>
-                        <TableCell>{item.hours}</TableCell>
-                        <TableCell>{item.description}</TableCell>
-                        <TableCell>{item.technician}</TableCell>
-                        <TableCell>{item.findings}</TableCell>
-                        <TableCell>${item.total_cost}</TableCell>
-                        <TableCell>{item.work_order}</TableCell>
-                      </TableRow>
-                    ))}
-                    
-                    {filteredMaintenance.length === 0 && (
-                      <TableRow>
-                        <TableCell colSpan={8} className="text-center py-4 text-muted-foreground">
-                          No hay registros de mantenimiento
-                        </TableCell>
-                      </TableRow>
-                    )}
+                    {/* Combine and sort maintenance and incidents */}
+                    {[...filteredMaintenance, ...filteredIncidents]
+                      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+                      .map((item) => {
+                        const isMaintenance = 'technician' in item;
+                        
+                        return (
+                          <TableRow key={`${isMaintenance ? 'maintenance' : 'incident'}-${item.id}`}>
+                            <TableCell>{formatDate(item.date)}</TableCell>
+                            <TableCell>
+                              <Badge 
+                                variant={
+                                  isMaintenance ? 
+                                    (item.type === 'Preventivo' ? 'default' : 'destructive') :
+                                    (item.type === 'Falla' ? 'destructive' : 'outline')
+                                }
+                              >
+                                {item.type}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              {isMaintenance ? 'Mantenimiento' : 'Incidente'}
+                            </TableCell>
+                            <TableCell className="max-w-xs truncate">
+                              {item.description}
+                            </TableCell>
+                            <TableCell>
+                              {isMaintenance ? item.technician : item.reported_by}
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
                   </TableBody>
                 </Table>
-              </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
-
-        <TabsContent value="incidents">
+        
+        <TabsContent value="maintenance" className="space-y-4">
           <Card>
-            <CardHeader className="flex flex-row items-center justify-between">
-              <div>
-                <CardTitle>Historial de Incidentes</CardTitle>
-                <CardDescription>Registro de todos los incidentes y fallas</CardDescription>
-              </div>
-              <Button onClick={() => setShowAddIncidentDialog(true)}>
-                <Plus className="mr-2 h-4 w-4" />
-                Registrar Incidente
-              </Button>
+            <CardHeader>
+              <CardTitle>Mantenimientos</CardTitle>
+              <CardDescription>
+                Registros de mantenimiento preventivo y correctivo
+              </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="rounded-md border">
+              {historyLoading ? (
+                <div className="space-y-2">
+                  <Skeleton className="h-8 w-full" />
+                  <Skeleton className="h-8 w-full" />
+                  <Skeleton className="h-8 w-full" />
+                </div>
+              ) : filteredMaintenance.length === 0 ? (
+                <div className="text-center py-6">
+                  <p className="text-muted-foreground">No hay registros de mantenimiento</p>
+                </div>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Fecha</TableHead>
+                      <TableHead>Tipo</TableHead>
+                      <TableHead>Descripción</TableHead>
+                      <TableHead>Técnico</TableHead>
+                      <TableHead>Costo</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredMaintenance.map((maintenance) => (
+                      <TableRow key={maintenance.id}>
+                        <TableCell>{formatDate(maintenance.date)}</TableCell>
+                        <TableCell>
+                          <Badge 
+                            variant={maintenance.type === 'Preventivo' ? 'default' : 'destructive'}
+                          >
+                            {maintenance.type}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="max-w-xs truncate">{maintenance.description}</TableCell>
+                        <TableCell>{maintenance.technician}</TableCell>
+                        <TableCell>{maintenance.total_cost || '-'}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+        
+        <TabsContent value="incidents" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Incidentes</CardTitle>
+              <CardDescription>
+                Registro de fallas, alertas y problemas reportados
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {incidentsLoading ? (
+                <div className="space-y-2">
+                  <Skeleton className="h-8 w-full" />
+                  <Skeleton className="h-8 w-full" />
+                  <Skeleton className="h-8 w-full" />
+                </div>
+              ) : filteredIncidents.length === 0 ? (
+                <div className="text-center py-6">
+                  <p className="text-muted-foreground">No hay registros de incidentes</p>
+                </div>
+              ) : (
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -697,45 +859,38 @@ export function AssetHistory({ id }: AssetHistoryProps) {
                       <TableHead>Tipo</TableHead>
                       <TableHead>Reportado por</TableHead>
                       <TableHead>Descripción</TableHead>
-                      <TableHead>Impacto</TableHead>
-                      <TableHead>Tiempo Inactivo</TableHead>
-                      <TableHead>Costo</TableHead>
                       <TableHead>Estado</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filteredIncidents.length > 0 ? (
-                      filteredIncidents.map((item) => (
-                        <TableRow key={item.id}>
-                          <TableCell>{item.date}</TableCell>
-                          <TableCell>
-                            <Badge variant="secondary">{item.type}</Badge>
-                          </TableCell>
-                          <TableCell>{item.reportedBy}</TableCell>
-                          <TableCell>{item.description}</TableCell>
-                          <TableCell>{item.impact}</TableCell>
-                          <TableCell>{item.downtime} horas</TableCell>
-                          <TableCell>${item.total_cost}</TableCell>
-                          <TableCell>
-                            <Badge variant="outline">{item.status}</Badge>
-                          </TableCell>
-                        </TableRow>
-                      ))
-                    ) : (
-                      <TableRow>
-                        <TableCell colSpan={8} className="text-center py-4 text-muted-foreground">
-                          No hay registros de incidentes
+                    {filteredIncidents.map((incident) => (
+                      <TableRow key={incident.id}>
+                        <TableCell>{formatDate(incident.date)}</TableCell>
+                        <TableCell>
+                          <Badge 
+                            variant={incident.type === 'Falla' ? 'destructive' : 'outline'}
+                          >
+                            {incident.type}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>{incident.reported_by}</TableCell>
+                        <TableCell className="max-w-xs truncate">{incident.description}</TableCell>
+                        <TableCell>
+                          <Badge 
+                            variant={incident.status === 'Resuelto' ? 'outline' : 'default'}
+                          >
+                            {incident.status || 'En proceso'}
+                          </Badge>
                         </TableCell>
                       </TableRow>
-                    )}
+                    ))}
                   </TableBody>
                 </Table>
-              </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
-
-        {/* Remaining tabs with simplified implementation */}
+        
         <TabsContent value="parts">
           <Card>
             <CardHeader>
@@ -752,10 +907,10 @@ export function AssetHistory({ id }: AssetHistoryProps) {
           </Card>
         </TabsContent>
 
-        <TabsContent value="costs">
+        <TabsContent value="metrics">
           <Card>
             <CardHeader>
-              <CardTitle>Historial de Costos</CardTitle>
+              <CardTitle>Métricas y costos</CardTitle>
               <CardDescription>Análisis de costos de mantenimiento</CardDescription>
             </CardHeader>
             <CardContent>
@@ -812,37 +967,8 @@ export function AssetHistory({ id }: AssetHistoryProps) {
             </CardContent>
           </Card>
         </TabsContent>
-
-        <TabsContent value="plan">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between">
-              <div>
-                <CardTitle>Plan de Mantenimiento</CardTitle>
-                <CardDescription>Programación de mantenimientos preventivos</CardDescription>
-              </div>
-              {/* Agregar el type="button" para evitar envíos accidentales */}
-              <Button type="button" disabled={true} onClick={(e) => {
-                // Prevenir propagación de eventos
-                e.preventDefault();
-                e.stopPropagation();
-                alert("Funcionalidad en desarrollo");
-              }}>
-                <Plus className="mr-2 h-4 w-4" />
-                Programar Mantenimiento
-              </Button>
-            </CardHeader>
-            <CardContent>
-              <div className="text-center py-8">
-                <p className="text-muted-foreground">
-                  Los planes de mantenimiento preventivo estarán disponibles en una próxima actualización.
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
       </Tabs>
 
-      {/* Dialog definitions remain the same */}
       <Dialog open={showAddMaintenanceDialog} onOpenChange={setShowAddMaintenanceDialog}>
         <DialogContent className="sm:max-w-[600px]" onSubmit={(e) => e.preventDefault()}>
           <DialogHeader>
@@ -1108,6 +1234,23 @@ export function AssetHistory({ id }: AssetHistoryProps) {
                   onChange={(e) => setNewIncident({ ...newIncident, workOrder: e.target.value })}
                 />
               </div>
+            </div>
+            
+            <div className="space-y-2">
+              <Label htmlFor="incidentStatus">Estado</Label>
+              <Select
+                value={newIncident.status || "Pendiente"}
+                onValueChange={(value) => setNewIncident({ ...newIncident, status: value })}
+              >
+                <SelectTrigger id="incidentStatus">
+                  <SelectValue placeholder="Seleccionar estado" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Pendiente">Pendiente</SelectItem>
+                  <SelectItem value="En proceso">En proceso</SelectItem>
+                  <SelectItem value="Resuelto">Resuelto</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </div>
           <DialogFooter>

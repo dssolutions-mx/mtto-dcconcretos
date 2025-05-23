@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useMemo, useEffect, use } from "react";
-import { useAsset } from "@/hooks/useSupabase";
+import { useAsset, useMaintenanceHistory, useIncidents } from "@/hooks/useSupabase";
 import { DashboardHeader } from "@/components/dashboard/dashboard-header";
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -11,8 +11,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import Link from "next/link";
-import { ArrowLeft, FileText, History, Wrench, Calendar, Edit, Camera, ExternalLink } from "lucide-react";
+import { ArrowLeft, FileText, History, Wrench, Calendar, Edit, Camera, ExternalLink, AlertTriangle, CheckCircle, AlertCircle } from "lucide-react";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { Asset, AssetWithModel, EquipmentModel } from "@/types";
@@ -47,6 +48,8 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
   const assetId = resolvedParams.id;
   
   const { asset: rawAsset, loading, error } = useAsset(assetId);
+  const { history: maintenanceHistory, loading: maintenanceLoading } = useMaintenanceHistory(assetId);
+  const { incidents, loading: incidentsLoading } = useIncidents(assetId);
   const [activeTab, setActiveTab] = useState("general");
   
   // Map the asset with equipment_models to use model property
@@ -103,6 +106,12 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
                   Editar
                 </Link>
               </Button>
+              <Button variant="outline" asChild>
+                <Link href={`/activos/${assetId}/incidentes`}>
+                  <AlertTriangle className="mr-2 h-4 w-4" />
+                  Incidentes
+                </Link>
+              </Button>
               <Button asChild>
                 <Link href={`/activos/${assetId}/mantenimiento`}>
                   <Wrench className="mr-2 h-4 w-4" />
@@ -150,6 +159,8 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
               <TabsTrigger value="technical">Datos Técnicos</TabsTrigger>
               <TabsTrigger value="documentation">Documentación</TabsTrigger>
               <TabsTrigger value="financial">Información Financiera</TabsTrigger>
+              <TabsTrigger value="maintenance">Mantenimientos</TabsTrigger>
+              <TabsTrigger value="incidents">Incidentes</TabsTrigger>
             </TabsList>
             
             <TabsContent value="general" className="space-y-4">
@@ -208,6 +219,126 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
                   </div>
                 </CardContent>
               </Card>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Últimos Mantenimientos</CardTitle>
+                    <CardDescription>Mantenimientos recientes realizados al activo</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    {maintenanceLoading ? (
+                      <div className="space-y-2">
+                        <Skeleton className="h-8 w-full" />
+                        <Skeleton className="h-8 w-full" />
+                      </div>
+                    ) : maintenanceHistory.length === 0 ? (
+                      <div className="text-center py-4">
+                        <p className="text-muted-foreground">No hay registros de mantenimiento</p>
+                      </div>
+                    ) : (
+                      <>
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>Fecha</TableHead>
+                              <TableHead>Tipo</TableHead>
+                              <TableHead>Descripción</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {maintenanceHistory.slice(0, 3).map((maintenance) => (
+                              <TableRow key={maintenance.id}>
+                                <TableCell>{formatDate(maintenance.date)}</TableCell>
+                                <TableCell>
+                                  <Badge 
+                                    variant={maintenance.type === 'Preventivo' ? 'default' : 
+                                            maintenance.type === 'Correctivo' ? 'destructive' : 'outline'}
+                                  >
+                                    {maintenance.type}
+                                  </Badge>
+                                </TableCell>
+                                <TableCell className="max-w-xs truncate">{maintenance.description}</TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                        {maintenanceHistory.length > 3 && (
+                          <div className="mt-4 text-center">
+                            <Button variant="ghost" size="sm" asChild>
+                              <Link href={`/activos/${assetId}/mantenimiento`}>
+                                Ver todos
+                              </Link>
+                            </Button>
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </CardContent>
+                </Card>
+                
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Incidentes Recientes</CardTitle>
+                    <CardDescription>Últimos problemas reportados del activo</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    {incidentsLoading ? (
+                      <div className="space-y-2">
+                        <Skeleton className="h-8 w-full" />
+                        <Skeleton className="h-8 w-full" />
+                      </div>
+                    ) : incidents.length === 0 ? (
+                      <div className="text-center py-4">
+                        <p className="text-muted-foreground">No hay registros de incidentes</p>
+                      </div>
+                    ) : (
+                      <>
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>Fecha</TableHead>
+                              <TableHead>Tipo</TableHead>
+                              <TableHead>Estado</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {incidents.slice(0, 3).map((incident) => (
+                              <TableRow key={incident.id}>
+                                <TableCell>{formatDate(incident.date)}</TableCell>
+                                <TableCell>
+                                  <Badge 
+                                    variant={incident.type === 'Falla' ? 'destructive' : 'outline'}
+                                  >
+                                    {incident.type}
+                                  </Badge>
+                                </TableCell>
+                                <TableCell>
+                                  <Badge 
+                                    variant={incident.status === 'Resuelto' ? 'outline' : 
+                                            incident.status === 'Pendiente' ? 'destructive' : 'default'}
+                                  >
+                                    {incident.status || 'En proceso'}
+                                  </Badge>
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                        {incidents.length > 3 && (
+                          <div className="mt-4 text-center">
+                            <Button variant="ghost" size="sm" asChild>
+                              <Link href={`/activos/${assetId}/historial`}>
+                                Ver todos
+                              </Link>
+                            </Button>
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
 
               <div className="flex flex-col md:flex-row gap-4">
                 <Card className="flex-1">
@@ -462,6 +593,157 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
                       </dl>
                     </div>
                   </div>
+                </CardContent>
+              </Card>
+            </TabsContent>
+            
+            <TabsContent value="maintenance" className="space-y-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Historial de Mantenimientos</CardTitle>
+                  <CardDescription>Últimos mantenimientos realizados al activo</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {maintenanceLoading ? (
+                    <div className="space-y-2">
+                      <Skeleton className="h-10 w-full" />
+                      <Skeleton className="h-10 w-full" />
+                      <Skeleton className="h-10 w-full" />
+                    </div>
+                  ) : maintenanceHistory.length === 0 ? (
+                    <div className="text-center py-8">
+                      <History className="mx-auto h-12 w-12 text-muted-foreground opacity-50" />
+                      <h3 className="mt-4 text-lg font-medium">Sin registros de mantenimiento</h3>
+                      <p className="mt-2 text-sm text-muted-foreground">
+                        Este activo no tiene mantenimientos registrados.
+                      </p>
+                      <Button variant="outline" className="mt-4" asChild>
+                        <Link href={`/activos/${assetId}/mantenimiento/nuevo`}>
+                          Registrar mantenimiento
+                        </Link>
+                      </Button>
+                    </div>
+                  ) : (
+                    <>
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Fecha</TableHead>
+                            <TableHead>Tipo</TableHead>
+                            <TableHead>Descripción</TableHead>
+                            <TableHead>Técnico</TableHead>
+                            <TableHead>Acciones</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {maintenanceHistory.slice(0, 5).map((maintenance) => (
+                            <TableRow key={maintenance.id}>
+                              <TableCell>{formatDate(maintenance.date)}</TableCell>
+                              <TableCell>
+                                <Badge 
+                                  variant={maintenance.type === 'Preventivo' ? 'default' : 
+                                          maintenance.type === 'Correctivo' ? 'destructive' : 'outline'}
+                                >
+                                  {maintenance.type}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="max-w-xs truncate">{maintenance.description}</TableCell>
+                              <TableCell>{maintenance.technician}</TableCell>
+                              <TableCell>
+                                <Button size="sm" variant="outline" asChild>
+                                  <Link href={`/activos/${assetId}/mantenimiento/${maintenance.id}`}>
+                                    Ver detalles
+                                  </Link>
+                                </Button>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                      
+                      {maintenanceHistory.length > 5 && (
+                        <div className="mt-4 text-center">
+                          <Button variant="outline" asChild>
+                            <Link href={`/activos/${assetId}/historial`}>
+                              <History className="mr-2 h-4 w-4" />
+                              Ver historial completo
+                            </Link>
+                          </Button>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
+            
+            <TabsContent value="incidents" className="space-y-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Historial de Incidentes</CardTitle>
+                  <CardDescription>Registro de fallas, alertas y problemas reportados</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {incidentsLoading ? (
+                    <div className="space-y-2">
+                      <Skeleton className="h-10 w-full" />
+                      <Skeleton className="h-10 w-full" />
+                      <Skeleton className="h-10 w-full" />
+                    </div>
+                  ) : incidents.length === 0 ? (
+                    <div className="text-center py-8">
+                      <CheckCircle className="mx-auto h-12 w-12 text-green-500 opacity-50" />
+                      <h3 className="mt-4 text-lg font-medium">Sin incidentes reportados</h3>
+                      <p className="mt-2 text-sm text-muted-foreground">
+                        No se han reportado incidentes para este activo.
+                      </p>
+                    </div>
+                  ) : (
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Fecha</TableHead>
+                          <TableHead>Tipo</TableHead>
+                          <TableHead>Reportado por</TableHead>
+                          <TableHead>Descripción</TableHead>
+                          <TableHead>Estado</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {incidents.map((incident) => (
+                          <TableRow key={incident.id}>
+                            <TableCell>{formatDate(incident.date)}</TableCell>
+                            <TableCell>
+                              <Badge 
+                                variant={incident.type === 'Falla' ? 'destructive' : 
+                                        incident.type === 'Alerta' ? 'default' : 'outline'}
+                              >
+                                {incident.type}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>{incident.reported_by}</TableCell>
+                            <TableCell className="max-w-xs truncate">{incident.description}</TableCell>
+                            <TableCell>
+                              <Badge 
+                                variant={incident.status === 'Resuelto' ? 'outline' : 
+                                        incident.status === 'Pendiente' ? 'destructive' : 'default'}
+                                className="flex items-center gap-1"
+                              >
+                                {incident.status === 'Resuelto' ? (
+                                  <CheckCircle className="h-3 w-3" />
+                                ) : incident.status === 'Pendiente' ? (
+                                  <AlertCircle className="h-3 w-3" />
+                                ) : (
+                                  <AlertTriangle className="h-3 w-3" />
+                                )}
+                                {incident.status || 'Desconocido'}
+                              </Badge>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  )}
                 </CardContent>
               </Card>
             </TabsContent>

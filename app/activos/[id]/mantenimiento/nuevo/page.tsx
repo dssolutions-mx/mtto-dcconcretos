@@ -12,8 +12,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
-import { CalendarIcon, ArrowLeft, PlusCircle, Minus, Check, Loader2 } from "lucide-react";
-import { format } from "date-fns";
+import { Badge } from "@/components/ui/badge";
+import { CalendarIcon, ArrowLeft, PlusCircle, Minus, Check, Loader2, Wrench, Clock, AlertTriangle } from "lucide-react";
+import { format, differenceInDays } from "date-fns";
 import { es } from "date-fns/locale";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
@@ -27,6 +28,36 @@ interface MaintenancePart {
   quantity: number;
   cost?: string;
   source?: string;
+}
+
+// Add this interface to properly type the maintenance plan data
+interface MaintenanceInterval {
+  id: string;
+  model_id: string | null;
+  interval_value: number;
+  hours?: number;
+  days?: number;
+  name: string;
+  description: string | null;
+  type: string;
+  estimated_duration: number | null;
+  created_at: string;
+  updated_at: string;
+  maintenance_tasks: MaintenanceTask[];
+}
+
+interface MaintenanceTask {
+  id: string;
+  description: string;
+  task_parts: TaskPart[];
+}
+
+interface TaskPart {
+  id: string;
+  name: string;
+  part_number?: string;
+  quantity: number;
+  cost?: string;
 }
 
 interface NewMaintenancePageProps {
@@ -63,6 +94,14 @@ export default function NewMaintenancePage({ params }: NewMaintenancePageProps) 
   const [newPartCost, setNewPartCost] = useState<string>("");
   
   const [maintenancePlan, setMaintenancePlan] = useState<any>(null);
+  const [maintenanceStatus, setMaintenanceStatus] = useState<{
+    isOverdue: boolean;
+    isPending: boolean;
+    daysOverdue?: number;
+    hoursOverdue?: number;
+    progress: number;
+    lastMaintenanceDate?: string;
+  } | null>(null);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<Error | null>(null);
@@ -76,7 +115,8 @@ export default function NewMaintenancePage({ params }: NewMaintenancePageProps) 
         setLoading(true);
         const supabase = createClient();
         
-        const { data, error } = await supabase
+        // Obtener el plan de mantenimiento
+        const { data: planData, error: planError } = await supabase
           .from("maintenance_intervals")
           .select(`
             *,
@@ -88,23 +128,88 @@ export default function NewMaintenancePage({ params }: NewMaintenancePageProps) 
           .eq("id", planId)
           .single();
           
-        if (error) throw error;
+        if (planError) throw planError;
         
-        setMaintenancePlan(data);
+        setMaintenancePlan(planData);
+        
+        // Obtener el último mantenimiento de este tipo
+        const { data: lastMaintenanceData, error: historyError } = await supabase
+          .from("maintenance_history")
+          .select("*")
+          .eq("maintenance_plan_id", planId)
+          .eq("asset_id", assetId)
+          .order("date", { ascending: false })
+          .limit(1);
+          
+        if (historyError) {
+          console.error("Error al cargar el último mantenimiento:", historyError);
+          // No lanzar error, continuar con el flujo
+        }
+        
+        // Calcular el estado del mantenimiento
+        if (planData && asset) {
+          const lastMaintenance = lastMaintenanceData && lastMaintenanceData.length > 0 ? lastMaintenanceData[0] : null;
+          let lastMaintenanceHours = 0;
+          let lastMaintenanceDate = asset.last_maintenance_date;
+          
+          if (lastMaintenance) {
+            lastMaintenanceHours = Number(lastMaintenance.hours) || 0;
+            lastMaintenanceDate = lastMaintenance.date;
+          }
+          
+          // Calcular próximo mantenimiento por horas
+          const interval = planData.interval_value || 0;
+          const nextHours = lastMaintenanceHours + interval;
+          
+          // Calcular si está pendiente o vencido
+          const currentHours = asset.current_hours || 0;
+          const hoursOverdue = currentHours - nextHours;
+          const isHoursOverdue = hoursOverdue >= 0;
+          
+          // Calcular días si hay intervalo por días
+          let daysOverdue = 0;
+          let isDaysOverdue = false;
+          // Uncomment this if you have a days_interval field
+          /*if (planData.days_interval && lastMaintenanceDate) {
+            const daysSinceLastMaintenance = differenceInDays(
+              new Date(), 
+              new Date(lastMaintenanceDate)
+            );
+            daysOverdue = daysSinceLastMaintenance - planData.days_interval;
+            isDaysOverdue = daysOverdue >= 0;
+          }*/
+          
+          // Calcular el progreso
+          let progress = 0;
+          if (currentHours && lastMaintenanceHours && interval > 0) {
+            const hoursDiff = currentHours - lastMaintenanceHours;
+            progress = Math.min(Math.round((hoursDiff / interval) * 100), 100);
+          }
+          
+          setMaintenanceStatus({
+            isOverdue: isHoursOverdue /* || isDaysOverdue */,
+            isPending: progress >= 90,
+            hoursOverdue: isHoursOverdue ? hoursOverdue : undefined,
+            // daysOverdue: isDaysOverdue ? daysOverdue : undefined,
+            progress,
+            lastMaintenanceDate: lastMaintenanceDate || undefined
+          });
+        }
+        
         // Prellenar campos basados en el plan
-        if (data) {
+        if (planData) {
           setType("Preventivo");
-          setDescription(data.description || "");
+          setDescription(planData.description || "");
           // Establecer horas a las horas actuales del activo
           if (asset?.current_hours) {
             setHours(asset.current_hours.toString());
           }
           
           // Cargar los repuestos asociados a las tareas de mantenimiento
-          if (data.maintenance_tasks && data.maintenance_tasks.length > 0) {
+          if (planData.maintenance_tasks && planData.maintenance_tasks.length > 0) {
             const taskParts: MaintenancePart[] = [];
             
-            data.maintenance_tasks.forEach(task => {
+            planData.maintenance_tasks.forEach(task => {
               if (task.task_parts && task.task_parts.length > 0) {
                 task.task_parts.forEach(part => {
                   taskParts.push({
@@ -134,7 +239,7 @@ export default function NewMaintenancePage({ params }: NewMaintenancePageProps) 
     if (planId) {
       fetchMaintenancePlan();
     }
-  }, [planId, asset]);
+  }, [planId, asset, assetId]);
   
   const addPart = () => {
     if (!newPartName || !newPartQuantity) return;
@@ -163,16 +268,36 @@ export default function NewMaintenancePage({ params }: NewMaintenancePageProps) 
     setParts(parts.filter((_, i) => i !== index));
   };
   
+  const formatDate = (dateString: string | null) => {
+    if (!dateString) return "No disponible";
+    return format(new Date(dateString), "dd 'de' MMMM 'de' yyyy", { locale: es });
+  };
+  
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!date || !type || !technician) {
+    if (!date || !type || !technician || !description) {
       toast({
         title: "Campos incompletos",
-        description: "Por favor complete los campos obligatorios: fecha, tipo y técnico",
+        description: "Por favor complete todos los campos obligatorios marcados con *",
         variant: "destructive",
       });
       return;
+    }
+
+    // Validar que las horas sean coherentes
+    if (hours && asset?.current_hours) {
+      const enteredHours = Number(hours);
+      const currentHours = asset.current_hours;
+      
+      if (enteredHours < currentHours - 100) {
+        toast({
+          title: "Horas inconsistentes",
+          description: `Las horas ingresadas (${enteredHours}) son muy menores a las actuales (${currentHours}). Verifique el valor.`,
+          variant: "destructive",
+        });
+        return;
+      }
     }
     
     try {
@@ -232,8 +357,8 @@ export default function NewMaintenancePage({ params }: NewMaintenancePageProps) 
       }
       
       toast({
-        title: "Mantenimiento registrado",
-        description: "El mantenimiento ha sido registrado correctamente",
+        title: "¡Mantenimiento registrado exitosamente!",
+        description: `El mantenimiento ${maintenancePlan ? 'programado' : ''} ha sido registrado correctamente en el sistema.`,
       });
       
       // Redirigir a la página de detalles del mantenimiento
@@ -247,7 +372,7 @@ export default function NewMaintenancePage({ params }: NewMaintenancePageProps) 
       console.error("Error al registrar mantenimiento:", err);
       toast({
         title: "Error al registrar mantenimiento",
-        description: err instanceof Error ? err.message : "Ha ocurrido un error",
+        description: err instanceof Error ? err.message : "Ha ocurrido un error inesperado",
         variant: "destructive",
       });
     } finally {
@@ -282,23 +407,120 @@ export default function NewMaintenancePage({ params }: NewMaintenancePageProps) 
         </Card>
       )}
       
+      {maintenancePlan && (
+        <Card className="mb-4 border-blue-200 bg-blue-50">
+          <CardHeader className="pb-2">
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  <Wrench className="h-5 w-5" />
+                  Checkpoint de Mantenimiento
+                  <Badge 
+                    variant="outline" 
+                    className="ml-2 whitespace-nowrap"
+                  >
+                    {maintenancePlan.type}
+                    {maintenancePlan.interval_value && ` ${maintenancePlan.interval_value}h`}
+                  </Badge>
+                </CardTitle>
+                <CardDescription>
+                  Estás registrando el siguiente checkpoint de mantenimiento:
+                </CardDescription>
+              </div>
+              
+              {maintenanceStatus && (
+                <div>
+                  <Badge 
+                    variant={maintenanceStatus.isOverdue ? "destructive" : maintenanceStatus.isPending ? "default" : "outline"}
+                    className="text-sm px-3 py-1.5"
+                  >
+                    {maintenanceStatus.isOverdue ? "VENCIDO" : 
+                     maintenanceStatus.isPending ? "PENDIENTE" : "PROGRAMADO"}
+                  </Badge>
+                </div>
+              )}
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="bg-white rounded-md border p-3 space-y-1">
+                  <div className="text-sm font-medium text-muted-foreground">Nombre del Checkpoint</div>
+                  <div className="font-medium">{maintenancePlan.description}</div>
+                </div>
+                
+                <div className="bg-white rounded-md border p-3 space-y-1">
+                  <div className="text-sm font-medium text-muted-foreground">Frecuencia</div>
+                  <div className="font-medium">
+                    {maintenancePlan.interval_value && `Cada ${maintenancePlan.interval_value} horas`}
+                  </div>
+                </div>
+                
+                <div className="bg-white rounded-md border p-3 space-y-1">
+                  <div className="text-sm font-medium text-muted-foreground">Tareas Incluidas</div>
+                  <div className="font-medium">
+                    {maintenancePlan.maintenance_tasks?.length || 0} tareas / {parts.length} repuestos
+                  </div>
+                </div>
+              </div>
+              
+              {maintenanceStatus && (
+                <div className="bg-white rounded-md border p-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="text-sm font-medium">Estado del Mantenimiento</div>
+                    <div className="text-sm">
+                      {maintenanceStatus.progress}% completado
+                    </div>
+                  </div>
+                  
+                  <div className="w-full bg-gray-200 rounded-full h-2.5 mb-4">
+                    <div 
+                      className={`h-2.5 rounded-full ${
+                        maintenanceStatus.progress >= 100 ? 'bg-red-600' : 
+                        maintenanceStatus.progress >= 90 ? 'bg-amber-500' : 'bg-blue-600'
+                      }`}
+                      style={{ width: `${Math.min(maintenanceStatus.progress, 100)}%` }}
+                    ></div>
+                  </div>
+                  
+                  <div className="text-xs text-muted-foreground mb-2">
+                    Horas actuales: {asset?.current_hours || 0}h
+                  </div>
+                  
+                  {maintenanceStatus.lastMaintenanceDate && (
+                    <div className="flex items-center gap-1 text-sm text-muted-foreground mb-2">
+                      <Clock className="h-4 w-4" />
+                      Último mantenimiento: {formatDate(maintenanceStatus.lastMaintenanceDate)}
+                    </div>
+                  )}
+                  
+                  {maintenanceStatus.isOverdue && (
+                    <div className="flex items-center gap-2 text-sm text-red-600 font-medium">
+                      <AlertTriangle className="h-4 w-4" />
+                      {maintenanceStatus.hoursOverdue !== undefined && (
+                        <span>¡Mantenimiento vencido por {maintenanceStatus.hoursOverdue} horas!</span>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+      
       <form onSubmit={handleSubmit}>
         <Card>
           <CardHeader>
             <CardTitle>Información del Mantenimiento</CardTitle>
             <CardDescription>
               Registre los detalles del mantenimiento realizado
-              {maintenancePlan && (
-                <span className="block mt-1">
-                  Plan de mantenimiento: <span className="font-medium">{maintenancePlan.description}</span>
-                </span>
-              )}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <div className="space-y-2">
-                <Label htmlFor="date">Fecha *</Label>
+                <Label htmlFor="date">Fecha de Realización *</Label>
                 <Popover>
                   <PopoverTrigger asChild>
                     <Button
@@ -341,22 +563,9 @@ export default function NewMaintenancePage({ params }: NewMaintenancePageProps) 
                   </SelectContent>
                 </Select>
               </div>
-            </div>
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+
               <div className="space-y-2">
-                <Label htmlFor="hours">Horas de Operación</Label>
-                <Input
-                  id="hours"
-                  type="number"
-                  value={hours}
-                  onChange={(e) => setHours(e.target.value)}
-                  placeholder="Horas actuales de operación"
-                />
-              </div>
-              
-              <div className="space-y-2">
-                <Label htmlFor="technician">Técnico *</Label>
+                <Label htmlFor="technician">Técnico Responsable *</Label>
                 <Input
                   id="technician"
                   value={technician}
@@ -367,94 +576,135 @@ export default function NewMaintenancePage({ params }: NewMaintenancePageProps) 
               </div>
             </div>
             
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="space-y-2">
+                <Label htmlFor="hours">Horómetro al Momento del Mantenimiento</Label>
+                <Input
+                  id="hours"
+                  type="number"
+                  value={hours}
+                  onChange={(e) => setHours(e.target.value)}
+                  placeholder={`Horas actuales: ${asset?.current_hours || 0}`}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Registre las horas del equipo al momento de realizar el mantenimiento
+                </p>
+              </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="workOrder">Orden de Trabajo</Label>
+                <Input
+                  id="workOrder"
+                  value={workOrder}
+                  onChange={(e) => setWorkOrder(e.target.value)}
+                  placeholder="Número de orden de trabajo"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Número de referencia interno (opcional)
+                </p>
+              </div>
+            </div>
+            
             <div className="space-y-2">
-              <Label htmlFor="description">Descripción *</Label>
+              <Label htmlFor="description">Descripción del Trabajo Realizado *</Label>
               <Textarea
                 id="description"
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                placeholder="Descripción del mantenimiento realizado"
+                placeholder="Describa detalladamente el mantenimiento realizado..."
+                rows={3}
                 required
               />
             </div>
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="space-y-2">
-                <Label htmlFor="findings">Hallazgos</Label>
+                <Label htmlFor="findings">Hallazgos y Observaciones</Label>
                 <Textarea
                   id="findings"
                   value={findings}
                   onChange={(e) => setFindings(e.target.value)}
-                  placeholder="Hallazgos durante el mantenimiento"
+                  placeholder="Condiciones encontradas, desgastes, problemas identificados..."
+                  rows={2}
                 />
               </div>
               
               <div className="space-y-2">
-                <Label htmlFor="actions">Acciones Realizadas</Label>
+                <Label htmlFor="actions">Acciones Correctivas Realizadas</Label>
                 <Textarea
                   id="actions"
                   value={actions}
                   onChange={(e) => setActions(e.target.value)}
-                  placeholder="Acciones realizadas durante el mantenimiento"
+                  placeholder="Reparaciones, ajustes, calibraciones realizadas..."
+                  rows={2}
                 />
               </div>
             </div>
-            
+          </CardContent>
+        </Card>
+
+        <Card className="mt-6">
+          <CardHeader>
+            <CardTitle>Información de Costos y Tiempos</CardTitle>
+            <CardDescription>
+              Registre los recursos utilizados (opcional pero recomendado)
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <div className="space-y-2">
-                <Label htmlFor="laborHours">Horas de Trabajo</Label>
+                <Label htmlFor="laborHours">Horas de Mano de Obra</Label>
                 <Input
                   id="laborHours"
                   type="number"
+                  step="0.5"
                   value={laborHours}
                   onChange={(e) => setLaborHours(e.target.value)}
-                  placeholder="Horas de mano de obra"
+                  placeholder="ej: 2.5"
                 />
               </div>
               
               <div className="space-y-2">
-                <Label htmlFor="laborCost">Costo de Mano de Obra</Label>
+                <Label htmlFor="laborCost">Costo de Mano de Obra ($)</Label>
                 <Input
                   id="laborCost"
                   type="number"
+                  step="0.01"
                   value={laborCost}
                   onChange={(e) => setLaborCost(e.target.value)}
-                  placeholder="Costo de mano de obra"
+                  placeholder="0.00"
                 />
               </div>
               
               <div className="space-y-2">
-                <Label htmlFor="totalCost">Costo Total</Label>
+                <Label htmlFor="totalCost">Costo Total ($)</Label>
                 <Input
                   id="totalCost"
                   type="number"
+                  step="0.01"
                   value={totalCost}
                   onChange={(e) => setTotalCost(e.target.value)}
-                  placeholder="Costo total del mantenimiento"
+                  placeholder="0.00"
                 />
+                <p className="text-xs text-muted-foreground">
+                  Incluye mano de obra + repuestos
+                </p>
               </div>
-            </div>
-            
-            <div className="space-y-2">
-              <Label htmlFor="workOrder">Orden de Trabajo</Label>
-              <Input
-                id="workOrder"
-                value={workOrder}
-                onChange={(e) => setWorkOrder(e.target.value)}
-                placeholder="Número de orden de trabajo"
-              />
             </div>
           </CardContent>
         </Card>
         
         <Card className="mt-6">
           <CardHeader>
-            <CardTitle>Repuestos Utilizados</CardTitle>
+            <CardTitle className="flex items-center gap-2">
+              <PlusCircle className="h-5 w-5" />
+              Repuestos y Materiales Utilizados
+            </CardTitle>
             <CardDescription>
-              Registre los repuestos utilizados durante el mantenimiento
+              Registre los repuestos y materiales utilizados durante el mantenimiento
               {maintenancePlan && parts.length > 0 && (
                 <span className="block mt-1 text-sm text-blue-600">
-                  Se han cargado automáticamente los repuestos asociados a las tareas de este mantenimiento
+                  ✓ Se han cargado automáticamente los repuestos del plan de mantenimiento
                 </span>
               )}
             </CardDescription>
@@ -462,95 +712,112 @@ export default function NewMaintenancePage({ params }: NewMaintenancePageProps) 
           <CardContent>
             {parts.length > 0 ? (
               <div className="space-y-4">
-                <table className="w-full border-collapse">
-                  <thead>
-                    <tr className="border-b">
-                      <th className="text-left py-2">Nombre</th>
-                      <th className="text-left py-2">Número</th>
-                      <th className="text-left py-2">Cantidad</th>
-                      <th className="text-left py-2">Costo</th>
-                      <th className="text-left py-2">Origen</th>
-                      <th className="text-left py-2">Acciones</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {parts.map((part, index) => (
-                      <tr key={index} className="border-b">
-                        <td className="py-2">{part.name}</td>
-                        <td className="py-2">{part.partNumber || "-"}</td>
-                        <td className="py-2">{part.quantity}</td>
-                        <td className="py-2">{part.cost || "-"}</td>
-                        <td className="py-2">{part.source || "-"}</td>
-                        <td className="py-2">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            type="button"
-                            onClick={() => removePart(index)}
-                          >
-                            <Minus className="h-4 w-4" />
-                          </Button>
-                        </td>
+                <div className="border rounded-lg overflow-hidden">
+                  <table className="w-full">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="text-left py-3 px-4 font-medium">Repuesto/Material</th>
+                        <th className="text-left py-3 px-4 font-medium">Número de Parte</th>
+                        <th className="text-left py-3 px-4 font-medium">Cantidad</th>
+                        <th className="text-left py-3 px-4 font-medium">Costo Unitario</th>
+                        <th className="text-left py-3 px-4 font-medium">Origen</th>
+                        <th className="text-left py-3 px-4 font-medium">Acciones</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {parts.map((part, index) => (
+                        <tr key={index} className="border-t hover:bg-gray-50">
+                          <td className="py-3 px-4 font-medium">{part.name}</td>
+                          <td className="py-3 px-4 text-muted-foreground">{part.partNumber || "-"}</td>
+                          <td className="py-3 px-4">{part.quantity}</td>
+                          <td className="py-3 px-4">{part.cost ? `$${part.cost}` : "-"}</td>
+                          <td className="py-3 px-4">
+                            {part.source ? (
+                              <Badge variant="outline" className="text-xs">
+                                {part.source}
+                              </Badge>
+                            ) : (
+                              <span className="text-muted-foreground">Manual</span>
+                            )}
+                          </td>
+                          <td className="py-3 px-4">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              type="button"
+                              onClick={() => removePart(index)}
+                              className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                            >
+                              <Minus className="h-4 w-4" />
+                            </Button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             ) : (
-              <div className="text-center py-4 text-muted-foreground">
-                No se han agregado repuestos
+              <div className="text-center py-8 border rounded-lg bg-gray-50">
+                <PlusCircle className="mx-auto h-12 w-12 text-gray-400 mb-2" />
+                <p className="text-lg font-medium text-gray-600">No se han registrado repuestos</p>
+                <p className="text-muted-foreground">Agregue los repuestos utilizados en este mantenimiento</p>
               </div>
             )}
             
-            <div className="mt-6 grid grid-cols-1 sm:grid-cols-5 gap-4 items-end">
-              <div className="sm:col-span-2">
-                <Label htmlFor="newPartName">Nombre</Label>
-                <Input
-                  id="newPartName"
-                  value={newPartName}
-                  onChange={(e) => setNewPartName(e.target.value)}
-                  placeholder="Nombre del repuesto"
-                />
-              </div>
-              <div>
-                <Label htmlFor="newPartNumber">Número</Label>
-                <Input
-                  id="newPartNumber"
-                  value={newPartNumber}
-                  onChange={(e) => setNewPartNumber(e.target.value)}
-                  placeholder="Número de parte"
-                />
-              </div>
-              <div>
-                <Label htmlFor="newPartQuantity">Cantidad</Label>
-                <Input
-                  id="newPartQuantity"
-                  type="number"
-                  min="1"
-                  value={newPartQuantity}
-                  onChange={(e) => setNewPartQuantity(e.target.value)}
-                />
-              </div>
-              <div>
-                <Label htmlFor="newPartCost">Costo</Label>
-                <Input
-                  id="newPartCost"
-                  type="number"
-                  value={newPartCost}
-                  onChange={(e) => setNewPartCost(e.target.value)}
-                  placeholder="Costo unitario"
-                />
-              </div>
-              <div className="sm:col-span-5 flex justify-end">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={addPart}
-                  className="ml-auto"
-                  disabled={!newPartName}
-                >
-                  <PlusCircle className="mr-2 h-4 w-4" /> Agregar Repuesto
-                </Button>
+            <div className="mt-6 p-4 border rounded-lg bg-blue-50">
+              <h4 className="font-medium mb-4 text-blue-900">Agregar Nuevo Repuesto</h4>
+              <div className="grid grid-cols-1 sm:grid-cols-6 gap-4 items-end">
+                <div className="sm:col-span-2">
+                  <Label htmlFor="newPartName">Nombre del Repuesto *</Label>
+                  <Input
+                    id="newPartName"
+                    value={newPartName}
+                    onChange={(e) => setNewPartName(e.target.value)}
+                    placeholder="ej: Filtro de aceite"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="newPartNumber">Número de Parte</Label>
+                  <Input
+                    id="newPartNumber"
+                    value={newPartNumber}
+                    onChange={(e) => setNewPartNumber(e.target.value)}
+                    placeholder="ej: ABC123"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="newPartQuantity">Cantidad *</Label>
+                  <Input
+                    id="newPartQuantity"
+                    type="number"
+                    min="1"
+                    value={newPartQuantity}
+                    onChange={(e) => setNewPartQuantity(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="newPartCost">Costo ($)</Label>
+                  <Input
+                    id="newPartCost"
+                    type="number"
+                    step="0.01"
+                    value={newPartCost}
+                    onChange={(e) => setNewPartCost(e.target.value)}
+                    placeholder="0.00"
+                  />
+                </div>
+                <div>
+                  <Button
+                    type="button"
+                    onClick={addPart}
+                    disabled={!newPartName || !newPartQuantity}
+                    className="w-full"
+                  >
+                    <PlusCircle className="mr-2 h-4 w-4" /> 
+                    Agregar
+                  </Button>
+                </div>
               </div>
             </div>
           </CardContent>
@@ -559,9 +826,17 @@ export default function NewMaintenancePage({ params }: NewMaintenancePageProps) 
         <Card className="mt-6">
           <CardFooter className="flex justify-between pt-6">
             <Button variant="outline" type="button" asChild>
-              <Link href={`/activos/${assetId}/mantenimiento`}>Cancelar</Link>
+              <Link href={`/activos/${assetId}/mantenimiento`}>
+                <ArrowLeft className="mr-2 h-4 w-4" />
+                Cancelar
+              </Link>
             </Button>
-            <Button type="submit" disabled={isSubmitting || isLoading}>
+            <Button 
+              type="submit" 
+              disabled={isSubmitting || isLoading}
+              className="min-w-[160px]"
+              size="lg"
+            >
               {isSubmitting ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -570,7 +845,7 @@ export default function NewMaintenancePage({ params }: NewMaintenancePageProps) 
               ) : (
                 <>
                   <Check className="mr-2 h-4 w-4" />
-                  Guardar Mantenimiento
+                  Registrar Mantenimiento
                 </>
               )}
             </Button>

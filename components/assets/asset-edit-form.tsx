@@ -120,6 +120,14 @@ const formSchema = z.object({
 
 type FormValues = z.infer<typeof formSchema>
 
+// Interfaz para fotos con descripción
+interface PhotoWithDescription {
+  file: File
+  preview: string
+  description: string
+  category?: string
+}
+
 interface AssetEditFormProps {
   assetId: string
 }
@@ -129,6 +137,10 @@ export function AssetEditForm({ assetId }: AssetEditFormProps) {
   const { toast } = useToast()
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
+  
+  // Estados para el manejo de fotos
+  const [uploadedPhotos, setUploadedPhotos] = useState<PhotoWithDescription[]>([])
+  const [photoUploadOpen, setPhotoUploadOpen] = useState(false)
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema) as Resolver<FormValues>,
@@ -401,9 +413,9 @@ export function AssetEditForm({ assetId }: AssetEditFormProps) {
           <TabsContent value="technical" className="space-y-6">
             <TechnicalInfoTab
               control={form.control}
-              uploadedPhotos={[]}
-              setUploadedPhotos={() => {}}
-              setPhotoUploadOpen={() => {}}
+              uploadedPhotos={uploadedPhotos}
+              setUploadedPhotos={setUploadedPhotos}
+              setPhotoUploadOpen={setPhotoUploadOpen}
             />
           </TabsContent>
           
@@ -520,6 +532,14 @@ export function AssetEditForm({ assetId }: AssetEditFormProps) {
           </div>
         </form>
       </Form>
+
+      {/* Diálogo para subir fotos */}
+      <PhotoUploadDialog
+        open={photoUploadOpen}
+        onOpenChange={setPhotoUploadOpen}
+        uploadedPhotos={uploadedPhotos}
+        setUploadedPhotos={setUploadedPhotos}
+      />
     </Tabs>
   )
 } 
