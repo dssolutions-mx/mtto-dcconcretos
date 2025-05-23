@@ -58,7 +58,9 @@ import { MaintenanceHistoryTab } from "./tabs/maintenance-history-tab"
 import { IncidentsTab } from "./tabs/incidents-tab"
 import { DocumentsTab } from "./tabs/documents-tab"
 import { PhotoUploadDialog } from "./dialogs/photo-upload-dialog"
+import { IncidentRegistrationDialog } from "./dialogs/incident-registration-dialog"
 import { createClient } from "@/lib/supabase"
+import { useIncidents } from "@/hooks/useSupabase"
 import { EquipmentModelWithIntervals } from "@/types"
 import { useToast } from "@/components/ui/use-toast"
 import { cn } from "@/lib/utils"
@@ -141,6 +143,10 @@ export function AssetEditForm({ assetId }: AssetEditFormProps) {
   // Estados para el manejo de fotos
   const [uploadedPhotos, setUploadedPhotos] = useState<PhotoWithDescription[]>([])
   const [photoUploadOpen, setPhotoUploadOpen] = useState(false)
+  
+  // Estados para el manejo de incidentes
+  const { incidents, loading: incidentsLoading, error: incidentsError, refetch: refetchIncidents } = useIncidents(assetId)
+  const [showIncidentDialog, setShowIncidentDialog] = useState(false)
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema) as Resolver<FormValues>,
@@ -286,6 +292,8 @@ export function AssetEditForm({ assetId }: AssetEditFormProps) {
             }
           })
         }
+
+
       } catch (error: any) {
         console.error("Error loading asset:", error)
         toast({
@@ -302,6 +310,56 @@ export function AssetEditForm({ assetId }: AssetEditFormProps) {
       loadAssetData()
     }
   }, [assetId, form, toast])
+
+  // Funciones para manejar incidentes
+  const handleAddIncident = () => {
+    setShowIncidentDialog(true)
+  }
+
+  const handleEditIncident = (index: number) => {
+    // Por ahora, solo mostrar el diálogo para agregar uno nuevo
+    // En una implementación completa, se cargarían los datos del incidente específico
+    setShowIncidentDialog(true)
+  }
+
+  const handleRemoveIncident = async (index: number) => {
+    const incident = incidents[index]
+    if (incident && incident.id) {
+      try {
+        const supabase = createClient()
+        const { error } = await supabase
+          .from("incident_history")
+          .delete()
+          .eq("id", incident.id)
+
+        if (error) {
+          throw error
+        }
+
+        // Recargar la lista de incidentes
+        refetchIncidents()
+
+        toast({
+          title: "Incidente eliminado",
+          description: "El incidente ha sido eliminado exitosamente.",
+          variant: "default",
+        })
+      } catch (error: any) {
+        console.error("Error deleting incident:", error)
+        toast({
+          title: "Error al eliminar incidente",
+          description: error.message || "Ha ocurrido un error inesperado.",
+          variant: "destructive",
+        })
+      }
+    }
+  }
+
+  const handleIncidentSuccess = async () => {
+    // Recargar incidentes después de agregar uno nuevo
+    refetchIncidents()
+    setShowIncidentDialog(false)
+  }
 
   const onSubmit = async (data: FormValues) => {
     try {
@@ -484,10 +542,24 @@ export function AssetEditForm({ assetId }: AssetEditFormProps) {
           
           <TabsContent value="incidents" className="space-y-6">
             <IncidentsTab
-              incidents={[]}
-              onAddIncident={() => {}}
-              onEditIncident={() => {}}
-              onRemoveIncident={() => {}}
+              incidents={incidents.map(incident => ({
+                date: new Date(incident.date),
+                type: incident.type,
+                reportedBy: incident.reported_by,
+                description: incident.description,
+                impact: incident.impact,
+                resolution: incident.resolution,
+                downtime: incident.downtime?.toString(),
+                laborHours: incident.labor_hours?.toString(),
+                laborCost: incident.labor_cost,
+                parts: incident.parts ? JSON.parse(incident.parts) : undefined,
+                totalCost: incident.total_cost,
+                workOrder: incident.work_order,
+                status: incident.status,
+              }))}
+              onAddIncident={handleAddIncident}
+              onEditIncident={handleEditIncident}
+              onRemoveIncident={handleRemoveIncident}
             />
           </TabsContent>
           
@@ -539,6 +611,14 @@ export function AssetEditForm({ assetId }: AssetEditFormProps) {
         onOpenChange={setPhotoUploadOpen}
         uploadedPhotos={uploadedPhotos}
         setUploadedPhotos={setUploadedPhotos}
+      />
+
+      {/* Diálogo para registrar incidentes */}
+      <IncidentRegistrationDialog
+        isOpen={showIncidentDialog}
+        onClose={() => setShowIncidentDialog(false)}
+        assetId={assetId}
+        onSuccess={handleIncidentSuccess}
       />
     </Tabs>
   )

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, use } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { DashboardHeader } from "@/components/dashboard/dashboard-header";
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
@@ -61,13 +61,14 @@ interface TaskPart {
 }
 
 interface NewMaintenancePageProps {
-  params: {
+  params: Promise<{
     id: string;
-  };
+  }>;
 }
 
 export default function NewMaintenancePage({ params }: NewMaintenancePageProps) {
-  const assetId = params.id;
+  const resolvedParams = use(params);
+  const assetId = resolvedParams.id;
   const router = useRouter();
   const searchParams = useSearchParams();
   const planId = searchParams.get('planId');
@@ -294,41 +295,41 @@ export default function NewMaintenancePage({ params }: NewMaintenancePageProps) 
         throw new Error("Usuario no autenticado");
       }
 
-      // Paso 1: Crear Orden de Trabajo siguiendo el proceso administrativo correcto
+      // Paso 1: Crear Orden de Trabajo - usar el mismo enfoque para ambos tipos
       let workOrderId: string;
+      let workOrderNumber: string;
       
-      if (planId) {
-        // Mantenimiento Preventivo - usar función específica que requiere solo asset_id y maintenance_plan_id
-        const { data: workOrderData, error: workOrderError } = await supabase.rpc('generate_preventive_work_order', {
-          p_asset_id: assetId,
-          p_maintenance_plan_id: planId
-        });
+      // Generar número secuencial para la orden de trabajo
+      const { count: workOrderCount, error: workOrderCountError } = await supabase
+        .from("work_orders")
+        .select("*", { count: "exact", head: true });
         
-        if (workOrderError) throw workOrderError;
-        workOrderId = workOrderData;
-      } else {
-        // Mantenimiento Correctivo - crear directamente ya que no hay checklist asociado
-        const workOrderData = {
-          asset_id: assetId,
-          description: description,
-          type: 'corrective',
-          requested_by: user.id,
-          assigned_to: user.id,
-          planned_date: date.toISOString(),
-          estimated_duration: laborHours ? Number(laborHours) : 0,
-          priority: 'Media',
-          status: 'Pendiente'
-        };
+      if (workOrderCountError) throw workOrderCountError;
+      
+      workOrderNumber = `OT-${((workOrderCount || 0) + 1).toString().padStart(4, '0')}`;
+      
+      const workOrderData = {
+        order_id: workOrderNumber,
+        asset_id: assetId,
+        description: description,
+        type: planId ? 'preventive' : 'corrective',
+        requested_by: user.id,
+        assigned_to: user.id,
+        planned_date: date.toISOString(),
+        estimated_duration: laborHours ? Number(laborHours) : 0,
+        priority: 'Media',
+        status: 'Pendiente',
+        maintenance_plan_id: planId || null
+      };
 
-        const { data: workOrderResult, error: workOrderError } = await supabase
-          .from('work_orders')
-          .insert(workOrderData)
-          .select('id')
-          .single();
-        
-        if (workOrderError) throw workOrderError;
-        workOrderId = workOrderResult.id;
-      }
+      const { data: workOrderResult, error: workOrderError } = await supabase
+        .from('work_orders')
+        .insert(workOrderData)
+        .select('id')
+        .single();
+      
+      if (workOrderError) throw workOrderError;
+      workOrderId = workOrderResult.id;
 
       // Paso 2: Agregar repuestos a la orden de trabajo si hay partes
       if (parts.length > 0) {
@@ -349,49 +350,13 @@ export default function NewMaintenancePage({ params }: NewMaintenancePageProps) 
         if (updateError) throw updateError;
       }
 
-      // Paso 3: Completar la Orden de Trabajo - esto genera automáticamente todo lo demás
-      const completionData = {
-        completion_date: date.toISOString(),
-        technician_id: user.id,
-        technician_name: technician,
-        findings: findings || '',
-        actions: actions || '',
-        notes: `Registro de mantenimiento ${type.toLowerCase()} realizado`,
-        labor_hours: laborHours ? Number(laborHours) : 0,
-        labor_cost: laborCost ? Number(laborCost) : 0,
-        parts_used: parts.map(part => ({
-          name: part.name,
-          part_number: part.partNumber || '',
-          quantity: part.quantity,
-          cost: part.cost ? Number(part.cost) : 0
-        })),
-        photos: [], // En el futuro se pueden agregar fotos
-        asset_hours: hours ? Number(hours) : null,
-        asset_kilometers: null,
-        created_by: user.id,
-        reported_by_id: user.id,
-        reported_by_name: technician
-      };
-
-      const { data: completionResult, error: completionError } = await supabase.rpc('complete_work_order', {
-        p_work_order_id: workOrderId,
-        p_completion_data: completionData
-      });
-
-      if (completionError) throw completionError;
-
       toast({
-        title: "¡Mantenimiento registrado exitosamente!",
-        description: `El mantenimiento ${planId ? 'programado' : 'correctivo'} ha sido procesado siguiendo el flujo administrativo completo. Se ha generado automáticamente la orden de trabajo y orden de servicio correspondientes.`,
+        title: "¡Orden de Trabajo creada exitosamente!",
+        description: `Se ha generado la Orden de Trabajo ${workOrderNumber} para el mantenimiento ${planId ? 'preventivo' : 'correctivo'}. La orden está en estado "Pendiente" y lista para ser ejecutada.`,
       });
 
-      // Redirigir a la página del mantenimiento o a la lista
-      if (completionResult) {
-        // El resultado debería ser el service_order_id
-        router.push(`/activos/${assetId}/mantenimiento`);
-      } else {
-        router.push(`/activos/${assetId}/mantenimiento`);
-      }
+      // Redirigir a la vista de órdenes de trabajo
+      router.push(`/ordenes`);
       
     } catch (err) {
       console.error("Error al registrar mantenimiento:", err);
@@ -411,8 +376,8 @@ export default function NewMaintenancePage({ params }: NewMaintenancePageProps) 
   return (
     <DashboardShell>
       <DashboardHeader
-        heading="Registrar Mantenimiento"
-        text={`Registrar un nuevo mantenimiento para ${asset?.name || ""}`}
+        heading="Crear Orden de Trabajo"
+        text={`Generar una nueva orden de trabajo para ${asset?.name || ""}`}
       >
         <Button variant="outline" asChild>
           <Link href={`/activos/${assetId}/mantenimiento`}>
@@ -537,9 +502,9 @@ export default function NewMaintenancePage({ params }: NewMaintenancePageProps) 
       <form onSubmit={handleSubmit}>
         <Card>
           <CardHeader>
-            <CardTitle>Información del Mantenimiento</CardTitle>
+            <CardTitle>Información de la Orden de Trabajo</CardTitle>
             <CardDescription>
-              Registre los detalles del mantenimiento realizado
+              Defina los detalles para la orden de trabajo a generar
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
@@ -870,7 +835,7 @@ export default function NewMaintenancePage({ params }: NewMaintenancePageProps) 
               ) : (
                 <>
                   <Check className="mr-2 h-4 w-4" />
-                  Registrar Mantenimiento
+                  Crear Orden de Trabajo
                 </>
               )}
             </Button>

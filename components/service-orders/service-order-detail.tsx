@@ -262,57 +262,98 @@ export function ServiceOrderDetail({ id }: ServiceOrderDetailProps) {
 REPORTE DETALLADO DE ORDEN DE SERVICIO
 ======================================
 
-Información General:
--------------------
-Orden ID: ${serviceOrder?.order_id}
-Activo: ${serviceOrder?.asset_name} (${serviceOrder?.asset?.asset_id})
-Ubicación: ${serviceOrder?.asset?.location || 'N/A'}
-Fecha de Servicio: ${formatDate(serviceOrder?.date)}
-Técnico Responsable: ${serviceOrder?.technician}
-Tipo de Mantenimiento: ${serviceOrder?.type === 'preventive' ? 'Preventivo' : 'Correctivo'}
-Estado: ${serviceOrder?.status}
-Prioridad: ${serviceOrder?.priority}
+INFORMACIÓN GENERAL DEL SERVICIO
+--------------------------------
+Orden ID:               ${serviceOrder?.order_id}
+Activo:                 ${serviceOrder?.asset_name}
+ID del Activo:          ${serviceOrder?.asset?.asset_id || serviceOrder?.asset_id}
+Ubicación:              ${serviceOrder?.asset?.location || 'No especificada'}
+Fecha de Servicio:      ${formatDate(serviceOrder?.date)}
+Técnico Responsable:    ${serviceOrder?.technician}
+Tipo de Mantenimiento:  ${serviceOrder?.type === 'preventive' ? 'Preventivo' : 'Correctivo'}
+Estado:                 ${serviceOrder?.status}
+Prioridad:              ${serviceOrder?.priority}
+Duración:               ${serviceOrder?.labor_hours || 0} horas
 
-Descripción del Trabajo:
------------------------
-${serviceOrder?.description}
+INFORMACIÓN DEL ACTIVO
+---------------------
+${serviceOrder?.asset?.equipment_model?.manufacturer ? `Fabricante:           ${serviceOrder.asset.equipment_model.manufacturer}` : ''}
+${serviceOrder?.asset?.equipment_model?.name ? `Modelo:               ${serviceOrder.asset.equipment_model.name}` : ''}
+${serviceOrder?.asset?.serial_number ? `Número de Serie:      ${serviceOrder.asset.serial_number}` : ''}
+${serviceOrder?.asset?.current_hours ? `Horas Actuales:       ${serviceOrder.asset.current_hours.toLocaleString()} hrs` : ''}
+${serviceOrder?.asset?.current_kilometers ? `Kilómetros Actuales:  ${serviceOrder.asset.current_kilometers.toLocaleString()} km` : ''}
 
-Hallazgos:
-----------
-${serviceOrder?.findings || 'Sin hallazgos registrados'}
+DESCRIPCIÓN DEL TRABAJO REALIZADO
+=================================
+${serviceOrder?.description || 'Sin descripción disponible'}
 
-Acciones Realizadas:
-------------------
-${serviceOrder?.actions || 'Sin acciones específicas registradas'}
+${serviceOrder?.findings ? `
+HALLAZGOS DURANTE LA INSPECCIÓN
+===============================
+${serviceOrder.findings}
+` : ''}
 
-Repuestos Utilizados:
---------------------
+${serviceOrder?.actions ? `
+ACCIONES CORRECTIVAS REALIZADAS
+===============================
+${serviceOrder.actions}
+` : ''}
+
+${serviceOrder?.notes ? `
+OBSERVACIONES ADICIONALES
+========================
+${serviceOrder.notes}
+` : ''}
+
+REPUESTOS Y MATERIALES UTILIZADOS
+=================================
 ${serviceOrder?.parts?.length ? 
-  serviceOrder.parts.map((part: any, index: number) => 
-    `${index + 1}. ${part.name} - Cantidad: ${part.quantity} - Costo: ${formatCurrency(part.cost || 0)}`
-  ).join('\n') : 
-  'No se utilizaron repuestos'
+  serviceOrder.parts.map((part: any, index: number) => {
+    const partName = part.name || part.part_name || part.description || 'Repuesto sin nombre';
+    const partNumber = part.part_number || part.partNumber || part.part_id || '';
+    const quantity = part.quantity || 1;
+    const unitCost = part.cost || part.unit_cost || part.unit_price || 0;
+    const totalCost = part.total_price || part.total_cost || (quantity * unitCost);
+    
+    return `${index + 1}. ${partName}${partNumber ? ` (P/N: ${partNumber})` : ''}
+   Cantidad: ${quantity}
+   Costo Unitario: ${formatCurrency(unitCost)}
+   Subtotal: ${formatCurrency(totalCost)}`;
+  }).join('\n\n') : 
+  'No se utilizaron repuestos en este servicio.'
 }
 
-Resumen de Costos:
------------------
-Costo de Mano de Obra: ${formatCurrency(serviceOrder?.labor_cost)}
-Costo de Repuestos: ${formatCurrency(serviceOrder?.parts_cost)}
-Total: ${formatCurrency(serviceOrder?.total_cost)}
+RESUMEN DE COSTOS DEL SERVICIO
+==============================
+Horas de Trabajo:       ${serviceOrder?.labor_hours || 0} horas
+Costo de Mano de Obra:  ${formatCurrency(serviceOrder?.labor_cost)}
+Cantidad de Repuestos:  ${serviceOrder?.parts?.length || 0} items
+Costo de Repuestos:     ${formatCurrency(serviceOrder?.parts_cost)}
+-----------------------------------------------------
+COSTO TOTAL:            ${formatCurrency(serviceOrder?.total_cost)}
 
-Observaciones:
--------------
-${serviceOrder?.notes || 'Sin observaciones adicionales'}
+CRONOLOGÍA DEL SERVICIO
+=======================
+Orden Creada:           ${formatDateTime(serviceOrder?.created_at)}
+Servicio Ejecutado:     ${formatDateTime(serviceOrder?.date)}
+${serviceOrder?.updated_at && serviceOrder.updated_at !== serviceOrder.created_at ? 
+  `Última Actualización:  ${formatDateTime(serviceOrder.updated_at)}` : ''}
+${serviceOrder?.work_order_id ? 
+  `Orden de Trabajo:      ${serviceOrder.work_order_id}` : ''}
 
-Generado el: ${format(new Date(), "dd/MM/yyyy 'a las' HH:mm", { locale: es })}
+======================================
+Este reporte fue generado automáticamente por el Sistema de Gestión de Mantenimiento
+Generado el: ${format(new Date(), "dd 'de' MMMM 'de' yyyy 'a las' HH:mm", { locale: es })}
+Documento confidencial - Solo para uso interno de la organización
+======================================
     `.trim()
 
     // Create and download the report
-    const blob = new Blob([reportContent], { type: 'text/plain' })
+    const blob = new Blob([reportContent], { type: 'text/plain;charset=utf-8' })
     const url = window.URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `Reporte_${serviceOrder?.order_id}_${format(new Date(), 'yyyyMMdd')}.txt`
+    a.download = `Reporte_Detallado_${serviceOrder?.order_id}_${format(new Date(), 'yyyyMMdd_HHmm')}.txt`
     document.body.appendChild(a)
     a.click()
     window.URL.revokeObjectURL(url)
@@ -688,7 +729,7 @@ Generado el: ${format(new Date(), "dd/MM/yyyy 'a las' HH:mm", { locale: es })}
           <TabsTrigger value="documents">Documentos</TabsTrigger>
         </TabsList>
         
-        <TabsContent value="parts" className="space-y-4">
+        <TabsContent value="parts" className="space-y-4 no-print">
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">

@@ -127,108 +127,48 @@ export function IncidentRegistrationDialog({
         throw new Error("Usuario no autenticado");
       }
 
-      // Step 1: Create corrective work order manually (since incidents may not be tied to checklists)
-      const workOrderData = {
+      // Calcular costos totales
+      const partsData = parts.length > 0 ? parts : null;
+      const laborCostNum = laborCost ? parseFloat(laborCost) : 0;
+      const totalCostNum = totalCost ? parseFloat(totalCost) : laborCostNum;
+
+      // Registrar incidente directamente en incident_history
+      const incidentData = {
         asset_id: assetId,
-        description: `Incidente reportado: ${description}`,
-        type: 'corrective',
-        requested_by: user.id,
-        assigned_to: user.id,
-        planned_date: date.toISOString(),
-        priority: type.toLowerCase().includes('falla') ? 'Alta' : 'Media',
-        status: 'Pendiente',
-        required_parts: parts.length > 0 ? parts.map(part => ({
-          name: part.name,
-          part_number: part.partNumber || '',
-          quantity: part.quantity,
-          unit_price: part.cost ? parseFloat(part.cost) : 0,
-          total_price: part.cost ? parseFloat(part.cost) * part.quantity : 0
-        })) : null
-      };
-
-      console.log("Creating corrective work order:", workOrderData);
-
-      const { data: workOrderResult, error: workOrderError } = await supabase
-        .from('work_orders')
-        .insert(workOrderData)
-        .select('id')
-        .single();
-
-      if (workOrderError) {
-        console.error("Error creating corrective work order:", workOrderError);
-        throw new Error(`Error al crear orden de trabajo: ${workOrderError.message}`);
-      }
-
-      if (!workOrderResult?.id) {
-        throw new Error("No se pudo crear la orden de trabajo");
-      }
-
-      const workOrderId = workOrderResult.id;
-      console.log("Created work order ID:", workOrderId);
-
-      // Step 2: Add parts to work order if needed
-      if (parts.length > 0) {
-        const requiredParts = parts.map(part => ({
-          name: part.name,
-          part_number: part.partNumber || '',
-          quantity: part.quantity,
-          unit_price: part.cost ? parseFloat(part.cost) : 0,
-          total_price: part.cost ? parseFloat(part.cost) * part.quantity : 0
-        }));
-
-        console.log("Adding required parts to work order:", requiredParts);
-
-        const { error: updateError } = await supabase
-          .from('work_orders')
-          .update({ required_parts: requiredParts })
-          .eq('id', workOrderId);
-
-        if (updateError) {
-          console.error("Error updating work order with parts:", updateError);
-          // Continue anyway
-        }
-      }
-
-      // Step 3: Complete the work order to trigger all downstream processes
-      const completionData = {
-        completion_date: date.toISOString(),
-        technician_id: user.id,
-        technician_name: reportedBy,
-        findings: `Incidente tipo: ${type}. Impacto: ${impact || 'No especificado'}`,
-        actions: resolution || 'Incidente registrado y resuelto',
-        notes: `Tiempo inactivo: ${downtime || '0'} horas. Estado: ${status}`,
-        labor_hours: laborHours ? parseFloat(laborHours) : 0,
-        labor_cost: laborCost || '0',
-        parts_used: parts.map(part => ({
-          name: part.name,
-          part_number: part.partNumber || '',
-          quantity: part.quantity,
-          cost: part.cost || '0'
-        })),
-        photos: [],
-        created_by: user.id,
+        date: date.toISOString(),
+        type: type,
+        reported_by: reportedBy,
         reported_by_id: user.id,
-        reported_by_name: reportedBy
+        description: description,
+        impact: impact || null,
+        resolution: resolution || null,
+        downtime: downtime ? parseFloat(downtime) : null,
+        labor_hours: laborHours ? parseFloat(laborHours) : null,
+        labor_cost: laborCost || null,
+        parts: partsData ? JSON.stringify(partsData) : null,
+        total_cost: totalCostNum > 0 ? totalCostNum.toString() : null,
+        work_order_text: workOrder || null,
+        status: status,
+        documents: null, // Por ahora sin documentos
+        created_by: user.id
       };
 
-      console.log("Completing work order with data:", completionData);
+      console.log("Registering incident:", incidentData);
 
-      const { data: serviceOrderId, error: completionError } = await supabase
-        .rpc('complete_work_order', {
-          p_work_order_id: workOrderId,
-          p_completion_data: completionData
-        });
+      const { error: incidentError } = await supabase
+        .from('incident_history')
+        .insert(incidentData);
 
-      if (completionError) {
-        console.error("Error completing work order:", completionError);
-        throw new Error(`Error al completar orden de trabajo: ${completionError.message}`);
+      if (incidentError) {
+        console.error("Error registering incident:", incidentError);
+        throw new Error(`Error al registrar incidente: ${incidentError.message}`);
       }
 
-      console.log("Work order completed successfully. Service order ID:", serviceOrderId);
+      console.log("Incident registered successfully");
 
       toast({
-        title: "¡Incidente procesado exitosamente!",
-        description: "Se ha creado la orden de trabajo y registrado el incidente siguiendo el proceso administrativo.",
+        title: "¡Incidente registrado exitosamente!",
+        description: "El incidente ha sido registrado en el historial del activo.",
       });
 
       resetForm();
