@@ -68,17 +68,32 @@ export function MaintenanceSchedule() {
   })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [page, setPage] = useState(1)
+  const [totalPages, setTotalPages] = useState(1)
+  const [totalCount, setTotalCount] = useState(0)
+  const itemsPerPage = 15
+  const [statusFilter, setStatusFilter] = useState<string | null>(null)
+  const [sortBy, setSortBy] = useState<string>('default')
 
   useEffect(() => {
     fetchUpcomingMaintenances()
-  }, [])
+  }, [page, statusFilter, sortBy])
 
   const fetchUpcomingMaintenances = async () => {
     try {
       setLoading(true)
       setError(null)
       
-      const response = await fetch('/api/calendar/upcoming-maintenance')
+      // Construir URL con todos los parámetros
+      let url = `/api/calendar/upcoming-maintenance?page=${page}&limit=${itemsPerPage}`
+      if (statusFilter) {
+        url += `&status=${statusFilter}`
+      }
+      if (sortBy && sortBy !== 'default') {
+        url += `&sortBy=${sortBy}`
+      }
+      
+      const response = await fetch(url)
       if (!response.ok) {
         throw new Error('Error al cargar los mantenimientos')
       }
@@ -86,6 +101,8 @@ export function MaintenanceSchedule() {
       const data = await response.json()
       setUpcomingMaintenances(data.upcomingMaintenances || [])
       setSummary(data.summary || { overdue: 0, upcoming: 0, covered: 0, highUrgency: 0, mediumUrgency: 0 })
+      setTotalCount(data.totalCount || 0)
+      setTotalPages(Math.ceil((data.totalCount || 0) / itemsPerPage))
     } catch (err) {
       console.error('Error fetching maintenance data:', err)
       setError(err instanceof Error ? err.message : 'Error desconocido')
@@ -418,7 +435,38 @@ export function MaintenanceSchedule() {
 
       <Card className="md:col-span-7">
         <CardHeader>
-          <CardTitle>Mantenimientos que Requieren Atención</CardTitle>
+          <div className="flex items-center justify-between">
+            <CardTitle>Mantenimientos que Requieren Atención</CardTitle>
+            <div className="flex items-center gap-2">
+              <select 
+                className="border rounded px-2 py-1 text-sm"
+                value={statusFilter || ''}
+                onChange={(e) => {
+                  setStatusFilter(e.target.value || null)
+                  setPage(1) // Reiniciar paginación al cambiar filtro
+                }}
+              >
+                <option value="">Todos los estados</option>
+                <option value="overdue">Vencidos</option>
+                <option value="upcoming">Próximos</option>
+                <option value="covered">Cubiertos</option>
+              </select>
+              
+              <select 
+                className="border rounded px-2 py-1 text-sm"
+                value={sortBy}
+                onChange={(e) => {
+                  setSortBy(e.target.value)
+                  setPage(1) // Reiniciar paginación al cambiar filtro
+                }}
+              >
+                <option value="default">Ordenar por prioridad</option>
+                <option value="urgency">Ordenar por urgencia</option>
+                <option value="date">Ordenar por fecha estimada</option>
+                <option value="asset">Ordenar por activo</option>
+              </select>
+            </div>
+          </div>
           <CardDescription>
             Lista de mantenimientos vencidos, próximos a vencer y cubiertos por mantenimientos posteriores
           </CardDescription>
@@ -427,8 +475,21 @@ export function MaintenanceSchedule() {
           {upcomingMaintenances.length === 0 ? (
             <div className="text-center py-8">
               <CheckCircle2 className="mx-auto h-12 w-12 text-green-500 mb-2" />
-              <h3 className="text-lg font-medium">¡Todos los mantenimientos al día!</h3>
-              <p className="text-muted-foreground">No hay mantenimientos que requieran atención inmediata</p>
+              {statusFilter ? (
+                <>
+                  <h3 className="text-lg font-medium">No hay mantenimientos {
+                    statusFilter === 'overdue' ? 'vencidos' : 
+                    statusFilter === 'upcoming' ? 'próximos' : 
+                    'cubiertos'
+                  }</h3>
+                  <p className="text-muted-foreground">Prueba con un filtro diferente o verifica otro activo</p>
+                </>
+              ) : (
+                <>
+                  <h3 className="text-lg font-medium">¡Todos los mantenimientos al día!</h3>
+                  <p className="text-muted-foreground">No hay mantenimientos que requieran atención inmediata</p>
+                </>
+              )}
             </div>
           ) : (
             <Table>
@@ -595,6 +656,35 @@ export function MaintenanceSchedule() {
                 ))}
               </TableBody>
             </Table>
+          )}
+          
+          {/* Paginación */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between mt-6">
+              <div className="text-sm text-muted-foreground">
+                Mostrando página {page} de {totalPages} ({totalCount} mantenimientos)
+              </div>
+              <div className="flex gap-2">
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={() => setPage(p => Math.max(1, p - 1))}
+                  disabled={page === 1}
+                >
+                  <ChevronLeft className="h-4 w-4 mr-1" />
+                  Anterior
+                </Button>
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                  disabled={page === totalPages}
+                >
+                  Siguiente
+                  <ChevronRight className="h-4 w-4 ml-1" />
+                </Button>
+              </div>
+            </div>
           )}
         </CardContent>
       </Card>

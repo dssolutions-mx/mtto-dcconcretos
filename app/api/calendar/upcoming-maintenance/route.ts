@@ -26,6 +26,16 @@ function calculateEstimatedDateByKm(currentKm: number, targetKm: number, dailyKm
 
 export async function GET(request: Request) {
   try {
+    // Obtener parámetros de paginación
+    const { searchParams } = new URL(request.url)
+    const page = parseInt(searchParams.get('page') || '1')
+    const limit = parseInt(searchParams.get('limit') || '50')
+    const offset = (page - 1) * limit
+    
+    // Parámetros de filtro
+    const statusFilter = searchParams.get('status')
+    const sortBy = searchParams.get('sortBy') || 'default'
+    
     const cookieStore = await cookies()
     
     const supabase = createServerClient(
@@ -242,39 +252,68 @@ export async function GET(request: Request) {
       }
     }
 
-    // Ordenar por prioridad (igual que en la página de mantenimiento)
-    upcomingMaintenances.sort((a, b) => {
-      // Primero por status
-      const statusOrder = { 'overdue': 3, 'upcoming': 2, 'covered': 1 }
-      const statusA = statusOrder[a.status as keyof typeof statusOrder] || 0
-      const statusB = statusOrder[b.status as keyof typeof statusOrder] || 0
-      
-      if (statusA !== statusB) {
-        return statusB - statusA
-      }
-      
-      // Luego por urgencia
-      const urgencyOrder = { 'high': 3, 'medium': 2, 'low': 1 }
-      const urgencyA = urgencyOrder[a.urgency] || 0
-      const urgencyB = urgencyOrder[b.urgency] || 0
-      
-      if (urgencyA !== urgencyB) {
-        return urgencyB - urgencyA
-      }
-      
-      // Finalmente por fecha estimada
-      return new Date(a.estimatedDate).getTime() - new Date(b.estimatedDate).getTime()
-    })
+    // Filtrar por status si se especificó
+    let filteredMaintenances = upcomingMaintenances
+    if (statusFilter) {
+      filteredMaintenances = upcomingMaintenances.filter(m => m.status === statusFilter)
+    }
+
+    // Ordenar según el criterio seleccionado
+    switch (sortBy) {
+      case 'urgency':
+        // Ordenar solo por urgencia, de mayor a menor
+        filteredMaintenances.sort((a, b) => {
+          const urgencyOrder = { 'high': 3, 'medium': 2, 'low': 1 }
+          return (urgencyOrder[b.urgency] || 0) - (urgencyOrder[a.urgency] || 0)
+        })
+        break
+      case 'date':
+        // Ordenar por fecha estimada (más cercana primero)
+        filteredMaintenances.sort((a, b) => 
+          new Date(a.estimatedDate).getTime() - new Date(b.estimatedDate).getTime()
+        )
+        break
+      case 'asset':
+        // Ordenar por nombre de activo
+        filteredMaintenances.sort((a, b) => 
+          a.assetName.localeCompare(b.assetName)
+        )
+        break
+      default:
+        // Ordenar por prioridad (status, luego urgencia, luego fecha)
+        filteredMaintenances.sort((a, b) => {
+          // Primero por status
+          const statusOrder = { 'overdue': 3, 'upcoming': 2, 'covered': 1 }
+          const statusA = statusOrder[a.status as keyof typeof statusOrder] || 0
+          const statusB = statusOrder[b.status as keyof typeof statusOrder] || 0
+          
+          if (statusA !== statusB) {
+            return statusB - statusA
+          }
+          
+          // Luego por urgencia
+          const urgencyOrder = { 'high': 3, 'medium': 2, 'low': 1 }
+          const urgencyA = urgencyOrder[a.urgency] || 0
+          const urgencyB = urgencyOrder[b.urgency] || 0
+          
+          if (urgencyA !== urgencyB) {
+            return urgencyB - urgencyA
+          }
+          
+          // Finalmente por fecha estimada
+          return new Date(a.estimatedDate).getTime() - new Date(b.estimatedDate).getTime()
+        })
+    }
 
     return NextResponse.json({
-      upcomingMaintenances: upcomingMaintenances.slice(0, 50), // Limitar a 50 registros
-      totalCount: upcomingMaintenances.length,
+      upcomingMaintenances: filteredMaintenances.slice(offset, offset + limit),
+      totalCount: filteredMaintenances.length,
       summary: {
-        overdue: upcomingMaintenances.filter(m => m.status === 'overdue').length,
-        upcoming: upcomingMaintenances.filter(m => m.status === 'upcoming').length,
-        covered: upcomingMaintenances.filter(m => m.status === 'covered').length,
-        highUrgency: upcomingMaintenances.filter(m => m.urgency === 'high').length,
-        mediumUrgency: upcomingMaintenances.filter(m => m.urgency === 'medium').length
+        overdue: filteredMaintenances.filter(m => m.status === 'overdue').length,
+        upcoming: filteredMaintenances.filter(m => m.status === 'upcoming').length,
+        covered: filteredMaintenances.filter(m => m.status === 'covered').length,
+        highUrgency: filteredMaintenances.filter(m => m.urgency === 'high').length,
+        mediumUrgency: filteredMaintenances.filter(m => m.urgency === 'medium').length
       }
     })
 
