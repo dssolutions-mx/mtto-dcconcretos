@@ -12,6 +12,7 @@ import { ArrowLeft, ShoppingCart, Loader2 } from "lucide-react"
 import Link from "next/link"
 import { toast } from "@/components/ui/use-toast"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { use } from "react"
 
 // Define a simplified AdditionalExpense interface for this component
 interface AdditionalExpenseData {
@@ -28,7 +29,10 @@ interface WorkOrderData {
   purchase_order_id: string | null;
 }
 
-export default function GenerateAdjustmentPOPage({ params }: { params: { id: string } }) {
+export default function GenerateAdjustmentPOPage({ params }: { params: Promise<{ id: string }> }) {
+  const resolvedParams = use(params);
+  const id = resolvedParams.id;
+  
   const router = useRouter()
   const [isLoading, setIsLoading] = useState(true)
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -47,7 +51,7 @@ export default function GenerateAdjustmentPOPage({ params }: { params: { id: str
         const { data: workOrderData, error: workOrderError } = await supabase
           .from("work_orders")
           .select("id, order_id, description, purchase_order_id")
-          .eq("id", params.id)
+          .eq("id", id)
           .single()
           
         if (workOrderError) {
@@ -63,7 +67,7 @@ export default function GenerateAdjustmentPOPage({ params }: { params: { id: str
         // Get approved expenses without an adjustment PO
         try {
           // Use our API endpoint to get approved expenses
-          const response = await fetch(`/api/maintenance/work-orders/${params.id}/additional-expenses?status=aprobado`, {
+          const response = await fetch(`/api/maintenance/work-orders/${id}/additional-expenses?status=aprobado`, {
             method: 'GET',
             headers: {
               'Content-Type': 'application/json',
@@ -128,7 +132,7 @@ export default function GenerateAdjustmentPOPage({ params }: { params: { id: str
     }
     
     loadData()
-  }, [params.id])
+  }, [id])
   
   // Calculate total amount
   const totalAmount = expenses.reduce((sum, expense) => {
@@ -231,7 +235,7 @@ export default function GenerateAdjustmentPOPage({ params }: { params: { id: str
                 <CardDescription>Para la orden de trabajo {workOrder.order_id}</CardDescription>
               </div>
               <Button variant="outline" size="icon" asChild>
-                <Link href={`/ordenes/${params.id}`}>
+                <Link href={`/ordenes/${id}`}>
                   <ArrowLeft className="h-4 w-4" />
                 </Link>
               </Button>
@@ -247,7 +251,7 @@ export default function GenerateAdjustmentPOPage({ params }: { params: { id: str
           </CardContent>
           <CardFooter className="flex justify-end">
             <Button variant="outline" asChild>
-              <Link href={`/ordenes/${params.id}`}>Volver a la orden</Link>
+              <Link href={`/ordenes/${id}`}>Volver a la orden</Link>
             </Button>
           </CardFooter>
         </Card>
@@ -265,7 +269,7 @@ export default function GenerateAdjustmentPOPage({ params }: { params: { id: str
               <CardDescription>Para la orden de trabajo {workOrder.order_id}</CardDescription>
             </div>
             <Button variant="outline" size="icon" asChild>
-              <Link href={`/ordenes/${params.id}`}>
+              <Link href={`/ordenes/${id}`}>
                 <ArrowLeft className="h-4 w-4" />
               </Link>
             </Button>
@@ -332,7 +336,7 @@ export default function GenerateAdjustmentPOPage({ params }: { params: { id: str
         </CardContent>
         <CardFooter className="flex justify-between">
           <Button variant="outline" asChild>
-            <Link href={`/ordenes/${params.id}`}>Cancelar</Link>
+            <Link href={`/ordenes/${id}`}>Cancelar</Link>
           </Button>
           <Button 
             onClick={handleGeneratePO}

@@ -7,7 +7,7 @@ import { AssetHistory } from "@/components/assets/asset-history";
 import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { useAsset, useMaintenanceHistory, useIncidents } from "@/hooks/useSupabase";
-import { useState } from "react";
+import { useState, use } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -15,8 +15,10 @@ import { Badge } from "@/components/ui/badge";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 
-export default function AssetHistoryPage({ params }: { params: { id: string } }) {
-  const assetId = params.id;
+export default function AssetHistoryPage({ params }: { params: Promise<{ id: string }> }) {
+  const resolvedParams = use(params);
+  const assetId = resolvedParams.id;
+  
   const [activeTab, setActiveTab] = useState("all");
   
   // Fetch the asset name to display in the heading

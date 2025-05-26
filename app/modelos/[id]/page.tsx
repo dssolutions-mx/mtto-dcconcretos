@@ -11,12 +11,18 @@ import { use } from "react"
 
 export const revalidate = 3600 // Revalidate this page every hour
 
-export async function generateMetadata({ params }: { params: { id: string } }): Promise<Metadata> {
+export async function generateMetadata(
+  { params }: { params: any }
+): Promise<Metadata> {
+  // Properly await the params
+  params = await Promise.resolve(params)
+  const id = params.id
+  
   const supabase = await createClient()
   const { data: model } = await supabase
     .from('equipment_models')
     .select('name, manufacturer')
-    .eq('id', params.id)
+    .eq('id', id)
     .single()
     
   if (!model) {

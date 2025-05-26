@@ -7,15 +7,22 @@ import { ArrowLeft } from "lucide-react"
 import Link from "next/link"
 import { createClient } from "@/lib/supabase-server"
 import { notFound } from "next/navigation"
+import { use } from "react"
 
 export const revalidate = 60 // Revalidate this page every minute
 
-export async function generateMetadata({ params }: { params: { id: string } }): Promise<Metadata> {
+export async function generateMetadata(
+  { params }: { params: any }
+): Promise<Metadata> {
+  // Properly await the params
+  params = await Promise.resolve(params)
+  const id = params.id
+
   const supabase = await createClient()
   const { data: model } = await supabase
     .from('equipment_models')
     .select('name, manufacturer')
-    .eq('id', params.id)
+    .eq('id', id)
     .single()
 
   if (!model) {
@@ -31,12 +38,19 @@ export async function generateMetadata({ params }: { params: { id: string } }): 
   }
 }
 
-export default async function EditEquipmentModelPage({ params }: { params: { id: string } }) {
+export default function EditEquipmentModelPage({ params }: { params: Promise<{ id: string }> }) {
+  const resolvedParams = use(params);
+  const id = resolvedParams.id;
+  
+  return <EditEquipmentModelPageContent id={id} />;
+}
+
+async function EditEquipmentModelPageContent({ id }: { id: string }) {
   const supabase = await createClient()
   const { data: model } = await supabase
     .from('equipment_models')
     .select('id')
-    .eq('id', params.id)
+    .eq('id', id)
     .single()
 
   if (!model) {
@@ -50,13 +64,13 @@ export default async function EditEquipmentModelPage({ params }: { params: { id:
         text="Modifica la información y especificaciones técnicas de este modelo de equipo."
       >
         <Button variant="outline" asChild>
-          <Link href={`/modelos/${params.id}`}>
+          <Link href={`/modelos/${id}`}>
             <ArrowLeft className="mr-2 h-4 w-4" />
             Volver
           </Link>
         </Button>
       </DashboardHeader>
-      <EquipmentModelEditForm modelId={params.id} />
+      <EquipmentModelEditForm modelId={id} />
     </DashboardShell>
   )
 } 
