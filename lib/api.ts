@@ -109,30 +109,50 @@ export const modelsApi = {
 
   // Subir documentación para un modelo
   uploadDocument: async (modelId: string, file: FileUpload): Promise<string> => {
-    const fileName = `${modelId}/${Date.now()}-${file.name}`;
-    
-    const { error: uploadError } = await supabase.storage
-      .from('model-documentation')
-      .upload(fileName, file.file);
-    
-    if (uploadError) throw uploadError;
-    
-    const { data: urlData } = supabase.storage
-      .from('model-documentation')
-      .getPublicUrl(fileName);
-    
-    const documentUrl = urlData.publicUrl;
-    
-    // Registrar documento en la tabla model_documentation
-    await supabase.from('model_documentation').insert({
-      model_id: modelId,
-      name: file.name,
-      type: file.type,
-      file_url: documentUrl,
-      size: `${(file.size / 1024 / 1024).toFixed(2)} MB`
-    });
-    
-    return documentUrl;
+    try {
+      console.log("API: Starting document upload", { modelId, fileName: file.name, fileSize: file.size });
+      
+      const fileName = `${modelId}/${Date.now()}-${file.name}`;
+      
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('model-documentation')
+        .upload(fileName, file.file);
+      
+      if (uploadError) {
+        console.error("Storage upload error:", uploadError);
+        throw new Error(`Error al subir el archivo: ${uploadError.message}`);
+      }
+      
+      console.log("File uploaded to storage:", uploadData);
+      
+      const { data: urlData } = supabase.storage
+        .from('model-documentation')
+        .getPublicUrl(fileName);
+      
+      const documentUrl = urlData.publicUrl;
+      console.log("Public URL generated:", documentUrl);
+      
+      // Registrar documento en la tabla model_documentation
+      const { data: docData, error: docError } = await supabase.from('model_documentation').insert({
+        model_id: modelId,
+        name: file.name,
+        type: file.type,
+        file_url: documentUrl,
+        size: `${(file.size / 1024 / 1024).toFixed(2)} MB`
+      }).select().single();
+      
+      if (docError) {
+        console.error("Database insert error:", docError);
+        throw new Error(`Error al registrar el documento: ${docError.message}`);
+      }
+      
+      console.log("Document registered in database:", docData);
+      return documentUrl;
+      
+    } catch (error) {
+      console.error("Upload document API error:", error);
+      throw error;
+    }
   },
 
   // Crear un intervalo de mantenimiento para un modelo

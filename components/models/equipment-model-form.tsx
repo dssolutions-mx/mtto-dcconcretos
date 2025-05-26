@@ -19,12 +19,12 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Badge } from "@/components/ui/badge"
-import { Plus, Save, Trash, Upload, Edit, FileText, Loader2 } from "lucide-react"
+import { Plus, Save, Trash, Upload, Edit, FileText, Loader2, Check } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { modelsApi } from "@/lib/api"
 import { toast } from "@/components/ui/use-toast"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { InsertEquipmentModel } from "@/types"
+import { InsertEquipmentModel, FileUpload } from "@/types"
 import { equipmentCategories, fuelTypes, maintenanceTypes, measurementUnits } from "@/lib/constants"
 
 // Interfaz para las tareas de mantenimiento
@@ -237,41 +237,124 @@ export function EquipmentModelForm() {
     setMaintenanceIntervals(updatedIntervals)
   }
 
+  // Funciones para manejo de documentos
+  const handleFileSelect = (documentType: 'operationManual' | 'maintenanceGuide' | 'partsList', event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      setDocumentUploads(prev => ({
+        ...prev,
+        [documentType]: file
+      }));
+    }
+  };
+
+  const uploadDocument = async (documentType: 'operationManual' | 'maintenanceGuide' | 'partsList', modelId: string) => {
+    const file = documentUploads[documentType];
+    if (!file) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "No se ha seleccionado ningún archivo",
+      });
+      return;
+    }
+
+    setUploadingDocuments(prev => ({ ...prev, [documentType]: true }));
+
+    try {
+      console.log("Uploading document:", {
+        documentType,
+        modelId,
+        fileName: file.name,
+        fileSize: file.size,
+        fileType: file.type
+      });
+
+      const fileUpload: FileUpload = {
+        name: file.name,
+        type: getDocumentTypeLabel(documentType),
+        size: file.size,
+        file: file
+      };
+
+      const documentUrl = await modelsApi.uploadDocument(modelId, fileUpload);
+      
+      console.log("Document uploaded successfully:", documentUrl);
+      
+      setUploadedDocuments(prev => ({
+        ...prev,
+        [documentType]: documentUrl
+      }));
+
+      toast({
+        title: "Documento subido",
+        description: `${getDocumentTypeLabel(documentType)} subido correctamente`,
+      });
+
+    } catch (error) {
+      console.error("Error uploading document:", error);
+      
+      let errorMessage = "Error al subir el documento";
+      if (error instanceof Error) {
+        errorMessage = error.message;
+      } else if (typeof error === 'object' && error !== null) {
+        errorMessage = JSON.stringify(error);
+      }
+      
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: errorMessage,
+      });
+    } finally {
+      setUploadingDocuments(prev => ({ ...prev, [documentType]: false }));
+    }
+  };
+
+  const getDocumentTypeLabel = (documentType: 'operationManual' | 'maintenanceGuide' | 'partsList') => {
+    const labels = {
+      operationManual: "Manual de Operación",
+      maintenanceGuide: "Guía de Mantenimiento", 
+      partsList: "Lista de Repuestos"
+    };
+    return labels[documentType];
+  };
+
   // Función para guardar el modelo
   const handleSaveModel = async () => {
     try {
       setIsSubmitting(true);
       setError(null);
 
-      // Obtener los valores del formulario
+      // Obtener los valores del formulario desde el estado
       const modelData: InsertEquipmentModel = {
         model_id: `MOD${Date.now().toString().substring(8)}`, // Generar un ID único
-        name: (document.getElementById("modelName") as HTMLInputElement).value,
-        manufacturer: (document.getElementById("manufacturer") as HTMLInputElement).value,
+        name: basicInfo.modelName,
+        manufacturer: basicInfo.manufacturer,
         category: selectedCategory,
-        description: (document.getElementById("description") as HTMLTextAreaElement).value,
-        year_introduced: Number((document.getElementById("yearIntroduced") as HTMLInputElement).value) || null,
-        expected_lifespan: Number((document.getElementById("expectedLifespan") as HTMLInputElement).value) || null,
+        description: basicInfo.description,
+        year_introduced: Number(basicInfo.yearIntroduced) || null,
+        expected_lifespan: Number(basicInfo.expectedLifespan) || null,
         maintenance_unit: maintenanceUnit,
         specifications: {
           general: {
-            engineType: (document.getElementById("engineType") as HTMLInputElement)?.value,
-            power: (document.getElementById("power") as HTMLInputElement)?.value,
+            engineType: specifications.general.engineType,
+            power: specifications.general.power,
             fuelType: selectedFuelType,
-            fuelCapacity: (document.getElementById("fuelCapacity") as HTMLInputElement)?.value,
+            fuelCapacity: specifications.general.fuelCapacity,
           },
           dimensions: {
-            length: (document.getElementById("length") as HTMLInputElement)?.value,
-            width: (document.getElementById("width") as HTMLInputElement)?.value,
-            height: (document.getElementById("height") as HTMLInputElement)?.value,
-            weight: (document.getElementById("weight") as HTMLInputElement)?.value,
-            capacity: (document.getElementById("capacity") as HTMLInputElement)?.value,
+            length: specifications.dimensions.length,
+            width: specifications.dimensions.width,
+            height: specifications.dimensions.height,
+            weight: specifications.dimensions.weight,
+            capacity: specifications.dimensions.capacity,
           },
           performance: {
-            maxSpeed: (document.getElementById("maxSpeed") as HTMLInputElement)?.value,
-            maxLoad: (document.getElementById("maxLoad") as HTMLInputElement)?.value,
-            productivity: (document.getElementById("productivity") as HTMLInputElement)?.value,
-            operatingHours: (document.getElementById("operatingHours") as HTMLInputElement)?.value,
+            maxSpeed: specifications.performance.maxSpeed,
+            maxLoad: specifications.performance.maxLoad,
+            productivity: specifications.performance.productivity,
+            operatingHours: specifications.performance.operatingHours,
           }
         }
       };
@@ -287,6 +370,17 @@ export function EquipmentModelForm() {
       const savedModel = await modelsApi.create(modelData);
       
       console.log("Modelo guardado con éxito:", savedModel);
+
+      // Subir documentos si existen
+      if (savedModel) {
+        const documentTypes: Array<'operationManual' | 'maintenanceGuide' | 'partsList'> = ['operationManual', 'maintenanceGuide', 'partsList'];
+        
+        for (const docType of documentTypes) {
+          if (documentUploads[docType]) {
+            await uploadDocument(docType, savedModel.id);
+          }
+        }
+      }
       
       // Ahora guardar los intervalos de mantenimiento
       if (savedModel && maintenanceIntervals.length > 0) {
@@ -356,6 +450,68 @@ export function EquipmentModelForm() {
   const [selectedCategory, setSelectedCategory] = useState<string>("");
   const [selectedFuelType, setSelectedFuelType] = useState<string>("");
 
+  // Estado para documentos
+  const [documentUploads, setDocumentUploads] = useState<{
+    operationManual: File | null;
+    maintenanceGuide: File | null;
+    partsList: File | null;
+  }>({
+    operationManual: null,
+    maintenanceGuide: null,
+    partsList: null,
+  });
+
+  const [uploadingDocuments, setUploadingDocuments] = useState<{
+    operationManual: boolean;
+    maintenanceGuide: boolean;
+    partsList: boolean;
+  }>({
+    operationManual: false,
+    maintenanceGuide: false,
+    partsList: false,
+  });
+
+  const [uploadedDocuments, setUploadedDocuments] = useState<{
+    operationManual: string | null;
+    maintenanceGuide: string | null;
+    partsList: string | null;
+  }>({
+    operationManual: null,
+    maintenanceGuide: null,
+    partsList: null,
+  });
+
+  // Estado para información básica del modelo
+  const [basicInfo, setBasicInfo] = useState({
+    modelName: "",
+    manufacturer: "",
+    description: "",
+    yearIntroduced: "",
+    expectedLifespan: "",
+  });
+
+  // Estado para especificaciones técnicas
+  const [specifications, setSpecifications] = useState({
+    general: {
+      engineType: "",
+      power: "",
+      fuelCapacity: "",
+    },
+    dimensions: {
+      length: "",
+      width: "",
+      height: "",
+      weight: "",
+      capacity: "",
+    },
+    performance: {
+      maxSpeed: "",
+      maxLoad: "",
+      productivity: "",
+      operatingHours: "",
+    }
+  });
+
   return (
     <div className="space-y-6">
       <Card>
@@ -367,18 +523,28 @@ export function EquipmentModelForm() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="modelName">Nombre del Modelo</Label>
-              <Input id="modelName" placeholder="Ej: CR-15" />
+              <Input 
+                id="modelName" 
+                placeholder="Ej: CR-15" 
+                value={basicInfo.modelName}
+                onChange={(e) => setBasicInfo(prev => ({ ...prev, modelName: e.target.value }))}
+              />
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="manufacturer">Fabricante</Label>
-              <Input id="manufacturer" placeholder="Ej: ConcreMix" />
+              <Input 
+                id="manufacturer" 
+                placeholder="Ej: ConcreMix" 
+                value={basicInfo.manufacturer}
+                onChange={(e) => setBasicInfo(prev => ({ ...prev, manufacturer: e.target.value }))}
+              />
             </div>
           </div>
 
           <div className="space-y-2">
             <Label htmlFor="category">Categoría</Label>
-            <Select onValueChange={setSelectedCategory}>
+            <Select value={selectedCategory} onValueChange={setSelectedCategory}>
               <SelectTrigger id="category">
                 <SelectValue placeholder="Seleccionar categoría" />
               </SelectTrigger>
@@ -394,18 +560,36 @@ export function EquipmentModelForm() {
 
           <div className="space-y-2">
             <Label htmlFor="description">Descripción</Label>
-            <Textarea id="description" placeholder="Descripción general del modelo" rows={3} />
+            <Textarea 
+              id="description" 
+              placeholder="Descripción general del modelo" 
+              rows={3}
+              value={basicInfo.description}
+              onChange={(e) => setBasicInfo(prev => ({ ...prev, description: e.target.value }))}
+            />
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="space-y-2">
               <Label htmlFor="yearIntroduced">Año de Introducción</Label>
-              <Input id="yearIntroduced" type="number" placeholder="Ej: 2020" />
+              <Input 
+                id="yearIntroduced" 
+                type="number" 
+                placeholder="Ej: 2020" 
+                value={basicInfo.yearIntroduced}
+                onChange={(e) => setBasicInfo(prev => ({ ...prev, yearIntroduced: e.target.value }))}
+              />
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="expectedLifespan">Vida Útil Esperada (años)</Label>
-              <Input id="expectedLifespan" type="number" placeholder="Ej: 10" />
+              <Input 
+                id="expectedLifespan" 
+                type="number" 
+                placeholder="Ej: 10" 
+                value={basicInfo.expectedLifespan}
+                onChange={(e) => setBasicInfo(prev => ({ ...prev, expectedLifespan: e.target.value }))}
+              />
             </div>
 
             <div className="space-y-2">
@@ -446,17 +630,33 @@ export function EquipmentModelForm() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="engineType">Tipo de Motor</Label>
-                  <Input id="engineType" placeholder="Ej: Diésel 4 cilindros" />
+                  <Input 
+                    id="engineType" 
+                    placeholder="Ej: Diésel 4 cilindros" 
+                    value={specifications.general.engineType}
+                    onChange={(e) => setSpecifications(prev => ({ 
+                      ...prev, 
+                      general: { ...prev.general, engineType: e.target.value } 
+                    }))}
+                  />
                 </div>
 
                 <div className="space-y-2">
                   <Label htmlFor="power">Potencia</Label>
-                  <Input id="power" placeholder="Ej: 120 HP" />
+                  <Input 
+                    id="power" 
+                    placeholder="Ej: 120 HP" 
+                    value={specifications.general.power}
+                    onChange={(e) => setSpecifications(prev => ({ 
+                      ...prev, 
+                      general: { ...prev.general, power: e.target.value } 
+                    }))}
+                  />
                 </div>
 
                 <div className="space-y-2">
                   <Label htmlFor="fuelType">Tipo de Combustible</Label>
-                  <Select onValueChange={setSelectedFuelType}>
+                  <Select value={selectedFuelType} onValueChange={setSelectedFuelType}>
                     <SelectTrigger id="fuelType">
                       <SelectValue placeholder="Seleccionar combustible" />
                     </SelectTrigger>
@@ -472,7 +672,15 @@ export function EquipmentModelForm() {
 
                 <div className="space-y-2">
                   <Label htmlFor="fuelCapacity">Capacidad de Combustible</Label>
-                  <Input id="fuelCapacity" placeholder="Ej: 200 L" />
+                  <Input 
+                    id="fuelCapacity" 
+                    placeholder="Ej: 200 L" 
+                    value={specifications.general.fuelCapacity}
+                    onChange={(e) => setSpecifications(prev => ({ 
+                      ...prev, 
+                      general: { ...prev.general, fuelCapacity: e.target.value } 
+                    }))}
+                  />
                 </div>
               </div>
             </TabsContent>
@@ -480,27 +688,67 @@ export function EquipmentModelForm() {
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="length">Longitud</Label>
-                  <Input id="length" placeholder="Ej: 5.5 m" />
+                  <Input 
+                    id="length" 
+                    placeholder="Ej: 5.5 m" 
+                    value={specifications.dimensions.length}
+                    onChange={(e) => setSpecifications(prev => ({ 
+                      ...prev, 
+                      dimensions: { ...prev.dimensions, length: e.target.value } 
+                    }))}
+                  />
                 </div>
 
                 <div className="space-y-2">
                   <Label htmlFor="width">Ancho</Label>
-                  <Input id="width" placeholder="Ej: 2.3 m" />
+                  <Input 
+                    id="width" 
+                    placeholder="Ej: 2.3 m" 
+                    value={specifications.dimensions.width}
+                    onChange={(e) => setSpecifications(prev => ({ 
+                      ...prev, 
+                      dimensions: { ...prev.dimensions, width: e.target.value } 
+                    }))}
+                  />
                 </div>
 
                 <div className="space-y-2">
                   <Label htmlFor="height">Altura</Label>
-                  <Input id="height" placeholder="Ej: 3.1 m" />
+                  <Input 
+                    id="height" 
+                    placeholder="Ej: 3.1 m" 
+                    value={specifications.dimensions.height}
+                    onChange={(e) => setSpecifications(prev => ({ 
+                      ...prev, 
+                      dimensions: { ...prev.dimensions, height: e.target.value } 
+                    }))}
+                  />
                 </div>
 
                 <div className="space-y-2">
                   <Label htmlFor="weight">Peso</Label>
-                  <Input id="weight" placeholder="Ej: 5000 kg" />
+                  <Input 
+                    id="weight" 
+                    placeholder="Ej: 5000 kg" 
+                    value={specifications.dimensions.weight}
+                    onChange={(e) => setSpecifications(prev => ({ 
+                      ...prev, 
+                      dimensions: { ...prev.dimensions, weight: e.target.value } 
+                    }))}
+                  />
                 </div>
 
                 <div className="space-y-2">
                   <Label htmlFor="capacity">Capacidad</Label>
-                  <Input id="capacity" placeholder="Ej: 2.5 m³" />
+                  <Input 
+                    id="capacity" 
+                    placeholder="Ej: 2.5 m³" 
+                    value={specifications.dimensions.capacity}
+                    onChange={(e) => setSpecifications(prev => ({ 
+                      ...prev, 
+                      dimensions: { ...prev.dimensions, capacity: e.target.value } 
+                    }))}
+                  />
                 </div>
               </div>
             </TabsContent>
@@ -508,22 +756,54 @@ export function EquipmentModelForm() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="maxSpeed">Velocidad Máxima</Label>
-                  <Input id="maxSpeed" placeholder="Ej: 25 km/h" />
+                  <Input 
+                    id="maxSpeed" 
+                    placeholder="Ej: 25 km/h" 
+                    value={specifications.performance.maxSpeed}
+                    onChange={(e) => setSpecifications(prev => ({ 
+                      ...prev, 
+                      performance: { ...prev.performance, maxSpeed: e.target.value } 
+                    }))}
+                  />
                 </div>
 
                 <div className="space-y-2">
                   <Label htmlFor="maxLoad">Carga Máxima</Label>
-                  <Input id="maxLoad" placeholder="Ej: 10000 kg" />
+                  <Input 
+                    id="maxLoad" 
+                    placeholder="Ej: 10000 kg" 
+                    value={specifications.performance.maxLoad}
+                    onChange={(e) => setSpecifications(prev => ({ 
+                      ...prev, 
+                      performance: { ...prev.performance, maxLoad: e.target.value } 
+                    }))}
+                  />
                 </div>
 
                 <div className="space-y-2">
                   <Label htmlFor="productivity">Productividad</Label>
-                  <Input id="productivity" placeholder="Ej: 50 m³/h" />
+                  <Input 
+                    id="productivity" 
+                    placeholder="Ej: 50 m³/h" 
+                    value={specifications.performance.productivity}
+                    onChange={(e) => setSpecifications(prev => ({ 
+                      ...prev, 
+                      performance: { ...prev.performance, productivity: e.target.value } 
+                    }))}
+                  />
                 </div>
 
                 <div className="space-y-2">
                   <Label htmlFor="operatingHours">Horas de Operación Recomendadas</Label>
-                  <Input id="operatingHours" placeholder="Ej: 8000 h/año" />
+                  <Input 
+                    id="operatingHours" 
+                    placeholder="Ej: 8000 h/año" 
+                    value={specifications.performance.operatingHours}
+                    onChange={(e) => setSpecifications(prev => ({ 
+                      ...prev, 
+                      performance: { ...prev.performance, operatingHours: e.target.value } 
+                    }))}
+                  />
                 </div>
               </div>
             </TabsContent>
@@ -673,36 +953,75 @@ export function EquipmentModelForm() {
             <div className="space-y-2">
               <Label htmlFor="manualUpload">Manual de Operación</Label>
               <div className="flex items-center gap-2">
-                <Input id="manualUpload" type="file" />
-                <Button variant="outline" size="sm">
-                  <Upload className="mr-2 h-4 w-4" />
-                  Subir
-                </Button>
+                <Input 
+                  id="manualUpload" 
+                  type="file" 
+                  accept=".pdf,.doc,.docx"
+                  onChange={(e) => handleFileSelect('operationManual', e)}
+                />
+                {uploadedDocuments.operationManual ? (
+                  <div className="flex items-center gap-2">
+                    <Check className="h-4 w-4 text-green-500" />
+                    <span className="text-sm text-green-600">Subido</span>
+                  </div>
+                ) : documentUploads.operationManual ? (
+                  <span className="text-sm text-muted-foreground">
+                    {documentUploads.operationManual.name}
+                  </span>
+                ) : null}
               </div>
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="maintenanceGuideUpload">Guía de Mantenimiento</Label>
               <div className="flex items-center gap-2">
-                <Input id="maintenanceGuideUpload" type="file" />
-                <Button variant="outline" size="sm">
-                  <Upload className="mr-2 h-4 w-4" />
-                  Subir
-                </Button>
+                <Input 
+                  id="maintenanceGuideUpload" 
+                  type="file" 
+                  accept=".pdf,.doc,.docx"
+                  onChange={(e) => handleFileSelect('maintenanceGuide', e)}
+                />
+                {uploadedDocuments.maintenanceGuide ? (
+                  <div className="flex items-center gap-2">
+                    <Check className="h-4 w-4 text-green-500" />
+                    <span className="text-sm text-green-600">Subido</span>
+                  </div>
+                ) : documentUploads.maintenanceGuide ? (
+                  <span className="text-sm text-muted-foreground">
+                    {documentUploads.maintenanceGuide.name}
+                  </span>
+                ) : null}
               </div>
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="partsListUpload">Lista de Repuestos</Label>
               <div className="flex items-center gap-2">
-                <Input id="partsListUpload" type="file" />
-                <Button variant="outline" size="sm">
-                  <Upload className="mr-2 h-4 w-4" />
-                  Subir
-                </Button>
+                <Input 
+                  id="partsListUpload" 
+                  type="file" 
+                  accept=".pdf,.doc,.docx,.xls,.xlsx"
+                  onChange={(e) => handleFileSelect('partsList', e)}
+                />
+                {uploadedDocuments.partsList ? (
+                  <div className="flex items-center gap-2">
+                    <Check className="h-4 w-4 text-green-500" />
+                    <span className="text-sm text-green-600">Subido</span>
+                  </div>
+                ) : documentUploads.partsList ? (
+                  <span className="text-sm text-muted-foreground">
+                    {documentUploads.partsList.name}
+                  </span>
+                ) : null}
               </div>
             </div>
           </div>
+          
+          {(documentUploads.operationManual || documentUploads.maintenanceGuide || documentUploads.partsList) && (
+            <div className="text-sm text-muted-foreground mt-4">
+              <p>📄 Los documentos se subirán automáticamente al guardar el modelo.</p>
+            </div>
+          )}
         </CardContent>
       </Card>
 
