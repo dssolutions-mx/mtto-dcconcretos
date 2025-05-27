@@ -10,12 +10,15 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { CalendarIcon, Loader2, Plus, Minus, Trash2 } from "lucide-react";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { CalendarIcon, Loader2, Plus, Minus, Trash2, Camera, FileText } from "lucide-react";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { createClient } from "@/lib/supabase";
+import { EvidenceUpload, type EvidencePhoto } from "@/components/ui/evidence-upload";
 
 interface IncidentPart {
   name: string;
@@ -52,8 +55,12 @@ export function IncidentRegistrationDialog({
   const [laborCost, setLaborCost] = useState("");
   const [totalCost, setTotalCost] = useState("");
   const [workOrder, setWorkOrder] = useState("");
-  const [status, setStatus] = useState("Resuelto");
+  const [status, setStatus] = useState("Pendiente");
   const [parts, setParts] = useState<IncidentPart[]>([]);
+  
+  // Evidence state
+  const [incidentEvidence, setIncidentEvidence] = useState<EvidencePhoto[]>([]);
+  const [showEvidenceDialog, setShowEvidenceDialog] = useState(false);
   
   // New part form
   const [newPartName, setNewPartName] = useState("");
@@ -73,8 +80,9 @@ export function IncidentRegistrationDialog({
     setLaborCost("");
     setTotalCost("");
     setWorkOrder("");
-    setStatus("Resuelto");
+    setStatus("Pendiente"); // Cambiado a Pendiente por defecto
     setParts([]);
+    setIncidentEvidence([]);
     setNewPartName("");
     setNewPartNumber("");
     setNewPartQuantity("1");
@@ -109,10 +117,21 @@ export function IncidentRegistrationDialog({
   };
 
   const handleSubmit = async () => {
+    // Validar campos obligatorios básicos
     if (!date || !type || !reportedBy || !description) {
       toast({
         title: "Campos incompletos",
         description: "Por favor complete todos los campos obligatorios marcados con *",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    // Validar que si está resuelto, tenga una resolución
+    if (status === "Resuelto" && !resolution) {
+      toast({
+        title: "Resolución requerida",
+        description: "Para marcar un incidente como resuelto, debe proporcionar una descripción de la resolución aplicada",
         variant: "destructive",
       });
       return;
@@ -149,27 +168,70 @@ export function IncidentRegistrationDialog({
         total_cost: totalCostNum > 0 ? totalCostNum.toString() : null,
         work_order_text: workOrder || null,
         status: status,
-        documents: null, // Por ahora sin documentos
+        documents: incidentEvidence.length > 0 
+          ? incidentEvidence.map(evidence => evidence.url)
+          : null,
         created_by: user.id
       };
 
       console.log("Registering incident:", incidentData);
 
-      const { error: incidentError } = await supabase
+      const { data: insertedIncident, error: incidentError } = await supabase
         .from('incident_history')
-        .insert(incidentData);
+        .insert(incidentData)
+        .select('id')
+        .single();
 
       if (incidentError) {
         console.error("Error registering incident:", incidentError);
         throw new Error(`Error al registrar incidente: ${incidentError.message}`);
       }
 
-      console.log("Incident registered successfully");
+      console.log("Incident registered successfully with ID:", insertedIncident.id);
 
-      toast({
-        title: "¡Incidente registrado exitosamente!",
-        description: "El incidente ha sido registrado en el historial del activo.",
-      });
+      // Generar orden de trabajo automáticamente si el incidente lo amerita
+      if (type.toLowerCase().includes('falla') || status === 'Pendiente') {
+        try {
+          console.log("Generating work order from incident...");
+          
+          // Llamar a la API para generar la orden de trabajo
+          const workOrderResponse = await fetch('/api/work-orders/generate-from-incident', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              incident_id: insertedIncident.id,
+              priority: type.toLowerCase().includes('crítica') || type.toLowerCase().includes('falla') ? 'Alta' : 'Media'
+            }),
+          });
+
+          if (!workOrderResponse.ok) {
+            const errorData = await workOrderResponse.json();
+            throw new Error(errorData.error || 'Error generando orden de trabajo');
+          }
+
+          const { work_order_id } = await workOrderResponse.json();
+          console.log("Work order generated successfully:", work_order_id);
+          
+          toast({
+            title: "¡Incidente registrado y orden de trabajo creada!",
+            description: `El incidente ha sido registrado y se generó automáticamente la orden de trabajo.`,
+          });
+        } catch (workOrderErr) {
+          console.error("Error in work order generation:", workOrderErr);
+          toast({
+            title: "Incidente registrado",
+            description: "El incidente fue registrado pero hubo un problema al generar la orden de trabajo.",
+            variant: "default",
+          });
+        }
+      } else {
+        toast({
+          title: "¡Incidente registrado exitosamente!",
+          description: "El incidente ha sido registrado en el historial del activo.",
+        });
+      }
 
       resetForm();
       onSuccess();
@@ -291,21 +353,10 @@ export function IncidentRegistrationDialog({
             </div>
           </div>
 
-          {/* Resolución y estado */}
+          {/* Estado del incidente */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="resolution">Resolución Aplicada</Label>
-              <Textarea
-                id="resolution"
-                value={resolution}
-                onChange={(e) => setResolution(e.target.value)}
-                placeholder="Describa cómo se resolvió el incidente..."
-                rows={2}
-              />
-            </div>
-            
-            <div className="space-y-2">
-              <Label htmlFor="status">Estado del Incidente</Label>
+              <Label htmlFor="status">Estado del Incidente *</Label>
               <Select value={status} onValueChange={setStatus}>
                 <SelectTrigger>
                   <SelectValue placeholder="Seleccionar estado" />
@@ -317,58 +368,74 @@ export function IncidentRegistrationDialog({
                 </SelectContent>
               </Select>
             </div>
+            
+            {(status === "En progreso" || status === "Resuelto") && (
+              <div className="space-y-2">
+                <Label htmlFor="resolution">Resolución Aplicada</Label>
+                <Textarea
+                  id="resolution"
+                  value={resolution}
+                  onChange={(e) => setResolution(e.target.value)}
+                  placeholder="Describa cómo se resolvió el incidente..."
+                  rows={2}
+                  required={status === "Resuelto"}
+                />
+              </div>
+            )}
           </div>
 
-          {/* Información de tiempo y costos */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="downtime">Tiempo Inactivo (horas)</Label>
-              <Input
-                id="downtime"
-                type="number"
-                step="0.5"
-                value={downtime}
-                onChange={(e) => setDowntime(e.target.value)}
-                placeholder="0.0"
-              />
+          {/* Información de tiempo y costos - solo visible si está en progreso o resuelto */}
+          {(status === "En progreso" || status === "Resuelto") && (
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="downtime">Tiempo Inactivo (horas)</Label>
+                <Input
+                  id="downtime"
+                  type="number"
+                  step="0.5"
+                  value={downtime}
+                  onChange={(e) => setDowntime(e.target.value)}
+                  placeholder="0.0"
+                />
+              </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="laborHours">Horas de Trabajo</Label>
+                <Input
+                  id="laborHours"
+                  type="number"
+                  step="0.5"
+                  value={laborHours}
+                  onChange={(e) => setLaborHours(e.target.value)}
+                  placeholder="0.0"
+                />
+              </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="laborCost">Costo de Mano de Obra ($)</Label>
+                <Input
+                  id="laborCost"
+                  type="number"
+                  step="0.01"
+                  value={laborCost}
+                  onChange={(e) => setLaborCost(e.target.value)}
+                  placeholder="0.00"
+                />
+              </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="totalCost">Costo Total ($)</Label>
+                <Input
+                  id="totalCost"
+                  type="number"
+                  step="0.01"
+                  value={totalCost}
+                  onChange={(e) => setTotalCost(e.target.value)}
+                  placeholder="0.00"
+                />
+              </div>
             </div>
-            
-            <div className="space-y-2">
-              <Label htmlFor="laborHours">Horas de Trabajo</Label>
-              <Input
-                id="laborHours"
-                type="number"
-                step="0.5"
-                value={laborHours}
-                onChange={(e) => setLaborHours(e.target.value)}
-                placeholder="0.0"
-              />
-            </div>
-            
-            <div className="space-y-2">
-              <Label htmlFor="laborCost">Costo de Mano de Obra ($)</Label>
-              <Input
-                id="laborCost"
-                type="number"
-                step="0.01"
-                value={laborCost}
-                onChange={(e) => setLaborCost(e.target.value)}
-                placeholder="0.00"
-              />
-            </div>
-            
-            <div className="space-y-2">
-              <Label htmlFor="totalCost">Costo Total ($)</Label>
-              <Input
-                id="totalCost"
-                type="number"
-                step="0.01"
-                value={totalCost}
-                onChange={(e) => setTotalCost(e.target.value)}
-                placeholder="0.00"
-              />
-            </div>
-          </div>
+          )}
 
           <div className="space-y-2">
             <Label htmlFor="workOrder">Orden de Trabajo</Label>
@@ -380,105 +447,174 @@ export function IncidentRegistrationDialog({
             />
           </div>
 
-          {/* Repuestos utilizados */}
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <Label className="text-base font-medium">Repuestos Utilizados</Label>
-            </div>
-            
-            {parts.length > 0 && (
-              <div className="border rounded-lg overflow-hidden">
-                <table className="w-full">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="text-left py-2 px-3 font-medium">Repuesto</th>
-                      <th className="text-left py-2 px-3 font-medium">Número de Parte</th>
-                      <th className="text-left py-2 px-3 font-medium">Cantidad</th>
-                      <th className="text-left py-2 px-3 font-medium">Costo</th>
-                      <th className="text-left py-2 px-3 font-medium">Acciones</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {parts.map((part, index) => (
-                      <tr key={index} className="border-t">
-                        <td className="py-2 px-3">{part.name}</td>
-                        <td className="py-2 px-3 text-muted-foreground">{part.partNumber || "-"}</td>
-                        <td className="py-2 px-3">{part.quantity}</td>
-                        <td className="py-2 px-3">{part.cost ? `$${part.cost}` : "-"}</td>
-                        <td className="py-2 px-3">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => removePart(index)}
-                            className="text-red-600 hover:text-red-700"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </td>
+          {/* Evidencia del incidente */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Camera className="h-5 w-5" />
+                Evidencia del Incidente
+              </CardTitle>
+              <CardDescription>
+                Añada fotografías, documentos o cualquier evidencia visual del incidente
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-muted-foreground">
+                    Incluya fotos del daño, condiciones del área, estado del equipo, y documentación relevante
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setShowEvidenceDialog(true)}
+                  className="flex items-center gap-2"
+                >
+                  <Camera className="h-4 w-4" />
+                  Agregar Evidencia
+                </Button>
+              </div>
+
+              {incidentEvidence.length > 0 && (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {incidentEvidence.map((evidence) => (
+                    <Card key={evidence.id} className="overflow-hidden">
+                      <div className="aspect-video relative bg-muted">
+                        {evidence.url.includes('image') || evidence.url.match(/\.(jpeg|jpg|gif|png|webp)$/i) ? (
+                          <img
+                            src={evidence.url}
+                            alt={evidence.description}
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center">
+                            <FileText className="h-8 w-8 text-muted-foreground" />
+                          </div>
+                        )}
+                        <Badge 
+                          variant="secondary" 
+                          className="absolute top-2 left-2 text-xs"
+                        >
+                          {evidence.category}
+                        </Badge>
+                      </div>
+                      <CardContent className="p-3">
+                        <p className="text-sm font-medium truncate">
+                          {evidence.description}
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {new Date(evidence.uploaded_at).toLocaleDateString()}
+                        </p>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Repuestos utilizados - solo se muestra si está en progreso o resuelto */}
+          {(status === "En progreso" || status === "Resuelto") && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <Label className="text-base font-medium">Repuestos Utilizados</Label>
+              </div>
+              
+              {parts.length > 0 && (
+                <div className="border rounded-lg overflow-hidden">
+                  <table className="w-full">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="text-left py-2 px-3 font-medium">Repuesto</th>
+                        <th className="text-left py-2 px-3 font-medium">Número de Parte</th>
+                        <th className="text-left py-2 px-3 font-medium">Cantidad</th>
+                        <th className="text-left py-2 px-3 font-medium">Costo</th>
+                        <th className="text-left py-2 px-3 font-medium">Acciones</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-            
-            {/* Formulario para agregar repuesto */}
-            <div className="p-4 border rounded-lg bg-gray-50">
-              <h4 className="font-medium mb-3">Agregar Repuesto</h4>
-              <div className="grid grid-cols-1 sm:grid-cols-5 gap-3 items-end">
-                <div>
-                  <Label htmlFor="newPartName">Nombre</Label>
-                  <Input
-                    id="newPartName"
-                    value={newPartName}
-                    onChange={(e) => setNewPartName(e.target.value)}
-                    placeholder="ej: Filtro de aceite"
-                  />
+                    </thead>
+                    <tbody>
+                      {parts.map((part, index) => (
+                        <tr key={index} className="border-t">
+                          <td className="py-2 px-3">{part.name}</td>
+                          <td className="py-2 px-3 text-muted-foreground">{part.partNumber || "-"}</td>
+                          <td className="py-2 px-3">{part.quantity}</td>
+                          <td className="py-2 px-3">{part.cost ? `$${part.cost}` : "-"}</td>
+                          <td className="py-2 px-3">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => removePart(index)}
+                              className="text-red-600 hover:text-red-700"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
-                <div>
-                  <Label htmlFor="newPartNumber">Número de Parte</Label>
-                  <Input
-                    id="newPartNumber"
-                    value={newPartNumber}
-                    onChange={(e) => setNewPartNumber(e.target.value)}
-                    placeholder="ej: ABC123"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="newPartQuantity">Cantidad</Label>
-                  <Input
-                    id="newPartQuantity"
-                    type="number"
-                    min="1"
-                    value={newPartQuantity}
-                    onChange={(e) => setNewPartQuantity(e.target.value)}
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="newPartCost">Costo ($)</Label>
-                  <Input
-                    id="newPartCost"
-                    type="number"
-                    step="0.01"
-                    value={newPartCost}
-                    onChange={(e) => setNewPartCost(e.target.value)}
-                    placeholder="0.00"
-                  />
-                </div>
-                <div>
-                  <Button
-                    type="button"
-                    onClick={addPart}
-                    disabled={!newPartName || !newPartQuantity}
-                    size="sm"
-                  >
-                    <Plus className="mr-1 h-4 w-4" />
-                    Agregar
-                  </Button>
+              )}
+              
+              {/* Formulario para agregar repuesto */}
+              <div className="p-4 border rounded-lg bg-gray-50">
+                <h4 className="font-medium mb-3">Agregar Repuesto</h4>
+                <div className="grid grid-cols-1 sm:grid-cols-5 gap-3 items-end">
+                  <div>
+                    <Label htmlFor="newPartName">Nombre</Label>
+                    <Input
+                      id="newPartName"
+                      value={newPartName}
+                      onChange={(e) => setNewPartName(e.target.value)}
+                      placeholder="ej: Filtro de aceite"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="newPartNumber">Número de Parte</Label>
+                    <Input
+                      id="newPartNumber"
+                      value={newPartNumber}
+                      onChange={(e) => setNewPartNumber(e.target.value)}
+                      placeholder="ej: ABC123"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="newPartQuantity">Cantidad</Label>
+                    <Input
+                      id="newPartQuantity"
+                      type="number"
+                      min="1"
+                      value={newPartQuantity}
+                      onChange={(e) => setNewPartQuantity(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="newPartCost">Costo ($)</Label>
+                    <Input
+                      id="newPartCost"
+                      type="number"
+                      step="0.01"
+                      value={newPartCost}
+                      onChange={(e) => setNewPartCost(e.target.value)}
+                      placeholder="0.00"
+                    />
+                  </div>
+                  <div>
+                    <Button
+                      type="button"
+                      onClick={addPart}
+                      disabled={!newPartName || !newPartQuantity}
+                      size="sm"
+                    >
+                      <Plus className="mr-1 h-4 w-4" />
+                      Agregar
+                    </Button>
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
+          )}
         </div>
 
         <DialogFooter>
@@ -497,6 +633,17 @@ export function IncidentRegistrationDialog({
           </Button>
         </DialogFooter>
       </DialogContent>
+      
+      <EvidenceUpload
+        open={showEvidenceDialog}
+        onOpenChange={setShowEvidenceDialog}
+        evidence={incidentEvidence}
+        setEvidence={setIncidentEvidence}
+        context="incident"
+        assetId={assetId}
+        title="Evidencia del Incidente"
+        description="Suba fotografías del daño, condiciones del área, estado del equipo, causas del incidente y cualquier documentación relevante"
+      />
     </Dialog>
   );
 } 

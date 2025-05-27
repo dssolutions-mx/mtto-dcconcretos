@@ -32,6 +32,7 @@ interface ExtendedWorkOrder extends WorkOrderComplete {
   creation_photos?: string | EvidenceItem[];
   completion_photos?: string | EvidenceItem[];
   progress_photos?: string | EvidenceItem[];
+  incident_id?: string | null;
 }
 
 export const metadata: Metadata = {
@@ -84,6 +85,26 @@ function getTypeVariant(type: string | null) {
     default:
       return "secondary"
   }
+}
+
+// Helper function to determine if Generate Purchase Order button should be shown
+function shouldShowGenerateOrderButton(workOrder: ExtendedWorkOrder): boolean {
+  // Don't show if already has a purchase order
+  if (workOrder.purchase_order_id) return false;
+  
+  // Show if work order has required parts (traditional flow)
+  if (workOrder.required_parts && Array.isArray(workOrder.required_parts) && workOrder.required_parts.length > 0) return true;
+  
+  // Show if work order has estimated cost > 0 (from incidents with cost information)
+  if (workOrder.estimated_cost && typeof workOrder.estimated_cost === 'number' && workOrder.estimated_cost > 0) return true;
+  
+  // Show for corrective orders (likely need parts/materials)
+  if (workOrder.type === MaintenanceType.Corrective) return true;
+  
+  // Show for preventive maintenance that typically requires parts
+  if (workOrder.type === MaintenanceType.Preventive) return true;
+  
+  return false;
 }
 
 export default function WorkOrderDetailsPage({
@@ -279,7 +300,7 @@ async function WorkOrderDetailsContent({ id }: { id: string }) {
             </Link>
           </Button>
           
-          {!extendedWorkOrder.purchase_order_id && extendedWorkOrder.required_parts && (
+          {!extendedWorkOrder.purchase_order_id && shouldShowGenerateOrderButton(extendedWorkOrder) && (
             <Button asChild>
               <Link href={`/ordenes/${id}/generar-oc`}>
                 <ShoppingCart className="mr-2 h-4 w-4" />

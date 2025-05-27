@@ -22,7 +22,7 @@ async function GeneratePurchaseOrderContent({ id }: { id: string }) {
   // Check if work order exists and doesn't already have a purchase order
   const { data: workOrder, error } = await supabase
     .from("work_orders")
-    .select("id, purchase_order_id, type, required_parts")
+    .select("id, purchase_order_id, type, required_parts, estimated_cost")
     .eq("id", id)
     .single();
     
@@ -36,8 +36,14 @@ async function GeneratePurchaseOrderContent({ id }: { id: string }) {
     redirect(`/compras/${workOrder.purchase_order_id}`);
   }
   
-  // If work order doesn't have required parts, redirect to edit it
-  if (!workOrder.required_parts) {
+  // Enhanced logic: Allow PO generation if work order has required_parts OR estimated_cost > 0 OR is corrective
+  const canGeneratePO = 
+    workOrder.required_parts || 
+    (workOrder.estimated_cost && workOrder.estimated_cost > 0) ||
+    workOrder.type === 'corrective';
+  
+  // If work order doesn't meet criteria for PO generation, redirect to edit it
+  if (!canGeneratePO) {
     redirect(`/ordenes/${id}/editar`);
   }
   

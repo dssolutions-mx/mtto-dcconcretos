@@ -114,14 +114,31 @@ export function PurchaseOrderForm({ workOrderId }: PurchaseOrderFormProps) {
         setWorkOrder(workOrderData as WorkOrderWithAsset);
         
         // Extract required parts from work order
+        let partsToLoad: PurchaseOrderItem[] = [];
+        
         if (workOrderData.required_parts) {
           // Parse required parts if it's a string
           const partsData = typeof workOrderData.required_parts === 'string' 
             ? JSON.parse(workOrderData.required_parts) 
             : workOrderData.required_parts;
             
-          setParts(partsData as PurchaseOrderItem[]);
+          partsToLoad = partsData as PurchaseOrderItem[];
         }
+        
+        // If still no parts but has estimated cost, create generic entry
+        if (partsToLoad.length === 0 && workOrderData.estimated_cost && Number(workOrderData.estimated_cost) > 0) {
+          partsToLoad = [{
+            id: 'estimated-cost',
+            name: 'Materiales y repuestos',
+            partNumber: '',
+            quantity: 1,
+            unit_price: Number(workOrderData.estimated_cost),
+            total_price: Number(workOrderData.estimated_cost),
+            supplier: ''
+          }];
+        }
+        
+        setParts(partsToLoad);
         
       } catch (err) {
         console.error("Error loading data:", err);

@@ -44,7 +44,7 @@ interface EvidenceUploadProps {
   onOpenChange: (open: boolean) => void
   evidence: EvidencePhoto[]
   setEvidence: (evidence: EvidencePhoto[]) => void
-  context: "creation" | "completion" | "maintenance" | "checklist"
+  context: "creation" | "completion" | "maintenance" | "checklist" | "incident"
   workOrderId?: string
   assetId?: string
   title?: string
@@ -84,6 +84,17 @@ const EVIDENCE_CATEGORIES = {
     { value: "lectura_medicion", label: "Lectura/Medición", icon: "📊" },
     { value: "violacion_seguridad", label: "Violación de Seguridad", icon: "🚨" },
     { value: "accion_correctiva", label: "Acción Correctiva", icon: "🔧" },
+  ],
+  incident: [
+    { value: "condicion_inicial", label: "Condición Inicial", icon: "📷" },
+    { value: "falla_danos", label: "Falla/Daños", icon: "💥" },
+    { value: "area_afectada", label: "Área Afectada", icon: "🏭" },
+    { value: "condiciones_seguridad", label: "Condiciones de Seguridad", icon: "⚠️" },
+    { value: "evidencia_causa", label: "Evidencia de la Causa", icon: "🔍" },
+    { value: "impacto_operacional", label: "Impacto Operacional", icon: "📊" },
+    { value: "acciones_inmediatas", label: "Acciones Inmediatas", icon: "🚨" },
+    { value: "estado_final", label: "Estado Final", icon: "✅" },
+    { value: "documentacion_soporte", label: "Documentación de Soporte", icon: "📄" },
   ]
 }
 
@@ -165,7 +176,11 @@ export function EvidenceUpload({
     const supabase = createClient()
     
     // Determine bucket based on context
-    const bucket = context === "checklist" ? "checklist-photos" : "work-order-evidence"
+    const bucket = context === "checklist" 
+      ? "checklist-photos" 
+      : context === "incident" 
+        ? "incident-evidence" 
+        : "work-order-evidence"
     
     // Create unique filename
     const fileExt = evidenceItem.file.name.split('.').pop()

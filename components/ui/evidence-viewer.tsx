@@ -83,6 +83,16 @@ export function EvidenceViewer({
       lectura_medicion: "bg-blue-100 text-blue-800",
       violacion_seguridad: "bg-red-100 text-red-800",
       accion_correctiva: "bg-green-100 text-green-800",
+      // Categorías de incidentes
+      condicion_inicial: "bg-gray-100 text-gray-800",
+      falla_danos: "bg-red-100 text-red-800",
+      area_afectada: "bg-orange-100 text-orange-800",
+      condiciones_seguridad: "bg-yellow-100 text-yellow-800",
+      evidencia_causa: "bg-purple-100 text-purple-800",
+      impacto_operacional: "bg-blue-100 text-blue-800",
+      acciones_inmediatas: "bg-green-100 text-green-800",
+      estado_final: "bg-green-100 text-green-800",
+      documentacion_soporte: "bg-gray-100 text-gray-800",
       // Mantener compatibilidad con categorías en inglés antiguas
       problem_identification: "bg-red-100 text-red-800",
       equipment_condition: "bg-blue-100 text-blue-800",

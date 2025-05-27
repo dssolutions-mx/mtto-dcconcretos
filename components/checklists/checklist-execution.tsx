@@ -274,42 +274,28 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
           }
         })
       
-      // Llamar a la API para crear una orden de trabajo correctiva
-      const response = await fetch('/api/maintenance/work-orders', {
+      // Llamar a la función mejorada que crea la orden de trabajo Y las incidencias
+      const response = await fetch('/api/checklists/generate-corrective-work-order', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          type: 'corrective',
-          asset_id: checklist.assetId,
-          description: `Acciones correctivas generadas desde checklist: ${checklist.name}`,
-          issues: itemsWithIssues,
           checklist_id: id,
-          creation_photos: itemsWithIssues
-            .filter(item => item.photo)
-            .map(item => ({
-              url: item.photo!,
-              description: `Evidencia de problema: ${item.description}`,
-              category: item.status === 'fail' ? 'problema_cumplimiento' : 'elemento_marcado',
-              uploaded_at: new Date().toISOString(),
-              bucket_path: item.photo!.includes('checklist-photos') ? 
-                item.photo!.split('/').pop() || '' : 
-                `checklist-photos/${item.id}`
-            }))
+          items_with_issues: itemsWithIssues
         }),
       })
       
       const result = await response.json()
       
-      if (result.error) {
-        throw new Error(result.error)
+      if (!response.ok || result.error) {
+        throw new Error(result.error || 'Error al crear orden de trabajo correctiva')
       }
       
-      toast.success(result.data.message || 'Orden de trabajo correctiva creada exitosamente')
+      toast.success(`Orden de trabajo correctiva creada exitosamente. También se registraron ${result.incidents_created || 0} incidencia(s) en el historial del activo.`)
       
       // Redirigir a la página de órdenes de trabajo
-      router.push(`/ordenes/${result.data.id}`)
+      router.push(`/ordenes/${result.work_order_id}`)
     } catch (error: any) {
       console.error('Error creating corrective action:', error)
       toast.error(`Error al crear acción correctiva: ${error.message}`)
