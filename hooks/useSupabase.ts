@@ -244,14 +244,36 @@ export function useIncidents(assetId: string | null) {
 
     try {
       setLoading(true);
+      // Mejorado para incluir información de órdenes de trabajo y órdenes de compra
       const { data, error } = await supabase
         .from('incident_history')
-        .select('*')
+        .select(`
+          *,
+          work_order:work_order_id (
+            id,
+            order_id,
+            status,
+            purchase_order_id
+          )
+        `)
         .eq('asset_id', assetId)
         .order('date', { ascending: false });
 
       if (error) throw error;
-      setIncidents(data || []);
+      
+      // Procesar los datos para añadir purchase_order_id directamente al incidente
+      const processedData = (data || []).map((incident: any) => {
+        const result = { ...incident };
+        
+        // Si el incidente tiene una orden de trabajo con orden de compra, añadirla directamente
+        if (incident.work_order && incident.work_order.purchase_order_id) {
+          result.purchase_order_id = incident.work_order.purchase_order_id;
+        }
+        
+        return result;
+      });
+      
+      setIncidents(processedData);
     } catch (err) {
       setError(err instanceof Error ? err : new Error(String(err)));
     } finally {

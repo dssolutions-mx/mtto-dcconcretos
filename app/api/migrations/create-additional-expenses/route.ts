@@ -15,167 +15,94 @@ export async function GET() {
     
     // SQL to create additional_expenses table and add adjustment fields to purchase_orders
     const migrationSQL = `
-      -- Create additional_expenses table
+      -- ========================================
+      -- MIGRACIÓN: Crear tabla additional_expenses y función para manejar gastos adicionales
+      -- ========================================
+
+      -- 1. Crear tabla additional_expenses si no existe
       CREATE TABLE IF NOT EXISTS additional_expenses (
         id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-        work_order_id UUID REFERENCES work_orders(id) ON DELETE CASCADE,
-        asset_id UUID REFERENCES assets(id) ON DELETE SET NULL,
+        work_order_id UUID REFERENCES work_orders(id),
         description TEXT NOT NULL,
-        amount DECIMAL(10,2) NOT NULL,
-        justification TEXT NOT NULL,
-        status TEXT NOT NULL DEFAULT 'pendiente_aprobacion',
-        created_by UUID REFERENCES auth.users(id),
+        amount DECIMAL(10, 2) NOT NULL,
+        justification TEXT,
+        expense_type TEXT DEFAULT 'other',
+        receipt_url TEXT,
+        adjustment_po_id UUID REFERENCES purchase_orders(id),
+        created_by UUID,
         created_at TIMESTAMPTZ DEFAULT NOW(),
-        updated_at TIMESTAMPTZ DEFAULT NOW(),
-        approved_by UUID REFERENCES auth.users(id),
-        approved_at TIMESTAMPTZ,
-        rejected_by UUID REFERENCES auth.users(id),
-        rejected_at TIMESTAMPTZ,
-        rejection_reason TEXT
+        updated_at TIMESTAMPTZ DEFAULT NOW()
       );
 
-      -- Add adjustment fields to purchase_orders
-      ALTER TABLE purchase_orders 
-      ADD COLUMN IF NOT EXISTS requires_adjustment BOOLEAN DEFAULT FALSE,
-      ADD COLUMN IF NOT EXISTS adjustment_amount DECIMAL(10,2),
-      ADD COLUMN IF NOT EXISTS adjustment_reason TEXT,
-      ADD COLUMN IF NOT EXISTS adjustment_status TEXT,
-      ADD COLUMN IF NOT EXISTS adjusted_at TIMESTAMPTZ,
-      ADD COLUMN IF NOT EXISTS adjusted_by UUID REFERENCES auth.users(id),
-      ADD COLUMN IF NOT EXISTS adjusted_total_amount DECIMAL(10,2);
+      -- 2. Agregar columna is_adjustment a purchase_orders si no existe
+      ALTER TABLE purchase_orders
+      ADD COLUMN IF NOT EXISTS is_adjustment BOOLEAN DEFAULT FALSE;
 
-      -- Add additional_expenses field to service_orders
-      ALTER TABLE service_orders
-      ADD COLUMN IF NOT EXISTS additional_expenses TEXT,
-      ADD COLUMN IF NOT EXISTS has_additional_expenses BOOLEAN DEFAULT FALSE,
-      ADD COLUMN IF NOT EXISTS requires_adjustment BOOLEAN DEFAULT FALSE;
+      -- 3. Agregar columna original_purchase_order_id a purchase_orders si no existe
+      ALTER TABLE purchase_orders
+      ADD COLUMN IF NOT EXISTS original_purchase_order_id UUID REFERENCES purchase_orders(id);
 
-      -- Create view to show all expenses requiring approval
-      CREATE OR REPLACE VIEW pending_expense_approvals AS
-      SELECT 
-        ae.id,
-        ae.work_order_id,
-        wo.order_id as work_order_number,
-        ae.asset_id,
-        a.name as asset_name,
-        ae.description,
-        ae.amount,
-        ae.justification,
-        ae.status,
-        ae.created_at,
-        p.nombre || ' ' || p.apellido as requested_by,
-        wo.purchase_order_id,
-        po.order_id as purchase_order_number
-      FROM 
-        additional_expenses ae
-      JOIN 
-        work_orders wo ON ae.work_order_id = wo.id
-      JOIN 
-        assets a ON ae.asset_id = a.id
-      JOIN 
-        profiles p ON ae.created_by = p.id
-      LEFT JOIN 
-        purchase_orders po ON wo.purchase_order_id = po.id
-      WHERE 
-        ae.status = 'pendiente_aprobacion';
-        
-      -- Create function to approve additional expenses
-      CREATE OR REPLACE FUNCTION approve_additional_expense(
-        p_expense_id UUID,
-        p_approved_by UUID
+      -- 4. Agregar función para generar orden de compra de ajuste
+      CREATE OR REPLACE FUNCTION generate_adjustment_purchase_order(
+        p_work_order_id UUID,
+        p_supplier TEXT,
+        p_items JSONB,
+        p_requested_by UUID,
+        p_original_po_id UUID DEFAULT NULL
       )
-      RETURNS BOOLEAN
+      RETURNS UUID
       LANGUAGE plpgsql
       SECURITY DEFINER
       AS $$
       DECLARE
-        v_expense RECORD;
-        v_work_order RECORD;
-        v_purchase_order RECORD;
-        v_total_adjustment DECIMAL(10,2) := 0;
+        v_order_counter INT;
+        v_order_id TEXT;
+        v_po_id UUID;
+        v_total_amount DECIMAL(10,2) := 0;
       BEGIN
-        -- Get expense data
-        SELECT * INTO v_expense 
-        FROM additional_expenses 
-        WHERE id = p_expense_id;
+        -- Get the current order count to generate a sequential order ID
+        SELECT COUNT(*) + 1 INTO v_order_counter FROM purchase_orders;
         
-        IF v_expense IS NULL THEN
-          RAISE EXCEPTION 'Expense not found';
-        END IF;
+        -- Format the order ID
+        v_order_id := 'OCA-' || LPAD(v_order_counter::TEXT, 4, '0');
         
-        -- Update expense status
-        UPDATE additional_expenses
-        SET status = 'aprobado',
-            approved_by = p_approved_by,
-            approved_at = NOW(),
-            updated_at = NOW()
-        WHERE id = p_expense_id;
+        -- Calculate total amount from items
+        SELECT COALESCE(SUM((item->>'total_price')::DECIMAL), 0)
+        INTO v_total_amount
+        FROM jsonb_array_elements(p_items) AS item;
         
-        -- Get work order
-        SELECT * INTO v_work_order
-        FROM work_orders
-        WHERE id = v_expense.work_order_id;
+        -- Insert the adjustment purchase order
+        INSERT INTO purchase_orders (
+          order_id,
+          work_order_id,
+          supplier,
+          items,
+          total_amount,
+          status,
+          requested_by,
+          expected_delivery_date,
+          actual_delivery_date,
+          approval_date,
+          approved_by,
+          is_adjustment,
+          original_purchase_order_id
+        ) VALUES (
+          v_order_id,
+          p_work_order_id,
+          p_supplier,
+          p_items,
+          v_total_amount,
+          'Recibida', -- Adjustment POs are typically already received
+          p_requested_by,
+          NOW(),
+          NOW(),
+          NOW(),
+          p_requested_by,
+          TRUE,
+          p_original_po_id
+        ) RETURNING id INTO v_po_id;
         
-        -- If work order has a purchase order, adjust it
-        IF v_work_order.purchase_order_id IS NOT NULL THEN
-          -- Get purchase order
-          SELECT * INTO v_purchase_order
-          FROM purchase_orders
-          WHERE id = v_work_order.purchase_order_id;
-          
-          -- Calculate total adjustment amount from all approved expenses
-          SELECT SUM(amount) INTO v_total_adjustment
-          FROM additional_expenses
-          WHERE work_order_id = v_work_order.id 
-          AND status = 'aprobado';
-          
-          -- Update purchase order
-          UPDATE purchase_orders
-          SET adjustment_amount = v_total_adjustment,
-              adjustment_status = 'aprobado',
-              adjusted_at = NOW(),
-              adjusted_by = p_approved_by,
-              adjusted_total_amount = total_amount + v_total_adjustment,
-              updated_at = NOW()
-          WHERE id = v_work_order.purchase_order_id;
-        END IF;
-        
-        RETURN TRUE;
-      END;
-      $$;
-      
-      -- Create function to reject additional expenses
-      CREATE OR REPLACE FUNCTION reject_additional_expense(
-        p_expense_id UUID,
-        p_rejected_by UUID,
-        p_rejection_reason TEXT
-      )
-      RETURNS BOOLEAN
-      LANGUAGE plpgsql
-      SECURITY DEFINER
-      AS $$
-      DECLARE
-        v_expense RECORD;
-      BEGIN
-        -- Get expense data
-        SELECT * INTO v_expense 
-        FROM additional_expenses 
-        WHERE id = p_expense_id;
-        
-        IF v_expense IS NULL THEN
-          RAISE EXCEPTION 'Expense not found';
-        END IF;
-        
-        -- Update expense status
-        UPDATE additional_expenses
-        SET status = 'rechazado',
-            rejected_by = p_rejected_by,
-            rejected_at = NOW(),
-            rejection_reason = p_rejection_reason,
-            updated_at = NOW()
-        WHERE id = p_expense_id;
-        
-        RETURN TRUE;
+        RETURN v_po_id;
       END;
       $$;
     `;
@@ -184,7 +111,8 @@ export async function GET() {
     return NextResponse.json({
       message: "Migration: Tabla de gastos adicionales y ajustes a órdenes de compra",
       note: "La siguiente SQL debe ser ejecutada en el editor SQL de Supabase:",
-      sql: migrationSQL
+      sql: migrationSQL,
+      instructions: "Ejecuta este script en el Supabase SQL Editor para crear las tablas y funciones necesarias para manejar gastos adicionales y órdenes de compra de ajuste."
     })
     
   } catch (error) {

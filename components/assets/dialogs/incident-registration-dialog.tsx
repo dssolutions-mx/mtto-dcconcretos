@@ -190,7 +190,11 @@ export function IncidentRegistrationDialog({
       console.log("Incident registered successfully with ID:", insertedIncident.id);
 
       // Generar orden de trabajo automáticamente si el incidente lo amerita
-      if (type.toLowerCase().includes('falla') || status === 'Pendiente') {
+      // Genera OT cuando: es una falla, está pendiente, en progreso, o es un accidente
+      if (type.toLowerCase().includes('falla') || 
+          status === 'Pendiente' || 
+          status === 'En progreso' || 
+          type.toLowerCase().includes('accidente')) {
         try {
           console.log("Generating work order from incident...");
           
@@ -202,7 +206,9 @@ export function IncidentRegistrationDialog({
             },
             body: JSON.stringify({
               incident_id: insertedIncident.id,
-              priority: type.toLowerCase().includes('crítica') || type.toLowerCase().includes('falla') ? 'Alta' : 'Media'
+              priority: type.toLowerCase().includes('crítica') || 
+                       type.toLowerCase().includes('falla') || 
+                       type.toLowerCase().includes('accidente') ? 'Alta' : 'Media'
             }),
           });
 
@@ -214,9 +220,16 @@ export function IncidentRegistrationDialog({
           const { work_order_id } = await workOrderResponse.json();
           console.log("Work order generated successfully:", work_order_id);
           
+          let message = "El incidente ha sido registrado y se generó automáticamente la orden de trabajo.";
+          
+          // Añadir mensaje sobre orden de compra si hay repuestos o costos
+          if ((parts && parts.length > 0) || (totalCostNum > 0)) {
+            message += " Se han transferido los repuestos y costos para generar una orden de compra.";
+          }
+          
           toast({
             title: "¡Incidente registrado y orden de trabajo creada!",
-            description: `El incidente ha sido registrado y se generó automáticamente la orden de trabajo.`,
+            description: message,
           });
         } catch (workOrderErr) {
           console.error("Error in work order generation:", workOrderErr);
@@ -227,10 +240,10 @@ export function IncidentRegistrationDialog({
           });
         }
       } else {
-        toast({
-          title: "¡Incidente registrado exitosamente!",
-          description: "El incidente ha sido registrado en el historial del activo.",
-        });
+                  toast({
+            title: "¡Incidente registrado exitosamente!",
+            description: "El incidente ha sido registrado en el historial del activo sin generar orden de trabajo.",
+          });
       }
 
       resetForm();
@@ -262,6 +275,12 @@ export function IncidentRegistrationDialog({
           <DialogDescription>
             Complete la información del incidente o falla reportada
           </DialogDescription>
+          <div className="mt-2 text-sm text-muted-foreground bg-muted p-2 rounded">
+            <p><strong>Nota:</strong> Los incidentes con estado "Pendiente", "En progreso", de tipo "Falla" o "Accidente" 
+            generarán automáticamente una orden de trabajo correctiva.</p>
+            <p className="mt-1"><strong>Importante:</strong> Los repuestos, costos y gastos registrados en el incidente 
+            se transferirán automáticamente a la orden de trabajo y podrán ser utilizados para generar órdenes de compra.</p>
+          </div>
         </DialogHeader>
         
         <div className="grid gap-6 py-4">

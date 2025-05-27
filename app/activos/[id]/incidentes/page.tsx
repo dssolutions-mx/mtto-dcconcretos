@@ -16,6 +16,7 @@ import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { IncidentRegistrationDialog } from "@/components/assets/dialogs/incident-registration-dialog";
 import { EvidenceViewer, type EvidenceItem } from "@/components/ui/evidence-viewer";
+import { useToast } from "@/hooks/use-toast";
 
 interface IncidentPageProps {
   params: Promise<{
@@ -26,6 +27,7 @@ interface IncidentPageProps {
 export default function IncidentPage({ params }: IncidentPageProps) {
   const resolvedParams = use(params);
   const assetId = resolvedParams.id;
+  const { toast } = useToast();
   
   const { asset, loading: assetLoading, error: assetError } = useAsset(assetId);
   const { incidents, loading: incidentsLoading, error: incidentsError, refetch } = useIncidents(assetId);
@@ -210,16 +212,70 @@ export default function IncidentPage({ params }: IncidentPageProps) {
                           </TableCell>
                           <TableCell>
                             {incident.work_order_id ? (
-                              <Badge variant="default" className="text-blue-600 border-blue-600">
-                                <svg className="h-3 w-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012-2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
-                                </svg>
-                                OT Vinculada
-                              </Badge>
+                              <div className="flex flex-col gap-1">
+                                <Badge variant="default" className="text-blue-600 border-blue-600 w-fit">
+                                  <svg className="h-3 w-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012-2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
+                                  </svg>
+                                  OT Vinculada
+                                </Badge>
+                                {incident.purchase_order_id && (
+                                  <Badge variant="outline" className="text-green-600 border-green-600 w-fit">
+                                    <svg className="h-3 w-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
+                                    </svg>
+                                    OC Vinculada
+                                  </Badge>
+                                )}
+                              </div>
                             ) : (
-                              <Badge variant="outline" className="text-gray-500">
-                                Sin OT
-                              </Badge>
+                              <div className="flex items-center gap-2">
+                                <Badge variant="outline" className="text-gray-500">
+                                  Sin OT
+                                </Badge>
+                                <Button 
+                                  variant="outline" 
+                                  size="sm" 
+                                  className="h-7 px-2 text-xs"
+                                  onClick={async () => {
+                                    try {
+                                      const response = await fetch('/api/work-orders/generate-from-incident', {
+                                        method: 'POST',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify({
+                                          incident_id: incident.id,
+                                          priority: incident.type?.toLowerCase().includes('crítica') || 
+                                                    incident.type?.toLowerCase().includes('falla') ||
+                                                    incident.type?.toLowerCase().includes('accidente') ? 'Alta' : 'Media'
+                                        }),
+                                      });
+                                      
+                                      if (response.ok) {
+                                        // Recargar la página para mostrar la OT generada
+                                        refetch();
+                                        toast({
+                                          title: "Orden de trabajo generada",
+                                          description: "Se ha creado una orden de trabajo a partir del incidente.",
+                                        });
+                                      } else {
+                                        toast({
+                                          title: "Error",
+                                          description: "No se pudo generar la orden de trabajo.",
+                                          variant: "destructive"
+                                        });
+                                      }
+                                    } catch (error) {
+                                      toast({
+                                        title: "Error",
+                                        description: "Ocurrió un error al generar la orden de trabajo.",
+                                        variant: "destructive"
+                                      });
+                                    }
+                                  }}
+                                >
+                                  Generar OT
+                                </Button>
+                              </div>
                             )}
                           </TableCell>
                           <TableCell>
@@ -430,6 +486,77 @@ export default function IncidentPage({ params }: IncidentPageProps) {
                     title=""
                     showCategories={true}
                   />
+                </CardContent>
+              </Card>
+              
+              {/* Acciones para el incidente */}
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm">Acciones</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {selectedIncident.work_order_id ? (
+                    <div className="flex flex-col gap-2">
+                      <Button 
+                        className="w-full"
+                        onClick={() => window.open(`/ordenes/${selectedIncident.work_order_id}`, '_blank')}
+                      >
+                        Ver Orden de Trabajo
+                      </Button>
+                      {selectedIncident.purchase_order_id && (
+                        <Button 
+                          variant="outline"
+                          className="w-full"
+                          onClick={() => window.open(`/compras/${selectedIncident.purchase_order_id}`, '_blank')}
+                        >
+                          Ver Orden de Compra
+                        </Button>
+                      )}
+                    </div>
+                  ) : (
+                    <Button 
+                      variant="outline"
+                      className="w-full"
+                      onClick={async () => {
+                        try {
+                          const response = await fetch('/api/work-orders/generate-from-incident', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                              incident_id: selectedIncident.id,
+                              priority: selectedIncident.type?.toLowerCase().includes('crítica') || 
+                                       selectedIncident.type?.toLowerCase().includes('falla') ||
+                                       selectedIncident.type?.toLowerCase().includes('accidente') ? 'Alta' : 'Media'
+                            }),
+                          });
+                          
+                          if (response.ok) {
+                            // Cerrar el diálogo y recargar los datos
+                            setShowIncidentDetails(false);
+                            refetch();
+                            toast({
+                              title: "Orden de trabajo generada",
+                              description: "Se ha creado una orden de trabajo a partir del incidente.",
+                            });
+                          } else {
+                            toast({
+                              title: "Error",
+                              description: "No se pudo generar la orden de trabajo.",
+                              variant: "destructive"
+                            });
+                          }
+                        } catch (error) {
+                          toast({
+                            title: "Error",
+                            description: "Ocurrió un error al generar la orden de trabajo.",
+                            variant: "destructive"
+                          });
+                        }
+                      }}
+                    >
+                      Generar Orden de Trabajo
+                    </Button>
+                  )}
                 </CardContent>
               </Card>
             </div>
