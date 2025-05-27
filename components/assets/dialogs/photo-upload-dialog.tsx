@@ -81,7 +81,6 @@ export function PhotoUploadDialog({
   setUploadedPhotos,
 }: PhotoUploadDialogProps) {
   const [pendingPhotos, setPendingPhotos] = useState<PhotoWithDescription[]>([])
-  const [customCategory, setCustomCategory] = useState("")
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid")
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -146,7 +145,6 @@ export function PhotoUploadDialog({
 
   const handleClose = useCallback(() => {
     setPendingPhotos([])
-    setCustomCategory("")
     onOpenChange(false)
   }, [onOpenChange])
 
@@ -286,8 +284,6 @@ export function PhotoUploadDialog({
                         updatePhotoCategory={updatePhotoCategory}
                         updatePhotoDescription={updatePhotoDescription}
                         getCategoryInfo={getCategoryInfo}
-                        customCategory={customCategory}
-                        setCustomCategory={setCustomCategory}
                       />
                     ))}
                   </div>
@@ -370,17 +366,14 @@ const PhotoClassificationCard = React.memo(function PhotoClassificationCard({
   updatePhotoCategory,
   updatePhotoDescription,
   getCategoryInfo,
-  customCategory,
-  setCustomCategory
 }: {
   photo: PhotoWithDescription
   index: number
   updatePhotoCategory: (index: number, category: string) => void
   updatePhotoDescription: (index: number, description: string) => void
   getCategoryInfo: (categoryValue: string) => { value: string; label: string; icon: string }
-  customCategory: string
-  setCustomCategory: (value: string) => void
 }) {
+  const [customCategory, setCustomCategory] = useState("")
   const categoryInfo = photo.category ? getCategoryInfo(photo.category) : null
   const isComplete = photo.category && photo.description.trim()
 
@@ -400,14 +393,14 @@ const PhotoClassificationCard = React.memo(function PhotoClassificationCard({
         setCustomCategory("")
       }
     }
-  }, [customCategory, index, updatePhotoCategory, setCustomCategory])
+  }, [customCategory, index, updatePhotoCategory])
 
   const handleAddCustomCategory = useCallback(() => {
     if (customCategory.trim()) {
       updatePhotoCategory(index, customCategory.trim())
       setCustomCategory("")
     }
-  }, [customCategory, index, updatePhotoCategory, setCustomCategory])
+  }, [customCategory, index, updatePhotoCategory])
 
   return (
     <Card className={cn(

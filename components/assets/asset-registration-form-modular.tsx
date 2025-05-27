@@ -56,10 +56,12 @@ import { GeneralInfoTab } from "./tabs/general-info-tab"
 import { TechnicalInfoTab } from "./tabs/technical-info-tab"
 import { FinancialInfoTab } from "./tabs/financial-info-tab"
 import { MaintenancePlanTab } from "./tabs/maintenance-plan-tab"
-import { MaintenanceHistoryTab } from "./tabs/maintenance-history-tab"
 import { IncidentsTab } from "./tabs/incidents-tab"
 import { DocumentsTab } from "./tabs/documents-tab"
 import { PhotoUploadDialog } from "./dialogs/photo-upload-dialog"
+import { MaintenanceRegistrationDialog } from "./dialogs/maintenance-registration-dialog"
+import { MaintenanceTasksDialog } from "./dialogs/maintenance-tasks-dialog"
+import { PartDialog } from "./dialogs/part-dialog"
 import { ModelSelector } from "./model-selector"
 import { DocumentUpload } from "./document-upload"
 import { createClient } from "@/lib/supabase"
@@ -83,7 +85,11 @@ const formSchema = z.object({
   notes: z.string().optional(),
   warrantyExpiration: z.date().optional(),
   isNew: z.boolean().default(true),
-  purchaseCost: z.string().optional(),
+  purchaseCost: z.string()
+    .optional()
+    .refine((val) => !val || (!isNaN(Number(val)) && Number(val) >= 0), { 
+      message: "El costo de adquisición debe ser un número válido mayor o igual a 0" 
+    }),
   registrationInfo: z.string().optional(),
   insurancePolicy: z.string().optional(),
   insuranceCoverage: z
@@ -484,21 +490,14 @@ export function AssetRegistrationFormModular() {
   }
 
   // Part management
-  const addPart = () => {
-    if (newPartName && newPartQuantity > 0) {
-      const newPart: MaintenanceHistoryPart = {
-        name: newPartName,
-        partNumber: newPartNumber || undefined,
-        quantity: newPartQuantity,
-        cost: newPartCost || undefined,
-      }
-      setHistoryParts([...historyParts, newPart])
-      setNewPartName("")
-      setNewPartNumber("")
-      setNewPartQuantity(1)
-      setNewPartCost("")
-      setIsPartDialogOpen(false)
+  const addPart = (name: string, partNumber: string, quantity: number, cost: string) => {
+    const newPart: MaintenanceHistoryPart = {
+      name,
+      partNumber: partNumber || undefined,
+      quantity,
+      cost: cost || undefined,
     }
+    setHistoryParts([...historyParts, newPart])
   }
 
   const removePart = (index: number) => {
@@ -697,92 +696,55 @@ export function AssetRegistrationFormModular() {
   }
 
   const onSubmit = async (data: FormValues) => {
+    console.log("Form submitted:", data)
+    setIsSubmitting(true)
+
     try {
-      setIsSubmitting(true)
-      
       const supabase = createClient()
-      const user = (await supabase.auth.getUser()).data.user
+      const { data: userData } = await supabase.auth.getUser()
+      const user = userData.user
       
       if (!user) {
         throw new Error("Usuario no autenticado")
       }
-      
-      // Upload photos
-      const assetId = data.assetId
-      const photoUrls: string[] = []
-      
-      for (const photo of uploadedPhotos) {
-        const fileName = `${assetId}/${Date.now()}-${photo.file.name}`
-        const { data: uploadData, error } = await supabase.storage.from("asset-photos").upload(fileName, photo.file)
-        
-        if (error) {
-          throw error
-        }
-        
-        const { data: publicUrlData } = supabase.storage.from("asset-photos").getPublicUrl(fileName)
-        photoUrls.push(publicUrlData.publicUrl)
-      }
-      
-      // Upload insurance documents
-      const insuranceDocUrls: string[] = []
-      
-      for (const doc of insuranceDocuments) {
-        if (doc.file) {
-          const fileName = `${assetId}/insurance/${Date.now()}-${doc.file.name}`
-          const { data: uploadData, error } = await supabase.storage.from("asset-documents").upload(fileName, doc.file)
-          
-          if (error) {
-            throw error
-          }
-          
-          const { data: publicUrlData } = supabase.storage.from("asset-documents").getPublicUrl(fileName)
-          insuranceDocUrls.push(publicUrlData.publicUrl)
-        }
-      }
-      
-      // Create asset data
-      const assetDataToSave = {
-        asset_id: data.assetId,
-        name: data.name,
-        status: data.status,
-        serial_number: data.serialNumber,
-        location: data.location,
-        department: data.department,
-        purchase_date: data.purchaseDate.toISOString(),
-        installation_date: data.installationDate?.toISOString(),
-        warranty_expiration: data.warrantyExpiration?.toISOString(),
-        initial_hours: Number(data.initialHours),
-        current_hours: Number(data.currentHours),
-        is_new: data.isNew,
-        notes: data.notes,
-        purchase_cost: data.purchaseCost ? data.purchaseCost : null,
-        registration_info: data.registrationInfo,
-        insurance_policy: data.insurancePolicy,
-        insurance_start_date: data.insuranceCoverage?.startDate?.toISOString(),
-        insurance_end_date: data.insuranceCoverage?.endDate?.toISOString(),
-        model_id: selectedModel?.id,
-        photos: photoUrls,
-        insurance_documents: insuranceDocUrls,
-        created_by: user.id,
-        created_at: new Date().toISOString(),
-      }
-      
-      // Create asset in database
-      const { data: insertedAsset, error } = await supabase
+
+      // Add to assets table
+      const { data: assetData, error: assetError } = await supabase
         .from("assets")
-        .insert([assetDataToSave])
+        .insert([
+          {
+            asset_id: data.assetId,
+            name: data.name,
+            serial_number: data.serialNumber,
+            location: data.location,
+            department: data.department,
+            purchase_date: data.purchaseDate.toISOString(),
+            installation_date: data.installationDate?.toISOString(),
+            initial_hours: parseFloat(data.initialHours),
+            current_hours: parseFloat(data.currentHours),
+            status: data.status,
+            notes: data.notes,
+            warranty_expiration: data.warrantyExpiration?.toISOString(),
+            is_new: data.isNew,
+            registration_info: data.registrationInfo,
+            purchase_cost: data.purchaseCost || null,
+            insurance_policy: data.insurancePolicy,
+            insurance_start_date: data.insuranceCoverage?.startDate?.toISOString(),
+            insurance_end_date: data.insuranceCoverage?.endDate?.toISOString(),
+            model_id: selectedModel?.id,
+          },
+        ])
         .select()
-        .single()
         
-      if (error) {
-        throw error
+      if (assetError) {
+        throw assetError
       }
       
       // Save maintenance history if exists
-      if (maintenanceHistory.length > 0 && insertedAsset?.id) {
+      if (maintenanceHistory.length > 0 && assetData && assetData[0]) {
         for (const record of maintenanceHistory) {
           const maintenanceData = {
-            asset_id: insertedAsset.id,
+            asset_id: assetData[0].id,
             date: record.date.toISOString(),
             type: record.type,
             description: record.description,
@@ -812,10 +774,10 @@ export function AssetRegistrationFormModular() {
       }
       
       // Process incidents following administrative workflow if they exist
-      if (incidents.length > 0 && insertedAsset?.id) {
+      if (incidents.length > 0 && assetData && assetData[0]) {
         for (const incident of incidents) {
           const incidentData = {
-            asset_id: insertedAsset.id,
+            asset_id: assetData[0].id,
             date: incident.date.toISOString(),
             type: incident.type,
             reported_by: incident.reportedBy,
@@ -827,7 +789,7 @@ export function AssetRegistrationFormModular() {
             labor_cost: incident.laborCost || null,
             parts: incident.parts ? JSON.stringify(incident.parts) : null,
             total_cost: incident.totalCost || null,
-            work_order: incident.workOrder || null,
+            work_order_text: incident.workOrder || null,
             status: incident.status || "Resuelto",
             created_by: user.id
           };
@@ -937,12 +899,11 @@ export function AssetRegistrationFormModular() {
   return (
     <div className="space-y-6">
       <Tabs defaultValue="general" className="w-full">
-        <TabsList className="grid w-full grid-cols-7">
+        <TabsList className="grid w-full grid-cols-6">
           <TabsTrigger value="general">General</TabsTrigger>
           <TabsTrigger value="technical">Técnica</TabsTrigger>
           <TabsTrigger value="financial">Financiera</TabsTrigger>
-          <TabsTrigger value="maintenance-plan">Plan</TabsTrigger>
-          <TabsTrigger value="maintenance-history">Historial</TabsTrigger>
+          <TabsTrigger value="maintenance-plan">Mantenimiento</TabsTrigger>
           <TabsTrigger value="incidents">Incidentes</TabsTrigger>
           <TabsTrigger value="documents">Documentos</TabsTrigger>
         </TabsList>
@@ -985,49 +946,13 @@ export function AssetRegistrationFormModular() {
                 nextMaintenance={getNextMaintenance()}
                 openMaintenanceDialog={openMaintenanceDialog}
                 onRegisterMaintenance={onRegisterMaintenance}
-              />
-            </TabsContent>
-
-            <TabsContent value="maintenance-history" className="space-y-6">
-              <MaintenanceHistoryTab
-                isNewEquipment={isNewEquipment}
                 maintenanceHistory={maintenanceHistory}
-                onAddMaintenanceHistory={addMaintenanceHistory}
-                onRemoveMaintenanceHistory={removeMaintenanceHistory}
                 onEditMaintenanceHistory={editMaintenanceHistory}
-                historyDate={historyDate}
-                setHistoryDate={setHistoryDate}
-                historyType={historyType}
-                setHistoryType={setHistoryType}
-                historyDescription={historyDescription}
-                setHistoryDescription={setHistoryDescription}
-                historyTechnician={historyTechnician}
-                setHistoryTechnician={setHistoryTechnician}
-                historyCost={historyCost}
-                setHistoryCost={setHistoryCost}
-                editingHistoryIndex={editingHistoryIndex}
-                historyHours={historyHours}
-                setHistoryHours={setHistoryHours}
-                historyFindings={historyFindings}
-                setHistoryFindings={setHistoryFindings}
-                historyActions={historyActions}
-                setHistoryActions={setHistoryActions}
-                historyLaborHours={historyLaborHours}
-                setHistoryLaborHours={setHistoryLaborHours}
-                historyLaborCost={historyLaborCost}
-                setHistoryLaborCost={setHistoryLaborCost}
-                historyWorkOrder={historyWorkOrder}
-                setHistoryWorkOrder={setHistoryWorkOrder}
-                historyParts={historyParts}
-                setHistoryParts={setHistoryParts}
-                selectedMaintenancePlan={selectedMaintenancePlan}
-                setSelectedMaintenancePlan={setSelectedMaintenancePlan}
-                completedTasks={completedTasks}
-                setCompletedTasks={setCompletedTasks}
-                maintenanceSchedule={maintenanceSchedule}
-                onAddDetailedMaintenanceHistory={addDetailedMaintenanceHistory}
-                onOpenPartDialog={() => setIsPartDialogOpen(true)}
-                onOpenLinkMaintenancePlanDialog={() => setShowLinkMaintenancePlanDialog(true)}
+                onRemoveMaintenanceHistory={removeMaintenanceHistory}
+                onAddNewMaintenance={() => {
+                  resetHistoryForm();
+                  setShowMaintenanceRecordDialog(true);
+                }}
               />
             </TabsContent>
 
@@ -1063,6 +988,7 @@ export function AssetRegistrationFormModular() {
         </Form>
       </Tabs>
 
+      {/* Dialogs */}
       <PhotoUploadDialog
         open={photoUploadOpen}
         onOpenChange={setPhotoUploadOpen}
@@ -1070,124 +996,145 @@ export function AssetRegistrationFormModular() {
         setUploadedPhotos={setUploadedPhotos}
       />
 
-      {/* Dialog para detalles de mantenimiento */}
-      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="max-w-[600px] max-h-[90vh] overflow-y-auto">
+      <PartDialog
+        open={isPartDialogOpen}
+        onOpenChange={setIsPartDialogOpen}
+        onAddPart={addPart}
+      />
+
+      <MaintenanceTasksDialog
+        open={showMaintenanceTasksDialog}
+        onOpenChange={setShowMaintenanceTasksDialog}
+        selectedMaintenancePlan={selectedMaintenancePlan}
+        completedTasks={completedTasks}
+        setCompletedTasks={setCompletedTasks}
+      />
+
+      <MaintenanceRegistrationDialog
+        open={showMaintenanceRecordDialog}
+        onOpenChange={setShowMaintenanceRecordDialog}
+        selectedMaintenancePlan={selectedMaintenancePlan}
+        historyDate={historyDate}
+        setHistoryDate={setHistoryDate}
+        historyType={historyType}
+        setHistoryType={setHistoryType}
+        historyHours={historyHours}
+        setHistoryHours={setHistoryHours}
+        historyDescription={historyDescription}
+        setHistoryDescription={setHistoryDescription}
+        historyFindings={historyFindings}
+        setHistoryFindings={setHistoryFindings}
+        historyActions={historyActions}
+        setHistoryActions={setHistoryActions}
+        historyTechnician={historyTechnician}
+        setHistoryTechnician={setHistoryTechnician}
+        historyLaborHours={historyLaborHours}
+        setHistoryLaborHours={setHistoryLaborHours}
+        historyLaborCost={historyLaborCost}
+        setHistoryLaborCost={setHistoryLaborCost}
+        historyWorkOrder={historyWorkOrder}
+        setHistoryWorkOrder={setHistoryWorkOrder}
+        historyParts={historyParts}
+        setHistoryParts={setHistoryParts}
+        completedTasks={completedTasks}
+        setCompletedTasks={setCompletedTasks}
+        onOpenPartDialog={() => setIsPartDialogOpen(true)}
+        onOpenTasksDialog={() => setShowMaintenanceTasksDialog(true)}
+        onSubmit={() => {
+          if (historyDate && historyType && historyDescription && historyTechnician) {
+            const totalPartsCost = historyParts.reduce((total, part) => {
+              return total + (Number(part.cost) || 0) * part.quantity
+            }, 0)
+
+            const laborCost = Number(historyLaborCost) || 0
+            const totalCost = totalPartsCost + laborCost
+
+            const newHistory: MaintenanceHistoryRecord = {
+              date: historyDate,
+              type: historyType,
+              hours: historyHours || undefined,
+              description: historyDescription,
+              findings: historyFindings || undefined,
+              actions: historyActions || undefined,
+              technician: historyTechnician,
+              laborHours: historyLaborHours || undefined,
+              laborCost: historyLaborCost || undefined,
+              cost: totalCost > 0 ? totalCost.toString() : undefined,
+              workOrder: historyWorkOrder || undefined,
+              parts: historyParts.length > 0 ? [...historyParts] : undefined,
+              maintenancePlanId: selectedMaintenancePlan?.id,
+              completedTasks: Object.keys(completedTasks).length > 0 ? { ...completedTasks } : undefined,
+            }
+
+            setMaintenanceHistory([...maintenanceHistory, newHistory])
+
+            if (selectedMaintenancePlan) {
+              markMaintenanceAsCompleted(selectedMaintenancePlan.id, true)
+            }
+
+            resetHistoryForm()
+            setShowMaintenanceRecordDialog(false)
+          }
+        }}
+      />
+
+      {/* Dialog para vincular plan de mantenimiento */}
+      <Dialog open={showLinkMaintenancePlanDialog} onOpenChange={setShowLinkMaintenancePlanDialog}>
+        <DialogContent className="max-w-[500px] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{currentMaintenance?.name}</DialogTitle>
-            <DialogDescription>
-              {currentMaintenance?.description} - {currentMaintenance?.hours} horas de operación
-            </DialogDescription>
+            <DialogTitle>Vincular a Plan de Mantenimiento</DialogTitle>
+            <DialogDescription>Seleccione un plan de mantenimiento para vincular a este registro</DialogDescription>
           </DialogHeader>
           <div className="py-4">
             <div className="space-y-4">
-              <h4 className="text-sm font-medium">Tareas de mantenimiento</h4>
-              {currentMaintenance?.tasks.map((task) => (
-                <div key={task.id} className="border rounded-md p-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Badge variant="outline">{task.type}</Badge>
-                      <span className="font-medium">{task.description}</span>
-                    </div>
-                    <span className="text-sm text-muted-foreground">{task.estimatedTime}h</span>
-                  </div>
-                  {task.requiresSpecialist && (
-                    <div className="mt-2 text-xs text-amber-600 flex items-center gap-1">
-                      <AlertCircle className="h-3 w-3" />
-                      Requiere técnico especialista
-                    </div>
-                  )}
-                  {task.parts.length > 0 && (
-                    <div className="mt-2">
-                      <p className="text-xs font-medium mb-1">Repuestos requeridos:</p>
-                      <div className="space-y-1">
-                        {task.parts.map((part) => (
-                          <div key={part.id} className="text-xs flex justify-between">
-                            <span>
-                              {part.name} ({part.partNumber})
-                            </span>
-                            <span>Cantidad: {part.quantity}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              ))}
-
-              {currentMaintenance?.tasks.length === 0 && (
-                <div className="text-center py-4 text-muted-foreground">
-                  No hay tareas definidas para este mantenimiento.
-                </div>
-              )}
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
-              Cerrar
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Dialog para agregar repuestos */}
-      <Dialog open={isPartDialogOpen} onOpenChange={setIsPartDialogOpen}>
-        <DialogContent className="max-w-[500px]">
-          <DialogHeader>
-            <DialogTitle>Agregar Repuesto</DialogTitle>
-            <DialogDescription>Ingrese la información del repuesto utilizado</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="partName">Nombre del Repuesto</Label>
-              <Input
-                id="partName"
-                placeholder="Ej: Filtro de aceite"
-                value={newPartName}
-                onChange={(e) => setNewPartName(e.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="partNumber">Número de Parte</Label>
-              <Input
-                id="partNumber"
-                placeholder="Ej: FO-1234"
-                value={newPartNumber}
-                onChange={(e) => setNewPartNumber(e.target.value)}
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="partQuantity">Cantidad</Label>
-                <Input
-                  id="partQuantity"
-                  type="number"
-                  min="1"
-                  value={newPartQuantity}
-                  onChange={(e) => setNewPartQuantity(Number.parseInt(e.target.value) || 1)}
+              <Command className="rounded-lg border shadow-md">
+                <CommandInput
+                  placeholder="Buscar plan de mantenimiento..."
+                  value={searchMaintenancePlan}
+                  onValueChange={setSearchMaintenancePlan}
                 />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="partCost">Costo</Label>
-                <div className="relative">
-                  <DollarSign className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    id="partCost"
-                    placeholder="0.00"
-                    className="pl-8"
-                    value={newPartCost}
-                    onChange={(e) => setNewPartCost(e.target.value)}
-                  />
-                </div>
+                <CommandList>
+                  <CommandEmpty>No se encontraron planes de mantenimiento.</CommandEmpty>
+                  <CommandGroup heading="Planes de Mantenimiento Disponibles">
+                    {filteredMaintenancePlans.map((plan) => (
+                      <CommandItem
+                        key={plan.id}
+                        onSelect={() => handleSelectMaintenancePlan(plan)}
+                        className="flex items-center justify-between"
+                      >
+                        <div className="flex items-center">
+                          <span>{plan.name}</span>
+                          <Badge variant="outline" className="ml-2">
+                            {plan.hours} horas
+                          </Badge>
+                        </div>
+                        <span className="text-xs text-muted-foreground">{plan.tasks.length} tareas</span>
+                      </CommandItem>
+                    ))}
+                  </CommandGroup>
+                </CommandList>
+              </Command>
+
+              {maintenanceSchedule.length === 0 && (
+                <Alert variant="destructive">
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertTitle>No hay planes disponibles</AlertTitle>
+                  <AlertDescription>
+                    No hay planes de mantenimiento disponibles para este modelo de equipo.
+                  </AlertDescription>
+                </Alert>
+              )}
+
+              <div className="text-sm text-muted-foreground">
+                <Info className="h-4 w-4 inline-block mr-1" />
+                Al vincular un plan de mantenimiento, se auto-completarán algunos campos y se podrán registrar las
+                tareas completadas.
               </div>
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setIsPartDialogOpen(false)}>
+            <Button variant="outline" onClick={() => setShowLinkMaintenancePlanDialog(false)}>
               Cancelar
-            </Button>
-            <Button onClick={addPart} disabled={!newPartName || newPartQuantity < 1}>
-              Agregar
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1411,417 +1358,6 @@ export function AssetRegistrationFormModular() {
             </Button>
             <Button type="button" onClick={addIncident} disabled={!incidentDate || !incidentType || !incidentReportedBy || !incidentDescription}>
               {editingIncidentIndex !== null ? "Actualizar" : "Registrar"} Incidente
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Dialog para vincular plan de mantenimiento */}
-      <Dialog open={showLinkMaintenancePlanDialog} onOpenChange={setShowLinkMaintenancePlanDialog}>
-        <DialogContent className="max-w-[500px] max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Vincular a Plan de Mantenimiento</DialogTitle>
-            <DialogDescription>Seleccione un plan de mantenimiento para vincular a este registro</DialogDescription>
-          </DialogHeader>
-          <div className="py-4">
-            <div className="space-y-4">
-              <Command className="rounded-lg border shadow-md">
-                <CommandInput
-                  placeholder="Buscar plan de mantenimiento..."
-                  value={searchMaintenancePlan}
-                  onValueChange={setSearchMaintenancePlan}
-                />
-                <CommandList>
-                  <CommandEmpty>No se encontraron planes de mantenimiento.</CommandEmpty>
-                  <CommandGroup heading="Planes de Mantenimiento Disponibles">
-                    {filteredMaintenancePlans.map((plan) => (
-                      <CommandItem
-                        key={plan.id}
-                        onSelect={() => handleSelectMaintenancePlan(plan)}
-                        className="flex items-center justify-between"
-                      >
-                        <div className="flex items-center">
-                          <span>{plan.name}</span>
-                          <Badge variant="outline" className="ml-2">
-                            {plan.hours} horas
-                          </Badge>
-                        </div>
-                        <span className="text-xs text-muted-foreground">{plan.tasks.length} tareas</span>
-                      </CommandItem>
-                    ))}
-                  </CommandGroup>
-                </CommandList>
-              </Command>
-
-              {maintenanceSchedule.length === 0 && (
-                <Alert variant="destructive">
-                  <AlertCircle className="h-4 w-4" />
-                  <AlertTitle>No hay planes disponibles</AlertTitle>
-                  <AlertDescription>
-                    No hay planes de mantenimiento disponibles para este modelo de equipo.
-                  </AlertDescription>
-                </Alert>
-              )}
-
-              <div className="text-sm text-muted-foreground">
-                <Info className="h-4 w-4 inline-block mr-1" />
-                Al vincular un plan de mantenimiento, se auto-completarán algunos campos y se podrán registrar las
-                tareas completadas.
-              </div>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowLinkMaintenancePlanDialog(false)}>
-              Cancelar
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Dialog para gestionar tareas del plan de mantenimiento */}
-      <Dialog open={showMaintenanceTasksDialog} onOpenChange={setShowMaintenanceTasksDialog}>
-        <DialogContent className="max-w-[500px] max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Gestionar Tareas Completadas</DialogTitle>
-            <DialogDescription>Marque las tareas que se completaron durante este mantenimiento</DialogDescription>
-          </DialogHeader>
-          <div className="py-4">
-            {selectedMaintenancePlan && (
-              <div className="space-y-4">
-                <div className="p-3 border rounded-md bg-muted/20">
-                  <h3 className="font-medium">{selectedMaintenancePlan.name}</h3>
-                  <p className="text-sm text-muted-foreground">{selectedMaintenancePlan.description}</p>
-                </div>
-
-                <div className="space-y-2">
-                  {selectedMaintenancePlan.tasks.map((task) => (
-                    <div key={task.id} className="flex items-start space-x-2">
-                      <Checkbox
-                        id={`task-${task.id}`}
-                        checked={completedTasks[task.id] || false}
-                        onCheckedChange={(checked) => {
-                          setCompletedTasks({
-                            ...completedTasks,
-                            [task.id]: !!checked,
-                          })
-                        }}
-                      />
-                      <div className="grid gap-1.5 leading-none">
-                        <Label htmlFor={`task-${task.id}`} className="text-sm font-medium">
-                          {task.description}
-                        </Label>
-                        <p className="text-xs text-muted-foreground">
-                          {task.type} - {task.estimatedTime}h{task.requiresSpecialist && " - Requiere especialista"}
-                        </p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="flex justify-between">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      const allTasks: Record<string, boolean> = {}
-                      selectedMaintenancePlan.tasks.forEach((task) => {
-                        allTasks[task.id] = true
-                      })
-                      setCompletedTasks(allTasks)
-                    }}
-                  >
-                    Marcar todas
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      setCompletedTasks({})
-                    }}
-                  >
-                    Desmarcar todas
-                  </Button>
-                </div>
-              </div>
-            )}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowMaintenanceTasksDialog(false)}>
-              Cancelar
-            </Button>
-            <Button onClick={() => setShowMaintenanceTasksDialog(false)}>Guardar</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Dialog para registrar mantenimiento desde el plan */}
-      <Dialog open={showMaintenanceRecordDialog} onOpenChange={setShowMaintenanceRecordDialog}>
-        <DialogContent className="max-w-[700px] max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Registrar Mantenimiento</DialogTitle>
-            <DialogDescription>
-              {selectedMaintenancePlan
-                ? `${selectedMaintenancePlan.name} - ${selectedMaintenancePlan.hours} horas`
-                : "Registre los detalles del mantenimiento realizado"}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="py-4 space-y-5 overflow-y-auto">
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div className="space-y-2">
-                <Label>Fecha</Label>
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <Button
-                      variant={"outline"}
-                      className={cn("w-full pl-3 text-left font-normal", !historyDate && "text-muted-foreground")}
-                    >
-                      {historyDate ? format(historyDate, "PPP", { locale: es }) : <span>Seleccionar fecha</span>}
-                      <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0" align="start">
-                    <Calendar mode="single" selected={historyDate} onSelect={setHistoryDate} initialFocus />
-                  </PopoverContent>
-                </Popover>
-              </div>
-
-              <div className="space-y-2">
-                <Label>Tipo de Mantenimiento</Label>
-                <Select onValueChange={setHistoryType} value={historyType}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Seleccionar tipo" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Preventivo">Preventivo</SelectItem>
-                    <SelectItem value="Correctivo">Correctivo</SelectItem>
-                    <SelectItem value="Predictivo">Predictivo</SelectItem>
-                    <SelectItem value="Overhaul">Overhaul</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label>Horas del Equipo</Label>
-                <Input
-                  type="number"
-                  placeholder="Ej: 500"
-                  value={historyHours}
-                  onChange={(e) => setHistoryHours(e.target.value)}
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Descripción</Label>
-                <Textarea
-                  placeholder="Describa el mantenimiento realizado"
-                  value={historyDescription}
-                  onChange={(e) => setHistoryDescription(e.target.value)}
-                  rows={3}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label>Hallazgos</Label>
-                <Textarea
-                  placeholder="Hallazgos durante el mantenimiento"
-                  value={historyFindings}
-                  onChange={(e) => setHistoryFindings(e.target.value)}
-                  rows={3}
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Acciones Realizadas</Label>
-                <Textarea
-                  placeholder="Acciones realizadas durante el mantenimiento"
-                  value={historyActions}
-                  onChange={(e) => setHistoryActions(e.target.value)}
-                  rows={3}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label>Técnico</Label>
-                <Input
-                  placeholder="Nombre del técnico"
-                  value={historyTechnician}
-                  onChange={(e) => setHistoryTechnician(e.target.value)}
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div className="space-y-2">
-                <Label>Horas de Trabajo</Label>
-                <Input
-                  type="number"
-                  placeholder="Ej: 4"
-                  value={historyLaborHours}
-                  onChange={(e) => setHistoryLaborHours(e.target.value)}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label>Costo de Mano de Obra</Label>
-                <div className="relative">
-                  <DollarSign className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    placeholder="0.00"
-                    className="pl-8"
-                    value={historyLaborCost}
-                    onChange={(e) => setHistoryLaborCost(e.target.value)}
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label>Orden de Trabajo</Label>
-                <Input
-                  placeholder="Ej: OT-12345"
-                  value={historyWorkOrder}
-                  onChange={(e) => setHistoryWorkOrder(e.target.value)}
-                />
-              </div>
-            </div>
-
-            {selectedMaintenancePlan && (
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <Label>Tareas Completadas</Label>
-                  <Button type="button" variant="outline" size="sm" onClick={handleOpenMaintenanceTasksDialog}>
-                    <ClipboardList className="mr-1 h-4 w-4" /> Gestionar Tareas
-                  </Button>
-                </div>
-                <div className="border rounded-md p-3 bg-muted/20">
-                  {Object.keys(completedTasks).length > 0 ? (
-                    <div className="space-y-2">
-                      {selectedMaintenancePlan.tasks.map((task) => (
-                        <div key={task.id} className="flex items-center gap-2">
-                          <Checkbox
-                            id={`plan-task-${task.id}`}
-                            checked={completedTasks[task.id] || false}
-                            onCheckedChange={(checked) => {
-                              setCompletedTasks({
-                                ...completedTasks,
-                                [task.id]: !!checked,
-                              })
-                            }}
-                          />
-                          <Label htmlFor={`plan-task-${task.id}`} className="text-sm">
-                            {task.description}
-                          </Label>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="text-center py-2 text-sm text-muted-foreground">
-                      No hay tareas marcadas como completadas
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label>Repuestos Utilizados</Label>
-                <Button type="button" variant="outline" size="sm" onClick={() => setIsPartDialogOpen(true)}>
-                  <Plus className="mr-1 h-4 w-4" /> Agregar Repuesto
-                </Button>
-              </div>
-
-              {historyParts.length > 0 ? (
-                <div className="overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Nombre</TableHead>
-                        <TableHead>Número de Parte</TableHead>
-                        <TableHead>Cantidad</TableHead>
-                        <TableHead>Costo</TableHead>
-                        <TableHead className="w-[50px]"></TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {historyParts.map((part, index) => (
-                        <TableRow key={index}>
-                          <TableCell>{part.name}</TableCell>
-                          <TableCell>{part.partNumber || "-"}</TableCell>
-                          <TableCell>{part.quantity}</TableCell>
-                          <TableCell>{part.cost || "-"}</TableCell>
-                          <TableCell>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => removePart(index)}
-                              className="h-8 w-8 p-0 text-red-500 hover:text-red-700 hover:bg-red-100"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
-              ) : (
-                <div className="text-center py-4 text-muted-foreground border rounded-md">
-                  No hay repuestos registrados para este mantenimiento.
-                </div>
-              )}
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowMaintenanceRecordDialog(false)}>
-              Cancelar
-            </Button>
-            <Button
-              type="button"
-              onClick={() => {
-                if (historyDate && historyType && historyDescription && historyTechnician) {
-                  const totalPartsCost = historyParts.reduce((total, part) => {
-                    return total + (Number(part.cost) || 0) * part.quantity
-                  }, 0)
-
-                  const laborCost = Number(historyLaborCost) || 0
-                  const totalCost = totalPartsCost + laborCost
-
-                  const newHistory: MaintenanceHistoryRecord = {
-                    date: historyDate,
-                    type: historyType,
-                    hours: historyHours || undefined,
-                    description: historyDescription,
-                    findings: historyFindings || undefined,
-                    actions: historyActions || undefined,
-                    technician: historyTechnician,
-                    laborHours: historyLaborHours || undefined,
-                    laborCost: historyLaborCost || undefined,
-                    cost: totalCost > 0 ? totalCost.toString() : undefined,
-                    workOrder: historyWorkOrder || undefined,
-                    parts: historyParts.length > 0 ? [...historyParts] : undefined,
-                    maintenancePlanId: selectedMaintenancePlan?.id,
-                    completedTasks: Object.keys(completedTasks).length > 0 ? { ...completedTasks } : undefined,
-                  }
-
-                  setMaintenanceHistory([...maintenanceHistory, newHistory])
-
-                  if (selectedMaintenancePlan) {
-                    markMaintenanceAsCompleted(selectedMaintenancePlan.id, true)
-                  }
-
-                  resetHistoryForm()
-                  setShowMaintenanceRecordDialog(false)
-                }
-              }}
-              disabled={!historyDate || !historyType || !historyDescription || !historyTechnician}
-            >
-              Registrar Mantenimiento
             </Button>
           </DialogFooter>
         </DialogContent>

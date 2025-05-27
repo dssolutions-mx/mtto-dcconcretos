@@ -49,21 +49,69 @@ import {
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 
 import { GeneralInfoTab } from "./tabs/general-info-tab"
 import { TechnicalInfoTab } from "./tabs/technical-info-tab"
 import { FinancialInfoTab } from "./tabs/financial-info-tab"
 import { MaintenancePlanTab } from "./tabs/maintenance-plan-tab"
-import { MaintenanceHistoryTab } from "./tabs/maintenance-history-tab"
 import { IncidentsTab } from "./tabs/incidents-tab"
 import { DocumentsTab } from "./tabs/documents-tab"
 import { PhotoUploadDialog } from "./dialogs/photo-upload-dialog"
 import { IncidentRegistrationDialog } from "./dialogs/incident-registration-dialog"
+import { MaintenanceRegistrationDialog } from "./dialogs/maintenance-registration-dialog"
+import { MaintenanceTasksDialog } from "./dialogs/maintenance-tasks-dialog"
+import { PartDialog } from "./dialogs/part-dialog"
 import { createClient } from "@/lib/supabase"
 import { useIncidents } from "@/hooks/useSupabase"
 import { EquipmentModelWithIntervals } from "@/types"
 import { useToast } from "@/components/ui/use-toast"
 import { cn } from "@/lib/utils"
+
+interface MaintenanceHistoryPart {
+  name: string
+  partNumber?: string
+  quantity: number
+  cost?: string
+}
+
+interface MaintenanceHistoryRecord {
+  date: Date
+  type: string
+  hours?: string
+  description: string
+  findings?: string
+  actions?: string
+  technician: string
+  laborHours?: string
+  laborCost?: string
+  cost?: string
+  workOrder?: string
+  parts?: MaintenanceHistoryPart[]
+  maintenancePlanId?: string
+  completedTasks?: Record<string, boolean>
+}
+
+interface MaintenanceScheduleItem {
+  id: string
+  hours: number
+  name: string
+  description: string
+  tasks: {
+    id: string
+    description: string
+    type: string
+    estimatedTime: number
+    requiresSpecialist: boolean
+    parts: {
+      id: string
+      name: string
+      partNumber: string
+      quantity: number
+      cost?: number
+    }[]
+  }[]
+}
 
 const formSchema = z.object({
   assetId: z.string().min(1, "El ID del activo es requerido"),
@@ -94,9 +142,11 @@ const formSchema = z.object({
     invalid_type_error: "La fecha de vencimiento de garantía debe ser una fecha válida",
   }).optional(),
   isNew: z.boolean(),
-  purchaseCost: z.number()
-    .min(0, "El costo de adquisición debe ser mayor o igual a 0")
-    .optional(),
+  purchaseCost: z.string()
+    .optional()
+    .refine((val) => !val || (!isNaN(Number(val)) && Number(val) >= 0), { 
+      message: "El costo de adquisición debe ser un número válido mayor o igual a 0" 
+    }),
   registrationInfo: z.string().optional(),
   insurancePolicy: z.string().optional(),
   insuranceCoverage: z
@@ -147,6 +197,30 @@ export function AssetEditForm({ assetId }: AssetEditFormProps) {
   // Estados para el manejo de incidentes
   const { incidents, loading: incidentsLoading, error: incidentsError, refetch: refetchIncidents } = useIncidents(assetId)
   const [showIncidentDialog, setShowIncidentDialog] = useState(false)
+
+  // Add states for modular maintenance dialogs
+  const [isPartDialogOpen, setIsPartDialogOpen] = useState(false)
+  const [showMaintenanceTasksDialog, setShowMaintenanceTasksDialog] = useState(false)
+  const [showMaintenanceRecordDialog, setShowMaintenanceRecordDialog] = useState(false)
+  const [showLinkMaintenancePlanDialog, setShowLinkMaintenancePlanDialog] = useState(false)
+  const [historyDate, setHistoryDate] = useState<Date | undefined>(new Date())
+  const [historyType, setHistoryType] = useState("")
+  const [historyDescription, setHistoryDescription] = useState("")
+  const [historyTechnician, setHistoryTechnician] = useState("")
+  const [historyCost, setHistoryCost] = useState("")
+  const [historyHours, setHistoryHours] = useState("")
+  const [historyFindings, setHistoryFindings] = useState("")
+  const [historyActions, setHistoryActions] = useState("")
+  const [historyLaborHours, setHistoryLaborHours] = useState("")
+  const [historyLaborCost, setHistoryLaborCost] = useState("")
+  const [historyWorkOrder, setHistoryWorkOrder] = useState("")
+  const [historyParts, setHistoryParts] = useState<MaintenanceHistoryPart[]>([])
+  const [editingHistoryIndex, setEditingHistoryIndex] = useState<number | null>(null)
+  const [selectedMaintenancePlan, setSelectedMaintenancePlan] = useState<any>(null)
+  const [completedTasks, setCompletedTasks] = useState<Record<string, boolean>>({})
+  const [maintenanceHistory, setMaintenanceHistory] = useState<MaintenanceHistoryRecord[]>([])
+  const [maintenanceSchedule, setMaintenanceSchedule] = useState<any[]>([])
+  const [completedMaintenances, setCompletedMaintenances] = useState<string[]>([])
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema) as Resolver<FormValues>,
@@ -284,7 +358,7 @@ export function AssetEditForm({ assetId }: AssetEditFormProps) {
             warrantyExpiration: asset.warranty_expiration ? new Date(asset.warranty_expiration) : undefined,
             isNew: asset.is_new || false,
             registrationInfo: asset.registration_info || "",
-            purchaseCost: typeof asset.purchase_cost === 'number' ? asset.purchase_cost : (asset.purchase_cost ? parseFloat(asset.purchase_cost) : undefined),
+            purchaseCost: asset.purchase_cost ? asset.purchase_cost.toString() : undefined,
             insurancePolicy: asset.insurance_policy || "",
             insuranceCoverage: {
               startDate: asset.insurance_start_date ? new Date(asset.insurance_start_date) : undefined,
@@ -361,6 +435,183 @@ export function AssetEditForm({ assetId }: AssetEditFormProps) {
     setShowIncidentDialog(false)
   }
 
+  // Function to add maintenance history
+  const addMaintenanceHistory = () => {
+    if (historyDate && historyType && historyDescription && historyTechnician) {
+      const newHistory: MaintenanceHistoryRecord = {
+        date: historyDate,
+        type: historyType,
+        description: historyDescription,
+        technician: historyTechnician,
+        cost: historyCost || undefined,
+      }
+
+      if (editingHistoryIndex !== null) {
+        const updatedHistory = [...maintenanceHistory]
+        updatedHistory[editingHistoryIndex] = newHistory
+        setMaintenanceHistory(updatedHistory)
+        setEditingHistoryIndex(null)
+      } else {
+        setMaintenanceHistory([...maintenanceHistory, newHistory])
+      }
+
+      resetHistoryForm()
+    }
+  }
+
+  const addDetailedMaintenanceHistory = () => {
+    if (historyDate && historyType && historyDescription && historyTechnician) {
+      const totalPartsCost = historyParts.reduce((total, part) => {
+        return total + (Number(part.cost) || 0) * part.quantity
+      }, 0)
+
+      const laborCost = Number(historyLaborCost) || 0
+      const totalCost = totalPartsCost + laborCost
+
+      const newHistory: MaintenanceHistoryRecord = {
+        date: historyDate,
+        type: historyType,
+        hours: historyHours || undefined,
+        description: historyDescription,
+        findings: historyFindings || undefined,
+        actions: historyActions || undefined,
+        technician: historyTechnician,
+        laborHours: historyLaborHours || undefined,
+        laborCost: historyLaborCost || undefined,
+        cost: totalCost > 0 ? totalCost.toString() : undefined,
+        workOrder: historyWorkOrder || undefined,
+        parts: historyParts.length > 0 ? [...historyParts] : undefined,
+        maintenancePlanId: selectedMaintenancePlan?.id,
+        completedTasks: Object.keys(completedTasks).length > 0 ? { ...completedTasks } : undefined,
+      }
+
+      if (editingHistoryIndex !== null) {
+        const updatedHistory = [...maintenanceHistory]
+        updatedHistory[editingHistoryIndex] = newHistory
+        setMaintenanceHistory(updatedHistory)
+        setEditingHistoryIndex(null)
+      } else {
+        setMaintenanceHistory([...maintenanceHistory, newHistory])
+      }
+
+      resetHistoryForm()
+      setShowMaintenanceRecordDialog(false)
+    }
+  }
+
+  const resetHistoryForm = () => {
+    setHistoryDate(new Date())
+    setHistoryType("")
+    setHistoryHours("")
+    setHistoryDescription("")
+    setHistoryFindings("")
+    setHistoryActions("")
+    setHistoryTechnician("")
+    setHistoryCost("")
+    setHistoryLaborHours("")
+    setHistoryLaborCost("")
+    setHistoryWorkOrder("")
+    setHistoryParts([])
+    setSelectedMaintenancePlan(null)
+    setCompletedTasks({})
+  }
+
+  const removeMaintenanceHistory = (index: number) => {
+    const newHistory = [...maintenanceHistory]
+    newHistory.splice(index, 1)
+    setMaintenanceHistory(newHistory)
+  }
+
+  const editMaintenanceHistory = (index: number) => {
+    const record = maintenanceHistory[index]
+    setHistoryDate(record.date)
+    setHistoryType(record.type)
+    setHistoryHours(record.hours || "")
+    setHistoryDescription(record.description)
+    setHistoryFindings(record.findings || "")
+    setHistoryActions(record.actions || "")
+    setHistoryTechnician(record.technician)
+    setHistoryCost(record.cost || "")
+    setHistoryLaborHours(record.laborHours || "")
+    setHistoryLaborCost(record.laborCost || "")
+    setHistoryWorkOrder(record.workOrder || "")
+    setHistoryParts(record.parts || [])
+    setEditingHistoryIndex(index)
+    setShowMaintenanceRecordDialog(true)
+
+    if (record.maintenancePlanId) {
+      const plan = maintenanceSchedule.find((p) => p.id === record.maintenancePlanId)
+      if (plan) {
+        setSelectedMaintenancePlan(plan)
+      }
+    }
+
+    if (record.completedTasks) {
+      setCompletedTasks(record.completedTasks)
+    }
+  }
+
+  // Function to add part to maintenance
+  const addPart = (name: string, partNumber: string, quantity: number, cost: string) => {
+    const newPart: MaintenanceHistoryPart = {
+      name,
+      partNumber: partNumber || undefined,
+      quantity,
+      cost: cost || undefined,
+    }
+    setHistoryParts([...historyParts, newPart])
+  }
+
+  // Maintenance plan functions
+  const openMaintenanceDialog = (maintenance: MaintenanceScheduleItem) => {
+    setSelectedMaintenancePlan(maintenance)
+    // Additional logic here if needed
+  }
+
+  const onRegisterMaintenance = (maintenance: MaintenanceScheduleItem) => {
+    setSelectedMaintenancePlan(maintenance)
+    setHistoryType("Preventivo")
+    setHistoryDescription(`${maintenance.name} - ${maintenance.description || ''}`)
+    setHistoryHours(maintenance.hours.toString())
+
+    const initialTasksState: Record<string, boolean> = {}
+    maintenance.tasks?.forEach((task) => {
+      initialTasksState[task.id] = false
+    })
+    setCompletedTasks(initialTasksState)
+
+    const planParts: MaintenanceHistoryPart[] = []
+    maintenance.tasks?.forEach((task) => {
+      task.parts?.forEach((part) => {
+        planParts.push({
+          name: part.name,
+          partNumber: part.partNumber,
+          quantity: part.quantity,
+          cost: part.cost?.toString(),
+        })
+      })
+    })
+
+    if (planParts.length > 0) {
+      setHistoryParts(planParts)
+    }
+
+    setShowMaintenanceRecordDialog(true)
+  }
+
+  const markMaintenanceAsCompleted = (maintenanceId: string, completed = true) => {
+    if (completed) {
+      setCompletedMaintenances([...completedMaintenances, maintenanceId])
+    } else {
+      setCompletedMaintenances(completedMaintenances.filter((id) => id !== maintenanceId))
+    }
+  }
+
+  const getNextMaintenance = () => {
+    // Logic to calculate next maintenance based on current hours
+    return null
+  }
+
   const onSubmit = async (data: FormValues) => {
     try {
       setIsSubmitting(true)
@@ -387,7 +638,7 @@ export function AssetEditForm({ assetId }: AssetEditFormProps) {
         current_hours: Number(data.currentHours),
         is_new: data.isNew,
         notes: data.notes,
-        purchase_cost: data.purchaseCost?.toString() || null,
+        purchase_cost: data.purchaseCost || null,
         registration_info: data.registrationInfo,
         insurance_policy: data.insurancePolicy,
         insurance_start_date: data.insuranceCoverage?.startDate?.toISOString(),
@@ -437,7 +688,7 @@ export function AssetEditForm({ assetId }: AssetEditFormProps) {
 
   return (
     <Tabs defaultValue="general" className="w-full">
-      <TabsList className="grid w-full grid-cols-7">
+      <TabsList className="grid w-full grid-cols-6">
         <TabsTrigger value="general" className={cn(getTabsWithErrors().general && "text-red-600")}>
           General
           {getTabsWithErrors().general && <AlertCircle className="ml-1 h-3 w-3" />}
@@ -450,8 +701,7 @@ export function AssetEditForm({ assetId }: AssetEditFormProps) {
           Financiera
           {getTabsWithErrors().financial && <AlertCircle className="ml-1 h-3 w-3" />}
         </TabsTrigger>
-        <TabsTrigger value="maintenance-plan">Plan</TabsTrigger>
-        <TabsTrigger value="maintenance-history">Historial</TabsTrigger>
+        <TabsTrigger value="maintenance-plan">Mantenimiento</TabsTrigger>
         <TabsTrigger value="incidents">Incidentes</TabsTrigger>
         <TabsTrigger value="documents">Documentos</TabsTrigger>
       </TabsList>
@@ -489,54 +739,18 @@ export function AssetEditForm({ assetId }: AssetEditFormProps) {
           <TabsContent value="maintenance-plan" className="space-y-6">
             <MaintenancePlanTab
               selectedModel={null}
-              maintenanceSchedule={[]}
-              completedMaintenances={[]}
-              nextMaintenance={null}
-              openMaintenanceDialog={() => {}}
-              onRegisterMaintenance={() => {}}
-            />
-          </TabsContent>
-          
-          <TabsContent value="maintenance-history" className="space-y-6">
-            <MaintenanceHistoryTab
-              isNewEquipment={true}
-              maintenanceHistory={[]}
-              onAddMaintenanceHistory={() => {}}
-              onRemoveMaintenanceHistory={() => {}}
-              onEditMaintenanceHistory={() => {}}
-              historyDate={new Date()}
-              setHistoryDate={() => {}}
-              historyType=""
-              setHistoryType={() => {}}
-              historyDescription=""
-              setHistoryDescription={() => {}}
-              historyTechnician=""
-              setHistoryTechnician={() => {}}
-              historyCost=""
-              setHistoryCost={() => {}}
-              editingHistoryIndex={null}
-              historyHours=""
-              setHistoryHours={() => {}}
-              historyFindings=""
-              setHistoryFindings={() => {}}
-              historyActions=""
-              setHistoryActions={() => {}}
-              historyLaborHours=""
-              setHistoryLaborHours={() => {}}
-              historyLaborCost=""
-              setHistoryLaborCost={() => {}}
-              historyWorkOrder=""
-              setHistoryWorkOrder={() => {}}
-              historyParts={[]}
-              setHistoryParts={() => {}}
-              selectedMaintenancePlan={null}
-              setSelectedMaintenancePlan={() => {}}
-              completedTasks={{}}
-              setCompletedTasks={() => {}}
-              maintenanceSchedule={[]}
-              onAddDetailedMaintenanceHistory={() => {}}
-              onOpenPartDialog={() => {}}
-              onOpenLinkMaintenancePlanDialog={() => {}}
+              maintenanceSchedule={maintenanceSchedule}
+              completedMaintenances={completedMaintenances}
+              nextMaintenance={getNextMaintenance()}
+              openMaintenanceDialog={openMaintenanceDialog}
+              onRegisterMaintenance={onRegisterMaintenance}
+              maintenanceHistory={maintenanceHistory}
+              onEditMaintenanceHistory={editMaintenanceHistory}
+              onRemoveMaintenanceHistory={removeMaintenanceHistory}
+              onAddNewMaintenance={() => {
+                resetHistoryForm();
+                setShowMaintenanceRecordDialog(true);
+              }}
             />
           </TabsContent>
           
@@ -619,6 +833,54 @@ export function AssetEditForm({ assetId }: AssetEditFormProps) {
         onClose={() => setShowIncidentDialog(false)}
         assetId={assetId}
         onSuccess={handleIncidentSuccess}
+      />
+
+      {/* Modular dialogs for maintenance */}
+      <PartDialog
+        open={isPartDialogOpen}
+        onOpenChange={setIsPartDialogOpen}
+        onAddPart={addPart}
+      />
+
+      <MaintenanceTasksDialog
+        open={showMaintenanceTasksDialog}
+        onOpenChange={setShowMaintenanceTasksDialog}
+        selectedMaintenancePlan={selectedMaintenancePlan}
+        completedTasks={completedTasks}
+        setCompletedTasks={setCompletedTasks}
+      />
+
+      <MaintenanceRegistrationDialog
+        open={showMaintenanceRecordDialog}
+        onOpenChange={setShowMaintenanceRecordDialog}
+        selectedMaintenancePlan={selectedMaintenancePlan}
+        historyDate={historyDate}
+        setHistoryDate={setHistoryDate}
+        historyType={historyType}
+        setHistoryType={setHistoryType}
+        historyHours={historyHours}
+        setHistoryHours={setHistoryHours}
+        historyDescription={historyDescription}
+        setHistoryDescription={setHistoryDescription}
+        historyFindings={historyFindings}
+        setHistoryFindings={setHistoryFindings}
+        historyActions={historyActions}
+        setHistoryActions={setHistoryActions}
+        historyTechnician={historyTechnician}
+        setHistoryTechnician={setHistoryTechnician}
+        historyLaborHours={historyLaborHours}
+        setHistoryLaborHours={setHistoryLaborHours}
+        historyLaborCost={historyLaborCost}
+        setHistoryLaborCost={setHistoryLaborCost}
+        historyWorkOrder={historyWorkOrder}
+        setHistoryWorkOrder={setHistoryWorkOrder}
+        historyParts={historyParts}
+        setHistoryParts={setHistoryParts}
+        completedTasks={completedTasks}
+        setCompletedTasks={setCompletedTasks}
+        onOpenPartDialog={() => setIsPartDialogOpen(true)}
+        onOpenTasksDialog={() => setShowMaintenanceTasksDialog(true)}
+        onSubmit={addDetailedMaintenanceHistory}
       />
     </Tabs>
   )

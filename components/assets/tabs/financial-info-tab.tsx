@@ -26,7 +26,7 @@ interface FormValues {
   warrantyExpiration?: Date
   isNew: boolean
   registrationInfo?: string
-  purchaseCost?: number
+  purchaseCost?: string
   insurancePolicy?: string
   insuranceCoverage?: {
     startDate?: Date
@@ -83,15 +83,19 @@ export function FinancialInfoTab({
                 <div className="relative">
                   <DollarSign className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
                   <Input 
-                    type="number"
-                    step="0.01"
-                    min="0"
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*\.?[0-9]*"
                     placeholder="0.00" 
                     className="pl-8" 
+                    {...field}
                     value={field.value || ""}
                     onChange={(e) => {
-                      const value = e.target.value
-                      field.onChange(value === "" ? undefined : parseFloat(value))
+                      const value = e.target.value;
+                      // Only allow numbers and decimal point
+                      if (value === '' || /^[0-9]*\.?[0-9]*$/.test(value)) {
+                        field.onChange(value);
+                      }
                     }}
                   />
                 </div>
@@ -189,6 +193,7 @@ export function FinancialInfoTab({
               />
               <Button
                 variant="outline"
+                type="button"
                 onClick={() => document.getElementById("insuranceDoc")?.click()}
                 className="w-full"
               >
