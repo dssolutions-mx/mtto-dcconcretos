@@ -1,6 +1,5 @@
 "use client"
 
-import { useState, useCallback, useMemo } from "react"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
 import { 
@@ -133,109 +132,20 @@ export function MaintenanceRegistrationDialog({
   onSubmit
 }: MaintenanceRegistrationDialogProps) {
   
-  const removePart = useCallback((index: number) => {
-    setHistoryParts((prevParts: MaintenanceHistoryPart[]) => {
-      const newParts = [...prevParts]
-      newParts.splice(index, 1)
-      return newParts
-    })
-  }, [setHistoryParts])
+  const removePart = (index: number) => {
+    const newParts = [...historyParts];
+    newParts.splice(index, 1);
+    setHistoryParts(newParts);
+  }
 
-  const handleCheckboxChange = useCallback((taskId: string, checked: boolean) => {
-    setCompletedTasks((prevTasks: Record<string, boolean>) => ({
-      ...prevTasks,
-      [taskId]: checked,
-    }))
-  }, [setCompletedTasks])
+  const handleCheckboxChange = (taskId: string, checked: boolean) => {
+    setCompletedTasks({
+      ...completedTasks,
+      [taskId]: checked
+    });
+  }
 
-  // Memoize the parts table to prevent unnecessary re-renders
-  const partsTable = useMemo(() => {
-    if (historyParts.length === 0) {
-      return (
-        <div className="text-center py-4 text-muted-foreground border rounded-md">
-          No hay repuestos registrados para este mantenimiento.
-        </div>
-      )
-    }
-
-    return (
-      <div className="overflow-x-auto">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Nombre</TableHead>
-              <TableHead>Número de Parte</TableHead>
-              <TableHead>Cantidad</TableHead>
-              <TableHead>Costo</TableHead>
-              <TableHead className="w-[50px]"></TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {historyParts.map((part, index) => (
-              <TableRow key={index}>
-                <TableCell>{part.name}</TableCell>
-                <TableCell>{part.partNumber || "-"}</TableCell>
-                <TableCell>{part.quantity}</TableCell>
-                <TableCell>{part.cost || "-"}</TableCell>
-                <TableCell>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => removePart(index)}
-                    className="h-8 w-8 p-0 text-red-500 hover:text-red-700 hover:bg-red-100"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </div>
-    )
-  }, [historyParts, removePart])
-
-  // Memoize the tasks section
-  const tasksSection = useMemo(() => {
-    if (!selectedMaintenancePlan) return null
-    
-    return (
-      <div className="space-y-2">
-        <div className="flex items-center justify-between">
-          <Label>Tareas Completadas</Label>
-          <Button type="button" variant="outline" size="sm" onClick={onOpenTasksDialog}>
-            <ClipboardList className="mr-1 h-4 w-4" /> Gestionar Tareas
-          </Button>
-        </div>
-        <div className="border rounded-md p-3 bg-muted/20">
-          {Object.keys(completedTasks).length > 0 ? (
-            <div className="space-y-2">
-              {selectedMaintenancePlan.tasks.map((task) => (
-                <div key={task.id} className="flex items-center gap-2">
-                  <Checkbox
-                    id={`plan-task-${task.id}`}
-                    checked={completedTasks[task.id] || false}
-                    onCheckedChange={(checked) => handleCheckboxChange(task.id, !!checked)}
-                  />
-                  <Label htmlFor={`plan-task-${task.id}`} className="text-sm">
-                    {task.description}
-                  </Label>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="text-center py-2 text-sm text-muted-foreground">
-              No hay tareas marcadas como completadas
-            </div>
-          )}
-        </div>
-      </div>
-    )
-  }, [selectedMaintenancePlan, completedTasks, handleCheckboxChange, onOpenTasksDialog])
-
-  const isFormValid = useMemo(() => {
-    return !!(historyDate && historyType && historyDescription && historyTechnician)
-  }, [historyDate, historyType, historyDescription, historyTechnician])
+  const isFormValid = historyDate && historyType && historyDescription && historyTechnician;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -248,10 +158,8 @@ export function MaintenanceRegistrationDialog({
               : "Registre los detalles del mantenimiento realizado"}
           </DialogDescription>
         </DialogHeader>
-        <div 
-          className="py-4 space-y-5 overflow-y-auto"
-          style={{ touchAction: 'pan-y' }} // Add passive touch action to improve scroll performance
-        >
+        
+        <div className="py-4 space-y-5 overflow-y-auto">
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div className="space-y-2">
               <Label>Fecha</Label>
@@ -374,7 +282,38 @@ export function MaintenanceRegistrationDialog({
             </div>
           </div>
 
-          {selectedMaintenancePlan && tasksSection}
+          {selectedMaintenancePlan && (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label>Tareas Completadas</Label>
+                <Button type="button" variant="outline" size="sm" onClick={onOpenTasksDialog}>
+                  <ClipboardList className="mr-1 h-4 w-4" /> Gestionar Tareas
+                </Button>
+              </div>
+              <div className="border rounded-md p-3 bg-muted/20">
+                {selectedMaintenancePlan.tasks && selectedMaintenancePlan.tasks.length > 0 ? (
+                  <div className="space-y-2">
+                    {selectedMaintenancePlan.tasks.map((task) => (
+                      <div key={task.id} className="flex items-center gap-2">
+                        <Checkbox
+                          id={`plan-task-${task.id}`}
+                          checked={completedTasks[task.id] || false}
+                          onCheckedChange={(checked) => handleCheckboxChange(task.id, !!checked)}
+                        />
+                        <Label htmlFor={`plan-task-${task.id}`} className="text-sm">
+                          {task.description}
+                        </Label>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-2 text-sm text-muted-foreground">
+                    No hay tareas disponibles para este plan
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
           <div className="space-y-2">
             <div className="flex items-center justify-between">
@@ -384,16 +323,60 @@ export function MaintenanceRegistrationDialog({
               </Button>
             </div>
 
-            {partsTable}
+            {historyParts.length > 0 ? (
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Nombre</TableHead>
+                      <TableHead>Número de Parte</TableHead>
+                      <TableHead>Cantidad</TableHead>
+                      <TableHead>Costo</TableHead>
+                      <TableHead className="w-[50px]"></TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {historyParts.map((part, index) => (
+                      <TableRow key={index}>
+                        <TableCell>{part.name}</TableCell>
+                        <TableCell>{part.partNumber || "-"}</TableCell>
+                        <TableCell>{part.quantity}</TableCell>
+                        <TableCell>{part.cost || "-"}</TableCell>
+                        <TableCell>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => removePart(index)}
+                            className="h-8 w-8 p-0 text-red-500 hover:text-red-700 hover:bg-red-100"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            ) : (
+              <div className="text-center py-4 text-muted-foreground border rounded-md">
+                No hay repuestos registrados para este mantenimiento.
+              </div>
+            )}
           </div>
         </div>
+        
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
+          <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
             Cancelar
           </Button>
           <Button
             type="button"
-            onClick={onSubmit}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onSubmit();
+            }}
             disabled={!isFormValid}
           >
             Registrar Mantenimiento

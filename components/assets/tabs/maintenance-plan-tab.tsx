@@ -184,7 +184,15 @@ export function MaintenancePlanTab({
                   <Button variant="ghost" size="sm" onClick={() => openMaintenanceDialog(maintenance)}>
                     Ver detalles
                   </Button>
-                  <Button size="sm" onClick={() => onRegisterMaintenance(maintenance)}>
+                  <Button 
+                    type="button" 
+                    size="sm" 
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      onRegisterMaintenance(maintenance);
+                    }}
+                  >
                     Registrar
                   </Button>
                 </CardFooter>
@@ -211,7 +219,11 @@ export function MaintenancePlanTab({
             <Button
               type="button"
               variant="outline"
-              onClick={onAddNewMaintenance}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onAddNewMaintenance();
+              }}
             >
               <Plus className="mr-2 h-4 w-4" /> Agregar Mantenimiento
             </Button>

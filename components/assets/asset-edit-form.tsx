@@ -198,6 +198,9 @@ export function AssetEditForm({ assetId }: AssetEditFormProps) {
   const { incidents, loading: incidentsLoading, error: incidentsError, refetch: refetchIncidents } = useIncidents(assetId)
   const [showIncidentDialog, setShowIncidentDialog] = useState(false)
 
+  // Add state for selected model
+  const [selectedModel, setSelectedModel] = useState<EquipmentModelWithIntervals | null>(null)
+
   // Add states for modular maintenance dialogs
   const [isPartDialogOpen, setIsPartDialogOpen] = useState(false)
   const [showMaintenanceTasksDialog, setShowMaintenanceTasksDialog] = useState(false)
@@ -385,6 +388,168 @@ export function AssetEditForm({ assetId }: AssetEditFormProps) {
     }
   }, [assetId, form, toast])
 
+  // Load maintenance intervals for the asset's model
+  useEffect(() => {
+    const loadMaintenanceIntervals = async () => {
+      try {
+        const supabase = createClient()
+        
+        // First get the asset with its model
+        const { data: asset, error: assetError } = await supabase
+          .from("assets")
+          .select(`
+            *,
+            equipment_models (*)
+          `)
+          .eq("id", assetId)
+          .single()
+
+        if (assetError) {
+          throw assetError
+        }
+
+        if (!asset || !asset.model_id || !asset.equipment_models) {
+          console.log("No model associated with this asset")
+          return
+        }
+
+        const modelId = asset.model_id
+        
+        // Set the selected model
+        const modelData = asset.equipment_models;
+        setSelectedModel({
+          ...modelData,
+          maintenanceIntervals: []
+        } as unknown as EquipmentModelWithIntervals);
+
+        // Now fetch the maintenance intervals for this model
+        try {
+          const response = await fetch(`/api/models/${modelId}/maintenance-intervals`)
+          
+          if (!response.ok) {
+            throw new Error('Error al cargar las actividades de mantenimiento')
+          }
+          
+          const maintenanceActivities = await response.json()
+          console.log("Actividades de mantenimiento cargadas:", maintenanceActivities)
+          
+          // Update the selected model with maintenance intervals
+          if (selectedModel) {
+            const maintenanceIntervals = maintenanceActivities.map((activity: any) => ({
+              hours: activity.interval_value,
+              type: activity.type,
+              id: activity.id,
+              name: activity.name,
+              description: activity.description || ''
+            }));
+            
+            setSelectedModel(prevModel => ({
+              ...prevModel!,
+              maintenanceIntervals
+            }));
+          }
+          
+          const schedules = maintenanceActivities.map((activity: any) => {
+            const tasks = Array.isArray(activity.maintenance_tasks) 
+              ? activity.maintenance_tasks.map((task: any) => {
+                  const parts = Array.isArray(task.task_parts) 
+                    ? task.task_parts.map((part: any) => ({
+                        id: part.id,
+                        name: part.name,
+                        partNumber: part.part_number || '',
+                        quantity: part.quantity || 1,
+                        cost: part.cost
+                      }))
+                    : []
+                  
+                  return {
+                    id: task.id,
+                    description: task.description,
+                    type: task.type || 'Mantenimiento',
+                    estimatedTime: task.estimated_time || 1,
+                    requiresSpecialist: task.requires_specialist || false,
+                    parts: parts
+                  }
+                })
+              : []
+            
+            return {
+              id: activity.id,
+              hours: activity.interval_value,
+              name: activity.name || `Mantenimiento a las ${activity.interval_value} horas`,
+              description: activity.description || '',
+              tasks: tasks
+            }
+          })
+          
+          console.log("Actividades de mantenimiento procesadas:", schedules)
+          setMaintenanceSchedule(schedules)
+        } catch (error) {
+          console.error('Error al cargar las actividades de mantenimiento:', error)
+          setMaintenanceSchedule([])
+        }
+      } catch (error) {
+        console.error("Error loading maintenance intervals:", error)
+      }
+    }
+
+    if (assetId) {
+      loadMaintenanceIntervals()
+    }
+  }, [assetId])
+
+  // Load existing maintenance history
+  useEffect(() => {
+    const loadMaintenanceHistory = async () => {
+      try {
+        const supabase = createClient()
+        
+        const { data: historyData, error } = await supabase
+          .from("maintenance_history")
+          .select("*")
+          .eq("asset_id", assetId)
+          .order("date", { ascending: false })
+
+        if (error) {
+          throw error
+        }
+
+        if (historyData) {
+          const formattedHistory: MaintenanceHistoryRecord[] = historyData.map((record: any) => ({
+            date: new Date(record.date),
+            type: record.type,
+            hours: record.hours?.toString(),
+            description: record.description,
+            findings: record.findings,
+            actions: record.actions,
+            technician: record.technician,
+            laborHours: record.labor_hours?.toString(),
+            laborCost: record.labor_cost,
+            cost: record.total_cost,
+            workOrder: record.work_order,
+            parts: record.parts ? JSON.parse(record.parts) : undefined,
+            maintenancePlanId: record.maintenance_plan_id,
+            completedTasks: record.completed_tasks ? JSON.parse(record.completed_tasks) : undefined,
+          }))
+          
+          setMaintenanceHistory(formattedHistory)
+          
+          // Mark completed maintenances
+          const completedIds = formattedHistory
+            .filter(record => record.maintenancePlanId)
+            .map(record => record.maintenancePlanId!)
+          setCompletedMaintenances(completedIds)
+        }
+      } catch (error) {
+        console.error("Error loading maintenance history:", error)
+      }
+    }
+
+    if (assetId) {
+      loadMaintenanceHistory()
+    }
+  }, [assetId])
+
   // Funciones para manejar incidentes
   const handleAddIncident = () => {
     setShowIncidentDialog(true)
@@ -459,7 +624,7 @@ export function AssetEditForm({ assetId }: AssetEditFormProps) {
     }
   }
 
-  const addDetailedMaintenanceHistory = () => {
+  const addDetailedMaintenanceHistory = async () => {
     if (historyDate && historyType && historyDescription && historyTechnician) {
       const totalPartsCost = historyParts.reduce((total, part) => {
         return total + (Number(part.cost) || 0) * part.quantity
@@ -485,17 +650,74 @@ export function AssetEditForm({ assetId }: AssetEditFormProps) {
         completedTasks: Object.keys(completedTasks).length > 0 ? { ...completedTasks } : undefined,
       }
 
-      if (editingHistoryIndex !== null) {
-        const updatedHistory = [...maintenanceHistory]
-        updatedHistory[editingHistoryIndex] = newHistory
-        setMaintenanceHistory(updatedHistory)
-        setEditingHistoryIndex(null)
-      } else {
-        setMaintenanceHistory([...maintenanceHistory, newHistory])
-      }
+      try {
+        // Save to database
+        const supabase = createClient()
+        const { data: userData } = await supabase.auth.getUser()
+        const user = userData.user
+        
+        if (!user) {
+          throw new Error("Usuario no autenticado")
+        }
 
-      resetHistoryForm()
-      setShowMaintenanceRecordDialog(false)
+        const maintenanceData = {
+          asset_id: assetId,
+          date: historyDate.toISOString(),
+          type: historyType,
+          description: historyDescription,
+          technician: historyTechnician,
+          findings: historyFindings || null,
+          actions: historyActions || null,
+          hours: historyHours ? parseInt(historyHours) : null,
+          labor_hours: historyLaborHours ? parseFloat(historyLaborHours) : null,
+          labor_cost: historyLaborCost || null,
+          total_cost: totalCost > 0 ? totalCost.toString() : null,
+          work_order: historyWorkOrder || null,
+          parts: historyParts.length > 0 ? JSON.stringify(historyParts) : null,
+          maintenance_plan_id: selectedMaintenancePlan?.id || null,
+          completed_tasks: Object.keys(completedTasks).length > 0 ? JSON.stringify(completedTasks) : null,
+          created_by: user.id,
+          created_at: new Date().toISOString()
+        }
+        
+        const { error: recordError } = await supabase
+          .from("maintenance_history")
+          .insert(maintenanceData)
+          
+        if (recordError) {
+          throw recordError
+        }
+
+        toast({
+          title: "Mantenimiento registrado",
+          description: "El registro de mantenimiento ha sido guardado exitosamente.",
+          variant: "default",
+        })
+
+        if (editingHistoryIndex !== null) {
+          const updatedHistory = [...maintenanceHistory]
+          updatedHistory[editingHistoryIndex] = newHistory
+          setMaintenanceHistory(updatedHistory)
+          setEditingHistoryIndex(null)
+        } else {
+          setMaintenanceHistory([...maintenanceHistory, newHistory])
+        }
+
+        // Mark maintenance as completed if it was linked to a plan
+        if (selectedMaintenancePlan) {
+          markMaintenanceAsCompleted(selectedMaintenancePlan.id, true)
+        }
+
+        resetHistoryForm()
+        setShowMaintenanceRecordDialog(false)
+      } catch (error: any) {
+        console.error("Error al guardar historial de mantenimiento:", error)
+        toast({
+          title: "Error al registrar mantenimiento",
+          description: error.message || "Ha ocurrido un error inesperado.",
+          variant: "destructive",
+        })
+      }
     }
   }
 
@@ -707,12 +929,98 @@ export function AssetEditForm({ assetId }: AssetEditFormProps) {
       </TabsList>
 
       <Form {...form}>
-        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6 pt-6">
+        <form 
+          onSubmit={(e) => {
+            // Only prevent default for the maintenance plan tab
+            const activeTab = document.querySelector('[role="tabpanel"][data-state="active"]');
+            if (activeTab?.getAttribute('data-value') === 'maintenance-plan') {
+              e.preventDefault();
+              return false;
+            }
+            return form.handleSubmit(onSubmit)(e);
+          }} 
+          className="space-y-6 pt-6"
+        >
           <TabsContent value="general" className="space-y-6">
             <GeneralInfoTab
               control={form.control}
-              selectedModel={null}
-              onModelSelect={() => {}}
+              selectedModel={selectedModel}
+              onModelSelect={(model) => {
+                setSelectedModel(model);
+                
+                // Fetch maintenance intervals for the new model
+                if (model) {
+                  const fetchModelIntervals = async () => {
+                    try {
+                      const response = await fetch(`/api/models/${model.id}/maintenance-intervals`);
+                      
+                      if (!response.ok) {
+                        throw new Error('Error al cargar las actividades de mantenimiento');
+                      }
+                      
+                      const maintenanceActivities = await response.json();
+                      console.log("Actividades de mantenimiento cargadas:", maintenanceActivities);
+                      
+                      // Update the selected model with maintenance intervals
+                      const maintenanceIntervals = maintenanceActivities.map((activity: any) => ({
+                        hours: activity.interval_value,
+                        type: activity.type,
+                        id: activity.id,
+                        name: activity.name,
+                        description: activity.description || ''
+                      }));
+                      
+                      setSelectedModel(prevModel => ({
+                        ...prevModel!,
+                        maintenanceIntervals
+                      }));
+                      
+                      // Update maintenance schedules
+                      const schedules = maintenanceActivities.map((activity: any) => {
+                        const tasks = Array.isArray(activity.maintenance_tasks) 
+                          ? activity.maintenance_tasks.map((task: any) => {
+                              const parts = Array.isArray(task.task_parts) 
+                                ? task.task_parts.map((part: any) => ({
+                                    id: part.id,
+                                    name: part.name,
+                                    partNumber: part.part_number || '',
+                                    quantity: part.quantity || 1,
+                                    cost: part.cost
+                                  }))
+                                : []
+                              
+                              return {
+                                id: task.id,
+                                description: task.description,
+                                type: task.type || 'Mantenimiento',
+                                estimatedTime: task.estimated_time || 1,
+                                requiresSpecialist: task.requires_specialist || false,
+                                parts: parts
+                              }
+                            })
+                          : []
+                        
+                        return {
+                          id: activity.id,
+                          hours: activity.interval_value,
+                          name: activity.name || `Mantenimiento a las ${activity.interval_value} horas`,
+                          description: activity.description || '',
+                          tasks: tasks
+                        }
+                      });
+                      
+                      setMaintenanceSchedule(schedules);
+                    } catch (error) {
+                      console.error('Error al cargar las actividades de mantenimiento:', error);
+                      setMaintenanceSchedule([]);
+                    }
+                  };
+                  
+                  fetchModelIntervals();
+                } else {
+                  setMaintenanceSchedule([]);
+                }
+              }}
               isNewEquipment={true}
               setIsNewEquipment={() => {}}
             />
@@ -738,7 +1046,7 @@ export function AssetEditForm({ assetId }: AssetEditFormProps) {
           
           <TabsContent value="maintenance-plan" className="space-y-6">
             <MaintenancePlanTab
-              selectedModel={null}
+              selectedModel={selectedModel}
               maintenanceSchedule={maintenanceSchedule}
               completedMaintenances={completedMaintenances}
               nextMaintenance={getNextMaintenance()}
@@ -880,7 +1188,7 @@ export function AssetEditForm({ assetId }: AssetEditFormProps) {
         setCompletedTasks={setCompletedTasks}
         onOpenPartDialog={() => setIsPartDialogOpen(true)}
         onOpenTasksDialog={() => setShowMaintenanceTasksDialog(true)}
-        onSubmit={addDetailedMaintenanceHistory}
+        onSubmit={() => addDetailedMaintenanceHistory()}
       />
     </Tabs>
   )
