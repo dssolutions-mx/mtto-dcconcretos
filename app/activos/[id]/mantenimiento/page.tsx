@@ -87,6 +87,15 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
         m.maintenance_plan_id === interval.id
       );
       
+      // Add debug logging
+      console.log(`Checking if maintenance for interval ${interval.id} was performed:`, {
+        interval_id: interval.id,
+        interval_description: interval.description,
+        maintenances_with_matching_plan_id: maintenanceHistory
+          .filter(m => m.maintenance_plan_id === interval.id)
+          .map(m => ({id: m.id, date: m.date, maintenance_plan_id: m.maintenance_plan_id}))
+      });
+      
       let lastMaintenanceDate = null;
       let lastMaintenanceHoursOfType = 0;
       let wasPerformed = false;
@@ -318,6 +327,30 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
               <CardDescription>
                 Mantenimientos que requieren atención en base a las horas actuales: {asset?.current_hours || 0} horas
               </CardDescription>
+              <div className="mt-2 text-sm text-muted-foreground bg-muted p-2 rounded">
+                <p>
+                  <span className="font-medium">Tipos de intervalos:</span> Los mantenimientos preventivos se realizan según intervalos predefinidos.
+                  Cada checkpoint de mantenimiento se identifica por su tipo (Preventivo, etc.) y la frecuencia de horas.
+                </p>
+              </div>
+              <div className="mt-2 grid grid-cols-2 sm:grid-cols-4 gap-2">
+                <div className="flex items-center gap-2 text-xs">
+                  <div className="h-3 w-3 rounded-full bg-red-600"></div>
+                  <span>Vencido (urgente)</span>
+                </div>
+                <div className="flex items-center gap-2 text-xs">
+                  <div className="h-3 w-3 rounded-full bg-orange-500"></div>
+                  <span>Vencido</span>
+                </div>
+                <div className="flex items-center gap-2 text-xs">
+                  <div className="h-3 w-3 rounded-full bg-amber-500"></div>
+                  <span>Próximo</span>
+                </div>
+                <div className="flex items-center gap-2 text-xs">
+                  <div className="h-3 w-3 rounded-full bg-blue-400"></div>
+                  <span>Cubierto</span>
+                </div>
+              </div>
             </CardHeader>
             <CardContent>
               {pendingMaintenances.length === 0 ? (
@@ -351,18 +384,23 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
                           }
                         >
                           <TableCell>
-                            <Badge 
-                              variant={
-                                interval.status === 'overdue' && interval.urgencyLevel === 'high' ? "destructive" :
-                                interval.status === 'overdue' ? "default" :
-                                interval.status === 'upcoming' ? "default" : 
-                                interval.status === 'covered' ? "secondary" : "outline"
-                              }
-                              className="whitespace-nowrap"
-                            >
-                              {interval.type}
-                              {interval.interval_value && ` ${interval.interval_value}h`}
-                            </Badge>
+                            <div className="flex flex-col gap-1">
+                              <Badge 
+                                variant={
+                                  interval.status === 'overdue' && interval.urgencyLevel === 'high' ? "destructive" :
+                                  interval.status === 'overdue' ? "default" :
+                                  interval.status === 'upcoming' ? "default" : 
+                                  interval.status === 'covered' ? "secondary" : "outline"
+                                }
+                                className="whitespace-nowrap text-xs inline-flex mb-1"
+                              >
+                                {interval.type}
+                                {interval.interval_value && ` ${interval.interval_value}h`}
+                              </Badge>
+                              <div className="text-xs font-medium">
+                                ID: {interval.id.substring(0, 8)}...
+                              </div>
+                            </div>
                           </TableCell>
                           <TableCell>
                             <div className="font-medium">{interval.description}</div>
@@ -384,12 +422,20 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
                           </TableCell>
                           <TableCell>
                             <div className="font-medium">Cada {interval.interval_value} horas</div>
+                            <div className="flex items-center gap-1 mt-1">
+                              <Badge variant="outline" className="text-xs">
+                                {interval.type}
+                              </Badge>
+                              <Badge variant="secondary" className="text-xs">
+                                {interval.interval_value}h
+                              </Badge>
+                            </div>
                             {interval.wasPerformed ? (
-                              <div className="text-xs text-muted-foreground">
+                              <div className="text-xs text-muted-foreground mt-1">
                                 Desde las {interval.lastMaintenanceHours}h hasta las {interval.nextHours}h
                               </div>
                             ) : (
-                              <div className="text-xs text-muted-foreground">
+                              <div className="text-xs text-muted-foreground mt-1">
                                 {interval.status === 'covered' 
                                   ? `Cubierto por mantenimientos posteriores`
                                   : `Desde 0h hasta las ${interval.intervalHours}h`
@@ -484,24 +530,71 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
                     <TableRow>
                       <TableHead>Fecha</TableHead>
                       <TableHead>Tipo</TableHead>
+                      <TableHead>Intervalo</TableHead>
                       <TableHead>Descripción</TableHead>
                       <TableHead>Técnico</TableHead>
                       <TableHead>Acciones</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {maintenanceHistory.slice(0, 5).map((maintenance) => (
-                      <TableRow key={maintenance.id}>
+                    {maintenanceHistory.slice(0, 5).map((maintenance) => {
+                      // Buscar el intervalo correspondiente a este mantenimiento
+                      const relatedInterval = maintenanceIntervals.find(
+                        interval => interval.id === maintenance.maintenance_plan_id
+                      );
+                      
+                      return (
+                      <TableRow 
+                        key={maintenance.id}
+                        className={
+                          maintenance.maintenance_plan_id ? "bg-blue-50/50" : ""
+                        }
+                      >
                         <TableCell>{formatDate(maintenance.date)}</TableCell>
                         <TableCell>
                           <Badge 
                             variant={maintenance.type === 'Preventivo' ? 'default' : 
                                     maintenance.type === 'Correctivo' ? 'destructive' : 'outline'}
+                            className="whitespace-nowrap"
                           >
                             {maintenance.type}
                           </Badge>
                         </TableCell>
-                        <TableCell>{maintenance.description}</TableCell>
+                        <TableCell>
+                          {maintenance.maintenance_plan_id ? (
+                            <div className="space-y-1">
+                              <div className="font-medium">
+                                {relatedInterval ? (
+                                  <>
+                                    <Badge 
+                                      variant="secondary" 
+                                      className="whitespace-nowrap text-xs"
+                                    >
+                                      {relatedInterval.type} {relatedInterval.interval_value}h
+                                    </Badge>
+                                  </>
+                                ) : (
+                                  "Plan asociado"
+                                )}
+                              </div>
+                              {relatedInterval && (
+                                <div className="text-xs text-muted-foreground">
+                                  {relatedInterval.description}
+                                </div>
+                              )}
+                            </div>
+                          ) : (
+                            <div className="text-xs text-muted-foreground">No asociado a un intervalo</div>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <div className="font-medium">{maintenance.description}</div>
+                          {maintenance.hours && (
+                            <div className="text-xs text-muted-foreground mt-1">
+                              Horómetro: {maintenance.hours}h
+                            </div>
+                          )}
+                        </TableCell>
                         <TableCell>{maintenance.technician}</TableCell>
                         <TableCell>
                           <Button size="sm" variant="outline" asChild>
@@ -511,7 +604,7 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
                           </Button>
                         </TableCell>
                       </TableRow>
-                    ))}
+                    )})}
                   </TableBody>
                 </Table>
               )}

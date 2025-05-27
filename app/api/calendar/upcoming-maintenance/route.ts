@@ -35,6 +35,7 @@ export async function GET(request: Request) {
     // Parámetros de filtro
     const statusFilter = searchParams.get('status')
     const sortBy = searchParams.get('sortBy') || 'default'
+    const assetIdFilter = searchParams.get('assetId')
     
     const cookieStore = await cookies()
     
@@ -56,7 +57,7 @@ export async function GET(request: Request) {
     )
 
     // Obtener todos los activos con sus modelos e intervalos de mantenimiento
-    const { data: assets, error: assetsError } = await supabase
+    let assetsQuery = supabase
       .from('assets')
       .select(`
         id,
@@ -80,6 +81,13 @@ export async function GET(request: Request) {
         )
       `)
       .eq('status', 'operational')
+
+    // Filter by specific asset if assetId parameter is provided
+    if (assetIdFilter) {
+      assetsQuery = assetsQuery.eq('id', assetIdFilter)
+    }
+
+    const { data: assets, error: assetsError } = await assetsQuery
 
     if (assetsError) {
       throw assetsError
@@ -228,9 +236,13 @@ export async function GET(request: Request) {
           }
         }
 
-        // Incluir TODOS los mantenimientos para mostrar una vista completa del calendario
-        // Incluir: overdue, upcoming, covered, scheduled (todos menos completed)
-        if (['overdue', 'upcoming', 'covered', 'scheduled'].includes(status)) {
+        // For asset detail page (when assetId is provided), show only overdue and upcoming
+        // For calendar page (no assetId), show all statuses for complete calendar view
+        const statusesToInclude = assetIdFilter 
+          ? ['overdue', 'upcoming'] 
+          : ['overdue', 'upcoming', 'covered', 'scheduled']
+
+        if (statusesToInclude.includes(status)) {
           upcomingMaintenances.push({
             id: `${asset.id}-${interval.id}`,
             assetId: asset.id,

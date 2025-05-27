@@ -199,6 +199,23 @@ export function MaintenanceDetails({
                 </div>
               </div>
             </div>
+
+            <div className="mt-4 p-3 bg-blue-100 rounded-md border border-blue-200">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="h-5 w-5 text-green-600" />
+                  <span className="font-medium">Mantenimiento completado como parte del intervalo programado</span>
+                </div>
+                {maintenance.hours && (
+                  <Badge className="bg-blue-600" variant="secondary">
+                    Horómetro: {maintenance.hours}h
+                  </Badge>
+                )}
+              </div>
+              <div className="mt-2 text-sm">
+                <p>Este registro cumple con el checkpoint de mantenimiento <strong>{maintenancePlan.type} {maintenancePlan.interval_value}h</strong> definido en el plan de mantenimiento preventivo del equipo. {maintenancePlan.maintenance_tasks?.length > 0 && `Incluye ${maintenancePlan.maintenance_tasks.length} tareas de mantenimiento programadas.`}</p>
+              </div>
+            </div>
           </CardContent>
         </Card>
       )}

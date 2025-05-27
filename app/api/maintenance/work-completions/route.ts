@@ -239,7 +239,8 @@ export async function POST(request: Request) {
         asset_id: enhancedHistoryData.asset_id,
         date: enhancedHistoryData.date,
         type: enhancedHistoryData.type,
-        labor_hours: enhancedHistoryData.labor_hours
+        labor_hours: enhancedHistoryData.labor_hours,
+        maintenance_plan_id: enhancedHistoryData.maintenance_plan_id || null
       }));
       
       const { data: historyData, error: historyError } = await supabase

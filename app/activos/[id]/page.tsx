@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useMemo, useEffect, use } from "react";
-import { useAsset, useMaintenanceHistory, useIncidents } from "@/hooks/useSupabase";
+import { useAsset, useMaintenanceHistory, useIncidents, useUpcomingMaintenance } from "@/hooks/useSupabase";
 import { DashboardHeader } from "@/components/dashboard/dashboard-header";
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -13,10 +13,11 @@ import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import Link from "next/link";
-import { ArrowLeft, FileText, History, Wrench, Calendar, Edit, Camera, ExternalLink, AlertTriangle, CheckCircle, AlertCircle } from "lucide-react";
-import { format } from "date-fns";
+import { ArrowLeft, FileText, History, Wrench, Calendar, Edit, Camera, ExternalLink, AlertTriangle, CheckCircle, AlertCircle, Clock } from "lucide-react";
+import { format, formatDistance, parseISO } from "date-fns";
 import { es } from "date-fns/locale";
 import { Asset, AssetWithModel, EquipmentModel } from "@/types";
+import { createClient } from "@/lib/supabase";
 
 // Define category type
 type CategoryInfo = {
@@ -51,6 +52,9 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
   const { history: maintenanceHistory, loading: maintenanceLoading } = useMaintenanceHistory(assetId);
   const { incidents, loading: incidentsLoading } = useIncidents(assetId);
   const [activeTab, setActiveTab] = useState("general");
+  const [upcomingMaintenances, setUpcomingMaintenances] = useState<any[]>([]);
+  const [upcomingLoading, setUpcomingLoading] = useState(true);
+  const [maintenanceIntervals, setMaintenanceIntervals] = useState<any[]>([]);
   
   // Map the asset with equipment_models to use model property
   const asset = useMemo(() => {
@@ -63,6 +67,55 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
     
     return assetWithModel;
   }, [rawAsset]);
+  
+  // Fetch upcoming maintenances
+  useEffect(() => {
+    if (assetId && asset && maintenanceHistory) {
+      const fetchUpcomingMaintenances = async () => {
+        try {
+          setUpcomingLoading(true);
+          const response = await fetch(`/api/calendar/upcoming-maintenance?assetId=${assetId}`);
+          if (response.ok) {
+            const data = await response.json();
+            setUpcomingMaintenances(data.upcomingMaintenances || []);
+          } else {
+            console.error('Error fetching upcoming maintenance:', response.statusText);
+            setUpcomingMaintenances([]);
+          }
+        } catch (error) {
+          console.error('Error fetching upcoming maintenance:', error);
+          setUpcomingMaintenances([]);
+        } finally {
+          setUpcomingLoading(false);
+        }
+      };
+      
+      fetchUpcomingMaintenances();
+    }
+  }, [assetId, asset, maintenanceHistory]);
+  
+  // Add a new effect to fetch maintenance intervals
+  useEffect(() => {
+    if (asset?.model_id) {
+      const fetchMaintenanceIntervals = async () => {
+        try {
+          const supabase = createClient();
+          
+          const { data, error } = await supabase
+            .from("maintenance_intervals")
+            .select("*")
+            .eq("model_id", asset.model_id!); // Use non-null assertion since we check above
+            
+          if (error) throw error;
+          setMaintenanceIntervals(data || []);
+        } catch (err) {
+          console.error("Error fetching maintenance intervals:", err);
+        }
+      };
+      
+      fetchMaintenanceIntervals();
+    }
+  }, [asset?.model_id]);
   
   // Función para mostrar el estado con un color adecuado
   const getStatusBadge = (status: string) => {
@@ -235,6 +288,11 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
                     ) : maintenanceHistory.length === 0 ? (
                       <div className="text-center py-4">
                         <p className="text-muted-foreground">No hay registros de mantenimiento</p>
+                        <Button variant="outline" className="mt-4" asChild>
+                          <Link href={`/activos/${assetId}/mantenimiento/nuevo`}>
+                            Registrar mantenimiento
+                          </Link>
+                        </Button>
                       </div>
                     ) : (
                       <>
@@ -243,11 +301,12 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
                             <TableRow>
                               <TableHead>Fecha</TableHead>
                               <TableHead>Tipo</TableHead>
-                              <TableHead>Descripción</TableHead>
+                              <TableHead>Técnico</TableHead>
+                              <TableHead>Estado</TableHead>
                             </TableRow>
                           </TableHeader>
                           <TableBody>
-                            {maintenanceHistory.slice(0, 3).map((maintenance) => (
+                            {maintenanceHistory.slice(0, 4).map((maintenance) => (
                               <TableRow key={maintenance.id}>
                                 <TableCell>{formatDate(maintenance.date)}</TableCell>
                                 <TableCell>
@@ -258,16 +317,55 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
                                     {maintenance.type}
                                   </Badge>
                                 </TableCell>
-                                <TableCell className="max-w-xs truncate">{maintenance.description}</TableCell>
+                                <TableCell>
+                                  <div className="flex flex-col gap-1">
+                                    <span>{maintenance.technician || "No asignado"}</span>
+                                    {maintenance.hours && (
+                                      <span className="text-xs text-muted-foreground">
+                                        Horómetro: {maintenance.hours}h
+                                      </span>
+                                    )}
+                                    {maintenance.maintenance_plan_id && (
+                                      <div className="flex flex-col gap-1 mt-1">
+                                        <span className="text-xs text-muted-foreground">
+                                          Plan: {
+                                            // Try to extract the maintenance interval type and value from the related intervals
+                                            (() => {
+                                              const interval = maintenanceIntervals?.find(
+                                                interval => interval.id === maintenance.maintenance_plan_id
+                                              );
+                                              if (interval?.interval_value) {
+                                                return `${interval.type || ''} ${interval.interval_value}h`;
+                                              }
+                                              return maintenance.maintenance_plan_id.substring(0, 8);
+                                            })()
+                                          }
+                                        </span>
+                                      </div>
+                                    )}
+                                  </div>
+                                </TableCell>
+                                <TableCell>
+                                  <div className="flex gap-1">
+                                    <Badge 
+                                      variant="outline"
+                                      className="whitespace-nowrap"
+                                    >
+                                      {maintenance.type === 'Preventivo' ? 'Completado' : 
+                                       maintenance.type === 'Correctivo' ? 'Reparado' : 'Finalizado'}
+                                    </Badge>
+                                  </div>
+                                </TableCell>
                               </TableRow>
                             ))}
                           </TableBody>
                         </Table>
-                        {maintenanceHistory.length > 3 && (
+                        {maintenanceHistory.length > 4 && (
                           <div className="mt-4 text-center">
-                            <Button variant="ghost" size="sm" asChild>
+                            <Button variant="outline" size="sm" asChild>
                               <Link href={`/activos/${assetId}/mantenimiento`}>
-                                Ver todos
+                                <History className="mr-2 h-4 w-4" />
+                                Ver historial completo
                               </Link>
                             </Button>
                           </div>
@@ -279,110 +377,162 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
                 
                 <Card>
                   <CardHeader>
-                    <CardTitle>Incidentes Recientes</CardTitle>
-                    <CardDescription>Últimos problemas reportados del activo</CardDescription>
+                    <CardTitle>Próximos Mantenimientos</CardTitle>
+                    <CardDescription>Mantenimientos programados para este activo</CardDescription>
                   </CardHeader>
                   <CardContent>
-                    {incidentsLoading ? (
+                    {upcomingLoading ? (
                       <div className="space-y-2">
                         <Skeleton className="h-8 w-full" />
                         <Skeleton className="h-8 w-full" />
                       </div>
-                    ) : incidents.length === 0 ? (
-                      <div className="text-center py-4">
-                        <p className="text-muted-foreground">No hay registros de incidentes</p>
+                    ) : upcomingMaintenances.length === 0 ? (
+                      <div className="text-center py-4 space-y-2">
+                        <Calendar className="mx-auto h-8 w-8 text-muted-foreground" />
+                        <p className="text-muted-foreground">No hay mantenimientos programados</p>
+                        <Button variant="outline" size="sm" asChild className="mt-2">
+                          <Link href={`/activos/${assetId}/mantenimiento`}>
+                            Programar mantenimiento
+                          </Link>
+                        </Button>
                       </div>
                     ) : (
-                      <>
-                        <Table>
-                          <TableHeader>
-                            <TableRow>
-                              <TableHead>Fecha</TableHead>
-                              <TableHead>Tipo</TableHead>
-                              <TableHead>Estado</TableHead>
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {incidents.slice(0, 3).map((incident) => (
-                              <TableRow key={incident.id}>
-                                <TableCell>{formatDate(incident.date)}</TableCell>
-                                <TableCell>
-                                  <Badge 
-                                    variant={incident.type === 'Falla' ? 'destructive' : 'outline'}
-                                  >
-                                    {incident.type}
-                                  </Badge>
-                                </TableCell>
-                                <TableCell>
-                                  <Badge 
-                                    variant={incident.status === 'Resuelto' ? 'outline' : 
-                                            incident.status === 'Pendiente' ? 'destructive' : 'default'}
-                                  >
-                                    {incident.status || 'En proceso'}
-                                  </Badge>
-                                </TableCell>
-                              </TableRow>
-                            ))}
-                          </TableBody>
-                        </Table>
-                        {incidents.length > 3 && (
-                          <div className="mt-4 text-center">
-                            <Button variant="ghost" size="sm" asChild>
-                              <Link href={`/activos/${assetId}/historial`}>
-                                Ver todos
+                      <div className="space-y-3">
+                        {upcomingMaintenances.slice(0, 3).map((maintenance, index) => (
+                          <div key={index} className="border rounded-md p-3">
+                            <div className="flex justify-between items-start mb-2">
+                              <div>
+                                <Badge 
+                                  variant={
+                                    maintenance.status === 'overdue' ? 'destructive' : 
+                                    maintenance.status === 'upcoming' ? 'default' : 'outline'
+                                  }
+                                  className="mb-1"
+                                >
+                                  {maintenance.status === 'overdue' ? 'Vencido' : 
+                                   maintenance.status === 'upcoming' ? 'Próximo' : 
+                                   maintenance.status === 'scheduled' ? 'Programado' : 'Cubierto'}
+                                </Badge>
+                                <h4 className="font-medium">{maintenance.intervalName}</h4>
+                              </div>
+                              <Badge 
+                                variant="outline" 
+                                className={
+                                  maintenance.urgency === 'high' ? 'border-red-500 text-red-500' : 
+                                  maintenance.urgency === 'medium' ? 'border-yellow-500 text-yellow-500' : 
+                                  'border-green-500 text-green-500'
+                                }
+                              >
+                                {maintenance.urgency === 'high' ? 'Alta' : 
+                                 maintenance.urgency === 'medium' ? 'Media' : 'Baja'} prioridad
+                              </Badge>
+                            </div>
+                            <div className="flex gap-2 items-center text-sm text-muted-foreground">
+                              <Clock className="h-4 w-4" />
+                              <span>
+                                {maintenance.unit === 'hours' ? 
+                                  `${maintenance.currentValue}/${maintenance.targetValue} horas` : 
+                                  `${maintenance.currentValue}/${maintenance.targetValue} km`}
+                              </span>
+                            </div>
+                            <div className="flex gap-2 items-center text-sm text-muted-foreground mt-1">
+                              <Calendar className="h-4 w-4" />
+                              <span>
+                                Fecha estimada: {format(parseISO(maintenance.estimatedDate), "dd MMM yyyy", { locale: es })}
+                                {maintenance.status === 'overdue' && ' (vencido)'}
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                        {upcomingMaintenances.length > 3 && (
+                          <div className="mt-2 text-center">
+                            <Button variant="outline" size="sm" asChild>
+                              <Link href={`/activos/${assetId}/mantenimiento`}>
+                                <Calendar className="mr-2 h-4 w-4" />
+                                Ver todos ({upcomingMaintenances.length})
                               </Link>
                             </Button>
                           </div>
                         )}
-                      </>
+                      </div>
                     )}
                   </CardContent>
                 </Card>
               </div>
 
-              <div className="flex flex-col md:flex-row gap-4">
-                <Card className="flex-1">
-                  <CardHeader>
-                    <CardTitle>Próximo Mantenimiento</CardTitle>
-                    <CardDescription>Información sobre el próximo servicio programado</CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="flex justify-between items-center">
-                      <div>
-                        <p className="text-sm text-muted-foreground">Tipo:</p>
-                        <p className="font-medium">Mantenimiento preventivo</p>
-                      </div>
-                      <Link href={`/activos/${assetId}/mantenimiento`}>
-                        <Button variant="outline" size="sm">
-                          <Calendar className="h-4 w-4 mr-2" />
-                          Ver calendario
-                        </Button>
-                      </Link>
+              <Card>
+                <CardHeader>
+                  <CardTitle>Incidentes Recientes</CardTitle>
+                  <CardDescription>Últimos problemas reportados del activo</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {incidentsLoading ? (
+                    <div className="space-y-2">
+                      <Skeleton className="h-8 w-full" />
+                      <Skeleton className="h-8 w-full" />
                     </div>
-                  </CardContent>
-                </Card>
-                
-                <Card className="flex-1">
-                  <CardHeader>
-                    <CardTitle>Historial</CardTitle>
-                    <CardDescription>Historial de mantenimientos e incidentes</CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="flex justify-between items-center">
-                      <div>
-                        <p className="text-sm text-muted-foreground">Último mantenimiento:</p>
-                        <p className="font-medium">{formatDate(asset?.last_maintenance_date || null)}</p>
-                      </div>
-                      <Link href={`/activos/${assetId}/historial`}>
-                        <Button variant="outline" size="sm">
-                          <History className="h-4 w-4 mr-2" />
-                          Ver historial
-                        </Button>
-                      </Link>
+                  ) : incidents.length === 0 ? (
+                    <div className="text-center py-4">
+                      <CheckCircle className="mx-auto h-8 w-8 text-green-500" />
+                      <p className="text-muted-foreground mt-2">No hay registros de incidentes</p>
                     </div>
-                  </CardContent>
-                </Card>
-              </div>
+                  ) : (
+                    <>
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Fecha</TableHead>
+                            <TableHead>Tipo</TableHead>
+                            <TableHead>Reportado por</TableHead>
+                            <TableHead>Estado</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {incidents.slice(0, 3).map((incident) => (
+                            <TableRow key={incident.id}>
+                              <TableCell>{formatDate(incident.date)}</TableCell>
+                              <TableCell>
+                                <Badge 
+                                  variant={incident.type === 'Falla' ? 'destructive' : 'outline'}
+                                >
+                                  {incident.type}
+                                </Badge>
+                              </TableCell>
+                              <TableCell>{incident.reported_by}</TableCell>
+                              <TableCell>
+                                <Badge 
+                                  variant={incident.status === 'Resuelto' ? 'outline' : 
+                                          incident.status === 'Pendiente' ? 'destructive' : 'default'}
+                                  className="flex items-center gap-1"
+                                >
+                                  {incident.status === 'Resuelto' ? (
+                                    <CheckCircle className="h-3 w-3" />
+                                  ) : incident.status === 'Pendiente' ? (
+                                    <AlertCircle className="h-3 w-3" />
+                                  ) : (
+                                    <AlertTriangle className="h-3 w-3" />
+                                  )}
+                                  {incident.status || 'En proceso'}
+                                </Badge>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                      {incidents.length > 3 && (
+                        <div className="mt-4 text-center">
+                          <Button variant="outline" size="sm" asChild>
+                            <Link href={`/activos/${assetId}/incidentes`}>
+                              <AlertTriangle className="mr-2 h-4 w-4" />
+                              Ver todos los incidentes
+                            </Link>
+                          </Button>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </CardContent>
+              </Card>
             </TabsContent>
             
             <TabsContent value="technical" className="space-y-4">

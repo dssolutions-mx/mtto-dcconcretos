@@ -148,7 +148,15 @@ export function WorkOrderCompletionForm({ workOrderId, initialData }: WorkOrderC
 
         if (orderError) throw orderError
         setWorkOrder(orderData)
-
+        
+        // Log maintenance_plan_id for debugging
+        console.log('Work order data loaded:', {
+          id: orderData.id,
+          type: orderData.type,
+          status: orderData.status,
+          maintenance_plan_id: orderData.maintenance_plan_id || null
+        });
+        
         // Parse required parts if they exist
         if (orderData.required_parts) {
           let parts = [];
@@ -401,6 +409,8 @@ export function WorkOrderCompletionForm({ workOrderId, initialData }: WorkOrderC
           work_order_id: workOrderId,
           findings: updatedData.technician_notes || null,
           actions: updatedData.resolution_details,
+          // Important: Include the maintenance_plan_id from the work order to properly mark the maintenance as completed
+          maintenance_plan_id: workOrder.maintenance_plan_id || null,
           // Incluir todos los campos de completion que no van en work_orders
           downtime_hours: updatedData.downtime_hours,
           resolution_details: updatedData.resolution_details,

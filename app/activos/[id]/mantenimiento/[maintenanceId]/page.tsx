@@ -231,6 +231,31 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
         </div>
       </DashboardHeader>
       
+      {maintenancePlan && (
+        <div className="mb-6 px-1">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-2">
+            <div className="flex items-center gap-2">
+              <div className="py-1 px-2.5 bg-blue-100 text-blue-800 rounded-md text-sm font-medium">
+                Intervalo: {maintenancePlan.type} {maintenancePlan.interval_value}h
+              </div>
+              <div className="py-1 px-2.5 bg-green-100 text-green-800 rounded-md text-sm font-medium">
+                {maintenance.type}
+              </div>
+            </div>
+            <div className="text-sm text-muted-foreground">
+              Horómetro registrado: {maintenance.hours || "No registrado"}
+            </div>
+          </div>
+          <div className="p-3 bg-blue-50 border border-blue-200 rounded-md">
+            <h3 className="font-medium mb-1">Plan de Mantenimiento: {maintenancePlan.description}</h3>
+            <p className="text-sm text-blue-700">
+              Este mantenimiento corresponde al checkpoint de {maintenancePlan.interval_value} horas ({maintenancePlan.type}).
+              {maintenancePlan.maintenance_tasks?.length > 0 && ` Incluye ${maintenancePlan.maintenance_tasks.length} tareas programadas.`}
+            </p>
+          </div>
+        </div>
+      )}
+      
       <MaintenanceDetails
         maintenance={maintenance}
         asset={asset}
