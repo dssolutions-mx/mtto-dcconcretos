@@ -274,7 +274,7 @@ export function EvidenceUpload({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
+      <DialogContent className="max-w-4xl max-h-[90vh]">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Camera className="h-5 w-5" />
@@ -285,8 +285,8 @@ export function EvidenceUpload({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex-1 overflow-hidden">
-          <Tabs defaultValue="upload" className="h-full flex flex-col">
+        <div className="my-4" style={{ height: 'calc(80vh - 200px)', overflowY: 'auto' }}>
+          <Tabs defaultValue="upload" className="w-full">
             <TabsList className="grid w-full grid-cols-2">
               <TabsTrigger value="upload">Subir Evidencia</TabsTrigger>
               <TabsTrigger value="classify">
@@ -294,7 +294,7 @@ export function EvidenceUpload({
               </TabsTrigger>
             </TabsList>
 
-            <TabsContent value="upload" className="flex-1 space-y-4">
+            <TabsContent value="upload" className="mt-4 space-y-4">
               <div className="border-2 border-dashed border-muted-foreground/25 rounded-lg p-8 text-center">
                 <div className="flex flex-col items-center gap-4">
                   <div className="p-4 bg-primary/10 rounded-full">
@@ -369,7 +369,7 @@ export function EvidenceUpload({
               )}
             </TabsContent>
 
-            <TabsContent value="classify" className="flex-1 overflow-auto space-y-4">
+            <TabsContent value="classify" className="mt-4 space-y-4">
               {pendingEvidence.length === 0 ? (
                 <div className="text-center py-8">
                   <FileText className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
