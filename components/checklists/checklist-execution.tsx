@@ -141,7 +141,7 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
         }
         
         // Intentar cargar desde cache si estamos offline
-        if (!isOnline && offlineChecklistService) {
+        if (isOnline === false && offlineChecklistService) {
           const cached = await offlineChecklistService.getCachedChecklistTemplate(id)
           if (cached) {
             setChecklist({
@@ -161,14 +161,13 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
               technician: cached.template.profiles ? `${cached.template.profiles.nombre} ${cached.template.profiles.apellido}` : '',
               maintenance_plan_id: cached.template.maintenance_plan_id || null
             })
-            loadFromLocalStorage()
             setLoading(false)
-            toast.success("📱 Checklist cargado desde cache offline")
+            loadFromLocalStorage()
+            console.log('📱 Checklist cargado desde cache offline')
             return
           } else {
-            // Si no hay cache y estamos offline, mostrar error
-            toast.error("❌ Este checklist no está disponible offline. Necesitas conexión a internet.")
-            setLoading(false)
+            toast.error("Este checklist no está disponible offline")
+            router.back()
             return
           }
         }
@@ -248,7 +247,7 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
         console.error('Error al cargar el checklist:', error)
         
         // Si hay error de conexión, intentar cargar desde cache
-        if (!isOnline && offlineChecklistService) {
+        if (isOnline === false && offlineChecklistService) {
           const cached = await offlineChecklistService.getCachedChecklistTemplate(id)
           if (cached) {
             toast.warning("⚠️ Cargando desde cache debido a problema de conexión")

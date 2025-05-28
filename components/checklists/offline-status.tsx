@@ -54,8 +54,8 @@ export function OfflineStatus({ className = "", showDetails = true, onSyncComple
     return lastSyncTime.toLocaleDateString()
   }
 
-  // Mostrar loading inicial
-  if (isLoading) {
+  // Mostrar loading inicial o mientras se determina el estado de conexión
+  if (isLoading || isOnline === undefined) {
     return showDetails ? (
       <Card className={className}>
         <CardContent className="p-4">
@@ -192,7 +192,7 @@ export function OfflineStatus({ className = "", showDetails = true, onSyncComple
         </div>
         
         {/* Mensaje de estado para móviles */}
-        {!isOnline && (
+        {isOnline === false && (
           <Alert className="mt-3 border-orange-200 bg-orange-50">
             <AlertTriangle className="h-4 w-4" />
             <AlertDescription className="text-sm">

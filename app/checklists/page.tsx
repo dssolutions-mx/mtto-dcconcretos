@@ -33,7 +33,7 @@ function ChecklistsContent() {
   const [activeTab, setActiveTab] = useState('overview')
   const [cleaningUp, setCleaningUp] = useState(false)
   const [preparingOffline, setPreparingOffline] = useState(false)
-  const [isOnline, setIsOnline] = useState(true)
+  const [isOnline, setIsOnline] = useState<boolean | undefined>(undefined)
   const [stats, setStats] = useState({
     daily: { total: 0, pending: 0, overdue: 0 },
     weekly: { total: 0, pending: 0, overdue: 0 },
@@ -84,21 +84,21 @@ function ChecklistsContent() {
 
   // Cache automático cuando se cargan los schedules
   useEffect(() => {
-    if (schedules.length > 0 && offlineChecklistService && navigator.onLine) {
+    if (schedules.length > 0 && offlineChecklistService && isOnline) {
       // Cache automático de schedules
       offlineChecklistService.cacheChecklistSchedules(schedules, 'pendiente')
       console.log(`📋 Auto-cache: ${schedules.length} schedules guardados para uso offline`)
     }
-  }, [schedules])
+  }, [schedules, isOnline])
 
   // Cache automático cuando se cargan los templates
   useEffect(() => {
-    if (templates.length > 0 && offlineChecklistService && navigator.onLine) {
+    if (templates.length > 0 && offlineChecklistService && isOnline) {
       // Cache automático de templates
       offlineChecklistService.cacheChecklistTemplates(templates)
       console.log(`📝 Auto-cache: ${templates.length} templates guardados para uso offline`)
     }
-  }, [templates])
+  }, [templates, isOnline])
   
   // Update stats when schedules and templates change
   useEffect(() => {
@@ -248,7 +248,7 @@ function ChecklistsContent() {
             <Button 
               variant="outline" 
               onClick={handlePrepareOffline}
-              disabled={preparingOffline || !navigator.onLine}
+              disabled={preparingOffline || isOnline === false}
               className="hidden lg:flex"
             >
               {preparingOffline ? (
@@ -281,7 +281,7 @@ function ChecklistsContent() {
       </div>
 
       {/* Indicador de preparación offline */}
-      {!navigator.onLine && (
+      {isOnline === false && (
         <Card className="mb-6 border-orange-200 bg-orange-50">
           <CardContent className="pt-6">
             <div className="flex items-center gap-3">
@@ -300,27 +300,27 @@ function ChecklistsContent() {
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
         <TabsList className="grid w-full grid-cols-3 lg:grid-cols-6">
           <TabsTrigger value="overview" className="text-xs sm:text-sm">
-            {!isOnline ? 'Offline' : 'General'}
+            {isOnline === false ? 'Offline' : 'General'}
           </TabsTrigger>
-          <TabsTrigger value="daily" className="text-xs sm:text-sm" disabled={!isOnline}>
+          <TabsTrigger value="daily" className="text-xs sm:text-sm" disabled={isOnline === false}>
             Diarios
           </TabsTrigger>
-          <TabsTrigger value="weekly" className="text-xs sm:text-sm" disabled={!isOnline}>
+          <TabsTrigger value="weekly" className="text-xs sm:text-sm" disabled={isOnline === false}>
             Semanales
           </TabsTrigger>
-          <TabsTrigger value="monthly" className="text-xs sm:text-sm" disabled={!isOnline}>
+          <TabsTrigger value="monthly" className="text-xs sm:text-sm" disabled={isOnline === false}>
             Mensuales
           </TabsTrigger>
-          <TabsTrigger value="preventive" className="text-xs sm:text-sm" disabled={!isOnline}>
+          <TabsTrigger value="preventive" className="text-xs sm:text-sm" disabled={isOnline === false}>
             Preventivo
           </TabsTrigger>
-          <TabsTrigger value="templates" className="text-xs sm:text-sm" disabled={!isOnline}>
+          <TabsTrigger value="templates" className="text-xs sm:text-sm" disabled={isOnline === false}>
             Plantillas
           </TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview">
-          {!isOnline ? (
+          {isOnline === false ? (
             <OfflineChecklistList />
           ) : loading ? (
             <div className="flex justify-center items-center py-8">

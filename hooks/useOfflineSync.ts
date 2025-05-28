@@ -14,7 +14,7 @@ interface SyncStats {
 }
 
 interface UseOfflineSyncReturn {
-  isOnline: boolean
+  isOnline: boolean | undefined
   isSyncing: boolean
   syncStats: SyncStats
   lastSyncTime: Date | null
@@ -24,7 +24,8 @@ interface UseOfflineSyncReturn {
 }
 
 export function useOfflineSync(): UseOfflineSyncReturn {
-  const [isOnline, setIsOnline] = useState(true)
+  // Inicializar como undefined para evitar problemas de hidratación
+  const [isOnline, setIsOnline] = useState<boolean | undefined>(undefined)
   const [isSyncing, setIsSyncing] = useState(false)
   const [syncStats, setSyncStats] = useState<SyncStats>({
     total: 0,
@@ -46,7 +47,7 @@ export function useOfflineSync(): UseOfflineSyncReturn {
           offlineChecklistService = module.offlineChecklistService
         }
 
-        // Estado inicial
+        // Estado inicial - establecer solo cuando estamos en el cliente
         setIsOnline(navigator.onLine)
 
         // Configurar listeners del servicio
@@ -130,8 +131,8 @@ export function useOfflineSync(): UseOfflineSyncReturn {
 
   // Función para sincronizar manualmente
   const sync = useCallback(async () => {
-    if (!offlineChecklistService || !isOnline || isSyncing) {
-      if (!isOnline) {
+    if (!offlineChecklistService || isOnline === false || isSyncing) {
+      if (isOnline === false) {
         toast.warning("Sin conexión - No se puede sincronizar")
       }
       return
