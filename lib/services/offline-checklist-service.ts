@@ -23,10 +23,27 @@ interface ChecklistDB extends DBSchema {
       lastUpdated: number
     }
   }
+  'checklist-schedules': {
+    key: string
+    value: {
+      id: string
+      schedules: any[]
+      lastUpdated: number
+      filters?: string
+    }
+  }
+  'checklist-lists': {
+    key: string
+    value: {
+      id: string
+      templates: any[]
+      lastUpdated: number
+    }
+  }
 }
 
 // Tipo para eventos del servicio offline
-type OfflineServiceEvent = 'sync-start' | 'sync-complete' | 'sync-error' | 'connection-change' | 'stats-update'
+type OfflineServiceEvent = 'sync-start' | 'sync-complete' | 'sync-error' | 'connection-change' | 'stats-update' | 'cache-update'
 
 class OfflineChecklistService {
   private db: Promise<IDBPDatabase<ChecklistDB>> | null = null
@@ -48,14 +65,20 @@ class OfflineChecklistService {
   private initializeDB() {
     if (!this.isClient || this.db) return
     
-    this.db = openDB<ChecklistDB>('checklists-offline', 2, {
-      upgrade(db, oldVersion) {
+    this.db = openDB<ChecklistDB>('checklists-offline', 3, {
+      upgrade(db, oldVersion, newVersion) {
         // Crear stores si no existen
         if (!db.objectStoreNames.contains('offline-checklists')) {
           db.createObjectStore('offline-checklists', { keyPath: 'id' })
         }
         if (!db.objectStoreNames.contains('checklist-templates')) {
           db.createObjectStore('checklist-templates', { keyPath: 'id' })
+        }
+        if (!db.objectStoreNames.contains('checklist-schedules')) {
+          db.createObjectStore('checklist-schedules', { keyPath: 'id' })
+        }
+        if (!db.objectStoreNames.contains('checklist-lists')) {
+          db.createObjectStore('checklist-lists', { keyPath: 'id' })
         }
       }
     })
@@ -171,6 +194,191 @@ class OfflineChecklistService {
 
     this.lastSyncAttempt = now
     return this.syncAll()
+  }
+  
+  // Cachear lista de schedules pendientes
+  async cacheChecklistSchedules(schedules: any[], filters: string = 'pendiente') {
+    const db = await this.getDB()
+    if (!db) return
+
+    await db.put('checklist-schedules', {
+      id: `schedules-${filters}`,
+      schedules,
+      lastUpdated: Date.now(),
+      filters
+    })
+
+    this.emit('cache-update', { type: 'schedules', count: schedules.length })
+    console.log(`📋 Cacheados ${schedules.length} schedules con filtro: ${filters}`)
+  }
+
+  // Obtener schedules desde cache
+  async getCachedChecklistSchedules(filters: string = 'pendiente') {
+    const db = await this.getDB()
+    if (!db) return null
+
+    const cached = await db.get('checklist-schedules', `schedules-${filters}`)
+    
+    // Verificar si el cache no es muy antiguo (máximo 2 horas)
+    if (cached && Date.now() - cached.lastUpdated < 2 * 60 * 60 * 1000) {
+      return cached.schedules
+    }
+
+    return null
+  }
+
+  // Cachear lista de templates
+  async cacheChecklistTemplates(templates: any[]) {
+    const db = await this.getDB()
+    if (!db) return
+
+    await db.put('checklist-lists', {
+      id: 'templates',
+      templates,
+      lastUpdated: Date.now()
+    })
+
+    this.emit('cache-update', { type: 'templates', count: templates.length })
+    console.log(`📝 Cacheados ${templates.length} templates`)
+  }
+
+  // Obtener templates desde cache
+  async getCachedChecklistTemplates() {
+    const db = await this.getDB()
+    if (!db) return null
+
+    const cached = await db.get('checklist-lists', 'templates')
+    
+    // Verificar si el cache no es muy antiguo (máximo 4 horas)
+    if (cached && Date.now() - cached.lastUpdated < 4 * 60 * 60 * 1000) {
+      return cached.templates
+    }
+
+    return null
+  }
+
+  // Cache proactivo de checklist completo al acceder
+  async proactivelyCacheChecklist(scheduleId: string) {
+    if (!navigator.onLine) return
+
+    try {
+      const supabase = createBrowserClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+      )
+
+      const { data, error } = await supabase
+        .from('checklist_schedules')
+        .select(`
+          *,
+          checklists (
+            *,
+            checklist_sections (
+              *,
+              checklist_items (*)
+            ),
+            equipment_models (
+              id, 
+              name, 
+              manufacturer
+            )
+          ),
+          assets (
+            id,
+            name,
+            asset_id,
+            location
+          )
+        `)
+        .eq('id', scheduleId)
+        .single()
+
+      if (!error && data) {
+        await this.cacheChecklistTemplate(scheduleId, data, data.assets)
+        console.log(`🔄 Cache proactivo completado para checklist ${scheduleId}`)
+        return true
+      }
+    } catch (error) {
+      console.error('Error en cache proactivo:', error)
+    }
+
+    return false
+  }
+
+  // Cache masivo de checklists pendientes (para preparar modo offline)
+  async massiveCachePreparation() {
+    if (!navigator.onLine) return
+
+    try {
+      const supabase = createBrowserClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+      )
+
+      // Obtener todos los checklists pendientes
+      const { data: schedules, error } = await supabase
+        .from('checklist_schedules')
+        .select(`
+          *,
+          checklists (
+            *,
+            checklist_sections (
+              *,
+              checklist_items (*)
+            ),
+            equipment_models (
+              id, 
+              name, 
+              manufacturer
+            )
+          ),
+          assets (
+            id,
+            name,
+            asset_id,
+            location
+          )
+        `)
+        .eq('status', 'pendiente')
+        .limit(20) // Limitar a 20 para no sobrecargar
+
+      if (!error && schedules) {
+        let cached = 0
+        for (const schedule of schedules) {
+          await this.cacheChecklistTemplate(schedule.id, schedule, schedule.assets)
+          cached++
+        }
+
+        console.log(`🏗️ Preparación masiva completada: ${cached} checklists cacheados`)
+        this.emit('cache-update', { type: 'massive', count: cached })
+        return cached
+      }
+    } catch (error) {
+      console.error('Error en preparación masiva:', error)
+    }
+
+    return 0
+  }
+
+  // Verificar disponibilidad offline de un checklist
+  async isChecklistAvailableOffline(scheduleId: string) {
+    const cached = await this.getCachedChecklistTemplate(scheduleId)
+    return cached !== null
+  }
+
+  // Obtener lista de checklists disponibles offline
+  async getAvailableOfflineChecklists() {
+    const db = await this.getDB()
+    if (!db) return []
+
+    const cached = await db.getAll('checklist-templates')
+    return cached.map(item => ({
+      id: item.id,
+      template: item.template,
+      asset: item.asset,
+      lastUpdated: item.lastUpdated,
+      isRecent: Date.now() - item.lastUpdated < 24 * 60 * 60 * 1000 // Menos de 24 horas
+    }))
   }
   
   // Guardar plantilla de checklist para uso offline
@@ -444,6 +652,24 @@ class OfflineChecklistService {
     for (const template of templates) {
       if (template.lastUpdated < thirtyDaysAgo) {
         await db.delete('checklist-templates', template.id)
+        cleaned++
+      }
+    }
+
+    // Limpiar schedules cache antiguo
+    const schedules = await db.getAll('checklist-schedules')
+    for (const schedule of schedules) {
+      if (schedule.lastUpdated < thirtyDaysAgo) {
+        await db.delete('checklist-schedules', schedule.id)
+        cleaned++
+      }
+    }
+
+    // Limpiar templates cache antiguo
+    const lists = await db.getAll('checklist-lists')
+    for (const list of lists) {
+      if (list.lastUpdated < thirtyDaysAgo) {
+        await db.delete('checklist-lists', list.id)
         cleaned++
       }
     }

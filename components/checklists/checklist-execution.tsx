@@ -132,6 +132,14 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
       try {
         setLoading(true)
         
+        // Cache proactivo inmediato si hay conexión
+        if (isOnline && offlineChecklistService) {
+          const cacheAttempt = await offlineChecklistService.proactivelyCacheChecklist(id)
+          if (cacheAttempt) {
+            console.log('✅ Cache proactivo exitoso')
+          }
+        }
+        
         // Intentar cargar desde cache si estamos offline
         if (!isOnline && offlineChecklistService) {
           const cached = await offlineChecklistService.getCachedChecklistTemplate(id)
@@ -155,80 +163,120 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
             })
             loadFromLocalStorage()
             setLoading(false)
+            toast.success("📱 Checklist cargado desde cache offline")
+            return
+          } else {
+            // Si no hay cache y estamos offline, mostrar error
+            toast.error("❌ Este checklist no está disponible offline. Necesitas conexión a internet.")
+            setLoading(false)
             return
           }
         }
         
-        const supabase = createBrowserClient(
-          process.env.NEXT_PUBLIC_SUPABASE_URL!,
-          process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-        )
-        
-        const { data, error } = await supabase
-          .from('checklist_schedules')
-          .select(`
-            *,
-            checklists (
+        // Si hay conexión, cargar desde servidor
+        if (isOnline) {
+          const supabase = createBrowserClient(
+            process.env.NEXT_PUBLIC_SUPABASE_URL!,
+            process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+          )
+          
+          const { data, error } = await supabase
+            .from('checklist_schedules')
+            .select(`
               *,
-              checklist_sections (
+              checklists (
                 *,
-                checklist_items (*)
+                checklist_sections (
+                  *,
+                  checklist_items (*)
+                ),
+                equipment_models (
+                  id, 
+                  name, 
+                  manufacturer
+                )
               ),
-              equipment_models (
-                id, 
-                name, 
-                manufacturer
+              assets (
+                id,
+                name,
+                asset_id,
+                location
               )
-            ),
-            assets (
-              id,
-              name,
-              asset_id,
-              location
-            )
-          `)
-          .eq('id', id)
-          .single()
-        
-        if (error) throw error
-        
-        if (data) {
-          // Procesar los datos para la estructura esperada
-          const processedData = {
-            id: data.id,
-            name: data.checklists?.name || 'Checklist sin nombre',
-            assetId: data.assets?.id || '',
-            assetCode: data.assets?.asset_id || '',
-            asset: data.assets?.name || '',
-            assetLocation: data.assets?.location || '',
-            modelId: data.checklists?.model_id || '',
-            model: data.checklists?.equipment_models?.name || 'N/A',
-            manufacturer: data.checklists?.equipment_models?.manufacturer || 'N/A',
-            frequency: data.checklists?.frequency || '',
-            sections: data.checklists?.checklist_sections || [],
-            scheduledDate: data.scheduled_date || '',
-            technicianId: data.assigned_to || '',
-            technician: '', // Lo llenaremos después si es necesario
-            maintenance_plan_id: data.maintenance_plan_id || null
+            `)
+            .eq('id', id)
+            .single()
+          
+          if (error) throw error
+          
+          if (data) {
+            // Procesar los datos para la estructura esperada
+            const processedData = {
+              id: data.id,
+              name: data.checklists?.name || 'Checklist sin nombre',
+              assetId: data.assets?.id || '',
+              assetCode: data.assets?.asset_id || '',
+              asset: data.assets?.name || '',
+              assetLocation: data.assets?.location || '',
+              modelId: data.checklists?.model_id || '',
+              model: data.checklists?.equipment_models?.name || 'N/A',
+              manufacturer: data.checklists?.equipment_models?.manufacturer || 'N/A',
+              frequency: data.checklists?.frequency || '',
+              sections: data.checklists?.checklist_sections || [],
+              scheduledDate: data.scheduled_date || '',
+              technicianId: data.assigned_to || '',
+              technician: '', // Lo llenaremos después si es necesario
+              maintenance_plan_id: data.maintenance_plan_id || null
+            }
+            
+            setChecklist(processedData)
+            
+            // Cachear los datos para uso offline
+            if (offlineChecklistService) {
+              await offlineChecklistService.cacheChecklistTemplate(
+                id,
+                data,
+                data.assets
+              )
+              console.log('💾 Checklist cacheado para uso offline')
+            }
+            
+            // Cargar datos guardados localmente si existen
+            loadFromLocalStorage()
           }
-          
-          setChecklist(processedData)
-          
-          // Cachear los datos para uso offline
-          if (offlineChecklistService) {
-            await offlineChecklistService.cacheChecklistTemplate(
-              id,
-              data,
-              data.assets
-            )
-          }
-          
-          // Cargar datos guardados localmente si existen
-          loadFromLocalStorage()
         }
       } catch (error) {
         console.error('Error al cargar el checklist:', error)
-        toast.error("Error al cargar el checklist")
+        
+        // Si hay error de conexión, intentar cargar desde cache
+        if (!isOnline && offlineChecklistService) {
+          const cached = await offlineChecklistService.getCachedChecklistTemplate(id)
+          if (cached) {
+            toast.warning("⚠️ Cargando desde cache debido a problema de conexión")
+            // Procesar datos de cache
+            setChecklist({
+              id: cached.template.id,
+              name: cached.template.checklists?.name || '',
+              assetId: cached.asset?.id || '',
+              assetCode: cached.asset?.asset_id || '',
+              asset: cached.asset?.name || '',
+              assetLocation: cached.asset?.location || '',
+              modelId: cached.template.checklists?.model_id || '',
+              model: cached.template.checklists?.equipment_models?.name || 'N/A',
+              manufacturer: cached.template.checklists?.equipment_models?.manufacturer || 'N/A',
+              frequency: cached.template.checklists?.frequency || '',
+              sections: cached.template.checklists?.checklist_sections || [],
+              scheduledDate: cached.template.scheduled_date || '',
+              technicianId: cached.template.assigned_to || '',
+              technician: cached.template.profiles ? `${cached.template.profiles.nombre} ${cached.template.profiles.apellido}` : '',
+              maintenance_plan_id: cached.template.maintenance_plan_id || null
+            })
+            loadFromLocalStorage()
+          } else {
+            toast.error("❌ Error al cargar el checklist y no hay versión offline disponible")
+          }
+        } else {
+          toast.error("❌ Error al cargar el checklist")
+        }
       } finally {
         setLoading(false)
       }
