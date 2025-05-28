@@ -57,7 +57,7 @@ import { FinancialInfoTab } from "./tabs/financial-info-tab"
 import { MaintenancePlanTab } from "./tabs/maintenance-plan-tab"
 import { IncidentsTab } from "./tabs/incidents-tab"
 import { DocumentsTab } from "./tabs/documents-tab"
-import { PhotoUploadDialog } from "./dialogs/photo-upload-dialog"
+import { EvidenceUpload, EvidencePhoto } from "@/components/ui/evidence-upload"
 import { IncidentRegistrationDialog } from "./dialogs/incident-registration-dialog"
 import { MaintenanceRegistrationDialog } from "./dialogs/maintenance-registration-dialog"
 import { MaintenanceTasksDialog } from "./dialogs/maintenance-tasks-dialog"
@@ -172,14 +172,6 @@ const formSchema = z.object({
 
 type FormValues = z.infer<typeof formSchema>
 
-// Interfaz para fotos con descripción
-interface PhotoWithDescription {
-  file: File
-  preview: string
-  description: string
-  category?: string
-}
-
 interface AssetEditFormProps {
   assetId: string
 }
@@ -191,7 +183,7 @@ export function AssetEditForm({ assetId }: AssetEditFormProps) {
   const [isLoading, setIsLoading] = useState(true)
   
   // Estados para el manejo de fotos
-  const [uploadedPhotos, setUploadedPhotos] = useState<PhotoWithDescription[]>([])
+  const [uploadedPhotos, setUploadedPhotos] = useState<EvidencePhoto[]>([])
   const [photoUploadOpen, setPhotoUploadOpen] = useState(false)
   
   // Estados para el manejo de incidentes
@@ -368,6 +360,33 @@ export function AssetEditForm({ assetId }: AssetEditFormProps) {
               endDate: asset.insurance_end_date ? new Date(asset.insurance_end_date) : undefined
             }
           })
+          
+          // Load existing photos
+          if (asset.photos && Array.isArray(asset.photos) && asset.photos.length > 0) {
+            const existingPhotos: EvidencePhoto[] = asset.photos.map((photoUrl: string, index: number) => {
+              // Extract category from filename if possible
+              const urlParts = photoUrl.split('/')
+              const filename = urlParts[urlParts.length - 1]
+              const filenameParts = filename.split('-')
+              let category = 'general'
+              
+              // Try to extract category from filename pattern: timestamp-category-id.ext
+              if (filenameParts.length >= 3) {
+                category = filenameParts[1]
+              }
+              
+              return {
+                id: crypto.randomUUID(),
+                url: photoUrl,
+                description: `Foto ${index + 1}`,
+                category: category,
+                uploaded_at: new Date().toISOString(),
+              }
+            })
+            
+            setUploadedPhotos(existingPhotos)
+            console.log(`Loaded ${existingPhotos.length} existing photos for asset`)
+          }
         }
 
 
@@ -850,21 +869,39 @@ export function AssetEditForm({ assetId }: AssetEditFormProps) {
       
       // Upload each new photo
       for (const photo of uploadedPhotos) {
-        const fileName = `${assetId}/${Date.now()}-${photo.category || 'general'}-${photo.file.name}`
-        const { data: uploadData, error } = await supabase.storage
-          .from("asset-photos")
-          .upload(fileName, photo.file)
-        
-        if (error) {
-          throw error
+        // Only upload photos that have files (new photos)
+        if (photo.file) {
+          // Create filename with proper structure: assetId/timestamp-category-originalname
+          const timestamp = Date.now()
+          const category = photo.category || 'general'
+          const fileExt = photo.file.name.split('.').pop()
+          const fileName = `${assetId}/${timestamp}-${category}-${photo.id}.${fileExt}`
+          
+          console.log(`Uploading photo: ${fileName}`)
+          
+          const { data: uploadData, error } = await supabase.storage
+            .from("asset-photos")
+            .upload(fileName, photo.file, {
+              cacheControl: '3600',
+              upsert: false
+            })
+          
+          if (error) {
+            console.error(`Error uploading ${fileName}:`, error)
+            throw error
+          }
+          
+          // Get public URL
+          const { data: publicUrlData } = supabase.storage
+            .from("asset-photos")
+            .getPublicUrl(fileName)
+          
+          photoUrls.push(publicUrlData.publicUrl)
+          console.log(`Successfully uploaded: ${publicUrlData.publicUrl}`)
+        } else if (photo.url && !photo.url.startsWith('blob:')) {
+          // This is an existing photo that's already uploaded
+          photoUrls.push(photo.url)
         }
-        
-        // Get public URL
-        const { data: publicUrlData } = supabase.storage
-          .from("asset-photos")
-          .getPublicUrl(fileName)
-        
-        photoUrls.push(publicUrlData.publicUrl)
       }
 
       // Get existing photos from the asset
@@ -878,9 +915,9 @@ export function AssetEditForm({ assetId }: AssetEditFormProps) {
         throw fetchError
       }
 
-      // Combine existing photos with new ones
-      const existingPhotos = existingAsset?.photos || []
-      const allPhotos = [...existingPhotos, ...photoUrls]
+      // Use only the photos from current editing session
+      // If user wants to keep existing photos, they should be loaded in uploadedPhotos
+      const allPhotos = photoUrls
 
       // Update asset data
       const assetDataToUpdate = {
@@ -1169,11 +1206,15 @@ export function AssetEditForm({ assetId }: AssetEditFormProps) {
       </Form>
 
       {/* Diálogo para subir fotos */}
-      <PhotoUploadDialog
+      <EvidenceUpload
         open={photoUploadOpen}
         onOpenChange={setPhotoUploadOpen}
-        uploadedPhotos={uploadedPhotos}
-        setUploadedPhotos={setUploadedPhotos}
+        evidence={uploadedPhotos}
+        setEvidence={setUploadedPhotos}
+        context="asset"
+        assetId={assetId}
+        title="Gestión de Fotografías del Activo"
+        description="Suba múltiples fotografías y clasifíquelas según el área o componente del equipo"
       />
 
       {/* Diálogo para registrar incidentes */}

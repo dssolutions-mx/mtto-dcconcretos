@@ -87,15 +87,6 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
         m.maintenance_plan_id === interval.id
       );
       
-      // Add debug logging
-      console.log(`Checking if maintenance for interval ${interval.id} was performed:`, {
-        interval_id: interval.id,
-        interval_description: interval.description,
-        maintenances_with_matching_plan_id: maintenanceHistory
-          .filter(m => m.maintenance_plan_id === interval.id)
-          .map(m => ({id: m.id, date: m.date, maintenance_plan_id: m.maintenance_plan_id}))
-      });
-      
       let lastMaintenanceDate = null;
       let lastMaintenanceHoursOfType = 0;
       let wasPerformed = false;
@@ -134,9 +125,15 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
             urgencyLevel = 'medium';
           }
         } else {
-          // Las horas actuales aún no llegan a este intervalo - PRÓXIMO
+          // Las horas actuales aún no llegan a este intervalo - PRÓXIMO/PROGRAMADO
           progress = Math.round((currentHours / intervalHours) * 100);
-          if (progress >= 90) {
+          const hoursRemaining = intervalHours - currentHours;
+          
+          // Nuevo criterio: urgencia si está a 100 horas o menos del servicio
+          if (hoursRemaining <= 100) {
+            status = 'upcoming';
+            urgencyLevel = 'high';
+          } else if (hoursRemaining <= 200) {
             status = 'upcoming';
             urgencyLevel = 'medium';
           } else {
@@ -160,19 +157,20 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
       };
     });
     
-    // Filtrar - mostrar solo los relevantes
+    // Filtrar - mostrar todos los relevantes incluyendo futuros
     const filteredPending = pendingList.filter(interval => {
-      // Mostrar solo:
+      // Mostrar:
       // 1. Vencidos (overdue) - nunca realizados y ya pasaron las horas
       // 2. Próximos a vencer (upcoming) - nunca realizados y cerca de las horas
       // 3. Cubiertos (covered) - nunca realizados pero cubiertos por posteriores
-      // NO mostrar: completed (ya realizados) ni scheduled (muy lejanos)
-      return ['overdue', 'upcoming', 'covered'].includes(interval.status);
+      // 4. Programados (scheduled) - todos los futuros para vista completa
+      // NO mostrar solo: completed (ya realizados)
+      return ['overdue', 'upcoming', 'covered', 'scheduled'].includes(interval.status);
     });
     
     // Ordenar por prioridad
     const sorted = filteredPending.sort((a, b) => {
-      const priorityOrder = { 'overdue': 3, 'upcoming': 2, 'covered': 1 };
+      const priorityOrder = { 'overdue': 4, 'upcoming': 3, 'scheduled': 2, 'covered': 1 };
       const priorityA = priorityOrder[a.status as keyof typeof priorityOrder] || 0;
       const priorityB = priorityOrder[b.status as keyof typeof priorityOrder] || 0;
       
@@ -250,23 +248,39 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
     
     // Para mantenimientos que nunca se han realizado
     const targetHours = interval.intervalHours;
-    const hoursOverdue = currentHours - targetHours;
+    const hoursRemaining = targetHours - currentHours;
     
     return (
       <div className="space-y-1">
         <div className="font-medium">{targetHours} horas</div>
-        {hoursOverdue > 0 ? (
+        {interval.status === 'overdue' ? (
           <div className="text-xs text-red-600 font-medium">
-            ¡{hoursOverdue} horas vencido!
+            ¡{Math.abs(hoursRemaining)} horas vencido!
           </div>
         ) : (
-          <div className="text-xs text-muted-foreground">
-            Faltan: {Math.abs(hoursOverdue)} horas
+          <div className={`text-xs ${
+            hoursRemaining <= 100 ? 'text-red-600 font-medium' :
+            hoursRemaining <= 200 ? 'text-amber-600 font-medium' :
+            'text-muted-foreground'
+          }`}>
+            Faltan: {hoursRemaining} horas
           </div>
         )}
-        <div className="text-xs text-orange-600">
-          Nunca realizado
-        </div>
+        {!interval.wasPerformed && (
+          <div className="text-xs text-orange-600">
+            Nunca realizado
+          </div>
+        )}
+        {interval.status === 'upcoming' && interval.urgencyLevel === 'high' && (
+          <div className="text-xs text-red-600 font-medium mt-1">
+            🚨 Urgente - Próximo en ≤100h
+          </div>
+        )}
+        {interval.status === 'upcoming' && interval.urgencyLevel === 'medium' && (
+          <div className="text-xs text-amber-600 font-medium mt-1">
+            ⚠️ Próximo - En ≤200h
+          </div>
+        )}
       </div>
     );
   };
@@ -333,7 +347,7 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
                   Cada checkpoint de mantenimiento se identifica por su tipo (Preventivo, etc.) y la frecuencia de horas.
                 </p>
               </div>
-              <div className="mt-2 grid grid-cols-2 sm:grid-cols-4 gap-2">
+              <div className="mt-2 grid grid-cols-2 sm:grid-cols-5 gap-2">
                 <div className="flex items-center gap-2 text-xs">
                   <div className="h-3 w-3 rounded-full bg-red-600"></div>
                   <span>Vencido (urgente)</span>
@@ -344,11 +358,15 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
                 </div>
                 <div className="flex items-center gap-2 text-xs">
                   <div className="h-3 w-3 rounded-full bg-amber-500"></div>
-                  <span>Próximo</span>
+                  <span>Próximo (≤100h)</span>
                 </div>
                 <div className="flex items-center gap-2 text-xs">
                   <div className="h-3 w-3 rounded-full bg-blue-400"></div>
                   <span>Cubierto</span>
+                </div>
+                <div className="flex items-center gap-2 text-xs">
+                  <div className="h-3 w-3 rounded-full bg-green-500"></div>
+                  <span>Programado</span>
                 </div>
               </div>
             </CardHeader>
@@ -379,8 +397,10 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
                           className={
                             interval.status === 'overdue' && interval.urgencyLevel === 'high' ? "bg-red-50" : 
                             interval.status === 'overdue' && interval.urgencyLevel === 'medium' ? "bg-orange-50" :
+                            interval.status === 'upcoming' && interval.urgencyLevel === 'high' ? "bg-red-50" :
                             interval.status === 'upcoming' ? "bg-amber-50" : 
-                            interval.status === 'covered' ? "bg-blue-50" : ""
+                            interval.status === 'covered' ? "bg-blue-50" : 
+                            interval.status === 'scheduled' ? "bg-green-50" : ""
                           }
                         >
                           <TableCell>
@@ -389,8 +409,10 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
                                 variant={
                                   interval.status === 'overdue' && interval.urgencyLevel === 'high' ? "destructive" :
                                   interval.status === 'overdue' ? "default" :
+                                  interval.status === 'upcoming' && interval.urgencyLevel === 'high' ? "destructive" :
                                   interval.status === 'upcoming' ? "default" : 
-                                  interval.status === 'covered' ? "secondary" : "outline"
+                                  interval.status === 'covered' ? "secondary" : 
+                                  interval.status === 'scheduled' ? "outline" : "outline"
                                 }
                                 className="whitespace-nowrap text-xs inline-flex mb-1"
                               >
@@ -437,8 +459,7 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
                             ) : (
                               <div className="text-xs text-muted-foreground mt-1">
                                 {interval.status === 'covered' 
-                                  ? `Cubierto por mantenimientos posteriores`
-                                  : `Desde 0h hasta las ${interval.intervalHours}h`
+                                  ? `Cubierto por mantenimientos posteriores`                                  : `Desde 0h hasta las ${interval.intervalHours}h`
                                 }
                               </div>
                             )}
@@ -449,8 +470,10 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
                                 className={`h-2.5 rounded-full ${
                                   interval.status === 'overdue' && interval.urgencyLevel === 'high' ? 'bg-red-600' :
                                   interval.status === 'overdue' ? 'bg-orange-500' :
+                                  interval.status === 'upcoming' && interval.urgencyLevel === 'high' ? 'bg-red-500' :
                                   interval.status === 'upcoming' ? 'bg-amber-500' : 
-                                  interval.status === 'covered' ? 'bg-blue-400' : 'bg-gray-400'
+                                  interval.status === 'covered' ? 'bg-blue-400' : 
+                                  interval.status === 'scheduled' ? 'bg-green-500' : 'bg-gray-400'
                                 }`}
                                 style={{ width: `${Math.min(interval.progress, 100)}%` }}
                               ></div>
@@ -466,9 +489,24 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
                                 {interval.urgencyLevel === 'high' ? '🚨 Muy vencido' : '⚠️ Vencido'}
                               </div>
                             )}
+                            {interval.status === 'upcoming' && interval.urgencyLevel === 'high' && (
+                              <div className="text-xs text-red-600 font-medium mt-1">
+                                🚨 Urgente - Próximo en ≤100h
+                              </div>
+                            )}
+                            {interval.status === 'upcoming' && interval.urgencyLevel === 'medium' && (
+                              <div className="text-xs text-amber-600 font-medium mt-1">
+                                ⚠️ Próximo - En ≤200h
+                              </div>
+                            )}
                             {interval.status === 'covered' && (
                               <div className="text-xs text-blue-600 font-medium mt-1">
                                 ℹ️ Cubierto por mantenimiento posterior
+                              </div>
+                            )}
+                            {interval.status === 'scheduled' && (
+                              <div className="text-xs text-green-600 font-medium mt-1">
+                                📅 Programado para el futuro
                               </div>
                             )}
                           </TableCell>

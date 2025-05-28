@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { cn } from "@/lib/utils"
+import { EvidencePhoto } from "@/components/ui/evidence-upload"
 
 interface FormValues {
   assetId: string
@@ -30,17 +31,10 @@ interface FormValues {
   registrationInfo?: string
 }
 
-interface PhotoWithDescription {
-  file: File
-  preview: string
-  description: string
-  category?: string
-}
-
 interface TechnicalInfoTabProps {
   control: Control<FormValues>
-  uploadedPhotos: PhotoWithDescription[]
-  setUploadedPhotos: (photos: PhotoWithDescription[]) => void
+  uploadedPhotos: EvidencePhoto[]
+  setUploadedPhotos: (photos: EvidencePhoto[]) => void
   setPhotoUploadOpen: (open: boolean) => void
 }
 
@@ -189,7 +183,7 @@ export function TechnicalInfoTab({
                   }
                   acc[category].push({ ...photo, originalIndex: index })
                   return acc
-                }, {} as Record<string, (PhotoWithDescription & { originalIndex: number })[]>)
+                }, {} as Record<string, (EvidencePhoto & { originalIndex: number })[]>)
               ).map(([category, photos]) => (
                 <div key={category} className="space-y-2">
                   <div className="flex items-center gap-2">
@@ -202,7 +196,7 @@ export function TechnicalInfoTab({
                     {photos.map((photo) => (
                       <div key={photo.originalIndex} className="relative border rounded-lg overflow-hidden group">
                         <img
-                          src={photo.preview || "/placeholder.svg"}
+                          src={photo.url || "/placeholder.svg"}
                           alt={photo.description || `Foto ${photo.originalIndex + 1}`}
                           className="w-full h-32 object-cover"
                         />

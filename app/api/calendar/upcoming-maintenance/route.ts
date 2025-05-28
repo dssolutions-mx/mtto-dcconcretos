@@ -190,10 +190,15 @@ export async function GET(request: Request) {
             } else {
               // Las horas actuales aún no llegan a este intervalo
               estimatedDate = calculateEstimatedDate(currentValue, targetValue)
-              const progress = Math.round((currentValue / intervalValue) * 100)
               
-              if (progress >= 90) {
+              // NUEVA LÓGICA: usar 100 horas como criterio de urgencia (igual que página individual)
+              const hoursRemaining = intervalValue - currentValue
+              
+              if (hoursRemaining <= 100) {
                 status = 'upcoming'
+                urgency = 'high'
+              } else if (hoursRemaining <= 200) {
+                status = 'upcoming' 
                 urgency = 'medium'
               } else {
                 status = 'scheduled'
@@ -223,9 +228,14 @@ export async function GET(request: Request) {
               estimatedDate = new Date()
             } else {
               estimatedDate = calculateEstimatedDateByKm(currentValue, targetValue)
-              const progress = Math.round((currentValue / intervalValue) * 100)
               
-              if (progress >= 90) {
+              // NUEVA LÓGICA: usar 100 km como criterio de urgencia (igual que para horas)
+              const kmRemaining = intervalValue - currentValue
+              
+              if (kmRemaining <= 100) {
+                status = 'upcoming'
+                urgency = 'high'
+              } else if (kmRemaining <= 200) {
                 status = 'upcoming'
                 urgency = 'medium'
               } else {
@@ -294,8 +304,8 @@ export async function GET(request: Request) {
       default:
         // Ordenar por prioridad (status, luego urgencia, luego fecha)
         filteredMaintenances.sort((a, b) => {
-          // Primero por status
-          const statusOrder = { 'overdue': 3, 'upcoming': 2, 'covered': 1 }
+          // Primero por status - MISMO ORDEN QUE PÁGINA INDIVIDUAL
+          const statusOrder = { 'overdue': 4, 'upcoming': 3, 'scheduled': 2, 'covered': 1 }
           const statusA = statusOrder[a.status as keyof typeof statusOrder] || 0
           const statusB = statusOrder[b.status as keyof typeof statusOrder] || 0
           

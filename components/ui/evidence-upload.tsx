@@ -49,7 +49,7 @@ interface EvidenceUploadProps {
   onOpenChange: (open: boolean) => void
   evidence: EvidencePhoto[]
   setEvidence: (evidence: EvidencePhoto[]) => void
-  context: "creation" | "completion" | "maintenance" | "checklist" | "incident"
+  context: "creation" | "completion" | "maintenance" | "checklist" | "incident" | "asset"
   workOrderId?: string
   assetId?: string
   title?: string
@@ -100,6 +100,23 @@ const EVIDENCE_CATEGORIES = {
     { value: "acciones_inmediatas", label: "Acciones Inmediatas", icon: "🚨" },
     { value: "estado_final", label: "Estado Final", icon: "✅" },
     { value: "documentacion_soporte", label: "Documentación de Soporte", icon: "📄" },
+  ],
+  asset: [
+    { value: "frontal", label: "Vista Frontal", icon: "📷" },
+    { value: "lateral", label: "Vista Lateral", icon: "↔️" },
+    { value: "posterior", label: "Vista Posterior", icon: "🔄" },
+    { value: "superior", label: "Vista Superior", icon: "⬆️" },
+    { value: "motor", label: "Motor", icon: "⚙️" },
+    { value: "compresor", label: "Compresor", icon: "🔧" },
+    { value: "panel", label: "Panel de Control", icon: "🎛️" },
+    { value: "conexiones", label: "Conexiones", icon: "🔌" },
+    { value: "filtros", label: "Filtros", icon: "🚰" },
+    { value: "lubricacion", label: "Sistema de Lubricación", icon: "🛢️" },
+    { value: "refrigeracion", label: "Sistema de Refrigeración", icon: "❄️" },
+    { value: "tablero", label: "Tablero Eléctrico", icon: "⚡" },
+    { value: "placa", label: "Placa de Identificación", icon: "🏷️" },
+    { value: "desgaste", label: "Desgaste/Daño", icon: "⚠️" },
+    { value: "instalacion", label: "Instalación", icon: "🏗️" },
   ]
 }
 
@@ -118,9 +135,31 @@ export function EvidenceUpload({
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid")
   const [uploading, setUploading] = useState(false)
   const [previewImage, setPreviewImage] = useState<string | null>(null)
+  const [customCategories, setCustomCategories] = useState<Array<{ value: string; label: string; icon: string }>>([])
+  const [newCategoryName, setNewCategoryName] = useState("")
+  const [showAddCategory, setShowAddCategory] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const categories = EVIDENCE_CATEGORIES[context] || EVIDENCE_CATEGORIES.creation
+  const categories = [...(EVIDENCE_CATEGORIES[context] || EVIDENCE_CATEGORIES.creation), ...customCategories]
+
+  const addCustomCategory = useCallback(() => {
+    if (newCategoryName.trim() && !categories.find(cat => cat.value === newCategoryName.toLowerCase().replace(/\s+/g, '_'))) {
+      const newCategory = {
+        value: newCategoryName.toLowerCase().replace(/\s+/g, '_'),
+        label: newCategoryName.trim(),
+        icon: "📋"
+      }
+      setCustomCategories(prev => [...prev, newCategory])
+      setNewCategoryName("")
+      setShowAddCategory(false)
+      
+      toast({
+        title: "Categoría agregada",
+        description: `La categoría "${newCategory.label}" ha sido agregada exitosamente.`,
+        variant: "default",
+      })
+    }
+  }, [newCategoryName, categories])
 
   const handleFileUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
@@ -194,7 +233,9 @@ export function EvidenceUpload({
       ? "checklist-photos" 
       : context === "incident" 
         ? "incident-evidence" 
-        : "work-order-evidence"
+        : context === "asset"
+          ? "asset-photos"
+          : "work-order-evidence"
     
     // Create unique filename
     const fileExt = evidenceItem.file.name.split('.').pop()
@@ -240,7 +281,20 @@ export function EvidenceUpload({
     try {
       setUploading(true)
       
-      // Upload all evidence to Supabase
+      // For asset context, don't upload to Supabase, just save locally
+      if (context === "asset") {
+        setEvidence([...evidence, ...validEvidence])
+        setPendingEvidence([])
+        onOpenChange(false)
+        
+        toast({
+          title: "Éxito",
+          description: `${validEvidence.length} evidencia(s) agregada(s) correctamente`
+        })
+        return
+      }
+      
+      // For other contexts, upload all evidence to Supabase
       const uploadedEvidence = await Promise.all(
         validEvidence.map(item => uploadToSupabase(item))
       )
@@ -404,6 +458,7 @@ export function EvidenceUpload({
                       getCategoryInfo={getCategoryInfo}
                       onRemove={removeEvidence}
                       onPreview={openPreview}
+                      setShowAddCategory={setShowAddCategory}
                     />
                   ))}
                 </div>
@@ -461,6 +516,70 @@ export function EvidenceUpload({
                 Haz clic fuera de la imagen o presiona el botón X para cerrar
               </div>
             </div>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* Custom Category Creation Modal */}
+      {showAddCategory && (
+        <Dialog open={showAddCategory} onOpenChange={setShowAddCategory}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Plus className="h-5 w-5" />
+                Agregar Categoría Personalizada
+              </DialogTitle>
+              <DialogDescription>
+                Crea una nueva categoría para clasificar tu evidencia
+              </DialogDescription>
+            </DialogHeader>
+            
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="new-category-name">Nombre de la categoría</Label>
+                <Input
+                  id="new-category-name"
+                  value={newCategoryName}
+                  onChange={(e) => setNewCategoryName(e.target.value)}
+                  placeholder="Ej: Inspección de válvulas"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault()
+                      addCustomCategory()
+                    }
+                  }}
+                />
+              </div>
+              
+              {newCategoryName.trim() && (
+                <div className="p-3 bg-muted rounded-lg">
+                  <p className="text-sm text-muted-foreground mb-2">Vista previa:</p>
+                  <div className="flex items-center gap-2">
+                    <span>📋</span>
+                    <span className="font-medium">{newCategoryName.trim()}</span>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setShowAddCategory(false)
+                  setNewCategoryName("")
+                }}
+              >
+                Cancelar
+              </Button>
+              <Button
+                onClick={addCustomCategory}
+                disabled={!newCategoryName.trim()}
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                Agregar Categoría
+              </Button>
+            </DialogFooter>
           </DialogContent>
         </Dialog>
       )}
@@ -551,6 +670,7 @@ const EvidenceClassificationCard = React.memo(function EvidenceClassificationCar
   getCategoryInfo,
   onRemove,
   onPreview,
+  setShowAddCategory,
 }: {
   evidence: EvidencePhoto
   index: number
@@ -560,6 +680,7 @@ const EvidenceClassificationCard = React.memo(function EvidenceClassificationCar
   getCategoryInfo: (categoryValue: string) => { value: string; label: string; icon: string }
   onRemove: (index: number) => void
   onPreview: (imageUrl: string) => void
+  setShowAddCategory: (show: boolean) => void
 }) {
   const isImage = evidence.file?.type.startsWith('image/') || false
   const categoryInfo = evidence.category ? getCategoryInfo(evidence.category) : null
@@ -620,7 +741,19 @@ const EvidenceClassificationCard = React.memo(function EvidenceClassificationCar
           <div className="md:col-span-2 space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor={`category-${index}`}>Categoría</Label>
+                <div className="flex items-center justify-between">
+                  <Label htmlFor={`category-${index}`}>Categoría</Label>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setShowAddCategory(true)}
+                    className="h-6 px-2 text-xs"
+                  >
+                    <Plus className="h-3 w-3 mr-1" />
+                    Nueva
+                  </Button>
+                </div>
                 <Select
                   value={evidence.category}
                   onValueChange={(value) => updateEvidenceCategory(index, value)}
