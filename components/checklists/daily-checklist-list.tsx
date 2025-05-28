@@ -101,6 +101,7 @@ export function DailyChecklistList() {
                   <TableHead>ID</TableHead>
                   <TableHead>Nombre</TableHead>
                   <TableHead>Equipo</TableHead>
+                  <TableHead>Tipo</TableHead>
                   <TableHead>Fecha Programada</TableHead>
                   <TableHead>Estado</TableHead>
                   <TableHead>Asignado a</TableHead>
@@ -111,12 +112,37 @@ export function DailyChecklistList() {
                 {filteredChecklists.map((checklist) => (
                   <TableRow key={checklist.id}>
                     <TableCell className="font-medium">{checklist.id.slice(0, 8)}</TableCell>
-                    <TableCell>{checklist.checklists?.name || 'Sin nombre'}</TableCell>
                     <TableCell>
-                      {checklist.assets?.name || 'Sin activo'}
-                      <div className="text-xs text-muted-foreground">
-                        {checklist.assets?.asset_id || ''}
+                      <div>
+                        <p className="font-medium">{checklist.checklists?.name || 'Sin nombre'}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {checklist.checklists?.equipment_models?.manufacturer} {checklist.checklists?.equipment_models?.name}
+                        </p>
                       </div>
+                    </TableCell>
+                    <TableCell>
+                      <div>
+                        <p className="font-medium">{checklist.assets?.name || 'Sin activo'}</p>
+                        <p className="text-xs text-muted-foreground">
+                          ID: {checklist.assets?.asset_id || 'N/A'}
+                        </p>
+                        {checklist.assets?.location && (
+                          <p className="text-xs text-muted-foreground">
+                            📍 {checklist.assets.location}
+                          </p>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      {checklist.maintenance_plan_id ? (
+                        <Badge variant="secondary" className="bg-blue-100 text-blue-800">
+                          Mantenimiento Preventivo
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline">
+                          Rutinario
+                        </Badge>
+                      )}
                     </TableCell>
                     <TableCell>{formatDate(checklist.scheduled_date)}</TableCell>
                     <TableCell>{getStatusBadge(checklist.status)}</TableCell>

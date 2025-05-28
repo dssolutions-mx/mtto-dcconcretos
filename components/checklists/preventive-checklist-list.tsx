@@ -14,26 +14,32 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
-import { ClipboardCheck, Edit, Eye, MoreHorizontal, Search, Trash, Loader2 } from "lucide-react"
+import { ClipboardCheck, Edit, Eye, MoreHorizontal, Search, Trash, Loader2, Wrench } from "lucide-react"
 import Link from "next/link"
 import { useChecklistSchedules } from "@/hooks/useChecklists"
 import { format, parseISO } from "date-fns"
 import { es } from "date-fns/locale"
 
-export function MonthlyChecklistList() {
+export function PreventiveChecklistList() {
   const [searchTerm, setSearchTerm] = useState("")
   const { schedules, loading, error, fetchSchedules } = useChecklistSchedules()
   
   useEffect(() => {
-    // Fetch monthly checklists
-    fetchSchedules('pendiente', 'mensual')
+    // Fetch all checklists (we'll filter for preventive ones)
+    fetchSchedules('pendiente')
   }, [fetchSchedules])
 
-  const filteredChecklists = schedules.filter(
+  // Filter only preventive maintenance checklists
+  const preventiveChecklists = schedules.filter(
+    (checklist) => checklist.maintenance_plan_id !== null && checklist.maintenance_plan_id !== undefined
+  )
+
+  const filteredChecklists = preventiveChecklists.filter(
     (checklist) =>
       checklist.checklists?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       checklist.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
       checklist.assets?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      checklist.assets?.asset_id?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       checklist.profiles?.nombre?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       checklist.profiles?.apellido?.toLowerCase().includes(searchTerm.toLowerCase())
   )
@@ -43,11 +49,11 @@ export function MonthlyChecklistList() {
       case "completado":
         return <Badge className="bg-green-500">Completado</Badge>
       case "pendiente":
-        return <Badge variant="outline">Programado</Badge>
-      case "vencido":
-        return <Badge variant="destructive">Atrasado</Badge>
+        return <Badge variant="outline">Pendiente</Badge>
       case "con_problemas":
         return <Badge variant="destructive">Con Problemas</Badge>
+      case "vencido":
+        return <Badge variant="destructive">Vencido</Badge>
       default:
         return <Badge variant="secondary">{status}</Badge>
     }
@@ -65,7 +71,10 @@ export function MonthlyChecklistList() {
     <Card>
       <CardHeader>
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-          <CardTitle>Checklists Mensuales</CardTitle>
+          <div className="flex items-center gap-2">
+            <Wrench className="h-5 w-5 text-blue-600" />
+            <CardTitle>Checklists de Mantenimiento Preventivo</CardTitle>
+          </div>
           <div className="relative w-full md:w-64">
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
@@ -91,7 +100,9 @@ export function MonthlyChecklistList() {
           </div>
         ) : filteredChecklists.length === 0 ? (
           <div className="text-center py-8 text-muted-foreground">
-            No se encontraron checklists mensuales.
+            <Wrench className="h-12 w-12 mx-auto mb-4 text-muted-foreground/50" />
+            <p className="text-lg font-medium mb-2">No hay checklists de mantenimiento preventivo</p>
+            <p className="text-sm">Los checklists aparecerán aquí cuando se programen desde una orden de trabajo de mantenimiento.</p>
           </div>
         ) : (
           <div className="rounded-md border">
@@ -100,8 +111,8 @@ export function MonthlyChecklistList() {
                 <TableRow>
                   <TableHead>ID</TableHead>
                   <TableHead>Nombre</TableHead>
-                  <TableHead>Equipo</TableHead>
-                  <TableHead>Tipo</TableHead>
+                  <TableHead>Equipo/Activo</TableHead>
+                  <TableHead>Frecuencia</TableHead>
                   <TableHead>Fecha Programada</TableHead>
                   <TableHead>Estado</TableHead>
                   <TableHead>Asignado a</TableHead>
@@ -134,15 +145,9 @@ export function MonthlyChecklistList() {
                       </div>
                     </TableCell>
                     <TableCell>
-                      {checklist.maintenance_plan_id ? (
-                        <Badge variant="secondary" className="bg-blue-100 text-blue-800">
-                          Mantenimiento Preventivo
-                        </Badge>
-                      ) : (
-                        <Badge variant="outline">
-                          Rutinario
-                        </Badge>
-                      )}
+                      <Badge variant="outline" className="capitalize">
+                        {checklist.checklists?.frequency || 'N/A'}
+                      </Badge>
                     </TableCell>
                     <TableCell>{formatDate(checklist.scheduled_date)}</TableCell>
                     <TableCell>{getStatusBadge(checklist.status)}</TableCell>
@@ -190,9 +195,9 @@ export function MonthlyChecklistList() {
       </CardContent>
       <CardFooter className="flex justify-between">
         <div className="text-sm text-muted-foreground">
-          Mostrando {filteredChecklists.length} de {schedules.length} checklists
+          Mostrando {filteredChecklists.length} de {preventiveChecklists.length} checklists de mantenimiento preventivo
         </div>
       </CardFooter>
     </Card>
   )
-}
+} 

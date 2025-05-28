@@ -164,7 +164,9 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
               id: cached.template.id,
               name: cached.template.checklists?.name || '',
               assetId: cached.asset?.id || '',
+              assetCode: cached.asset?.asset_id || '',
               asset: cached.asset?.name || '',
+              assetLocation: cached.asset?.location || '',
               modelId: cached.template.checklists?.model_id || '',
               model: cached.template.checklists?.equipment_models?.name || 'N/A',
               manufacturer: cached.template.checklists?.equipment_models?.manufacturer || 'N/A',
@@ -172,7 +174,8 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
               sections: cached.template.checklists?.checklist_sections || [],
               scheduledDate: cached.template.scheduled_date || '',
               technicianId: cached.template.assigned_to || '',
-              technician: cached.template.profiles ? `${cached.template.profiles.nombre} ${cached.template.profiles.apellido}` : ''
+              technician: cached.template.profiles ? `${cached.template.profiles.nombre} ${cached.template.profiles.apellido}` : '',
+              maintenance_plan_id: cached.template.maintenance_plan_id || null
             })
             loadFromLocalStorage()
             setLoading(false)
@@ -219,7 +222,9 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
             id: data.id,
             name: data.checklists?.name || 'Checklist sin nombre',
             assetId: data.assets?.id || '',
+            assetCode: data.assets?.asset_id || '',
             asset: data.assets?.name || '',
+            assetLocation: data.assets?.location || '',
             modelId: data.checklists?.model_id || '',
             model: data.checklists?.equipment_models?.name || 'N/A',
             manufacturer: data.checklists?.equipment_models?.manufacturer || 'N/A',
@@ -227,7 +232,8 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
             sections: data.checklists?.checklist_sections || [],
             scheduledDate: data.scheduled_date || '',
             technicianId: data.assigned_to || '',
-            technician: '' // Lo llenaremos después si es necesario
+            technician: '', // Lo llenaremos después si es necesario
+            maintenance_plan_id: data.maintenance_plan_id || null
           }
           
           setChecklist(processedData)
@@ -310,15 +316,18 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
     if (!checklist) return []
     
     for (const section of checklist.sections) {
-      for (const item of section.items) {
-        if (itemStatus[item.id]) {
-          completedItems.push({
-            id: crypto.randomUUID(),
-            item_id: item.id,
-            status: itemStatus[item.id],
-            notes: itemNotes[item.id] || null,
-            photo_url: itemPhotos[item.id] || null
-          })
+      const items = section.checklist_items || section.items
+      if (items) {
+        for (const item of items) {
+          if (itemStatus[item.id]) {
+            completedItems.push({
+              id: crypto.randomUUID(),
+              item_id: item.id,
+              status: itemStatus[item.id],
+              notes: itemNotes[item.id] || null,
+              photo_url: itemPhotos[item.id] || null
+            })
+          }
         }
       }
     }
@@ -465,9 +474,12 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
     if (!checklist) return null
     
     for (const section of checklist.sections) {
-      for (const item of section.items) {
-        if (item.id === itemId) {
-          return { section, item }
+      const items = section.checklist_items || section.items
+      if (items) {
+        for (const item of items) {
+          if (item.id === itemId) {
+            return { section, item }
+          }
         }
       }
     }
@@ -480,8 +492,9 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
     
     let total = 0
     checklist.sections.forEach((section: any) => {
-      if (section.items) {
-        total += section.items.length
+      const items = section.checklist_items || section.items
+      if (items) {
+        total += items.length
       }
     })
     return total
@@ -494,18 +507,31 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
   const isChecklistComplete = () => {
     if (!checklist || !checklist.sections) return false
     
-    // Verificar si todos los items requeridos tienen un estado
+    // Verificar si TODOS los items tienen un estado
     let complete = true
+    let totalItems = 0
+    let completedItems = 0
+    
     checklist.sections.forEach((section: any) => {
-      if (section.items) {
-        section.items.forEach((item: any) => {
-          if (item.required && !itemStatus[item.id]) {
+      const items = section.checklist_items || section.items
+      if (items) {
+        items.forEach((item: any) => {
+          totalItems++
+          if (itemStatus[item.id]) {
+            completedItems++
+          } else {
             complete = false
           }
         })
       }
     })
-    return complete && technician.trim() !== "" && signature !== null
+    
+    // Verificar que todos los items estén completados y que se hayan llenado los campos obligatorios
+    return complete && 
+           totalItems > 0 && 
+           completedItems === totalItems && 
+           technician.trim() !== "" && 
+           signature !== null
   }
 
   // Función para sincronizar manualmente
@@ -567,18 +593,55 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
       <Card>
         <CardHeader className="bg-blue-500 text-white">
           <CardTitle className="text-2xl">{checklist.name}</CardTitle>
-          <CardDescription className="text-white/90">
-            {checklist.asset} - {checklist.manufacturer} {checklist.model}
-          </CardDescription>
+          <div className="text-white/90 mt-2">
+            <div className="space-y-1">
+              <div className="font-medium text-lg">{checklist.asset || 'Sin activo'}</div>
+              <div className="text-sm">
+                {checklist.manufacturer} {checklist.model}
+              </div>
+              {checklist.assetCode && (
+                <div className="text-xs opacity-75">
+                  ID del Activo: {checklist.assetCode}
+                </div>
+              )}
+              {checklist.assetLocation && (
+                <div className="text-xs opacity-75">
+                  📍 {checklist.assetLocation}
+                </div>
+              )}
+            </div>
+          </div>
         </CardHeader>
         <CardContent className="pt-6">
+          {checklist.maintenance_plan_id && (
+            <Alert className="mb-4 border-blue-200 bg-blue-50">
+              <AlertTitle className="text-blue-800">
+                Checklist de Mantenimiento Preventivo
+              </AlertTitle>
+              <AlertDescription className="text-blue-700">
+                Este checklist está asociado a una orden de trabajo de mantenimiento preventivo. 
+                Es obligatorio completar todos los items para continuar con el plan de mantenimiento.
+              </AlertDescription>
+            </Alert>
+          )}
+          
           <div className="flex justify-between items-center mb-4">
             <div className="flex items-center gap-2">
               <Clock className="h-5 w-5 text-muted-foreground" />
               <span className="text-sm text-muted-foreground">Fecha: {checklist.scheduledDate}</span>
             </div>
-            <div className="text-sm text-muted-foreground">
-              Completado: {getCompletedItems()}/{getTotalItems()}
+            <div className="flex items-center gap-4">
+              <div className="text-sm text-muted-foreground">
+                Completado: {getCompletedItems()}/{getTotalItems()}
+              </div>
+              <div className="w-32 bg-gray-200 rounded-full h-2">
+                <div 
+                  className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                  style={{ 
+                    width: `${getTotalItems() > 0 ? (getCompletedItems() / getTotalItems()) * 100 : 0}%` 
+                  }}
+                ></div>
+              </div>
             </div>
           </div>
 
@@ -745,19 +808,33 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
           <Button variant="outline" onClick={() => router.back()}>
             Cancelar
           </Button>
-          <Button onClick={handleSubmit} disabled={!isChecklistComplete() || submitting}>
-            {submitting ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Guardando...
-              </>
-            ) : (
-              <>
-                <Save className="mr-2 h-4 w-4" />
-                Completar Checklist
-              </>
-            )}
-          </Button>
+          <div className="flex flex-col items-end gap-2">
+            <div className="text-sm text-muted-foreground">
+              Progreso: {getCompletedItems()}/{getTotalItems()} items completados
+            </div>
+            <Button 
+              onClick={handleSubmit} 
+              disabled={!isChecklistComplete() || submitting}
+              className={!isChecklistComplete() ? "opacity-50 cursor-not-allowed" : ""}
+            >
+              {submitting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Guardando...
+                </>
+              ) : !isChecklistComplete() ? (
+                <>
+                  <X className="mr-2 h-4 w-4" />
+                  Completar todos los items
+                </>
+              ) : (
+                <>
+                  <Save className="mr-2 h-4 w-4" />
+                  Completar Checklist
+                </>
+              )}
+            </Button>
+          </div>
         </div>
       </div>
 
