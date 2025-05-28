@@ -28,6 +28,11 @@ import { cn } from "@/lib/utils"
 import { createClient } from "@/lib/supabase"
 import { toast } from "@/components/ui/use-toast"
 
+// VisuallyHidden component for accessibility
+const VisuallyHidden = ({ children }: { children: React.ReactNode }) => (
+  <span className="sr-only">{children}</span>
+)
+
 export interface EvidencePhoto {
   id: string
   file?: File
@@ -434,21 +439,27 @@ export function EvidenceUpload({
       {/* Image Preview Modal */}
       {previewImage && (
         <Dialog open={!!previewImage} onOpenChange={closePreview}>
-          <DialogContent className="max-w-4xl max-h-[90vh] p-0">
-            <div className="relative">
+          <DialogContent className="max-w-[95vw] max-h-[95vh] p-2 bg-black/90">
+            <VisuallyHidden>
+              <DialogTitle>Vista previa de evidencia</DialogTitle>
+            </VisuallyHidden>
+            <div className="relative w-full h-full flex items-center justify-center">
               <img
                 src={previewImage}
                 alt="Preview"
-                className="w-full h-auto max-h-[85vh] object-contain"
+                className="max-w-full max-h-[90vh] object-contain rounded-lg"
               />
               <Button
                 variant="secondary"
-                size="sm"
-                className="absolute top-4 right-4"
+                size="lg"
+                className="absolute top-4 right-4 bg-white/90 hover:bg-white"
                 onClick={closePreview}
               >
-                <X className="h-4 w-4" />
+                <X className="h-5 w-5" />
               </Button>
+              <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 bg-black/70 text-white px-4 py-2 rounded-lg text-sm">
+                Haz clic fuera de la imagen o presiona el botón X para cerrar
+              </div>
             </div>
           </DialogContent>
         </Dialog>
@@ -554,43 +565,55 @@ const EvidenceClassificationCard = React.memo(function EvidenceClassificationCar
   const categoryInfo = evidence.category ? getCategoryInfo(evidence.category) : null
 
   return (
-    <Card>
+    <Card className="relative">
       <CardContent className="p-4">
+        {/* Delete button - Top right of entire card */}
+        <Button
+          variant="destructive"
+          size="sm"
+          className="absolute top-2 right-2 h-8 w-8 p-0 z-10 shadow-lg"
+          onClick={() => onRemove(index)}
+          title="Eliminar evidencia"
+        >
+          <Trash2 className="h-4 w-4" />
+        </Button>
+
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {/* Preview */}
           <div className="relative">
             <div 
-              className="aspect-square bg-muted rounded-lg overflow-hidden cursor-pointer hover:opacity-80 transition-opacity"
+              className={cn(
+                "aspect-square bg-muted rounded-lg overflow-hidden transition-all duration-200",
+                isImage ? "cursor-pointer hover:ring-2 hover:ring-primary hover:shadow-lg" : ""
+              )}
               onClick={() => isImage && onPreview(evidence.preview || evidence.url)}
+              title={isImage ? "Haz clic para ver en grande" : ""}
             >
               {isImage ? (
-                <>
+                <div className="relative w-full h-full group">
                   <img
                     src={evidence.preview || evidence.url}
                     alt={evidence.description}
-                    className="w-full h-full object-cover"
+                    className="w-full h-full object-cover transition-transform duration-200 group-hover:scale-105"
                   />
-                  <div className="absolute inset-0 bg-black bg-opacity-0 hover:bg-opacity-20 transition-all duration-200 flex items-center justify-center">
-                    <Eye className="h-8 w-8 text-white opacity-0 hover:opacity-100 transition-opacity" />
+                  <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 transition-all duration-200 flex items-center justify-center">
+                    <div className="bg-white/90 rounded-full p-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                      <Eye className="h-6 w-6 text-gray-800" />
+                    </div>
                   </div>
-                </>
+                  <div className="absolute bottom-2 left-2 right-2">
+                    <div className="bg-black/70 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                      Clic para ampliar
+                    </div>
+                  </div>
+                </div>
               ) : (
-                <div className="w-full h-full flex flex-col items-center justify-center">
-                  <FileText className="h-12 w-12 text-muted-foreground" />
-                  <p className="text-xs text-center mt-2 px-2">{evidence.file?.name}</p>
+                <div className="w-full h-full flex flex-col items-center justify-center p-4">
+                  <FileText className="h-12 w-12 text-muted-foreground mb-2" />
+                  <p className="text-xs text-center text-muted-foreground">{evidence.file?.name}</p>
                 </div>
               )}
             </div>
-            
-            {/* Delete button overlay */}
-            <Button
-              variant="destructive"
-              size="sm"
-              className="absolute top-2 right-2 h-8 w-8 p-0"
-              onClick={() => onRemove(index)}
-            >
-              <X className="h-4 w-4" />
-            </Button>
           </div>
 
           {/* Classification */}
@@ -652,17 +675,28 @@ const EvidenceClassificationCard = React.memo(function EvidenceClassificationCar
                 )}
               </div>
               
-              {isImage && (
+              <div className="flex gap-2">
+                {isImage && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => onPreview(evidence.preview || evidence.url)}
+                    className="flex items-center gap-2"
+                  >
+                    <Eye className="h-4 w-4" />
+                    Vista Previa
+                  </Button>
+                )}
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => onPreview(evidence.preview || evidence.url)}
-                  className="flex items-center gap-2"
+                  onClick={() => onRemove(index)}
+                  className="flex items-center gap-2 text-destructive hover:text-destructive"
                 >
-                  <Eye className="h-4 w-4" />
-                  Vista Previa
+                  <Trash2 className="h-4 w-4" />
+                  Eliminar
                 </Button>
-              )}
+              </div>
             </div>
           </div>
         </div>
