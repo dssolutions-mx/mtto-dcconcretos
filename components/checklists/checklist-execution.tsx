@@ -4,6 +4,7 @@ import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
 import { Textarea } from "@/components/ui/textarea"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -18,10 +19,14 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import { Camera, Check, Clock, FileText, Flag, Loader2, Save, Upload, X } from "lucide-react"
+import { Camera, Check, Clock, FileText, Flag, Loader2, Save, Upload, X, Wifi, WifiOff, RefreshCw } from "lucide-react"
 import { SignatureCanvas } from "@/components/checklists/signature-canvas"
 import { toast } from "sonner"
 import { createBrowserClient } from '@supabase/ssr'
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+
+// Importación dinámica del servicio offline para evitar problemas de SSR
+let offlineChecklistService: any = null
 
 interface ChecklistExecutionProps {
   id: string
@@ -42,10 +47,138 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
   const [showCorrective, setShowCorrective] = useState(false)
   const [selectedItem, setSelectedItem] = useState<string | null>(null)
   
+  // Nuevos estados para funcionalidad offline
+  const [isOnline, setIsOnline] = useState(navigator.onLine)
+  const [isSyncing, setIsSyncing] = useState(false)
+  const [pendingSyncCount, setPendingSyncCount] = useState(0)
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
+
+  // Detectar cambios de conexión
+  useEffect(() => {
+    // Inicializar servicio offline solo en el cliente
+    if (typeof window !== 'undefined' && !offlineChecklistService) {
+      import('@/lib/services/offline-checklist-service').then(module => {
+        offlineChecklistService = module.offlineChecklistService
+        checkPendingSyncs()
+      })
+    }
+    
+    const handleOnline = () => {
+      setIsOnline(true)
+      toast.success("Conexión restaurada", {
+        description: "Los cambios pendientes se sincronizarán automáticamente"
+      })
+      checkPendingSyncs()
+    }
+    
+    const handleOffline = () => {
+      setIsOnline(false)
+      toast.warning("Sin conexión", {
+        description: "Los cambios se guardarán localmente y se sincronizarán cuando vuelva la conexión"
+      })
+    }
+    
+    if (typeof window !== 'undefined') {
+      window.addEventListener('online', handleOnline)
+      window.addEventListener('offline', handleOffline)
+      
+      // Auto-guardar cambios cada 30 segundos si hay cambios no guardados
+      const autoSaveInterval = setInterval(() => {
+        if (hasUnsavedChanges && checklist) {
+          saveToLocalStorage()
+        }
+      }, 30000)
+      
+      return () => {
+        window.removeEventListener('online', handleOnline)
+        window.removeEventListener('offline', handleOffline)
+        clearInterval(autoSaveInterval)
+      }
+    }
+  }, [hasUnsavedChanges, checklist])
+
+  // Verificar sincs pendientes
+  const checkPendingSyncs = async () => {
+    if (!offlineChecklistService) return
+    
+    const stats = await offlineChecklistService.getSyncStats()
+    setPendingSyncCount(stats.pending)
+  }
+
+  // Guardar en localStorage para recuperación
+  const saveToLocalStorage = () => {
+    if (!checklist) return
+    
+    const saveData = {
+      checklist,
+      itemStatus,
+      itemNotes,
+      itemPhotos,
+      notes,
+      technician,
+      signature,
+      showCorrective,
+      selectedItem,
+      timestamp: Date.now()
+    }
+    
+    localStorage.setItem(`checklist-draft-${id}`, JSON.stringify(saveData))
+    setHasUnsavedChanges(false)
+  }
+
+  // Recuperar datos guardados localmente
+  const loadFromLocalStorage = () => {
+    const saved = localStorage.getItem(`checklist-draft-${id}`)
+    if (saved) {
+      try {
+        const data = JSON.parse(saved)
+        // Solo cargar si los datos tienen menos de 24 horas
+        if (Date.now() - data.timestamp < 24 * 60 * 60 * 1000) {
+          setItemStatus(data.itemStatus || {})
+          setItemNotes(data.itemNotes || {})
+          setItemPhotos(data.itemPhotos || {})
+          setNotes(data.notes || "")
+          setTechnician(data.technician || "")
+          setSignature(data.signature || null)
+          setShowCorrective(data.showCorrective || false)
+          setSelectedItem(data.selectedItem || null)
+          return true
+        }
+      } catch (error) {
+        console.error("Error loading saved data:", error)
+      }
+    }
+    return false
+  }
+
   useEffect(() => {
     const fetchChecklistData = async () => {
       try {
         setLoading(true)
+        
+        // Intentar cargar desde cache si estamos offline
+        if (!isOnline && offlineChecklistService) {
+          const cached = await offlineChecklistService.getCachedChecklistTemplate(id)
+          if (cached) {
+            setChecklist({
+              id: cached.template.id,
+              name: cached.template.checklists?.name || '',
+              assetId: cached.asset?.id || '',
+              asset: cached.asset?.name || '',
+              modelId: cached.template.checklists?.model_id || '',
+              model: cached.template.checklists?.equipment_models?.name || 'N/A',
+              manufacturer: cached.template.checklists?.equipment_models?.manufacturer || 'N/A',
+              frequency: cached.template.checklists?.frequency || '',
+              sections: cached.template.checklists?.checklist_sections || [],
+              scheduledDate: cached.template.scheduled_date || '',
+              technicianId: cached.template.assigned_to || '',
+              technician: cached.template.profiles ? `${cached.template.profiles.nombre} ${cached.template.profiles.apellido}` : ''
+            })
+            loadFromLocalStorage()
+            setLoading(false)
+            return
+          }
+        }
         
         const supabase = createBrowserClient(
           process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -60,7 +193,7 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
               *,
               checklist_sections (
                 *,
-                checklist_items(*)
+                checklist_items (*)
               ),
               equipment_models (
                 id, 
@@ -80,62 +213,54 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
         
         if (error) throw error
         
-        if (!data) throw new Error('Checklist no encontrado')
-        
-        // Formatear los datos del checklist para usar en el componente
-        const formattedData = {
-          id: data.id,
-          name: data.checklists.name,
-          assetId: data.assets.id,
-          asset: data.assets.name,
-          modelId: data.checklists.model_id,
-          model: data.checklists.equipment_models?.name || 'N/A',
-          manufacturer: data.checklists.equipment_models?.manufacturer || 'N/A',
-          frequency: data.checklists.frequency,
-          sections: data.checklists.checklist_sections.map((section: any) => ({
-            id: section.id,
-            title: section.title,
-            items: section.checklist_items.map((item: any) => ({
-              id: item.id,
-              description: item.description,
-              required: item.required,
-              item_type: item.item_type || 'check',
-              expected_value: item.expected_value,
-              tolerance: item.tolerance
-            }))
-          })),
-          scheduledDate: new Date(data.scheduled_date).toLocaleDateString(),
-          technicianId: data.assigned_to,
-          technician: ''
-        }
-        
-        // Fetch technician info separately 
-        if (data.assigned_to) {
-          const { data: profileData } = await supabase
-            .from('profiles')
-            .select('nombre, apellido')
-            .eq('id', data.assigned_to)
-            .single()
-            
-          if (profileData) {
-            formattedData.technician = `${profileData.nombre || ''} ${profileData.apellido || ''}`.trim() || 'Técnico asignado'
+        if (data) {
+          // Procesar los datos para la estructura esperada
+          const processedData = {
+            id: data.id,
+            name: data.checklists?.name || 'Checklist sin nombre',
+            assetId: data.assets?.id || '',
+            asset: data.assets?.name || '',
+            modelId: data.checklists?.model_id || '',
+            model: data.checklists?.equipment_models?.name || 'N/A',
+            manufacturer: data.checklists?.equipment_models?.manufacturer || 'N/A',
+            frequency: data.checklists?.frequency || '',
+            sections: data.checklists?.checklist_sections || [],
+            scheduledDate: data.scheduled_date || '',
+            technicianId: data.assigned_to || '',
+            technician: '' // Lo llenaremos después si es necesario
           }
+          
+          setChecklist(processedData)
+          
+          // Cachear los datos para uso offline
+          if (offlineChecklistService) {
+            await offlineChecklistService.cacheChecklistTemplate(
+              id,
+              data,
+              data.assets
+            )
+          }
+          
+          // Cargar datos guardados localmente si existen
+          loadFromLocalStorage()
         }
-        
-        setChecklist(formattedData)
-        setTechnician(formattedData.technician)
-      } catch (error: any) {
-        console.error('Error loading checklist:', error)
-        toast.error(`Error al cargar el checklist: ${error.message}`)
+      } catch (error) {
+        console.error('Error al cargar el checklist:', error)
+        toast.error("Error al cargar el checklist")
       } finally {
         setLoading(false)
       }
     }
     
-    if (id) {
-      fetchChecklistData()
+    fetchChecklistData()
+  }, [id, isOnline])
+
+  // Actualizar el estado de cambios no guardados cuando cambian las respuestas
+  useEffect(() => {
+    if (Object.keys(itemStatus).length > 0) {
+      setHasUnsavedChanges(true)
     }
-  }, [id])
+  }, [itemStatus])
 
   const handleStatusChange = (itemId: string, status: "pass" | "flag" | "fail") => {
     setItemStatus((prev) => ({ ...prev, [itemId]: status }))
@@ -144,6 +269,7 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
     if (status === "flag" || status === "fail") {
       setSelectedItem(itemId)
     }
+    setHasUnsavedChanges(true)
   }
 
   const handlePhotoUpload = async (itemId: string, file: File) => {
@@ -175,6 +301,7 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
       console.error('Error uploading photo:', error)
       toast.error(`Error al subir la foto: ${error.message}`)
     }
+    setHasUnsavedChanges(true)
   }
 
   const prepareCompletedItems = () => {
@@ -210,49 +337,81 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
     try {
       const completedItems = prepareCompletedItems()
       
-      // En una implementación real, llamaríamos a la API para guardar el checklist completado
-      const response = await fetch('/api/checklists/execution', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          schedule_id: id,
-          completed_items: completedItems,
-          technician: checklist.technician || 'Técnico',
-          notes: notes,
-          signature: signature
-        }),
-      })
-      
-      const result = await response.json()
-      
-      if (result.error) {
-        throw new Error(result.error)
+      const submissionData = {
+        scheduleId: id,
+        technician: technician || 'Técnico',
+        notes,
+        signature,
+        completed_items: completedItems
       }
       
-      // Verificar si hay algún item con estado flag o fail
-      const hasIssues = Object.values(itemStatus).some((status) => status === "flag" || status === "fail")
-  
-      if (hasIssues) {
-        setShowCorrective(true)
+      if (isOnline) {
+        // Intentar enviar directamente si hay conexión
+        const response = await fetch(`/api/checklists/schedules/${id}/complete`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(submissionData),
+        })
+        
+        if (response.ok) {
+          const result = await response.json()
+          
+          // Limpiar datos locales
+          localStorage.removeItem(`checklist-draft-${id}`)
+          
+          toast.success("Checklist completado exitosamente")
+          
+          if (result.has_issues) {
+            toast.info("Se detectaron problemas. Se generará una orden de trabajo.")
+          }
+          
+          router.push('/checklists')
+        } else {
+          throw new Error('Error al enviar el checklist')
+        }
       } else {
-        toast.success('Checklist completado exitosamente')
-        
-        // Redirigir a la página de checklists según la frecuencia
-        let redirectPath = '/checklists/diarios'
-        
-        if (checklist.frequency === 'semanal') {
-          redirectPath = '/checklists/semanales'
-        } else if (checklist.frequency === 'mensual') {
-          redirectPath = '/checklists/mensuales'
+        // Guardar offline si no hay conexión
+        if (offlineChecklistService) {
+          const offlineId = `checklist-${id}-${Date.now()}`
+          await offlineChecklistService.saveOfflineChecklist(offlineId, submissionData)
+          
+          // Limpiar datos locales
+          localStorage.removeItem(`checklist-draft-${id}`)
+          
+          toast.warning("Checklist guardado sin conexión", {
+            description: "Se sincronizará automáticamente cuando vuelva la conexión"
+          })
+          
+          router.push('/checklists')
+        } else {
+          throw new Error('Servicio offline no disponible')
+        }
+      }
+    } catch (error) {
+      console.error('Error al enviar el checklist:', error)
+      toast.error("Error al completar el checklist")
+      
+      // Si falla, guardar offline como respaldo
+      if (isOnline && offlineChecklistService) {
+        const offlineId = `checklist-${id}-${Date.now()}`
+        const submissionData = {
+          scheduleId: id,
+          technician: technician || 'Técnico',
+          notes,
+          signature,
+          completed_items: Object.keys(itemStatus).map(itemId => ({
+            item_id: itemId,
+            status: itemStatus[itemId],
+            notes: itemNotes[itemId] || null,
+            photo_url: itemPhotos[itemId] || null
+          }))
         }
         
-        router.push(redirectPath)
+        await offlineChecklistService.saveOfflineChecklist(offlineId, submissionData)
+        toast.info("Checklist guardado localmente como respaldo")
       }
-    } catch (error: any) {
-      console.error('Error submitting checklist:', error)
-      toast.error(`Error al guardar el checklist: ${error.message}`)
     } finally {
       setSubmitting(false)
     }
@@ -317,11 +476,13 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
   }
 
   const getTotalItems = () => {
-    if (!checklist) return 0
+    if (!checklist || !checklist.sections) return 0
     
     let total = 0
     checklist.sections.forEach((section: any) => {
-      total += section.items.length
+      if (section.items) {
+        total += section.items.length
+      }
     })
     return total
   }
@@ -331,18 +492,51 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
   }
 
   const isChecklistComplete = () => {
-    if (!checklist) return false
+    if (!checklist || !checklist.sections) return false
     
     // Verificar si todos los items requeridos tienen un estado
     let complete = true
     checklist.sections.forEach((section: any) => {
-      section.items.forEach((item: any) => {
-        if (item.required && !itemStatus[item.id]) {
-          complete = false
-        }
-      })
+      if (section.items) {
+        section.items.forEach((item: any) => {
+          if (item.required && !itemStatus[item.id]) {
+            complete = false
+          }
+        })
+      }
     })
     return complete && technician.trim() !== "" && signature !== null
+  }
+
+  // Función para sincronizar manualmente
+  const syncManually = async () => {
+    if (!isOnline) {
+      toast.error("No hay conexión a internet")
+      return
+    }
+    
+    if (!offlineChecklistService) {
+      toast.error("Servicio offline no disponible")
+      return
+    }
+    
+    setIsSyncing(true)
+    try {
+      const result = await offlineChecklistService.syncAll()
+      if (result && typeof result === 'object') {
+        if (result.synced !== undefined && result.synced > 0) {
+          toast.success(`${result.synced} checklists sincronizados exitosamente`)
+        }
+        if (result.failed !== undefined && result.failed > 0) {
+          toast.warning(`${result.failed} checklists no pudieron sincronizarse`)
+        }
+      }
+      await checkPendingSyncs()
+    } catch (error) {
+      toast.error("Error al sincronizar")
+    } finally {
+      setIsSyncing(false)
+    }
   }
 
   if (loading) {
@@ -388,11 +582,13 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
             </div>
           </div>
 
-          {checklist.sections.map((section: any, sectionIndex: number) => (
+          {checklist.sections && checklist.sections.map((section: any, sectionIndex: number) => {
+            return (
             <div key={sectionIndex} className="mb-8">
               <h3 className="text-lg font-semibold mb-4">{section.title}</h3>
               <div className="space-y-6">
-                {section.items.map((item: any) => (
+                {(section.checklist_items || section.items) && (section.checklist_items || section.items).map((item: any) => {
+                  return (
                   <Card key={item.id} className="overflow-hidden">
                     <CardHeader className="py-3">
                       <CardTitle className="text-base">{item.description}</CardTitle>
@@ -465,22 +661,22 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
                               <div className="border-2 border-dashed border-muted-foreground/50 rounded-md p-8 text-center">
                                 <Label
                                   htmlFor={`photo-upload-${item.id}`}
-                                  className="flex flex-col items-center gap-2 cursor-pointer"
+                                  className="cursor-pointer"
                                 >
-                                  <Camera className="h-8 w-8 text-muted-foreground" />
-                                  <span className="text-sm text-muted-foreground">Agregar Foto</span>
-                                  <input
-                                    id={`photo-upload-${item.id}`}
-                                    type="file"
-                                    accept="image/*"
-                                    className="hidden"
-                                    onChange={(e) => {
-                                      if (e.target.files && e.target.files[0]) {
-                                        handlePhotoUpload(item.id, e.target.files[0])
-                                      }
-                                    }}
-                                  />
+                                  <Upload className="h-6 w-6 mx-auto mb-2 text-muted-foreground" />
+                                  <span className="text-sm text-muted-foreground">Subir foto</span>
                                 </Label>
+                                <input
+                                  id={`photo-upload-${item.id}`}
+                                  type="file"
+                                  accept="image/*"
+                                  className="hidden"
+                                  onChange={(e) => {
+                                    if (e.target.files && e.target.files[0]) {
+                                      handlePhotoUpload(item.id, e.target.files[0])
+                                    }
+                                  }}
+                                />
                               </div>
                             )}
                           </div>
@@ -488,36 +684,64 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
                       )}
                     </CardContent>
                   </Card>
-                ))}
+                )})}
               </div>
             </div>
-          ))}
-
-          <div className="space-y-6 pt-4">
-            <div className="space-y-2">
-              <Label htmlFor="notes">Notas Generales</Label>
-              <Textarea
-                id="notes"
-                placeholder="Agregue notas generales sobre el mantenimiento realizado"
-                rows={3}
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="technician">Técnico Responsable</Label>
-              <Input id="technician" value={technician} readOnly />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="signature">Firma</Label>
-              <SignatureCanvas onSave={setSignature} />
-              {signature && <p className="text-sm text-green-600 mt-1">Firma guardada</p>}
-            </div>
-          </div>
+          )})}
         </CardContent>
-        <CardFooter className="justify-between">
+        <CardFooter className="flex justify-between">
+          <Button
+            variant="outline"
+            onClick={() => router.back()}
+            disabled={submitting}
+          >
+            Cancelar
+          </Button>
+          <Button
+            onClick={handleSubmit}
+            disabled={submitting}
+          >
+            {submitting ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                Enviando...
+              </>
+            ) : (
+              "Enviar"
+            )}
+          </Button>
+        </CardFooter>
+      </Card>
+
+      <div className="space-y-6 pt-4">
+        <div className="space-y-2">
+          <Label htmlFor="notes">Notas Generales</Label>
+          <Textarea
+            id="notes"
+            placeholder="Agregue notas generales sobre el mantenimiento realizado"
+            rows={3}
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+          />
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="technician">Técnico Responsable</Label>
+          <Input 
+            id="technician" 
+            value={technician} 
+            onChange={(e) => setTechnician(e.target.value)}
+            placeholder="Nombre del técnico responsable"
+          />
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="signature">Firma</Label>
+          <SignatureCanvas onSave={setSignature} />
+          {signature && <p className="text-sm text-green-600 mt-1">Firma guardada</p>}
+        </div>
+
+        <div className="flex justify-between">
           <Button variant="outline" onClick={() => router.back()}>
             Cancelar
           </Button>
@@ -534,8 +758,8 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
               </>
             )}
           </Button>
-        </CardFooter>
-      </Card>
+        </div>
+      </div>
 
       <AlertDialog open={showCorrective} onOpenChange={setShowCorrective}>
         <AlertDialogContent>
@@ -552,6 +776,55 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Barra de estado de conexión */}
+      <div className="flex items-center justify-between bg-background border rounded-lg p-3">
+        <div className="flex items-center gap-2">
+          {isOnline ? (
+            <>
+              <Wifi className="h-4 w-4 text-green-600" />
+              <span className="text-sm text-green-600 font-medium">Conectado</span>
+            </>
+          ) : (
+            <>
+              <WifiOff className="h-4 w-4 text-orange-600" />
+              <span className="text-sm text-orange-600 font-medium">Sin conexión</span>
+            </>
+          )}
+          {pendingSyncCount > 0 && (
+            <Badge variant="outline" className="ml-2">
+              {pendingSyncCount} pendiente{pendingSyncCount > 1 ? 's' : ''}
+            </Badge>
+          )}
+        </div>
+        
+        {pendingSyncCount > 0 && isOnline && (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={syncManually}
+            disabled={isSyncing}
+          >
+            {isSyncing ? (
+              <Loader2 className="h-4 w-4 animate-spin mr-2" />
+            ) : (
+              <RefreshCw className="h-4 w-4 mr-2" />
+            )}
+            Sincronizar
+          </Button>
+        )}
+      </div>
+
+      {hasUnsavedChanges && (
+        <Alert>
+          <AlertDescription className="flex items-center justify-between">
+            <span>Tienes cambios sin guardar</span>
+            <Button size="sm" variant="outline" onClick={saveToLocalStorage}>
+              Guardar borrador
+            </Button>
+          </AlertDescription>
+        </Alert>
+      )}
     </div>
   )
 }

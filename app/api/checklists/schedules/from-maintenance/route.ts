@@ -202,21 +202,68 @@ export async function POST(request: Request) {
     const today = new Date()
     const createdSchedules = []
     
-    // If we have a maintenance plan ID, get its details to set proper due date
+    // Calculate appropriate scheduled date based on frequency, not maintenance plan
     let scheduledDate = today
-    if (maintenancePlanId) {
-      const { data: plan } = await supabase
-        .from('maintenance_plans')
-        .select('next_due')
-        .eq('id', maintenancePlanId)
-        .single()
-      
-      if (plan && plan.next_due) {
-        scheduledDate = new Date(plan.next_due)
-      }
-    }
     
     for (const template of templates) {
+      // Calculate next appropriate date based on checklist frequency
+      switch (template.frequency) {
+        case 'diario':
+          scheduledDate = today
+          break
+        case 'semanal':
+          // Schedule for next week if it's a weekly checklist
+          scheduledDate = new Date(today)
+          scheduledDate.setDate(today.getDate() + 7)
+          break
+        case 'mensual':
+          // Schedule for next month if it's a monthly checklist
+          scheduledDate = new Date(today)
+          scheduledDate.setMonth(today.getMonth() + 1)
+          break
+        case 'trimestral':
+          // Schedule for next quarter if it's a quarterly checklist
+          scheduledDate = new Date(today)
+          scheduledDate.setMonth(today.getMonth() + 3)
+          break
+        default:
+          scheduledDate = today
+      }
+      
+      // If we have a maintenance plan and it's due soon (within 30 days), use that date instead
+      if (maintenancePlanId) {
+        const { data: plan } = await supabase
+          .from('maintenance_plans')
+          .select('next_due')
+          .eq('id', maintenancePlanId)
+          .single()
+        
+        if (plan && plan.next_due) {
+          const planDate = new Date(plan.next_due)
+          const daysDifference = Math.ceil((planDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
+          
+          // Only use plan date if it's within 30 days, otherwise use frequency-based date
+          if (daysDifference >= 0 && daysDifference <= 30) {
+            scheduledDate = planDate
+          }
+        }
+      }
+      
+      // Check if a similar schedule already exists to avoid duplicates
+      const { data: existingSchedule } = await supabase
+        .from('checklist_schedules')
+        .select('id')
+        .eq('template_id', template.id)
+        .eq('asset_id', assetId)
+        .eq('status', 'pendiente')
+        .gte('scheduled_date', today.toISOString().split('T')[0]) // Only check future schedules
+        .single()
+      
+      if (existingSchedule) {
+        console.log(`Skipping duplicate schedule for template ${template.id} and asset ${assetId}`)
+        continue
+      }
+      
       const { data, error } = await supabase
         .from('checklist_schedules')
         .insert({

@@ -8,6 +8,7 @@ export async function GET(request: Request) {
     const url = new URL(request.url)
     const status = url.searchParams.get('status')
     const type = url.searchParams.get('type')
+    const cleanup = url.searchParams.get('cleanup')
     
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -25,6 +26,60 @@ export async function GET(request: Request) {
         },
       }
     )
+
+    if (cleanup === 'true') {
+      try {
+        const { data: duplicates, error: duplicatesError } = await supabase
+          .from('checklist_schedules')
+          .select('id, template_id, asset_id, scheduled_date, created_at')
+          .eq('status', 'pendiente')
+          .order('template_id, asset_id, scheduled_date, created_at')
+        
+        if (duplicatesError) throw duplicatesError
+        
+        const groups = new Map()
+        let deletedCount = 0
+        
+        for (const schedule of duplicates || []) {
+          const date = new Date(schedule.scheduled_date).toISOString().split('T')[0]
+          const key = `${schedule.template_id}-${schedule.asset_id}-${date}`
+          
+          if (!groups.has(key)) {
+            groups.set(key, [])
+          }
+          groups.get(key).push(schedule)
+        }
+        
+        for (const [key, schedules] of groups) {
+          if (schedules.length > 1) {
+            schedules.sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+            const toDelete = schedules.slice(1)
+            
+            for (const schedule of toDelete) {
+              const { error: deleteError } = await supabase
+                .from('checklist_schedules')
+                .delete()
+                .eq('id', schedule.id)
+              
+              if (!deleteError) {
+                deletedCount++
+              }
+            }
+          }
+        }
+        
+        return NextResponse.json({ 
+          success: true, 
+          message: `Se eliminaron ${deletedCount} programaciones duplicadas` 
+        })
+      } catch (cleanupError) {
+        console.error('Error during cleanup:', cleanupError)
+        return NextResponse.json(
+          { error: 'Error durante la limpieza de duplicados' },
+          { status: 500 }
+        )
+      }
+    }
 
     let query = supabase
       .from('checklist_schedules')

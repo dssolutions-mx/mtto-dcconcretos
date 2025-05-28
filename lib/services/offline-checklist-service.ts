@@ -24,11 +24,21 @@ interface ChecklistDB extends DBSchema {
 }
 
 class OfflineChecklistService {
-  private db: Promise<IDBPDatabase<ChecklistDB>>
+  private db: Promise<IDBPDatabase<ChecklistDB>> | null = null
   private syncInProgress: boolean = false
   private onlineListener: (() => void) | null = null
+  private isClient: boolean = false
   
   constructor() {
+    this.isClient = typeof window !== 'undefined'
+    if (this.isClient) {
+      this.initializeDB()
+    }
+  }
+
+  private initializeDB() {
+    if (!this.isClient || this.db) return
+    
     this.db = openDB<ChecklistDB>('checklists-offline', 2, {
       upgrade(db, oldVersion) {
         // Crear stores si no existen
@@ -44,9 +54,17 @@ class OfflineChecklistService {
     // Inicializar listeners para conexión
     this.setupOnlineListener()
   }
+
+  private async getDB(): Promise<IDBPDatabase<ChecklistDB> | null> {
+    if (!this.isClient) return null
+    if (!this.db) this.initializeDB()
+    return this.db
+  }
   
   // Configurar listener para cuando vuelva la conexión
   private setupOnlineListener() {
+    if (!this.isClient) return
+    
     this.onlineListener = () => {
       console.log('Conexión detectada, iniciando sincronización...')
       this.syncAll()
@@ -64,7 +82,9 @@ class OfflineChecklistService {
   
   // Guardar plantilla de checklist para uso offline
   async cacheChecklistTemplate(scheduleId: string, templateData: any, assetData: any) {
-    const db = await this.db
+    const db = await this.getDB()
+    if (!db) return
+    
     await db.put('checklist-templates', {
       id: scheduleId,
       template: templateData,
@@ -75,13 +95,17 @@ class OfflineChecklistService {
   
   // Obtener plantilla de checklist desde cache
   async getCachedChecklistTemplate(scheduleId: string) {
-    const db = await this.db
+    const db = await this.getDB()
+    if (!db) return null
+    
     return await db.get('checklist-templates', scheduleId)
   }
   
   // Guardar un checklist completado offline con reintentos
   async saveOfflineChecklist(id: string, data: any) {
-    const db = await this.db
+    const db = await this.getDB()
+    if (!db) return
+    
     await db.put('offline-checklists', {
       id,
       data,
@@ -91,21 +115,25 @@ class OfflineChecklistService {
     })
     
     // Intentar sincronizar inmediatamente si hay conexión
-    if (navigator.onLine) {
+    if (this.isClient && navigator.onLine) {
       setTimeout(() => this.syncSingle(id), 1000)
     }
   }
   
   // Obtener todos los checklists pendientes de sincronización
   async getPendingSyncs() {
-    const db = await this.db
+    const db = await this.getDB()
+    if (!db) return []
+    
     const all = await db.getAll('offline-checklists')
     return all.filter(item => !item.synced && item.retryCount < 5) // Máximo 5 reintentos
   }
   
   // Marcar un checklist como sincronizado
   async markAsSynced(id: string) {
-    const db = await this.db
+    const db = await this.getDB()
+    if (!db) return
+    
     const item = await db.get('offline-checklists', id)
     if (item) {
       item.synced = true
@@ -115,7 +143,9 @@ class OfflineChecklistService {
   
   // Incrementar contador de reintentos
   async incrementRetryCount(id: string) {
-    const db = await this.db
+    const db = await this.getDB()
+    if (!db) return
+    
     const item = await db.get('offline-checklists', id)
     if (item) {
       item.retryCount = (item.retryCount || 0) + 1
@@ -126,7 +156,9 @@ class OfflineChecklistService {
   // Sincronizar un solo checklist
   async syncSingle(id: string): Promise<boolean> {
     try {
-      const db = await this.db
+      const db = await this.getDB()
+      if (!db) return false
+      
       const item = await db.get('offline-checklists', id)
       
       if (!item || item.synced) return true
@@ -180,7 +212,7 @@ class OfflineChecklistService {
   
   // Sincronizar todos los checklists pendientes
   async syncAll() {
-    if (!navigator.onLine) {
+    if (!this.isClient || !navigator.onLine) {
       console.log('Sin conexión, sincronización cancelada')
       return { success: false, message: 'Sin conexión a internet' }
     }
@@ -206,7 +238,9 @@ class OfflineChecklistService {
   
   // Obtener estadísticas de sincronización
   async getSyncStats() {
-    const db = await this.db
+    const db = await this.getDB()
+    if (!db) return { total: 0, synced: 0, pending: 0, failed: 0 }
+    
     const all = await db.getAll('offline-checklists')
     
     return {
@@ -219,7 +253,9 @@ class OfflineChecklistService {
   
   // Limpiar datos antiguos (más de 30 días)
   async cleanOldData() {
-    const db = await this.db
+    const db = await this.getDB()
+    if (!db) return
+    
     const all = await db.getAll('offline-checklists')
     const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000
     
@@ -240,7 +276,7 @@ class OfflineChecklistService {
   
   // Destruir el servicio y limpiar listeners
   destroy() {
-    if (this.onlineListener) {
+    if (this.isClient && this.onlineListener) {
       window.removeEventListener('online', this.onlineListener)
     }
   }

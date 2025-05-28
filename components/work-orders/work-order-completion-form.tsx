@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { ArrowLeft, CalendarCheck, CheckCircle, Clock, CalendarIcon, Plus, Trash2, ShoppingCart, Camera, FileText } from "lucide-react"
+import { ArrowLeft, CalendarCheck, CheckCircle, Clock, CalendarIcon, Plus, Trash2, ShoppingCart, Camera, FileText, ClipboardCheck, AlertTriangle } from "lucide-react"
 import { createClient } from "@/lib/supabase"
 import { Separator } from "@/components/ui/separator"
 import { toast } from "@/components/ui/use-toast"
@@ -25,6 +25,7 @@ import { cn } from "@/lib/utils"
 import { Switch } from "@/components/ui/switch"
 import { EvidenceUpload, type EvidencePhoto } from "@/components/ui/evidence-upload"
 import { Badge } from "@/components/ui/badge"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 
 // Date picker component
 function DatePicker({ date, setDate }: { date: Date | undefined, setDate: (date: Date | undefined) => void }) {
@@ -106,6 +107,11 @@ export function WorkOrderCompletionForm({ workOrderId, initialData }: WorkOrderC
   const [requiredParts, setRequiredParts] = useState<any[]>([])
   const [completionEvidence, setCompletionEvidence] = useState<EvidencePhoto[]>([])
   const [showEvidenceDialog, setShowEvidenceDialog] = useState(false)
+  const [checklistStatus, setChecklistStatus] = useState<{
+    required: boolean
+    completed: boolean
+    checklistId: string | null
+  }>({ required: false, completed: false, checklistId: null })
 
   // Default form values
   const defaultValues: Partial<WorkOrderCompletionFormValues> = {
@@ -141,7 +147,11 @@ export function WorkOrderCompletionForm({ workOrderId, initialData }: WorkOrderC
           .from("work_orders")
           .select(`
             *,
-            asset:assets (*)
+            asset:assets (*),
+            purchase_orders!purchase_order_id (
+              id,
+              status
+            )
           `)
           .eq("id", workOrderId)
           .single()
@@ -156,6 +166,38 @@ export function WorkOrderCompletionForm({ workOrderId, initialData }: WorkOrderC
           status: orderData.status,
           maintenance_plan_id: orderData.maintenance_plan_id || null
         });
+        
+        // Check if this is a preventive order that requires checklist
+        if (orderData.type === MaintenanceType.Preventive) {
+          // Check if order is ready to execute (PO approved/received)
+          // @ts-ignore - RPC function created in recent migration
+          const { data: readyData } = await supabase
+            .rpc('is_work_order_ready_to_execute', { p_work_order_id: workOrderId })
+          
+          if (readyData) {
+            // Get required checklist
+            // @ts-ignore - RPC function created in recent migration
+            const { data: checklistId } = await supabase
+              .rpc('get_required_checklist_for_work_order', { p_work_order_id: workOrderId })
+            
+            if (checklistId) {
+              // Check if checklist is completed
+              // @ts-ignore - Table created in recent migration
+              const { data: maintenanceChecklist } = await supabase
+                .from('maintenance_checklists')
+                .select('*')
+                .eq('work_order_id', workOrderId)
+                .eq('status', 'completed')
+                .single()
+              
+              setChecklistStatus({
+                required: true,
+                completed: !!maintenanceChecklist,
+                checklistId: checklistId
+              })
+            }
+          }
+        }
         
         // Parse required parts if they exist
         if (orderData.required_parts) {
@@ -634,7 +676,7 @@ export function WorkOrderCompletionForm({ workOrderId, initialData }: WorkOrderC
 
   if (isLoading && !workOrder) {
     return (
-      <div className="flex items-center justify-center h-64">
+      <div className="flex justify-center items-center h-64">
         <div className="text-center">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
           <p className="mt-2 text-sm text-muted-foreground">Cargando orden de trabajo...</p>
@@ -661,8 +703,41 @@ export function WorkOrderCompletionForm({ workOrderId, initialData }: WorkOrderC
         </div>
       </CardHeader>
       <CardContent>
+        {/* Alert for preventive maintenance checklist requirement */}
+        {workOrder?.type === MaintenanceType.Preventive && checklistStatus.required && (
+          <Alert className={checklistStatus.completed ? "border-green-500" : "border-orange-500"}>
+            {checklistStatus.completed ? (
+              <CheckCircle className="h-4 w-4 text-green-600" />
+            ) : (
+              <AlertTriangle className="h-4 w-4 text-orange-600" />
+            )}
+            <AlertTitle>
+              {checklistStatus.completed 
+                ? "Checklist de Mantenimiento Completado" 
+                : "Checklist de Mantenimiento Requerido"}
+            </AlertTitle>
+            <AlertDescription>
+              {checklistStatus.completed ? (
+                <span>El checklist de mantenimiento preventivo ha sido completado correctamente.</span>
+              ) : (
+                <div className="space-y-2">
+                  <span>Esta orden de trabajo preventiva requiere completar un checklist de mantenimiento antes de marcarla como completada.</span>
+                  <div className="flex gap-2 mt-2">
+                    <Button size="sm" asChild>
+                      <Link href={`/checklists/mantenimiento/${workOrderId}`}>
+                        <ClipboardCheck className="h-4 w-4 mr-2" />
+                        Completar Checklist
+                      </Link>
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </AlertDescription>
+          </Alert>
+        )}
+
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6 mt-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <FormField
                 control={form.control}
@@ -1012,7 +1087,7 @@ export function WorkOrderCompletionForm({ workOrderId, initialData }: WorkOrderC
                 </Button>
                 <Button 
                   type="submit" 
-                  disabled={isLoading}
+                  disabled={isLoading || (checklistStatus.required && !checklistStatus.completed)}
                 >
                   {isLoading ? (
                     <>
@@ -1027,6 +1102,11 @@ export function WorkOrderCompletionForm({ workOrderId, initialData }: WorkOrderC
                   )}
                 </Button>
               </div>
+              {checklistStatus.required && !checklistStatus.completed && (
+                <p className="text-sm text-orange-600 mt-2">
+                  * Debe completar el checklist de mantenimiento antes de finalizar la orden
+                </p>
+              )}
               {Object.keys(form.formState.errors).length > 0 && (
                 <div className="mt-4 p-3 border border-destructive rounded-md bg-destructive/10 text-sm">
                   <p className="font-semibold mb-1">Por favor, corrige los siguientes errores:</p>

@@ -149,10 +149,13 @@ export function ChecklistTemplateForm() {
   }
   
   const handleFormChange = (field: string, value: string) => {
+    // Si el campo es interval_id y el valor es "none", establecerlo como vacío
+    const processedValue = field === 'interval_id' && value === 'none' ? '' : value;
+    
     setFormData({
       ...formData,
-      [field]: value
-    })
+      [field]: processedValue
+    });
   }
   
   const validateForm = () => {
@@ -288,7 +291,7 @@ export function ChecklistTemplateForm() {
                 } />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">Ninguno (plantilla general)</SelectItem>
+                <SelectItem value="none">Ninguno (plantilla general)</SelectItem>
                 {intervals.map((interval) => (
                   <SelectItem key={interval.id} value={interval.id}>
                     {interval.name} ({interval.interval_value} horas)

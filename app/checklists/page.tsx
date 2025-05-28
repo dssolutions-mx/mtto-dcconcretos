@@ -7,7 +7,7 @@ import { DashboardHeader } from "@/components/dashboard/dashboard-header"
 import { DashboardShell } from "@/components/dashboard/dashboard-shell"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Plus, FileDown, ClipboardCheck, Loader2 } from "lucide-react"
+import { Plus, FileDown, ClipboardCheck, Loader2, Trash2 } from "lucide-react"
 import Link from "next/link"
 import { useSearchParams } from "next/navigation"
 import { DailyChecklistList } from "@/components/checklists/daily-checklist-list"
@@ -15,6 +15,7 @@ import { WeeklyChecklistList } from "@/components/checklists/weekly-checklist-li
 import { MonthlyChecklistList } from "@/components/checklists/monthly-checklist-list"
 import { ChecklistTemplateList } from "@/components/checklists/checklist-template-list"
 import { useChecklistSchedules, useChecklistTemplates } from "@/hooks/useChecklists"
+import { toast } from "sonner"
 
 // Create a client component that uses useSearchParams
 function ChecklistsContent() {
@@ -23,6 +24,7 @@ function ChecklistsContent() {
   const { schedules, loading, error, fetchSchedules } = useChecklistSchedules()
   const { templates, fetchTemplates } = useChecklistTemplates()
   const [activeTab, setActiveTab] = useState('overview')
+  const [cleaningUp, setCleaningUp] = useState(false)
   const [stats, setStats] = useState({
     daily: { total: 0, pending: 0 },
     weekly: { total: 0, pending: 0, overdue: 0 },
@@ -86,6 +88,28 @@ function ChecklistsContent() {
     }
   }, [schedules, templates])
 
+  // Function to clean up duplicates
+  const handleCleanupDuplicates = async () => {
+    setCleaningUp(true)
+    try {
+      const response = await fetch('/api/checklists/schedules?cleanup=true')
+      const result = await response.json()
+      
+      if (response.ok) {
+        toast.success(result.message)
+        // Recargar los schedules después de la limpieza
+        fetchSchedules('pendiente')
+      } else {
+        throw new Error(result.error || 'Error durante la limpieza')
+      }
+    } catch (error: any) {
+      console.error('Error cleaning duplicates:', error)
+      toast.error(`Error al limpiar duplicados: ${error.message}`)
+    } finally {
+      setCleaningUp(false)
+    }
+  }
+
   return (
     <DashboardShell>
       <DashboardHeader
@@ -97,11 +121,29 @@ function ChecklistsContent() {
             <FileDown className="mr-2 h-4 w-4" />
             Exportar
           </Button>
+          <Button variant="outline" asChild>
+            <Link href="/checklists/programar">
+              <ClipboardCheck className="mr-2 h-4 w-4" />
+              Programar Checklist
+            </Link>
+          </Button>
           <Button asChild>
             <Link href="/checklists/crear">
               <Plus className="mr-2 h-4 w-4" />
-              Nuevo Checklist
+              Nueva Plantilla
             </Link>
+          </Button>
+          <Button 
+            variant="outline" 
+            onClick={handleCleanupDuplicates}
+            disabled={cleaningUp}
+          >
+            {cleaningUp ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Trash2 className="mr-2 h-4 w-4" />
+            )}
+            {cleaningUp ? 'Limpiando...' : 'Limpiar Duplicados'}
           </Button>
         </div>
       </DashboardHeader>
