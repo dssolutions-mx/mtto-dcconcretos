@@ -29,7 +29,19 @@ export function DailyChecklistList() {
     fetchSchedules('pendiente', 'diario')
   }, [fetchSchedules])
 
-  const filteredChecklists = schedules.filter(
+  // Filter only TODAY's checklists like in the main page
+  const todaysChecklists = schedules.filter(checklist => {
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    const tomorrow = new Date(today)
+    tomorrow.setDate(tomorrow.getDate() + 1)
+    
+    const scheduledDate = new Date(checklist.scheduled_date)
+    scheduledDate.setHours(0, 0, 0, 0)
+    return scheduledDate >= today && scheduledDate < tomorrow
+  })
+
+  const filteredChecklists = todaysChecklists.filter(
     (checklist) =>
       checklist.checklists?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       checklist.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -65,7 +77,7 @@ export function DailyChecklistList() {
     <Card>
       <CardHeader>
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-          <CardTitle>Checklists Diarios</CardTitle>
+          <CardTitle>Checklists Diarios - Hoy</CardTitle>
           <div className="relative w-full md:w-64">
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
@@ -91,14 +103,15 @@ export function DailyChecklistList() {
           </div>
         ) : filteredChecklists.length === 0 ? (
           <div className="text-center py-8 text-muted-foreground">
-            No se encontraron checklists diarios.
+            <ClipboardCheck className="h-12 w-12 mx-auto mb-4 text-muted-foreground/30" />
+            <p className="text-lg font-medium">No hay checklists diarios programados para hoy</p>
+            <p className="text-sm mt-2">¡Todos los checklists del día han sido completados!</p>
           </div>
         ) : (
           <div className="rounded-md border">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>ID</TableHead>
                   <TableHead>Nombre</TableHead>
                   <TableHead>Equipo</TableHead>
                   <TableHead>Tipo</TableHead>
@@ -111,7 +124,6 @@ export function DailyChecklistList() {
               <TableBody>
                 {filteredChecklists.map((checklist) => (
                   <TableRow key={checklist.id}>
-                    <TableCell className="font-medium">{checklist.id.slice(0, 8)}</TableCell>
                     <TableCell>
                       <div>
                         <p className="font-medium">{checklist.checklists?.name || 'Sin nombre'}</p>
@@ -190,7 +202,7 @@ export function DailyChecklistList() {
       </CardContent>
       <CardFooter className="flex justify-between">
         <div className="text-sm text-muted-foreground">
-          Mostrando {filteredChecklists.length} de {schedules.length} checklists
+          Mostrando {filteredChecklists.length} de {todaysChecklists.length} checklists para hoy
         </div>
       </CardFooter>
     </Card>

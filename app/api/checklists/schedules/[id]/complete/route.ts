@@ -3,16 +3,17 @@ import { createClient } from '@/lib/supabase-server'
 
 export async function POST(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const supabase = await createClient()
+  const { id } = await params
 
   const { technician, notes, signature, completed_items } = await request.json()
   
   try {
     // Llamar a la función RPC para marcar el checklist como completado
     const { data, error } = await supabase.rpc('mark_checklist_as_completed', {
-      p_schedule_id: params.id,
+      p_schedule_id: id,
       p_completed_items: completed_items,
       p_technician: technician,
       p_notes: notes
@@ -32,7 +33,7 @@ export async function POST(
           checklists(name),
           assets(id, name, asset_id, model_id)
         `)
-        .eq('id', params.id)
+        .eq('id', id)
         .single()
         
       if (scheduleData) {

@@ -13,7 +13,7 @@ import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import Link from "next/link";
-import { ArrowLeft, FileText, History, Wrench, Calendar, Edit, Camera, ExternalLink, AlertTriangle, CheckCircle, AlertCircle, Clock } from "lucide-react";
+import { ArrowLeft, FileText, History, Wrench, Calendar, Edit, Camera, ExternalLink, AlertTriangle, CheckCircle, AlertCircle, Clock, ClipboardCheck } from "lucide-react";
 import { format, formatDistance, parseISO } from "date-fns";
 import { es } from "date-fns/locale";
 import { Asset, AssetWithModel, EquipmentModel } from "@/types";
@@ -55,6 +55,8 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
   const [upcomingMaintenances, setUpcomingMaintenances] = useState<any[]>([]);
   const [upcomingLoading, setUpcomingLoading] = useState(true);
   const [maintenanceIntervals, setMaintenanceIntervals] = useState<any[]>([]);
+  const [completedChecklists, setCompletedChecklists] = useState<any[]>([]);
+  const [checklistsLoading, setChecklistsLoading] = useState(true);
   
   // Map the asset with equipment_models to use model property
   const asset = useMemo(() => {
@@ -116,6 +118,33 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
       fetchMaintenanceIntervals();
     }
   }, [asset?.model_id]);
+  
+  // Add a new effect to fetch completed checklists
+  useEffect(() => {
+    if (assetId) {
+      const fetchCompletedChecklists = async () => {
+        try {
+          setChecklistsLoading(true);
+          
+          const response = await fetch(`/api/checklists/schedules?status=completado&assetId=${assetId}`);
+          if (response.ok) {
+            const result = await response.json();
+            setCompletedChecklists(result.data || []);
+          } else {
+            console.error('Error fetching completed checklists:', response.statusText);
+            setCompletedChecklists([]);
+          }
+        } catch (err) {
+          console.error("Error fetching completed checklists:", err);
+          setCompletedChecklists([]);
+        } finally {
+          setChecklistsLoading(false);
+        }
+      };
+      
+      fetchCompletedChecklists();
+    }
+  }, [assetId]);
   
   // Función para mostrar el estado con un color adecuado
   const getStatusBadge = (status: string) => {
@@ -819,6 +848,76 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
                               Ver historial completo
                             </Link>
                           </Button>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>Checklists Completados</CardTitle>
+                  <CardDescription>Últimos checklists de inspección realizados</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {checklistsLoading ? (
+                    <div className="space-y-2">
+                      <Skeleton className="h-10 w-full" />
+                      <Skeleton className="h-10 w-full" />
+                      <Skeleton className="h-10 w-full" />
+                    </div>
+                  ) : completedChecklists.length === 0 ? (
+                    <div className="text-center py-8">
+                      <ClipboardCheck className="mx-auto h-12 w-12 text-muted-foreground opacity-50" />
+                      <h3 className="mt-4 text-lg font-medium">Sin checklists completados</h3>
+                      <p className="mt-2 text-sm text-muted-foreground">
+                        No hay checklists completados para este activo.
+                      </p>
+                    </div>
+                  ) : (
+                    <>
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Fecha</TableHead>
+                            <TableHead>Nombre del Checklist</TableHead>
+                            <TableHead>Frecuencia</TableHead>
+                            <TableHead>Realizado por</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {completedChecklists.slice(0, 8).map((checklist) => (
+                            <TableRow key={checklist.id}>
+                              <TableCell>{formatDate(checklist.updated_at)}</TableCell>
+                              <TableCell>
+                                <div>
+                                  <p className="font-medium">{checklist.checklists?.name || 'Sin nombre'}</p>
+                                </div>
+                              </TableCell>
+                              <TableCell>
+                                <Badge 
+                                  variant={checklist.checklists?.frequency === 'diario' ? 'default' : 
+                                          checklist.checklists?.frequency === 'semanal' ? 'secondary' : 'outline'}
+                                >
+                                  {checklist.checklists?.frequency || 'N/A'}
+                                </Badge>
+                              </TableCell>
+                              <TableCell>
+                                {checklist.profiles ? 
+                                  `${checklist.profiles.nombre} ${checklist.profiles.apellido}` : 
+                                  'No especificado'}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                      
+                      {completedChecklists.length > 8 && (
+                        <div className="mt-4 text-center">
+                          <p className="text-sm text-muted-foreground">
+                            Mostrando los 8 más recientes de {completedChecklists.length} total
+                          </p>
                         </div>
                       )}
                     </>

@@ -8,6 +8,7 @@ export async function GET(request: Request) {
     const url = new URL(request.url)
     const status = url.searchParams.get('status')
     const type = url.searchParams.get('type')
+    const assetId = url.searchParams.get('assetId')
     const cleanup = url.searchParams.get('cleanup')
     
     const supabase = createServerClient(
@@ -91,14 +92,20 @@ export async function GET(request: Request) {
         ),
         assets (name, asset_id, location)
       `)
-      .order('scheduled_date', { ascending: true })
 
     if (status) {
       query = query.eq('status', status)
     }
 
-    if (type) {
-      query = query.eq('checklists.frequency', type)
+    if (assetId) {
+      query = query.eq('asset_id', assetId)
+    }
+
+    // Order by scheduled_date for pending, by updated_at for completed
+    if (status === 'completado') {
+      query = query.order('updated_at', { ascending: false })
+    } else {
+      query = query.order('scheduled_date', { ascending: true })
     }
 
     const { data, error } = await query
@@ -107,7 +114,35 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
-    return NextResponse.json({ data })
+    // Filter by type/frequency on the server side after getting the data
+    let filteredData = data || []
+    if (type && filteredData.length > 0) {
+      filteredData = filteredData.filter(schedule => 
+        schedule.checklists?.frequency === type
+      )
+    }
+
+    // Fetch profile information for assigned users
+    if (filteredData.length > 0) {
+      const userIds = [...new Set(filteredData.map(schedule => schedule.assigned_to).filter(Boolean))]
+      
+      if (userIds.length > 0) {
+        const { data: profiles, error: profilesError } = await supabase
+          .from('profiles')
+          .select('id, nombre, apellido')
+          .in('id', userIds)
+        
+        if (!profilesError && profiles) {
+          // Add profile data to schedules
+          filteredData = filteredData.map(schedule => ({
+            ...schedule,
+            profiles: profiles.find(profile => profile.id === schedule.assigned_to) || null
+          }))
+        }
+      }
+    }
+
+    return NextResponse.json({ data: filteredData })
   } catch (error) {
     console.error('Error in GET schedules:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
