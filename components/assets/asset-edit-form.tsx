@@ -845,6 +845,43 @@ export function AssetEditForm({ assetId }: AssetEditFormProps) {
         throw new Error("Usuario no autenticado")
       }
 
+      // Subir fotos nuevas si hay algunas
+      const photoUrls: string[] = []
+      
+      // Upload each new photo
+      for (const photo of uploadedPhotos) {
+        const fileName = `${assetId}/${Date.now()}-${photo.category || 'general'}-${photo.file.name}`
+        const { data: uploadData, error } = await supabase.storage
+          .from("asset-photos")
+          .upload(fileName, photo.file)
+        
+        if (error) {
+          throw error
+        }
+        
+        // Get public URL
+        const { data: publicUrlData } = supabase.storage
+          .from("asset-photos")
+          .getPublicUrl(fileName)
+        
+        photoUrls.push(publicUrlData.publicUrl)
+      }
+
+      // Get existing photos from the asset
+      const { data: existingAsset, error: fetchError } = await supabase
+        .from("assets")
+        .select("photos")
+        .eq("id", assetId)
+        .single()
+
+      if (fetchError) {
+        throw fetchError
+      }
+
+      // Combine existing photos with new ones
+      const existingPhotos = existingAsset?.photos || []
+      const allPhotos = [...existingPhotos, ...photoUrls]
+
       // Update asset data
       const assetDataToUpdate = {
         asset_id: data.assetId,
@@ -865,6 +902,7 @@ export function AssetEditForm({ assetId }: AssetEditFormProps) {
         insurance_policy: data.insurancePolicy,
         insurance_start_date: data.insuranceCoverage?.startDate?.toISOString(),
         insurance_end_date: data.insuranceCoverage?.endDate?.toISOString(),
+        photos: allPhotos, // Include both existing and new photos
         updated_at: new Date().toISOString(),
       }
 
@@ -879,9 +917,12 @@ export function AssetEditForm({ assetId }: AssetEditFormProps) {
 
       toast({
         title: "Activo actualizado con éxito",
-        description: `${data.name} ha sido actualizado correctamente.`,
+        description: `${data.name} ha sido actualizado correctamente.${photoUrls.length > 0 ? ` Se agregaron ${photoUrls.length} foto(s).` : ''}`,
         variant: "default",
       })
+
+      // Clear uploaded photos after successful save
+      setUploadedPhotos([])
 
       router.push("/activos")
       router.refresh()
