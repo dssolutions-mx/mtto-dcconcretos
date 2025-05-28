@@ -15,6 +15,7 @@ import { WeeklyChecklistList } from "@/components/checklists/weekly-checklist-li
 import { MonthlyChecklistList } from "@/components/checklists/monthly-checklist-list"
 import { PreventiveChecklistList } from "@/components/checklists/preventive-checklist-list"
 import { ChecklistTemplateList } from "@/components/checklists/checklist-template-list"
+import { OfflineStatus } from "@/components/checklists/offline-status"
 import { useChecklistSchedules, useChecklistTemplates } from "@/hooks/useChecklists"
 import { toast } from "sonner"
 import { Badge } from "@/components/ui/badge"
@@ -139,52 +140,71 @@ function ChecklistsContent() {
     }
   }
 
+  // Callback para actualizar datos después de sincronización
+  const handleSyncComplete = () => {
+    fetchSchedules('pendiente')
+    fetchTemplates()
+  }
+
   return (
     <DashboardShell>
       <DashboardHeader
         heading="Checklists de Mantenimiento"
         text="Gestiona los checklists para diferentes frecuencias de mantenimiento."
       >
-        <div className="flex gap-2">
-          <Button variant="outline">
-            <FileDown className="mr-2 h-4 w-4" />
-            Exportar
-          </Button>
-          <Button variant="outline" asChild>
-            <Link href="/checklists/programar">
-              <ClipboardCheck className="mr-2 h-4 w-4" />
-              Programar Checklist
-            </Link>
-          </Button>
-          <Button asChild>
-            <Link href="/checklists/crear">
-              <Plus className="mr-2 h-4 w-4" />
-              Nueva Plantilla
-            </Link>
-          </Button>
-          <Button 
-            variant="outline" 
-            onClick={handleCleanupDuplicates}
-            disabled={cleaningUp}
-          >
-            {cleaningUp ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            ) : (
-              <Trash2 className="mr-2 h-4 w-4" />
-            )}
-            {cleaningUp ? 'Limpiando...' : 'Limpiar Duplicados'}
-          </Button>
+        <div className="flex flex-col sm:flex-row gap-2">
+          {/* Estado offline compacto en header para móviles */}
+          <div className="sm:hidden">
+            <OfflineStatus showDetails={false} onSyncComplete={handleSyncComplete} />
+          </div>
+          
+          <div className="flex gap-2">
+            <Button variant="outline" className="hidden sm:flex">
+              <FileDown className="mr-2 h-4 w-4" />
+              <span className="hidden md:inline">Exportar</span>
+            </Button>
+            <Button variant="outline" asChild>
+              <Link href="/checklists/programar">
+                <ClipboardCheck className="mr-2 h-4 w-4" />
+                <span className="hidden md:inline">Programar</span>
+              </Link>
+            </Button>
+            <Button asChild>
+              <Link href="/checklists/crear">
+                <Plus className="mr-2 h-4 w-4" />
+                <span className="hidden md:inline">Nueva Plantilla</span>
+              </Link>
+            </Button>
+            <Button 
+              variant="outline" 
+              onClick={handleCleanupDuplicates}
+              disabled={cleaningUp}
+              className="hidden lg:flex"
+            >
+              {cleaningUp ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Trash2 className="mr-2 h-4 w-4" />
+              )}
+              {cleaningUp ? 'Limpiando...' : 'Limpiar Duplicados'}
+            </Button>
+          </div>
         </div>
       </DashboardHeader>
 
+      {/* Estado offline detallado para desktop */}
+      <div className="hidden sm:block mb-6">
+        <OfflineStatus onSyncComplete={handleSyncComplete} />
+      </div>
+
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-        <TabsList>
-          <TabsTrigger value="overview">Vista General</TabsTrigger>
-          <TabsTrigger value="daily">Diarios</TabsTrigger>
-          <TabsTrigger value="weekly">Semanales</TabsTrigger>
-          <TabsTrigger value="monthly">Mensuales</TabsTrigger>
-          <TabsTrigger value="preventive">Mantenimiento Preventivo</TabsTrigger>
-          <TabsTrigger value="templates">Plantillas</TabsTrigger>
+        <TabsList className="grid w-full grid-cols-3 lg:grid-cols-6">
+          <TabsTrigger value="overview" className="text-xs sm:text-sm">General</TabsTrigger>
+          <TabsTrigger value="daily" className="text-xs sm:text-sm">Diarios</TabsTrigger>
+          <TabsTrigger value="weekly" className="text-xs sm:text-sm">Semanales</TabsTrigger>
+          <TabsTrigger value="monthly" className="text-xs sm:text-sm">Mensuales</TabsTrigger>
+          <TabsTrigger value="preventive" className="text-xs sm:text-sm">Preventivo</TabsTrigger>
+          <TabsTrigger value="templates" className="text-xs sm:text-sm">Plantillas</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview">
@@ -262,7 +282,7 @@ function ChecklistsContent() {
                 }
               })()}
               
-              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+              <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">
                 <Link href="/checklists/diarios" className="block">
                   <Card className="hover:bg-muted/50 transition-colors">
                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -317,19 +337,6 @@ function ChecklistsContent() {
                   </Card>
                 </Link>
 
-                <Link href="/checklists" className="block">
-                  <Card className="hover:bg-muted/50 transition-colors">
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                      <CardTitle className="text-sm font-medium">Plantillas</CardTitle>
-                      <ClipboardCheck className="h-4 w-4 text-muted-foreground" />
-                    </CardHeader>
-                    <CardContent>
-                      <div className="text-2xl font-bold">{stats.templates}</div>
-                      <p className="text-xs text-muted-foreground">Para diferentes equipos</p>
-                    </CardContent>
-                  </Card>
-                </Link>
-
                 <Link href="/checklists?tab=preventive" className="block">
                   <Card className="hover:bg-muted/50 transition-colors">
                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -342,6 +349,19 @@ function ChecklistsContent() {
                         {stats.preventive.pending} pendientes
                         {stats.preventive.overdue > 0 && ` • ${stats.preventive.overdue} atrasados`}
                       </p>
+                    </CardContent>
+                  </Card>
+                </Link>
+
+                <Link href="/checklists?tab=templates" className="block">
+                  <Card className="hover:bg-muted/50 transition-colors">
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                      <CardTitle className="text-sm font-medium">Plantillas</CardTitle>
+                      <ClipboardCheck className="h-4 w-4 text-muted-foreground" />
+                    </CardHeader>
+                    <CardContent>
+                      <div className="text-2xl font-bold">{stats.templates}</div>
+                      <p className="text-xs text-muted-foreground">Para diferentes equipos</p>
                     </CardContent>
                   </Card>
                 </Link>

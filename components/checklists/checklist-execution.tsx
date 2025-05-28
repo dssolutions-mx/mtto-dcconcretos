@@ -21,6 +21,8 @@ import {
 } from "@/components/ui/alert-dialog"
 import { Camera, Check, Clock, FileText, Flag, Loader2, Save, Upload, X, Wifi, WifiOff, RefreshCw } from "lucide-react"
 import { SignatureCanvas } from "@/components/checklists/signature-canvas"
+import { OfflineStatus } from "@/components/checklists/offline-status"
+import { useOfflineSync } from "@/hooks/useOfflineSync"
 import { toast } from "sonner"
 import { createBrowserClient } from '@supabase/ssr'
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
@@ -47,63 +49,34 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
   const [showCorrective, setShowCorrective] = useState(false)
   const [selectedItem, setSelectedItem] = useState<string | null>(null)
   
-  // Nuevos estados para funcionalidad offline
-  const [isOnline, setIsOnline] = useState(navigator.onLine)
-  const [isSyncing, setIsSyncing] = useState(false)
-  const [pendingSyncCount, setPendingSyncCount] = useState(0)
+  // Usar el nuevo hook para estado offline
+  const { isOnline, hasPendingSyncs } = useOfflineSync()
+  
+  // Estados para auto-guardar
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
+  const [lastSaved, setLastSaved] = useState<Date | null>(null)
 
-  // Detectar cambios de conexión
+  // Inicializar servicio offline solo cuando sea necesario
   useEffect(() => {
-    // Inicializar servicio offline solo en el cliente
     if (typeof window !== 'undefined' && !offlineChecklistService) {
       import('@/lib/services/offline-checklist-service').then(module => {
         offlineChecklistService = module.offlineChecklistService
-        checkPendingSyncs()
       })
     }
-    
-    const handleOnline = () => {
-      setIsOnline(true)
-      toast.success("Conexión restaurada", {
-        description: "Los cambios pendientes se sincronizarán automáticamente"
-      })
-      checkPendingSyncs()
-    }
-    
-    const handleOffline = () => {
-      setIsOnline(false)
-      toast.warning("Sin conexión", {
-        description: "Los cambios se guardarán localmente y se sincronizarán cuando vuelva la conexión"
-      })
-    }
-    
-    if (typeof window !== 'undefined') {
-      window.addEventListener('online', handleOnline)
-      window.addEventListener('offline', handleOffline)
-      
-      // Auto-guardar cambios cada 30 segundos si hay cambios no guardados
-      const autoSaveInterval = setInterval(() => {
-        if (hasUnsavedChanges && checklist) {
-          saveToLocalStorage()
-        }
-      }, 30000)
-      
-      return () => {
-        window.removeEventListener('online', handleOnline)
-        window.removeEventListener('offline', handleOffline)
-        clearInterval(autoSaveInterval)
-      }
-    }
-  }, [hasUnsavedChanges, checklist])
+  }, [])
 
-  // Verificar sincs pendientes
-  const checkPendingSyncs = async () => {
-    if (!offlineChecklistService) return
+  // Auto-guardar cambios cada 30 segundos si hay cambios no guardados
+  useEffect(() => {
+    if (typeof window === 'undefined') return
     
-    const stats = await offlineChecklistService.getSyncStats()
-    setPendingSyncCount(stats.pending)
-  }
+    const autoSaveInterval = setInterval(() => {
+      if (hasUnsavedChanges && checklist) {
+        saveToLocalStorage()
+      }
+    }, 30000)
+    
+    return () => clearInterval(autoSaveInterval)
+  }, [hasUnsavedChanges, checklist])
 
   // Guardar en localStorage para recuperación
   const saveToLocalStorage = () => {
@@ -124,6 +97,8 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
     
     localStorage.setItem(`checklist-draft-${id}`, JSON.stringify(saveData))
     setHasUnsavedChanges(false)
+    setLastSaved(new Date())
+    toast.success("Borrador guardado localmente", { duration: 2000 })
   }
 
   // Recuperar datos guardados localmente
@@ -142,6 +117,7 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
           setSignature(data.signature || null)
           setShowCorrective(data.showCorrective || false)
           setSelectedItem(data.selectedItem || null)
+          toast.info("Borrador restaurado desde almacenamiento local")
           return true
         }
       } catch (error) {
@@ -263,10 +239,10 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
 
   // Actualizar el estado de cambios no guardados cuando cambian las respuestas
   useEffect(() => {
-    if (Object.keys(itemStatus).length > 0) {
+    if (Object.keys(itemStatus).length > 0 || notes || technician || signature) {
       setHasUnsavedChanges(true)
     }
-  }, [itemStatus])
+  }, [itemStatus, notes, technician, signature])
 
   const handleStatusChange = (itemId: string, status: "pass" | "flag" | "fail") => {
     setItemStatus((prev) => ({ ...prev, [itemId]: status }))
@@ -389,7 +365,7 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
           // Limpiar datos locales
           localStorage.removeItem(`checklist-draft-${id}`)
           
-          toast.warning("Checklist guardado sin conexión", {
+          toast.success("Checklist guardado sin conexión", {
             description: "Se sincronizará automáticamente cuando vuelva la conexión"
           })
           
@@ -532,37 +508,6 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
            completedItems === totalItems && 
            technician.trim() !== "" && 
            signature !== null
-  }
-
-  // Función para sincronizar manualmente
-  const syncManually = async () => {
-    if (!isOnline) {
-      toast.error("No hay conexión a internet")
-      return
-    }
-    
-    if (!offlineChecklistService) {
-      toast.error("Servicio offline no disponible")
-      return
-    }
-    
-    setIsSyncing(true)
-    try {
-      const result = await offlineChecklistService.syncAll()
-      if (result && typeof result === 'object') {
-        if (result.synced !== undefined && result.synced > 0) {
-          toast.success(`${result.synced} checklists sincronizados exitosamente`)
-        }
-        if (result.failed !== undefined && result.failed > 0) {
-          toast.warning(`${result.failed} checklists no pudieron sincronizarse`)
-        }
-      }
-      await checkPendingSyncs()
-    } catch (error) {
-      toast.error("Error al sincronizar")
-    } finally {
-      setIsSyncing(false)
-    }
   }
 
   if (loading) {
@@ -854,48 +799,20 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Barra de estado de conexión */}
-      <div className="flex items-center justify-between bg-background border rounded-lg p-3">
-        <div className="flex items-center gap-2">
-          {isOnline ? (
-            <>
-              <Wifi className="h-4 w-4 text-green-600" />
-              <span className="text-sm text-green-600 font-medium">Conectado</span>
-            </>
-          ) : (
-            <>
-              <WifiOff className="h-4 w-4 text-orange-600" />
-              <span className="text-sm text-orange-600 font-medium">Sin conexión</span>
-            </>
-          )}
-          {pendingSyncCount > 0 && (
-            <Badge variant="outline" className="ml-2">
-              {pendingSyncCount} pendiente{pendingSyncCount > 1 ? 's' : ''}
-            </Badge>
-          )}
-        </div>
-        
-        {pendingSyncCount > 0 && isOnline && (
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={syncManually}
-            disabled={isSyncing}
-          >
-            {isSyncing ? (
-              <Loader2 className="h-4 w-4 animate-spin mr-2" />
-            ) : (
-              <RefreshCw className="h-4 w-4 mr-2" />
-            )}
-            Sincronizar
-          </Button>
-        )}
-      </div>
+      {/* Estado offline integrado */}
+      <OfflineStatus showDetails={true} />
 
       {hasUnsavedChanges && (
         <Alert>
-          <AlertDescription className="flex items-center justify-between">
-            <span>Tienes cambios sin guardar</span>
+          <AlertDescription className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <span className="text-sm">Tienes cambios sin guardar</span>
+              {lastSaved && (
+                <span className="text-xs text-muted-foreground">
+                  Último guardado: {lastSaved.toLocaleTimeString()}
+                </span>
+              )}
+            </div>
             <Button size="sm" variant="outline" onClick={saveToLocalStorage}>
               Guardar borrador
             </Button>

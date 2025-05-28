@@ -10,6 +10,8 @@ interface ChecklistDB extends DBSchema {
       synced: boolean
       timestamp: number
       retryCount: number
+      lastAttempt?: number
+      error?: string
     }
   }
   'checklist-templates': {
@@ -23,11 +25,18 @@ interface ChecklistDB extends DBSchema {
   }
 }
 
+// Tipo para eventos del servicio offline
+type OfflineServiceEvent = 'sync-start' | 'sync-complete' | 'sync-error' | 'connection-change' | 'stats-update'
+
 class OfflineChecklistService {
   private db: Promise<IDBPDatabase<ChecklistDB>> | null = null
   private syncInProgress: boolean = false
   private onlineListener: (() => void) | null = null
   private isClient: boolean = false
+  private eventListeners: Map<OfflineServiceEvent, Function[]> = new Map()
+  private autoSyncTimer: NodeJS.Timeout | null = null
+  private lastSyncAttempt: number = 0
+  private minSyncInterval: number = 30000 // 30 segundos mínimo entre syncs
   
   constructor() {
     this.isClient = typeof window !== 'undefined'
@@ -53,6 +62,7 @@ class OfflineChecklistService {
     
     // Inicializar listeners para conexión
     this.setupOnlineListener()
+    this.setupAutoSync()
   }
 
   private async getDB(): Promise<IDBPDatabase<ChecklistDB> | null> {
@@ -61,23 +71,106 @@ class OfflineChecklistService {
     return this.db
   }
   
+  // Sistema de eventos
+  on(event: OfflineServiceEvent, callback: Function) {
+    if (!this.eventListeners.has(event)) {
+      this.eventListeners.set(event, [])
+    }
+    this.eventListeners.get(event)!.push(callback)
+  }
+
+  off(event: OfflineServiceEvent, callback: Function) {
+    const listeners = this.eventListeners.get(event)
+    if (listeners) {
+      const index = listeners.indexOf(callback)
+      if (index > -1) {
+        listeners.splice(index, 1)
+      }
+    }
+  }
+
+  private emit(event: OfflineServiceEvent, data?: any) {
+    const listeners = this.eventListeners.get(event)
+    if (listeners) {
+      listeners.forEach(callback => {
+        try {
+          callback(data)
+        } catch (error) {
+          console.error(`Error in event listener for ${event}:`, error)
+        }
+      })
+    }
+  }
+  
   // Configurar listener para cuando vuelva la conexión
   private setupOnlineListener() {
     if (!this.isClient) return
     
-    this.onlineListener = () => {
+    this.onlineListener = async () => {
       console.log('Conexión detectada, iniciando sincronización...')
-      this.syncAll()
+      this.emit('connection-change', { online: true })
+      
+      // Esperar un poco antes de sincronizar para asegurar estabilidad de conexión
+      setTimeout(() => {
+        if (navigator.onLine) {
+          this.syncAllWithThrottle()
+        }
+      }, 2000)
+    }
+    
+    const offlineListener = () => {
+      this.emit('connection-change', { online: false })
     }
     
     window.addEventListener('online', this.onlineListener)
+    window.addEventListener('offline', offlineListener)
     
-    // También verificar periódicamente si hay conexión
-    setInterval(() => {
+    // Cleanup anterior
+    const cleanup = () => {
+      window.removeEventListener('online', this.onlineListener!)
+      window.removeEventListener('offline', offlineListener)
+    }
+    
+    // Guardar la función de cleanup para uso posterior
+    this.cleanup = cleanup
+  }
+
+  private cleanup: (() => void) | null = null
+
+  // Configurar sincronización automática inteligente
+  private setupAutoSync() {
+    if (!this.isClient) return
+    
+    // Sync periódico más inteligente: cada 2 minutos si hay conexión y pendientes
+    this.autoSyncTimer = setInterval(async () => {
       if (navigator.onLine && !this.syncInProgress) {
-        this.syncPendingWithRetry()
+        const stats = await this.getSyncStats()
+        if (stats.pending > 0) {
+          await this.syncAllWithThrottle()
+        }
       }
-    }, 30000) // Cada 30 segundos
+    }, 120000) // 2 minutos
+
+    // También verificar cuando la página gana/pierde foco
+    const handleVisibilityChange = () => {
+      if (!document.hidden && navigator.onLine && !this.syncInProgress) {
+        this.syncAllWithThrottle()
+      }
+    }
+
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+  }
+
+  // Sincronización con throttling para evitar spam
+  private async syncAllWithThrottle() {
+    const now = Date.now()
+    if (now - this.lastSyncAttempt < this.minSyncInterval) {
+      console.log('Sincronización throttled, muy pronto desde la última')
+      return
+    }
+
+    this.lastSyncAttempt = now
+    return this.syncAll()
   }
   
   // Guardar plantilla de checklist para uso offline
@@ -111,8 +204,13 @@ class OfflineChecklistService {
       data,
       synced: false,
       timestamp: Date.now(),
-      retryCount: 0
+      retryCount: 0,
+      lastAttempt: undefined,
+      error: undefined
     })
+    
+    // Emitir evento de actualización de stats
+    this.emit('stats-update', await this.getSyncStats())
     
     // Intentar sincronizar inmediatamente si hay conexión
     if (this.isClient && navigator.onLine) {
@@ -137,23 +235,26 @@ class OfflineChecklistService {
     const item = await db.get('offline-checklists', id)
     if (item) {
       item.synced = true
+      item.error = undefined
       await db.put('offline-checklists', item)
     }
   }
   
   // Incrementar contador de reintentos
-  async incrementRetryCount(id: string) {
+  async incrementRetryCount(id: string, error?: string) {
     const db = await this.getDB()
     if (!db) return
     
     const item = await db.get('offline-checklists', id)
     if (item) {
       item.retryCount = (item.retryCount || 0) + 1
+      item.lastAttempt = Date.now()
+      item.error = error
       await db.put('offline-checklists', item)
     }
   }
   
-  // Sincronizar un solo checklist
+  // Sincronizar un solo checklist con mejor manejo de errores
   async syncSingle(id: string): Promise<boolean> {
     try {
       const db = await this.getDB()
@@ -163,6 +264,11 @@ class OfflineChecklistService {
       
       if (!item || item.synced) return true
       
+      // Verificar si no hemos reintentado demasiado recientemente
+      if (item.lastAttempt && Date.now() - item.lastAttempt < 10000) {
+        return false // Esperar 10 segundos entre reintentos
+      }
+
       const response = await fetch(`/api/checklists/schedules/${item.data.scheduleId}/complete`, {
         method: 'POST',
         headers: {
@@ -173,60 +279,92 @@ class OfflineChecklistService {
       
       if (response.ok) {
         await this.markAsSynced(id)
+        console.log(`✅ Checklist ${id} sincronizado exitosamente`)
         return true
-      } else if (response.status >= 400 && response.status < 500) {
-        // Error del cliente, no reintentar
-        console.error(`Error ${response.status} al sincronizar checklist ${id}`)
-        await this.incrementRetryCount(id)
-        return false
       } else {
-        // Error del servidor, reintentar
-        throw new Error(`Server error ${response.status}`)
+        const errorText = await response.text()
+        const errorMessage = `HTTP ${response.status}: ${errorText}`
+        
+        if (response.status >= 400 && response.status < 500) {
+          // Error del cliente, no reintentar más
+          console.error(`❌ Error del cliente para checklist ${id}: ${errorMessage}`)
+          await this.incrementRetryCount(id, errorMessage)
+          return false
+        } else {
+          // Error del servidor, reintentar
+          console.warn(`⚠️ Error del servidor para checklist ${id}: ${errorMessage}`)
+          throw new Error(errorMessage)
+        }
       }
-    } catch (error) {
-      console.error(`Error sincronizando checklist ${id}:`, error)
-      await this.incrementRetryCount(id)
+    } catch (error: any) {
+      console.error(`💥 Error sincronizando checklist ${id}:`, error)
+      await this.incrementRetryCount(id, error.message)
       return false
     }
   }
   
-  // Sincronizar todos los checklists pendientes con reintentos
+  // Sincronizar todos los checklists pendientes con reintentos y mejor feedback
   async syncPendingWithRetry() {
     if (this.syncInProgress) return
     
     this.syncInProgress = true
-    const pending = await this.getPendingSyncs()
+    this.emit('sync-start')
     
-    for (const item of pending) {
-      if (item.retryCount < 5) {
-        const success = await this.syncSingle(item.id)
-        if (!success) {
-          // Esperar antes de continuar con el siguiente
-          await new Promise(resolve => setTimeout(resolve, 2000))
+    try {
+      const pending = await this.getPendingSyncs()
+      let successCount = 0
+      let errorCount = 0
+      
+      for (const item of pending) {
+        if (item.retryCount < 5) {
+          const success = await this.syncSingle(item.id)
+          if (success) {
+            successCount++
+          } else {
+            errorCount++
+            // Esperar un poco entre errores para no sobrecargar
+            await new Promise(resolve => setTimeout(resolve, 1000))
+          }
         }
       }
+      
+      // Emitir evento de stats actualizado
+      this.emit('stats-update', await this.getSyncStats())
+      
+      return { success: successCount, errors: errorCount }
+    } finally {
+      this.syncInProgress = false
     }
-    
-    this.syncInProgress = false
   }
   
   // Sincronizar todos los checklists pendientes
   async syncAll() {
     if (!this.isClient || !navigator.onLine) {
       console.log('Sin conexión, sincronización cancelada')
+      this.emit('sync-error', { message: 'Sin conexión a internet' })
       return { success: false, message: 'Sin conexión a internet' }
     }
     
-    await this.syncPendingWithRetry()
-    
-    const pending = await this.getPendingSyncs()
-    const failed = pending.filter(item => item.retryCount >= 5)
-    
-    return {
-      success: pending.length === failed.length,
-      synced: pending.length - failed.length,
-      failed: failed.length,
-      results: pending
+    try {
+      const result = await this.syncPendingWithRetry()
+      
+      const pending = await this.getPendingSyncs()
+      const failed = pending.filter(item => item.retryCount >= 5)
+      
+      const syncResult = {
+        success: pending.length === 0,
+        synced: result?.success || 0,
+        failed: failed.length,
+        errors: result?.errors || 0,
+        results: pending
+      }
+      
+      this.emit('sync-complete', syncResult)
+      
+      return syncResult
+    } catch (error: any) {
+      this.emit('sync-error', { message: error.message, error })
+      throw error
     }
   }
   
@@ -243,12 +381,46 @@ class OfflineChecklistService {
     
     const all = await db.getAll('offline-checklists')
     
-    return {
+    const stats = {
       total: all.length,
       synced: all.filter(item => item.synced).length,
       pending: all.filter(item => !item.synced && item.retryCount < 5).length,
       failed: all.filter(item => !item.synced && item.retryCount >= 5).length
     }
+
+    // Emitir evento de actualización
+    this.emit('stats-update', stats)
+    
+    return stats
+  }
+  
+  // Obtener detalles de elementos con errores
+  async getFailedItems() {
+    const db = await this.getDB()
+    if (!db) return []
+    
+    const all = await db.getAll('offline-checklists')
+    return all.filter(item => !item.synced && item.retryCount >= 5)
+  }
+
+  // Reintentar un elemento fallido específico
+  async retryFailed(id: string) {
+    const db = await this.getDB()
+    if (!db) return false
+    
+    const item = await db.get('offline-checklists', id)
+    if (item && !item.synced) {
+      // Resetear contador de reintentos
+      item.retryCount = 0
+      item.error = undefined
+      item.lastAttempt = undefined
+      await db.put('offline-checklists', item)
+      
+      // Intentar sincronizar
+      return this.syncSingle(id)
+    }
+    
+    return false
   }
   
   // Limpiar datos antiguos (más de 30 días)
@@ -258,10 +430,12 @@ class OfflineChecklistService {
     
     const all = await db.getAll('offline-checklists')
     const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000
+    let cleaned = 0
     
     for (const item of all) {
       if (item.synced && item.timestamp < thirtyDaysAgo) {
         await db.delete('offline-checklists', item.id)
+        cleaned++
       }
     }
     
@@ -270,15 +444,29 @@ class OfflineChecklistService {
     for (const template of templates) {
       if (template.lastUpdated < thirtyDaysAgo) {
         await db.delete('checklist-templates', template.id)
+        cleaned++
       }
     }
+
+    if (cleaned > 0) {
+      console.log(`🧹 Limpieza automática: ${cleaned} elementos antiguos eliminados`)
+      this.emit('stats-update', await this.getSyncStats())
+    }
+    
+    return cleaned
   }
   
   // Destruir el servicio y limpiar listeners
   destroy() {
-    if (this.isClient && this.onlineListener) {
-      window.removeEventListener('online', this.onlineListener)
+    if (this.cleanup) {
+      this.cleanup()
     }
+    
+    if (this.autoSyncTimer) {
+      clearInterval(this.autoSyncTimer)
+    }
+    
+    this.eventListeners.clear()
   }
 }
 
