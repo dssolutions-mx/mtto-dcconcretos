@@ -1,7 +1,7 @@
 "use client"
 
 import React, { useState, useRef, useCallback, useMemo } from "react"
-import { Camera, Upload, X, Check, Plus, Grid3X3, List, FileText, AlertTriangle } from "lucide-react"
+import { Camera, Upload, X, Check, Plus, Grid3X3, List, FileText, AlertTriangle, Eye, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -112,6 +112,7 @@ export function EvidenceUpload({
   const [pendingEvidence, setPendingEvidence] = useState<EvidencePhoto[]>([])
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid")
   const [uploading, setUploading] = useState(false)
+  const [previewImage, setPreviewImage] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const categories = EVIDENCE_CATEGORIES[context] || EVIDENCE_CATEGORIES.creation
@@ -166,6 +167,14 @@ export function EvidenceUpload({
       }
       return prev.filter((_, i) => i !== index)
     })
+  }, [])
+
+  const openPreview = useCallback((imageUrl: string) => {
+    setPreviewImage(imageUrl)
+  }, [])
+
+  const closePreview = useCallback(() => {
+    setPreviewImage(null)
   }, [])
 
   const uploadToSupabase = async (evidenceItem: EvidencePhoto): Promise<EvidencePhoto> => {
@@ -388,6 +397,8 @@ export function EvidenceUpload({
                       updateEvidenceCategory={updateEvidenceCategory}
                       updateEvidenceDescription={updateEvidenceDescription}
                       getCategoryInfo={getCategoryInfo}
+                      onRemove={removeEvidence}
+                      onPreview={openPreview}
                     />
                   ))}
                 </div>
@@ -419,6 +430,29 @@ export function EvidenceUpload({
           </div>
         </DialogFooter>
       </DialogContent>
+
+      {/* Image Preview Modal */}
+      {previewImage && (
+        <Dialog open={!!previewImage} onOpenChange={closePreview}>
+          <DialogContent className="max-w-4xl max-h-[90vh] p-0">
+            <div className="relative">
+              <img
+                src={previewImage}
+                alt="Preview"
+                className="w-full h-auto max-h-[85vh] object-contain"
+              />
+              <Button
+                variant="secondary"
+                size="sm"
+                className="absolute top-4 right-4"
+                onClick={closePreview}
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
     </Dialog>
   )
 }
@@ -504,6 +538,8 @@ const EvidenceClassificationCard = React.memo(function EvidenceClassificationCar
   updateEvidenceCategory,
   updateEvidenceDescription,
   getCategoryInfo,
+  onRemove,
+  onPreview,
 }: {
   evidence: EvidencePhoto
   index: number
@@ -511,6 +547,8 @@ const EvidenceClassificationCard = React.memo(function EvidenceClassificationCar
   updateEvidenceCategory: (index: number, category: string) => void
   updateEvidenceDescription: (index: number, description: string) => void
   getCategoryInfo: (categoryValue: string) => { value: string; label: string; icon: string }
+  onRemove: (index: number) => void
+  onPreview: (imageUrl: string) => void
 }) {
   const isImage = evidence.file?.type.startsWith('image/') || false
   const categoryInfo = evidence.category ? getCategoryInfo(evidence.category) : null
@@ -520,19 +558,39 @@ const EvidenceClassificationCard = React.memo(function EvidenceClassificationCar
       <CardContent className="p-4">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {/* Preview */}
-          <div className="aspect-square bg-muted rounded-lg overflow-hidden">
-            {isImage ? (
-              <img
-                src={evidence.preview || evidence.url}
-                alt={evidence.description}
-                className="w-full h-full object-cover"
-              />
-            ) : (
-              <div className="w-full h-full flex items-center justify-center">
-                <FileText className="h-12 w-12 text-muted-foreground" />
-                <p className="text-xs text-center mt-2">{evidence.file?.name}</p>
-              </div>
-            )}
+          <div className="relative">
+            <div 
+              className="aspect-square bg-muted rounded-lg overflow-hidden cursor-pointer hover:opacity-80 transition-opacity"
+              onClick={() => isImage && onPreview(evidence.preview || evidence.url)}
+            >
+              {isImage ? (
+                <>
+                  <img
+                    src={evidence.preview || evidence.url}
+                    alt={evidence.description}
+                    className="w-full h-full object-cover"
+                  />
+                  <div className="absolute inset-0 bg-black bg-opacity-0 hover:bg-opacity-20 transition-all duration-200 flex items-center justify-center">
+                    <Eye className="h-8 w-8 text-white opacity-0 hover:opacity-100 transition-opacity" />
+                  </div>
+                </>
+              ) : (
+                <div className="w-full h-full flex flex-col items-center justify-center">
+                  <FileText className="h-12 w-12 text-muted-foreground" />
+                  <p className="text-xs text-center mt-2 px-2">{evidence.file?.name}</p>
+                </div>
+              )}
+            </div>
+            
+            {/* Delete button overlay */}
+            <Button
+              variant="destructive"
+              size="sm"
+              className="absolute top-2 right-2 h-8 w-8 p-0"
+              onClick={() => onRemove(index)}
+            >
+              <X className="h-4 w-4" />
+            </Button>
           </div>
 
           {/* Classification */}
@@ -578,18 +636,32 @@ const EvidenceClassificationCard = React.memo(function EvidenceClassificationCar
               </div>
             </div>
 
-            {/* Status indicator */}
-            <div className="flex items-center gap-2">
-              {evidence.category && evidence.description.trim() ? (
-                <Badge variant="default" className="flex items-center gap-1">
-                  <Check className="h-3 w-3" />
-                  Listo para subir
-                </Badge>
-              ) : (
-                <Badge variant="secondary" className="flex items-center gap-1">
-                  <AlertTriangle className="h-3 w-3" />
-                  Falta información
-                </Badge>
+            {/* Status indicator and actions */}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                {evidence.category && evidence.description.trim() ? (
+                  <Badge variant="default" className="flex items-center gap-1">
+                    <Check className="h-3 w-3" />
+                    Listo para subir
+                  </Badge>
+                ) : (
+                  <Badge variant="secondary" className="flex items-center gap-1">
+                    <AlertTriangle className="h-3 w-3" />
+                    Falta información
+                  </Badge>
+                )}
+              </div>
+              
+              {isImage && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => onPreview(evidence.preview || evidence.url)}
+                  className="flex items-center gap-2"
+                >
+                  <Eye className="h-4 w-4" />
+                  Vista Previa
+                </Button>
               )}
             </div>
           </div>
