@@ -16,7 +16,8 @@ export async function POST(
       p_schedule_id: id,
       p_completed_items: completed_items,
       p_technician: technician,
-      p_notes: notes
+      p_notes: notes,
+      p_signature_data: signature
     })
     
     if (error) {
@@ -67,19 +68,6 @@ export async function POST(
         // Incluir información de la orden de trabajo en la respuesta
         data.work_order = workOrder
       }
-    }
-    
-    // Guardar la firma (en un entorno real esto se haría en el storage de Supabase)
-    if (signature) {
-      const signatureId = data.completed_id
-      
-      // Aquí se implementaría la lógica para guardar la firma en Storage
-      // Por ejemplo:
-      // const { data: signatureData, error: signatureError } = await supabase.storage
-      //   .from('signatures')
-      //   .upload(`${signatureId}.png`, base64ToBlob(signature), {
-      //     contentType: 'image/png',
-      //   })
     }
     
     return NextResponse.json(data)

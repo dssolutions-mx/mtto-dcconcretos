@@ -884,6 +884,7 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
                             <TableHead>Nombre del Checklist</TableHead>
                             <TableHead>Frecuencia</TableHead>
                             <TableHead>Realizado por</TableHead>
+                            <TableHead>Acciones</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -907,6 +908,14 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
                                 {checklist.profiles ? 
                                   `${checklist.profiles.nombre} ${checklist.profiles.apellido}` : 
                                   'No especificado'}
+                              </TableCell>
+                              <TableCell>
+                                <Button size="sm" variant="outline" asChild>
+                                  <Link href={`/checklists/completado/${checklist.id}`}>
+                                    <ClipboardCheck className="mr-2 h-4 w-4" />
+                                    Ver detalles
+                                  </Link>
+                                </Button>
                               </TableCell>
                             </TableRow>
                           ))}
