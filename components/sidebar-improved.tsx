@@ -2,7 +2,6 @@
 
 import React from "react"
 import { useState, useEffect } from "react"
-
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
@@ -29,6 +28,8 @@ import {
   AlertTriangle,
   ChevronDown,
   ChevronRight,
+  PanelLeft,
+  PanelLeftClose,
   Building2,
 } from "lucide-react"
 import { UserNav } from "@/components/user-nav"
@@ -42,21 +43,16 @@ interface SidebarProps extends React.HTMLAttributes<HTMLDivElement> {
   onLinkClick?: () => void
 }
 
-// Enhanced Logo Component that acts as toggle button
-function AppLogo({ 
-  isCollapsed = false, 
-  className, 
-  onClick 
-}: { 
-  isCollapsed?: boolean; 
-  className?: string;
-  onClick?: () => void;
-}) {
-  const LogoContent = () => (
-    <div className={cn(
-      "flex items-center gap-3 font-semibold transition-all duration-200 hover:opacity-80 group cursor-pointer",
-      className
-    )}>
+// Enhanced Logo Component
+function AppLogo({ isCollapsed = false, className }: { isCollapsed?: boolean; className?: string }) {
+  return (
+    <Link 
+      href="/dashboard" 
+      className={cn(
+        "flex items-center gap-3 font-semibold transition-all duration-200 hover:opacity-80 group",
+        className
+      )}
+    >
       <div className="flex items-center justify-center w-8 h-8 bg-primary rounded-lg text-primary-foreground group-hover:scale-105 transition-transform">
         <Building2 className="h-5 w-5" />
       </div>
@@ -66,28 +62,44 @@ function AppLogo({
           <span className="text-xs text-muted-foreground -mt-0.5">Sistema de Gestión</span>
         </div>
       )}
-    </div>
-  )
-
-  if (onClick) {
-    return (
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <button onClick={onClick} className="text-left">
-            <LogoContent />
-          </button>
-        </TooltipTrigger>
-        <TooltipContent side="right" sideOffset={10}>
-          <p>{isCollapsed ? "Expandir sidebar" : "Colapsar sidebar"}</p>
-        </TooltipContent>
-      </Tooltip>
-    )
-  }
-
-  return (
-    <Link href="/dashboard">
-      <LogoContent />
     </Link>
+  )
+}
+
+// Enhanced Toggle Button
+function SidebarToggle({ 
+  isCollapsed, 
+  onClick, 
+  className 
+}: { 
+  isCollapsed: boolean; 
+  onClick: () => void; 
+  className?: string 
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon"
+          className={cn(
+            "h-8 w-8 rounded-lg border-2 border-transparent hover:border-border/50 transition-all",
+            "hover:bg-accent/50 focus-visible:border-primary/50",
+            className
+          )}
+          onClick={onClick}
+        >
+          {isCollapsed ? (
+            <PanelLeft className="h-4 w-4" />
+          ) : (
+            <PanelLeftClose className="h-4 w-4" />
+          )}
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent side="right" sideOffset={10}>
+        <p>{isCollapsed ? "Expandir sidebar" : "Colapsar sidebar"}</p>
+      </TooltipContent>
+    </Tooltip>
   )
 }
 
@@ -500,7 +512,7 @@ export function CollapsedSidebar({ className, onLinkClick }: SidebarProps) {
 export function SidebarWrapper({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(true) // Start collapsed by default
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false) // Start expanded for better UX
 
   useEffect(() => {
     setIsMobileMenuOpen(false)
@@ -511,87 +523,90 @@ export function SidebarWrapper({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <TooltipProvider>
-      <div className="min-h-screen flex">
-        {/* Desktop Sidebar */}
-        <aside className={cn(
-          "hidden md:flex md:flex-col border-r bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 transition-all duration-300 ease-in-out",
-          isSidebarCollapsed ? "md:w-16" : "md:w-64"
-        )}>
-          <div className="flex h-full max-h-screen flex-col">
-            {/* Enhanced Header with logo as toggle */}
-            <div className="flex h-16 items-center border-b px-4 lg:px-6">
-              <AppLogo 
-                isCollapsed={isSidebarCollapsed} 
-                onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
-              />
-            </div>
-            
-            {/* Navigation Content */}
-            <div className="flex-1 overflow-auto">
-              {isSidebarCollapsed ? (
-                <CollapsedSidebar 
-                  className="px-1" 
-                  onLinkClick={() => setIsMobileMenuOpen(false)} 
-                />
-              ) : (
-                <Sidebar 
-                  className="px-2" 
-                  onLinkClick={() => setIsMobileMenuOpen(false)} 
-                />
+    <div className="min-h-screen flex">
+      {/* Desktop Sidebar */}
+      <aside className={cn(
+        "hidden md:flex md:flex-col border-r bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 transition-all duration-300 ease-in-out",
+        isSidebarCollapsed ? "md:w-16" : "md:w-64"
+      )}>
+        <div className="flex h-full max-h-screen flex-col">
+          {/* Enhanced Header with better spacing */}
+          <div className="flex h-16 items-center justify-between border-b px-4 lg:px-6">
+            <AppLogo isCollapsed={isSidebarCollapsed} />
+            <SidebarToggle 
+              isCollapsed={isSidebarCollapsed}
+              onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+              className={cn(
+                "transition-all duration-200",
+                isSidebarCollapsed && "ml-0"
               )}
-            </div>
+            />
           </div>
-        </aside>
-
-        {/* Main Content */}
-        <div className="flex flex-1 flex-col min-w-0">
-          {/* Enhanced Header */}
-          <header className="flex h-16 items-center gap-4 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 px-4 lg:px-6">
-            {/* Mobile Menu & Logo */}
-            <div className="flex items-center gap-4 md:hidden">
-              <Sheet open={isMobileMenuOpen} onOpenChange={setIsMobileMenuOpen}>
-                <SheetTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="shrink-0"
-                  >
-                    <Menu className="h-5 w-5" />
-                    <span className="sr-only">Abrir menú</span>
-                  </Button>
-                </SheetTrigger>
-                <SheetContent side="left" className="flex flex-col p-0 w-64">
-                  <div className="flex h-16 items-center border-b px-4">
-                    <AppLogo />
-                  </div>
-                  <div className="flex-1 overflow-auto">
-                    <Sidebar 
-                      className="px-2" 
-                      onLinkClick={() => setIsMobileMenuOpen(false)} 
-                    />
-                  </div>
-                </SheetContent>
-              </Sheet>
-              <AppLogo className="md:hidden" />
-            </div>
-
-            {/* Breadcrumb - takes remaining space */}
-            <div className="flex-1 min-w-0">
-              <BreadcrumbNav />
-            </div>
-
-            {/* Header Actions */}
-            <div className="flex items-center gap-2">
-              <ModeToggle />
-              <UserNav />
-            </div>
-          </header>
-
-          {/* Page Content */}
-          <main className="flex-1 overflow-auto">{children}</main>
+          
+          {/* Navigation Content */}
+          <div className="flex-1 overflow-auto">
+            {isSidebarCollapsed ? (
+              <CollapsedSidebar 
+                className="px-1" 
+                onLinkClick={() => setIsMobileMenuOpen(false)} 
+              />
+            ) : (
+              <Sidebar 
+                className="px-2" 
+                onLinkClick={() => setIsMobileMenuOpen(false)} 
+              />
+            )}
+          </div>
         </div>
+      </aside>
+
+      {/* Main Content */}
+      <div className="flex flex-1 flex-col min-w-0">
+        {/* Enhanced Header */}
+        <header className="flex h-16 items-center gap-4 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 px-4 lg:px-6">
+          {/* Mobile Menu & Logo */}
+          <div className="flex items-center gap-4 md:hidden">
+            <Sheet open={isMobileMenuOpen} onOpenChange={setIsMobileMenuOpen}>
+              <SheetTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="shrink-0"
+                >
+                  <Menu className="h-5 w-5" />
+                  <span className="sr-only">Abrir menú</span>
+                </Button>
+              </SheetTrigger>
+              <SheetContent side="left" className="flex flex-col p-0 w-64">
+                <div className="flex h-16 items-center border-b px-4">
+                  <AppLogo />
+                </div>
+                <div className="flex-1 overflow-auto">
+                  <Sidebar 
+                    className="px-2" 
+                    onLinkClick={() => setIsMobileMenuOpen(false)} 
+                  />
+                </div>
+              </SheetContent>
+            </Sheet>
+            <AppLogo className="md:hidden" />
+          </div>
+
+          {/* Breadcrumb - takes remaining space */}
+          <div className="flex-1 min-w-0">
+            <BreadcrumbNav />
+          </div>
+
+          {/* Header Actions */}
+          <div className="flex items-center gap-2">
+            <ModeToggle />
+            <UserNav />
+          </div>
+        </header>
+
+        {/* Page Content */}
+        <main className="flex-1 overflow-auto">{children}</main>
       </div>
-    </TooltipProvider>
+    </div>
   )
-}
+} 
