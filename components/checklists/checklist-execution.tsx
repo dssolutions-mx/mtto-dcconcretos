@@ -303,32 +303,54 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
 
   const handlePhotoUpload = async (itemId: string, file: File) => {
     try {
-      const supabase = createBrowserClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-      )
-      
-      const fileName = `checklist_${id}_item_${itemId}_${Date.now()}.${file.name.split('.').pop()}`
-      
-      const { data, error } = await supabase.storage
-        .from('checklist-photos')
-        .upload(fileName, file)
-      
-      if (error) throw error
-      
-      const { data: urlData } = supabase.storage
-        .from('checklist-photos')
-        .getPublicUrl(fileName)
-      
-      setItemPhotos((prev) => ({ 
-        ...prev, 
-        [itemId]: urlData.publicUrl 
-      }))
-      
-      toast.success('Foto subida exitosamente')
+      if (isOnline) {
+        // Subir directamente si hay conexión
+        const supabase = createBrowserClient(
+          process.env.NEXT_PUBLIC_SUPABASE_URL!,
+          process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+        )
+        
+        const fileName = `checklist_${id}_item_${itemId}_${Date.now()}.${file.name.split('.').pop()}`
+        
+        const { data, error } = await supabase.storage
+          .from('checklist-photos')
+          .upload(fileName, file)
+        
+        if (error) throw error
+        
+        const { data: urlData } = supabase.storage
+          .from('checklist-photos')
+          .getPublicUrl(fileName)
+        
+        setItemPhotos((prev) => ({ 
+          ...prev, 
+          [itemId]: urlData.publicUrl 
+        }))
+        
+        toast.success('Foto subida exitosamente')
+      } else {
+        // Guardar offline si no hay conexión
+        if (offlineChecklistService) {
+          const photoId = await offlineChecklistService.savePhotoOffline(id, itemId, file)
+          
+          // Crear URL local para vista previa
+          const localUrl = URL.createObjectURL(file)
+          
+          setItemPhotos((prev) => ({ 
+            ...prev, 
+            [itemId]: localUrl
+          }))
+          
+          toast.success('📸 Foto guardada offline', {
+            description: "Se subirá automáticamente cuando vuelva la conexión"
+          })
+        } else {
+          throw new Error('Servicio offline no disponible')
+        }
+      }
     } catch (error: any) {
-      console.error('Error uploading photo:', error)
-      toast.error(`Error al subir la foto: ${error.message}`)
+      console.error('Error handling photo:', error)
+      toast.error(`Error al procesar la foto: ${error.message}`)
     }
     setHasUnsavedChanges(true)
   }
@@ -344,7 +366,6 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
         for (const item of items) {
           if (itemStatus[item.id]) {
             completedItems.push({
-              id: crypto.randomUUID(),
               item_id: item.id,
               status: itemStatus[item.id],
               notes: itemNotes[item.id] || null,

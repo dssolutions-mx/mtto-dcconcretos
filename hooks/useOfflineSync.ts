@@ -93,11 +93,34 @@ export function useOfflineSync(): UseOfflineSyncReturn {
         offlineChecklistService.on('connection-change', handleConnectionChange)
         offlineChecklistService.on('stats-update', handleStatsUpdate)
 
-        // Cargar stats iniciales
-        const initialStats = await offlineChecklistService.getSyncStats()
-        setSyncStats(initialStats)
+        // Cargar stats iniciales con reintento
+        const loadInitialStats = async (retries = 3) => {
+          try {
+            // Esperar a que la base de datos esté completamente lista
+            const isReady = await offlineChecklistService.waitForDatabase(5000)
+            
+            if (!isReady) {
+              throw new Error('Database initialization timeout')
+            }
+            
+            const initialStats = await offlineChecklistService.getSyncStats()
+            setSyncStats(initialStats)
+            setIsLoading(false)
+          } catch (error) {
+            console.warn(`Stats loading attempt failed (${4-retries}/3):`, error)
+            
+            if (retries > 1) {
+              // Reintentar después de un delay exponencial
+              const delay = Math.pow(2, 4-retries) * 500
+              setTimeout(() => loadInitialStats(retries - 1), delay)
+            } else {
+              console.error('Failed to load initial stats after retries')
+              setIsLoading(false)
+            }
+          }
+        }
         
-        setIsLoading(false)
+        await loadInitialStats()
 
         return () => {
           // Cleanup listeners

@@ -40,10 +40,25 @@ interface ChecklistDB extends DBSchema {
       lastUpdated: number
     }
   }
+  'offline-photos': {
+    key: string
+    value: {
+      id: string
+      checklistId: string
+      itemId: string
+      file: Blob
+      fileName: string
+      uploaded: boolean
+      uploadUrl?: string
+      uploadError?: string
+      retryCount: number
+      timestamp: number
+    }
+  }
 }
 
 // Tipo para eventos del servicio offline
-type OfflineServiceEvent = 'sync-start' | 'sync-complete' | 'sync-error' | 'connection-change' | 'stats-update' | 'cache-update'
+type OfflineServiceEvent = 'sync-start' | 'sync-complete' | 'sync-error' | 'connection-change' | 'stats-update' | 'cache-update' | 'photo-upload' | 'photo-sync'
 
 class OfflineChecklistService {
   private db: Promise<IDBPDatabase<ChecklistDB>> | null = null
@@ -65,27 +80,50 @@ class OfflineChecklistService {
   private initializeDB() {
     if (!this.isClient || this.db) return
     
-    this.db = openDB<ChecklistDB>('checklists-offline', 3, {
+    this.db = openDB<ChecklistDB>('checklists-offline', 4, {
       upgrade(db, oldVersion, newVersion) {
+        console.log(`Upgrading IndexedDB from version ${oldVersion} to ${newVersion}`)
+        
         // Crear stores si no existen
         if (!db.objectStoreNames.contains('offline-checklists')) {
+          console.log('Creating offline-checklists store')
           db.createObjectStore('offline-checklists', { keyPath: 'id' })
         }
         if (!db.objectStoreNames.contains('checklist-templates')) {
+          console.log('Creating checklist-templates store')
           db.createObjectStore('checklist-templates', { keyPath: 'id' })
         }
         if (!db.objectStoreNames.contains('checklist-schedules')) {
+          console.log('Creating checklist-schedules store')
           db.createObjectStore('checklist-schedules', { keyPath: 'id' })
         }
         if (!db.objectStoreNames.contains('checklist-lists')) {
+          console.log('Creating checklist-lists store')
           db.createObjectStore('checklist-lists', { keyPath: 'id' })
         }
+        if (!db.objectStoreNames.contains('offline-photos')) {
+          console.log('Creating offline-photos store')
+          db.createObjectStore('offline-photos', { keyPath: 'id' })
+        }
+        
+        console.log('IndexedDB upgrade completed')
+      },
+      blocked() {
+        console.warn('IndexedDB upgrade blocked by another tab/window')
+      },
+      blocking() {
+        console.warn('This tab is blocking IndexedDB upgrade in another tab')
       }
     })
     
-    // Inicializar listeners para conexión
-    this.setupOnlineListener()
-    this.setupAutoSync()
+    // Configurar listeners después de que la base de datos esté lista
+    this.db.then(() => {
+      this.setupOnlineListener()
+      this.setupAutoSync()
+      console.log('IndexedDB successfully initialized')
+    }).catch(error => {
+      console.error('Failed to initialize IndexedDB:', error)
+    })
   }
 
   private async getDB(): Promise<IDBPDatabase<ChecklistDB> | null> {
@@ -462,7 +500,7 @@ class OfflineChecklistService {
     }
   }
   
-  // Sincronizar un solo checklist con mejor manejo de errores
+  // Sincronizar un solo checklist con mejor manejo de errores y fotos
   async syncSingle(id: string): Promise<boolean> {
     try {
       const db = await this.getDB()
@@ -475,6 +513,31 @@ class OfflineChecklistService {
       // Verificar si no hemos reintentado demasiado recientemente
       if (item.lastAttempt && Date.now() - item.lastAttempt < 10000) {
         return false // Esperar 10 segundos entre reintentos
+      }
+
+      // Primero, subir todas las fotos pendientes para este checklist
+      const pendingPhotos = await this.getPendingPhotos(item.data.scheduleId)
+      if (pendingPhotos.length > 0) {
+        console.log(`📸 Subiendo ${pendingPhotos.length} fotos pendientes para checklist ${item.data.scheduleId}`)
+        
+        for (const photo of pendingPhotos) {
+          const photoUploaded = await this.uploadPendingPhoto(photo.id)
+          if (photoUploaded) {
+            // Actualizar el completed_items con la URL de la foto subida
+            const photoUrl = await this.getPhotoUrl(photo.id)
+            if (photoUrl && item.data.completed_items) {
+              item.data.completed_items = item.data.completed_items.map((completedItem: any) => {
+                if (completedItem.item_id === photo.itemId) {
+                  return { ...completedItem, photo_url: photoUrl }
+                }
+                return completedItem
+              })
+            }
+          }
+        }
+        
+        // Actualizar el item en la base de datos local con las URLs actualizadas
+        await db.put('offline-checklists', item)
       }
 
       const response = await fetch(`/api/checklists/schedules/${item.data.scheduleId}/complete`, {
@@ -545,7 +608,64 @@ class OfflineChecklistService {
     }
   }
   
-  // Sincronizar todos los checklists pendientes
+  // Obtener estadísticas de sincronización con fotos
+  async getSyncStats() {
+    try {
+      const db = await this.getDB()
+      if (!db) return { 
+        total: 0, 
+        synced: 0, 
+        pending: 0, 
+        failed: 0, 
+        photos: { total: 0, uploaded: 0, pending: 0, failed: 0 } 
+      }
+      
+      // Verificar que todos los object stores existan antes de accederlos
+      const storeNames = db.objectStoreNames
+      if (!storeNames.contains('offline-checklists') || !storeNames.contains('offline-photos')) {
+        console.warn('Database not fully initialized, returning empty stats')
+        return { 
+          total: 0, 
+          synced: 0, 
+          pending: 0, 
+          failed: 0, 
+          photos: { total: 0, uploaded: 0, pending: 0, failed: 0 } 
+        }
+      }
+      
+      const all = await db.getAll('offline-checklists')
+      const allPhotos = await db.getAll('offline-photos')
+      
+      const stats = {
+        total: all.length,
+        synced: all.filter(item => item.synced).length,
+        pending: all.filter(item => !item.synced && item.retryCount < 5).length,
+        failed: all.filter(item => !item.synced && item.retryCount >= 5).length,
+        photos: {
+          total: allPhotos.length,
+          uploaded: allPhotos.filter(photo => photo.uploaded).length,
+          pending: allPhotos.filter(photo => !photo.uploaded && photo.retryCount < 5).length,
+          failed: allPhotos.filter(photo => !photo.uploaded && photo.retryCount >= 5).length
+        }
+      }
+
+      // Emitir evento de actualización
+      this.emit('stats-update', stats)
+      
+      return stats
+    } catch (error) {
+      console.error('Error getting sync stats:', error)
+      return { 
+        total: 0, 
+        synced: 0, 
+        pending: 0, 
+        failed: 0, 
+        photos: { total: 0, uploaded: 0, pending: 0, failed: 0 } 
+      }
+    }
+  }
+  
+  // Sincronizar todos los checklists pendientes incluyendo fotos
   async syncAll() {
     if (!this.isClient || !navigator.onLine) {
       console.log('Sin conexión, sincronización cancelada')
@@ -554,6 +674,13 @@ class OfflineChecklistService {
     }
     
     try {
+      // Primero sincronizar todas las fotos pendientes
+      console.log('🔄 Iniciando sincronización de fotos...')
+      const photoResult = await this.uploadAllPendingPhotos()
+      console.log(`📸 Fotos sincronizadas: ${photoResult.success} exitosas, ${photoResult.errors} errores`)
+      
+      // Luego sincronizar checklists
+      console.log('🔄 Iniciando sincronización de checklists...')
       const result = await this.syncPendingWithRetry()
       
       const pending = await this.getPendingSyncs()
@@ -564,6 +691,8 @@ class OfflineChecklistService {
         synced: result?.success || 0,
         failed: failed.length,
         errors: result?.errors || 0,
+        photosSynced: photoResult.success,
+        photosErrors: photoResult.errors,
         results: pending
       }
       
@@ -580,26 +709,6 @@ class OfflineChecklistService {
   async hasPendingSyncs() {
     const pending = await this.getPendingSyncs()
     return pending.length > 0
-  }
-  
-  // Obtener estadísticas de sincronización
-  async getSyncStats() {
-    const db = await this.getDB()
-    if (!db) return { total: 0, synced: 0, pending: 0, failed: 0 }
-    
-    const all = await db.getAll('offline-checklists')
-    
-    const stats = {
-      total: all.length,
-      synced: all.filter(item => item.synced).length,
-      pending: all.filter(item => !item.synced && item.retryCount < 5).length,
-      failed: all.filter(item => !item.synced && item.retryCount >= 5).length
-    }
-
-    // Emitir evento de actualización
-    this.emit('stats-update', stats)
-    
-    return stats
   }
   
   // Obtener detalles de elementos con errores
@@ -693,6 +802,182 @@ class OfflineChecklistService {
     }
     
     this.eventListeners.clear()
+  }
+
+  // Guardar una foto offline
+  async savePhotoOffline(checklistId: string, itemId: string, file: File): Promise<string> {
+    const db = await this.getDB()
+    if (!db) throw new Error('Database not available')
+    
+    const photoId = `photo-${checklistId}-${itemId}-${Date.now()}`
+    
+    await db.put('offline-photos', {
+      id: photoId,
+      checklistId,
+      itemId,
+      file: file,
+      fileName: file.name,
+      uploaded: false,
+      retryCount: 0,
+      timestamp: Date.now()
+    })
+    
+    this.emit('photo-upload', { photoId, checklistId, itemId })
+    
+    // Intentar subir inmediatamente si hay conexión
+    if (this.isClient && navigator.onLine) {
+      setTimeout(() => this.uploadPendingPhoto(photoId), 1000)
+    }
+    
+    return photoId
+  }
+  
+  // Obtener fotos pendientes de subida para un checklist
+  async getPendingPhotos(checklistId?: string) {
+    const db = await this.getDB()
+    if (!db) return []
+    
+    const allPhotos = await db.getAll('offline-photos')
+    
+    return allPhotos.filter(photo => 
+      !photo.uploaded && 
+      photo.retryCount < 5 &&
+      (!checklistId || photo.checklistId === checklistId)
+    )
+  }
+  
+  // Subir una foto específica
+  async uploadPendingPhoto(photoId: string): Promise<boolean> {
+    try {
+      const db = await this.getDB()
+      if (!db) return false
+      
+      const photo = await db.get('offline-photos', photoId)
+      if (!photo || photo.uploaded) return true
+      
+      const supabase = createBrowserClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+      )
+      
+      // Generar nombre único para el archivo
+      const fileName = `checklist_${photo.checklistId}_item_${photo.itemId}_${Date.now()}.${photo.fileName.split('.').pop()}`
+      
+      const { error: uploadError } = await supabase.storage
+        .from('checklist-photos')
+        .upload(fileName, photo.file)
+      
+      if (uploadError) {
+        console.error('Error uploading photo:', uploadError)
+        photo.retryCount = (photo.retryCount || 0) + 1
+        photo.uploadError = uploadError.message
+        await db.put('offline-photos', photo)
+        return false
+      }
+      
+      // Obtener URL pública
+      const { data: urlData } = supabase.storage
+        .from('checklist-photos')
+        .getPublicUrl(fileName)
+      
+      // Marcar como subida exitosamente
+      photo.uploaded = true
+      photo.uploadUrl = urlData.publicUrl
+      photo.uploadError = undefined
+      await db.put('offline-photos', photo)
+      
+      this.emit('photo-sync', { photoId, url: urlData.publicUrl })
+      
+      console.log(`✅ Photo ${photoId} uploaded successfully`)
+      return true
+      
+    } catch (error: any) {
+      console.error(`💥 Error uploading photo ${photoId}:`, error)
+      
+      const db = await this.getDB()
+      if (db) {
+        const photo = await db.get('offline-photos', photoId)
+        if (photo) {
+          photo.retryCount = (photo.retryCount || 0) + 1
+          photo.uploadError = error.message
+          await db.put('offline-photos', photo)
+        }
+      }
+      
+      return false
+    }
+  }
+  
+  // Subir todas las fotos pendientes
+  async uploadAllPendingPhotos(): Promise<{ success: number, errors: number }> {
+    const pendingPhotos = await this.getPendingPhotos()
+    let successCount = 0
+    let errorCount = 0
+    
+    for (const photo of pendingPhotos) {
+      const success = await this.uploadPendingPhoto(photo.id)
+      if (success) {
+        successCount++
+      } else {
+        errorCount++
+        // Esperar un poco entre subidas fallidas
+        await new Promise(resolve => setTimeout(resolve, 500))
+      }
+    }
+    
+    return { success: successCount, errors: errorCount }
+  }
+  
+  // Obtener URL de foto (subida o local)
+  async getPhotoUrl(photoId: string): Promise<string | null> {
+    const db = await this.getDB()
+    if (!db) return null
+    
+    const photo = await db.get('offline-photos', photoId)
+    if (!photo) return null
+    
+    if (photo.uploaded && photo.uploadUrl) {
+      return photo.uploadUrl
+    }
+    
+    // Crear URL blob para vista previa local
+    return URL.createObjectURL(photo.file)
+  }
+
+  // Verificar si la base de datos está completamente inicializada
+  async isDatabaseReady(): Promise<boolean> {
+    try {
+      const db = await this.getDB()
+      if (!db) return false
+      
+      const storeNames = db.objectStoreNames
+      
+      return storeNames.contains('offline-checklists') &&
+             storeNames.contains('checklist-templates') &&
+             storeNames.contains('checklist-schedules') &&
+             storeNames.contains('checklist-lists') &&
+             storeNames.contains('offline-photos')
+    } catch (error) {
+      console.error('Error checking database readiness:', error)
+      return false
+    }
+  }
+
+  // Esperar hasta que la base de datos esté lista
+  async waitForDatabase(maxWaitMs = 5000): Promise<boolean> {
+    const startTime = Date.now()
+    
+    while (Date.now() - startTime < maxWaitMs) {
+      if (await this.isDatabaseReady()) {
+        return true
+      }
+      
+      // Esperar 100ms antes del siguiente intento
+      await new Promise(resolve => setTimeout(resolve, 100))
+    }
+    
+    console.warn('Database initialization timeout')
+    return false
   }
 }
 
