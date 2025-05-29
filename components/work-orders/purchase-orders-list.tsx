@@ -17,7 +17,8 @@ import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/componen
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { 
   Check, CheckCircle, Edit, Eye, FileText, MoreHorizontal, Search, Trash, User, 
-  AlertTriangle, Wrench, CalendarDays, ShoppingCart, Package, FileCheck, X, PlusCircle
+  AlertTriangle, Wrench, CalendarDays, ShoppingCart, Package, FileCheck, X, PlusCircle,
+  Clock, DollarSign, TrendingUp
 } from "lucide-react"
 import { createClient } from "@/lib/supabase"
 import Link from "next/link"
@@ -119,6 +120,25 @@ export function PurchaseOrdersList() {
     loadOrders()
   }, [])
 
+  // Calculate summary metrics
+  const summaryMetrics = {
+    pending: orders.filter(o => o.status === PurchaseOrderStatus.Pending && !o.is_adjustment).length,
+    approved: orders.filter(o => o.status === PurchaseOrderStatus.Approved && !o.is_adjustment).length,
+    ordered: orders.filter(o => o.status === PurchaseOrderStatus.Ordered && !o.is_adjustment).length,
+    adjustments: orders.filter(o => o.is_adjustment).length,
+    totalPendingValue: orders
+      .filter(o => o.status === PurchaseOrderStatus.Pending && !o.is_adjustment)
+      .reduce((sum, o) => sum + (parseFloat(o.total_amount || '0')), 0),
+    totalMonthValue: orders
+      .filter(o => {
+        if (!o.created_at) return false;
+        const orderDate = new Date(o.created_at);
+        const now = new Date();
+        return orderDate.getMonth() === now.getMonth() && orderDate.getFullYear() === now.getFullYear();
+      })
+      .reduce((sum, o) => sum + (parseFloat(o.total_amount || '0')), 0)
+  }
+
   // Filter orders by status tab
   const filteredOrdersByTab = orders.filter(order => {
     if (activeTab === "all") return true;
@@ -156,100 +176,242 @@ export function PurchaseOrdersList() {
   };
 
   return (
-    <Card>
-      <CardContent className="pt-6">
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
-          <div className="relative w-full md:w-64">
-            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input
-              type="search"
-              placeholder="Buscar por OC, proveedor..."
-              className="pl-8"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
-          </div>
-        </div>
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="mb-4 grid w-full grid-cols-2 sm:grid-cols-6">
-            <TabsTrigger value="all">Todas</TabsTrigger>
-            <TabsTrigger value="pending">Pendientes</TabsTrigger>
-            <TabsTrigger value="approved">Aprobadas</TabsTrigger>
-            <TabsTrigger value="ordered">Pedidas</TabsTrigger>
-            <TabsTrigger value="received">Recibidas</TabsTrigger>
-            <TabsTrigger value="adjustments" className="relative">
-              Ajustes
-              <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-green-500 text-[10px] text-white">
-                {orders.filter(o => o.is_adjustment).length}
-              </span>
-            </TabsTrigger>
-          </TabsList>
-          
-          {activeTab === "adjustments" && (
-            <div className="mb-4 p-3 text-sm bg-blue-50 border border-blue-200 rounded-md flex items-start gap-2">
-              <Check className="h-4 w-4 text-blue-600 mt-0.5 flex-shrink-0" />
-              <p className="text-blue-700">
-                Los gastos adicionales generan automáticamente órdenes de compra de ajuste que se marcan directamente como recibidas, ya que representan costos ya incurridos que no requieren aprobación ni proceso de compra.
-              </p>
+    <div className="space-y-6">
+      {/* Summary Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <Card className={summaryMetrics.pending > 0 ? "border-yellow-200 bg-yellow-50" : ""}>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">
+              Pendientes Aprobación
+            </CardTitle>
+            <Clock className={`h-4 w-4 ${summaryMetrics.pending > 0 ? 'text-yellow-600' : 'text-muted-foreground'}`} />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">
+              {summaryMetrics.pending}
             </div>
-          )}
-          
-          <TabsContent value="all" className="mt-0"> 
-             <RenderTable 
-               orders={filteredOrders} 
-               isLoading={isLoading} 
-               getTechnicianName={getTechnicianName}
-               formatCurrency={formatCurrency}
-             />
-          </TabsContent>
-          <TabsContent value="pending" className="mt-0">
-            <RenderTable 
-              orders={filteredOrders} 
-              isLoading={isLoading} 
-              getTechnicianName={getTechnicianName}
-              formatCurrency={formatCurrency}
-            />
-          </TabsContent>
-          <TabsContent value="approved" className="mt-0">
-            <RenderTable 
-              orders={filteredOrders} 
-              isLoading={isLoading} 
-              getTechnicianName={getTechnicianName}
-              formatCurrency={formatCurrency}
-            />
-          </TabsContent>
-          <TabsContent value="ordered" className="mt-0">
-            <RenderTable 
-              orders={filteredOrders} 
-              isLoading={isLoading} 
-              getTechnicianName={getTechnicianName}
-              formatCurrency={formatCurrency}
-            />
-          </TabsContent>
-          <TabsContent value="received" className="mt-0">
-            <RenderTable 
-              orders={filteredOrders} 
-              isLoading={isLoading} 
-              getTechnicianName={getTechnicianName}
-              formatCurrency={formatCurrency}
-            />
-          </TabsContent>
-          <TabsContent value="adjustments" className="mt-0">
-            <RenderTable 
-              orders={filteredOrders} 
-              isLoading={isLoading} 
-              getTechnicianName={getTechnicianName}
-              formatCurrency={formatCurrency}
-            />
-          </TabsContent>
-        </Tabs>
-      </CardContent>
-      <CardFooter>
-        <div className="text-xs text-muted-foreground">
-          Mostrando <strong>{filteredOrders.length}</strong> de <strong>{orders.length}</strong> órdenes de compra.
-        </div>
-      </CardFooter>
-    </Card>
+            <p className="text-xs text-muted-foreground">
+              Valor: {formatCurrency(summaryMetrics.totalPendingValue.toString())}
+            </p>
+            {summaryMetrics.pending > 0 && (
+              <div className="mt-2">
+                <Button 
+                  size="sm" 
+                  variant="outline" 
+                  onClick={() => setActiveTab("pending")}
+                  className="text-yellow-700 hover:text-yellow-800"
+                >
+                  <AlertTriangle className="h-3 w-3 mr-1" />
+                  Revisar
+                </Button>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">
+              Listas para Pedido
+            </CardTitle>
+            <CheckCircle className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">
+              {summaryMetrics.approved}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Aprobadas y esperando pedido
+            </p>
+            {summaryMetrics.approved > 0 && (
+              <div className="mt-2">
+                <Button 
+                  size="sm" 
+                  variant="outline" 
+                  onClick={() => setActiveTab("approved")}
+                  className="text-green-700 hover:text-green-800"
+                >
+                  <ShoppingCart className="h-3 w-3 mr-1" />
+                  Ver
+                </Button>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">
+              En Proceso
+            </CardTitle>
+            <Package className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">
+              {summaryMetrics.ordered}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Pedidas, esperando recepción
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">
+              Valor del Mes
+            </CardTitle>
+            <TrendingUp className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">
+              {formatCurrency(summaryMetrics.totalMonthValue.toString())}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Total órdenes este mes
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Quick Actions */}
+      {summaryMetrics.pending > 0 && (
+        <Card className="border-orange-200 bg-orange-50">
+          <CardContent className="pt-6">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <AlertTriangle className="h-5 w-5 text-orange-600" />
+                <div>
+                  <p className="font-medium text-orange-800">
+                    Hay {summaryMetrics.pending} orden{summaryMetrics.pending !== 1 ? 'es' : ''} pendiente{summaryMetrics.pending !== 1 ? 's' : ''} de aprobación
+                  </p>
+                  <p className="text-sm text-orange-700">
+                    Valor total: {formatCurrency(summaryMetrics.totalPendingValue.toString())}
+                  </p>
+                </div>
+              </div>
+              <Button 
+                onClick={() => setActiveTab("pending")}
+                className="bg-orange-600 hover:bg-orange-700"
+              >
+                <Clock className="h-4 w-4 mr-2" />
+                Aprobar Órdenes
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Main Table */}
+      <Card>
+        <CardContent className="pt-6">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
+            <div className="relative w-full md:w-64">
+              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input
+                type="search"
+                placeholder="Buscar por OC, proveedor..."
+                className="pl-8"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
+            </div>
+          </div>
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+            <TabsList className="mb-4 grid w-full grid-cols-2 sm:grid-cols-6">
+              <TabsTrigger value="all">Todas</TabsTrigger>
+              <TabsTrigger value="pending" className="relative">
+                Pendientes
+                {summaryMetrics.pending > 0 && (
+                  <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-yellow-500 text-[10px] text-white">
+                    {summaryMetrics.pending}
+                  </span>
+                )}
+              </TabsTrigger>
+              <TabsTrigger value="approved" className="relative">
+                Aprobadas
+                {summaryMetrics.approved > 0 && (
+                  <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-green-500 text-[10px] text-white">
+                    {summaryMetrics.approved}
+                  </span>
+                )}
+              </TabsTrigger>
+              <TabsTrigger value="ordered">Pedidas</TabsTrigger>
+              <TabsTrigger value="received">Recibidas</TabsTrigger>
+              <TabsTrigger value="adjustments" className="relative">
+                Ajustes
+                <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-blue-500 text-[10px] text-white">
+                  {summaryMetrics.adjustments}
+                </span>
+              </TabsTrigger>
+            </TabsList>
+            
+            {activeTab === "adjustments" && (
+              <div className="mb-4 p-3 text-sm bg-blue-50 border border-blue-200 rounded-md flex items-start gap-2">
+                <Check className="h-4 w-4 text-blue-600 mt-0.5 flex-shrink-0" />
+                <p className="text-blue-700">
+                  Los gastos adicionales generan automáticamente órdenes de compra de ajuste que se marcan directamente como recibidas, ya que representan costos ya incurridos que no requieren aprobación ni proceso de compra.
+                </p>
+              </div>
+            )}
+            
+            <TabsContent value="all" className="mt-0"> 
+               <RenderTable 
+                 orders={filteredOrders} 
+                 isLoading={isLoading} 
+                 getTechnicianName={getTechnicianName}
+                 formatCurrency={formatCurrency}
+               />
+            </TabsContent>
+            
+            <TabsContent value="pending" className="mt-0">
+              <RenderTable 
+                orders={filteredOrders} 
+                isLoading={isLoading} 
+                getTechnicianName={getTechnicianName}
+                formatCurrency={formatCurrency}
+              />
+            </TabsContent>
+            
+            <TabsContent value="approved" className="mt-0">
+              <RenderTable 
+                orders={filteredOrders} 
+                isLoading={isLoading} 
+                getTechnicianName={getTechnicianName}
+                formatCurrency={formatCurrency}
+              />
+            </TabsContent>
+            
+            <TabsContent value="ordered" className="mt-0">
+              <RenderTable 
+                orders={filteredOrders} 
+                isLoading={isLoading} 
+                getTechnicianName={getTechnicianName}
+                formatCurrency={formatCurrency}
+              />
+            </TabsContent>
+            
+            <TabsContent value="received" className="mt-0">
+              <RenderTable 
+                orders={filteredOrders} 
+                isLoading={isLoading} 
+                getTechnicianName={getTechnicianName}
+                formatCurrency={formatCurrency}
+              />
+            </TabsContent>
+            
+            <TabsContent value="adjustments" className="mt-0">
+              <RenderTable 
+                orders={filteredOrders} 
+                isLoading={isLoading} 
+                getTechnicianName={getTechnicianName}
+                formatCurrency={formatCurrency}
+              />
+            </TabsContent>
+          </Tabs>
+        </CardContent>
+      </Card>
+    </div>
   )
 }
 
