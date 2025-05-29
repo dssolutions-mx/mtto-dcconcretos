@@ -35,13 +35,9 @@ export function PurchaseOrderForm({ workOrderId }: PurchaseOrderFormProps) {
   
   const [workOrder, setWorkOrder] = useState<WorkOrderWithAsset | null>(null);
   const [parts, setParts] = useState<PurchaseOrderItem[]>([]);
-  const [suppliers, setSuppliers] = useState<string[]>([
-    "Automotriz Refacciones S.A.",
-    "Maquinaria Industrial MX",
-    "Repuestos Industriales",
-    "Soluciones Técnicas Avanzadas",
-    "Herrajes y Tornillería Especializada"
-  ]);
+  const [recentSuppliers, setRecentSuppliers] = useState<string[]>([]);
+  const [supplierSuggestions, setSupplierSuggestions] = useState<string[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
   const [currentUser, setCurrentUser] = useState<Profile | null>(null);
   
   const [formData, setFormData] = useState<Partial<InsertPurchaseOrder>>({
@@ -66,7 +62,7 @@ export function PurchaseOrderForm({ workOrderId }: PurchaseOrderFormProps) {
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
-  // Load work order data
+  // Load work order data and recent suppliers
   useEffect(() => {
     const loadData = async () => {
       setIsLoading(true);
@@ -88,6 +84,25 @@ export function PurchaseOrderForm({ workOrderId }: PurchaseOrderFormProps) {
             setCurrentUser(profile);
             setFormData(prev => ({ ...prev, requested_by: profile.id }));
           }
+        }
+        
+        // Get recent suppliers from existing purchase orders
+        const { data: supplierData, error: supplierError } = await supabase
+          .from("purchase_orders")
+          .select("supplier")
+          .not("supplier", "is", null)
+          .order("created_at", { ascending: false })
+          .limit(50);
+          
+        if (!supplierError && supplierData) {
+          // Get unique suppliers from recent orders
+          const uniqueSuppliers = Array.from(
+            new Set(supplierData
+              .map(item => item.supplier)
+              .filter(supplier => supplier && supplier.trim() !== "")
+            )
+          ) as string[];
+          setRecentSuppliers(uniqueSuppliers.slice(0, 10)); // Keep top 10
         }
         
         // Get work order with asset
@@ -154,6 +169,27 @@ export function PurchaseOrderForm({ workOrderId }: PurchaseOrderFormProps) {
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { id, value } = e.target;
     setFormData(prev => ({ ...prev, [id]: value }));
+  };
+
+  const handleSupplierChange = (value: string) => {
+    setFormData(prev => ({ ...prev, supplier: value }));
+    
+    // Show suggestions if there's text and we have recent suppliers
+    if (value.trim() && recentSuppliers.length > 0) {
+      const filtered = recentSuppliers.filter(supplier => 
+        supplier.toLowerCase().includes(value.toLowerCase())
+      );
+      setSupplierSuggestions(filtered);
+      setShowSuggestions(filtered.length > 0);
+    } else {
+      setSupplierSuggestions(recentSuppliers);
+      setShowSuggestions(value.trim() === "" && recentSuppliers.length > 0);
+    }
+  };
+
+  const selectSupplier = (supplier: string) => {
+    setFormData(prev => ({ ...prev, supplier }));
+    setShowSuggestions(false);
   };
   
   const handleDeliveryDateChange = (date: Date | undefined) => {
@@ -252,8 +288,8 @@ export function PurchaseOrderForm({ workOrderId }: PurchaseOrderFormProps) {
     setIsSaving(true);
     setError(null);
     
-    if (!formData.supplier) {
-      setError("Por favor, selecciona un proveedor");
+    if (!formData.supplier || formData.supplier.trim() === "") {
+      setError("Por favor, ingresa el nombre del proveedor");
       setIsSaving(false);
       return;
     }
@@ -315,7 +351,7 @@ export function PurchaseOrderForm({ workOrderId }: PurchaseOrderFormProps) {
         'generate_purchase_order',
         {
           p_work_order_id: workOrderId,
-          p_supplier: formData.supplier || "",
+          p_supplier: formData.supplier?.trim() || "",
           p_items: parts,
           p_requested_by: formData.requested_by as any,
           p_expected_delivery_date: formData.expected_delivery_date || new Date().toISOString(),
@@ -393,20 +429,45 @@ export function PurchaseOrderForm({ workOrderId }: PurchaseOrderFormProps) {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4">
             <div className="space-y-2">
               <Label htmlFor="supplier">Proveedor</Label>
-              <select 
-                id="supplier"
-                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                value={formData.supplier || ""}
-                onChange={(e) => setFormData(prev => ({ ...prev, supplier: e.target.value }))}
-                required
-              >
-                <option value="">Seleccionar proveedor</option>
-                {suppliers.map((supplier) => (
-                  <option key={supplier} value={supplier}>
-                    {supplier}
-                  </option>
-                ))}
-              </select>
+              <div className="relative">
+                <Input
+                  id="supplier"
+                  placeholder="Ingresa el nombre del proveedor"
+                  value={formData.supplier || ""}
+                  onChange={(e) => handleSupplierChange(e.target.value)}
+                  onFocus={() => {
+                    if (recentSuppliers.length > 0) {
+                      setSupplierSuggestions(recentSuppliers);
+                      setShowSuggestions(true);
+                    }
+                  }}
+                  onBlur={() => {
+                    // Delay hiding suggestions to allow for selection
+                    setTimeout(() => setShowSuggestions(false), 200);
+                  }}
+                  required
+                />
+                {showSuggestions && supplierSuggestions.length > 0 && (
+                  <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-md shadow-lg max-h-60 overflow-auto">
+                    <div className="p-2 text-xs text-gray-500 border-b">
+                      Proveedores recientes:
+                    </div>
+                    {supplierSuggestions.map((supplier, index) => (
+                      <button
+                        key={index}
+                        type="button"
+                        className="w-full text-left px-3 py-2 hover:bg-gray-100 text-sm"
+                        onClick={() => selectSupplier(supplier)}
+                      >
+                        {supplier}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Escribe el nombre del proveedor o selecciona uno de los recientes
+              </p>
             </div>
             
             <div className="space-y-2">
@@ -596,7 +657,7 @@ export function PurchaseOrderForm({ workOrderId }: PurchaseOrderFormProps) {
                           type="number"
                           min="1"
                           placeholder="Cantidad"
-                          value={newPart.quantity || ''}
+                          value={newPart.quantity}
                           onChange={(e) => handleNewPartChange('quantity', Number(e.target.value))}
                         />
                       </TableCell>
@@ -606,7 +667,7 @@ export function PurchaseOrderForm({ workOrderId }: PurchaseOrderFormProps) {
                           min="0"
                           step="0.01"
                           placeholder="Precio unit."
-                          value={newPart.unit_price || ''}
+                          value={newPart.unit_price}
                           onChange={(e) => handleNewPartChange('unit_price', Number(e.target.value))}
                         />
                       </TableCell>
