@@ -32,15 +32,15 @@ type CategoryMap = {
 
 // Map of category codes to more readable names and styling
 const PHOTO_CATEGORIES: CategoryMap = {
-  'frontal': { label: 'Vista Frontal', color: 'bg-blue-500', icon: '🔍' },
-  'trasera': { label: 'Vista Trasera', color: 'bg-green-500', icon: '🔍' },
-  'lateral': { label: 'Vista Lateral', color: 'bg-yellow-500', icon: '🔍' },
-  'interior': { label: 'Interior', color: 'bg-purple-500', icon: '🏠' },
-  'motor': { label: 'Motor', color: 'bg-red-500', icon: '⚙️' },
-  'placa': { label: 'Placa/Serial', color: 'bg-indigo-500', icon: '🔢' },
-  'detalles': { label: 'Detalles', color: 'bg-orange-500', icon: '🔎' },
-  'daños': { label: 'Daños/Problemas', color: 'bg-red-700', icon: '⚠️' },
-  'otros': { label: 'Otros', color: 'bg-gray-500', icon: '📷' },
+  'frontal': { label: 'Vista Frontal', color: 'bg-blue-500', icon: '' },
+  'trasera': { label: 'Vista Trasera', color: 'bg-green-500', icon: '' },
+  'lateral': { label: 'Vista Lateral', color: 'bg-yellow-500', icon: '' },
+  'interior': { label: 'Interior', color: 'bg-purple-500', icon: '' },
+  'motor': { label: 'Motor', color: 'bg-red-500', icon: '' },
+  'placa': { label: 'Placa/Serial', color: 'bg-indigo-500', icon: '' },
+  'detalles': { label: 'Detalles', color: 'bg-orange-500', icon: '' },
+  'daños': { label: 'Daños/Problemas', color: 'bg-red-700', icon: '' },
+  'otros': { label: 'Otros', color: 'bg-gray-500', icon: '' },
 };
 
 export default function AssetDetailsPage({ params }: { params: Promise<{ id: string }> }) {
@@ -72,35 +72,7 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
     return assetWithModel;
   }, [rawAsset]);
   
-  // Fetch upcoming maintenances with corrected logic
-  useEffect(() => {
-    if (assetId && asset) {
-      const fetchUpcomingMaintenances = async () => {
-        try {
-          setUpcomingLoading(true);
-          const response = await fetch(`/api/calendar/upcoming-maintenance?assetId=${assetId}`);
-          if (response.ok) {
-            const data = await response.json();
-            console.log('API Response for asset', assetId, ':', data);
-            // API should return overdue and upcoming maintenances for this asset
-            setUpcomingMaintenances(data.upcomingMaintenances || []);
-          } else {
-            console.error('Error fetching upcoming maintenance:', response.statusText);
-            setUpcomingMaintenances([]);
-          }
-        } catch (error) {
-          console.error('Error fetching upcoming maintenance:', error);
-          setUpcomingMaintenances([]);
-        } finally {
-          setUpcomingLoading(false);
-        }
-      };
-      
-      fetchUpcomingMaintenances();
-    }
-  }, [assetId, asset, maintenanceHistory]);
-  
-  // Add a new effect to fetch maintenance intervals
+  // Load maintenance intervals for this equipment model
   useEffect(() => {
     if (asset?.model_id) {
       const fetchMaintenanceIntervals = async () => {
@@ -109,8 +81,11 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
           
           const { data, error } = await supabase
             .from("maintenance_intervals")
-            .select("*")
-            .eq("model_id", asset.model_id!); // Use non-null assertion since we check above
+            .select(`
+              *,
+              maintenance_tasks(*)
+            `)
+            .eq("model_id", asset.model_id!);
             
           if (error) throw error;
           setMaintenanceIntervals(data || []);
@@ -122,6 +97,169 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
       fetchMaintenanceIntervals();
     }
   }, [asset?.model_id]);
+  
+  // Process and calculate upcoming maintenances with proper logic
+  useEffect(() => {
+    if (!maintenanceIntervals.length || !asset) {
+      setUpcomingMaintenances([]);
+      setUpcomingLoading(false);
+      return;
+    }
+    
+    try {
+      setUpcomingLoading(true);
+      
+      const currentHours = asset.current_hours || 0;
+      
+      // Find the hour of the last maintenance performed (any type)
+      const allMaintenanceHours = maintenanceHistory
+        .map(m => Number(m.hours) || 0)
+        .filter(h => h > 0)
+        .sort((a, b) => b - a); // Sort from highest to lowest
+      
+      const lastMaintenanceHours = allMaintenanceHours.length > 0 ? allMaintenanceHours[0] : 0;
+      
+      const upcomingList = maintenanceIntervals.map(interval => {
+        const intervalHours = interval.interval_value || 0;
+        
+        // Find if this specific maintenance was already performed
+        const lastMaintenanceOfType = maintenanceHistory.find(m => 
+          m.maintenance_plan_id === interval.id
+        );
+        
+        let lastMaintenanceDate = null;
+        let lastMaintenanceHoursOfType = 0;
+        let wasPerformed = false;
+        let status = 'pending';
+        let progress = 0;
+        let nextHours = intervalHours;
+        let urgency = 'low';
+        let valueRemaining = 0;
+        let estimatedDate = new Date().toISOString();
+        
+        if (lastMaintenanceOfType) {
+          // This maintenance WAS performed - calculate next cycle
+          lastMaintenanceHoursOfType = Number(lastMaintenanceOfType.hours) || 0;
+          lastMaintenanceDate = lastMaintenanceOfType.date;
+          wasPerformed = true;
+          nextHours = lastMaintenanceHoursOfType + intervalHours;
+          
+          const hoursUntilNext = nextHours - currentHours;
+          valueRemaining = hoursUntilNext;
+          
+          if (hoursUntilNext <= 0) {
+            status = 'overdue';
+            progress = 100;
+            urgency = hoursUntilNext <= -intervalHours * 0.5 ? 'high' : 'medium';
+          } else if (hoursUntilNext <= 100) {
+            status = 'upcoming';
+            progress = Math.round(((intervalHours - hoursUntilNext) / intervalHours) * 100);
+            urgency = 'high';
+          } else if (hoursUntilNext <= 200) {
+            status = 'upcoming';
+            progress = Math.round(((intervalHours - hoursUntilNext) / intervalHours) * 100);
+            urgency = 'medium';
+          } else {
+            status = 'scheduled';
+            progress = Math.round(((intervalHours - hoursUntilNext) / intervalHours) * 100);
+            urgency = 'low';
+          }
+        } else {
+          // This maintenance was NEVER performed
+          wasPerformed = false;
+          
+          // Check if it was "covered" by later maintenances
+          if (intervalHours <= lastMaintenanceHours) {
+            // Was covered by later maintenances
+            status = 'covered';
+            progress = 100;
+            urgency = 'low';
+            valueRemaining = 0;
+          } else if (currentHours >= intervalHours) {
+            // Current hours already passed this interval - OVERDUE
+            const hoursOverdue = currentHours - intervalHours;
+            status = 'overdue';
+            progress = 100;
+            valueRemaining = -hoursOverdue;
+            
+            if (hoursOverdue > intervalHours * 0.5) {
+              urgency = 'high';
+            } else {
+              urgency = 'medium';
+            }
+          } else {
+            // Current hours haven't reached this interval yet - UPCOMING/SCHEDULED
+            progress = Math.round((currentHours / intervalHours) * 100);
+            const hoursRemaining = intervalHours - currentHours;
+            valueRemaining = hoursRemaining;
+            
+            if (hoursRemaining <= 100) {
+              status = 'upcoming';
+              urgency = 'high';
+            } else if (hoursRemaining <= 200) {
+              status = 'upcoming';
+              urgency = 'medium';
+            } else {
+              status = 'scheduled';
+              urgency = 'low';
+            }
+          }
+        }
+        
+        return {
+          intervalId: interval.id,
+          intervalName: interval.description || `${interval.type} ${interval.interval_value}h`,
+          type: interval.type,
+          intervalValue: interval.interval_value,
+          currentValue: currentHours,
+          targetValue: wasPerformed ? nextHours : intervalHours,
+          valueRemaining,
+          status,
+          urgency,
+          progress,
+          unit: 'hours',
+          estimatedDate,
+          lastMaintenanceDate,
+          wasPerformed
+        };
+      });
+      
+      // Filter to show only relevant maintenances (overdue, upcoming, and some scheduled)
+      const filteredUpcoming = upcomingList.filter(maintenance => {
+        return ['overdue', 'upcoming'].includes(maintenance.status) || 
+               (maintenance.status === 'scheduled' && maintenance.progress >= 50);
+      });
+      
+      // Sort by priority: overdue first, then upcoming, then by urgency
+      const sorted = filteredUpcoming.sort((a, b) => {
+        const statusPriority = { 'overdue': 3, 'upcoming': 2, 'scheduled': 1, 'covered': 0 };
+        const urgencyPriority = { 'high': 3, 'medium': 2, 'low': 1 };
+        
+        const priorityA = statusPriority[a.status as keyof typeof statusPriority] || 0;
+        const priorityB = statusPriority[b.status as keyof typeof statusPriority] || 0;
+        
+        if (priorityA !== priorityB) {
+          return priorityB - priorityA;
+        }
+        
+        const urgencyA = urgencyPriority[a.urgency as keyof typeof urgencyPriority] || 0;
+        const urgencyB = urgencyPriority[b.urgency as keyof typeof urgencyPriority] || 0;
+        
+        if (urgencyA !== urgencyB) {
+          return urgencyB - urgencyA;
+        }
+        
+        return a.intervalValue - b.intervalValue;
+      });
+      
+      setUpcomingMaintenances(sorted);
+    } catch (error) {
+      console.error('Error calculating upcoming maintenances:', error);
+      setUpcomingMaintenances([]);
+    } finally {
+      setUpcomingLoading(false);
+    }
+  }, [maintenanceIntervals, asset, maintenanceHistory]);
   
   // Add a new effect to fetch completed checklists
   useEffect(() => {
@@ -176,6 +314,20 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
       fetchPendingChecklists()
     }
   }, [assetId])
+  
+  // Helper function to check if incident is pending (case-insensitive)
+  const isPendingIncident = (incident: any) => {
+    const status = incident.status?.toLowerCase();
+    return status === 'pendiente' || 
+           status === 'pending' || 
+           status === 'en proceso' || 
+           status === 'en progreso' ||
+           status === 'abierto' ||
+           status === 'open';
+  };
+  
+  // Get pending incidents count
+  const pendingIncidentsCount = incidents.filter(isPendingIncident).length;
   
   // Función para mostrar el estado con un color adecuado
   const getStatusBadge = (status: string) => {
@@ -298,7 +450,9 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
                 
                 <div className="text-center">
                   <div className="text-xl sm:text-2xl md:text-3xl font-bold">
-                    {(incidents.filter(i => i.status === 'Pendiente').length + pendingChecklists.length)}
+                    {(pendingIncidentsCount + 
+                      pendingChecklists.length + 
+                      upcomingMaintenances.filter(m => m.status === 'overdue' || (m.status === 'upcoming' && m.urgency === 'high')).length)}
                   </div>
                   <div className="text-xs sm:text-sm text-muted-foreground mt-1">Tareas Pendientes</div>
                 </div>
@@ -352,9 +506,9 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
               <TabsTrigger value="status" className="text-xs sm:text-sm px-3 py-2">Estado & Mantenimiento</TabsTrigger>
               <TabsTrigger value="incidents" className="text-xs sm:text-sm px-3 py-2 relative">
                 <span>Incidentes & Checklists</span>
-                {(incidents.filter(i => i.status === 'Pendiente').length > 0 || pendingChecklists.length > 0) && (
+                {(pendingIncidentsCount > 0 || pendingChecklists.length > 0) && (
                   <Badge variant="destructive" className="absolute -top-2 -right-2 h-5 w-5 rounded-full p-0 text-xs flex items-center justify-center min-w-[20px]">
-                    {incidents.filter(i => i.status === 'Pendiente').length + pendingChecklists.length}
+                    {pendingIncidentsCount + pendingChecklists.length}
                   </Badge>
                 )}
               </TabsTrigger>
@@ -365,7 +519,7 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
             <TabsContent value="status" className="space-y-4">
               {/* Critical Alerts Section */}
               {(upcomingMaintenances.filter(m => m.status === 'overdue').length > 0 || 
-                incidents.filter(i => i.status === 'Pendiente').length > 0 ||
+                pendingIncidentsCount > 0 ||
                 pendingChecklists.length > 0) && (
                 <Alert variant="destructive">
                   <AlertTriangle className="h-4 w-4" />
@@ -374,8 +528,8 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
                       {upcomingMaintenances.filter(m => m.status === 'overdue').length > 0 && (
                         <p><strong>{upcomingMaintenances.filter(m => m.status === 'overdue').length}</strong> mantenimiento(s) vencido(s)</p>
                       )}
-                      {incidents.filter(i => i.status === 'Pendiente').length > 0 && (
-                        <p><strong>{incidents.filter(i => i.status === 'Pendiente').length}</strong> incidente(s) pendiente(s)</p>
+                      {pendingIncidentsCount > 0 && (
+                        <p><strong>{pendingIncidentsCount}</strong> incidente(s) pendiente(s)</p>
                       )}
                       {pendingChecklists.length > 0 && (
                         <p><strong>{pendingChecklists.length}</strong> checklist(s) pendiente(s)</p>
@@ -434,9 +588,9 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
                                   }
                                   className="mb-2"
                                 >
-                                  {maintenance.status === 'overdue' ? '🚨 Vencido' : 
-                                   maintenance.status === 'upcoming' ? '⏰ Próximo' : 
-                                   maintenance.status === 'scheduled' ? '📅 Programado' : '✅ Cubierto'}
+                                  {maintenance.status === 'overdue' ? 'Vencido' : 
+                                   maintenance.status === 'upcoming' ? 'Próximo' : 
+                                   maintenance.status === 'scheduled' ? 'Programado' : 'Cubierto'}
                                 </Badge>
                                 <h4 className="font-medium text-sm sm:text-base break-words">{maintenance.intervalName}</h4>
                               </div>
@@ -459,7 +613,7 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
                                   {maintenance.unit === 'hours' ? 
                                     `${maintenance.currentValue}/${maintenance.targetValue} horas` : 
                                     `${maintenance.currentValue}/${maintenance.targetValue} km`}
-                                  {maintenance.status === 'overdue' && (
+                                  {maintenance.status === 'overdue' && maintenance.valueRemaining < 0 && (
                                     <span className="font-medium text-red-600 ml-2">
                                       (Excedido por {Math.abs(maintenance.valueRemaining)} {maintenance.unit === 'hours' ? 'h' : 'km'})
                                     </span>
@@ -471,17 +625,27 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
                                 <span className="break-words">
                                   {maintenance.status === 'overdue' ? 
                                     `Vencido - debió realizarse antes` :
-                                    `Estimado: ${format(parseISO(maintenance.estimatedDate), "dd MMM yyyy", { locale: es })}`
+                                    maintenance.valueRemaining > 0 ? 
+                                      `Próximo en ${maintenance.valueRemaining} ${maintenance.unit === 'hours' ? 'horas' : 'km'}` :
+                                      'Programado para el futuro'
                                   }
                                 </span>
                               </div>
+                              {maintenance.wasPerformed && maintenance.lastMaintenanceDate && (
+                                <div className="flex items-center gap-2">
+                                  <History className="h-4 w-4 flex-shrink-0" />
+                                  <span className="break-words text-xs">
+                                    Último: {formatDate(maintenance.lastMaintenanceDate)}
+                                  </span>
+                                </div>
+                              )}
                             </div>
-                            {maintenance.status === 'overdue' && (
+                            {(maintenance.status === 'overdue' || (maintenance.status === 'upcoming' && maintenance.urgency === 'high')) && (
                               <div className="mt-3 pt-2 border-t border-red-200">
-                                <Button size="sm" variant="destructive" asChild className="w-full">
+                                <Button size="sm" variant={maintenance.status === 'overdue' ? "destructive" : "default"} asChild className="w-full">
                                   <Link href={`/activos/${assetId}/mantenimiento/nuevo?planId=${maintenance.intervalId}`}>
                                     <Wrench className="h-4 w-4 mr-2" />
-                                    Registrar Mantenimiento Urgente
+                                    {maintenance.status === 'overdue' ? "¡Registrar Urgente!" : "Programar Mantenimiento"}
                                   </Link>
                                 </Button>
                               </div>
@@ -605,13 +769,15 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
                                 <h4 className="font-medium text-sm">{formatDate(incident.date)}</h4>
                               </div>
                               <Badge 
-                                variant={incident.status === 'Resuelto' ? 'outline' : 
-                                        incident.status === 'Pendiente' ? 'destructive' : 'default'}
+                                variant={
+                                  incident.status?.toLowerCase() === 'resuelto' || incident.status?.toLowerCase() === 'resolved' ? 'outline' : 
+                                  isPendingIncident(incident) ? 'destructive' : 'default'
+                                }
                                 className="flex items-center gap-1"
                               >
-                                {incident.status === 'Resuelto' ? (
+                                {incident.status?.toLowerCase() === 'resuelto' || incident.status?.toLowerCase() === 'resolved' ? (
                                   <CheckCircle className="h-3 w-3" />
-                                ) : incident.status === 'Pendiente' ? (
+                                ) : isPendingIncident(incident) ? (
                                   <AlertCircle className="h-3 w-3" />
                                 ) : (
                                   <AlertTriangle className="h-3 w-3" />
@@ -848,7 +1014,6 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
                               <div key={index} className="relative border rounded-lg overflow-hidden group">
                                 <div className="absolute top-2 left-2 z-10">
                                   <Badge className={`${categoryInfo.color} text-white px-2 py-1`}>
-                                    <span className="mr-1">{categoryInfo.icon}</span>
                                     {categoryInfo.label}
                                   </Badge>
                                 </div>
