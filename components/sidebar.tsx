@@ -37,6 +37,7 @@ import { ModeToggle } from "@/components/mode-toggle"
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { BreadcrumbNav } from "@/components/breadcrumb-nav"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 
 interface SidebarProps extends React.HTMLAttributes<HTMLDivElement> {
   onLinkClick?: () => void
@@ -44,10 +45,10 @@ interface SidebarProps extends React.HTMLAttributes<HTMLDivElement> {
 
 export function Sidebar({ className, onLinkClick }: SidebarProps) {
   const pathname = usePathname()
-  const [equipmentOpen, setEquipmentOpen] = useState(true)
-  const [operationsOpen, setOperationsOpen] = useState(true)
-  const [procurementOpen, setProcurementOpen] = useState(true)
-  const [recordsOpen, setRecordsOpen] = useState(true)
+  const [equipmentOpen, setEquipmentOpen] = useState(false)
+  const [operationsOpen, setOperationsOpen] = useState(false)
+  const [procurementOpen, setProcurementOpen] = useState(false)
+  const [recordsOpen, setRecordsOpen] = useState(false)
 
   const handleLinkClick = () => {
     if (onLinkClick) {
@@ -121,17 +122,6 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                   Activos
                 </Link>
               </Button>
-              <Button
-                variant={isPathActive("/preventivo") ? "secondary" : "ghost"}
-                className="w-full justify-start pl-8"
-                asChild
-                onClick={handleLinkClick}
-              >
-                <Link href="/preventivo">
-                  <Activity className="mr-2 h-4 w-4" />
-                  Mantenimiento Preventivo
-                </Link>
-              </Button>
             </CollapsibleContent>
           </Collapsible>
         </div>
@@ -165,6 +155,17 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                 <Link href="/checklists">
                   <ClipboardCheck className="mr-2 h-4 w-4" />
                   Checklists
+                </Link>
+              </Button>
+              <Button
+                variant={isPathActive("/incidentes") ? "secondary" : "ghost"}
+                className="w-full justify-start pl-8"
+                asChild
+                onClick={handleLinkClick}
+              >
+                <Link href="/incidentes">
+                  <AlertTriangle className="mr-2 h-4 w-4" />
+                  Incidentes
                 </Link>
               </Button>
               <Button
@@ -289,10 +290,129 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
   )
 }
 
+// Collapsed Sidebar Component
+export function CollapsedSidebar({ className, onLinkClick }: SidebarProps) {
+  const pathname = usePathname()
+
+  const handleLinkClick = () => {
+    if (onLinkClick) {
+      onLinkClick()
+    }
+  }
+
+  const isPathActive = (path: string) => {
+    return pathname === path || pathname.startsWith(path + "/")
+  }
+
+  const navigationItems = [
+    {
+      href: "/dashboard",
+      icon: Home,
+      label: "Dashboard",
+      active: pathname === "/dashboard"
+    },
+    {
+      href: "/modelos",
+      icon: Settings,
+      label: "Modelos",
+      active: isPathActive("/modelos")
+    },
+    {
+      href: "/activos",
+      icon: Package,
+      label: "Activos",
+      active: isPathActive("/activos")
+    },
+    {
+      href: "/checklists",
+      icon: ClipboardCheck,
+      label: "Checklists",
+      active: isPathActive("/checklists")
+    },
+    {
+      href: "/incidentes",
+      icon: AlertTriangle,
+      label: "Incidentes",
+      active: isPathActive("/incidentes")
+    },
+    {
+      href: "/ordenes",
+      icon: Tool,
+      label: "Órdenes de Trabajo",
+      active: isPathActive("/ordenes")
+    },
+    {
+      href: "/calendario",
+      icon: Calendar,
+      label: "Calendario",
+      active: isPathActive("/calendario")
+    },
+    {
+      href: "/compras",
+      icon: CreditCard,
+      label: "Órdenes de Compra",
+      active: isPathActive("/compras")
+    },
+    {
+      href: "/inventario",
+      icon: Boxes,
+      label: "Inventario",
+      active: isPathActive("/inventario")
+    },
+    {
+      href: "/servicios",
+      icon: CheckCircle,
+      label: "Órdenes de Servicio",
+      active: isPathActive("/servicios")
+    },
+    {
+      href: "/reportes",
+      icon: BarChart3,
+      label: "Reportes",
+      active: isPathActive("/reportes")
+    }
+  ]
+
+  return (
+    <div className={cn("pb-12", className)}>
+      <TooltipProvider>
+        <div className="space-y-2 py-4">
+          {navigationItems.map((item) => {
+            const Icon = item.icon
+            return (
+              <div key={item.href} className="px-2">
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant={item.active ? "secondary" : "ghost"}
+                      size="icon"
+                      className="w-10 h-10 mx-auto"
+                      asChild
+                      onClick={handleLinkClick}
+                    >
+                      <Link href={item.href}>
+                        <Icon className="h-4 w-4" />
+                        <span className="sr-only">{item.label}</span>
+                      </Link>
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="right">
+                    <p>{item.label}</p>
+                  </TooltipContent>
+                </Tooltip>
+              </div>
+            )
+          })}
+        </div>
+      </TooltipProvider>
+    </div>
+  )
+}
+
 export function SidebarWrapper({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(true)
 
   // Close mobile menu on route change
   useEffect(() => {
@@ -331,7 +451,12 @@ export function SidebarWrapper({ children }: { children: React.ReactNode }) {
             </Button>
           </div>
           <div className="flex-1 overflow-auto">
-            {!isSidebarCollapsed && (
+            {isSidebarCollapsed ? (
+              <CollapsedSidebar 
+                className="px-1" 
+                onLinkClick={() => setIsMobileMenuOpen(false)} 
+              />
+            ) : (
               <Sidebar 
                 className="px-2" 
                 onLinkClick={() => setIsMobileMenuOpen(false)} 
