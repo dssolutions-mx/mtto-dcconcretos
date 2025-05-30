@@ -138,32 +138,14 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
         let estimatedDate = new Date().toISOString();
         
         if (lastMaintenanceOfType) {
-          // This maintenance WAS performed - calculate next cycle
+          // This maintenance WAS performed - mark as completed, don't show
           lastMaintenanceHoursOfType = Number(lastMaintenanceOfType.hours) || 0;
           lastMaintenanceDate = lastMaintenanceOfType.date;
           wasPerformed = true;
-          nextHours = lastMaintenanceHoursOfType + intervalHours;
-          
-          const hoursUntilNext = nextHours - currentHours;
-          valueRemaining = hoursUntilNext;
-          
-          if (hoursUntilNext <= 0) {
-            status = 'overdue';
-            progress = 100;
-            urgency = hoursUntilNext <= -intervalHours * 0.5 ? 'high' : 'medium';
-          } else if (hoursUntilNext <= 100) {
-            status = 'upcoming';
-            progress = Math.round(((intervalHours - hoursUntilNext) / intervalHours) * 100);
-            urgency = 'high';
-          } else if (hoursUntilNext <= 200) {
-            status = 'upcoming';
-            progress = Math.round(((intervalHours - hoursUntilNext) / intervalHours) * 100);
-            urgency = 'medium';
-          } else {
-            status = 'scheduled';
-            progress = Math.round(((intervalHours - hoursUntilNext) / intervalHours) * 100);
-            urgency = 'low';
-          }
+          status = 'completed';
+          progress = 100;
+          urgency = 'low';
+          valueRemaining = 0;
         } else {
           // This maintenance was NEVER performed
           wasPerformed = false;
@@ -212,7 +194,7 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
           type: interval.type,
           intervalValue: interval.interval_value,
           currentValue: currentHours,
-          targetValue: wasPerformed ? nextHours : intervalHours,
+          targetValue: intervalHours,
           valueRemaining,
           status,
           urgency,
@@ -224,10 +206,15 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
         };
       });
       
-      // Filter to show only relevant maintenances (overdue, upcoming, and some scheduled)
+      // Filter to show only relevant maintenances (exclude completed ones)
       const filteredUpcoming = upcomingList.filter(maintenance => {
-        return ['overdue', 'upcoming'].includes(maintenance.status) || 
-               (maintenance.status === 'scheduled' && maintenance.progress >= 50);
+        // Show:
+        // 1. Overdue - never performed and hours already passed
+        // 2. Upcoming - never performed and close to hours
+        // 3. Covered - never performed but covered by later maintenances
+        // 4. Scheduled - future ones for complete view
+        // DON'T show: completed (already performed)
+        return ['overdue', 'upcoming', 'covered', 'scheduled'].includes(maintenance.status);
       });
       
       // Sort by priority: overdue first, then upcoming, then by urgency
@@ -518,7 +505,7 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
             
             <TabsContent value="status" className="space-y-4">
               {/* Critical Alerts Section */}
-              {(upcomingMaintenances.filter(m => m.status === 'overdue').length > 0 || 
+              {(upcomingMaintenances.filter(m => m.status === 'overdue' || (m.status === 'upcoming' && m.urgency === 'high')).length > 0 || 
                 pendingIncidentsCount > 0 ||
                 pendingChecklists.length > 0) && (
                 <Alert variant="destructive">
@@ -527,6 +514,9 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
                     <div className="space-y-1">
                       {upcomingMaintenances.filter(m => m.status === 'overdue').length > 0 && (
                         <p><strong>{upcomingMaintenances.filter(m => m.status === 'overdue').length}</strong> mantenimiento(s) vencido(s)</p>
+                      )}
+                      {upcomingMaintenances.filter(m => m.status === 'upcoming' && m.urgency === 'high').length > 0 && (
+                        <p><strong>{upcomingMaintenances.filter(m => m.status === 'upcoming' && m.urgency === 'high').length}</strong> mantenimiento(s) urgente(s)</p>
                       )}
                       {pendingIncidentsCount > 0 && (
                         <p><strong>{pendingIncidentsCount}</strong> incidente(s) pendiente(s)</p>
@@ -577,6 +567,7 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
                           <div key={index} className={`border rounded-lg p-3 ${
                             maintenance.status === 'overdue' ? 'border-red-300 bg-red-50' : 
                             maintenance.status === 'upcoming' ? 'border-amber-300 bg-amber-50' : 
+                            maintenance.status === 'covered' ? 'border-blue-300 bg-blue-50' :
                             'border-gray-200 bg-white'
                           }`}>
                             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-2">
@@ -624,7 +615,9 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
                                 <CalendarIcon className="h-4 w-4 flex-shrink-0" />
                                 <span className="break-words">
                                   {maintenance.status === 'overdue' ? 
-                                    `Vencido - debió realizarse antes` :
+                                    `Vencido - debió realizarse antes de las ${maintenance.targetValue}h` :
+                                    maintenance.status === 'covered' ?
+                                      `Cubierto por mantenimiento posterior` :
                                     maintenance.valueRemaining > 0 ? 
                                       `Próximo en ${maintenance.valueRemaining} ${maintenance.unit === 'hours' ? 'horas' : 'km'}` :
                                       'Programado para el futuro'
@@ -635,7 +628,15 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
                                 <div className="flex items-center gap-2">
                                   <History className="h-4 w-4 flex-shrink-0" />
                                   <span className="break-words text-xs">
-                                    Último: {formatDate(maintenance.lastMaintenanceDate)}
+                                    Realizado: {formatDate(maintenance.lastMaintenanceDate)}
+                                  </span>
+                                </div>
+                              )}
+                              {!maintenance.wasPerformed && maintenance.status !== 'covered' && (
+                                <div className="flex items-center gap-2">
+                                  <AlertTriangle className="h-4 w-4 flex-shrink-0 text-orange-500" />
+                                  <span className="break-words text-xs text-orange-600">
+                                    Nunca realizado
                                   </span>
                                 </div>
                               )}
@@ -646,6 +647,24 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
                                   <Link href={`/activos/${assetId}/mantenimiento/nuevo?planId=${maintenance.intervalId}`}>
                                     <Wrench className="h-4 w-4 mr-2" />
                                     {maintenance.status === 'overdue' ? "¡Registrar Urgente!" : "Programar Mantenimiento"}
+                                  </Link>
+                                </Button>
+                              </div>
+                            )}
+                            {maintenance.status === 'covered' && (
+                              <div className="mt-3 pt-2 border-t border-blue-200">
+                                <Button size="sm" variant="outline" disabled className="w-full opacity-50">
+                                  <CheckCircle className="h-4 w-4 mr-2" />
+                                  Cubierto por mantenimiento posterior
+                                </Button>
+                              </div>
+                            )}
+                            {maintenance.status === 'upcoming' && maintenance.urgency !== 'high' && (
+                              <div className="mt-3 pt-2 border-t border-amber-200">
+                                <Button size="sm" variant="outline" asChild className="w-full">
+                                  <Link href={`/activos/${assetId}/mantenimiento/nuevo?planId=${maintenance.intervalId}`}>
+                                    <Wrench className="h-4 w-4 mr-2" />
+                                    Programar Mantenimiento
                                   </Link>
                                 </Button>
                               </div>

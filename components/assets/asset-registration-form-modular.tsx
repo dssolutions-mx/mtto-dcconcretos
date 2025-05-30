@@ -68,6 +68,8 @@ import { createClient } from "@/lib/supabase"
 import { EquipmentModelWithIntervals } from "@/types"
 import { useToast } from "@/components/ui/use-toast"
 import { cn } from "@/lib/utils"
+import { EvidenceUpload, EvidencePhoto } from "@/components/ui/evidence-upload"
+import { IncidentRegistrationDialog } from "./dialogs/incident-registration-dialog"
 
 const formSchema = z.object({
   assetId: z.string().min(1, "El ID del activo es requerido"),
@@ -122,12 +124,6 @@ const formSchema = z.object({
 })
 
 type FormValues = z.infer<typeof formSchema>
-
-interface PhotoWithDescription {
-  file: File
-  preview: string
-  description: string
-}
 
 interface MaintenanceHistoryPart {
   name: string
@@ -209,7 +205,7 @@ export function AssetRegistrationFormModular() {
   const { toast } = useToast()
   const [selectedModel, setSelectedModel] = useState<EquipmentModelWithIntervals | null>(null)
   const [isNewEquipment, setIsNewEquipment] = useState(true)
-  const [uploadedPhotos, setUploadedPhotos] = useState<PhotoWithDescription[]>([])
+  const [uploadedPhotos, setUploadedPhotos] = useState<EvidencePhoto[]>([])
   const [photoUploadOpen, setPhotoUploadOpen] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [maintenanceHistory, setMaintenanceHistory] = useState<MaintenanceHistoryRecord[]>([])
@@ -231,7 +227,6 @@ export function AssetRegistrationFormModular() {
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [isPartDialogOpen, setIsPartDialogOpen] = useState(false)
   const [currentMaintenance, setCurrentMaintenance] = useState<MaintenanceSchedule | null>(null)
-  const [currentPhotoDescription, setCurrentPhotoDescription] = useState("")
   const [historyHours, setHistoryHours] = useState("")
   const [historyFindings, setHistoryFindings] = useState("")
   const [historyActions, setHistoryActions] = useState("")
@@ -540,35 +535,6 @@ export function AssetRegistrationFormModular() {
     return null
   }
 
-  // Photo management
-  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      const file = e.target.files[0]
-      const reader = new FileReader()
-
-      reader.onloadend = () => {
-        setUploadedPhotos([
-          ...uploadedPhotos,
-          {
-            file,
-            preview: reader.result as string,
-            description: currentPhotoDescription || `Foto ${uploadedPhotos.length + 1}`,
-          },
-        ])
-        setCurrentPhotoDescription("")
-      }
-
-      reader.readAsDataURL(file)
-      setPhotoUploadOpen(false)
-    }
-  }
-
-  const removePhoto = (index: number) => {
-    const newPhotos = [...uploadedPhotos]
-    newPhotos.splice(index, 1)
-    setUploadedPhotos(newPhotos)
-  }
-
   // Función para agregar incidente
   const addIncident = () => {
     if (!incidentDate || !incidentType || !incidentReportedBy || !incidentDescription) {
@@ -708,6 +674,42 @@ export function AssetRegistrationFormModular() {
         throw new Error("Usuario no autenticado")
       }
 
+      // Upload photos first if any
+      const photoUrls: string[] = []
+      
+      for (const photo of uploadedPhotos) {
+        if (photo.file) {
+          // Create temporary asset ID for photo organization
+          const tempAssetId = data.assetId || `temp-${Date.now()}`
+          const timestamp = Date.now()
+          const category = photo.category || 'general'
+          const fileExt = photo.file.name.split('.').pop()
+          const fileName = `${tempAssetId}/${timestamp}-${category}-${photo.id}.${fileExt}`
+          
+          console.log(`Uploading photo: ${fileName}`)
+          
+          const { data: uploadData, error } = await supabase.storage
+            .from("asset-photos")
+            .upload(fileName, photo.file, {
+              cacheControl: '3600',
+              upsert: false
+            })
+          
+          if (error) {
+            console.error(`Error uploading ${fileName}:`, error)
+            throw error
+          }
+          
+          // Get public URL
+          const { data: publicUrlData } = supabase.storage
+            .from("asset-photos")
+            .getPublicUrl(fileName)
+          
+          photoUrls.push(publicUrlData.publicUrl)
+          console.log(`Successfully uploaded: ${publicUrlData.publicUrl}`)
+        }
+      }
+
       // Add to assets table
       const { data: assetData, error: assetError } = await supabase
         .from("assets")
@@ -732,6 +734,7 @@ export function AssetRegistrationFormModular() {
             insurance_start_date: data.insuranceCoverage?.startDate?.toISOString(),
             insurance_end_date: data.insuranceCoverage?.endDate?.toISOString(),
             model_id: selectedModel?.id,
+            photos: photoUrls, // Include uploaded photos
           },
         ])
         .select()
@@ -989,11 +992,15 @@ export function AssetRegistrationFormModular() {
       </Tabs>
 
       {/* Dialogs */}
-      <PhotoUploadDialog
+      <EvidenceUpload
         open={photoUploadOpen}
         onOpenChange={setPhotoUploadOpen}
-        uploadedPhotos={uploadedPhotos}
-        setUploadedPhotos={setUploadedPhotos}
+        evidence={uploadedPhotos}
+        setEvidence={setUploadedPhotos}
+        context="asset"
+        assetId="new-asset"
+        title="Gestión de Fotografías del Activo"
+        description="Suba múltiples fotografías y clasifíquelas según el área o componente del equipo"
       />
 
       <PartDialog

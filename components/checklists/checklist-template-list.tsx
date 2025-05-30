@@ -20,10 +20,13 @@ import { Copy, Edit, Eye, FileText, Loader2, MoreHorizontal, Plus, Search, Trash
 import Link from "next/link"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { DuplicateTemplateDialog } from "./duplicate-template-dialog"
 
 export function ChecklistTemplateList() {
   const { templates, loading, error, fetchTemplates, getTemplatesWithIntervals } = useChecklistTemplates()
   const [searchTerm, setSearchTerm] = useState("")
+  const [duplicateDialogOpen, setDuplicateDialogOpen] = useState(false)
+  const [selectedTemplate, setSelectedTemplate] = useState<Checklist | null>(null)
 
   useEffect(() => {
     fetchTemplates()
@@ -44,6 +47,15 @@ export function ChecklistTemplateList() {
     t.frequency !== 'diario' && t.frequency !== 'semanal' && t.frequency !== 'mensual'
   )
   const intervalsTemplates = filteredTemplates.filter(t => t.interval_id !== null && t.interval_id !== undefined)
+
+  const handleDuplicate = (template: Checklist) => {
+    setSelectedTemplate(template)
+    setDuplicateDialogOpen(true)
+  }
+
+  const handleDuplicateSuccess = () => {
+    fetchTemplates() // Refresh the templates list
+  }
 
   if (loading) {
     return (
@@ -198,7 +210,7 @@ export function ChecklistTemplateList() {
                         </Link>
                       </DropdownMenuItem>
                       <DropdownMenuSeparator />
-                      <DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => handleDuplicate(template)}>
                         <Copy className="mr-2 h-4 w-4" />
                         Duplicar plantilla
                       </DropdownMenuItem>
@@ -218,111 +230,120 @@ export function ChecklistTemplateList() {
   }
 
   return (
-    <Card>
-      <CardHeader className="space-y-0">
-        <div className="flex flex-col sm:flex-row justify-between gap-4 mb-6">
-          <CardTitle>Plantillas de Checklist</CardTitle>
-          <div className="flex flex-col sm:flex-row gap-2">
-            <div className="relative">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                type="search"
-                placeholder="Buscar plantillas..."
-                className="pl-8 w-full"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-              />
+    <>
+      <Card>
+        <CardHeader className="space-y-0">
+          <div className="flex flex-col sm:flex-row justify-between gap-4 mb-6">
+            <CardTitle>Plantillas de Checklist</CardTitle>
+            <div className="flex flex-col sm:flex-row gap-2">
+              <div className="relative">
+                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input
+                  type="search"
+                  placeholder="Buscar plantillas..."
+                  className="pl-8 w-full"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                />
+              </div>
+              <Button 
+                variant="outline" 
+                size="icon" 
+                onClick={() => fetchTemplates()} 
+                title="Recargar plantillas"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
+                  <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path>
+                  <path d="M3 3v5h5"></path>
+                </svg>
+              </Button>
+              <Button asChild>
+                <Link href="/checklists/crear">
+                  <Plus className="mr-2 h-4 w-4" />
+                  Nueva Plantilla
+                </Link>
+              </Button>
             </div>
-            <Button 
-              variant="outline" 
-              size="icon" 
-              onClick={() => fetchTemplates()} 
-              title="Recargar plantillas"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
-                <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path>
-                <path d="M3 3v5h5"></path>
-              </svg>
-            </Button>
-            <Button asChild>
-              <Link href="/checklists/crear">
-                <Plus className="mr-2 h-4 w-4" />
-                Nueva Plantilla
-              </Link>
-            </Button>
           </div>
-        </div>
-      </CardHeader>
-      <CardContent>
-        <Tabs defaultValue="all" className="w-full">
-          <TabsList className="mb-4">
-            <TabsTrigger value="all">
-              Todas ({filteredTemplates.length})
-            </TabsTrigger>
-            <TabsTrigger value="diario">
-              Diarios ({dailyTemplates.length})
-            </TabsTrigger>
-            <TabsTrigger value="semanal">
-              Semanales ({weeklyTemplates.length})
-            </TabsTrigger>
-            <TabsTrigger value="mensual">
-              Mensuales ({monthlyTemplates.length})
-            </TabsTrigger>
+        </CardHeader>
+        <CardContent>
+          <Tabs defaultValue="all" className="w-full">
+            <TabsList className="mb-4">
+              <TabsTrigger value="all">
+                Todas ({filteredTemplates.length})
+              </TabsTrigger>
+              <TabsTrigger value="diario">
+                Diarios ({dailyTemplates.length})
+              </TabsTrigger>
+              <TabsTrigger value="semanal">
+                Semanales ({weeklyTemplates.length})
+              </TabsTrigger>
+              <TabsTrigger value="mensual">
+                Mensuales ({monthlyTemplates.length})
+              </TabsTrigger>
+              {otherTemplates.length > 0 && (
+                <TabsTrigger value="other">
+                  Otros ({otherTemplates.length})
+                </TabsTrigger>
+              )}
+              {intervalsTemplates.length > 0 && (
+                <TabsTrigger value="intervals">
+                  Con intervalo ({intervalsTemplates.length})
+                </TabsTrigger>
+              )}
+            </TabsList>
+            
+            <TabsContent value="all">
+              {renderTemplateTable(filteredTemplates)}
+            </TabsContent>
+            
+            <TabsContent value="diario">
+              {renderTemplateTable(dailyTemplates)}
+            </TabsContent>
+            
+            <TabsContent value="semanal">
+              {renderTemplateTable(weeklyTemplates)}
+            </TabsContent>
+            
+            <TabsContent value="mensual">
+              {renderTemplateTable(monthlyTemplates)}
+            </TabsContent>
+            
             {otherTemplates.length > 0 && (
-              <TabsTrigger value="other">
-                Otros ({otherTemplates.length})
-              </TabsTrigger>
+              <TabsContent value="other">
+                {renderTemplateTable(otherTemplates)}
+              </TabsContent>
             )}
+            
             {intervalsTemplates.length > 0 && (
-              <TabsTrigger value="intervals">
-                Con intervalo ({intervalsTemplates.length})
-              </TabsTrigger>
+              <TabsContent value="intervals">
+                {renderTemplateTable(intervalsTemplates)}
+              </TabsContent>
             )}
-          </TabsList>
-          
-          <TabsContent value="all">
-            {renderTemplateTable(filteredTemplates)}
-          </TabsContent>
-          
-          <TabsContent value="diario">
-            {renderTemplateTable(dailyTemplates)}
-          </TabsContent>
-          
-          <TabsContent value="semanal">
-            {renderTemplateTable(weeklyTemplates)}
-          </TabsContent>
-          
-          <TabsContent value="mensual">
-            {renderTemplateTable(monthlyTemplates)}
-          </TabsContent>
-          
-          {otherTemplates.length > 0 && (
-            <TabsContent value="other">
-              {renderTemplateTable(otherTemplates)}
-            </TabsContent>
+          </Tabs>
+        </CardContent>
+        <CardFooter className="flex justify-between border-t px-6 py-4">
+          <div className="text-sm text-muted-foreground">
+            Mostrando {filteredTemplates.length} de {templates.length} plantillas
+          </div>
+          {filteredTemplates.length > 0 && searchTerm && (
+            <Button 
+              variant="ghost" 
+              size="sm"
+              onClick={() => setSearchTerm("")}
+            >
+              Limpiar filtro
+            </Button>
           )}
-          
-          {intervalsTemplates.length > 0 && (
-            <TabsContent value="intervals">
-              {renderTemplateTable(intervalsTemplates)}
-            </TabsContent>
-          )}
-        </Tabs>
-      </CardContent>
-      <CardFooter className="flex justify-between border-t px-6 py-4">
-        <div className="text-sm text-muted-foreground">
-          Mostrando {filteredTemplates.length} de {templates.length} plantillas
-        </div>
-        {filteredTemplates.length > 0 && searchTerm && (
-          <Button 
-            variant="ghost" 
-            size="sm"
-            onClick={() => setSearchTerm("")}
-          >
-            Limpiar filtro
-          </Button>
-        )}
-      </CardFooter>
-    </Card>
+        </CardFooter>
+      </Card>
+
+      <DuplicateTemplateDialog
+        open={duplicateDialogOpen}
+        onOpenChange={setDuplicateDialogOpen}
+        template={selectedTemplate}
+        onSuccess={handleDuplicateSuccess}
+      />
+    </>
   )
 }
