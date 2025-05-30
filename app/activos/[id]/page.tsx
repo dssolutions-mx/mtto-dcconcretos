@@ -478,6 +478,12 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
                     </Link>
                   </Button>
                   <Button size="sm" variant="outline" asChild className="w-full sm:w-auto justify-center">
+                    <Link href={`/activos/${assetId}/reporte-produccion`}>
+                      <FileText className="h-4 w-4 mr-2" />
+                      Reporte Producción
+                    </Link>
+                  </Button>
+                  <Button size="sm" variant="outline" asChild className="w-full sm:w-auto justify-center">
                     <Link href={`/activos/${assetId}/editar`}>
                       <Edit className="h-4 w-4 mr-2" />
                       Editar

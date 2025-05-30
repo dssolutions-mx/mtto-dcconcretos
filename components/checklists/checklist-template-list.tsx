@@ -16,7 +16,7 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Copy, Edit, Eye, FileText, Loader2, MoreHorizontal, Plus, Search, Trash } from "lucide-react"
+import { Copy, Edit, Eye, FileText, Loader2, MoreHorizontal, Plus, Search, Trash, History } from "lucide-react"
 import Link from "next/link"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
@@ -201,6 +201,12 @@ export function ChecklistTemplateList() {
                         <Link href={`/checklists/${template.id}/editar`}>
                           <Edit className="mr-2 h-4 w-4" />
                           Editar plantilla
+                        </Link>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem asChild>
+                        <Link href={`/checklists/${template.id}?tab=versions`}>
+                          <History className="mr-2 h-4 w-4" />
+                          Ver versiones
                         </Link>
                       </DropdownMenuItem>
                       <DropdownMenuItem asChild>

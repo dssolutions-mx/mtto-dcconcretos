@@ -424,12 +424,150 @@ class OfflineChecklistService {
     const db = await this.getDB()
     if (!db) return
     
+    // Ensure we cache the template with version information
+    const templateToCache = {
+      ...templateData,
+      // If template has version info, preserve it; otherwise add compatibility
+      template_version_id: templateData.template_version_id || null,
+      version_compatible: true, // Mark as compatible with versioning system
+      cache_timestamp: Date.now()
+    }
+    
     await db.put('checklist-templates', {
       id: scheduleId,
-      template: templateData,
+      template: templateToCache,
       asset: assetData,
       lastUpdated: Date.now()
     })
+    
+    // Log for debugging
+    console.log('✅ Cached checklist template with version compatibility:', {
+      scheduleId,
+      hasVersionId: !!templateData.template_version_id,
+      templateName: templateData.checklists?.name || templateData.name
+    })
+  }
+  
+  // Enhanced function to get cached template with version awareness
+  async getCachedChecklistTemplateVersioned(scheduleId: string) {
+    const cached = await this.getCachedChecklistTemplate(scheduleId)
+    if (!cached) return null
+
+    // Check if this cached template is compatible with versioning
+    const template = cached.template
+    
+    // Add version compatibility if missing
+    if (!template.version_compatible) {
+      console.log('🔄 Upgrading cached template for version compatibility:', scheduleId)
+      template.version_compatible = true
+      template.template_version_id = template.template_version_id || null
+      
+      // Re-cache with updated compatibility
+      await this.cacheChecklistTemplate(scheduleId, template, cached.asset)
+    }
+
+    return cached
+  }
+
+  // Function to handle offline completion with versioning
+  async saveOfflineChecklistVersioned(id: string, data: any, templateVersionId?: string) {
+    const db = await this.getDB()
+    if (!db) return
+    
+    // Enhance the data with version information
+    const enhancedData = {
+      ...data,
+      template_version_id: templateVersionId || data.template_version_id || null,
+      version_aware: true, // Mark as version-aware completion
+      offline_completion: true
+    }
+    
+    await db.put('offline-checklists', {
+      id,
+      data: enhancedData,
+      synced: false,
+      timestamp: Date.now(),
+      retryCount: 0,
+      lastAttempt: undefined,
+      error: undefined
+    })
+    
+    console.log('💾 Saved offline checklist with version awareness:', {
+      id,
+      templateVersionId: enhancedData.template_version_id,
+      hasVersionInfo: !!enhancedData.template_version_id
+    })
+    
+    // Emitir evento de actualización de stats
+    this.emit('stats-update', await this.getSyncStats())
+    
+    // Intentar sincronizar inmediatamente si hay conexión
+    if (this.isClient && navigator.onLine) {
+      setTimeout(() => this.syncSingleVersioned(id), 1000)
+    }
+  }
+
+  // Enhanced sync function that handles versioning
+  async syncSingleVersioned(id: string) {
+    const db = await this.getDB()
+    if (!db) return false
+    
+    try {
+      const item = await db.get('offline-checklists', id)
+      if (!item || item.synced) return true
+      
+      const supabase = createBrowserClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+      )
+      
+      // Use the versioned completion function if available
+      const functionName = item.data.version_aware 
+        ? 'mark_checklist_as_completed_versioned'
+        : 'mark_checklist_as_completed'
+      
+      console.log(`🔄 Syncing checklist ${id} using ${functionName}`)
+      
+      let result
+      if (functionName === 'mark_checklist_as_completed_versioned') {
+        // Use new versioned function
+        const { data, error } = await supabase.rpc(functionName, {
+          p_schedule_id: item.data.schedule_id,
+          p_completed_items: item.data.completed_items,
+          p_technician: item.data.technician,
+          p_notes: item.data.notes || null,
+          p_signature_data: item.data.signature_data || null
+        })
+        result = { data, error }
+      } else {
+        // Use legacy function for backward compatibility
+        const { data, error } = await supabase.rpc(functionName, {
+          p_schedule_id: item.data.schedule_id,
+          p_completed_items: item.data.completed_items,
+          p_technician: item.data.technician,
+          p_notes: item.data.notes || null
+        })
+        result = { data, error }
+      }
+
+      if (result.error) {
+        await this.incrementRetryCount(id, result.error.message)
+        this.emit('sync-error', { id, error: result.error })
+        return false
+      }
+
+      await this.markAsSynced(id)
+      this.emit('sync-complete', { id, result: result.data })
+      console.log(`✅ Successfully synced checklist ${id}`)
+      
+      return true
+    } catch (error) {
+      console.error(`❌ Error syncing checklist ${id}:`, error)
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+      await this.incrementRetryCount(id, errorMessage)
+      this.emit('sync-error', { id, error })
+      return false
+    }
   }
   
   // Obtener plantilla de checklist desde cache
@@ -460,7 +598,7 @@ class OfflineChecklistService {
     
     // Intentar sincronizar inmediatamente si hay conexión
     if (this.isClient && navigator.onLine) {
-      setTimeout(() => this.syncSingle(id), 1000)
+      setTimeout(() => this.syncSingleVersioned(id), 1000)
     }
   }
   
@@ -500,80 +638,6 @@ class OfflineChecklistService {
     }
   }
   
-  // Sincronizar un solo checklist con mejor manejo de errores y fotos
-  async syncSingle(id: string): Promise<boolean> {
-    try {
-      const db = await this.getDB()
-      if (!db) return false
-      
-      const item = await db.get('offline-checklists', id)
-      
-      if (!item || item.synced) return true
-      
-      // Verificar si no hemos reintentado demasiado recientemente
-      if (item.lastAttempt && Date.now() - item.lastAttempt < 10000) {
-        return false // Esperar 10 segundos entre reintentos
-      }
-
-      // Primero, subir todas las fotos pendientes para este checklist
-      const pendingPhotos = await this.getPendingPhotos(item.data.scheduleId)
-      if (pendingPhotos.length > 0) {
-        console.log(`📸 Subiendo ${pendingPhotos.length} fotos pendientes para checklist ${item.data.scheduleId}`)
-        
-        for (const photo of pendingPhotos) {
-          const photoUploaded = await this.uploadPendingPhoto(photo.id)
-          if (photoUploaded) {
-            // Actualizar el completed_items con la URL de la foto subida
-            const photoUrl = await this.getPhotoUrl(photo.id)
-            if (photoUrl && item.data.completed_items) {
-              item.data.completed_items = item.data.completed_items.map((completedItem: any) => {
-                if (completedItem.item_id === photo.itemId) {
-                  return { ...completedItem, photo_url: photoUrl }
-                }
-                return completedItem
-              })
-            }
-          }
-        }
-        
-        // Actualizar el item en la base de datos local con las URLs actualizadas
-        await db.put('offline-checklists', item)
-      }
-
-      const response = await fetch(`/api/checklists/schedules/${item.data.scheduleId}/complete`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(item.data),
-      })
-      
-      if (response.ok) {
-        await this.markAsSynced(id)
-        console.log(`✅ Checklist ${id} sincronizado exitosamente`)
-        return true
-      } else {
-        const errorText = await response.text()
-        const errorMessage = `HTTP ${response.status}: ${errorText}`
-        
-        if (response.status >= 400 && response.status < 500) {
-          // Error del cliente, no reintentar más
-          console.error(`❌ Error del cliente para checklist ${id}: ${errorMessage}`)
-          await this.incrementRetryCount(id, errorMessage)
-          return false
-        } else {
-          // Error del servidor, reintentar
-          console.warn(`⚠️ Error del servidor para checklist ${id}: ${errorMessage}`)
-          throw new Error(errorMessage)
-        }
-      }
-    } catch (error: any) {
-      console.error(`💥 Error sincronizando checklist ${id}:`, error)
-      await this.incrementRetryCount(id, error.message)
-      return false
-    }
-  }
-  
   // Sincronizar todos los checklists pendientes con reintentos y mejor feedback
   async syncPendingWithRetry() {
     if (this.syncInProgress) return
@@ -588,7 +652,7 @@ class OfflineChecklistService {
       
       for (const item of pending) {
         if (item.retryCount < 5) {
-          const success = await this.syncSingle(item.id)
+          const success = await this.syncSingleVersioned(item.id)
           if (success) {
             successCount++
           } else {
@@ -734,7 +798,7 @@ class OfflineChecklistService {
       await db.put('offline-checklists', item)
       
       // Intentar sincronizar
-      return this.syncSingle(id)
+      return this.syncSingleVersioned(id)
     }
     
     return false

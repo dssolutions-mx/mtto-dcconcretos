@@ -7,7 +7,7 @@ import { DashboardHeader } from "@/components/dashboard/dashboard-header"
 import { DashboardShell } from "@/components/dashboard/dashboard-shell"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Plus, FileDown, ClipboardCheck, Loader2, Check, WifiOff } from "lucide-react"
+import { Plus, FileDown, ClipboardCheck, Loader2, Check, WifiOff, History, Edit, GitCompare, TestTube, Eye } from "lucide-react"
 import Link from "next/link"
 import { useSearchParams } from "next/navigation"
 import { DailyChecklistList } from "@/components/checklists/daily-checklist-list"
@@ -444,6 +444,64 @@ function ChecklistsContent() {
                   </Card>
                 </Link>
               </div>
+
+              {/* New Versioning Features Section */}
+              <Card className="mt-6 border-2 border-green-200 bg-green-50/50">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-green-800">
+                    <History className="h-5 w-5" />
+                    🎉 Nuevas Funciones de Versionado
+                  </CardTitle>
+                  <CardDescription className="text-green-700">
+                    Sistema avanzado de gestión de versiones para plantillas de checklist
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                    <div className="p-4 bg-white rounded-lg border">
+                      <h4 className="font-semibold mb-2 flex items-center gap-2">
+                        <Edit className="h-4 w-4 text-blue-600" />
+                        Editor Avanzado
+                      </h4>
+                      <p className="text-sm text-muted-foreground">
+                        Edita plantillas con vista previa en tiempo real y control de cambios automático
+                      </p>
+                    </div>
+                    <div className="p-4 bg-white rounded-lg border">
+                      <h4 className="font-semibold mb-2 flex items-center gap-2">
+                        <History className="h-4 w-4 text-purple-600" />
+                        Historial Completo
+                      </h4>
+                      <p className="text-sm text-muted-foreground">
+                        Rastrea todos los cambios y mantén un historial inmutable de versiones
+                      </p>
+                    </div>
+                    <div className="p-4 bg-white rounded-lg border">
+                      <h4 className="font-semibold mb-2 flex items-center gap-2">
+                        <GitCompare className="h-4 w-4 text-orange-600" />
+                        Comparación Visual
+                      </h4>
+                      <p className="text-sm text-muted-foreground">
+                        Compara versiones lado a lado con detección automática de cambios
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex gap-2 mt-4">
+                    <Button asChild variant="outline" size="sm">
+                      <Link href="/test-versioning">
+                        <TestTube className="mr-2 h-4 w-4" />
+                        Explorar Funciones
+                      </Link>
+                    </Button>
+                    <Button asChild variant="outline" size="sm">
+                      <Link href="/checklists?tab=templates">
+                        <Eye className="mr-2 h-4 w-4" />
+                        Ver Plantillas
+                      </Link>
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
 
               <div className="mt-6">
                 <Card>
