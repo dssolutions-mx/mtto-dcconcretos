@@ -115,13 +115,31 @@ export function AssetProductionReport({ assetId, onClose }: AssetProductionRepor
   }
 
   const handlePrint = () => {
+    // Hide all navigation elements before printing
+    const navigationElements = document.querySelectorAll('nav, header, .sidebar, .navigation, .nav, .header, [role="navigation"], [role="banner"], .navbar, .menu, .breadcrumb, .breadcrumbs')
+    const originalDisplay: string[] = []
+    
+    navigationElements.forEach((el, index) => {
+      const element = el as HTMLElement
+      originalDisplay[index] = element.style.display
+      element.style.display = 'none'
+    })
+    
+    // Trigger print
     window.print()
+    
+    // Restore navigation elements after printing
+    setTimeout(() => {
+      navigationElements.forEach((el, index) => {
+        const element = el as HTMLElement
+        element.style.display = originalDisplay[index] || ''
+      })
+    }, 100)
   }
 
   const handleDownloadPDF = async () => {
-    // Usar la funcionalidad de impresión del navegador
-    // que permite guardar como PDF de manera más confiable
-    window.print()
+    // Use the same approach as print for consistency
+    handlePrint()
   }
 
   if (loading) {
@@ -406,7 +424,7 @@ export function AssetProductionReport({ assetId, onClose }: AssetProductionRepor
 
         {/* Maintenance Intervals Analysis */}
         {intervalAnalysis && intervalAnalysis.length > 0 && (
-          <div className="mb-8">
+          <div className="mb-8 maintenance-intervals-section">
             <h3 className="text-lg font-semibold text-gray-800 border-b border-gray-200 pb-2 mb-4">
               Análisis de Intervalos de Mantenimiento Programados
             </h3>
@@ -656,7 +674,7 @@ export function AssetProductionReport({ assetId, onClose }: AssetProductionRepor
 
         {/* Maintenance History */}
         {maintenanceHistory.length > 0 && (
-          <div className="mb-8">
+          <div className="mb-8 maintenance-history-section">
             <h3 className="text-lg font-semibold text-gray-800 border-b border-gray-200 pb-2 mb-4">
               Historial de Mantenimiento Detallado
             </h3>
@@ -879,58 +897,119 @@ export function AssetProductionReport({ assetId, onClose }: AssetProductionRepor
       {/* Print Styles */}
       <style jsx global>{`
         @media print {
-          .no-print {
-            display: none !important;
+          /* Hide everything except the report content */
+          body > * {
+            visibility: hidden !important;
           }
           
-          /* Resetear estilos de página */
-          * {
+          .print-container, .print-container * {
+            visibility: visible !important;
+          }
+          
+          .no-print {
+            display: none !important;
+            visibility: hidden !important;
+          }
+          
+          /* Hide navigation and headers completely */
+          nav, header, .sidebar, .navigation, .nav, .header, 
+          [role="navigation"], [role="banner"], .navbar, .menu,
+          .breadcrumb, .breadcrumbs {
+            display: none !important;
+            visibility: hidden !important;
+          }
+          
+          /* Reset page and body for printing */
+          html, body {
+            width: 100% !important;
+            height: auto !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            font-size: 12px !important;
+            line-height: 1.3 !important;
+            color: black !important;
+            background: white !important;
             -webkit-print-color-adjust: exact !important;
             color-adjust: exact !important;
           }
           
-          body {
-            margin: 0 !important;
-            padding: 0 !important;
-            font-size: 12px !important;
-            line-height: 1.4 !important;
-            color: black !important;
-            background: white !important;
-          }
-          
-          /* Configuración de página */
-          @page {
-            margin: 15mm !important;
-            size: A4 !important;
-          }
-          
-          /* Contenedor del reporte */
-          .report-content {
+          /* Position the print container correctly */
+          .print-container {
+            position: static !important;
             display: block !important;
             width: 100% !important;
             max-width: none !important;
             margin: 0 !important;
-            padding: 0 !important;
+            padding: 15mm !important;
             background: white !important;
             color: black !important;
+            box-shadow: none !important;
+            border: none !important;
           }
           
-          /* Evitar saltos de página en elementos importantes */
+          /* Page configuration */
+          @page {
+            margin: 10mm !important;
+            size: A4 portrait !important;
+          }
+          
+          /* Typography for print */
           h1, h2, h3, h4, h5, h6 {
             page-break-after: avoid !important;
             color: black !important;
+            margin-top: 0.5em !important;
+            margin-bottom: 0.3em !important;
           }
           
+          h1 { font-size: 18px !important; }
+          h2 { font-size: 16px !important; }
+          h3 { font-size: 14px !important; }
+          h4 { font-size: 12px !important; }
+          
+          p, div, span {
+            color: black !important;
+            font-size: 11px !important;
+            line-height: 1.3 !important;
+          }
+          
+          /* Section spacing */
           .mb-8 {
             page-break-inside: avoid !important;
-            margin-bottom: 20px !important;
+            margin-bottom: 15px !important;
           }
           
-          /* Tablas */
+          /* Grid layouts */
+          .grid {
+            display: block !important;
+          }
+          
+          .grid.grid-cols-2 > div {
+            display: inline-block !important;
+            width: 48% !important;
+            vertical-align: top !important;
+            margin-right: 2% !important;
+          }
+          
+          .grid.grid-cols-3 > div {
+            display: inline-block !important;
+            width: 31% !important;
+            vertical-align: top !important;
+            margin-right: 2% !important;
+          }
+          
+          .grid.grid-cols-4 > div {
+            display: inline-block !important;
+            width: 23% !important;
+            vertical-align: top !important;
+            margin-right: 2% !important;
+          }
+          
+          /* Tables */
           table {
             page-break-inside: auto !important;
             border-collapse: collapse !important;
             width: 100% !important;
+            margin-bottom: 10px !important;
           }
           
           thead {
@@ -943,40 +1022,152 @@ export function AssetProductionReport({ assetId, onClose }: AssetProductionRepor
           }
           
           th, td {
-            border: 1px solid #ccc !important;
-            padding: 4px !important;
-            font-size: 10px !important;
+            border: 1px solid #333 !important;
+            padding: 3px 5px !important;
+            font-size: 9px !important;
+            line-height: 1.2 !important;
+            text-align: left !important;
+            vertical-align: top !important;
           }
           
-          /* Encabezados de tabla */
           th {
+            background-color: #f0f0f0 !important;
+            font-weight: bold !important;
+            font-size: 9px !important;
+          }
+          
+          /* Background colors for print */
+          .bg-blue-50, .bg-blue-100 {
+            background-color: #e6f3ff !important;
+          }
+          
+          .bg-green-50, .bg-green-100 {
+            background-color: #e6f7e6 !important;
+          }
+          
+          .bg-red-50, .bg-red-100 {
+            background-color: #ffe6e6 !important;
+          }
+          
+          .bg-yellow-50, .bg-yellow-100 {
+            background-color: #fff9e6 !important;
+          }
+          
+          .bg-gray-50, .bg-gray-100 {
             background-color: #f5f5f5 !important;
+          }
+          
+          .bg-amber-50, .bg-amber-100 {
+            background-color: #fff8e6 !important;
+          }
+          
+          /* Borders and rounded corners */
+          .rounded, .rounded-lg {
+            border-radius: 3px !important;
+          }
+          
+          .border {
+            border: 1px solid #ccc !important;
+          }
+          
+          .border-t {
+            border-top: 1px solid #ccc !important;
+          }
+          
+          .border-b {
+            border-bottom: 1px solid #ccc !important;
+          }
+          
+          .border-l-4 {
+            border-left: 3px solid #666 !important;
+          }
+          
+          /* Progress bars */
+          .w-full {
+            width: 100% !important;
+          }
+          
+          /* Badges and status indicators */
+          .px-2 {
+            padding-left: 4px !important;
+            padding-right: 4px !important;
+          }
+          
+          .py-1 {
+            padding-top: 2px !important;
+            padding-bottom: 2px !important;
+          }
+          
+          /* Force page breaks for major sections */
+          .maintenance-intervals-section {
+            page-break-before: always !important;
+          }
+          
+          .maintenance-history-section {
+            page-break-before: always !important;
+          }
+          
+          /* Spacing adjustments */
+          .space-y-1 > * + * {
+            margin-top: 2px !important;
+          }
+          
+          .space-y-2 > * + * {
+            margin-top: 4px !important;
+          }
+          
+          .space-y-3 > * + * {
+            margin-top: 6px !important;
+          }
+          
+          /* Text colors for print */
+          .text-green-600, .text-green-800 {
+            color: #166534 !important;
+          }
+          
+          .text-red-600, .text-red-800 {
+            color: #dc2626 !important;
+          }
+          
+          .text-blue-600, .text-blue-800 {
+            color: #2563eb !important;
+          }
+          
+          .text-yellow-600, .text-amber-600 {
+            color: #d97706 !important;
+          }
+          
+          .text-gray-500, .text-gray-600, .text-gray-700 {
+            color: #4b5563 !important;
+          }
+          
+          /* Ensure visibility of important elements */
+          .font-bold, .font-medium {
             font-weight: bold !important;
           }
           
-          /* Colores de fondo para impresión */
-          .bg-blue-50 {
-            background-color: #eff6ff !important;
+          .text-center {
+            text-align: center !important;
           }
           
-          .bg-green-50 {
-            background-color: #f0fdf4 !important;
+          .text-right {
+            text-align: right !important;
           }
           
-          .bg-red-50 {
-            background-color: #fef2f2 !important;
+          /* Overflow handling */
+          .overflow-hidden {
+            overflow: visible !important;
           }
           
-          .bg-yellow-50 {
-            background-color: #fefce8 !important;
+          /* Fixed positioning issues */
+          .fixed, .absolute {
+            position: static !important;
           }
           
-          .bg-gray-50 {
-            background-color: #f9fafb !important;
-          }
-          
-          .bg-amber-50 {
-            background-color: #fffbeb !important;
+          /* Signature section */
+          .border-b.border-gray-400 {
+            border-bottom: 1px solid #333 !important;
+            height: 30px !important;
           }
         }
       `}</style>
