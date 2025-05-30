@@ -2,7 +2,7 @@
 
 import { AssetProductionReport } from "@/components/assets/asset-production-report"
 import { useRouter } from "next/navigation"
-import { useEffect } from "react"
+import { useEffect, use } from "react"
 
 interface PageProps {
   params: Promise<{ id: string }>
@@ -10,6 +10,10 @@ interface PageProps {
 
 export default function ReporteProduccionPage({ params }: PageProps) {
   const router = useRouter()
+  
+  // Unwrap params using React.use()
+  const resolvedParams = use(params)
+  const assetId = resolvedParams.id
   
   useEffect(() => {
     // Hide navigation elements on mount
@@ -39,7 +43,7 @@ export default function ReporteProduccionPage({ params }: PageProps) {
   return (
     <div className="min-h-screen bg-white">
       <AssetProductionReport 
-        assetId={(params as any).id} 
+        assetId={assetId} 
         onClose={() => router.back()}
       />
     </div>

@@ -165,66 +165,20 @@ export async function GET(
         // Analyze each interval status
         const currentHours = asset.current_hours || 0
         
+        // Find the highest maintenance hours for "covered" logic
+        const allMaintenanceHours = (maintenanceHistory || [])
+          .map(m => Number(m.hours) || 0)
+          .filter(h => h > 0)
+          .sort((a, b) => b - a) // Sort from highest to lowest
+        const lastMaintenanceHours = allMaintenanceHours.length > 0 ? allMaintenanceHours[0] : 0
+        
         intervalAnalysis = maintenanceIntervals.map(interval => {
           const intervalHours = interval.interval_value || 0
           
-          // Find maintenance records that could be related to this interval
-          // Look for maintenance records that mention this interval type or are within the interval range
-          const relatedMaintenanceRecords = (maintenanceHistory || []).filter(m => {
-            const maintenanceHours = Number(m.hours) || 0
-            const maintenanceType = (m.type || '').toLowerCase()
-            const intervalType = (interval.type || '').toLowerCase()
-            const intervalName = (interval.name || '').toLowerCase()
-            const intervalDesc = (interval.description || '').toLowerCase()
-            const maintenanceDesc = (m.description || '').toLowerCase()
-            
-            // Multiple ways to match maintenance to intervals:
-            // 1. Direct maintenance_plan_id match
-            if (m.maintenance_plan_id === interval.id) return true
-            
-            // 2. Type-based matching (e.g., "preventive" maintenance for "preventive" intervals)
-            if (intervalType.includes('preventivo') || intervalType.includes('preventive')) {
-              if (maintenanceType.includes('preventivo') || maintenanceType.includes('preventive')) {
-                return true
-              }
-            }
-            
-            // 3. Content-based matching (description contains interval keywords)
-            const intervalKeywords = [
-              intervalType,
-              intervalName,
-              ...intervalDesc.split(' ').filter((word: string) => word.length > 3)
-            ].filter(Boolean)
-            
-            const hasKeywordMatch = intervalKeywords.some(keyword => 
-              maintenanceDesc.includes(keyword.toLowerCase())
-            )
-            
-            if (hasKeywordMatch) return true
-            
-            // 4. Hour-based proximity matching for preventive maintenance
-            if ((maintenanceType.includes('preventivo') || maintenanceType.includes('preventive')) && maintenanceHours > 0) {
-              // Check if maintenance was done near an interval milestone
-              const intervalMilestones = []
-              for (let i = 1; i <= Math.ceil(currentHours / intervalHours) + 1; i++) {
-                intervalMilestones.push(i * intervalHours)
-              }
-              
-              // Check if maintenance was done within ±10% of any milestone
-              const tolerance = intervalHours * 0.1
-              return intervalMilestones.some(milestone => 
-                Math.abs(maintenanceHours - milestone) <= tolerance
-              )
-            }
-            
-            return false
-          })
-          
-          // Sort related maintenance by hours (most recent first)
-          relatedMaintenanceRecords.sort((a, b) => (Number(b.hours) || 0) - (Number(a.hours) || 0))
-          
-          // Find the most recent relevant maintenance
-          const lastMaintenanceOfType = relatedMaintenanceRecords[0]
+          // Find if this specific maintenance was performed (ONLY by maintenance_plan_id)
+          const lastMaintenanceOfType = (maintenanceHistory || []).find(m => 
+            m.maintenance_plan_id === interval.id
+          )
           
           let status = 'pending'
           let progress = 0
@@ -234,16 +188,17 @@ export async function GET(
           let urgencyLevel = 'normal'
           
           if (lastMaintenanceOfType) {
+            // This maintenance WAS performed - now check next cycle status
             const lastMaintenanceHoursOfType = Number(lastMaintenanceOfType.hours) || 0
-            
-            // Calculate next due based on the last maintenance of this type
+            wasPerformed = true
             nextHours = lastMaintenanceHoursOfType + intervalHours
-            const hoursOverdueCalc = currentHours - nextHours
             
+            // Check if the next cycle is due
+            const hoursOverdueCalc = currentHours - nextHours
             if (hoursOverdueCalc >= 0) {
               status = 'overdue'
               hoursOverdue = hoursOverdueCalc
-              progress = 100 + Math.round((hoursOverdueCalc / intervalHours) * 20) // Show overdue progress
+              progress = 100 + Math.round((hoursOverdueCalc / intervalHours) * 20)
               urgencyLevel = hoursOverdueCalc > intervalHours * 0.5 ? 'high' : 'medium'
             } else {
               const hoursSinceLastMaintenance = currentHours - lastMaintenanceHoursOfType
@@ -252,20 +207,39 @@ export async function GET(
               if (progress >= 90) {
                 status = 'upcoming'
                 urgencyLevel = Math.abs(hoursOverdueCalc) <= 100 ? 'high' : 'medium'
-              } else {
+              } else if (progress >= 0) {
                 status = 'scheduled'
                 urgencyLevel = 'low'
+              } else {
+                // Just completed, show as completed until it reaches some progress
+                status = 'completed'
+                urgencyLevel = 'low'
+                progress = Math.max(0, progress)
               }
             }
           } else {
-            // Never performed - check if we're past due for first performance
-            if (currentHours >= intervalHours) {
-              status = 'overdue'
-              hoursOverdue = currentHours - intervalHours
+            // This maintenance was NEVER performed
+            wasPerformed = false
+            
+            // Check if it was "covered" by subsequent maintenance
+            if (intervalHours <= lastMaintenanceHours) {
+              // Covered by subsequent maintenance
+              status = 'covered'
               progress = 100
-              urgencyLevel = hoursOverdue > intervalHours * 0.5 ? 'high' : 'medium'
-              nextHours = intervalHours // First time due
+              urgencyLevel = 'low'
+            } else if (currentHours >= intervalHours) {
+              // Current hours already passed this interval - OVERDUE
+              hoursOverdue = currentHours - intervalHours
+              status = 'overdue'
+              progress = 100
+              
+              if (hoursOverdue > intervalHours * 0.5) {
+                urgencyLevel = 'high'
+              } else {
+                urgencyLevel = 'medium'
+              }
             } else {
+              // Current hours haven't reached this interval yet - SCHEDULED/UPCOMING
               progress = Math.round((currentHours / intervalHours) * 100)
               const hoursRemaining = intervalHours - currentHours
               
@@ -273,13 +247,12 @@ export async function GET(
                 status = 'upcoming'
                 urgencyLevel = 'high'
               } else if (hoursRemaining <= 200) {
-                status = 'upcoming' 
+                status = 'upcoming'
                 urgencyLevel = 'medium'
               } else {
                 status = 'scheduled'
                 urgencyLevel = 'low'
               }
-              nextHours = intervalHours // First time due
             }
           }
           
@@ -298,7 +271,7 @@ export async function GET(
                 technician: lastMaintenanceOfType.technician || 'No especificado',
                 description: lastMaintenanceOfType.description
               } : null,
-              relatedMaintenanceCount: relatedMaintenanceRecords.length
+              intervalHours
             }
           }
         })

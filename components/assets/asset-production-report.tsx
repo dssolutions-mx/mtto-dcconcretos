@@ -181,7 +181,7 @@ export function AssetProductionReport({ assetId, onClose }: AssetProductionRepor
       case 'scheduled':
         return 'bg-green-100 text-green-800 border-green-200'
       case 'completed':
-        return 'bg-gray-100 text-gray-800 border-gray-200'
+        return 'bg-emerald-100 text-emerald-800 border-emerald-200'
       default:
         return 'bg-gray-100 text-gray-600 border-gray-200'
     }
@@ -440,13 +440,13 @@ export function AssetProductionReport({ assetId, onClose }: AssetProductionRepor
               <table className="w-full text-sm">
                 <thead className="bg-gray-50">
                   <tr>
-                    <th className="px-4 py-3 text-left font-medium text-gray-600 border-b">Intervalo</th>
-                    <th className="px-4 py-3 text-left font-medium text-gray-600 border-b">Descripción</th>
-                    <th className="px-4 py-3 text-center font-medium text-gray-600 border-b">Estado</th>
-                    <th className="px-4 py-3 text-center font-medium text-gray-600 border-b">Progreso</th>
-                    <th className="px-4 py-3 text-left font-medium text-gray-600 border-b">Último Realizado</th>
-                    <th className="px-4 py-3 text-left font-medium text-gray-600 border-b">Próximo Due</th>
-                    <th className="px-4 py-3 text-left font-medium text-gray-600 border-b">Tareas</th>
+                    <th className="px-3 py-3 text-left font-medium text-gray-600 border-b w-32">Intervalo</th>
+                    <th className="px-3 py-3 text-left font-medium text-gray-600 border-b w-48">Descripción</th>
+                    <th className="px-3 py-3 text-center font-medium text-gray-600 border-b w-28">Estado</th>
+                    <th className="px-3 py-3 text-center font-medium text-gray-600 border-b w-20">Progreso</th>
+                    <th className="px-3 py-3 text-left font-medium text-gray-600 border-b w-40">Último Realizado</th>
+                    <th className="px-3 py-3 text-left font-medium text-gray-600 border-b w-32">Próximo Due</th>
+                    <th className="px-3 py-3 text-left font-medium text-gray-600 border-b">Tareas</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -454,9 +454,10 @@ export function AssetProductionReport({ assetId, onClose }: AssetProductionRepor
                     <tr key={interval.id} className={`border-t border-gray-200 ${
                       interval.analysis.status === 'overdue' ? 'bg-red-50' :
                       interval.analysis.status === 'upcoming' ? 'bg-amber-50' :
-                      interval.analysis.status === 'covered' ? 'bg-blue-50' : 'bg-white'
+                      interval.analysis.status === 'covered' ? 'bg-blue-50' :
+                      interval.analysis.status === 'completed' ? 'bg-emerald-50' : 'bg-white'
                     }`}>
-                      <td className="px-4 py-3 border-r border-gray-200">
+                      <td className="px-3 py-3 border-r border-gray-200 w-32">
                         <div className="space-y-1">
                           <div className="font-medium">{interval.type}</div>
                           <div className="text-xs bg-gray-100 px-2 py-1 rounded">
@@ -467,7 +468,7 @@ export function AssetProductionReport({ assetId, onClose }: AssetProductionRepor
                           </div>
                         </div>
                       </td>
-                      <td className="px-4 py-3 border-r border-gray-200">
+                      <td className="px-3 py-3 border-r border-gray-200 w-48">
                         <div className="font-medium mb-1">{interval.description || interval.name}</div>
                         {interval.maintenance_tasks && interval.maintenance_tasks.length > 0 && (
                           <div className="text-xs text-gray-600">
@@ -480,10 +481,13 @@ export function AssetProductionReport({ assetId, onClose }: AssetProductionRepor
                           </div>
                         )}
                       </td>
-                      <td className="px-4 py-3 text-center border-r border-gray-200">
+                      <td className="px-3 py-3 text-center border-r border-gray-200 w-28">
                         <div className="space-y-2">
                           <span className={`px-2 py-1 rounded text-xs font-medium border ${getStatusBadgeClass(interval.analysis.status)}`}>
                             {getStatusText(interval.analysis.status)}
+                            {interval.analysis.wasPerformed && interval.analysis.status !== 'completed' && (
+                              <div className="text-xs mt-1">Siguiente ciclo</div>
+                            )}
                           </span>
                           {interval.analysis.urgencyLevel === 'high' && (
                             <div className="text-xs text-red-600 font-medium">🚨 URGENTE</div>
@@ -493,7 +497,7 @@ export function AssetProductionReport({ assetId, onClose }: AssetProductionRepor
                           )}
                         </div>
                       </td>
-                      <td className="px-4 py-3 text-center border-r border-gray-200">
+                      <td className="px-3 py-3 text-center border-r border-gray-200 w-20">
                         <div className="space-y-2">
                           <div className="w-full bg-gray-200 rounded-full h-2">
                             <div 
@@ -515,18 +519,38 @@ export function AssetProductionReport({ assetId, onClose }: AssetProductionRepor
                           )}
                         </div>
                       </td>
-                      <td className="px-4 py-3 border-r border-gray-200">
+                      <td className="px-3 py-3 border-r border-gray-200 w-40">
                         {interval.analysis.wasPerformed && interval.analysis.lastMaintenance ? (
                           <div className="space-y-1">
                             <div className="text-sm font-medium">
                               {formatDate(interval.analysis.lastMaintenance.date)}
                             </div>
                             <div className="text-xs text-gray-600">
-                              A las {interval.analysis.lastMaintenance.hours?.toLocaleString() || 'N/A'} horas
+                              A las {Number(interval.analysis.lastMaintenance.hours)?.toLocaleString() || 'N/A'} horas
                             </div>
                             <div className="text-xs text-gray-600">
                               Por: {interval.analysis.lastMaintenance.technician}
                             </div>
+                            {interval.analysis.status === 'completed' && (
+                              <div className="text-xs text-green-600 font-medium">
+                                ✅ Completado en esta frecuencia
+                              </div>
+                            )}
+                            {interval.analysis.status === 'overdue' && (
+                              <div className="text-xs text-red-600 font-medium">
+                                🚨 Siguiente ciclo vencido
+                              </div>
+                            )}
+                            {interval.analysis.status === 'upcoming' && (
+                              <div className="text-xs text-amber-600 font-medium">
+                                ⚠️ Siguiente ciclo próximo
+                              </div>
+                            )}
+                            {interval.analysis.status === 'scheduled' && (
+                              <div className="text-xs text-green-600">
+                                📅 Siguiente ciclo programado
+                              </div>
+                            )}
                           </div>
                         ) : (
                           <div className="space-y-1">
@@ -535,53 +559,122 @@ export function AssetProductionReport({ assetId, onClose }: AssetProductionRepor
                             </div>
                             {interval.analysis.status === 'covered' && (
                               <div className="text-xs text-blue-600">
-                                Cubierto por mantenimiento posterior
+                                📋 Cubierto por mantenimiento posterior
+                              </div>
+                            )}
+                            {interval.analysis.status === 'overdue' && (
+                              <div className="text-xs text-red-600 font-medium">
+                                🚨 Vencido - Requiere atención inmediata
+                              </div>
+                            )}
+                            {interval.analysis.status === 'upcoming' && interval.analysis.urgencyLevel === 'high' && (
+                              <div className="text-xs text-red-600 font-medium">
+                                🚨 Urgente - Próximo en ≤100h
+                              </div>
+                            )}
+                            {interval.analysis.status === 'upcoming' && interval.analysis.urgencyLevel === 'medium' && (
+                              <div className="text-xs text-amber-600 font-medium">
+                                ⚠️ Próximo - En ≤200h
+                              </div>
+                            )}
+                            {interval.analysis.status === 'scheduled' && (
+                              <div className="text-xs text-green-600">
+                                📅 Programado para el futuro
                               </div>
                             )}
                           </div>
                         )}
                       </td>
-                      <td className="px-4 py-3 border-r border-gray-200">
+                      <td className="px-3 py-3 border-r border-gray-200 w-32">
                         <div className="space-y-1">
-                          <div className="text-sm font-medium">
-                            {interval.analysis.nextHours.toLocaleString()} horas
-                          </div>
-                          {interval.analysis.status === 'scheduled' && (
-                            <div className="text-xs text-green-600">
-                              En {(interval.analysis.nextHours - (asset.current_hours || 0)).toLocaleString()} horas
-                            </div>
-                          )}
-                          {interval.analysis.status === 'upcoming' && (
-                            <div className="text-xs text-amber-600 font-medium">
-                              En {Math.abs(interval.analysis.nextHours - (asset.current_hours || 0))} horas
-                            </div>
+                          {interval.analysis.wasPerformed ? (
+                            <>
+                              <div className="text-sm font-medium">
+                                {interval.analysis.nextHours.toLocaleString()} horas
+                              </div>
+                              <div className="text-xs text-gray-600">
+                                Próximo ciclo desde las {Number(interval.analysis.lastMaintenance?.hours)?.toLocaleString() || 'N/A'}h
+                              </div>
+                              {interval.analysis.status === 'overdue' && (
+                                <div className="text-xs text-red-600 font-medium">
+                                  Vencido por {interval.analysis.hoursOverdue} horas
+                                </div>
+                              )}
+                              {interval.analysis.status === 'upcoming' && (
+                                <div className="text-xs text-amber-600 font-medium">
+                                  En {Math.abs(interval.analysis.nextHours - (asset.current_hours || 0))} horas
+                                </div>
+                              )}
+                              {interval.analysis.status === 'scheduled' && (
+                                <div className="text-xs text-green-600">
+                                  En {Math.abs(interval.analysis.nextHours - (asset.current_hours || 0))} horas
+                                </div>
+                              )}
+                            </>
+                          ) : (
+                            <>
+                              <div className="text-sm font-medium">
+                                {interval.interval_value.toLocaleString()} horas
+                              </div>
+                              <div className="text-xs text-gray-600">
+                                Primera vez (desde 0h)
+                              </div>
+                              {interval.analysis.status === 'overdue' && (
+                                <div className="text-xs text-red-600 font-medium">
+                                  Vencido por {interval.analysis.hoursOverdue} horas
+                                </div>
+                              )}
+                              {interval.analysis.status === 'upcoming' && (
+                                <div className="text-xs text-amber-600 font-medium">
+                                  En {interval.interval_value - (asset.current_hours || 0)} horas
+                                </div>
+                              )}
+                              {interval.analysis.status === 'scheduled' && (
+                                <div className="text-xs text-green-600">
+                                  En {interval.interval_value - (asset.current_hours || 0)} horas
+                                </div>
+                              )}
+                              {interval.analysis.status === 'covered' && (
+                                <div className="text-xs text-blue-600">
+                                  Cubierto por mantenimiento a las {interval.analysis.intervalHours}h+
+                                </div>
+                              )}
+                            </>
                           )}
                         </div>
                       </td>
-                      <td className="px-4 py-3">
+                      <td className="px-3 py-3">
                         {interval.maintenance_tasks && interval.maintenance_tasks.length > 0 ? (
                           <div className="space-y-1">
-                            {interval.maintenance_tasks.slice(0, 3).map((task: any, taskIndex: number) => (
-                              <div key={task.id} className="text-xs bg-gray-50 p-1 rounded">
-                                <div className="font-medium text-gray-800">
+                            {interval.maintenance_tasks.slice(0, 2).map((task: any, taskIndex: number) => (
+                              <div key={task.id} className="text-xs bg-gray-50 p-2 rounded border-l-2 border-blue-200">
+                                <div className="font-medium text-gray-800 mb-1">
                                   {task.description}
                                 </div>
                                 {task.task_parts && task.task_parts.length > 0 && (
+                                  <div className="text-xs text-blue-600">
+                                    📦 {task.task_parts.length} repuesto(s): {task.task_parts.map((part: any) => part.part_name || part.name).join(', ').substring(0, 50)}{task.task_parts.map((part: any) => part.part_name || part.name).join(', ').length > 50 ? '...' : ''}
+                                  </div>
+                                )}
+                                {task.estimated_duration && (
                                   <div className="text-xs text-gray-600">
-                                    {task.task_parts.length} repuestos requeridos
+                                    ⏱️ Duración: {task.estimated_duration}h
                                   </div>
                                 )}
                               </div>
                             ))}
-                            {interval.maintenance_tasks.length > 3 && (
-                              <div className="text-xs text-gray-500 italic">
-                                ... y {interval.maintenance_tasks.length - 3} tareas más
+                            {interval.maintenance_tasks.length > 2 && (
+                              <div className="text-xs text-gray-500 italic bg-gray-100 p-1 rounded">
+                                ➕ {interval.maintenance_tasks.length - 2} tarea(s) adicional(es)
                               </div>
                             )}
+                            <div className="text-xs text-gray-500 font-medium mt-2">
+                              Total: {interval.maintenance_tasks.length} tarea(s)
+                            </div>
                           </div>
                         ) : (
-                          <div className="text-xs text-gray-500">
-                            Sin tareas definidas
+                          <div className="text-xs text-gray-500 italic">
+                            Sin tareas específicas definidas
                           </div>
                         )}
                       </td>
