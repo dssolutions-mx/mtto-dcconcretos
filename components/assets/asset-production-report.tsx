@@ -114,6 +114,22 @@ export function AssetProductionReport({ assetId, onClose }: AssetProductionRepor
     }
   }
 
+  // Function to determine if maintenance is preventive or corrective
+  const getMaintenanceType = (maintenance: any) => {
+    const type = maintenance.type?.toLowerCase()
+    
+    // A maintenance is preventive if:
+    // 1. Has explicit preventive type
+    // 2. Is associated with a maintenance plan (maintenance_plan_id)
+    const isPreventive = type === 'preventive' || type === 'preventivo' || maintenance.maintenance_plan_id
+    
+    return {
+      isPreventive,
+      displayText: isPreventive ? 'Preventivo' : 'Correctivo',
+      colorClass: isPreventive ? 'text-green-600' : 'text-red-600'
+    }
+  }
+
   const handlePrint = () => {
     // Hide all navigation elements before printing
     const navigationElements = document.querySelectorAll('nav, header, .sidebar, .navigation, .nav, .header, [role="navigation"], [role="banner"], .navbar, .menu, .breadcrumb, .breadcrumbs')
@@ -485,9 +501,6 @@ export function AssetProductionReport({ assetId, onClose }: AssetProductionRepor
                         <div className="space-y-2">
                           <span className={`px-2 py-1 rounded text-xs font-medium border ${getStatusBadgeClass(interval.analysis.status)}`}>
                             {getStatusText(interval.analysis.status)}
-                            {interval.analysis.wasPerformed && interval.analysis.status !== 'completed' && (
-                              <div className="text-xs mt-1">Siguiente ciclo</div>
-                            )}
                           </span>
                           {interval.analysis.urgencyLevel === 'high' && (
                             <div className="text-xs text-red-600 font-medium">🚨 URGENTE</div>
@@ -526,31 +539,14 @@ export function AssetProductionReport({ assetId, onClose }: AssetProductionRepor
                               {formatDate(interval.analysis.lastMaintenance.date)}
                             </div>
                             <div className="text-xs text-gray-600">
-                              A las {Number(interval.analysis.lastMaintenance.hours)?.toLocaleString() || 'N/A'} horas
+                              A las {Number(interval.analysis?.lastMaintenance?.hours)?.toLocaleString() || 'N/A'} horas del equipo
                             </div>
                             <div className="text-xs text-gray-600">
                               Por: {interval.analysis.lastMaintenance.technician}
                             </div>
-                            {interval.analysis.status === 'completed' && (
-                              <div className="text-xs text-green-600 font-medium">
-                                ✅ Completado en esta frecuencia
-                              </div>
-                            )}
-                            {interval.analysis.status === 'overdue' && (
-                              <div className="text-xs text-red-600 font-medium">
-                                🚨 Siguiente ciclo vencido
-                              </div>
-                            )}
-                            {interval.analysis.status === 'upcoming' && (
-                              <div className="text-xs text-amber-600 font-medium">
-                                ⚠️ Siguiente ciclo próximo
-                              </div>
-                            )}
-                            {interval.analysis.status === 'scheduled' && (
-                              <div className="text-xs text-green-600">
-                                📅 Siguiente ciclo programado
-                              </div>
-                            )}
+                            <div className="text-xs text-green-600 font-medium">
+                              ✅ Completado
+                            </div>
                           </div>
                         ) : (
                           <div className="space-y-1">
@@ -589,54 +585,42 @@ export function AssetProductionReport({ assetId, onClose }: AssetProductionRepor
                         <div className="space-y-1">
                           {interval.analysis.wasPerformed ? (
                             <>
-                              <div className="text-sm font-medium">
-                                {interval.analysis.nextHours.toLocaleString()} horas
+                              <div className="text-sm font-medium text-green-600">
+                                Completado
                               </div>
                               <div className="text-xs text-gray-600">
-                                Próximo ciclo desde las {Number(interval.analysis.lastMaintenance?.hours)?.toLocaleString() || 'N/A'}h
+                                Intervalo: {interval.interval_value?.toLocaleString() || 'N/A'} horas
                               </div>
-                              {interval.analysis.status === 'overdue' && (
-                                <div className="text-xs text-red-600 font-medium">
-                                  Vencido por {interval.analysis.hoursOverdue} horas
-                                </div>
-                              )}
-                              {interval.analysis.status === 'upcoming' && (
-                                <div className="text-xs text-amber-600 font-medium">
-                                  En {Math.abs(interval.analysis.nextHours - (asset.current_hours || 0))} horas
-                                </div>
-                              )}
-                              {interval.analysis.status === 'scheduled' && (
-                                <div className="text-xs text-green-600">
-                                  En {Math.abs(interval.analysis.nextHours - (asset.current_hours || 0))} horas
-                                </div>
-                              )}
+                              <div className="text-xs text-green-600">
+                                ✅ Mantenimiento realizado
+                              </div>
                             </>
                           ) : (
                             <>
                               <div className="text-sm font-medium">
-                                {interval.interval_value.toLocaleString()} horas
+                                {interval.interval_value?.toLocaleString() || 'N/A'} horas
                               </div>
                               <div className="text-xs text-gray-600">
-                                Primera vez (desde 0h)
+                                Intervalo programado
                               </div>
                               {interval.analysis.status === 'overdue' && (
                                 <div className="text-xs text-red-600 font-medium">
-                                  Vencido por {interval.analysis.hoursOverdue} horas
+                                  Vencido por {interval.analysis.hoursOverdue || 0} horas
                                 </div>
                               )}
                               {interval.analysis.status === 'upcoming' && (
                                 <div className="text-xs text-amber-600 font-medium">
-                                  En {interval.interval_value - (asset.current_hours || 0)} horas
+                                  En {Math.max(0, (interval.interval_value || 0) - (asset.current_hours || 0))} horas
                                 </div>
                               )}
                               {interval.analysis.status === 'scheduled' && (
                                 <div className="text-xs text-green-600">
-                                  En {interval.interval_value - (asset.current_hours || 0)} horas
+                                  En {Math.max(0, (interval.interval_value || 0) - (asset.current_hours || 0))} horas
                                 </div>
                               )}
                               {interval.analysis.status === 'covered' && (
                                 <div className="text-xs text-blue-600">
-                                  Cubierto por mantenimiento a las {interval.analysis.intervalHours}h+
+                                  Cubierto por mantenimiento posterior
                                 </div>
                               )}
                             </>
@@ -771,12 +755,18 @@ export function AssetProductionReport({ assetId, onClose }: AssetProductionRepor
             <h3 className="text-lg font-semibold text-gray-800 border-b border-gray-200 pb-2 mb-4">
               Historial de Mantenimiento Detallado
             </h3>
-            {maintenanceHistory.slice(0, 10).map((maintenance: any, index: number) => (
+            {maintenanceHistory.slice(0, 10).map((maintenance: any, index: number) => {
+              const maintenanceType = getMaintenanceType(maintenance)
+              
+              return (
               <div key={index} className="border border-gray-200 rounded mb-4 p-4">
                 <div className="grid grid-cols-3 gap-4 mb-3">
                   <div>
                     <p className="text-sm"><strong>Fecha:</strong> {formatDate(maintenance.date)}</p>
-                    <p className="text-sm"><strong>Tipo:</strong> <span className={`font-medium ${maintenance.type === 'preventive' ? 'text-green-600' : 'text-red-600'}`}>{maintenance.type === 'preventive' ? 'Preventivo' : 'Correctivo'}</span></p>
+                    <p className="text-sm"><strong>Tipo:</strong> <span className={`font-medium ${maintenanceType.colorClass}`}>{maintenanceType.displayText}</span></p>
+                    {maintenance.maintenance_plan_id && (
+                      <p className="text-xs text-blue-600 mt-1">📋 Asociado a plan de mantenimiento</p>
+                    )}
                   </div>
                   <div>
                     <p className="text-sm"><strong>Técnico:</strong> {maintenance.technician}</p>
@@ -812,7 +802,8 @@ export function AssetProductionReport({ assetId, onClose }: AssetProductionRepor
                   </div>
                 )}
               </div>
-            ))}
+              )
+            })}
           </div>
         )}
 

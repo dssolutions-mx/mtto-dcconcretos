@@ -175,7 +175,7 @@ export async function GET(
         intervalAnalysis = maintenanceIntervals.map(interval => {
           const intervalHours = interval.interval_value || 0
           
-          // Find if this specific maintenance was performed (ONLY by maintenance_plan_id)
+          // Find if this specific maintenance was performed (by maintenance_plan_id)
           const lastMaintenanceOfType = (maintenanceHistory || []).find(m => 
             m.maintenance_plan_id === interval.id
           )
@@ -188,35 +188,12 @@ export async function GET(
           let urgencyLevel = 'normal'
           
           if (lastMaintenanceOfType) {
-            // This maintenance WAS performed - now check next cycle status
-            const lastMaintenanceHoursOfType = Number(lastMaintenanceOfType.hours) || 0
+            // This maintenance WAS performed - it's completed, no next cycle
             wasPerformed = true
-            nextHours = lastMaintenanceHoursOfType + intervalHours
-            
-            // Check if the next cycle is due
-            const hoursOverdueCalc = currentHours - nextHours
-            if (hoursOverdueCalc >= 0) {
-              status = 'overdue'
-              hoursOverdue = hoursOverdueCalc
-              progress = 100 + Math.round((hoursOverdueCalc / intervalHours) * 20)
-              urgencyLevel = hoursOverdueCalc > intervalHours * 0.5 ? 'high' : 'medium'
-            } else {
-              const hoursSinceLastMaintenance = currentHours - lastMaintenanceHoursOfType
-              progress = Math.min(Math.round((hoursSinceLastMaintenance / intervalHours) * 100), 100)
-              
-              if (progress >= 90) {
-                status = 'upcoming'
-                urgencyLevel = Math.abs(hoursOverdueCalc) <= 100 ? 'high' : 'medium'
-              } else if (progress >= 0) {
-                status = 'scheduled'
-                urgencyLevel = 'low'
-              } else {
-                // Just completed, show as completed until it reaches some progress
-                status = 'completed'
-                urgencyLevel = 'low'
-                progress = Math.max(0, progress)
-              }
-            }
+            status = 'completed'
+            progress = 100
+            urgencyLevel = 'low'
+            nextHours = intervalHours // Keep the original interval hours
           } else {
             // This maintenance was NEVER performed
             wasPerformed = false
@@ -260,7 +237,7 @@ export async function GET(
             ...interval,
             analysis: {
               status,
-              progress: Math.min(progress, 150), // Cap at 150% for display
+              progress: Math.min(progress, 100), // Cap at 100% since there's no next cycle
               nextHours,
               hoursOverdue,
               wasPerformed,
