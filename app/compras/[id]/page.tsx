@@ -90,15 +90,26 @@ async function PurchaseOrderDetailsContent({ id }: { id: string }) {
   // Get the purchase order details
   const { data: order, error } = await supabase
     .from("purchase_orders")
-    .select(`
-      *,
-      work_order:work_orders (*)
-    `)
+    .select("*")
     .eq("id", id)
     .single();
     
   if (error || !order) {
     notFound();
+  }
+  
+  // Get work order if it exists
+  let workOrder = null;
+  if (order.work_order_id) {
+    const { data: workOrderData, error: workOrderError } = await supabase
+      .from("work_orders")
+      .select("*")
+      .eq("id", order.work_order_id)
+      .single();
+      
+    if (!workOrderError && workOrderData) {
+      workOrder = workOrderData;
+    }
   }
   
   // Parse JSON items if it's a string
@@ -204,9 +215,9 @@ async function PurchaseOrderDetailsContent({ id }: { id: string }) {
             <div>
               <p className="text-sm font-medium text-muted-foreground">Orden de Trabajo</p>
               <p className="font-medium">
-                {order.work_order ? (
-                  <Link href={`/ordenes/${order.work_order.id}`} className="text-blue-600 hover:underline">
-                    {order.work_order.order_id}
+                {workOrder ? (
+                  <Link href={`/ordenes/${workOrder.id}`} className="text-blue-600 hover:underline">
+                    {workOrder.order_id}
                   </Link>
                 ) : 'N/A'}
               </p>

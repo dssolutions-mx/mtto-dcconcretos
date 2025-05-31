@@ -10,7 +10,6 @@ import { format } from "date-fns"
 import { es } from "date-fns/locale"
 import { notFound } from "next/navigation"
 import Link from "next/link"
-import { use } from "react"
 import { 
   ArrowLeft, ShoppingCart, CalendarCheck, CheckCircle, Edit, Clock, 
   User, Wrench, Plus, CalendarDays, ChevronDown, Camera, FileText 
@@ -41,9 +40,9 @@ export const metadata: Metadata = {
 }
 
 interface ServiceOrderPageProps {
-  params: {
+  params: Promise<{
     id: string
-  }
+  }>
 }
 
 // Helper function to get badge variant based on status
@@ -107,21 +106,12 @@ function shouldShowGenerateOrderButton(workOrder: ExtendedWorkOrder): boolean {
   return false;
 }
 
-export default function WorkOrderDetailsPage({
+export default async function WorkOrderDetailsPage({
   params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
-  // Unwrap params using React.use()
-  const resolvedParams = use(params);
-  const id = resolvedParams.id;
+}: ServiceOrderPageProps) {
+  // Await params to get the id
+  const { id } = await params;
   
-  // Return the content component with the id
-  return <WorkOrderDetailsContent id={id} />;
-}
-
-// Create an async server component for the content
-async function WorkOrderDetailsContent({ id }: { id: string }) {
   const supabase = await createClient();
   
   // Fetch work order with related data
@@ -130,7 +120,7 @@ async function WorkOrderDetailsContent({ id }: { id: string }) {
     .select(`
       *,
       asset:assets (*),
-      purchase_order:purchase_orders (*)
+      purchase_order:purchase_orders!work_orders_purchase_order_id_fkey (*)
     `)
     .eq("id", id)
     .single();

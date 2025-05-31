@@ -37,7 +37,12 @@ import {
 } from "@/components/ui/select"
 
 interface PurchaseOrderWithWorkOrder extends PurchaseOrder {
-  work_order?: WorkOrder;
+  work_orders?: {
+    id: string;
+    order_id: string;
+    description: string;
+    asset_id: string | null;
+  } | null;
   is_adjustment?: boolean;
   original_purchase_order_id?: string;
 }
@@ -58,6 +63,11 @@ function getStatusVariant(status: string | null) {
     default:
       return "outline"
   }
+}
+
+// Helper function to get work order from purchase order
+function getWorkOrder(order: PurchaseOrderWithWorkOrder) {
+  return order.work_orders;
 }
 
 export function PurchaseOrdersList() {
@@ -88,18 +98,10 @@ export function PurchaseOrdersList() {
           setTechnicians(techMap)
         }
         
-        // Load purchase orders with associated work order
-        const { data, error } = await supabase
+        // Load purchase orders first
+        const { data: purchaseOrdersData, error } = await supabase
           .from("purchase_orders")
-          .select(`
-            *,
-            work_order:work_orders (
-              id,
-              order_id,
-              description,
-              asset_id
-            )
-          `)
+          .select("*")
           .order("created_at", { ascending: false })
 
         if (error) {
@@ -107,7 +109,41 @@ export function PurchaseOrdersList() {
           throw error
         }
         
-        setOrders(data as PurchaseOrderWithWorkOrder[])
+        // Get work order IDs from purchase orders
+        const workOrderIds = purchaseOrdersData
+          ?.filter(po => po.work_order_id)
+          .map(po => po.work_order_id)
+          .filter((id): id is string => id !== null) || []
+        
+        // Load work orders if there are any to load
+        let workOrdersMap: Record<string, any> = {}
+        if (workOrderIds.length > 0) {
+          const { data: workOrdersData, error: workOrdersError } = await supabase
+            .from("work_orders")
+            .select(`
+              id,
+              order_id,
+              description,
+              asset_id
+            `)
+            .in("id", workOrderIds)
+            
+          if (workOrdersError) {
+            console.error("Error al cargar órdenes de trabajo:", workOrdersError)
+          } else if (workOrdersData) {
+            workOrdersData.forEach(wo => {
+              workOrdersMap[wo.id] = wo
+            })
+          }
+        }
+        
+        // Merge the data
+        const ordersWithWorkOrders = purchaseOrdersData.map(po => ({
+          ...po,
+          work_orders: po.work_order_id ? workOrdersMap[po.work_order_id] : null
+        }))
+        
+        setOrders(ordersWithWorkOrders as PurchaseOrderWithWorkOrder[])
 
       } catch (error) {
         console.error("Error al cargar órdenes de compra:", error)
@@ -152,11 +188,15 @@ export function PurchaseOrdersList() {
 
   // Filter orders by search term
   const filteredOrders = filteredOrdersByTab.filter(
-    (order) =>
-      (order.order_id?.toLowerCase() || "").includes(searchTerm.toLowerCase()) ||
-      (order.supplier?.toLowerCase() || "").includes(searchTerm.toLowerCase()) ||
-      (order.work_order?.order_id?.toLowerCase() || "").includes(searchTerm.toLowerCase()) ||
-      (order.work_order?.description?.toLowerCase() || "").includes(searchTerm.toLowerCase())
+    (order) => {
+      const workOrder = getWorkOrder(order);
+      return (
+        (order.order_id?.toLowerCase() || "").includes(searchTerm.toLowerCase()) ||
+        (order.supplier?.toLowerCase() || "").includes(searchTerm.toLowerCase()) ||
+        (workOrder?.order_id?.toLowerCase() || "").includes(searchTerm.toLowerCase()) ||
+        (workOrder?.description?.toLowerCase() || "").includes(searchTerm.toLowerCase())
+      );
+    }
   )
 
   // Get technician name from ID
@@ -472,9 +512,9 @@ function RenderTable({ orders, isLoading, getTechnicianName, formatCurrency }: R
               </TableCell>
               <TableCell>{order.supplier || 'N/A'}</TableCell>
               <TableCell>
-                {order.work_order ? (
-                  <Link href={`/ordenes/${order.work_order.id}`} className="text-blue-600 hover:underline">
-                    {order.work_order.order_id}
+                {order.work_orders && order.work_orders.order_id ? (
+                  <Link href={`/ordenes/${order.work_orders.id}`} className="text-blue-600 hover:underline">
+                    {order.work_orders.order_id}
                   </Link>
                 ) : (
                   <span className="text-muted-foreground">N/A</span>
