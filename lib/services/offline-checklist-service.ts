@@ -72,8 +72,19 @@ class OfflineChecklistService {
   
   constructor() {
     this.isClient = typeof window !== 'undefined'
+    
     if (this.isClient) {
-      this.initializeDB()
+      // Add error handling for browser extension issues
+      try {
+        this.initializeDB()
+        this.setupOnlineListener()
+        this.setupAutoSync()
+      } catch (error) {
+        // Silently handle extension-related errors
+        if (process.env.NODE_ENV === 'development') {
+          console.warn('Offline service initialization warning:', error)
+        }
+      }
     }
   }
 
@@ -247,7 +258,9 @@ class OfflineChecklistService {
     })
 
     this.emit('cache-update', { type: 'schedules', count: schedules.length })
-    console.log(`📋 Cacheados ${schedules.length} schedules con filtro: ${filters}`)
+    if (process.env.NODE_ENV === 'development') {
+      console.log(`📋 Cacheados ${schedules.length} schedules con filtro: ${filters}`)
+    }
   }
 
   // Obtener schedules desde cache
@@ -277,7 +290,9 @@ class OfflineChecklistService {
     })
 
     this.emit('cache-update', { type: 'templates', count: templates.length })
-    console.log(`📝 Cacheados ${templates.length} templates`)
+    if (process.env.NODE_ENV === 'development') {
+      console.log(`📝 Cacheados ${templates.length} templates`)
+    }
   }
 
   // Obtener templates desde cache
@@ -333,7 +348,9 @@ class OfflineChecklistService {
 
       if (!error && data) {
         await this.cacheChecklistTemplate(scheduleId, data, data.assets)
-        console.log(`🔄 Cache proactivo completado para checklist ${scheduleId}`)
+        if (process.env.NODE_ENV === 'development') {
+          console.log(`🔄 Cache proactivo completado para checklist ${scheduleId}`)
+        }
         return true
       }
     } catch (error) {
@@ -387,7 +404,9 @@ class OfflineChecklistService {
           cached++
         }
 
-        console.log(`🏗️ Preparación masiva completada: ${cached} checklists cacheados`)
+        if (process.env.NODE_ENV === 'development') {
+          console.log(`🏗️ Preparación masiva completada: ${cached} checklists cacheados`)
+        }
         this.emit('cache-update', { type: 'massive', count: cached })
         return cached
       }
@@ -441,11 +460,13 @@ class OfflineChecklistService {
     })
     
     // Log for debugging
-    console.log('✅ Cached checklist template with version compatibility:', {
-      scheduleId,
-      hasVersionId: !!templateData.template_version_id,
-      templateName: templateData.checklists?.name || templateData.name
-    })
+    if (process.env.NODE_ENV === 'development') {
+      console.log('✅ Cached checklist template with version compatibility:', {
+        scheduleId,
+        hasVersionId: !!templateData.template_version_id,
+        templateName: templateData.checklists?.name || templateData.name
+      })
+    }
   }
   
   // Enhanced function to get cached template with version awareness
@@ -458,7 +479,9 @@ class OfflineChecklistService {
     
     // Add version compatibility if missing
     if (!template.version_compatible) {
-      console.log('🔄 Upgrading cached template for version compatibility:', scheduleId)
+      if (process.env.NODE_ENV === 'development') {
+        console.log('🔄 Upgrading cached template for version compatibility:', scheduleId)
+      }
       template.version_compatible = true
       template.template_version_id = template.template_version_id || null
       

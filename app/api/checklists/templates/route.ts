@@ -94,22 +94,55 @@ export async function POST(request: Request) {
       )
     }
     
-    // Verificar que cada sección tenga título e items
+    // Verificar que cada sección tenga título y contenido apropiado según su tipo
     for (const section of template.sections) {
-      if (!section.title || !section.items || section.items.length === 0) {
+      if (!section.title) {
         return NextResponse.json(
-          { error: 'Cada sección debe tener un título y al menos un item' },
+          { error: 'Cada sección debe tener un título' },
           { status: 400 }
         )
       }
       
-      // Verificar que cada item tenga descripción
-      for (const item of section.items) {
-        if (!item.description) {
+      if (section.section_type === 'evidence') {
+        // Para secciones de evidencia, verificar configuración
+        if (!section.evidence_config) {
           return NextResponse.json(
-            { error: 'Cada item debe tener una descripción' },
+            { error: `La sección de evidencia "${section.title}" no tiene configuración` },
             { status: 400 }
           )
+        }
+        
+        const config = section.evidence_config
+        if (!config.categories || config.categories.length === 0) {
+          return NextResponse.json(
+            { error: `La sección de evidencia "${section.title}" debe tener al menos una categoría` },
+            { status: 400 }
+          )
+        }
+        
+        if (config.min_photos < 1 || config.max_photos < config.min_photos) {
+          return NextResponse.json(
+            { error: `Configuración de fotos inválida en la sección "${section.title}"` },
+            { status: 400 }
+          )
+        }
+      } else {
+        // Para secciones normales de checklist, verificar items
+        if (!section.items || section.items.length === 0) {
+          return NextResponse.json(
+            { error: `La sección "${section.title}" debe tener al menos un item` },
+            { status: 400 }
+          )
+        }
+        
+        // Verificar que cada item tenga descripción
+        for (const item of section.items) {
+          if (!item.description) {
+            return NextResponse.json(
+              { error: 'Cada item debe tener una descripción' },
+              { status: 400 }
+            )
+          }
         }
       }
     }
@@ -151,7 +184,9 @@ export async function POST(request: Request) {
         .insert({
           checklist_id: checklistId,
           title: section.title,
-          order_index: i
+          order_index: i,
+          section_type: section.section_type || 'checklist',
+          evidence_config: section.evidence_config || null
         })
         .select('id')
         .single()
@@ -163,22 +198,27 @@ export async function POST(request: Request) {
       
       const sectionId = sectionData.id
       
-      // Crear los items para la sección
-      for (let j = 0; j < section.items.length; j++) {
-        const item = section.items[j]
-        
-        await supabase
-          .from('checklist_items')
-          .insert({
-            section_id: sectionId,
-            description: item.description,
-            required: item.required || false,
-            item_type: item.item_type || 'check',
-            expected_value: item.expected_value || null,
-            tolerance: item.tolerance || null,
-            order_index: j
-          })
+      // Solo crear items para secciones normales de checklist
+      if (section.section_type === 'checklist' || !section.section_type) {
+        // Crear los items para la sección
+        for (let j = 0; j < section.items.length; j++) {
+          const item = section.items[j]
+          
+          await supabase
+            .from('checklist_items')
+            .insert({
+              section_id: sectionId,
+              description: item.description,
+              required: item.required || false,
+              item_type: item.item_type || 'check',
+              expected_value: item.expected_value || null,
+              tolerance: item.tolerance || null,
+              order_index: j
+            })
+        }
       }
+      // Para secciones de evidencia, no se crean items individuales
+      // La configuración se almacena en evidence_config
     }
     
     return NextResponse.json({

@@ -22,6 +22,8 @@ import {
 import { Camera, Check, Clock, FileText, Flag, Loader2, Save, Upload, X, Wifi, WifiOff, RefreshCw } from "lucide-react"
 import { SignatureCanvas } from "@/components/checklists/signature-canvas"
 import { OfflineStatus } from "@/components/checklists/offline-status"
+import { EquipmentReadingsForm } from "@/components/checklists/equipment-readings-form"
+import { EvidenceCaptureSection } from "@/components/checklists/evidence-capture-section"
 import { useOfflineSync } from "@/hooks/useOfflineSync"
 import { toast } from "sonner"
 import { createBrowserClient } from '@supabase/ssr'
@@ -48,6 +50,15 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
   const [signature, setSignature] = useState<string | null>(null)
   const [showCorrective, setShowCorrective] = useState(false)
   const [selectedItem, setSelectedItem] = useState<string | null>(null)
+  
+  // Estados para lecturas de equipo
+  const [equipmentReadings, setEquipmentReadings] = useState<{
+    hours_reading?: number | null
+    kilometers_reading?: number | null
+  }>({})
+  
+  // Estados para evidencias fotográficas
+  const [evidenceData, setEvidenceData] = useState<Record<string, any[]>>({})
   
   // Usar el nuevo hook para estado offline
   const { isOnline, hasPendingSyncs } = useOfflineSync()
@@ -92,6 +103,8 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
       signature,
       showCorrective,
       selectedItem,
+      equipmentReadings,
+      evidenceData,
       timestamp: Date.now()
     }
     
@@ -117,6 +130,8 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
           setSignature(data.signature || null)
           setShowCorrective(data.showCorrective || false)
           setSelectedItem(data.selectedItem || null)
+          setEquipmentReadings(data.equipmentReadings || {})
+          setEvidenceData(data.evidenceData || {})
           toast.info("Borrador restaurado desde almacenamiento local")
           return true
         }
@@ -125,6 +140,39 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
       }
     }
     return false
+  }
+
+  // Manejar cambios en evidencias
+  const handleEvidenceChange = (sectionId: string, evidences: any[]) => {
+    setEvidenceData(prev => ({
+      ...prev,
+      [sectionId]: evidences
+    }))
+  }
+
+  // Validar si las evidencias están completas
+  const validateEvidenceRequirements = () => {
+    if (!checklist?.sections) return { isValid: true, errors: [] }
+    
+    const errors: string[] = []
+    
+    checklist.sections
+      .filter((section: any) => section.section_type === 'evidence')
+      .forEach((section: any) => {
+        const sectionEvidences = evidenceData[section.id] || []
+        const config = section.evidence_config || {}
+        const minPhotos = config.min_photos || 1
+        const categories = config.categories || []
+        
+        categories.forEach((category: string) => {
+          const categoryCount = sectionEvidences.filter(e => e.category === category).length
+          if (categoryCount < minPhotos) {
+            errors.push(`Se requieren al menos ${minPhotos} fotos para "${category}" en ${section.title}`)
+          }
+        })
+      })
+    
+    return { isValid: errors.length === 0, errors }
   }
 
   useEffect(() => {
@@ -159,7 +207,11 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
               scheduledDate: cached.template.scheduled_date || '',
               technicianId: cached.template.assigned_to || '',
               technician: cached.template.profiles ? `${cached.template.profiles.nombre} ${cached.template.profiles.apellido}` : '',
-              maintenance_plan_id: cached.template.maintenance_plan_id || null
+              maintenance_plan_id: cached.template.maintenance_plan_id || null,
+              // Información del activo para lecturas
+              currentHours: cached.asset?.current_hours || 0,
+              currentKilometers: cached.asset?.current_kilometers || 0,
+              maintenanceUnit: cached.template.checklists?.equipment_models?.maintenance_unit || 'hours'
             })
             setLoading(false)
             loadFromLocalStorage()
@@ -192,14 +244,17 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
                 equipment_models (
                   id, 
                   name, 
-                  manufacturer
+                  manufacturer,
+                  maintenance_unit
                 )
               ),
               assets (
                 id,
                 name,
                 asset_id,
-                location
+                location,
+                current_hours,
+                current_kilometers
               )
             `)
             .eq('id', id)
@@ -207,181 +262,102 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
           
           if (error) throw error
           
-          if (data) {
-            // Procesar los datos para la estructura esperada
-            const processedData = {
-              id: data.id,
-              name: data.checklists?.name || 'Checklist sin nombre',
-              assetId: data.assets?.id || '',
-              assetCode: data.assets?.asset_id || '',
-              asset: data.assets?.name || '',
-              assetLocation: data.assets?.location || '',
-              modelId: data.checklists?.model_id || '',
-              model: data.checklists?.equipment_models?.name || 'N/A',
-              manufacturer: data.checklists?.equipment_models?.manufacturer || 'N/A',
-              frequency: data.checklists?.frequency || '',
-              sections: data.checklists?.checklist_sections || [],
-              scheduledDate: data.scheduled_date || '',
-              technicianId: data.assigned_to || '',
-              technician: '', // Lo llenaremos después si es necesario
-              maintenance_plan_id: data.maintenance_plan_id || null
-            }
-            
-            setChecklist(processedData)
-            
-            // Cachear los datos para uso offline
-            if (offlineChecklistService) {
-              await offlineChecklistService.cacheChecklistTemplate(
-                id,
-                data,
-                data.assets
-              )
-              console.log('💾 Checklist cacheado para uso offline')
-            }
-            
-            // Cargar datos guardados localmente si existen
-            loadFromLocalStorage()
+          // Estructurar los datos
+          const checklistData = {
+            id: data.id,
+            name: data.checklists?.name || '',
+            assetId: data.assets?.id || '',
+            assetCode: data.assets?.asset_id || '',
+            asset: data.assets?.name || '',
+            assetLocation: data.assets?.location || '',
+            modelId: data.checklists?.model_id || '',
+            model: data.checklists?.equipment_models?.name || 'N/A',
+            manufacturer: data.checklists?.equipment_models?.manufacturer || 'N/A',
+            frequency: data.checklists?.frequency || '',
+            sections: data.checklists?.checklist_sections || [],
+            scheduledDate: data.scheduled_date || '',
+            technicianId: data.assigned_to || '',
+            maintenance_plan_id: data.maintenance_plan_id || null,
+            // Información del activo para lecturas
+            currentHours: data.assets?.current_hours || 0,
+            currentKilometers: data.assets?.current_kilometers || 0,
+            maintenanceUnit: data.checklists?.equipment_models?.maintenance_unit || 'hours'
           }
+          
+          setChecklist(checklistData)
+          
+          // Intentar cargar datos guardados
+          loadFromLocalStorage()
         }
-      } catch (error) {
-        console.error('Error al cargar el checklist:', error)
-        
-        // Si hay error de conexión, intentar cargar desde cache
-        if (isOnline === false && offlineChecklistService) {
-          const cached = await offlineChecklistService.getCachedChecklistTemplate(id)
-          if (cached) {
-            toast.warning("⚠️ Cargando desde cache debido a problema de conexión")
-            // Procesar datos de cache
-            setChecklist({
-              id: cached.template.id,
-              name: cached.template.checklists?.name || '',
-              assetId: cached.asset?.id || '',
-              assetCode: cached.asset?.asset_id || '',
-              asset: cached.asset?.name || '',
-              assetLocation: cached.asset?.location || '',
-              modelId: cached.template.checklists?.model_id || '',
-              model: cached.template.checklists?.equipment_models?.name || 'N/A',
-              manufacturer: cached.template.checklists?.equipment_models?.manufacturer || 'N/A',
-              frequency: cached.template.checklists?.frequency || '',
-              sections: cached.template.checklists?.checklist_sections || [],
-              scheduledDate: cached.template.scheduled_date || '',
-              technicianId: cached.template.assigned_to || '',
-              technician: cached.template.profiles ? `${cached.template.profiles.nombre} ${cached.template.profiles.apellido}` : '',
-              maintenance_plan_id: cached.template.maintenance_plan_id || null
-            })
-            loadFromLocalStorage()
-          } else {
-            toast.error("❌ Error al cargar el checklist y no hay versión offline disponible")
-          }
-        } else {
-          toast.error("❌ Error al cargar el checklist")
-        }
+      } catch (error: any) {
+        console.error('Error loading checklist data:', error)
+        toast.error('Error al cargar el checklist: ' + error.message)
+        router.back()
       } finally {
         setLoading(false)
       }
     }
-    
-    fetchChecklistData()
-  }, [id, isOnline])
 
-  // Actualizar el estado de cambios no guardados cuando cambian las respuestas
+    fetchChecklistData()
+  }, [id, isOnline, router])
+
+  // Marcar cambios sin guardar
   useEffect(() => {
-    if (Object.keys(itemStatus).length > 0 || notes || technician || signature) {
-      setHasUnsavedChanges(true)
-    }
-  }, [itemStatus, notes, technician, signature])
+    setHasUnsavedChanges(true)
+  }, [itemStatus, itemNotes, itemPhotos, notes, technician, signature, equipmentReadings, evidenceData])
 
   const handleStatusChange = (itemId: string, status: "pass" | "flag" | "fail") => {
-    setItemStatus((prev) => ({ ...prev, [itemId]: status }))
-
-    // Si el estado es flag o fail, mostrar el diálogo para agregar foto y notas
-    if (status === "flag" || status === "fail") {
-      setSelectedItem(itemId)
-    }
-    setHasUnsavedChanges(true)
+    setItemStatus(prev => ({ ...prev, [itemId]: status }))
   }
 
   const handlePhotoUpload = async (itemId: string, file: File) => {
     try {
-      if (isOnline) {
-        // Subir directamente si hay conexión
-        const supabase = createBrowserClient(
-          process.env.NEXT_PUBLIC_SUPABASE_URL!,
-          process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-        )
-        
-        const fileName = `checklist_${id}_item_${itemId}_${Date.now()}.${file.name.split('.').pop()}`
-        
-        const { data, error } = await supabase.storage
-          .from('checklist-photos')
-          .upload(fileName, file)
-        
-        if (error) throw error
-        
-        const { data: urlData } = supabase.storage
-          .from('checklist-photos')
-          .getPublicUrl(fileName)
-        
-        setItemPhotos((prev) => ({ 
-          ...prev, 
-          [itemId]: urlData.publicUrl 
-        }))
-        
-        toast.success('Foto subida exitosamente')
-      } else {
-        // Guardar offline si no hay conexión
-        if (offlineChecklistService) {
-          const photoId = await offlineChecklistService.savePhotoOffline(id, itemId, file)
-          
-          // Crear URL local para vista previa
-          const localUrl = URL.createObjectURL(file)
-          
-          setItemPhotos((prev) => ({ 
-            ...prev, 
-            [itemId]: localUrl
-          }))
-          
-          toast.success('📸 Foto guardada offline', {
-            description: "Se subirá automáticamente cuando vuelva la conexión"
-          })
-        } else {
-          throw new Error('Servicio offline no disponible')
-        }
+      const formData = new FormData()
+      formData.append('file', file)
+      formData.append('bucket', 'checklist-photos')
+      
+      const response = await fetch('/api/storage/upload', {
+        method: 'POST',
+        body: formData
+      })
+      
+      if (!response.ok) {
+        throw new Error('Error al subir la foto')
       }
-    } catch (error: any) {
-      console.error('Error handling photo:', error)
-      toast.error(`Error al procesar la foto: ${error.message}`)
+      
+      const { url } = await response.json()
+      setItemPhotos(prev => ({ ...prev, [itemId]: url }))
+      toast.success('Foto subida exitosamente')
+    } catch (error) {
+      console.error('Error uploading photo:', error)
+      toast.error('Error al subir la foto')
     }
-    setHasUnsavedChanges(true)
+  }
+
+  const handleItemNotesChange = (itemId: string, note: string) => {
+    setItemNotes(prev => ({ ...prev, [itemId]: note }))
   }
 
   const prepareCompletedItems = () => {
-    const completedItems = []
-    
-    if (!checklist) return []
-    
-    for (const section of checklist.sections) {
-      const items = section.checklist_items || section.items
-      if (items) {
-        for (const item of items) {
-          if (itemStatus[item.id]) {
-            completedItems.push({
-              item_id: item.id,
-              status: itemStatus[item.id],
-              notes: itemNotes[item.id] || null,
-              photo_url: itemPhotos[item.id] || null
-            })
-          }
-        }
-      }
-    }
-    
-    return completedItems
+    return Object.keys(itemStatus).map(itemId => ({
+      item_id: itemId,
+      status: itemStatus[itemId],
+      notes: itemNotes[itemId] || null,
+      photo_url: itemPhotos[itemId] || null
+    }))
   }
   
   const handleSubmit = async () => {
     if (!isChecklistComplete()) {
       toast.error('Por favor complete todos los campos requeridos')
+      return
+    }
+    
+    // Validar evidencias
+    const evidenceValidation = validateEvidenceRequirements()
+    if (!evidenceValidation.isValid) {
+      toast.error('Evidencias fotográficas incompletas')
+      evidenceValidation.errors.forEach(error => toast.error(error))
       return
     }
     
@@ -391,16 +367,18 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
       const completedItems = prepareCompletedItems()
       
       const submissionData = {
-        scheduleId: id,
+        completed_items: completedItems,
         technician: technician || 'Técnico',
         notes,
         signature,
-        completed_items: completedItems
+        hours_reading: equipmentReadings.hours_reading || null,
+        kilometers_reading: equipmentReadings.kilometers_reading || null,
+        evidence_data: evidenceData
       }
       
       if (isOnline) {
-        // Intentar enviar directamente si hay conexión
-        const response = await fetch(`/api/checklists/schedules/${id}/complete`, {
+        // Usar el nuevo endpoint que maneja lecturas y evidencias
+        const response = await fetch(`/api/checklists/schedules/${id}/complete-with-readings`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -414,15 +392,45 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
           // Limpiar datos locales
           localStorage.removeItem(`checklist-draft-${id}`)
           
-          toast.success("Checklist completado exitosamente")
+          toast.success(result.message || "Checklist completado exitosamente")
           
-          if (result.has_issues) {
-            toast.info("Se detectaron problemas. Se generará una orden de trabajo.")
+          if (result.data?.has_issues) {
+            toast.info("Se detectaron problemas. Se creará una orden de trabajo correctiva.")
+          }
+          
+          // Mostrar información de actualización de lecturas si hubo cambios
+          if (result.data?.reading_update && (equipmentReadings.hours_reading || equipmentReadings.kilometers_reading)) {
+            const update = result.data.reading_update
+            if (update.hours_difference > 0 || update.kilometers_difference > 0) {
+              toast.success(
+                `Lecturas actualizadas: ${update.hours_difference > 0 ? `+${update.hours_difference}h` : ''} ${update.kilometers_difference > 0 ? `+${update.kilometers_difference}km` : ''}`,
+                { duration: 5000 }
+              )
+            }
+          }
+          
+          // Mostrar información de evidencias si se guardaron
+          if (result.data?.evidence_summary?.saved_count > 0) {
+            toast.success(
+              `Se guardaron ${result.data.evidence_summary.saved_count} evidencias fotográficas`,
+              { duration: 5000 }
+            )
           }
           
           router.push('/checklists')
         } else {
-          throw new Error('Error al enviar el checklist')
+          const errorData = await response.json()
+          if (errorData.validation_errors || errorData.validation_warnings) {
+            toast.error('Error en las validaciones')
+            if (errorData.validation_errors?.length > 0) {
+              errorData.validation_errors.forEach((error: string) => toast.error(error))
+            }
+            if (errorData.validation_warnings?.length > 0) {
+              errorData.validation_warnings.forEach((warning: string) => toast.warning(warning))
+            }
+          } else {
+            throw new Error(errorData.error || 'Error al enviar el checklist')
+          }
         }
       } else {
         // Guardar offline si no hay conexión
@@ -459,7 +467,10 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
             status: itemStatus[itemId],
             notes: itemNotes[itemId] || null,
             photo_url: itemPhotos[itemId] || null
-          }))
+          })),
+          hours_reading: equipmentReadings.hours_reading || null,
+          kilometers_reading: equipmentReadings.kilometers_reading || null,
+          evidence_data: evidenceData
         }
         
         await offlineChecklistService.saveOfflineChecklist(offlineId, submissionData)
@@ -659,6 +670,25 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
           </div>
 
           {checklist.sections && checklist.sections.map((section: any, sectionIndex: number) => {
+            if (section.section_type === 'evidence') {
+              // Renderizar sección de evidencias
+              return (
+                <EvidenceCaptureSection
+                  key={section.id}
+                  sectionId={section.id}
+                  sectionTitle={section.title}
+                  config={section.evidence_config || {
+                    min_photos: 1,
+                    max_photos: 5,
+                    categories: ['Estado General']
+                  }}
+                  onEvidenceChange={handleEvidenceChange}
+                  disabled={submitting}
+                />
+              )
+            }
+            
+            // Renderizar sección normal de checklist
             return (
             <div key={sectionIndex} className="mb-8">
               <h3 className="text-lg font-semibold mb-4">{section.title}</h3>
@@ -711,7 +741,7 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
                               id={`notes-${item.id}`}
                               placeholder="Describa el problema encontrado"
                               value={itemNotes[item.id] || ""}
-                              onChange={(e) => setItemNotes((prev) => ({ ...prev, [item.id]: e.target.value }))}
+                              onChange={(e) => handleItemNotesChange(item.id, e.target.value)}
                             />
                           </div>
 
@@ -728,7 +758,7 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
                                   variant="destructive"
                                   size="sm"
                                   className="absolute top-2 right-2"
-                                  onClick={() => setItemPhotos((prev) => ({ ...prev, [item.id]: null }))}
+                                  onClick={() => setItemPhotos(prev => ({ ...prev, [item.id]: null }))}
                                 >
                                   Eliminar
                                 </Button>
@@ -788,6 +818,17 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
           </Button>
         </CardFooter>
       </Card>
+
+      {/* Componente de lecturas de equipo */}
+      <EquipmentReadingsForm
+        assetId={checklist.assetId}
+        assetName={checklist.asset}
+        maintenanceUnit={checklist.maintenanceUnit}
+        currentHours={checklist.currentHours}
+        currentKilometers={checklist.currentKilometers}
+        onReadingsChange={setEquipmentReadings}
+        disabled={submitting}
+      />
 
       <div className="space-y-6 pt-4">
         <div className="space-y-2">

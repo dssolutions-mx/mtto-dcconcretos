@@ -13,11 +13,31 @@ import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import Link from "next/link";
-import { ArrowLeft, FileText, History, Wrench, Calendar, Edit, Camera, ExternalLink, AlertTriangle, CheckCircle, AlertCircle, Clock, ClipboardCheck, Plus, Gauge, Users, MapPin, Calendar as CalendarIcon, Package, Settings } from "lucide-react";
+import {
+  AlertTriangle,
+  AlertCircle,
+  ArrowLeft,
+  Calendar,
+  CheckCircle,
+  ClipboardCheck,
+  Clock,
+  Edit,
+  ExternalLink,
+  FileText,
+  History,
+  MapPin,
+  Plus,
+  Truck,
+  Users,
+  Wrench,
+  Camera,
+  Calendar as CalendarIcon
+} from "lucide-react"
 import { format, formatDistance, parseISO } from "date-fns";
 import { es } from "date-fns/locale";
 import { Asset, AssetWithModel, EquipmentModel } from "@/types";
 import { createClient } from "@/lib/supabase";
+import { CompletedChecklistEvidenceViewer } from "@/components/checklists/completed-checklist-evidence-viewer"
 
 // Define category type
 type CategoryInfo = {
@@ -931,27 +951,62 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
                                 </Badge>
                                 <h4 className="font-medium text-sm">{formatDate(checklist.updated_at)}</h4>
                               </div>
-                              <Badge 
-                                variant={checklist.checklists?.frequency === 'diario' ? 'default' : 
-                                        checklist.checklists?.frequency === 'semanal' ? 'secondary' : 'outline'}
-                                className="text-xs"
-                              >
-                                {checklist.checklists?.frequency || 'N/A'}
-                              </Badge>
+                              <div className="flex items-center gap-2">
+                                <Badge 
+                                  variant={checklist.checklists?.frequency === 'diario' ? 'default' : 
+                                          checklist.checklists?.frequency === 'semanal' ? 'secondary' : 'outline'}
+                                  className="text-xs"
+                                >
+                                  {checklist.checklists?.frequency || 'N/A'}
+                                </Badge>
+                                <CompletedChecklistEvidenceViewer
+                                  completedChecklistId={checklist.id}
+                                  checklistName={checklist.checklists?.name || 'Sin nombre'}
+                                  completionDate={checklist.completion_date || checklist.updated_at}
+                                  technician={checklist.profiles ? 
+                                    `${checklist.profiles.nombre} ${checklist.profiles.apellido}` : 
+                                    checklist.technician || 'No especificado'}
+                                  assetName={asset?.name || 'Activo desconocido'}
+                                  trigger={
+                                    <Button variant="outline" size="sm" className="h-7 px-2">
+                                      <Camera className="h-3 w-3 mr-1" />
+                                      <span className="text-xs">Evidencias</span>
+                                    </Button>
+                                  }
+                                />
+                              </div>
                             </div>
                             <p className="text-sm font-medium">{checklist.checklists?.name || 'Sin nombre'}</p>
                             <p className="text-sm text-muted-foreground">
                               {checklist.profiles ? 
                                 `${checklist.profiles.nombre} ${checklist.profiles.apellido}` : 
-                                'No especificado'}
+                                checklist.technician || 'No especificado'}
                             </p>
+                            
+                            {/* Mostrar información adicional si hay lecturas de equipo */}
+                            {(checklist.equipment_hours_reading || checklist.equipment_kilometers_reading) && (
+                              <div className="mt-2 pt-2 border-t text-xs text-muted-foreground">
+                                {checklist.equipment_hours_reading && (
+                                  <span className="mr-3">
+                                    🕒 {checklist.equipment_hours_reading} horas
+                                  </span>
+                                )}
+                                {checklist.equipment_kilometers_reading && (
+                                  <span>
+                                    🚗 {checklist.equipment_kilometers_reading} km
+                                  </span>
+                                )}
+                              </div>
+                            )}
                           </div>
                         ))}
                         {completedChecklists.length > 3 && (
                           <div className="mt-2 text-center">
-                            <p className="text-sm text-muted-foreground">
-                              {completedChecklists.length - 3} más completados
-                            </p>
+                            <Button variant="outline" size="sm" asChild>
+                              <Link href={`/activos/${assetId}/historial-checklists`}>
+                                Ver historial completo ({completedChecklists.length} checklists)
+                              </Link>
+                            </Button>
                           </div>
                         )}
                       </div>
