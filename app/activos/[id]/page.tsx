@@ -998,6 +998,16 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
                                 )}
                               </div>
                             )}
+                            
+                            {/* Botón para ver detalles del checklist completado */}
+                            <div className="mt-3 pt-2 border-t">
+                              <Button size="sm" variant="outline" asChild className="w-full">
+                                <Link href={`/checklists/completado/${checklist.id}`}>
+                                  <ClipboardCheck className="h-4 w-4 mr-2" />
+                                  Ver Detalles
+                                </Link>
+                              </Button>
+                            </div>
                           </div>
                         ))}
                         {completedChecklists.length > 3 && (
