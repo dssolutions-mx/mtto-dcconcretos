@@ -24,6 +24,7 @@ import { SignatureCanvas } from "@/components/checklists/signature-canvas"
 import { OfflineStatus } from "@/components/checklists/offline-status"
 import { EquipmentReadingsForm } from "@/components/checklists/equipment-readings-form"
 import { EvidenceCaptureSection } from "@/components/checklists/evidence-capture-section"
+import { CorrectiveWorkOrderDialog } from "@/components/checklists/corrective-work-order-dialog"
 import { useOfflineSync } from "@/hooks/useOfflineSync"
 import { toast } from "sonner"
 import { createBrowserClient } from '@supabase/ssr'
@@ -49,6 +50,7 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
   const [technician, setTechnician] = useState('')
   const [signature, setSignature] = useState<string | null>(null)
   const [showCorrective, setShowCorrective] = useState(false)
+  const [correctiveDialogOpen, setCorrectiveDialogOpen] = useState(false)
   const [selectedItem, setSelectedItem] = useState<string | null>(null)
   
   // Estados para lecturas de equipo
@@ -483,48 +485,32 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
     }
   }
 
-  const createCorrectiveAction = async () => {
-    try {
-      // Crear una orden de trabajo correctiva basada en los items con flag o fail
-      const itemsWithIssues = Object.entries(itemStatus)
-        .filter(([_, status]) => status === "flag" || status === "fail")
-        .map(([itemId]) => {
-          const sectionAndItem = findSectionAndItemById(itemId)
-          return {
-            id: itemId,
-            description: sectionAndItem?.item?.description || '',
-            notes: itemNotes[itemId] || '',
-            photo: itemPhotos[itemId] || null,
-            status: itemStatus[itemId]
-          }
-        })
-      
-      // Llamar a la función mejorada que crea la orden de trabajo Y las incidencias
-      const response = await fetch('/api/checklists/generate-corrective-work-order', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          checklist_id: id,
-          items_with_issues: itemsWithIssues
-        }),
+  const prepareCorrectiveAction = () => {
+    // Check if there are any items with issues
+    const itemsWithIssues = Object.entries(itemStatus)
+      .filter(([_, status]) => status === "flag" || status === "fail")
+      .map(([itemId]) => {
+        const sectionAndItem = findSectionAndItemById(itemId)
+        return {
+          id: itemId,
+          description: sectionAndItem?.item?.description || '',
+          notes: itemNotes[itemId] || '',
+          photo: itemPhotos[itemId] || null,
+          status: itemStatus[itemId],
+          sectionTitle: sectionAndItem?.section?.title
+        }
       })
-      
-      const result = await response.json()
-      
-      if (!response.ok || result.error) {
-        throw new Error(result.error || 'Error al crear orden de trabajo correctiva')
-      }
-      
-      toast.success(`Orden de trabajo correctiva creada exitosamente. También se registraron ${result.incidents_created || 0} incidencia(s) en el historial del activo.`)
-      
-      // Redirigir a la página de órdenes de trabajo
-      router.push(`/ordenes/${result.work_order_id}`)
-    } catch (error: any) {
-      console.error('Error creating corrective action:', error)
-      toast.error(`Error al crear acción correctiva: ${error.message}`)
+
+    if (itemsWithIssues.length === 0) {
+      toast.error("No hay elementos con problemas para generar una orden correctiva")
+      return
     }
+
+    setCorrectiveDialogOpen(true)
+  }
+
+  const handleWorkOrderCreated = (workOrderId: string) => {
+    router.push(`/ordenes/${workOrderId}`)
   }
   
   const findSectionAndItemById = (itemId: string) => {
@@ -905,10 +891,32 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>No, solo guardar</AlertDialogCancel>
-            <AlertDialogAction onClick={createCorrectiveAction}>Sí, crear orden correctiva</AlertDialogAction>
+                            <AlertDialogAction onClick={prepareCorrectiveAction}>Sí, crear orden correctiva</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Corrective Work Order Dialog */}
+      <CorrectiveWorkOrderDialog
+        open={correctiveDialogOpen}
+        onOpenChange={setCorrectiveDialogOpen}
+        checklist={checklist}
+        itemsWithIssues={Object.entries(itemStatus)
+          .filter(([_, status]) => status === "flag" || status === "fail")
+          .map(([itemId]) => {
+            const sectionAndItem = findSectionAndItemById(itemId)
+            const currentStatus = itemStatus[itemId]
+            return {
+              id: itemId,
+              description: sectionAndItem?.item?.description || '',
+              notes: itemNotes[itemId] || '',
+              photo: itemPhotos[itemId] || null,
+              status: currentStatus as "flag" | "fail",
+              sectionTitle: sectionAndItem?.section?.title
+            }
+          })}
+        onWorkOrderCreated={handleWorkOrderCreated}
+      />
 
       {/* Estado offline integrado */}
       <OfflineStatus showDetails={true} />

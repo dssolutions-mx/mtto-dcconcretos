@@ -32,7 +32,8 @@ export async function POST(request: Request) {
       templateIds, 
       assignedTo, 
       modelId,
-      automaticForAllAssets = false 
+      automaticForAllAssets = false,
+      maxSchedulesPerTemplate = 10 // Limit to prevent excessive schedules
     } = await request.json()
     
     const startDateTime = new Date(startDate)
@@ -42,6 +43,17 @@ export async function POST(request: Request) {
     if (endDateTime <= startDateTime) {
       return NextResponse.json(
         { error: 'La fecha de fin debe ser posterior a la fecha de inicio' },
+        { status: 400 }
+      )
+    }
+    
+    // Limit the date range to prevent excessive schedules
+    const maxDays = 90 // Maximum 90 days
+    const daysDifference = Math.ceil((endDateTime.getTime() - startDateTime.getTime()) / (1000 * 60 * 60 * 24))
+    
+    if (daysDifference > maxDays) {
+      return NextResponse.json(
+        { error: `El rango de fechas no puede exceder ${maxDays} días` },
         { status: 400 }
       )
     }
@@ -72,8 +84,8 @@ export async function POST(request: Request) {
     // Get templates to schedule
     let templatesToSchedule = templateIds || []
     
-    // If a model is specified but no specific templates, get all templates for this model
-    if (modelId && templatesToSchedule.length === 0) {
+    // If automatic scheduling is requested, get templates for the model
+    if (automaticForAllAssets && modelId) {
       const { data: modelTemplates, error: templatesError } = await supabase
         .from('checklists')
         .select('id')
@@ -91,7 +103,6 @@ export async function POST(request: Request) {
       }
     }
     
-    // Validate assets and templates
     if (!assetsToSchedule.length || !templatesToSchedule.length) {
       return NextResponse.json(
         { error: 'Debe seleccionar al menos un activo y una plantilla' },
@@ -99,8 +110,7 @@ export async function POST(request: Request) {
       )
     }
     
-    // Array to store created schedule IDs
-    const createdSchedules = []
+    const createdSchedules: string[] = []
     
     // Process each combination of asset and template
     for (const assetId of assetsToSchedule) {
@@ -115,49 +125,108 @@ export async function POST(request: Request) {
           
         if (!template) continue
         
-        // Calculate dates based on the pattern
+        // Check for existing pending schedules to avoid duplicates
+        const { data: existingSchedules } = await supabase
+          .from('checklist_schedules')
+          .select('id, scheduled_date')
+          .eq('template_id', templateId)
+          .eq('asset_id', assetId)
+          .eq('status', 'pendiente')
+          .gte('scheduled_date', new Date().toISOString())
+        
+        // Calculate dates based on the pattern with intelligent frequency handling
         const scheduleDates = []
         let currentDate = new Date(startDateTime)
+        let scheduleCount = 0
         
-        switch (pattern) {
+        // For frequency-based patterns, respect the template's frequency
+        const templateFrequency = template.frequency
+        let effectivePattern = pattern
+        
+        // Override pattern based on template frequency if it makes sense
+        if (templateFrequency === 'diario' && pattern !== 'daily') {
+          effectivePattern = 'daily'
+        } else if (templateFrequency === 'semanal' && !['weekly', 'biweekly'].includes(pattern)) {
+          effectivePattern = 'weekly'
+        } else if (templateFrequency === 'mensual' && pattern !== 'monthly') {
+          effectivePattern = 'monthly'
+        }
+        
+        switch (effectivePattern) {
           case 'daily':
-            // Daily
-            while (currentDate <= endDateTime) {
-              scheduleDates.push(new Date(currentDate))
+            // Daily - but limit to reasonable amount
+            while (currentDate <= endDateTime && scheduleCount < maxSchedulesPerTemplate) {
+              // Check if this date already has a schedule
+              const hasExisting = existingSchedules?.some(s => 
+                new Date(s.scheduled_date).toDateString() === currentDate.toDateString()
+              )
+              
+              if (!hasExisting) {
+                scheduleDates.push(new Date(currentDate))
+                scheduleCount++
+              }
               currentDate = addDays(currentDate, 1)
             }
             break
             
           case 'weekly':
             // Weekly (same day of the week)
-            while (currentDate <= endDateTime) {
-              scheduleDates.push(new Date(currentDate))
+            while (currentDate <= endDateTime && scheduleCount < maxSchedulesPerTemplate) {
+              const hasExisting = existingSchedules?.some(s => 
+                new Date(s.scheduled_date).toDateString() === currentDate.toDateString()
+              )
+              
+              if (!hasExisting) {
+                scheduleDates.push(new Date(currentDate))
+                scheduleCount++
+              }
               currentDate = addWeeks(currentDate, 1)
             }
             break
             
           case 'biweekly':
             // Biweekly
-            while (currentDate <= endDateTime) {
-              scheduleDates.push(new Date(currentDate))
+            while (currentDate <= endDateTime && scheduleCount < maxSchedulesPerTemplate) {
+              const hasExisting = existingSchedules?.some(s => 
+                new Date(s.scheduled_date).toDateString() === currentDate.toDateString()
+              )
+              
+              if (!hasExisting) {
+                scheduleDates.push(new Date(currentDate))
+                scheduleCount++
+              }
               currentDate = addDays(currentDate, 14)
             }
             break
             
           case 'monthly':
             // Monthly (same day of the month)
-            while (currentDate <= endDateTime) {
-              scheduleDates.push(new Date(currentDate))
+            while (currentDate <= endDateTime && scheduleCount < maxSchedulesPerTemplate) {
+              const hasExisting = existingSchedules?.some(s => 
+                new Date(s.scheduled_date).toDateString() === currentDate.toDateString()
+              )
+              
+              if (!hasExisting) {
+                scheduleDates.push(new Date(currentDate))
+                scheduleCount++
+              }
               currentDate = addMonths(currentDate, 1)
             }
             break
             
           case 'workdays':
             // Only workdays (Monday to Friday)
-            while (currentDate <= endDateTime) {
+            while (currentDate <= endDateTime && scheduleCount < maxSchedulesPerTemplate) {
               const dayOfWeek = getDay(currentDate)
               if (dayOfWeek >= 1 && dayOfWeek <= 5) {
-                scheduleDates.push(new Date(currentDate))
+                const hasExisting = existingSchedules?.some(s => 
+                  new Date(s.scheduled_date).toDateString() === currentDate.toDateString()
+                )
+                
+                if (!hasExisting) {
+                  scheduleDates.push(new Date(currentDate))
+                  scheduleCount++
+                }
               }
               currentDate = addDays(currentDate, 1)
             }
@@ -165,7 +234,13 @@ export async function POST(request: Request) {
             
           default:
             // If no pattern specified, just use startDate
-            scheduleDates.push(new Date(startDateTime))
+            const hasExisting = existingSchedules?.some(s => 
+              new Date(s.scheduled_date).toDateString() === startDateTime.toDateString()
+            )
+            
+            if (!hasExisting) {
+              scheduleDates.push(new Date(startDateTime))
+            }
             break
         }
         
@@ -185,6 +260,8 @@ export async function POST(request: Request) {
             
           if (!error) {
             createdSchedules.push(data.id)
+          } else {
+            console.error('Error creating schedule:', error)
           }
         }
       }
@@ -193,7 +270,8 @@ export async function POST(request: Request) {
     return NextResponse.json({
       success: true,
       count: createdSchedules.length,
-      schedules: createdSchedules
+      schedules: createdSchedules,
+      message: `Se crearon ${createdSchedules.length} programaciones de checklist`
     })
     
   } catch (error) {

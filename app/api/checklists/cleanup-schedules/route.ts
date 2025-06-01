@@ -26,7 +26,7 @@ export async function POST(request: Request) {
     // Get current schedule stats
     const { data: beforeStats, error: beforeError } = await supabase
       .from('checklist_schedules')
-      .select('id, scheduled_date, status, created_at, maintenance_plan_id')
+      .select('id, scheduled_date, status, created_at, maintenance_plan_id, template_id, asset_id')
       .eq('status', 'pendiente')
     
     if (beforeError) {
@@ -36,6 +36,8 @@ export async function POST(request: Request) {
     const today = new Date()
     const threeDaysFromNow = new Date()
     threeDaysFromNow.setDate(today.getDate() + 3)
+    const sevenDaysFromNow = new Date()
+    sevenDaysFromNow.setDate(today.getDate() + 7)
     
     // Count schedules by category
     const totalBefore = beforeStats?.length || 0
@@ -49,9 +51,51 @@ export async function POST(request: Request) {
       s.maintenance_plan_id !== null
     ).length || 0
 
-    // Delete future schedules (more than 3 days) that were auto-generated
+    // Identify excessive schedules (more than 5 schedules for same template+asset combination)
+    const scheduleGroups = new Map<string, any[]>()
+    beforeStats?.forEach(schedule => {
+      const key = `${schedule.template_id}-${schedule.asset_id}`
+      if (!scheduleGroups.has(key)) {
+        scheduleGroups.set(key, [])
+      }
+      scheduleGroups.get(key)!.push(schedule)
+    })
+
+    const excessiveSchedulesToDelete: string[] = []
+    scheduleGroups.forEach((schedules, key) => {
+      if (schedules.length > 5) {
+        // Keep only the first 5 schedules (closest dates), mark others for deletion
+        const sortedSchedules = schedules.sort((a: any, b: any) => 
+          new Date(a.scheduled_date).getTime() - new Date(b.scheduled_date).getTime()
+        )
+        
+        // Keep first 3 schedules, delete the rest if they're more than 7 days away
+        const toDelete = sortedSchedules.slice(3).filter((s: any) => 
+          new Date(s.scheduled_date) > sevenDaysFromNow && 
+          !s.maintenance_plan_id // Don't delete maintenance plan schedules
+        )
+        
+        excessiveSchedulesToDelete.push(...toDelete.map((s: any) => s.id))
+      }
+    })
+
+    // Delete excessive schedules
+    let deletedExcessive = 0
+    if (excessiveSchedulesToDelete.length > 0) {
+      const { data: deletedExcessiveData, error: deleteExcessiveError } = await supabase
+        .from('checklist_schedules')
+        .delete()
+        .in('id', excessiveSchedulesToDelete)
+        .select('id')
+
+      if (!deleteExcessiveError) {
+        deletedExcessive = deletedExcessiveData?.length || 0
+      }
+    }
+
+    // Delete future schedules (more than 7 days) that were auto-generated
     // Keep schedules that are:
-    // 1. For today or next 3 days
+    // 1. For today or next 7 days
     // 2. Associated with specific maintenance plans
     // 3. Older than 7 days (probably manually created)
     const sevenDaysAgo = new Date()
@@ -61,7 +105,7 @@ export async function POST(request: Request) {
       .from('checklist_schedules')
       .delete()
       .eq('status', 'pendiente')
-      .gt('scheduled_date', threeDaysFromNow.toISOString())
+      .gt('scheduled_date', sevenDaysFromNow.toISOString())
       .is('maintenance_plan_id', null)
       .gt('created_at', sevenDaysAgo.toISOString())
       .select('id')
@@ -81,7 +125,19 @@ export async function POST(request: Request) {
     }
 
     const totalAfter = afterStats?.length || 0
-    const deletedCount = deletedSchedules?.length || 0
+    const deletedCount = (deletedSchedules?.length || 0) + deletedExcessive
+
+    // Also clean up any orphaned checklist issues
+    const { data: orphanedIssues, error: orphanedError } = await supabase
+      .from('checklist_issues')
+      .delete()
+      .is('work_order_id', null)
+      .is('incident_id', null)
+      .eq('resolved', false)
+      .lt('created_at', sevenDaysAgo.toISOString())
+      .select('id')
+
+    const orphanedCount = orphanedIssues?.length || 0
 
     return NextResponse.json({
       success: true,
@@ -91,13 +147,18 @@ export async function POST(request: Request) {
           total: totalBefore,
           todayAndNext3Days,
           futureSchedules,
-          withMaintenancePlan
+          withMaintenancePlan,
+          excessiveGroups: Array.from(scheduleGroups.entries())
+            .filter(([_, schedules]) => schedules.length > 5).length
         },
         after: {
           total: totalAfter,
-          deleted: deletedCount
+          deleted: deletedCount,
+          deletedExcessive,
+          deletedFuture: deletedSchedules?.length || 0,
+          orphanedIssuesDeleted: orphanedCount
         },
-        summary: `Se eliminaron ${deletedCount} schedules automáticos futuros. Schedules restantes: ${totalAfter}`
+        summary: `Se eliminaron ${deletedCount} schedules automáticos (${deletedExcessive} excesivos, ${deletedSchedules?.length || 0} futuros). ${orphanedCount} problemas huérfanos eliminados. Schedules restantes: ${totalAfter}`
       }
     })
 
