@@ -244,8 +244,12 @@ export function AssetProductionReport({ assetId, onClose }: AssetProductionRepor
         {/* Header */}
         <div className="text-center mb-8 border-b-2 border-gray-200 pb-6">
           <div className="flex items-center justify-between mb-4">
-            <div className="w-20 h-20 bg-gray-100 rounded border flex items-center justify-center">
-              <span className="text-xs text-gray-500">LOGO</span>
+            <div className="w-20 h-20 flex items-center justify-center">
+              <img 
+                src="/logo-dark.svg" 
+                alt="Company Logo" 
+                className="w-full h-full object-contain"
+              />
             </div>
             <div className="text-center flex-1">
               <h1 className="text-3xl font-bold text-gray-800 mb-2">REPORTE DE PRODUCCIÓN DE ACTIVO</h1>
@@ -1033,8 +1037,20 @@ export function AssetProductionReport({ assetId, onClose }: AssetProductionRepor
           
           /* Page configuration */
           @page {
-            margin: 10mm !important;
+            margin: 8mm !important;
             size: A4 portrait !important;
+          }
+          
+          @page :first {
+            margin: 8mm !important;
+          }
+          
+          @page :left {
+            margin: 8mm !important;
+          }
+          
+          @page :right {
+            margin: 8mm !important;
           }
           
           /* Typography for print */
@@ -1058,8 +1074,13 @@ export function AssetProductionReport({ assetId, onClose }: AssetProductionRepor
           
           /* Section spacing */
           .mb-8 {
-            page-break-inside: avoid !important;
             margin-bottom: 15px !important;
+            page-break-inside: auto !important;
+          }
+          
+          /* Allow sections to break across pages */
+          .space-y-8 > * {
+            page-break-inside: auto !important;
           }
           
           /* Grid layouts */
@@ -1100,8 +1121,12 @@ export function AssetProductionReport({ assetId, onClose }: AssetProductionRepor
             display: table-header-group !important;
           }
           
+          tbody {
+            page-break-inside: auto !important;
+          }
+          
           tr {
-            page-break-inside: avoid !important;
+            page-break-inside: auto !important;
             page-break-after: auto !important;
           }
           
@@ -1182,13 +1207,23 @@ export function AssetProductionReport({ assetId, onClose }: AssetProductionRepor
             padding-bottom: 2px !important;
           }
           
-          /* Force page breaks for major sections */
+          /* Remove forced page breaks to allow natural flow */
           .maintenance-intervals-section {
-            page-break-before: always !important;
+            page-break-before: auto !important;
           }
           
           .maintenance-history-section {
-            page-break-before: always !important;
+            page-break-before: auto !important;
+          }
+          
+          /* Improve page break handling for large content blocks */
+          .overflow-x-auto {
+            overflow: visible !important;
+          }
+          
+          /* Ensure long content doesn't get cut off */
+          .max-w-none {
+            max-width: none !important;
           }
           
           /* Spacing adjustments */

@@ -1,6 +1,7 @@
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { NextResponse } from 'next/server'
+import { createClient } from '@/lib/supabase-server'
 
 export async function POST(request: Request) {
   try {
@@ -139,6 +140,102 @@ export async function POST(request: Request) {
 
     const orphanedCount = orphanedIssues?.length || 0
 
+    // Find duplicate checklist schedules (same template_id, asset_id, and scheduled_date)
+    const { data: duplicateSchedules, error: findError } = await supabase
+      .from('checklist_schedules')
+      .select('id, template_id, asset_id, scheduled_date, status, created_at')
+      .order('created_at', { ascending: true })
+
+    if (findError) {
+      console.error('Error finding duplicate schedules:', findError)
+      return NextResponse.json({ error: findError.message }, { status: 500 })
+    }
+
+    // Group schedules by template_id, asset_id, and date
+    const groupedSchedules: { [key: string]: typeof duplicateSchedules } = {}
+    const schedulesByDay: { [key: string]: typeof duplicateSchedules } = {}
+
+    duplicateSchedules?.forEach(schedule => {
+      const key = `${schedule.template_id}-${schedule.asset_id}-${schedule.scheduled_date?.split('T')[0]}`
+      if (!groupedSchedules[key]) {
+        groupedSchedules[key] = []
+      }
+      groupedSchedules[key].push(schedule)
+
+      // Also group by day to check for same-day schedules
+      const dayKey = `${schedule.asset_id}-${schedule.scheduled_date?.split('T')[0]}`
+      if (!schedulesByDay[dayKey]) {
+        schedulesByDay[dayKey] = []
+      }
+      schedulesByDay[dayKey].push(schedule)
+    })
+
+    const duplicatesToDelete: string[] = []
+    let duplicateCount = 0
+
+    // Find exact duplicates (same template, asset, and date)
+    Object.values(groupedSchedules).forEach(group => {
+      if (group.length > 1) {
+        // Keep the oldest one (first created), delete the rest
+        const sortedGroup = group.sort((a, b) => 
+          new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+        )
+        
+        // Skip the first one (keep it), delete the rest
+        sortedGroup.slice(1).forEach(schedule => {
+          // Only delete if not completed
+          if (schedule.status !== 'completado') {
+            duplicatesToDelete.push(schedule.id)
+            duplicateCount++
+          }
+        })
+      }
+    })
+
+    // Find same-day schedules for same asset (potential duplicates from different sources)
+    Object.values(schedulesByDay).forEach(group => {
+      if (group.length > 1) {
+        // Group by template_id to handle multiple different checklists on same day
+        const byTemplate: { [key: string]: typeof group } = {}
+        group.forEach(schedule => {
+          if (!byTemplate[schedule.template_id]) {
+            byTemplate[schedule.template_id] = []
+          }
+          byTemplate[schedule.template_id].push(schedule)
+        })
+
+        // For each template, if there are multiple schedules on same day, keep only the oldest
+        Object.values(byTemplate).forEach(templateGroup => {
+          if (templateGroup.length > 1) {
+            const sortedTemplateGroup = templateGroup.sort((a, b) => 
+              new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+            )
+            
+            // Skip the first one (keep it), delete the rest if not already marked and not completed
+            sortedTemplateGroup.slice(1).forEach(schedule => {
+              if (schedule.status !== 'completado' && !duplicatesToDelete.includes(schedule.id)) {
+                duplicatesToDelete.push(schedule.id)
+                duplicateCount++
+              }
+            })
+          }
+        })
+      }
+    })
+
+    // Delete the duplicate schedules
+    if (duplicatesToDelete.length > 0) {
+      const { error: deleteError } = await supabase
+        .from('checklist_schedules')
+        .delete()
+        .in('id', duplicatesToDelete)
+
+      if (deleteError) {
+        console.error('Error deleting duplicate schedules:', deleteError)
+        return NextResponse.json({ error: deleteError.message }, { status: 500 })
+      }
+    }
+
     return NextResponse.json({
       success: true,
       message: 'Limpieza de schedules completada',
@@ -159,7 +256,9 @@ export async function POST(request: Request) {
           orphanedIssuesDeleted: orphanedCount
         },
         summary: `Se eliminaron ${deletedCount} schedules automáticos (${deletedExcessive} excesivos, ${deletedSchedules?.length || 0} futuros). ${orphanedCount} problemas huérfanos eliminados. Schedules restantes: ${totalAfter}`
-      }
+      },
+      duplicateCount: duplicateCount,
+      deletedIds: duplicatesToDelete
     })
 
   } catch (error: any) {

@@ -7,6 +7,7 @@ import { MaintenanceCalendar } from "@/components/dashboard/maintenance-calendar
 import { RecentOrders } from "@/components/dashboard/recent-orders"
 import { WarrantyAlerts } from "@/components/dashboard/warranty-alerts"
 import { QuickActions, commonActions } from "@/components/ui/quick-actions"
+import { MaintenanceCleanupButton } from "@/components/dashboard/maintenance-cleanup-button"
 
 export default function DashboardPage() {
   // Mock data for demonstration - in real app, this would come from API/database
@@ -22,6 +23,9 @@ export default function DashboardPage() {
     <div className="flex-1 space-y-4 p-8 pt-6">
       <div className="flex items-center justify-between space-y-2">
         <h2 className="text-3xl font-bold tracking-tight">Dashboard</h2>
+        <div className="flex gap-2">
+          <MaintenanceCleanupButton />
+        </div>
       </div>
       <Tabs defaultValue="resumen" className="space-y-4">
         <TabsList>

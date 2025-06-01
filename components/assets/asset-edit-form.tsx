@@ -940,6 +940,7 @@ export function AssetEditForm({ assetId }: AssetEditFormProps) {
         insurance_start_date: data.insuranceCoverage?.startDate?.toISOString(),
         insurance_end_date: data.insuranceCoverage?.endDate?.toISOString(),
         photos: allPhotos, // Include both existing and new photos
+        model_id: selectedModel?.id || null, // Update the model_id based on selected model
         updated_at: new Date().toISOString(),
       }
 

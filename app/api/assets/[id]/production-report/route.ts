@@ -175,9 +175,17 @@ export async function GET(
         intervalAnalysis = maintenanceIntervals.map(interval => {
           const intervalHours = interval.interval_value || 0
           
-          // Find if this specific maintenance was performed (by maintenance_plan_id)
+          // Find the corresponding maintenance plan for this interval by interval_value
+          // (interval_id may not match if model was changed)
+          const correspondingPlan = (maintenancePlans || []).find(plan => 
+            plan.interval_value === interval.interval_value
+          )
+          
+          // Find if this specific maintenance was performed (by maintenance_plan_id or interval_id)
+          // Some historical records may have interval_id instead of maintenance_plan_id
           const lastMaintenanceOfType = (maintenanceHistory || []).find(m => 
-            m.maintenance_plan_id === interval.id
+            m.maintenance_plan_id === correspondingPlan?.id ||
+            m.maintenance_plan_id === correspondingPlan?.interval_id
           )
           
           let status = 'pending'
@@ -235,6 +243,7 @@ export async function GET(
           
           return {
             ...interval,
+            correspondingPlan,
             analysis: {
               status,
               progress: Math.min(progress, 100), // Cap at 100% since there's no next cycle
@@ -248,7 +257,8 @@ export async function GET(
                 technician: lastMaintenanceOfType.technician || 'No especificado',
                 description: lastMaintenanceOfType.description
               } : null,
-              intervalHours
+              intervalHours,
+              planId: correspondingPlan?.id
             }
           }
         })
@@ -257,17 +267,43 @@ export async function GET(
       }
     }
 
-    // 9. Calculate summary statistics
-    const totalMaintenanceCost = (maintenanceHistory || [])
+    // 9. Filter out reading-only updates from maintenance history
+    const actualMaintenanceHistory = (maintenanceHistory || [])
+      .filter(record => {
+        const description = record.description?.toLowerCase() || ''
+        const type = record.type?.toLowerCase() || ''
+        
+        // Exclude entries that are just reading updates
+        const isReadingUpdate = description.includes('lectura') || 
+                               description.includes('reading') ||
+                               description.includes('actualización de horas') ||
+                               description.includes('actualización de horómetro') ||
+                               description.includes('actualización de kilómetros') ||
+                               description.includes('update hours') ||
+                               description.includes('update kilometers') ||
+                               description.includes('horómetro') ||
+                               description.includes('horometro') ||
+                               description.includes('via checklist') ||
+                               description.includes('→') || // Arrow character often used in hour updates
+                               description.includes('->') || // ASCII arrow
+                               type === 'reading' ||
+                               type === 'lectura' ||
+                               (description.includes('actualización') && (description.includes('1332') || description.includes('1385'))) // Specific hour values
+        
+        return !isReadingUpdate
+      })
+
+    // 10. Calculate summary statistics  
+    const totalMaintenanceCost = actualMaintenanceHistory
       .reduce((sum, record) => sum + (parseFloat(record.total_cost || '0')), 0)
 
     const totalIncidentCost = (incidents || [])
       .reduce((sum, incident) => sum + (parseFloat(incident.total_cost || '0')), 0)
 
-    const totalMaintenanceHours = (maintenanceHistory || [])
+    const totalMaintenanceHours = actualMaintenanceHistory
       .reduce((sum, record) => sum + (record.labor_hours || 0), 0)
 
-    const preventiveMaintenance = (maintenanceHistory || [])
+    const preventiveMaintenance = actualMaintenanceHistory
       .filter(record => {
         const type = record.type?.toLowerCase()
         // Un mantenimiento es preventivo si:
@@ -276,7 +312,7 @@ export async function GET(
         return type === 'preventive' || type === 'preventivo' || record.maintenance_plan_id
       })
 
-    const correctiveMaintenance = (maintenanceHistory || [])
+    const correctiveMaintenance = actualMaintenanceHistory
       .filter(record => {
         const type = record.type?.toLowerCase()
         // Un mantenimiento es correctivo si:
@@ -288,15 +324,20 @@ export async function GET(
 
     const completedChecklistsCount = (completedChecklists || []).length
 
-    const checklistIssuesCount = (completedChecklists || [])
-      .reduce((sum, checklist) => sum + (checklist.checklist_issues?.length || 0), 0)
+    // Get unique checklist issues (avoid double counting)
+    const allChecklistIssues = (completedChecklists || [])
+      .flatMap(checklist => checklist.checklist_issues || [])
+      .filter((issue, index, array) => 
+        // Remove duplicates based on ID if available, otherwise include all
+        !issue.id || array.findIndex(i => i.id === issue.id) === index
+      )
 
-    const resolvedIssuesCount = (completedChecklists || [])
-      .reduce((sum, checklist) => {
-        return sum + (checklist.checklist_issues?.filter((issue: any) => issue.resolved).length || 0)
-      }, 0)
+    const checklistIssuesCount = allChecklistIssues.length
 
-    // 10. Calculate availability and reliability metrics
+    const resolvedIssuesCount = allChecklistIssues
+      .filter((issue: any) => issue.resolved).length
+
+    // 11. Calculate availability and reliability metrics
     const totalDowntime = (incidents || [])
       .reduce((sum, incident) => sum + (incident.downtime || 0), 0)
 
@@ -306,7 +347,7 @@ export async function GET(
     const totalOperatingHours = operatingDays * 24
     const availability = totalOperatingHours > 0 ? ((totalOperatingHours - totalDowntime) / totalOperatingHours) * 100 : 100
 
-    // 11. Warranty status
+    // 12. Warranty status
     const warrantyStatus = asset.warranty_expiration 
       ? new Date(asset.warranty_expiration) > currentDate ? 'Active' : 'Expired'
       : 'Not specified'
@@ -320,7 +361,8 @@ export async function GET(
       asset,
       completedChecklists: completedChecklists || [],
       incidents: incidents || [],
-      maintenanceHistory: maintenanceHistory || [],
+      maintenanceHistory: actualMaintenanceHistory || [],
+      allMaintenanceHistory: maintenanceHistory || [], // Keep original for reference
       workOrders: workOrders || [],
       serviceOrders: serviceOrders || [],
       maintenancePlans: maintenancePlans || [],
