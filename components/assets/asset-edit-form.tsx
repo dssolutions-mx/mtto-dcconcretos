@@ -546,9 +546,9 @@ export function AssetEditForm({ assetId }: AssetEditFormProps) {
             laborCost: record.labor_cost,
             cost: record.total_cost,
             workOrder: record.work_order,
-            parts: record.parts ? JSON.parse(record.parts) : undefined,
+            parts: record.parts ? (typeof record.parts === 'string' ? JSON.parse(record.parts) : record.parts) : undefined,
             maintenancePlanId: record.maintenance_plan_id,
-            completedTasks: record.completed_tasks ? JSON.parse(record.completed_tasks) : undefined,
+            completedTasks: record.completed_tasks ? (typeof record.completed_tasks === 'string' ? JSON.parse(record.completed_tasks) : record.completed_tasks) : undefined,
           }))
           
           setMaintenanceHistory(formattedHistory)

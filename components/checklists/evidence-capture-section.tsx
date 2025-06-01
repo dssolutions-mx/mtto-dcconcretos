@@ -103,7 +103,8 @@ export function EvidenceCaptureSection({
       })
       
       if (!response.ok) {
-        throw new Error('Error al subir la foto')
+        const errorData = await response.text().catch(() => 'Error desconocido')
+        throw new Error(`Error al subir archivo: ${errorData}`)
       }
       
       const { url } = await response.json()
@@ -124,9 +125,10 @@ export function EvidenceCaptureSection({
       
       setCurrentDescription('')
       toast.success('Evidencia agregada exitosamente')
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error uploading evidence:', error)
-      toast.error('Error al subir la evidencia')
+      const errorMessage = error?.message || 'Error desconocido al subir la evidencia'
+      toast.error(`Error al subir la evidencia: ${errorMessage}`)
     } finally {
       setUploading(false)
     }

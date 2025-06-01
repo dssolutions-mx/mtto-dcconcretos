@@ -322,15 +322,17 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
       })
       
       if (!response.ok) {
-        throw new Error('Error al subir la foto')
+        const errorData = await response.text().catch(() => 'Error desconocido')
+        throw new Error(`Error al subir archivo: ${errorData}`)
       }
       
       const { url } = await response.json()
       setItemPhotos(prev => ({ ...prev, [itemId]: url }))
       toast.success('Foto subida exitosamente')
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error uploading photo:', error)
-      toast.error('Error al subir la foto')
+      const errorMessage = error?.message || 'Error desconocido al subir la foto'
+      toast.error(`Error al subir la foto: ${errorMessage}`)
     }
   }
 

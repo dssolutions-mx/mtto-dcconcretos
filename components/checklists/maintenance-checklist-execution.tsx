@@ -162,7 +162,10 @@ export function MaintenanceChecklistExecution({ workOrderId }: MaintenanceCheckl
         .from('checklist-photos')
         .upload(fileName, file)
       
-      if (uploadError) throw uploadError
+      if (uploadError) {
+        console.error('Upload error details:', uploadError)
+        throw new Error(`Error al subir archivo: ${uploadError.message}`)
+      }
       
       const { data: urlData } = supabase.storage
         .from('checklist-photos')
@@ -174,9 +177,10 @@ export function MaintenanceChecklistExecution({ workOrderId }: MaintenanceCheckl
       }))
       
       toast.success('Foto subida exitosamente')
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error uploading photo:', error)
-      toast.error('Error al subir la foto')
+      const errorMessage = error?.message || 'Error desconocido al subir la foto'
+      toast.error(`Error al subir la foto: ${errorMessage}`)
     }
   }
 
