@@ -130,8 +130,8 @@ export enum MaintenanceUnit {
 }
 
 export enum MaintenanceType {
-  Preventive = 'Preventivo',
-  Corrective = 'Correctivo'
+  Preventive = 'preventive',
+  Corrective = 'corrective'
 }
 
 export enum ServiceOrderPriority {
