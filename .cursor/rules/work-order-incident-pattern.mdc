@@ -1,0 +1,235 @@
+---
+description: when working with incident and work order management
+globs: 
+alwaysApply: false
+---
+# Work Order and Incident Management Pattern
+
+## Core Business Rule
+
+**CRITICAL**: Each incident (failed or flagged checklist item) must create its own individual corrective work order. Multiple incidents cannot be grouped into a single work order.
+
+## Database Trigger Integration
+
+The database already has an **existing trigger** that automatically schedules a new checklist after the current one is completed. New scheduling logic must:
+
+1. **Respect and utilize** this existing trigger
+2. **NOT duplicate** the scheduling behavior
+3. **Work in harmony** with the existing system
+
+## Incident-to-Work-Order Flow
+
+### 1. Checklist Execution
+- Checklists are executed via [app/checklists/ejecutar/[id]/page.tsx](mdc:app/checklists/ejecutar/[id]/page.tsx)
+- Failed or flagged items are recorded as incidents
+- Each incident gets its individual record
+
+### 2. Automatic Work Order Generation
+When incidents are detected:
+```typescript
+// Each incident generates its own work order
+incidents.forEach(async (incident) => {
+  await generateCorrectiveWorkOrder({
+    incidentId: incident.id,
+    assetId: incident.asset_id,
+    description: incident.description,
+    priority: incident.severity_level
+  });
+});
+```
+
+### 3. Work Order Structure
+Each work order contains:
+- Reference to **single** incident
+- Asset information
+- Generated corrective tasks
+- Priority based on incident severity
+- Estimated completion time
+
+## API Endpoints
+
+### Generate Work Order from Incident
+- `POST /api/checklists/generate-corrective-work-order`
+- `POST /api/checklists/generate-corrective-work-order-enhanced`
+
+**Parameters**:
+- `incidentId` - Single incident ID (not array)
+- `assetId` - Asset requiring maintenance  
+- `checklistExecutionId` - Source checklist execution
+
+### Work Order Management
+- `GET /api/work-orders/[id]` - Individual work order details
+- `PUT /api/work-orders/[id]/update-status` - Status updates
+- `POST /api/work-orders/[id]/additional-expenses` - Cost tracking
+
+## Checklist Integration
+
+### Existing Trigger Behavior
+The database trigger automatically:
+1. Detects checklist completion
+2. Schedules next checklist based on frequency
+3. Maintains scheduling continuity
+
+### New Code Requirements
+When implementing new scheduling features:
+```typescript
+// ❌ DON'T DO THIS - Duplicates existing trigger
+await scheduleNextChecklist(assetId, frequency);
+
+// ✅ DO THIS - Let existing trigger handle it
+await markChecklistAsCompleted(checklistId);
+// Trigger automatically schedules next one
+```
+
+## Work Order Status Flow
+
+### Status Progression
+1. **Created** - Generated from incident
+2. **Assigned** - Technician assigned
+3. **In Progress** - Work started
+4. **Pending Parts** - Waiting for materials
+5. **Completed** - Work finished
+6. **Verified** - Quality check passed
+
+### Status Updates
+```typescript
+// Update single work order status
+await updateWorkOrderStatus(workOrderId, {
+  status: 'completed',
+  completedBy: technicianId,
+  completionDate: new Date(),
+  actualHours: hoursWorked
+});
+```
+
+## UI Patterns
+
+### Work Order List
+- One row per work order
+- Clear incident reference
+- Priority indicators
+- Status badges
+
+### Work Order Details
+- [app/ordenes/[id]/page.tsx](mdc:app/ordenes/[id]/page.tsx)
+- Shows related incident details
+- Task completion tracking
+- Parts and labor costs
+
+### Incident Management
+- [app/incidentes/page.tsx](mdc:app/incidentes/page.tsx)
+- Links to generated work orders
+- Incident resolution tracking
+
+## Data Relationships
+
+### Database Schema
+```sql
+-- Each work order references exactly one incident
+work_orders {
+  id: uuid
+  incident_id: uuid (foreign key, unique)
+  asset_id: uuid
+  status: enum
+  created_at: timestamp
+}
+
+-- Incidents can have one work order
+incidents {
+  id: uuid  
+  checklist_execution_id: uuid
+  work_order_id: uuid (nullable)
+  description: text
+  severity_level: enum
+}
+```
+
+### Referential Integrity
+- One-to-one relationship: `incident ↔ work_order`
+- Cascade deletion rules for data consistency
+- Foreign key constraints enforced
+
+## Best Practices
+
+### 1. Individual Work Orders
+- Never aggregate multiple incidents
+- Each work order has single responsibility
+- Clear incident traceability
+
+### 2. Trigger Compatibility
+- Always check existing trigger behavior
+- Test scheduling integration thoroughly
+- Avoid duplicate scheduling logic
+
+### 3. Status Management
+- Maintain clear status progression
+- Log all status changes with timestamps
+- Provide status change audit trail
+
+### 4. Error Handling
+```typescript
+try {
+  const workOrder = await generateWorkOrder(incident);
+  // Let existing trigger handle checklist scheduling
+} catch (error) {
+  // Handle work order generation failure
+  // Don't interfere with checklist trigger
+}
+```
+
+## Common Anti-Patterns
+
+### ❌ Avoid These Patterns
+```typescript
+// DON'T: Group multiple incidents
+const workOrder = await createWorkOrder({
+  incidents: [incident1, incident2, incident3] // WRONG
+});
+
+// DON'T: Duplicate trigger functionality  
+await completeChecklist(id);
+await scheduleNextChecklist(assetId); // WRONG - trigger does this
+
+// DON'T: Manual status transitions
+workOrder.status = 'completed'; // WRONG - use proper API
+```
+
+### ✅ Correct Patterns
+```typescript
+// DO: One work order per incident
+for (const incident of incidents) {
+  await createWorkOrder({
+    incidentId: incident.id
+  });
+}
+
+// DO: Trust existing trigger
+await markChecklistCompleted(id);
+// Trigger handles scheduling automatically
+
+// DO: Use proper status API
+await updateWorkOrderStatus(id, 'completed');
+```
+
+## Testing Guidelines
+
+### Unit Tests
+- Test one-to-one incident-work order creation
+- Verify trigger compatibility
+- Check status transition validation
+
+### Integration Tests  
+- Test complete checklist-to-work-order flow
+- Verify existing trigger still functions
+- Test error scenarios and rollback
+
+### Database Tests
+- Verify referential integrity
+- Test trigger behavior preservation
+- Check constraint enforcement
+
+## Related Files
+- [app/checklists/ejecutar/[id]/page.tsx](mdc:app/checklists/ejecutar/[id]/page.tsx) - Checklist execution
+- [app/ordenes/](mdc:app/ordenes) - Work order management
+- [app/incidentes/](mdc:app/incidentes) - Incident tracking
+- [api/checklists/generate-corrective-work-order/](mdc:api/checklists/generate-corrective-work-order) - Work order generation

@@ -1,0 +1,180 @@
+---
+description: when working with maintenance intervals or any preventive work
+globs: 
+alwaysApply: false
+---
+# Cyclic Maintenance Logic for Models and Assets
+
+## Overview
+
+This codebase implements a **cyclic maintenance system** where maintenance intervals repeat after reaching the maximum interval hours, with sophisticated "covered" logic and cycle-aware scheduling.
+
+## Database Schema
+
+### Maintenance Intervals Table
+Key fields added for cyclic logic in [maintenance_intervals]:
+- `is_recurring` (boolean, default: true) - Whether the interval repeats in cycles
+- `is_first_cycle_only` (boolean, default: false) - Whether interval only applies to first cycle (e.g., break-in services)
+- `cycle_defining_interval` (integer) - Reserved for future use
+- `maintenance_category` (string, default: 'standard') - Category classification
+
+## Core Concepts
+
+### 1. Cycle Definition
+- **Cycle Length**: Determined by the highest `interval_value` in the model's maintenance intervals
+- **Current Cycle**: `Math.floor(current_hours / cycle_length) + 1`
+- **Cycle Boundaries**: 
+  - Start: `(cycle_number - 1) * cycle_length`
+  - End: `cycle_number * cycle_length`
+
+### 2. Service Due Hour Calculation
+For any service in a specific cycle:
+```typescript
+nextDueHour = ((currentCycleNum - 1) * maxInterval) + interval.interval_value
+```
+
+### 3. Boundary Conditions
+**CRITICAL**: Services that fall exactly at cycle boundaries belong to the cycle they complete:
+- Service at 3600h in a 3600h cycle = End of Cycle 1 (NOT start of Cycle 2)
+- Service at 7200h = End of Cycle 2 (NOT start of Cycle 3)
+
+### 4. Status Types
+
+#### Overdue
+- Service is past its due hour in current cycle
+- Color: Red (`bg-red-50`)
+
+#### Upcoming  
+- Service is due within 100 hours
+- Color: Amber (`bg-amber-50`)
+
+#### Scheduled
+- Service is due in the future within current cycle
+- Color: Green (`bg-green-50`)
+
+#### Covered
+- Lower interval service covered by higher service in **same cycle**
+- A 600h service covers 300h service if done in same cycle
+- Color: Blue (`bg-blue-50`)
+
+#### Completed
+- Service was performed in current cycle (within ±200h tolerance)
+- Color: Gray (usually filtered out from display)
+
+## Implementation Details
+
+### Key File: [app/activos/[id]/mantenimiento/page.tsx](mdc:app/activos/[id]/mantenimiento/page.tsx)
+
+### Critical Logic Sections
+
+#### Cycle Boundary Filtering
+```typescript
+// CRITICAL: Maintenance at exact cycle boundary belongs to PREVIOUS cycle
+const currentCycleMaintenances = maintenanceHistory.filter(m => {
+  const mHours = Number(m.hours) || 0;
+  // Exclude maintenance that marks the end of previous cycle (exactly at cycle boundary)
+  return mHours > currentCycleStartHour && mHours < currentCycleEndHour;
+});
+```
+
+#### Service Completion Detection
+Services are marked as completed only if:
+1. `maintenance_plan_id` matches the interval ID
+2. Maintenance hours are within ±200h tolerance of expected cycle hour
+3. Maintenance occurred in the current cycle
+
+```typescript
+const wasPerformedInCurrentCycle = nextDueHour !== null && currentCycleMaintenances.some(m => {
+  const maintenanceHours = Number(m.hours) || 0;
+  const tolerance = 200; // Allow some tolerance for when maintenance is done early/late
+  
+  return m.maintenance_plan_id === interval.id && 
+         Math.abs(maintenanceHours - nextDueHour!) <= tolerance;
+});
+```
+
+#### Coverage Logic
+Higher maintenance services cover lower ones **within the same cycle**:
+```typescript
+const cycleIntervalHour = nextDueHour - currentCycleStartHour; // Relative to cycle start
+const highestRelativeHour = highestMaintenanceInCycle - currentCycleStartHour;
+
+if (highestRelativeHour >= cycleIntervalHour && highestMaintenanceInCycle > 0) {
+  status = 'covered';
+}
+```
+
+## Common Patterns
+
+### Example: Sitrak Model
+- Intervals: 300h, 600h, 900h, 1200h, 1500h, 1800h
+- Cycle Length: 1800h
+- At 1800h → Next cycle starts, 300h service due at 2100h
+
+### Example: Complex Model (13 intervals to 3600h)
+- Intervals: 100h, 300h, 600h, ..., 3600h  
+- Cycle Length: 3600h
+- More complex but follows same principles
+
+## Business Rules
+
+### 1. Operational Coverage
+The "covered" logic reflects real-world maintenance practice where comprehensive services include tasks from smaller services.
+
+### 2. Cycle Integrity  
+Each cycle is independent - services reset and repeat according to the original interval pattern.
+
+### 3. First-Cycle Services
+Some services (like break-in maintenance) only occur in the first cycle and are marked with `is_first_cycle_only: true`.
+
+## UI Display Rules
+
+### Cycle Information Card
+- Shows current cycle number, progress, and next cycle start
+- Progress bar indicates completion percentage of current cycle
+
+### Service Table
+- Grouped by cycle with clear cycle indicators
+- Status badges with appropriate colors
+- "Próximo en Xh" for upcoming services
+- "Vencido por Xh" for overdue services
+
+### Action Buttons
+- Disabled for "covered" and "not_applicable" services
+- "¡Urgente!" for overdue services
+- "Programar" for upcoming services
+
+## Debugging Guidelines
+
+### Console Logs
+When debugging, check for:
+- Cycle boundary calculations
+- Service completion detection accuracy
+- Coverage logic application
+
+### Common Issues
+1. **Services disappearing**: Usually cycle boundary classification errors
+2. **Incorrect coverage**: Check same-cycle maintenance detection
+3. **Wrong cycle assignment**: Verify boundary condition logic
+
+## Migration Compatibility
+
+The system maintains backward compatibility:
+- New fields default to maintain existing behavior
+- Legacy data without cycle fields still functions
+- Gradual migration path for existing maintenance records
+
+## Related Files
+- [app/activos/[id]/mantenimiento/page.tsx](mdc:app/activos/[id]/mantenimiento/page.tsx) - Main cyclic logic
+- [types/](mdc:types) - Type definitions for CyclicMaintenanceInterval
+- [hooks/useSupabase.ts](mdc:hooks/useSupabase.ts) - Data fetching hooks
+- Database migrations for cyclic fields
+
+## Testing Scenarios
+
+Always test with:
+1. Services at exact cycle boundaries (e.g., 3600h, 7200h)
+2. Multiple cycles with different service patterns
+3. Coverage scenarios with higher services performed
+4. First-cycle-only services behavior
+5. Tolerance edge cases (±200h from expected hour)

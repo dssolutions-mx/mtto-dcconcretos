@@ -872,6 +872,10 @@ export type Database = {
           type: string
           updated_at: string | null
           updated_by: string | null
+          is_recurring: boolean | null
+          is_first_cycle_only: boolean | null
+          cycle_defining_interval: number | null
+          maintenance_category: string | null
         }
         Insert: {
           created_at?: string | null
@@ -885,6 +889,10 @@ export type Database = {
           type: string
           updated_at?: string | null
           updated_by?: string | null
+          is_recurring?: boolean | null
+          is_first_cycle_only?: boolean | null
+          cycle_defining_interval?: number | null
+          maintenance_category?: string | null
         }
         Update: {
           created_at?: string | null
@@ -898,6 +906,10 @@ export type Database = {
           type?: string
           updated_at?: string | null
           updated_by?: string | null
+          is_recurring?: boolean | null
+          is_first_cycle_only?: boolean | null
+          cycle_defining_interval?: number | null
+          maintenance_category?: string | null
         }
         Relationships: [
           {
