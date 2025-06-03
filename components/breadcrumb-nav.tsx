@@ -2,7 +2,7 @@
 
 import React from "react"
 import Link from "next/link"
-import { usePathname } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -10,8 +10,16 @@ import {
   BreadcrumbList,
   BreadcrumbPage,
   BreadcrumbSeparator,
+  BreadcrumbEllipsis,
 } from "@/components/ui/breadcrumb"
-import { Home } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { 
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import { Home, ChevronLeft, ChevronDown } from "lucide-react"
 
 interface BreadcrumbNavProps {
   className?: string
@@ -25,6 +33,7 @@ interface BreadcrumbItemData {
 
 export function BreadcrumbNav({ className }: BreadcrumbNavProps) {
   const pathname = usePathname()
+  const router = useRouter()
 
   // Skip breadcrumbs for auth pages
   if (pathname?.startsWith("/login") || pathname?.startsWith("/register")) {
@@ -148,8 +157,10 @@ export function BreadcrumbNav({ className }: BreadcrumbNavProps) {
         if (segment === "crear") label = "Crear"
         else if (segment === "editar") label = "Editar"
         else if (segment === "historial") label = "Historial"
+        else if (segment === "historial-checklists") label = "Historial de Checklists"
         else if (segment === "incidentes") label = "Incidentes"
         else if (segment === "mantenimiento") label = "Mantenimiento"
+        else if (segment === "reporte-produccion") label = "Reporte de Producción"
         else if (segment === "completar") label = "Completar"
         else if (segment === "aprobar") label = "Aprobar"
         else if (segment === "rechazar") label = "Rechazar"
@@ -159,6 +170,14 @@ export function BreadcrumbNav({ className }: BreadcrumbNavProps) {
         else if (segment === "semanales") label = "Semanales"
         else if (segment === "mensuales") label = "Mensuales"
         else if (segment === "completado") label = "Completado"
+        else if (segment === "nuevo") label = "Nuevo"
+        else if (segment === "copiar") label = "Copiar"
+        else if (segment === "eliminar") label = "Eliminar"
+        else if (segment === "generar-oc") label = "Generar OC"
+        else if (segment === "generar-oc-ajuste") label = "Generar OC Ajuste"
+        else if (segment === "pedido") label = "Pedido"
+        else if (segment === "recibido") label = "Recibido"
+        else if (segment === "gastos-adicionales") label = "Gastos Adicionales"
         
         items.push({
           label,
@@ -171,31 +190,157 @@ export function BreadcrumbNav({ className }: BreadcrumbNavProps) {
   }
 
   const breadcrumbItems = getBreadcrumbItems()
+  const currentPage = breadcrumbItems[breadcrumbItems.length - 1]
+  const parentPage = breadcrumbItems.length > 1 ? breadcrumbItems[breadcrumbItems.length - 2] : null
 
-  return (
-    <Breadcrumb className={className}>
-      <BreadcrumbList>
-        {breadcrumbItems.map((item, index) => (
-          <React.Fragment key={item.href}>
-            <BreadcrumbItem>
-              {index === breadcrumbItems.length - 1 ? (
-                <BreadcrumbPage className="flex items-center gap-2">
-                  {item.icon}
-                  {item.label}
-                </BreadcrumbPage>
-              ) : (
-                <BreadcrumbLink asChild>
+  const handleBack = () => {
+    if (parentPage && parentPage.href !== "#") {
+      router.push(parentPage.href)
+    } else {
+      router.back()
+    }
+  }
+
+  // Mobile view: Back button + current page + optional dropdown
+  const MobileNav = () => (
+    <div className="flex items-center gap-3 md:hidden">
+      <Button 
+        variant="ghost" 
+        size="sm" 
+        onClick={handleBack}
+        className="p-2 h-auto"
+      >
+        <ChevronLeft className="h-4 w-4" />
+        <span className="sr-only">Volver</span>
+      </Button>
+      
+      <div className="flex items-center gap-2 min-w-0 flex-1">
+        <div className="flex items-center gap-2 text-sm font-medium text-foreground truncate">
+          {currentPage.icon}
+          <span className="truncate">{currentPage.label}</span>
+        </div>
+        
+        {breadcrumbItems.length > 2 && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="sm" className="p-1 h-auto flex-shrink-0">
+                <ChevronDown className="h-3 w-3" />
+                <span className="sr-only">Ver ruta completa</span>
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56">
+              {breadcrumbItems.slice(0, -1).map((item, index) => (
+                <DropdownMenuItem key={item.href} asChild>
                   <Link href={item.href} className="flex items-center gap-2">
                     {item.icon}
-                    {item.label}
+                    <span>{item.label}</span>
+                  </Link>
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
+      </div>
+    </div>
+  )
+
+  // Desktop view: Full breadcrumbs with ellipsis for very long paths
+  const DesktopNav = () => {
+    const showEllipsis = breadcrumbItems.length > 4
+    const visibleItems = showEllipsis 
+      ? [breadcrumbItems[0], ...breadcrumbItems.slice(-2)]
+      : breadcrumbItems
+
+    return (
+      <Breadcrumb className="hidden md:block">
+        <BreadcrumbList>
+          {showEllipsis ? (
+            <>
+              {/* First item (Dashboard) */}
+              <BreadcrumbItem>
+                <BreadcrumbLink asChild>
+                  <Link href={visibleItems[0].href} className="flex items-center gap-2">
+                    {visibleItems[0].icon}
+                    {visibleItems[0].label}
                   </Link>
                 </BreadcrumbLink>
-              )}
-            </BreadcrumbItem>
-            {index < breadcrumbItems.length - 1 && <BreadcrumbSeparator />}
-          </React.Fragment>
-        ))}
-      </BreadcrumbList>
-    </Breadcrumb>
+              </BreadcrumbItem>
+              <BreadcrumbSeparator />
+              
+              {/* Ellipsis with dropdown for hidden items */}
+              <BreadcrumbItem>
+                <DropdownMenu>
+                  <DropdownMenuTrigger className="flex h-9 w-9 items-center justify-center">
+                    <BreadcrumbEllipsis />
+                    <span className="sr-only">Toggle menu</span>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start">
+                    {breadcrumbItems.slice(1, -2).map((item) => (
+                      <DropdownMenuItem key={item.href} asChild>
+                        <Link href={item.href} className="flex items-center gap-2">
+                          {item.icon}
+                          <span>{item.label}</span>
+                        </Link>
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </BreadcrumbItem>
+              <BreadcrumbSeparator />
+              
+              {/* Last two items */}
+              {visibleItems.slice(1).map((item, index) => (
+                <React.Fragment key={item.href}>
+                  <BreadcrumbItem>
+                    {index === visibleItems.slice(1).length - 1 ? (
+                      <BreadcrumbPage className="flex items-center gap-2">
+                        {item.icon}
+                        {item.label}
+                      </BreadcrumbPage>
+                    ) : (
+                      <BreadcrumbLink asChild>
+                        <Link href={item.href} className="flex items-center gap-2">
+                          {item.icon}
+                          {item.label}
+                        </Link>
+                      </BreadcrumbLink>
+                    )}
+                  </BreadcrumbItem>
+                  {index < visibleItems.slice(1).length - 1 && <BreadcrumbSeparator />}
+                </React.Fragment>
+              ))}
+            </>
+          ) : (
+            breadcrumbItems.map((item, index) => (
+              <React.Fragment key={item.href}>
+                <BreadcrumbItem>
+                  {index === breadcrumbItems.length - 1 ? (
+                    <BreadcrumbPage className="flex items-center gap-2">
+                      {item.icon}
+                      {item.label}
+                    </BreadcrumbPage>
+                  ) : (
+                    <BreadcrumbLink asChild>
+                      <Link href={item.href} className="flex items-center gap-2">
+                        {item.icon}
+                        {item.label}
+                      </Link>
+                    </BreadcrumbLink>
+                  )}
+                </BreadcrumbItem>
+                {index < breadcrumbItems.length - 1 && <BreadcrumbSeparator />}
+              </React.Fragment>
+            ))
+          )}
+        </BreadcrumbList>
+      </Breadcrumb>
+    )
+  }
+
+  return (
+    <div className={className}>
+      <MobileNav />
+      <DesktopNav />
+    </div>
   )
 } 

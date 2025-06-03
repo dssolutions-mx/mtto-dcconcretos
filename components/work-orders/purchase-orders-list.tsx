@@ -481,146 +481,245 @@ function RenderTable({ orders, isLoading, getTechnicianName, formatCurrency }: R
       </div>
     );
   }
+
+  // Mobile Card Component
+  const PurchaseOrderCard = ({ order }: { order: PurchaseOrderWithWorkOrder }) => (
+    <Card className={`mb-4 ${order.is_adjustment ? "bg-yellow-50/50 border-yellow-200" : ""}`}>
+      <CardContent className="p-4">
+        <div className="flex justify-between items-start mb-3">
+          <div className="flex items-center gap-2">
+            <Link href={`/compras/${order.id}`} className="font-medium hover:underline">
+              {order.order_id}
+            </Link>
+            <Badge variant={getStatusVariant(order.status)} className="capitalize">
+              {order.status || 'Pendiente'}
+            </Badge>
+            {order.is_adjustment && (
+              <Badge variant="secondary" className="bg-yellow-100 hover:bg-yellow-200 text-yellow-800">
+                Ajuste
+              </Badge>
+            )}
+          </div>
+          <div className="text-lg font-semibold">
+            {formatCurrency(order.total_amount)}
+          </div>
+        </div>
+        
+        <div className="space-y-2 text-sm">
+          <div>
+            <span className="font-medium">Proveedor:</span> {order.supplier || 'N/A'}
+          </div>
+          
+          {order.work_orders && order.work_orders.order_id && (
+            <div>
+              <span className="font-medium">OT:</span>{' '}
+              <Link href={`/ordenes/${order.work_orders.id}`} className="text-blue-600 hover:underline">
+                {order.work_orders.order_id}
+              </Link>
+            </div>
+          )}
+          
+          <div>
+            <span className="font-medium">Solicitada por:</span> {getTechnicianName(order.requested_by)}
+          </div>
+          
+          {order.expected_delivery_date && (
+            <div>
+              <span className="font-medium">Entrega esperada:</span> {formatDate(order.expected_delivery_date)}
+            </div>
+          )}
+        </div>
+        
+        <div className="flex gap-2 mt-4">
+          <Button variant="outline" size="sm" asChild className="flex-1">
+            <Link href={`/compras/${order.id}`}>
+              <Eye className="h-4 w-4 mr-1" />
+              Ver
+            </Link>
+          </Button>
+          
+          {/* Quick actions based on status */}
+          {order.status === PurchaseOrderStatus.Pending && !order.is_adjustment && (
+            <Button variant="default" size="sm" asChild className="flex-1">
+              <Link href={`/compras/${order.id}/aprobar`}>
+                <Check className="h-4 w-4 mr-1" />
+                Aprobar
+              </Link>
+            </Button>
+          )}
+          
+          {order.status === PurchaseOrderStatus.Approved && !order.is_adjustment && (
+            <Button variant="default" size="sm" asChild className="flex-1">
+              <Link href={`/compras/${order.id}/pedido`}>
+                <ShoppingCart className="h-4 w-4 mr-1" />
+                Pedir
+              </Link>
+            </Button>
+          )}
+          
+          {order.status === PurchaseOrderStatus.Ordered && !order.is_adjustment && (
+            <Button variant="default" size="sm" asChild className="flex-1">
+              <Link href={`/compras/${order.id}/recibido`}>
+                <Package className="h-4 w-4 mr-1" />
+                Recibir
+              </Link>
+            </Button>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+
   return (
-    <div className="rounded-md border">
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead className="w-[100px]">OC ID</TableHead>
-            <TableHead>Proveedor</TableHead>
-            <TableHead>OT Relacionada</TableHead>
-            <TableHead>Solicitada Por</TableHead>
-            <TableHead>Monto Total</TableHead>
-            <TableHead>Estado</TableHead>
-            <TableHead>Entrega Esperada</TableHead>
-            <TableHead className="text-right w-[100px]">Acciones</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {orders.map((order) => (
-            <TableRow 
-              key={order.id}
-              className={order.is_adjustment ? "bg-yellow-50/50" : ""}
-            >
-              <TableCell>
-                <Link href={`/compras/${order.id}`} className="font-medium hover:underline">
-                  {order.order_id}
-                </Link>
-                {order.is_adjustment && (
-                  <Badge variant="secondary" className="ml-2 bg-yellow-100 hover:bg-yellow-200 text-yellow-800">Ajuste</Badge>
-                )}
-              </TableCell>
-              <TableCell>{order.supplier || 'N/A'}</TableCell>
-              <TableCell>
-                {order.work_orders && order.work_orders.order_id ? (
-                  <Link href={`/ordenes/${order.work_orders.id}`} className="text-blue-600 hover:underline">
-                    {order.work_orders.order_id}
-                  </Link>
-                ) : (
-                  <span className="text-muted-foreground">N/A</span>
-                )}
-              </TableCell>
-              <TableCell>{getTechnicianName(order.requested_by)}</TableCell> 
-              <TableCell>{formatCurrency(order.total_amount)}</TableCell>
-              <TableCell>
-                <Badge variant={getStatusVariant(order.status)} className="capitalize">
-                  {order.status || 'Pendiente'}
-                </Badge>
-              </TableCell>
-              <TableCell>
-                {order.expected_delivery_date 
-                  ? formatDate(order.expected_delivery_date) 
-                  : 'No definida'}
-              </TableCell>
-              <TableCell className="text-right">
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" className="h-8 w-8 p-0">
-                      <span className="sr-only">Abrir menú</span>
-                      <MoreHorizontal className="h-4 w-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuLabel>Acciones</DropdownMenuLabel>
-                    <DropdownMenuItem asChild>
-                      <Link href={`/compras/${order.id}`}>
-                        <Eye className="mr-2 h-4 w-4" />
-                        <span>Ver Detalles</span>
-                      </Link>
-                    </DropdownMenuItem>
-                    
-                    {/* Only show approve options for pending orders and not adjustments */}
-                    {order.status === PurchaseOrderStatus.Pending && !order.is_adjustment && (
-                      <>
-                        <DropdownMenuItem asChild>
-                          <Link href={`/compras/${order.id}/aprobar`}>
-                            <Check className="mr-2 h-4 w-4" />
-                            <span>Aprobar</span>
-                          </Link>
-                        </DropdownMenuItem>
-                        <DropdownMenuItem asChild>
-                          <Link href={`/compras/${order.id}/rechazar`}>
-                            <X className="mr-2 h-4 w-4" />
-                            <span>Rechazar</span>
-                          </Link>
-                        </DropdownMenuItem>
-                      </>
-                    )}
-                    
-                    {/* Show mark as ordered option for approved orders and not adjustments */}
-                    {order.status === PurchaseOrderStatus.Approved && !order.is_adjustment && (
-                      <DropdownMenuItem asChild>
-                        <Link href={`/compras/${order.id}/pedido`}>
-                          <ShoppingCart className="mr-2 h-4 w-4" />
-                          <span>Marcar como Pedida</span>
-                        </Link>
-                      </DropdownMenuItem>
-                    )}
-                    
-                    {/* Show mark as received option for ordered orders and not adjustments */}
-                    {order.status === PurchaseOrderStatus.Ordered && !order.is_adjustment && (
-                      <DropdownMenuItem asChild>
-                        <Link href={`/compras/${order.id}/recibido`}>
-                          <Package className="mr-2 h-4 w-4" />
-                          <span>Marcar como Recibida</span>
-                        </Link>
-                      </DropdownMenuItem>
-                    )}
-                    
-                    {/* No edit option for adjustment orders */}
-                    {!order.is_adjustment && (
-                      <DropdownMenuItem asChild>
-                        <Link href={`/compras/${order.id}/editar`}>
-                          <Edit className="mr-2 h-4 w-4" />
-                          <span>Editar</span>
-                        </Link>
-                      </DropdownMenuItem>
-                    )}
-                    
-                    {/* Register invoice option for non-adjustment orders */}
-                    {!order.is_adjustment && (
-                      <DropdownMenuItem>
-                        <FileCheck className="mr-2 h-4 w-4" />
-                        <span>Registrar Factura</span>
-                      </DropdownMenuItem>
-                    )}
-                    
-                    <DropdownMenuSeparator />
-                    {/* No cancelation option for adjustment orders */}
-                    {!order.is_adjustment && (
-                      <DropdownMenuItem className="text-red-600 hover:bg-red-50 hover:text-red-700">
-                        <Trash className="mr-2 h-4 w-4" />
-                        <span>Cancelar OC</span>
-                      </DropdownMenuItem>
-                    )}
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </TableCell>
+    <>
+      {/* Mobile View */}
+      <div className="md:hidden space-y-4">
+        {orders.map((order) => (
+          <PurchaseOrderCard key={order.id} order={order} />
+        ))}
+      </div>
+
+      {/* Desktop View */}
+      <div className="hidden md:block rounded-md border">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="w-[100px]">OC ID</TableHead>
+              <TableHead>Proveedor</TableHead>
+              <TableHead>OT Relacionada</TableHead>
+              <TableHead>Solicitada Por</TableHead>
+              <TableHead>Monto Total</TableHead>
+              <TableHead>Estado</TableHead>
+              <TableHead>Entrega Esperada</TableHead>
+              <TableHead className="text-right w-[100px]">Acciones</TableHead>
             </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-    </div>
+          </TableHeader>
+          <TableBody>
+            {orders.map((order) => (
+              <TableRow 
+                key={order.id}
+                className={order.is_adjustment ? "bg-yellow-50/50" : ""}
+              >
+                <TableCell>
+                  <Link href={`/compras/${order.id}`} className="font-medium hover:underline">
+                    {order.order_id}
+                  </Link>
+                  {order.is_adjustment && (
+                    <Badge variant="secondary" className="ml-2 bg-yellow-100 hover:bg-yellow-200 text-yellow-800">Ajuste</Badge>
+                  )}
+                </TableCell>
+                <TableCell>{order.supplier || 'N/A'}</TableCell>
+                <TableCell>
+                  {order.work_orders && order.work_orders.order_id ? (
+                    <Link href={`/ordenes/${order.work_orders.id}`} className="text-blue-600 hover:underline">
+                      {order.work_orders.order_id}
+                    </Link>
+                  ) : (
+                    <span className="text-muted-foreground">N/A</span>
+                  )}
+                </TableCell>
+                <TableCell>{getTechnicianName(order.requested_by)}</TableCell> 
+                <TableCell>{formatCurrency(order.total_amount)}</TableCell>
+                <TableCell>
+                  <Badge variant={getStatusVariant(order.status)} className="capitalize">
+                    {order.status || 'Pendiente'}
+                  </Badge>
+                </TableCell>
+                <TableCell>
+                  {order.expected_delivery_date 
+                    ? formatDate(order.expected_delivery_date) 
+                    : 'No definida'}
+                </TableCell>
+                <TableCell className="text-right">
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" className="h-8 w-8 p-0">
+                        <span className="sr-only">Abrir menú</span>
+                        <MoreHorizontal className="h-4 w-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuLabel>Acciones</DropdownMenuLabel>
+                      <DropdownMenuItem asChild>
+                        <Link href={`/compras/${order.id}`}>
+                          <Eye className="mr-2 h-4 w-4" />
+                          <span>Ver Detalles</span>
+                        </Link>
+                      </DropdownMenuItem>
+                      
+                      {/* Only show approve options for pending orders and not adjustments */}
+                      {order.status === PurchaseOrderStatus.Pending && !order.is_adjustment && (
+                        <>
+                          <DropdownMenuItem asChild>
+                            <Link href={`/compras/${order.id}/aprobar`}>
+                              <Check className="mr-2 h-4 w-4" />
+                              <span>Aprobar</span>
+                            </Link>
+                          </DropdownMenuItem>
+                          <DropdownMenuItem asChild>
+                            <Link href={`/compras/${order.id}/rechazar`}>
+                              <X className="mr-2 h-4 w-4" />
+                              <span>Rechazar</span>
+                            </Link>
+                          </DropdownMenuItem>
+                        </>
+                      )}
+                      
+                      {/* Show mark as ordered option for approved orders and not adjustments */}
+                      {order.status === PurchaseOrderStatus.Approved && !order.is_adjustment && (
+                        <DropdownMenuItem asChild>
+                          <Link href={`/compras/${order.id}/pedido`}>
+                            <ShoppingCart className="mr-2 h-4 w-4" />
+                            <span>Marcar como Pedida</span>
+                          </Link>
+                        </DropdownMenuItem>
+                      )}
+                      
+                      {/* Show mark as received option for ordered orders and not adjustments */}
+                      {order.status === PurchaseOrderStatus.Ordered && !order.is_adjustment && (
+                        <DropdownMenuItem asChild>
+                          <Link href={`/compras/${order.id}/recibido`}>
+                            <Package className="mr-2 h-4 w-4" />
+                            <span>Marcar como Recibida</span>
+                          </Link>
+                        </DropdownMenuItem>
+                      )}
+                      
+                      {/* No edit option for adjustment orders */}
+                      {!order.is_adjustment && (
+                        <DropdownMenuItem asChild>
+                          <Link href={`/compras/${order.id}/editar`}>
+                            <Edit className="mr-2 h-4 w-4" />
+                            <span>Editar</span>
+                          </Link>
+                        </DropdownMenuItem>
+                      )}
+                      
+                      {/* Register invoice option for non-adjustment orders */}
+                      {!order.is_adjustment && (
+                        <DropdownMenuItem>
+                          <FileCheck className="mr-2 h-4 w-4" />
+                          <span>Registrar Factura</span>
+                        </DropdownMenuItem>
+                      )}
+                      
+                      <DropdownMenuSeparator />
+                      {/* No cancelation option for adjustment orders */}
+                      {!order.is_adjustment && (
+                        <DropdownMenuItem className="text-red-600 hover:bg-red-50 hover:text-red-700">
+                          <Trash className="mr-2 h-4 w-4" />
+                          <span>Cancelar OC</span>
+                        </DropdownMenuItem>
+                      )}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+    </>
   )
 }
 

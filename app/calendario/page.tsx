@@ -3,7 +3,8 @@ import { Button } from "@/components/ui/button"
 import { DashboardHeader } from "@/components/dashboard/dashboard-header"
 import { DashboardShell } from "@/components/dashboard/dashboard-shell"
 import { MaintenanceSchedule } from "@/components/schedule/maintenance-schedule"
-import { Plus, FileDown } from "lucide-react"
+import { Plus } from "lucide-react"
+import Link from "next/link"
 
 export const metadata: Metadata = {
   title: "Calendario | Sistema de Gestión de Mantenimiento",
@@ -17,16 +18,12 @@ export default function SchedulePage() {
         heading="Planificación y Calendario"
         text="Programa y visualiza los mantenimientos preventivos y vencimientos de garantías."
       >
-        <div className="flex gap-2">
-          <Button variant="outline">
-            <FileDown className="mr-2 h-4 w-4" />
-            Exportar
-          </Button>
-          <Button>
+        <Button asChild>
+          <Link href="/checklists/programar">
             <Plus className="mr-2 h-4 w-4" />
-            Programar
-          </Button>
-        </div>
+            <span className="hidden sm:inline">Programar</span>
+          </Link>
+        </Button>
       </DashboardHeader>
       <MaintenanceSchedule />
     </DashboardShell>

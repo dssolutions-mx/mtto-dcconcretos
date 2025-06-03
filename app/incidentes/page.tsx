@@ -22,7 +22,9 @@ import {
   TrendingUp,
   TrendingDown,
   Clock,
-  Wrench
+  Wrench,
+  Calendar,
+  User
 } from "lucide-react";
 import Link from "next/link";
 import { format } from "date-fns";
@@ -147,6 +149,166 @@ export default function IncidentsPage() {
   const uniqueTypes = [...new Set(incidents.map(i => i.type).filter(Boolean))];
   const uniqueStatuses = [...new Set(incidents.map(i => i.status).filter(Boolean))];
 
+  // Mobile Incident Card Component
+  const IncidentCard = ({ incident }: { incident: any }) => (
+    <Card className="mb-4">
+      <CardContent className="p-4">
+        <div className="flex justify-between items-start mb-3">
+          <div className="flex items-center gap-2">
+            {getStatusBadge(incident.status || "")}
+            {getTypeBadge(incident.type)}
+          </div>
+          <div className="text-xs text-muted-foreground">
+            {formatDate(incident.date)}
+          </div>
+        </div>
+        
+        <div className="space-y-2">
+          <Link 
+            href={`/activos/${incident.asset_id}`}
+            className="block font-medium text-blue-600 hover:underline"
+          >
+            {getAssetName(incident.asset_id)}
+          </Link>
+          
+          <p className="text-sm text-gray-600 line-clamp-2">
+            {incident.description}
+          </p>
+          
+          <div className="flex items-center gap-4 text-xs text-muted-foreground">
+            <div className="flex items-center gap-1">
+              <User className="h-3 w-3" />
+              {incident.reported_by}
+            </div>
+            {incident.downtime && (
+              <div className="flex items-center gap-1">
+                <Clock className="h-3 w-3" />
+                {incident.downtime} hrs
+              </div>
+            )}
+          </div>
+        </div>
+        
+        <div className="flex gap-2 mt-3">
+          <Button variant="outline" size="sm" asChild className="flex-1">
+            <Link href={`/activos/${incident.asset_id}/incidentes`}>
+              <Eye className="h-4 w-4 mr-1" />
+              Ver
+            </Link>
+          </Button>
+          {incident.work_order_id && (
+            <Button variant="default" size="sm" asChild className="flex-1">
+              <Link href={`/ordenes/${incident.work_order_id}`}>
+                <Wrench className="h-4 w-4 mr-1" />
+                OT
+              </Link>
+            </Button>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+
+  // Incidents List Component (responsive)
+  const IncidentsList = ({ incidents }: { incidents: any[] }) => (
+    <>
+      {/* Mobile View */}
+      <div className="md:hidden space-y-4">
+        {incidents.length === 0 ? (
+          <div className="py-8 text-center">
+            <CheckCircle className="mx-auto h-12 w-12 text-green-500 mb-2" />
+            <p className="text-lg font-medium">No hay incidentes</p>
+            <p className="text-muted-foreground">
+              {searchTerm || statusFilter !== 'all' || typeFilter !== 'all' 
+                ? "No se encontraron incidentes con los filtros aplicados" 
+                : "No hay incidentes registrados en el sistema"
+              }
+            </p>
+          </div>
+        ) : (
+          incidents.map((incident) => (
+            <IncidentCard key={incident.id} incident={incident} />
+          ))
+        )}
+      </div>
+
+      {/* Desktop View */}
+      <div className="hidden md:block">
+        {incidents.length === 0 ? (
+          <div className="py-8 text-center border rounded-md bg-gray-50">
+            <CheckCircle className="mx-auto h-12 w-12 text-green-500 mb-2" />
+            <p className="text-lg font-medium">No hay incidentes</p>
+            <p className="text-muted-foreground mb-4">
+              {searchTerm || statusFilter !== 'all' || typeFilter !== 'all' 
+                ? "No se encontraron incidentes con los filtros aplicados" 
+                : "No hay incidentes registrados en el sistema"
+              }
+            </p>
+          </div>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Fecha</TableHead>
+                <TableHead>Activo</TableHead>
+                <TableHead>Tipo</TableHead>
+                <TableHead>Reportado por</TableHead>
+                <TableHead>Descripción</TableHead>
+                <TableHead>Estado</TableHead>
+                <TableHead>Tiempo Inactivo</TableHead>
+                <TableHead>Acciones</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {incidents.map((incident) => (
+                <TableRow key={incident.id}>
+                  <TableCell>{formatDate(incident.date)}</TableCell>
+                  <TableCell>
+                    <Link 
+                      href={`/activos/${incident.asset_id}`}
+                      className="text-blue-600 hover:underline"
+                    >
+                      {getAssetName(incident.asset_id)}
+                    </Link>
+                  </TableCell>
+                  <TableCell>{getTypeBadge(incident.type)}</TableCell>
+                  <TableCell>{incident.reported_by}</TableCell>
+                  <TableCell className="max-w-xs">
+                    <div className="truncate" title={incident.description}>
+                      {incident.description}
+                    </div>
+                  </TableCell>
+                  <TableCell>{getStatusBadge(incident.status || "")}</TableCell>
+                  <TableCell>
+                    {incident.downtime ? `${incident.downtime} hrs` : '-'}
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex gap-2">
+                      <Button variant="outline" size="sm" asChild>
+                        <Link href={`/activos/${incident.asset_id}/incidentes`}>
+                          <Eye className="h-4 w-4 mr-1" />
+                          Ver
+                        </Link>
+                      </Button>
+                      {incident.work_order_id && (
+                        <Button variant="default" size="sm" asChild>
+                          <Link href={`/ordenes/${incident.work_order_id}`}>
+                            <Wrench className="h-4 w-4 mr-1" />
+                            OT
+                          </Link>
+                        </Button>
+                      )}
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+      </div>
+    </>
+  );
+
   if (loading) {
     return (
       <DashboardShell>
@@ -178,7 +340,7 @@ export default function IncidentsPage() {
         <Button asChild>
           <Link href="/activos">
             <Plus className="mr-2 h-4 w-4" />
-            Nuevo Incidente
+            <span className="hidden sm:inline">Nuevo Incidente</span>
           </Link>
         </Button>
       </DashboardHeader>
@@ -190,7 +352,7 @@ export default function IncidentsPage() {
       )}
 
       {/* Statistics Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-6">
         <Card>
           <CardContent className="pt-6">
             <div className="flex items-center">
@@ -227,7 +389,7 @@ export default function IncidentsPage() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="hidden md:block">
           <CardContent className="pt-6">
             <div className="flex items-center">
               <Clock className="h-4 w-4 text-orange-500" />
@@ -239,7 +401,7 @@ export default function IncidentsPage() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="hidden lg:block">
           <CardContent className="pt-6">
             <div className="flex items-center">
               <TrendingUp className="h-4 w-4 text-blue-500" />
@@ -253,8 +415,8 @@ export default function IncidentsPage() {
       </div>
 
       <Tabs defaultValue="all" className="w-full">
-        <TabsList>
-          <TabsTrigger value="all">Todos los Incidentes</TabsTrigger>
+        <TabsList className="grid w-full grid-cols-3">
+          <TabsTrigger value="all">Todos</TabsTrigger>
           <TabsTrigger value="pending">Pendientes</TabsTrigger>
           <TabsTrigger value="resolved">Resueltos</TabsTrigger>
         </TabsList>
@@ -268,8 +430,8 @@ export default function IncidentsPage() {
               </CardDescription>
               
               {/* Filters */}
-              <div className="flex flex-col sm:flex-row gap-4 mt-4">
-                <div className="relative flex-1">
+              <div className="flex flex-col gap-4 mt-4">
+                <div className="relative">
                   <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
                   <Input
                     placeholder="Buscar por descripción, usuario o activo..."
@@ -279,115 +441,39 @@ export default function IncidentsPage() {
                   />
                 </div>
                 
-                <Select value={statusFilter} onValueChange={setStatusFilter}>
-                  <SelectTrigger className="w-[180px]">
-                    <SelectValue placeholder="Estado" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Todos los estados</SelectItem>
-                    {uniqueStatuses.map(status => (
-                      <SelectItem key={status} value={status.toLowerCase()}>
-                        {status}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <div className="flex gap-2">
+                  <Select value={statusFilter} onValueChange={setStatusFilter}>
+                    <SelectTrigger className="flex-1">
+                      <SelectValue placeholder="Estado" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Todos los estados</SelectItem>
+                      {uniqueStatuses.map(status => (
+                        <SelectItem key={status} value={status.toLowerCase()}>
+                          {status}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
 
-                <Select value={typeFilter} onValueChange={setTypeFilter}>
-                  <SelectTrigger className="w-[180px]">
-                    <SelectValue placeholder="Tipo" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Todos los tipos</SelectItem>
-                    {uniqueTypes.map(type => (
-                      <SelectItem key={type} value={type.toLowerCase()}>
-                        {type}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                  <Select value={typeFilter} onValueChange={setTypeFilter}>
+                    <SelectTrigger className="flex-1">
+                      <SelectValue placeholder="Tipo" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Todos los tipos</SelectItem>
+                      {uniqueTypes.map(type => (
+                        <SelectItem key={type} value={type.toLowerCase()}>
+                          {type}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
             </CardHeader>
             <CardContent>
-              {filteredIncidents.length === 0 ? (
-                <div className="py-8 text-center border rounded-md bg-gray-50">
-                  <CheckCircle className="mx-auto h-12 w-12 text-green-500 mb-2" />
-                  <p className="text-lg font-medium">No hay incidentes</p>
-                  <p className="text-muted-foreground mb-4">
-                    {incidents.length === 0 
-                      ? "No hay incidentes registrados en el sistema" 
-                      : "No se encontraron incidentes con los filtros aplicados"
-                    }
-                  </p>
-                </div>
-              ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Fecha</TableHead>
-                      <TableHead>Activo</TableHead>
-                      <TableHead>Tipo</TableHead>
-                      <TableHead>Reportado por</TableHead>
-                      <TableHead>Descripción</TableHead>
-                      <TableHead>Estado</TableHead>
-                      <TableHead>Tiempo Inactivo</TableHead>
-                      <TableHead>Acciones</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredIncidents.map((incident) => (
-                      <TableRow key={incident.id}>
-                        <TableCell>{formatDate(incident.date)}</TableCell>
-                        <TableCell>
-                          <Link 
-                            href={`/activos/${incident.asset_id}`}
-                            className="text-blue-600 hover:underline"
-                          >
-                            {getAssetName(incident.asset_id)}
-                          </Link>
-                        </TableCell>
-                        <TableCell>{getTypeBadge(incident.type)}</TableCell>
-                        <TableCell>{incident.reported_by}</TableCell>
-                        <TableCell className="max-w-xs">
-                          <div className="truncate" title={incident.description}>
-                            {incident.description}
-                          </div>
-                        </TableCell>
-                        <TableCell>{getStatusBadge(incident.status || "")}</TableCell>
-                        <TableCell>
-                          {incident.downtime ? `${incident.downtime} hrs` : '-'}
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex gap-2">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              asChild
-                            >
-                              <Link href={`/activos/${incident.asset_id}/incidentes`}>
-                                <Eye className="h-4 w-4 mr-1" />
-                                Ver
-                              </Link>
-                            </Button>
-                            {incident.work_order_id && (
-                              <Button
-                                variant="default"
-                                size="sm"
-                                asChild
-                              >
-                                <Link href={`/ordenes/${incident.work_order_id}`}>
-                                  <Wrench className="h-4 w-4 mr-1" />
-                                  OT
-                                </Link>
-                              </Button>
-                            )}
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              )}
+              <IncidentsList incidents={filteredIncidents} />
             </CardContent>
           </Card>
         </TabsContent>
@@ -401,52 +487,11 @@ export default function IncidentsPage() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Fecha</TableHead>
-                    <TableHead>Activo</TableHead>
-                    <TableHead>Tipo</TableHead>
-                    <TableHead>Descripción</TableHead>
-                    <TableHead>Acciones</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {incidents
-                    .filter(i => ['pendiente', 'pending', 'en proceso', 'en progreso'].includes(i.status?.toLowerCase()))
-                    .map((incident) => (
-                      <TableRow key={incident.id}>
-                        <TableCell>{formatDate(incident.date)}</TableCell>
-                        <TableCell>
-                          <Link 
-                            href={`/activos/${incident.asset_id}`}
-                            className="text-blue-600 hover:underline"
-                          >
-                            {getAssetName(incident.asset_id)}
-                          </Link>
-                        </TableCell>
-                        <TableCell>{getTypeBadge(incident.type)}</TableCell>
-                        <TableCell className="max-w-xs">
-                          <div className="truncate" title={incident.description}>
-                            {incident.description}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            asChild
-                          >
-                            <Link href={`/activos/${incident.asset_id}/incidentes`}>
-                              <Eye className="h-4 w-4 mr-1" />
-                              Ver Detalles
-                            </Link>
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                </TableBody>
-              </Table>
+              <IncidentsList 
+                incidents={incidents.filter(i => 
+                  ['pendiente', 'pending', 'en proceso', 'en progreso'].includes(i.status?.toLowerCase())
+                )}
+              />
             </CardContent>
           </Card>
         </TabsContent>
@@ -460,56 +505,11 @@ export default function IncidentsPage() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Fecha</TableHead>
-                    <TableHead>Activo</TableHead>
-                    <TableHead>Tipo</TableHead>
-                    <TableHead>Descripción</TableHead>
-                    <TableHead>Tiempo Resolución</TableHead>
-                    <TableHead>Acciones</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {incidents
-                    .filter(i => ['resuelto', 'resolved'].includes(i.status?.toLowerCase()))
-                    .map((incident) => (
-                      <TableRow key={incident.id}>
-                        <TableCell>{formatDate(incident.date)}</TableCell>
-                        <TableCell>
-                          <Link 
-                            href={`/activos/${incident.asset_id}`}
-                            className="text-blue-600 hover:underline"
-                          >
-                            {getAssetName(incident.asset_id)}
-                          </Link>
-                        </TableCell>
-                        <TableCell>{getTypeBadge(incident.type)}</TableCell>
-                        <TableCell className="max-w-xs">
-                          <div className="truncate" title={incident.description}>
-                            {incident.description}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          {incident.downtime ? `${incident.downtime} hrs` : '-'}
-                        </TableCell>
-                        <TableCell>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            asChild
-                          >
-                            <Link href={`/activos/${incident.asset_id}/incidentes`}>
-                              <Eye className="h-4 w-4 mr-1" />
-                              Ver Detalles
-                            </Link>
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                </TableBody>
-              </Table>
+              <IncidentsList 
+                incidents={incidents.filter(i => 
+                  ['resuelto', 'resolved'].includes(i.status?.toLowerCase())
+                )}
+              />
             </CardContent>
           </Card>
         </TabsContent>

@@ -383,15 +383,179 @@ export function TemplateEditor({ templateId, onSave, onCancel }: TemplateEditorP
       delete titleTimeouts.current[sectionIndex]
     }
     
+    // Clear all timeouts and local state for sections that will be shifted
+    for (let i = sectionIndex; i < template.sections.length; i++) {
+      // Clear section title timeouts
+      if (titleTimeouts.current[i]) {
+        clearTimeout(titleTimeouts.current[i])
+        delete titleTimeouts.current[i]
+      }
+      
+      // Clear item-related timeouts and state for this section
+      const section = template.sections[i]
+      if (section) {
+        for (let j = 0; j < section.items.length; j++) {
+          const itemKey = `${i}-${j}`
+          const expectedKey = `${itemKey}-expected`
+          const toleranceKey = `${itemKey}-tolerance`
+          
+          // Clear timeouts
+          if (descriptionTimeouts.current[itemKey]) {
+            clearTimeout(descriptionTimeouts.current[itemKey])
+            delete descriptionTimeouts.current[itemKey]
+          }
+          if (itemFieldTimeouts.current[expectedKey]) {
+            clearTimeout(itemFieldTimeouts.current[expectedKey])
+            delete itemFieldTimeouts.current[expectedKey]
+          }
+          if (itemFieldTimeouts.current[toleranceKey]) {
+            clearTimeout(itemFieldTimeouts.current[toleranceKey])
+            delete itemFieldTimeouts.current[toleranceKey]
+          }
+        }
+        
+        // Clear evidence-related timeouts if any
+        if (section.evidence_config) {
+          section.evidence_config.categories.forEach(category => {
+            const evidenceKey = `${i}-${category}`
+            if (evidenceTimeouts.current[evidenceKey]) {
+              clearTimeout(evidenceTimeouts.current[evidenceKey])
+              delete evidenceTimeouts.current[evidenceKey]
+            }
+          })
+        }
+      }
+    }
+    
     setTemplate(prev => ({
       ...prev,
       sections: prev.sections.filter((_, index) => index !== sectionIndex)
     }))
     setHasChanges(true)
+    
+    // Re-index local state for remaining sections
+    const newSectionTitles = { ...sectionTitles }
+    const newDescriptions = { ...itemDescriptions }
+    const newExpectedValues = { ...itemExpectedValues }
+    const newTolerances = { ...itemTolerances }
+    const newEvidenceDescriptions = { ...evidenceDescriptions }
+    
+    // Remove state for deleted section and sections that will be shifted
+    for (let i = sectionIndex; i < template.sections.length; i++) {
+      delete newSectionTitles[i]
+      
+      // Remove item state for this section
+      const section = template.sections[i]
+      if (section) {
+        for (let j = 0; j < section.items.length; j++) {
+          const oldKey = `${i}-${j}`
+          delete newDescriptions[oldKey]
+          delete newExpectedValues[oldKey]
+          delete newTolerances[oldKey]
+        }
+        
+        // Remove evidence state for this section
+        if (section.evidence_config) {
+          section.evidence_config.categories.forEach(category => {
+            const oldKey = `${i}-${category}`
+            delete newEvidenceDescriptions[oldKey]
+          })
+        }
+      }
+    }
+    
+    // Re-index remaining sections (shift indices down)
+    for (let i = sectionIndex + 1; i < template.sections.length; i++) {
+      const newIndex = i - 1
+      
+      // Re-index section titles
+      if (sectionTitles[i]) {
+        newSectionTitles[newIndex] = sectionTitles[i]
+      }
+      
+      // Re-index item state
+      const section = template.sections[i]
+      if (section) {
+        for (let j = 0; j < section.items.length; j++) {
+          const oldKey = `${i}-${j}`
+          const newKey = `${newIndex}-${j}`
+          
+          if (itemDescriptions[oldKey]) {
+            newDescriptions[newKey] = itemDescriptions[oldKey]
+          }
+          if (itemExpectedValues[oldKey]) {
+            newExpectedValues[newKey] = itemExpectedValues[oldKey]
+          }
+          if (itemTolerances[oldKey]) {
+            newTolerances[newKey] = itemTolerances[oldKey]
+          }
+        }
+        
+        // Re-index evidence state
+        if (section.evidence_config) {
+          section.evidence_config.categories.forEach(category => {
+            const oldKey = `${i}-${category}`
+            const newKey = `${newIndex}-${category}`
+            if (evidenceDescriptions[oldKey]) {
+              newEvidenceDescriptions[newKey] = evidenceDescriptions[oldKey]
+            }
+          })
+        }
+      }
+    }
+    
+    setSectionTitles(newSectionTitles)
+    setItemDescriptions(newDescriptions)
+    setItemExpectedValues(newExpectedValues)
+    setItemTolerances(newTolerances)
+    setEvidenceDescriptions(newEvidenceDescriptions)
   }
 
   const moveSectionUp = (sectionIndex: number) => {
     if (sectionIndex === 0) return
+    
+    const targetIndex = sectionIndex - 1
+    
+    // Clear any pending timeouts for both affected sections
+    const indicesToClear = [sectionIndex, targetIndex]
+    indicesToClear.forEach((idx: number) => {
+      if (titleTimeouts.current[idx]) {
+        clearTimeout(titleTimeouts.current[idx])
+        delete titleTimeouts.current[idx]
+      }
+      
+      const section = template.sections[idx]
+      if (section) {
+        section.items.forEach((_, itemIdx) => {
+          const itemKey = `${idx}-${itemIdx}`
+          const expectedKey = `${itemKey}-expected`
+          const toleranceKey = `${itemKey}-tolerance`
+          
+          if (descriptionTimeouts.current[itemKey]) {
+            clearTimeout(descriptionTimeouts.current[itemKey])
+            delete descriptionTimeouts.current[itemKey]
+          }
+          if (itemFieldTimeouts.current[expectedKey]) {
+            clearTimeout(itemFieldTimeouts.current[expectedKey])
+            delete itemFieldTimeouts.current[expectedKey]
+          }
+          if (itemFieldTimeouts.current[toleranceKey]) {
+            clearTimeout(itemFieldTimeouts.current[toleranceKey])
+            delete itemFieldTimeouts.current[toleranceKey]
+          }
+        })
+        
+        if (section.evidence_config) {
+          section.evidence_config.categories.forEach(category => {
+            const evidenceKey = `${idx}-${category}`
+            if (evidenceTimeouts.current[evidenceKey]) {
+              clearTimeout(evidenceTimeouts.current[evidenceKey])
+              delete evidenceTimeouts.current[evidenceKey]
+            }
+          })
+        }
+      }
+    })
     
     setTemplate(prev => {
       const newSections = [...prev.sections]
@@ -401,10 +565,138 @@ export function TemplateEditor({ templateId, onSave, onCancel }: TemplateEditorP
       return { ...prev, sections: newSections }
     })
     setHasChanges(true)
+    
+    // Swap local state for the two affected sections
+    const newSectionTitles = { ...sectionTitles }
+    const newDescriptions = { ...itemDescriptions }
+    const newExpectedValues = { ...itemExpectedValues }
+    const newTolerances = { ...itemTolerances }
+    const newEvidenceDescriptions = { ...evidenceDescriptions }
+    
+    // Swap section titles
+    const tempTitle = newSectionTitles[sectionIndex]
+    newSectionTitles[sectionIndex] = newSectionTitles[targetIndex]
+    newSectionTitles[targetIndex] = tempTitle
+    
+    // Swap item state for both sections
+    const currentSection = template.sections[sectionIndex]
+    const targetSection = template.sections[targetIndex]
+    
+    // Clear old state for both sections
+    const sectionsToProcess = [
+      { section: currentSection, index: sectionIndex },
+      { section: targetSection, index: targetIndex }
+    ]
+    
+    sectionsToProcess.forEach(({ section, index }) => {
+      if (section) {
+        section.items.forEach((_, itemIdx) => {
+          const key = `${index}-${itemIdx}`
+          delete newDescriptions[key]
+          delete newExpectedValues[key]
+          delete newTolerances[key]
+        })
+        
+        if (section.evidence_config) {
+          section.evidence_config.categories.forEach(category => {
+            const key = `${index}-${category}`
+            delete newEvidenceDescriptions[key]
+          })
+        }
+      }
+    })
+    
+    // Set new state with swapped indices
+    if (currentSection) {
+      currentSection.items.forEach((_, itemIdx) => {
+        const oldKey = `${sectionIndex}-${itemIdx}`
+        const newKey = `${targetIndex}-${itemIdx}`
+        
+        if (itemDescriptions[oldKey]) newDescriptions[newKey] = itemDescriptions[oldKey]
+        if (itemExpectedValues[oldKey]) newExpectedValues[newKey] = itemExpectedValues[oldKey]
+        if (itemTolerances[oldKey]) newTolerances[newKey] = itemTolerances[oldKey]
+      })
+      
+      if (currentSection.evidence_config) {
+        currentSection.evidence_config.categories.forEach(category => {
+          const oldKey = `${sectionIndex}-${category}`
+          const newKey = `${targetIndex}-${category}`
+          if (evidenceDescriptions[oldKey]) newEvidenceDescriptions[newKey] = evidenceDescriptions[oldKey]
+        })
+      }
+    }
+    
+    if (targetSection) {
+      targetSection.items.forEach((_, itemIdx) => {
+        const oldKey = `${targetIndex}-${itemIdx}`
+        const newKey = `${sectionIndex}-${itemIdx}`
+        
+        if (itemDescriptions[oldKey]) newDescriptions[newKey] = itemDescriptions[oldKey]
+        if (itemExpectedValues[oldKey]) newExpectedValues[newKey] = itemExpectedValues[oldKey]
+        if (itemTolerances[oldKey]) newTolerances[newKey] = itemTolerances[oldKey]
+      })
+      
+      if (targetSection.evidence_config) {
+        targetSection.evidence_config.categories.forEach(category => {
+          const oldKey = `${targetIndex}-${category}`
+          const newKey = `${sectionIndex}-${category}`
+          if (evidenceDescriptions[oldKey]) newEvidenceDescriptions[newKey] = evidenceDescriptions[oldKey]
+        })
+      }
+    }
+    
+    setSectionTitles(newSectionTitles)
+    setItemDescriptions(newDescriptions)
+    setItemExpectedValues(newExpectedValues)
+    setItemTolerances(newTolerances)
+    setEvidenceDescriptions(newEvidenceDescriptions)
   }
 
   const moveSectionDown = (sectionIndex: number) => {
     if (sectionIndex >= template.sections.length - 1) return
+    
+    const targetIndex = sectionIndex + 1
+    
+    // Clear any pending timeouts for both affected sections
+    const indicesToClear = [sectionIndex, targetIndex]
+    indicesToClear.forEach((idx: number) => {
+      if (titleTimeouts.current[idx]) {
+        clearTimeout(titleTimeouts.current[idx])
+        delete titleTimeouts.current[idx]
+      }
+      
+      const section = template.sections[idx]
+      if (section) {
+        section.items.forEach((_, itemIdx) => {
+          const itemKey = `${idx}-${itemIdx}`
+          const expectedKey = `${itemKey}-expected`
+          const toleranceKey = `${itemKey}-tolerance`
+          
+          if (descriptionTimeouts.current[itemKey]) {
+            clearTimeout(descriptionTimeouts.current[itemKey])
+            delete descriptionTimeouts.current[itemKey]
+          }
+          if (itemFieldTimeouts.current[expectedKey]) {
+            clearTimeout(itemFieldTimeouts.current[expectedKey])
+            delete itemFieldTimeouts.current[expectedKey]
+          }
+          if (itemFieldTimeouts.current[toleranceKey]) {
+            clearTimeout(itemFieldTimeouts.current[toleranceKey])
+            delete itemFieldTimeouts.current[toleranceKey]
+          }
+        })
+        
+        if (section.evidence_config) {
+          section.evidence_config.categories.forEach(category => {
+            const evidenceKey = `${idx}-${category}`
+            if (evidenceTimeouts.current[evidenceKey]) {
+              clearTimeout(evidenceTimeouts.current[evidenceKey])
+              delete evidenceTimeouts.current[evidenceKey]
+            }
+          })
+        }
+      }
+    })
     
     setTemplate(prev => {
       const newSections = [...prev.sections]
@@ -414,6 +706,91 @@ export function TemplateEditor({ templateId, onSave, onCancel }: TemplateEditorP
       return { ...prev, sections: newSections }
     })
     setHasChanges(true)
+    
+    // Swap local state for the two affected sections
+    const newSectionTitles = { ...sectionTitles }
+    const newDescriptions = { ...itemDescriptions }
+    const newExpectedValues = { ...itemExpectedValues }
+    const newTolerances = { ...itemTolerances }
+    const newEvidenceDescriptions = { ...evidenceDescriptions }
+    
+    // Swap section titles
+    const tempTitle = newSectionTitles[sectionIndex]
+    newSectionTitles[sectionIndex] = newSectionTitles[targetIndex]
+    newSectionTitles[targetIndex] = tempTitle
+    
+    // Swap item state for both sections
+    const currentSection = template.sections[sectionIndex]
+    const targetSection = template.sections[targetIndex]
+    
+    // Clear old state for both sections
+    const sectionsToProcess = [
+      { section: currentSection, index: sectionIndex },
+      { section: targetSection, index: targetIndex }
+    ]
+    
+    sectionsToProcess.forEach(({ section, index }) => {
+      if (section) {
+        section.items.forEach((_, itemIdx) => {
+          const key = `${index}-${itemIdx}`
+          delete newDescriptions[key]
+          delete newExpectedValues[key]
+          delete newTolerances[key]
+        })
+        
+        if (section.evidence_config) {
+          section.evidence_config.categories.forEach(category => {
+            const key = `${index}-${category}`
+            delete newEvidenceDescriptions[key]
+          })
+        }
+      }
+    })
+    
+    // Set new state with swapped indices
+    if (currentSection) {
+      currentSection.items.forEach((_, itemIdx) => {
+        const oldKey = `${sectionIndex}-${itemIdx}`
+        const newKey = `${targetIndex}-${itemIdx}`
+        
+        if (itemDescriptions[oldKey]) newDescriptions[newKey] = itemDescriptions[oldKey]
+        if (itemExpectedValues[oldKey]) newExpectedValues[newKey] = itemExpectedValues[oldKey]
+        if (itemTolerances[oldKey]) newTolerances[newKey] = itemTolerances[oldKey]
+      })
+      
+      if (currentSection.evidence_config) {
+        currentSection.evidence_config.categories.forEach(category => {
+          const oldKey = `${sectionIndex}-${category}`
+          const newKey = `${targetIndex}-${category}`
+          if (evidenceDescriptions[oldKey]) newEvidenceDescriptions[newKey] = evidenceDescriptions[oldKey]
+        })
+      }
+    }
+    
+    if (targetSection) {
+      targetSection.items.forEach((_, itemIdx) => {
+        const oldKey = `${targetIndex}-${itemIdx}`
+        const newKey = `${sectionIndex}-${itemIdx}`
+        
+        if (itemDescriptions[oldKey]) newDescriptions[newKey] = itemDescriptions[oldKey]
+        if (itemExpectedValues[oldKey]) newExpectedValues[newKey] = itemExpectedValues[oldKey]
+        if (itemTolerances[oldKey]) newTolerances[newKey] = itemTolerances[oldKey]
+      })
+      
+      if (targetSection.evidence_config) {
+        targetSection.evidence_config.categories.forEach(category => {
+          const oldKey = `${targetIndex}-${category}`
+          const newKey = `${sectionIndex}-${category}`
+          if (evidenceDescriptions[oldKey]) newEvidenceDescriptions[newKey] = evidenceDescriptions[oldKey]
+        })
+      }
+    }
+    
+    setSectionTitles(newSectionTitles)
+    setItemDescriptions(newDescriptions)
+    setItemExpectedValues(newExpectedValues)
+    setItemTolerances(newTolerances)
+    setEvidenceDescriptions(newEvidenceDescriptions)
   }
 
   const updateSectionType = (sectionIndex: number, newType: 'checklist' | 'evidence') => {
@@ -457,8 +834,65 @@ export function TemplateEditor({ templateId, onSave, onCancel }: TemplateEditorP
       delete descriptionTimeouts.current[key]
     }
     
+    // Clear all timeouts for items in this section that will be shifted
+    const section = template.sections[sectionIndex]
+    for (let i = itemIndex; i < section.items.length; i++) {
+      const currentKey = `${sectionIndex}-${i}`
+      const expectedKey = `${currentKey}-expected`
+      const toleranceKey = `${currentKey}-tolerance`
+      
+      // Clear timeouts
+      if (descriptionTimeouts.current[currentKey]) {
+        clearTimeout(descriptionTimeouts.current[currentKey])
+        delete descriptionTimeouts.current[currentKey]
+      }
+      if (itemFieldTimeouts.current[expectedKey]) {
+        clearTimeout(itemFieldTimeouts.current[expectedKey])
+        delete itemFieldTimeouts.current[expectedKey]
+      }
+      if (itemFieldTimeouts.current[toleranceKey]) {
+        clearTimeout(itemFieldTimeouts.current[toleranceKey])
+        delete itemFieldTimeouts.current[toleranceKey]
+      }
+    }
+    
+    // Update the template
     const updatedItems = template.sections[sectionIndex].items.filter((_, index) => index !== itemIndex)
     updateSection(sectionIndex, { items: updatedItems })
+    setHasChanges(true)
+    
+    // Re-index local state for remaining items
+    const newDescriptions = { ...itemDescriptions }
+    const newExpectedValues = { ...itemExpectedValues }
+    const newTolerances = { ...itemTolerances }
+    
+    // Remove state for deleted item and items that will be shifted
+    for (let i = itemIndex; i < section.items.length; i++) {
+      const oldKey = `${sectionIndex}-${i}`
+      delete newDescriptions[oldKey]
+      delete newExpectedValues[oldKey]
+      delete newTolerances[oldKey]
+    }
+    
+    // Re-index remaining items (shift indices down)
+    for (let i = itemIndex + 1; i < section.items.length; i++) {
+      const oldKey = `${sectionIndex}-${i}`
+      const newKey = `${sectionIndex}-${i - 1}`
+      
+      if (itemDescriptions[oldKey]) {
+        newDescriptions[newKey] = itemDescriptions[oldKey]
+      }
+      if (itemExpectedValues[oldKey]) {
+        newExpectedValues[newKey] = itemExpectedValues[oldKey]
+      }
+      if (itemTolerances[oldKey]) {
+        newTolerances[newKey] = itemTolerances[oldKey]
+      }
+    }
+    
+    setItemDescriptions(newDescriptions)
+    setItemExpectedValues(newExpectedValues)
+    setItemTolerances(newTolerances)
   }
 
   // Evidence functions

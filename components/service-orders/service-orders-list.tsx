@@ -225,8 +225,8 @@ export function ServiceOrdersList() {
           </div>
         </CardHeader>
         <CardContent>
-          <div className="flex flex-col sm:flex-row gap-4 mb-6">
-            <div className="relative flex-1">
+          <div className="flex flex-col gap-4 mb-6">
+            <div className="relative">
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
                 type="search"
@@ -236,10 +236,10 @@ export function ServiceOrdersList() {
                 onChange={(e) => setSearchQuery(e.target.value)}
               />
             </div>
-            <div className="flex gap-2">
+            <div className="flex flex-col sm:flex-row gap-2">
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="outline" className="flex items-center gap-1">
+                  <Button variant="outline" className="flex items-center gap-1 w-full sm:w-auto">
                     <Filter className="h-4 w-4" />
                     Estado
                   </Button>
@@ -265,7 +265,7 @@ export function ServiceOrdersList() {
               
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="outline" className="flex items-center gap-1">
+                  <Button variant="outline" className="flex items-center gap-1 w-full sm:w-auto">
                     <Wrench className="h-4 w-4" />
                     Tipo
                   </Button>
@@ -299,36 +299,38 @@ export function ServiceOrdersList() {
               <p>No se encontraron órdenes de servicio que coincidan con los criterios de búsqueda.</p>
             </div>
           ) : (
-            <div className="rounded-md border overflow-hidden">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>ID</TableHead>
-                    <TableHead>Activo</TableHead>
-                    <TableHead>Tipo</TableHead>
-                    <TableHead>Técnico</TableHead>
-                    <TableHead>Fecha</TableHead>
-                    <TableHead>Duración</TableHead>
-                    <TableHead>Costo Total</TableHead>
-                    <TableHead>Estado</TableHead>
-                    <TableHead>Acciones</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredOrders.map((order) => (
-                    <TableRow key={order.id}>
-                      <TableCell className="font-medium">{order.order_id}</TableCell>
-                      <TableCell>
-                        <div>
-                          <p className="font-medium">{order.asset_name}</p>
-                          <p className="text-xs text-muted-foreground">{order.assetData?.asset_id}</p>
-                          {order.assetData?.location && (
-                            <p className="text-xs text-muted-foreground">{order.assetData.location}</p>
+            <>
+              {/* Mobile View */}
+              <div className="md:hidden space-y-4">
+                {filteredOrders.map((order) => (
+                  <Card key={order.id} className="border">
+                    <CardContent className="p-4">
+                      <div className="flex justify-between items-start mb-3">
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium">{order.order_id}</span>
+                          {getStatusBadge(order.status)}
+                        </div>
+                        <div className="text-right">
+                          <div className="font-medium">{formatCurrency(order.total_cost)}</div>
+                          {order.labor_hours && (
+                            <div className="text-sm text-muted-foreground">{order.labor_hours}h</div>
                           )}
                         </div>
-                      </TableCell>
-                      <TableCell>
+                      </div>
+                      
+                      <div className="space-y-2 text-sm">
+                        <div>
+                          <span className="font-medium">Activo:</span> {order.asset_name}
+                          {order.assetData?.asset_id && (
+                            <div className="text-xs text-muted-foreground">ID: {order.assetData.asset_id}</div>
+                          )}
+                          {order.assetData?.location && (
+                            <div className="text-xs text-muted-foreground">📍 {order.assetData.location}</div>
+                          )}
+                        </div>
+                        
                         <div className="flex items-center gap-2">
+                          <span className="font-medium">Tipo:</span>
                           {order.type === 'corrective' ? (
                             <>
                               <Wrench className="h-4 w-4 text-red-500" />
@@ -343,68 +345,165 @@ export function ServiceOrdersList() {
                             <span>{order.type}</span>
                           )}
                         </div>
-                      </TableCell>
-                      <TableCell>
+                        
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <span className="font-medium">Técnico:</span> {order.technician}
+                          </div>
+                          {order.priority && getPriorityBadge(order.priority)}
+                        </div>
+                        
                         <div>
-                          <p className="font-medium">{order.technician}</p>
-                          {order.priority && (
-                            <div className="mt-1">
-                              {getPriorityBadge(order.priority)}
-                            </div>
+                          <span className="font-medium">Fecha:</span> {formatDate(order.date)}
+                        </div>
+                        
+                        {order.description && (
+                          <div>
+                            <span className="font-medium">Descripción:</span>
+                            <p className="text-muted-foreground text-xs mt-1 line-clamp-2">{order.description}</p>
+                          </div>
+                        )}
+                      </div>
+                      
+                      <div className="flex gap-2 mt-4">
+                        <Button variant="outline" size="sm" asChild className="flex-1">
+                          <Link href={`/servicios/${order.id}`}>
+                            <Eye className="h-4 w-4 mr-1" />
+                            Ver
+                          </Link>
+                        </Button>
+                        
+                                                  {order.work_order_id && (
+                            <Button variant="outline" size="sm" asChild className="flex-1">
+                              <Link href={`/ordenes/${order.work_order_id}`}>
+                                <ClipboardCheck className="h-4 w-4 mr-1" />
+                                OT
+                              </Link>
+                            </Button>
+                          )}
+                          
+                          {order.asset_id && (
+                            <Button variant="outline" size="sm" asChild className="flex-1">
+                              <Link href={`/activos/${order.asset_id}`}>
+                                <FileText className="h-4 w-4 mr-1" />
+                                Activo
+                              </Link>
+                            </Button>
                           )}
                         </div>
-                      </TableCell>
-                      <TableCell>{formatDate(order.date)}</TableCell>
-                      <TableCell>
-                        {order.labor_hours ? `${order.labor_hours}h` : 'N/A'}
-                      </TableCell>
-                      <TableCell className="font-medium">
-                        {formatCurrency(order.total_cost)}
-                      </TableCell>
-                      <TableCell>{getStatusBadge(order.status)}</TableCell>
-                      <TableCell>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" className="h-8 w-8 p-0">
-                              <MoreHorizontal className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuLabel>Acciones</DropdownMenuLabel>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem asChild>
-                              <Link href={`/servicios/${order.id}`}>
-                                <Eye className="mr-2 h-4 w-4" />
-                                Ver Detalles
-                              </Link>
-                            </DropdownMenuItem>
-                            {order.work_order_id && (
-                              <DropdownMenuItem asChild>
-                                <Link href={`/ordenes/${order.work_order_id}`}>
-                                  <ClipboardCheck className="mr-2 h-4 w-4" />
-                                  Ver Orden de Trabajo
-                                </Link>
-                              </DropdownMenuItem>
-                            )}
-                            {order.asset_id && (
-                              <DropdownMenuItem asChild>
-                                <Link href={`/activos/${order.asset_id}`}>
-                                  <FileText className="mr-2 h-4 w-4" />
-                                  Ver Activo
-                                </Link>
-                              </DropdownMenuItem>
-                            )}
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </TableCell>
-                    </TableRow>
+                      </CardContent>
+                    </Card>
                   ))}
-                </TableBody>
-              </Table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-    </div>
-  )
-} 
+                </div>
+
+                {/* Desktop View */}
+                <div className="hidden md:block rounded-md border overflow-hidden">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>ID</TableHead>
+                        <TableHead>Activo</TableHead>
+                        <TableHead>Tipo</TableHead>
+                        <TableHead>Técnico</TableHead>
+                        <TableHead>Fecha</TableHead>
+                        <TableHead>Duración</TableHead>
+                        <TableHead>Costo Total</TableHead>
+                        <TableHead>Estado</TableHead>
+                        <TableHead>Acciones</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredOrders.map((order) => (
+                        <TableRow key={order.id}>
+                          <TableCell className="font-medium">{order.order_id}</TableCell>
+                          <TableCell>
+                            <div>
+                              <p className="font-medium">{order.asset_name}</p>
+                              <p className="text-xs text-muted-foreground">{order.assetData?.asset_id}</p>
+                              {order.assetData?.location && (
+                                <p className="text-xs text-muted-foreground">{order.assetData.location}</p>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-2">
+                              {order.type === 'corrective' ? (
+                                <>
+                                  <Wrench className="h-4 w-4 text-red-500" />
+                                  <span>Correctivo</span>
+                                </>
+                              ) : order.type === 'preventive' ? (
+                                <>
+                                  <CalendarDays className="h-4 w-4 text-blue-500" />
+                                  <span>Preventivo</span>
+                                </>
+                              ) : (
+                                <span>{order.type}</span>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div>
+                              <p className="font-medium">{order.technician}</p>
+                              {order.priority && (
+                                <div className="mt-1">
+                                  {getPriorityBadge(order.priority)}
+                                </div>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell>{formatDate(order.date)}</TableCell>
+                          <TableCell>
+                            {order.labor_hours ? `${order.labor_hours}h` : 'N/A'}
+                          </TableCell>
+                          <TableCell className="font-medium">
+                            {formatCurrency(order.total_cost)}
+                          </TableCell>
+                          <TableCell>{getStatusBadge(order.status)}</TableCell>
+                          <TableCell>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" className="h-8 w-8 p-0">
+                                  <MoreHorizontal className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuLabel>Acciones</DropdownMenuLabel>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem asChild>
+                                  <Link href={`/servicios/${order.id}`}>
+                                    <Eye className="mr-2 h-4 w-4" />
+                                    Ver Detalles
+                                  </Link>
+                                </DropdownMenuItem>
+                                {order.work_order_id && (
+                                  <DropdownMenuItem asChild>
+                                    <Link href={`/ordenes/${order.work_order_id}`}>
+                                      <ClipboardCheck className="mr-2 h-4 w-4" />
+                                      Ver Orden de Trabajo
+                                    </Link>
+                                  </DropdownMenuItem>
+                                )}
+                                {order.asset_id && (
+                                  <DropdownMenuItem asChild>
+                                    <Link href={`/activos/${order.asset_id}`}>
+                                      <FileText className="mr-2 h-4 w-4" />
+                                      Ver Activo
+                                    </Link>
+                                  </DropdownMenuItem>
+                                )}
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }

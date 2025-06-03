@@ -5,10 +5,9 @@ import { Button } from "@/components/ui/button"
 import { DashboardHeader } from "@/components/dashboard/dashboard-header"
 import { DashboardShell } from "@/components/dashboard/dashboard-shell"
 import { AssetsList } from "@/components/assets/assets-list"
-import { FileDown, FileUp, PlusCircle, Wrench, Calendar, CheckCircle, AlertTriangle, Settings, Plus, Package } from "lucide-react"
-import { useAssets, useUpcomingMaintenance } from "@/hooks/useSupabase"
+import { Plus, Calendar, CheckCircle, AlertTriangle, Package, Wrench, FileText, Settings } from "lucide-react"
+import { useAssets } from "@/hooks/useSupabase"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { QuickActions, commonActions } from "@/components/ui/quick-actions"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { useState, useEffect } from "react"
 import { createClient } from "@/lib/supabase"
@@ -112,25 +111,6 @@ export default function AssetsPage() {
 
     calculateStats()
   }, [assets])
-
-  // Quick actions specific to assets context
-  const assetQuickActions = [
-    commonActions.createWorkOrder(),
-    {
-      id: "view-calendar",
-      title: "Ver Calendario",
-      href: "/calendario",
-      icon: <Calendar className="h-4 w-4" />,
-      variant: "outline" as const
-    },
-    {
-      id: "maintenance-models",
-      title: "Modelos",
-      href: "/modelos",
-      icon: <Wrench className="h-4 w-4" />,
-      variant: "outline" as const
-    }
-  ];
   
   return (
     <DashboardShell>
@@ -138,25 +118,16 @@ export default function AssetsPage() {
         heading="Gestión de Activos"
         text="Administra y supervisa todos los equipos de la empresa"
       >
-        <div className="flex gap-2">
-          <Button variant="outline">
-            <FileDown className="mr-2 h-4 w-4" />
-            Exportar
-          </Button>
-          <Button variant="outline">
-            <FileUp className="mr-2 h-4 w-4" />
-            Importar
-          </Button>
-          <Button asChild>
-            <Link href="/activos/crear">
-              <Plus className="mr-2 h-4 w-4" />
-              Nuevo Activo
-            </Link>
-          </Button>
-        </div>
+        {/* Primary action - most important */}
+        <Button asChild size="default">
+          <Link href="/activos/crear">
+            <Plus className="mr-2 h-4 w-4" />
+            Nuevo Activo
+          </Link>
+        </Button>
       </DashboardHeader>
       
-      {/* Enhanced Summary Cards - Phase 2 */}
+      {/* Summary Cards */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 mb-6">
         {/* Total Assets */}
         <Card>
@@ -207,7 +178,7 @@ export default function AssetsPage() {
         </Card>
 
         {/* Critical Alerts */}
-        <Card>
+        <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => window.location.href = '/incidentes'}>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Alertas Críticas</CardTitle>
             <AlertTriangle className="h-4 w-4 text-red-600" />
@@ -223,34 +194,44 @@ export default function AssetsPage() {
         </Card>
       </div>
 
-      {/* QuickActions positioned after summary cards to avoid sidebar interference */}
+      {/* Streamlined Quick Actions */}
       <div className="mb-6">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <h3 className="text-lg font-medium">Acciones Rápidas</h3>
-        </div>
-        <div className="mt-3 flex flex-wrap gap-3">
-          {assetQuickActions.map((action) => (
-            <Button
-              key={action.id}
-              asChild
-              variant={action.variant || "outline"}
-              size="sm"
-              className=""
-            >
-              <Link href={action.href}>
-                {action.icon}
-                                 <span className="ml-2">{action.title}</span>
-                 {'badge' in action && action.badge && action.badge.count > 0 && (
-                   <Badge 
-                     variant={action.badge.variant || "destructive"}
-                     className="ml-2 h-5 px-1.5 text-xs"
-                   >
-                     {action.badge.count}
-                   </Badge>
-                 )}
+          
+          <div className="flex flex-wrap gap-2">
+            {/* Calendar - High priority */}
+            <Button variant="outline" size="sm" asChild>
+              <Link href="/calendario">
+                <Calendar className="h-4 w-4 mr-2" />
+                Calendario
               </Link>
             </Button>
-          ))}
+            
+            {/* Models management */}
+            <Button variant="outline" size="sm" asChild>
+              <Link href="/modelos">
+                <Settings className="h-4 w-4 mr-2" />
+                Modelos
+              </Link>
+            </Button>
+            
+            {/* Reports */}
+            <Button variant="outline" size="sm" asChild>
+              <Link href="/reportes">
+                <FileText className="h-4 w-4 mr-2" />
+                Reportes
+              </Link>
+            </Button>
+
+            {/* Preventive maintenance overview */}
+            <Button variant="outline" size="sm" asChild>
+              <Link href="/preventivo">
+                <Wrench className="h-4 w-4 mr-2" />
+                Preventivo
+              </Link>
+            </Button>
+          </div>
         </div>
       </div>
       
@@ -259,6 +240,7 @@ export default function AssetsPage() {
           <AlertDescription>Error al cargar los activos: {assetsError.message}</AlertDescription>
         </Alert>
       )}
+      
       <AssetsList 
         assets={assets || []} 
         isLoading={assetsLoading}

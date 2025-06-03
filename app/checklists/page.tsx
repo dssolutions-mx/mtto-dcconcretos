@@ -7,7 +7,7 @@ import { DashboardHeader } from "@/components/dashboard/dashboard-header"
 import { DashboardShell } from "@/components/dashboard/dashboard-shell"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Plus, FileDown, ClipboardCheck, Loader2, Check, WifiOff } from "lucide-react"
+import { Plus, FileDown, ClipboardCheck, Loader2, Check, WifiOff, ChevronDown } from "lucide-react"
 import Link from "next/link"
 import { useSearchParams } from "next/navigation"
 import { DailyChecklistList } from "@/components/checklists/daily-checklist-list"
@@ -20,6 +20,7 @@ import { OfflineChecklistList } from "@/components/checklists/offline-checklist-
 import { useChecklistSchedules, useChecklistTemplates } from "@/hooks/useChecklists"
 import { toast } from "sonner"
 import { Badge } from "@/components/ui/badge"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 
 // Importación dinámica del servicio offline
 let offlineChecklistService: any = null
@@ -33,6 +34,7 @@ function ChecklistsContent() {
   const [activeTab, setActiveTab] = useState('overview')
   const [preparingOffline, setPreparingOffline] = useState(false)
   const [isOnline, setIsOnline] = useState<boolean | undefined>(undefined)
+  const [showAllOverdue, setShowAllOverdue] = useState(false)
   const [stats, setStats] = useState({
     daily: { total: 0, pending: 0, overdue: 0 },
     weekly: { total: 0, pending: 0, overdue: 0 },
@@ -210,10 +212,6 @@ function ChecklistsContent() {
           </div>
           
           <div className="flex gap-2">
-            <Button variant="outline" className="hidden sm:flex">
-              <FileDown className="mr-2 h-4 w-4" />
-              <span className="hidden md:inline">Exportar</span>
-            </Button>
             <Button variant="outline" asChild>
               <Link href="/checklists/programar">
                 <ClipboardCheck className="mr-2 h-4 w-4" />
@@ -223,7 +221,7 @@ function ChecklistsContent() {
             <Button asChild>
               <Link href="/checklists/crear">
                 <Plus className="mr-2 h-4 w-4" />
-                <span className="hidden md:inline">Nueva Plantilla</span>
+                <span className="hidden sm:inline">Nueva Plantilla</span>
               </Link>
             </Button>
             <Button 
@@ -266,26 +264,83 @@ function ChecklistsContent() {
       )}
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-        <TabsList className="grid w-full grid-cols-3 lg:grid-cols-6">
-          <TabsTrigger value="overview" className="text-xs sm:text-sm">
+        <TabsList className="grid w-full grid-cols-3 sm:grid-cols-6">
+          <TabsTrigger value="overview" className="text-xs sm:text-sm px-2">
             {isOnline === false ? 'Offline' : 'General'}
           </TabsTrigger>
-          <TabsTrigger value="daily" className="text-xs sm:text-sm" disabled={isOnline === false}>
+          <TabsTrigger value="daily" className="text-xs sm:text-sm px-2" disabled={isOnline === false}>
             Diarios
           </TabsTrigger>
-          <TabsTrigger value="weekly" className="text-xs sm:text-sm" disabled={isOnline === false}>
+          <TabsTrigger value="weekly" className="text-xs sm:text-sm px-2" disabled={isOnline === false}>
             Semanales
           </TabsTrigger>
-          <TabsTrigger value="monthly" className="text-xs sm:text-sm" disabled={isOnline === false}>
+          <TabsTrigger value="monthly" className="text-xs sm:text-sm px-2 hidden sm:flex" disabled={isOnline === false}>
             Mensuales
           </TabsTrigger>
-          <TabsTrigger value="preventive" className="text-xs sm:text-sm" disabled={isOnline === false}>
+          <TabsTrigger value="preventive" className="text-xs sm:text-sm px-2 hidden sm:flex" disabled={isOnline === false}>
             Preventivo
           </TabsTrigger>
-          <TabsTrigger value="templates" className="text-xs sm:text-sm" disabled={isOnline === false}>
+          <TabsTrigger value="templates" className="text-xs sm:text-sm px-2 hidden sm:flex" disabled={isOnline === false}>
             Plantillas
           </TabsTrigger>
         </TabsList>
+
+        {/* Mobile-only secondary tabs for hidden tabs */}
+        <div className="sm:hidden">
+          {(activeTab === 'monthly' || activeTab === 'preventive' || activeTab === 'templates') && (
+            <div className="flex gap-2 pb-4">
+              <Button 
+                variant={activeTab === 'monthly' ? 'default' : 'outline'} 
+                size="sm" 
+                onClick={() => setActiveTab('monthly')}
+                disabled={isOnline === false}
+              >
+                Mensuales
+              </Button>
+              <Button 
+                variant={activeTab === 'preventive' ? 'default' : 'outline'} 
+                size="sm" 
+                onClick={() => setActiveTab('preventive')}
+                disabled={isOnline === false}
+              >
+                Preventivo
+              </Button>
+              <Button 
+                variant={activeTab === 'templates' ? 'default' : 'outline'} 
+                size="sm" 
+                onClick={() => setActiveTab('templates')}
+                disabled={isOnline === false}
+              >
+                Plantillas
+              </Button>
+            </div>
+          )}
+          
+          {/* Show "More" option when on general tabs */}
+          {['overview', 'daily', 'weekly'].includes(activeTab) && (
+            <div className="flex justify-center pb-4">
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="sm">
+                    Más opciones
+                    <ChevronDown className="ml-2 h-3 w-3" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent>
+                  <DropdownMenuItem onClick={() => setActiveTab('monthly')} disabled={isOnline === false}>
+                    Mensuales
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setActiveTab('preventive')} disabled={isOnline === false}>
+                    Preventivo
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setActiveTab('templates')} disabled={isOnline === false}>
+                    Plantillas
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          )}
+        </div>
 
         <TabsContent value="overview">
           {isOnline === false ? (
@@ -548,7 +603,7 @@ function ChecklistsContent() {
                         </CardHeader>
                         <CardContent className="pt-4">
                           <div className="space-y-3">
-                            {overdueChecklists.slice(0, 5).map(checklist => (
+                            {(showAllOverdue ? overdueChecklists : overdueChecklists.slice(0, 5)).map(checklist => (
                               <Link 
                                 key={checklist.id} 
                                 href={`/checklists/ejecutar/${checklist.id}`} 
@@ -558,7 +613,7 @@ function ChecklistsContent() {
                                   <CardContent className="p-3">
                                     <div className="flex justify-between items-center">
                                       <div className="flex-1">
-                                        <div className="flex items-center gap-2">
+                                        <div className="flex items-center gap-2 mb-1">
                                           <span className="text-sm font-semibold">
                                             {checklist.checklists?.name}
                                           </span>
@@ -566,9 +621,23 @@ function ChecklistsContent() {
                                             Atrasado
                                           </Badge>
                                         </div>
-                                        <p className="text-xs text-muted-foreground mt-1">
-                                          {checklist.assets?.name} • Fecha: {new Date(checklist.scheduled_date).toLocaleDateString('es')}
-                                        </p>
+                                        <div className="space-y-1">
+                                          <p className="text-sm font-medium text-red-700">
+                                            🚛 {checklist.assets?.name || 'Sin activo asignado'}
+                                          </p>
+                                          {checklist.assets?.asset_id && (
+                                            <p className="text-xs text-muted-foreground">
+                                              ID: {checklist.assets.asset_id}
+                                              {checklist.assets?.location && ` • 📍 ${checklist.assets.location}`}
+                                              • Fecha: {new Date(checklist.scheduled_date).toLocaleDateString('es')}
+                                            </p>
+                                          )}
+                                          {!checklist.assets?.asset_id && (
+                                            <p className="text-xs text-muted-foreground">
+                                              Fecha: {new Date(checklist.scheduled_date).toLocaleDateString('es')}
+                                            </p>
+                                          )}
+                                        </div>
                                       </div>
                                       <Button size="sm" variant="destructive">
                                         Ejecutar ahora
@@ -579,9 +648,19 @@ function ChecklistsContent() {
                               </Link>
                             ))}
                             {overdueChecklists.length > 5 && (
-                              <p className="text-sm text-center text-muted-foreground">
-                                Y {overdueChecklists.length - 5} más...
-                              </p>
+                              <div className="text-center pt-2">
+                                <Button 
+                                  variant="outline" 
+                                  size="sm" 
+                                  onClick={() => setShowAllOverdue(!showAllOverdue)}
+                                  className="text-red-600 border-red-200 hover:bg-red-50"
+                                >
+                                  {showAllOverdue 
+                                    ? 'Mostrar menos' 
+                                    : `Ver todos (${overdueChecklists.length - 5} más)`
+                                  }
+                                </Button>
+                              </div>
                             )}
                           </div>
                         </CardContent>
