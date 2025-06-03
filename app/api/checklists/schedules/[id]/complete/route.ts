@@ -1,248 +1,243 @@
-import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
+import { NextResponse } from 'next/server'
 
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const supabase = await createClient()
-  const { id } = await params
-
-  const { technician, notes, signature, completed_items } = await request.json()
-  
   try {
-    // Get current user for proper work order attribution
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    if (authError) {
-      console.error('Error getting user:', authError)
-      return NextResponse.json({ error: 'Error de autenticación' }, { status: 401 })
+    const { id } = await params
+    const supabase = await createClient()
+    
+    const {
+      completed_items,
+      technician,
+      notes,
+      signature,
+      hours_reading,
+      kilometers_reading,
+      evidence_data
+    } = await request.json()
+
+    console.log('=== COMPLETANDO CHECKLIST SIN AUTO-WORK-ORDER ===')
+    console.log('Schedule ID:', id)
+    console.log('Technician:', technician)
+    console.log('Hours reading:', hours_reading)
+    console.log('Kilometers reading:', kilometers_reading)
+    console.log('Items count:', completed_items?.length)
+    console.log('Evidence sections:', Object.keys(evidence_data || {}).length)
+
+    // Validar parámetros requeridos
+    if (!completed_items || !Array.isArray(completed_items)) {
+      return NextResponse.json(
+        { error: 'Se requieren los items completados' },
+        { status: 400 }
+      )
     }
 
-    // Llamar a la función RPC para marcar el checklist como completado
-    const { data, error } = await supabase.rpc('mark_checklist_as_completed', {
-      p_schedule_id: id,
-      p_completed_items: completed_items,
-      p_technician: technician,
-      p_notes: notes,
-      p_signature_data: signature
-    })
-    
-    if (error) {
-      console.error('Error in mark_checklist_as_completed:', error)
-      return NextResponse.json({ error: error.message }, { status: 500 })
+    if (!technician || typeof technician !== 'string') {
+      return NextResponse.json(
+        { error: 'Se requiere el nombre del técnico' },
+        { status: 400 }
+      )
     }
-    
-    // Si hay problemas, crear una orden de trabajo COMPLETA usando el endpoint estándar
-    if (data.has_issues) {
-      console.log('Issues detected, creating comprehensive work order for completed checklist:', data.completed_id)
-      
-      // Obtener información completa del checklist y activo
-      const { data: scheduleData, error: scheduleError } = await supabase
-        .from('checklist_schedules')
-        .select(`
-          *,
-          checklists!inner(
-            id,
-            name,
-            model_id,
-            equipment_models(name, manufacturer)
-          ),
-          assets!inner(
-            id, 
-            name, 
-            asset_id, 
-            model_id, 
-            location,
-            current_hours,
-            current_kilometers
+
+    // Obtener información del activo para validar lecturas
+    const { data: scheduleData, error: scheduleError } = await supabase
+      .from('checklist_schedules')
+      .select(`
+        id,
+        asset_id,
+        template_id,
+        assets!inner(
+          id,
+          name,
+          current_hours,
+          current_kilometers,
+          equipment_models(
+            maintenance_unit
           )
-        `)
-        .eq('id', id)
-        .single()
-        
-      if (scheduleError) {
-        console.error('Error fetching schedule data:', scheduleError)
-        return NextResponse.json({ error: 'Error obteniendo datos del checklist' }, { status: 500 })
+        )
+      `)
+      .eq('id', id)
+      .single()
+
+    if (scheduleError || !scheduleData) {
+      console.error('Error fetching schedule:', scheduleError)
+      return NextResponse.json(
+        { error: 'Checklist programado no encontrado' },
+        { status: 404 }
+      )
+    }
+
+    const asset = scheduleData.assets as any
+
+    // Validar lecturas si se proporcionaron
+    if (hours_reading !== null || kilometers_reading !== null) {
+      const { data: validationResult, error: validationError } = await supabase
+        .rpc('validate_equipment_readings', {
+          p_asset_id: scheduleData.asset_id,
+          p_hours_reading: hours_reading,
+          p_kilometers_reading: kilometers_reading
+        })
+
+      if (validationError) {
+        console.error('Error validating readings:', validationError)
+        return NextResponse.json(
+          { error: 'Error validando lecturas del equipo' },
+          { status: 500 }
+        )
       }
-      
-      if (scheduleData) {
-        // Obtener las issues detectadas con TODA la información
-        const { data: issues, error: issuesError } = await supabase
-          .from('checklist_issues')
-          .select(`
-            *,
-            checklist_items:item_id (
-              id,
-              description,
-              item_type,
-              expected_value,
-              tolerance
-            )
-          `)
-          .eq('checklist_id', data.completed_id)
-          .eq('resolved', false)
-        
-        if (issuesError) {
-          console.error('Error fetching issues:', issuesError)
-          return NextResponse.json({ error: 'Error obteniendo problemas del checklist' }, { status: 500 })
-        }
 
-        // Preparar los datos de las issues con formato completo
-        const issueItems = issues?.map(issue => ({
-          id: issue.id,
-          item_id: issue.item_id,
-          checklist_item_description: issue.checklist_items?.description || 'Item de checklist',
-          status: issue.status,
-          description: issue.description,
-          notes: issue.notes || '',
-          photo_url: issue.photo_url,
-          created_at: issue.created_at,
-          severity: issue.status === 'fail' ? 'high' : 'medium',
-          item_type: issue.checklist_items?.item_type || 'inspection',
-          expected_value: issue.checklist_items?.expected_value,
-          tolerance: issue.checklist_items?.tolerance
-        })) || []
+      if (!validationResult?.valid) {
+        return NextResponse.json(
+          { 
+            error: 'Lecturas del equipo inválidas',
+            validation_errors: validationResult?.errors || [],
+            validation_warnings: validationResult?.warnings || []
+          },
+          { status: 400 }
+        )
+      }
 
-        // Preparar las fotos de evidencia para creation_photos
-        const creationPhotos = issues?.filter(issue => issue.photo_url)
-          .map(issue => ({
-            url: issue.photo_url,
-            description: `Evidencia: ${issue.description} - ${issue.notes || 'Sin notas adicionales'}`,
-            category: issue.status === 'fail' ? 'falla' : 'observacion',
-            uploaded_at: issue.created_at || new Date().toISOString(),
-            item_id: issue.item_id,
-            checklist_item: issue.checklist_items?.description || 'Item de checklist'
-          })) || []
+      // Si hay advertencias, incluirlas en la respuesta pero continuar
+      if (validationResult?.warnings?.length > 0) {
+        console.log('Validation warnings:', validationResult.warnings)
+      }
+    }
 
-        // Crear resumen detallado de problemas
-        const issuesSummary = issues?.map(issue => {
-          const severity = issue.status === 'fail' ? '🔴 CRÍTICO' : '🟡 ATENCIÓN'
-          const itemDesc = issue.checklist_items?.description || 'Item de checklist'
-          const notes = issue.notes ? ` - ${issue.notes}` : ''
-          const photo = issue.photo_url ? ' [CON EVIDENCIA FOTOGRÁFICA]' : ''
-          return `${severity}: ${itemDesc}${notes}${photo}`
-        }).join('\n') || 'Sin detalles específicos de problemas'
+    // Validar evidencias si se proporcionaron
+    let evidenceValidation = null
+    if (evidence_data && Object.keys(evidence_data).length > 0) {
+      // Convertir evidencias a formato plano para validación
+      const flattenedEvidences = Object.values(evidence_data)
+        .flat()
+        .map((evidence: any) => ({
+          section_id: evidence.section_id,
+          category: evidence.category,
+          photo_url: evidence.photo_url,
+          description: evidence.description || '',
+          sequence_order: evidence.sequence_order || 1
+        }))
 
-        // Construir descripción completa de la orden de trabajo
-        const workOrderDescription = `ORDEN CORRECTIVA GENERADA DESDE CHECKLIST
+      const { data: evidenceValidationResult, error: evidenceValidationError } = await supabase
+        .rpc('validate_evidence_requirements', {
+          p_completed_checklist_id: null, // Se validará después de crear el checklist
+          p_evidence_data: flattenedEvidences
+        })
 
-📋 CHECKLIST: ${scheduleData.checklists.name}
-🏭 ACTIVO: ${scheduleData.assets.name} (${scheduleData.assets.asset_id})
-📍 UBICACIÓN: ${scheduleData.assets.location || 'No especificada'}
-👤 TÉCNICO: ${technician}
-📅 FECHA INSPECCIÓN: ${new Date().toLocaleDateString('es-ES')}
+      if (evidenceValidationError) {
+        console.error('Error validating evidence:', evidenceValidationError)
+        return NextResponse.json(
+          { error: 'Error validando evidencias fotográficas' },
+          { status: 500 }
+        )
+      }
 
-🔍 PROBLEMAS DETECTADOS:
-${issuesSummary}
+      evidenceValidation = evidenceValidationResult
 
-📝 NOTAS ADICIONALES:
-${notes || 'No se proporcionaron notas adicionales'}
+      if (!evidenceValidationResult?.valid) {
+        return NextResponse.json(
+          { 
+            error: 'Evidencias fotográficas incompletas',
+            validation_errors: evidenceValidationResult?.errors || [],
+            validation_warnings: evidenceValidationResult?.warnings || []
+          },
+          { status: 400 }
+        )
+      }
+    }
 
-⚙️ INFORMACIÓN TÉCNICA:
-- Modelo: ${scheduleData.checklists.equipment_models?.name || 'No especificado'}
-- Fabricante: ${scheduleData.checklists.equipment_models?.manufacturer || 'No especificado'}
-- Horas actuales: ${scheduleData.assets.current_hours || 'No registradas'}
-- Kilómetros actuales: ${scheduleData.assets.current_kilometers || 'No registrados'}
+    // Usar la función mejorada para completar el checklist
+    const { data: completionResult, error: completionError } = await supabase
+      .rpc('complete_checklist_with_readings', {
+        p_schedule_id: id,
+        p_completed_items: completed_items,
+        p_technician: technician,
+        p_notes: notes || null,
+        p_signature_data: signature || null,
+        p_hours_reading: hours_reading,
+        p_kilometers_reading: kilometers_reading
+      })
 
-🎯 ACCIÓN REQUERIDA:
-Esta orden de trabajo requiere atención inmediata para resolver los problemas identificados durante la inspección. Revisar evidencia fotográfica adjunta y coordinar con el equipo de mantenimiento para la planificación de la intervención.`
+    if (completionError) {
+      console.error('Error completing checklist:', completionError)
+      return NextResponse.json(
+        { error: completionError.message || 'Error completando el checklist' },
+        { status: 500 }
+      )
+    }
 
-        // Determinar prioridad basada en los tipos de problemas
-        const hasCriticalIssues = issues?.some(issue => issue.status === 'fail') || false
-        const priority = hasCriticalIssues ? 'alta' : 'media'
+    console.log('Checklist completion result:', completionResult)
 
-        // Crear la orden de trabajo usando la estructura estándar
-        const { data: workOrder, error: workOrderError } = await supabase
-          .from('work_orders')
-          .insert({
-            description: workOrderDescription,
-            asset_id: scheduleData.assets.id,
-            priority: priority,
-            status: 'pendiente',
-            type: 'correctivo',
-            requested_by: user?.id || null,
-            checklist_id: data.completed_id,
-            issue_items: issueItems,
-            creation_photos: creationPhotos,
-            estimated_duration: hasCriticalIssues ? 4.0 : 2.0, // Horas estimadas basadas en criticidad
-            planned_date: new Date().toISOString()
+    // Guardar evidencias si se proporcionaron
+    let evidenceSaveResult = null
+    if (evidence_data && Object.keys(evidence_data).length > 0 && completionResult?.completed_id) {
+      try {
+        // Preparar evidencias para guardar
+        const evidencesToSave = Object.values(evidence_data)
+          .flat()
+          .map((evidence: any) => ({
+            ...evidence,
+            completed_checklist_id: completionResult.completed_id
+          }))
+
+        const { data: saveResult, error: saveError } = await supabase
+          .rpc('save_checklist_evidence', {
+            p_completed_checklist_id: completionResult.completed_id,
+            p_evidence_data: evidencesToSave
           })
-          .select('id, order_id, description, status, priority')
-          .single()
-        
-        if (workOrderError) {
-          console.error('Error creating comprehensive work order:', workOrderError)
-          return NextResponse.json({ 
-            error: 'Checklist completado pero no se pudo crear la orden de trabajo: ' + workOrderError.message 
-          }, { status: 500 })
-        }
-        
-        console.log('Comprehensive work order created successfully:', workOrder.id)
-        
-        // Actualizar el registro de problemas con la orden de trabajo
-        const { error: updateError } = await supabase
-          .from('checklist_issues')
-          .update({ 
-            work_order_id: workOrder.id,
-            updated_at: new Date().toISOString()
-          })
-          .eq('checklist_id', data.completed_id)
-          .eq('resolved', false)
-          
-        if (updateError) {
-          console.error('Error updating checklist_issues with work_order_id:', updateError)
-          // No retornamos error aquí porque la orden de trabajo sí se creó
+
+        if (saveError) {
+          console.error('Error saving evidence:', saveError)
+          // No fallar el checklist por esto, solo registrar el error
         } else {
-          console.log('Successfully updated checklist_issues with work_order_id:', workOrder.id)
+          evidenceSaveResult = saveResult
+          console.log('Evidence saved successfully:', saveResult)
         }
-        
-        // Generar incidentes en el historial del activo (opcional, si se requiere)
-        try {
-          for (const issue of issues || []) {
-            const { error: incidentError } = await supabase
-              .from('incident_history')
-              .insert({
-                asset_id: scheduleData.assets.id,
-                type: issue.status === 'fail' ? 'Falla crítica detectada' : 'Observación de mantenimiento',
-                description: `${issue.checklist_items?.description || 'Item de checklist'}: ${issue.description}`,
-                severity: issue.status === 'fail' ? 'Alta' : 'Media',
-                status: 'Abierto',
-                reported_by: user?.id,
-                work_order_id: workOrder.id,
-                checklist_issue_id: issue.id,
-                photos: issue.photo_url ? [{ url: issue.photo_url, description: issue.notes }] : null,
-                notes: issue.notes
-              })
-            
-            if (incidentError) {
-              console.warn('Error creating incident for issue:', issue.id, incidentError)
-            }
-          }
-        } catch (incidentCreationError) {
-          console.warn('Error creating incidents:', incidentCreationError)
-          // No interrumpir el flujo principal
-        }
-        
-        // Incluir información completa de la orden de trabajo en la respuesta
-        data.work_order = {
-          ...workOrder,
-          issue_count: issues?.length || 0,
-          critical_issues: issues?.filter(i => i.status === 'fail').length || 0,
-          photos_count: creationPhotos.length,
-          asset_name: scheduleData.assets.name,
-          asset_code: scheduleData.assets.asset_id
+      } catch (evidenceError) {
+        console.error('Error in evidence saving process:', evidenceError)
+        // No fallar el checklist por esto
+      }
+    }
+
+    // Respuesta exitosa - NO crear work orders automáticamente
+    const response = {
+      success: true,
+      message: 'Checklist completado exitosamente',
+      data: {
+        completed_id: completionResult.completed_id,
+        has_issues: completionResult.has_issues,
+        reading_update: completionResult.reading_update,
+        evidence_summary: evidenceSaveResult,
+        asset_info: {
+          name: asset?.name || 'Desconocido',
+          previous_hours: completionResult.reading_update?.previous_hours,
+          previous_kilometers: completionResult.reading_update?.previous_kilometers,
+          updated_hours: completionResult.reading_update?.updated_hours,
+          updated_kilometers: completionResult.reading_update?.updated_kilometers
         }
       }
     }
+
+    // Agregar mensajes adicionales
+    let messageAdditions = []
     
-    return NextResponse.json({
-      ...data,
-      message: data.has_issues 
-        ? `Checklist completado con ${data.work_order?.issue_count || 0} problema(s) detectado(s). Orden de trabajo ${data.work_order?.order_id} creada.`
-        : 'Checklist completado exitosamente sin problemas detectados.'
-    })
-  } catch (error) {
-    console.error('Error completing checklist:', error)
-    return NextResponse.json({ error: 'Error interno del servidor' }, { status: 500 })
+    if (evidenceSaveResult?.saved_count > 0) {
+      messageAdditions.push(`Se guardaron ${evidenceSaveResult.saved_count} evidencias fotográficas`)
+    }
+    
+    if (messageAdditions.length > 0) {
+      response.message += `. ${messageAdditions.join('. ')}.`
+    }
+
+    return NextResponse.json(response)
+    
+  } catch (error: any) {
+    console.error('Error in checklist completion:', error)
+    return NextResponse.json(
+      { error: 'Error interno del servidor', details: error.message },
+      { status: 500 }
+    )
   }
 } 

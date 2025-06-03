@@ -52,6 +52,7 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
   const [showCorrective, setShowCorrective] = useState(false)
   const [correctiveDialogOpen, setCorrectiveDialogOpen] = useState(false)
   const [selectedItem, setSelectedItem] = useState<string | null>(null)
+  const [completedChecklistId, setCompletedChecklistId] = useState<string | null>(null)
   
   // Estados para lecturas de equipo
   const [equipmentReadings, setEquipmentReadings] = useState<{
@@ -364,7 +365,26 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
       evidenceValidation.errors.forEach(error => toast.error(error))
       return
     }
-    
+
+    // Check if there are any items with issues BEFORE submitting
+    const itemsWithIssues = Object.entries(itemStatus)
+      .filter(([_, status]) => status === "flag" || status === "fail")
+
+    if (itemsWithIssues.length > 0) {
+      // Complete the checklist first, then show dialog
+      const completedId = await submitChecklist()
+      if (completedId) {
+        setCompletedChecklistId(completedId)
+        setShowCorrective(true)
+      }
+      return
+    }
+
+    // If no issues, proceed with normal submission
+    await submitChecklist()
+  }
+
+  const submitChecklist = async (): Promise<string | null> => {
     setSubmitting(true)
     
     try {
@@ -381,8 +401,8 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
       }
       
       if (isOnline) {
-        // Usar el nuevo endpoint que maneja lecturas y evidencias
-        const response = await fetch(`/api/checklists/schedules/${id}/complete-with-readings`, {
+        // Create a new endpoint that doesn't auto-create work orders
+        const response = await fetch(`/api/checklists/schedules/${id}/complete`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -397,10 +417,6 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
           localStorage.removeItem(`checklist-draft-${id}`)
           
           toast.success(result.message || "Checklist completado exitosamente")
-          
-          if (result.data?.has_issues) {
-            toast.info("Se detectaron problemas. Se creará una orden de trabajo correctiva.")
-          }
           
           // Mostrar información de actualización de lecturas si hubo cambios
           if (result.data?.reading_update && (equipmentReadings.hours_reading || equipmentReadings.kilometers_reading)) {
@@ -421,7 +437,13 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
             )
           }
           
-          router.push('/checklists')
+          // Return completed ID for work order creation, or navigate if no issues
+          if (result.data?.completed_id) {
+            return result.data.completed_id
+          } else {
+            router.push('/checklists')
+            return null
+          }
         } else {
           const errorData = await response.json()
           if (errorData.validation_errors || errorData.validation_warnings) {
@@ -450,6 +472,7 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
           })
           
           router.push('/checklists')
+          return null
         } else {
           throw new Error('Servicio offline no disponible')
         }
@@ -480,9 +503,12 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
         await offlineChecklistService.saveOfflineChecklist(offlineId, submissionData)
         toast.info("Checklist guardado localmente como respaldo")
       }
+      return null
     } finally {
       setSubmitting(false)
     }
+    
+    return null
   }
 
   const prepareCorrectiveAction = () => {
@@ -509,8 +535,9 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
     setCorrectiveDialogOpen(true)
   }
 
-  const handleWorkOrderCreated = (workOrderId: string) => {
-    router.push(`/ordenes/${workOrderId}`)
+  const handleWorkOrderCreated = async (workOrderId: string) => {
+    // Checklist is already completed, just navigate to checklists
+    router.push('/checklists')
   }
   
   const findSectionAndItemById = (itemId: string) => {
@@ -890,8 +917,11 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>No, solo guardar</AlertDialogCancel>
-                            <AlertDialogAction onClick={prepareCorrectiveAction}>Sí, crear orden correctiva</AlertDialogAction>
+            <AlertDialogCancel onClick={() => {
+              setShowCorrective(false)
+              submitChecklist()
+            }}>No, solo guardar</AlertDialogCancel>
+            <AlertDialogAction onClick={prepareCorrectiveAction}>Sí, crear orden correctiva</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
@@ -900,7 +930,10 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
       <CorrectiveWorkOrderDialog
         open={correctiveDialogOpen}
         onOpenChange={setCorrectiveDialogOpen}
-        checklist={checklist}
+        checklist={{
+          ...checklist,
+          id: completedChecklistId || checklist.id // Use completed checklist ID if available
+        }}
         itemsWithIssues={Object.entries(itemStatus)
           .filter(([_, status]) => status === "flag" || status === "fail")
           .map(([itemId]) => {
