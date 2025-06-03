@@ -39,7 +39,11 @@ export function QuickActions({
 
   if (compact) {
     return (
-      <div className={cn("flex flex-wrap gap-2", className)}>
+      <div className={cn(
+        "flex flex-wrap gap-2 relative",
+        "z-page-content",
+        className
+      )}>
         {actions.map((action) => (
           <Button
             key={action.id}
@@ -48,6 +52,7 @@ export function QuickActions({
             size="sm"
             className={cn(
               "relative",
+              "z-page-content",
               action.urgent && "border-orange-300 bg-orange-50 hover:bg-orange-100"
             )}
           >
@@ -70,7 +75,7 @@ export function QuickActions({
   }
 
   return (
-    <Card className={className}>
+    <Card className={cn("relative z-page-content", className)}>
       <CardHeader className="pb-3">
         <CardTitle className="text-lg flex items-center gap-2">
           <Zap className="h-5 w-5" />
@@ -84,7 +89,7 @@ export function QuickActions({
             asChild
             variant={action.variant || "outline"}
             className={cn(
-              "w-full justify-start h-auto p-3 relative",
+              "w-full justify-start h-auto p-3 relative z-page-content",
               action.urgent && "border-orange-300 bg-orange-50 hover:bg-orange-100"
             )}
           >

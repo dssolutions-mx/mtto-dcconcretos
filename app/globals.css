@@ -10,6 +10,33 @@ body {
   .text-balance {
     text-wrap: balance;
   }
+  
+  /* Z-index utilities for proper layering */
+  .z-sidebar-tooltip {
+    z-index: 9999999;
+  }
+  
+  .z-page-content {
+    z-index: 10;
+  }
+  
+  .z-sidebar-panel {
+    z-index: 20; /* For the sidebar panel itself */
+  }
+  
+  .z-floating-elements {
+    z-index: 50;
+  }
+  
+  /* Prevent sidebar interference */
+  .sidebar-safe-spacing {
+    @apply ml-2 md:ml-4 lg:ml-0;
+  }
+  
+  /* Improved spacing for mobile/tablet when sidebar is collapsed */
+  .responsive-content-spacing {
+    @apply pl-0 md:pl-2 lg:pl-0;
+  }
 }
 
 @layer base {

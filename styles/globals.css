@@ -92,3 +92,12 @@ body {
     @apply bg-background text-foreground;
   }
 }
+
+/* Force tooltips to appear above everything */
+[data-radix-popper-content-wrapper] {
+  z-index: 9999999 !important;
+}
+
+[data-state="open"][role="tooltip"] {
+  z-index: 9999999 !important;
+}

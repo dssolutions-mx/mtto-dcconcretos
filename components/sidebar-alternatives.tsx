@@ -247,7 +247,7 @@ export function BottomToggleSidebar() {
                     </Button>
                   </TooltipTrigger>
                   {isCollapsed && (
-                    <TooltipContent side="right">
+                    <TooltipContent side="right" className="z-[99999]">
                       <p>Dashboard</p>
                     </TooltipContent>
                   )}
@@ -270,7 +270,7 @@ export function BottomToggleSidebar() {
                     </Button>
                   </TooltipTrigger>
                   {isCollapsed && (
-                    <TooltipContent side="right">
+                    <TooltipContent side="right" className="z-[99999]">
                       <p>Activos</p>
                     </TooltipContent>
                   )}
@@ -293,7 +293,7 @@ export function BottomToggleSidebar() {
                     </Button>
                   </TooltipTrigger>
                   {isCollapsed && (
-                    <TooltipContent side="right">
+                    <TooltipContent side="right" className="z-[99999]">
                       <p>Modelos</p>
                     </TooltipContent>
                   )}
@@ -320,7 +320,7 @@ export function BottomToggleSidebar() {
                 )}
               </Button>
             </TooltipTrigger>
-            <TooltipContent side={isCollapsed ? "right" : "top"}>
+            <TooltipContent side={isCollapsed ? "right" : "top"} className="z-[99999]">
               <p>{isCollapsed ? "Expandir" : "Colapsar"}</p>
             </TooltipContent>
           </Tooltip>
@@ -425,7 +425,7 @@ export function SplitLogoToggleSidebar() {
                   </Button>
                 </TooltipTrigger>
                 {isCollapsed && (
-                  <TooltipContent side="right">
+                  <TooltipContent side="right" className="z-[99999]">
                     <p>Dashboard</p>
                   </TooltipContent>
                 )}
@@ -448,7 +448,7 @@ export function SplitLogoToggleSidebar() {
                   </Button>
                 </TooltipTrigger>
                 {isCollapsed && (
-                  <TooltipContent side="right">
+                  <TooltipContent side="right" className="z-[99999]">
                     <p>Activos</p>
                   </TooltipContent>
                 )}
@@ -471,7 +471,7 @@ export function SplitLogoToggleSidebar() {
                   </Button>
                 </TooltipTrigger>
                 {isCollapsed && (
-                  <TooltipContent side="right">
+                  <TooltipContent side="right" className="z-[99999]">
                     <p>Modelos</p>
                   </TooltipContent>
                 )}

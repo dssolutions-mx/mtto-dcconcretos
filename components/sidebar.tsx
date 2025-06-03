@@ -77,7 +77,7 @@ function AppLogo({
             <LogoContent />
           </button>
         </TooltipTrigger>
-        <TooltipContent side="right" sideOffset={10}>
+        <TooltipContent side="right" sideOffset={10} className="z-sidebar-tooltip">
           <p>{isCollapsed ? "Expandir sidebar" : "Colapsar sidebar"}</p>
         </TooltipContent>
       </Tooltip>
@@ -341,11 +341,19 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
 // Enhanced Collapsed Sidebar with better tooltips
 export function CollapsedSidebar({ className, onLinkClick }: SidebarProps) {
   const pathname = usePathname()
+  const [openTooltips, setOpenTooltips] = useState<Record<string, boolean>>({})
 
   const handleLinkClick = () => {
     if (onLinkClick) {
       onLinkClick()
     }
+  }
+
+  const toggleTooltip = (sectionId: string) => {
+    setOpenTooltips(prev => ({
+      ...prev,
+      [sectionId]: !prev[sectionId]
+    }))
   }
 
   const isPathActive = (path: string) => {
@@ -434,7 +442,7 @@ export function CollapsedSidebar({ className, onLinkClick }: SidebarProps) {
                           </Link>
                         </Button>
                       </TooltipTrigger>
-                      <TooltipContent side="right" sideOffset={10}>
+                      <TooltipContent side="right" sideOffset={10} className="z-sidebar-tooltip">
                         <p>{section.label}</p>
                       </TooltipContent>
                     </Tooltip>
@@ -447,21 +455,44 @@ export function CollapsedSidebar({ className, onLinkClick }: SidebarProps) {
             return (
               <div key={section.id}>
                 <div className="px-2">
-                  <Tooltip>
+                  <Tooltip 
+                    open={openTooltips[section.id]} 
+                    onOpenChange={(open) => setOpenTooltips(prev => ({ ...prev, [section.id]: open }))}
+                    delayDuration={0}
+                  >
                     <TooltipTrigger asChild>
                       <Button
                         variant={section.active ? "secondary" : "ghost"}
                         size="icon"
-                        className="w-10 h-10 mx-auto group relative"
+                        className="w-10 h-10 mx-auto group relative hover:scale-105 transition-all duration-200"
+                        onClick={(e) => {
+                          e.preventDefault()
+                          toggleTooltip(section.id)
+                        }}
+                        onMouseEnter={() => {}} // Disable hover
+                        onMouseLeave={() => {}} // Disable hover
                       >
                         <Icon className="h-4 w-4" />
                         <span className="sr-only">{section.label}</span>
                       </Button>
                     </TooltipTrigger>
-                    <TooltipContent side="right" className="p-0" sideOffset={10}>
-                      <div className="bg-background border rounded-md shadow-md py-1 min-w-[200px]">
-                        <div className="px-3 py-2 text-sm font-medium text-muted-foreground border-b">
-                          {section.label}
+                    <TooltipContent 
+                      side="right" 
+                      className="p-0" 
+                      sideOffset={10}
+                      style={{ zIndex: 9999999 }}
+                      onPointerDownOutside={() => setOpenTooltips(prev => ({ ...prev, [section.id]: false }))}
+                      onEscapeKeyDown={() => setOpenTooltips(prev => ({ ...prev, [section.id]: false }))}
+                    >
+                      <div className="bg-background border rounded-md shadow-lg py-1 min-w-[220px] max-w-[280px]" style={{ position: 'relative', zIndex: 9999999 }}>
+                        <div className="px-3 py-2 text-sm font-medium text-muted-foreground border-b bg-muted/50">
+                          <div className="flex items-center gap-2">
+                            <Icon className="h-4 w-4" />
+                            {section.label}
+                          </div>
+                          <div className="text-xs mt-1 text-muted-foreground/70">
+                            Click any item to navigate
+                          </div>
                         </div>
                         {section.items?.map((item) => {
                           const ItemIcon = item.icon
@@ -469,13 +500,16 @@ export function CollapsedSidebar({ className, onLinkClick }: SidebarProps) {
                             <Button
                               key={item.href}
                               variant={item.active ? "secondary" : "ghost"}
-                              className="w-full justify-start px-3 py-2 h-auto rounded-none"
+                              className="w-full justify-start px-3 py-2 h-auto rounded-none hover:bg-accent/50 transition-colors"
                               asChild
                               onClick={handleLinkClick}
                             >
                               <Link href={item.href}>
                                 <ItemIcon className="mr-2 h-4 w-4" />
                                 {item.label}
+                                {item.active && (
+                                  <div className="ml-auto w-1.5 h-1.5 bg-primary rounded-full" />
+                                )}
                               </Link>
                             </Button>
                           )
@@ -515,7 +549,7 @@ export function SidebarWrapper({ children }: { children: React.ReactNode }) {
       <div className="min-h-screen flex">
         {/* Desktop Sidebar */}
         <aside className={cn(
-          "hidden md:flex md:flex-col border-r bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 transition-all duration-300 ease-in-out",
+          "hidden md:flex md:flex-col border-r bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 transition-all duration-300 ease-in-out relative z-sidebar-panel",
           isSidebarCollapsed ? "md:w-16" : "md:w-64"
         )}>
           <div className="flex h-full max-h-screen flex-col">
@@ -589,7 +623,7 @@ export function SidebarWrapper({ children }: { children: React.ReactNode }) {
           </header>
 
           {/* Page Content */}
-          <main className="flex-1 overflow-auto">{children}</main>
+          <main className="flex-1 overflow-auto relative z-page-content">{children}</main>
         </div>
       </div>
     </TooltipProvider>

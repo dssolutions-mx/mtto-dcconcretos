@@ -12,6 +12,7 @@ import { QuickActions, commonActions } from "@/components/ui/quick-actions"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { useState, useEffect } from "react"
 import { createClient } from "@/lib/supabase"
+import { Badge } from "@/components/ui/badge"
 
 interface AssetStats {
   total: number
@@ -155,14 +156,6 @@ export default function AssetsPage() {
         </div>
       </DashboardHeader>
       
-      {/* Compact Quick Actions */}
-      <div className="mb-4">
-        <QuickActions 
-          actions={assetQuickActions}
-          compact={true}
-        />
-      </div>
-      
       {/* Enhanced Summary Cards - Phase 2 */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 mb-6">
         {/* Total Assets */}
@@ -228,6 +221,37 @@ export default function AssetsPage() {
             </p>
           </CardContent>
         </Card>
+      </div>
+
+      {/* QuickActions positioned after summary cards to avoid sidebar interference */}
+      <div className="mb-6">
+        <div className="flex items-center justify-between">
+          <h3 className="text-lg font-medium">Acciones Rápidas</h3>
+        </div>
+        <div className="mt-3 flex flex-wrap gap-3">
+          {assetQuickActions.map((action) => (
+            <Button
+              key={action.id}
+              asChild
+              variant={action.variant || "outline"}
+              size="sm"
+              className=""
+            >
+              <Link href={action.href}>
+                {action.icon}
+                                 <span className="ml-2">{action.title}</span>
+                 {'badge' in action && action.badge && action.badge.count > 0 && (
+                   <Badge 
+                     variant={action.badge.variant || "destructive"}
+                     className="ml-2 h-5 px-1.5 text-xs"
+                   >
+                     {action.badge.count}
+                   </Badge>
+                 )}
+              </Link>
+            </Button>
+          ))}
+        </div>
       </div>
       
       {assetsError && (
