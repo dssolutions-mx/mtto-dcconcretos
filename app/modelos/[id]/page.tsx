@@ -3,11 +3,19 @@ import { Button } from "@/components/ui/button"
 import { DashboardHeader } from "@/components/dashboard/dashboard-header"
 import { DashboardShell } from "@/components/dashboard/dashboard-shell"
 import { EquipmentModelDetails } from "@/components/models/equipment-model-details"
-import { ArrowLeft, Edit, Copy, Trash2 } from "lucide-react"
+import { ArrowLeft, Edit, Copy, Trash2, MoreVertical } from "lucide-react"
 import Link from "next/link"
 import { createClient } from "@/lib/supabase-server"
 import { notFound } from "next/navigation"
 import { use } from "react"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 
 export const revalidate = 3600 // Revalidate this page every hour
 
@@ -65,31 +73,71 @@ async function EquipmentModelDetailsPageContent({ id }: { id: string }) {
         heading={`${model.manufacturer} ${model.name}`}
         text="Detalles del modelo de equipo y sus especificaciones de mantenimiento recomendadas por el fabricante."
       >
-        <div className="flex gap-2">
-          <Button variant="outline" asChild>
+        {/* Mobile-friendly action buttons */}
+        <div className="flex flex-col sm:flex-row gap-2">
+          <Button variant="outline" asChild className="sm:w-auto w-full">
             <Link href="/modelos">
               <ArrowLeft className="mr-2 h-4 w-4" />
               Volver
             </Link>
           </Button>
-          <Button variant="outline" asChild>
-            <Link href={`/modelos/${id}/editar`}>
-              <Edit className="mr-2 h-4 w-4" />
-              Editar
-            </Link>
-          </Button>
-          <Button variant="outline" asChild>
-            <Link href={`/modelos/${id}/copiar`}>
-              <Copy className="mr-2 h-4 w-4" />
-              Copiar
-            </Link>
-          </Button>
-          <Button variant="destructive" asChild>
-            <Link href={`/modelos/${id}/eliminar`}>
-              <Trash2 className="mr-2 h-4 w-4" />
-              Eliminar
-            </Link>
-          </Button>
+          
+          {/* Desktop actions */}
+          <div className="hidden sm:flex gap-2">
+            <Button variant="outline" asChild>
+              <Link href={`/modelos/${id}/editar`}>
+                <Edit className="mr-2 h-4 w-4" />
+                Editar
+              </Link>
+            </Button>
+            <Button variant="outline" asChild>
+              <Link href={`/modelos/${id}/copiar`}>
+                <Copy className="mr-2 h-4 w-4" />
+                Copiar
+              </Link>
+            </Button>
+            <Button variant="destructive" asChild>
+              <Link href={`/modelos/${id}/eliminar`}>
+                <Trash2 className="mr-2 h-4 w-4" />
+                Eliminar
+              </Link>
+            </Button>
+          </div>
+          
+          {/* Mobile dropdown menu */}
+          <div className="sm:hidden">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" className="w-full">
+                  <MoreVertical className="mr-2 h-4 w-4" />
+                  Acciones
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-48">
+                <DropdownMenuLabel>Acciones del Modelo</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem asChild>
+                  <Link href={`/modelos/${id}/editar`}>
+                    <Edit className="mr-2 h-4 w-4" />
+                    Editar Modelo
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                  <Link href={`/modelos/${id}/copiar`}>
+                    <Copy className="mr-2 h-4 w-4" />
+                    Copiar Modelo
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem asChild className="text-destructive">
+                  <Link href={`/modelos/${id}/eliminar`}>
+                    <Trash2 className="mr-2 h-4 w-4" />
+                    Eliminar Modelo
+                  </Link>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </div>
       </DashboardHeader>
       <EquipmentModelDetails id={id} />

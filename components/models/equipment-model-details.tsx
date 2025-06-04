@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Separator } from "@/components/ui/separator"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Download, FileText, Plus, Eye, AlertTriangle } from "lucide-react"
+import { Download, FileText, Plus, Eye, AlertTriangle, Gauge } from "lucide-react"
 import Link from "next/link"
 import { useEquipmentModel } from "@/hooks/useSupabase"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -166,11 +166,31 @@ export function EquipmentModelDetails({ id }: EquipmentModelDetailsProps) {
       </Card>
 
       <Tabs defaultValue="specifications" className="w-full">
-        <TabsList className="mb-4">
-          <TabsTrigger value="specifications">Especificaciones</TabsTrigger>
-          <TabsTrigger value="maintenance">Mantenimiento</TabsTrigger>
-          <TabsTrigger value="documentation">Documentación</TabsTrigger>
-          <TabsTrigger value="assets">Activos</TabsTrigger>
+        <TabsList className="mb-4 grid w-full grid-cols-2 md:grid-cols-4 h-auto md:h-10">
+          <TabsTrigger 
+            value="specifications" 
+            className="text-xs md:text-sm p-3 md:p-2 h-12 md:h-auto data-[state=active]:bg-background data-[state=active]:text-foreground"
+          >
+            <span className="text-center leading-tight">Especificaciones</span>
+          </TabsTrigger>
+          <TabsTrigger 
+            value="maintenance" 
+            className="text-xs md:text-sm p-3 md:p-2 h-12 md:h-auto data-[state=active]:bg-background data-[state=active]:text-foreground"
+          >
+            <span className="text-center leading-tight">Mantenimiento</span>
+          </TabsTrigger>
+          <TabsTrigger 
+            value="documentation" 
+            className="text-xs md:text-sm p-3 md:p-2 h-12 md:h-auto data-[state=active]:bg-background data-[state=active]:text-foreground"
+          >
+            <span className="text-center leading-tight">Documentación</span>
+          </TabsTrigger>
+          <TabsTrigger 
+            value="assets" 
+            className="text-xs md:text-sm p-3 md:p-2 h-12 md:h-auto data-[state=active]:bg-background data-[state=active]:text-foreground"
+          >
+            <span className="text-center leading-tight">Activos</span>
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="specifications">
@@ -331,38 +351,71 @@ export function EquipmentModelDetails({ id }: EquipmentModelDetailsProps) {
             </CardHeader>
             <CardContent>
               {documentation.length > 0 ? (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Nombre</TableHead>
-                      <TableHead>Tipo</TableHead>
-                      <TableHead>Tamaño</TableHead>
-                      <TableHead>Subido</TableHead>
-                      <TableHead className="text-right">Acciones</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
+                <>
+                  {/* Mobile View - Cards */}
+                  <div className="md:hidden space-y-4">
                     {documentation.map((doc) => (
-                      <TableRow key={doc.id}>
-                        <TableCell className="font-medium">{doc.name}</TableCell>
-                        <TableCell>{doc.type}</TableCell>
-                        <TableCell>{doc.size}</TableCell>
-                        <TableCell>{new Date(doc.uploaded_at).toLocaleDateString()}</TableCell>
-                        <TableCell className="text-right">
-                          <Button variant="ghost" size="icon" asChild>
+                      <Card key={doc.id} className="p-4">
+                        <div className="space-y-3">
+                          <div className="flex justify-between items-start">
+                            <div>
+                              <h4 className="font-medium">{doc.name}</h4>
+                              <p className="text-sm text-muted-foreground">{doc.type}</p>
+                            </div>
+                            <Badge variant="outline">{doc.size}</Badge>
+                          </div>
+                          <div className="text-sm text-muted-foreground">
+                            Subido: {new Date(doc.uploaded_at).toLocaleDateString()}
+                          </div>
+                          <Button variant="outline" size="sm" asChild className="w-full">
                             <Link href={doc.file_url} target="_blank">
-                              <Download className="h-4 w-4" />
-                              <span className="sr-only">Descargar</span>
+                              <Download className="h-4 w-4 mr-2" />
+                              Descargar
                             </Link>
                           </Button>
-                        </TableCell>
-                      </TableRow>
+                        </div>
+                      </Card>
                     ))}
-                  </TableBody>
-                </Table>
+                  </div>
+                  
+                  {/* Desktop View - Table */}
+                  <div className="hidden md:block">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Nombre</TableHead>
+                          <TableHead>Tipo</TableHead>
+                          <TableHead>Tamaño</TableHead>
+                          <TableHead>Subido</TableHead>
+                          <TableHead className="text-right">Acciones</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {documentation.map((doc) => (
+                          <TableRow key={doc.id}>
+                            <TableCell className="font-medium">{doc.name}</TableCell>
+                            <TableCell>{doc.type}</TableCell>
+                            <TableCell>{doc.size}</TableCell>
+                            <TableCell>{new Date(doc.uploaded_at).toLocaleDateString()}</TableCell>
+                            <TableCell className="text-right">
+                              <Button variant="ghost" size="icon" asChild>
+                                <Link href={doc.file_url} target="_blank">
+                                  <Download className="h-4 w-4" />
+                                  <span className="sr-only">Descargar</span>
+                                </Link>
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </>
               ) : (
                 <div className="text-center py-6 text-muted-foreground">
-                  No hay documentos disponibles para este modelo.
+                  <FileText className="mx-auto h-12 w-12 text-muted-foreground/50 mb-4" />
+                  <h3 className="text-lg font-medium">No hay documentos disponibles</h3>
+                  <p className="text-sm">Sube documentos técnicos del fabricante.</p>
                 </div>
               )}
             </CardContent>
@@ -377,44 +430,85 @@ export function EquipmentModelDetails({ id }: EquipmentModelDetailsProps) {
             </CardHeader>
             <CardContent>
               {assets.length > 0 ? (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>ID</TableHead>
-                      <TableHead>Nombre</TableHead>
-                      <TableHead>Ubicación</TableHead>
-                      <TableHead>Estado</TableHead>
-                      <TableHead className="text-right">Acciones</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
+                <>
+                  {/* Mobile View - Cards */}
+                  <div className="md:hidden space-y-4">
                     {assets.map((asset) => (
-                      <TableRow key={asset.id}>
-                        <TableCell className="font-medium">{asset.asset_id}</TableCell>
-                        <TableCell>{asset.name}</TableCell>
-                        <TableCell>{asset.location}</TableCell>
-                        <TableCell>
-                          <Badge className={asset.status === 'Operativo' ? 'bg-green-100 text-green-800' : 
+                      <Card key={asset.id} className="hover:shadow-md transition-shadow">
+                        <CardContent className="p-4">
+                          <div className="space-y-3">
+                            <div className="flex justify-between items-start">
+                              <div>
+                                <Link href={`/activos/${asset.id}`} className="font-medium hover:underline">
+                                  {asset.name}
+                                </Link>
+                                <p className="text-sm text-muted-foreground">ID: {asset.asset_id}</p>
+                              </div>
+                              <Badge className={asset.status === 'Operativo' ? 'bg-green-100 text-green-800' : 
                                             asset.status === 'En Mantenimiento' ? 'bg-amber-100 text-amber-800' : 
                                             'bg-red-100 text-red-800'}>
-                            {asset.status}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <Button variant="ghost" size="icon" asChild>
-                            <Link href={`/activos/${asset.id}`}>
-                              <Eye className="h-4 w-4" />
-                              <span className="sr-only">Ver detalles</span>
-                            </Link>
-                          </Button>
-                        </TableCell>
-                      </TableRow>
+                                {asset.status}
+                              </Badge>
+                            </div>
+                            <div className="text-sm">
+                              <span className="font-medium">Ubicación:</span> {asset.location}
+                            </div>
+                            <Button variant="outline" size="sm" asChild className="w-full">
+                              <Link href={`/activos/${asset.id}`}>
+                                <Eye className="h-4 w-4 mr-2" />
+                                Ver Detalles
+                              </Link>
+                            </Button>
+                          </div>
+                        </CardContent>
+                      </Card>
                     ))}
-                  </TableBody>
-                </Table>
+                  </div>
+                  
+                  {/* Desktop View - Table */}
+                  <div className="hidden md:block">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>ID</TableHead>
+                          <TableHead>Nombre</TableHead>
+                          <TableHead>Ubicación</TableHead>
+                          <TableHead>Estado</TableHead>
+                          <TableHead className="text-right">Acciones</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {assets.map((asset) => (
+                          <TableRow key={asset.id}>
+                            <TableCell className="font-medium">{asset.asset_id}</TableCell>
+                            <TableCell>{asset.name}</TableCell>
+                            <TableCell>{asset.location}</TableCell>
+                            <TableCell>
+                              <Badge className={asset.status === 'Operativo' ? 'bg-green-100 text-green-800' : 
+                                            asset.status === 'En Mantenimiento' ? 'bg-amber-100 text-amber-800' : 
+                                            'bg-red-100 text-red-800'}>
+                                {asset.status}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <Button variant="ghost" size="icon" asChild>
+                                <Link href={`/activos/${asset.id}`}>
+                                  <Eye className="h-4 w-4" />
+                                  <span className="sr-only">Ver detalles</span>
+                                </Link>
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </>
               ) : (
                 <div className="text-center py-6 text-muted-foreground">
-                  No hay activos registrados con este modelo.
+                  <Gauge className="mx-auto h-12 w-12 text-muted-foreground/50 mb-4" />
+                  <h3 className="text-lg font-medium">No hay activos registrados</h3>
+                  <p className="text-sm">Los equipos con este modelo aparecerán aquí.</p>
                 </div>
               )}
             </CardContent>
