@@ -195,6 +195,15 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
         if (isOnline === false && offlineChecklistService) {
           const cached = await offlineChecklistService.getCachedChecklistTemplate(id)
           if (cached) {
+            // Ordenar secciones e items del cache también
+            const cachedSections = cached.template.checklists?.checklist_sections || []
+            const orderedCachedSections = cachedSections
+              .sort((a: any, b: any) => a.order_index - b.order_index)
+              .map((section: any) => ({
+                ...section,
+                checklist_items: (section.checklist_items || []).sort((a: any, b: any) => a.order_index - b.order_index)
+              }))
+            
             setChecklist({
               id: cached.template.id,
               name: cached.template.checklists?.name || '',
@@ -206,7 +215,7 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
               model: cached.template.checklists?.equipment_models?.name || 'N/A',
               manufacturer: cached.template.checklists?.equipment_models?.manufacturer || 'N/A',
               frequency: cached.template.checklists?.frequency || '',
-              sections: cached.template.checklists?.checklist_sections || [],
+              sections: orderedCachedSections,
               scheduledDate: cached.template.scheduled_date || '',
               technicianId: cached.template.assigned_to || '',
               technician: cached.template.profiles ? `${cached.template.profiles.nombre} ${cached.template.profiles.apellido}` : '',
@@ -265,7 +274,15 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
           
           if (error) throw error
           
-          // Estructurar los datos
+          // Estructurar los datos con secciones e items ordenados
+          const sectionsData = data.checklists?.checklist_sections || []
+          const orderedSections = sectionsData
+            .sort((a: any, b: any) => a.order_index - b.order_index)
+            .map((section: any) => ({
+              ...section,
+              checklist_items: (section.checklist_items || []).sort((a: any, b: any) => a.order_index - b.order_index)
+            }))
+          
           const checklistData = {
             id: data.id,
             name: data.checklists?.name || '',
@@ -277,7 +294,7 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
             model: data.checklists?.equipment_models?.name || 'N/A',
             manufacturer: data.checklists?.equipment_models?.manufacturer || 'N/A',
             frequency: data.checklists?.frequency || '',
-            sections: data.checklists?.checklist_sections || [],
+            sections: orderedSections,
             scheduledDate: data.scheduled_date || '',
             technicianId: data.assigned_to || '',
             maintenance_plan_id: data.maintenance_plan_id || null,
