@@ -2,7 +2,7 @@ import type { Metadata } from "next"
 import { Button } from "@/components/ui/button"
 import { DashboardHeader } from "@/components/dashboard/dashboard-header"
 import { DashboardShell } from "@/components/dashboard/dashboard-shell"
-import { ChecklistTemplateForm } from "@/components/checklists/checklist-template-form"
+import { TemplateEditor } from "@/components/checklists/template-editor"
 import { ArrowLeft } from "lucide-react"
 import Link from "next/link"
 
@@ -25,7 +25,7 @@ export default function CreateChecklistTemplatePage() {
           </Link>
         </Button>
       </DashboardHeader>
-      <ChecklistTemplateForm />
+      <TemplateEditor />
     </DashboardShell>
   )
 }
