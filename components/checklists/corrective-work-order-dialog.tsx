@@ -15,7 +15,9 @@ import { Textarea } from "@/components/ui/textarea"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { AlertTriangle, Clock, Flag, Wrench, Loader2 } from "lucide-react"
+import { ScrollArea } from "@/components/ui/scroll-area"
+import { Separator } from "@/components/ui/separator"
+import { AlertTriangle, Clock, Flag, Wrench, Loader2, Info } from "lucide-react"
 import { toast } from "sonner"
 
 interface CorrectiveWorkOrderDialogProps {
@@ -75,18 +77,16 @@ export function CorrectiveWorkOrderDialog({
     return desc.trim()
   }
 
-  // Initialize description when dialog opens
+  // Initialize description when dialog opens - leave empty for user to add optional notes
   useEffect(() => {
-    if (open && itemsWithIssues.length > 0) {
-      setDescription(generateDefaultDescription())
+    if (open) {
+      setDescription("")
     }
-  }, [open, itemsWithIssues, checklist?.name])
+  }, [open])
 
   const handleSubmit = async () => {
-    if (!description.trim()) {
-      toast.error("Por favor, ingrese una descripción para la orden de trabajo")
-      return
-    }
+    // Note: description is now optional since each work order gets its own specific description
+    // The user can add additional notes that will be included in all work orders
 
     setLoading(true)
     
@@ -158,138 +158,185 @@ export function CorrectiveWorkOrderDialog({
     }
   }
 
+  const getPriorityLabel = (priorityLevel: string) => {
+    switch (priorityLevel) {
+      case "Alta":
+        return "Inmediata"
+      case "Media":
+        return "En el día"
+      case "Baja":
+        return "Programar"
+      default:
+        return ""
+    }
+  }
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Wrench className="h-5 w-5 text-orange-500" />
-            Generar Orden de Trabajo Correctiva
-          </DialogTitle>
-          <DialogDescription>
-            Configure los detalles de la orden de trabajo que se generará para corregir los problemas detectados.
-          </DialogDescription>
-        </DialogHeader>
+      <DialogContent className="max-w-4xl max-h-[90vh] w-[95vw] sm:w-[90vw] md:w-[80vw] p-0">
+        <div className="flex flex-col h-full max-h-[90vh]">
+          <DialogHeader className="p-6 pb-4">
+            <DialogTitle className="flex items-center gap-2 text-lg">
+              <Wrench className="h-5 w-5 text-orange-500" />
+              Generar Órdenes de Trabajo Correctivas
+            </DialogTitle>
+            <DialogDescription>
+              Configure los detalles de las órdenes de trabajo que se generarán para corregir los problemas detectados.
+            </DialogDescription>
+          </DialogHeader>
 
-        <div className="space-y-6">
-          {/* Asset Information */}
-          <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
-            <h4 className="font-medium text-blue-900 mb-2">Información del Activo</h4>
-            <div className="text-sm text-blue-800">
-              <div><strong>Activo:</strong> {checklist.asset}</div>
-              <div><strong>Código:</strong> {checklist.assetCode}</div>
-              {checklist.assetLocation && (
-                <div><strong>Ubicación:</strong> {checklist.assetLocation}</div>
-              )}
-            </div>
-          </div>
+          <ScrollArea className="flex-1 px-6">
+            <div className="space-y-6 pb-4">
+              {/* Individual Work Orders Info */}
+              <Alert>
+                <Info className="h-4 w-4" />
+                <AlertDescription>
+                  <strong>Se creará una orden de trabajo individual para cada problema detectado</strong>, 
+                  no una sola orden agrupada. Esto permite un mejor seguimiento y resolución específica de cada incidencia.
+                </AlertDescription>
+              </Alert>
 
-          {/* Issues Summary */}
-          <div>
-            <h4 className="font-medium mb-3">Problemas Detectados ({itemsWithIssues.length})</h4>
-            <div className="space-y-2 max-h-32 overflow-y-auto">
-              {itemsWithIssues.map((item, index) => (
-                <div key={item.id} className="flex items-start gap-2 p-2 bg-gray-50 rounded border">
-                  <Badge 
-                    variant={item.status === "fail" ? "destructive" : "secondary"}
-                    className="mt-0.5"
-                  >
-                    {item.status === "fail" ? "Falla" : "Revisar"}
-                  </Badge>
-                  <div className="flex-1 text-sm">
-                    <div className="font-medium">{item.description}</div>
-                    {item.sectionTitle && (
-                      <div className="text-muted-foreground">Sección: {item.sectionTitle}</div>
-                    )}
-                    {item.notes && (
-                      <div className="text-muted-foreground">Notas: {item.notes}</div>
-                    )}
-                  </div>
+              {/* Asset Information */}
+              <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
+                <h4 className="font-medium text-blue-900 mb-2">Información del Activo</h4>
+                <div className="text-sm text-blue-800 space-y-1">
+                  <div><strong>Activo:</strong> {checklist.asset}</div>
+                  <div><strong>Código:</strong> {checklist.assetCode}</div>
+                  {checklist.assetLocation && (
+                    <div><strong>Ubicación:</strong> {checklist.assetLocation}</div>
+                  )}
                 </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Priority Selection */}
-          <div>
-            <Label className="text-base font-medium">Prioridad de la Orden de Trabajo</Label>
-            <RadioGroup value={priority} onValueChange={setPriority} className="mt-3">
-              <div className="space-y-3">
-                {["Alta", "Media", "Baja"].map((priorityLevel) => (
-                  <div key={priorityLevel} className="flex items-center space-x-2">
-                    <RadioGroupItem value={priorityLevel} id={priorityLevel} />
-                    <Label 
-                      htmlFor={priorityLevel} 
-                      className={`flex items-center gap-2 cursor-pointer px-3 py-2 rounded border transition-colors ${
-                        priority === priorityLevel ? getPriorityColor(priorityLevel) : 'hover:bg-gray-50'
-                      }`}
-                    >
-                      {getPriorityIcon(priorityLevel)}
-                      <span className="font-medium">{priorityLevel}</span>
-                      <span className="text-sm text-muted-foreground">
-                        {priorityLevel === "Alta" && "- Requiere atención inmediata"}
-                        {priorityLevel === "Media" && "- Atender en el día"}
-                        {priorityLevel === "Baja" && "- Programar cuando sea conveniente"}
-                      </span>
-                    </Label>
-                  </div>
-                ))}
               </div>
-            </RadioGroup>
-          </div>
 
-          {/* Description */}
-          <div>
-            <Label htmlFor="description" className="text-base font-medium">
-              Descripción de la Orden de Trabajo
-            </Label>
-            <Textarea
-              id="description"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="Describa los trabajos a realizar para corregir los problemas detectados..."
-              className="mt-2 min-h-[120px]"
-            />
-            <p className="text-sm text-muted-foreground mt-1">
-              Esta descripción se usará para crear la orden de trabajo. Puede modificar el texto generado automáticamente.
-            </p>
-          </div>
+              {/* Issues Summary */}
+              <div>
+                <h4 className="font-medium mb-3">
+                  Problemas Detectados ({itemsWithIssues.length})
+                  <span className="text-sm text-muted-foreground ml-2">
+                    → {itemsWithIssues.length} Órdenes de Trabajo
+                  </span>
+                </h4>
+                <ScrollArea className="h-64 border rounded-lg">
+                  <div className="space-y-3 p-4">
+                    {itemsWithIssues.map((item, index) => (
+                      <div key={item.id}>
+                        <div className="flex items-start gap-3 p-3 bg-gray-50 rounded border">
+                          <div className="flex flex-col items-center gap-1 min-w-[60px]">
+                            <Badge 
+                              variant={item.status === "fail" ? "destructive" : "secondary"}
+                              className="text-xs"
+                            >
+                              {item.status === "fail" ? "Falla" : "Revisar"}
+                            </Badge>
+                            <span className="text-xs text-muted-foreground">OT #{index + 1}</span>
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="font-medium text-sm leading-tight">{item.description}</div>
+                            {item.sectionTitle && (
+                              <div className="text-xs text-muted-foreground mt-1">
+                                Sección: {item.sectionTitle}
+                              </div>
+                            )}
+                            {item.notes && (
+                              <div className="text-xs text-muted-foreground mt-1 bg-white p-2 rounded border">
+                                <strong>Notas:</strong> {item.notes}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        {index < itemsWithIssues.length - 1 && <Separator />}
+                      </div>
+                    ))}
+                  </div>
+                </ScrollArea>
+              </div>
 
-          {/* Warning */}
-          <Alert>
-            <AlertTriangle className="h-4 w-4" />
-            <AlertDescription>
-              Se creará una orden de trabajo correctiva y se registrarán los incidentes correspondientes en el historial del activo.
-              Cada problema detectado generará un incidente individual para mejor seguimiento.
-            </AlertDescription>
-          </Alert>
+              {/* Priority Selection */}
+              <div>
+                <Label className="text-base font-medium">Prioridad para Todas las Órdenes</Label>
+                <RadioGroup value={priority} onValueChange={setPriority} className="mt-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    {["Alta", "Media", "Baja"].map((priorityLevel) => (
+                      <div key={priorityLevel} className="flex items-center space-x-2">
+                        <RadioGroupItem value={priorityLevel} id={priorityLevel} />
+                        <Label 
+                          htmlFor={priorityLevel} 
+                          className={`flex items-center gap-2 cursor-pointer px-3 py-2 rounded border transition-colors flex-1 ${
+                            priority === priorityLevel ? getPriorityColor(priorityLevel) : 'hover:bg-gray-50'
+                          }`}
+                        >
+                          {getPriorityIcon(priorityLevel)}
+                          <div className="flex flex-col">
+                            <span className="font-medium text-sm">{priorityLevel}</span>
+                            <span className="text-xs text-muted-foreground">
+                              {getPriorityLabel(priorityLevel)}
+                            </span>
+                          </div>
+                        </Label>
+                      </div>
+                    ))}
+                  </div>
+                </RadioGroup>
+              </div>
+
+              {/* Description */}
+              <div>
+                <Label htmlFor="description" className="text-base font-medium">
+                  Notas Adicionales (Opcional)
+                </Label>
+                <Textarea
+                  id="description"
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder="Agregue observaciones adicionales, instrucciones especiales, o contexto que se incluirá en todas las órdenes..."
+                  className="mt-2 min-h-[100px] max-h-[150px]"
+                />
+                <p className="text-sm text-muted-foreground mt-1">
+                  Cada orden tendrá una descripción específica del problema detectado. Estas notas se agregarán a todas las órdenes como contexto adicional.
+                </p>
+              </div>
+
+              {/* Final Warning */}
+              <Alert>
+                <AlertTriangle className="h-4 w-4" />
+                <AlertDescription>
+                  Se crearán <strong>{itemsWithIssues.length} órdenes de trabajo correctivas independientes</strong> y 
+                  se registrarán <strong>{itemsWithIssues.length} incidentes individuales</strong> en el historial del activo.
+                </AlertDescription>
+              </Alert>
+            </div>
+          </ScrollArea>
+
+          <Separator />
+          
+          <DialogFooter className="p-6 pt-4">
+            <Button 
+              variant="outline" 
+              onClick={() => onOpenChange(false)}
+              disabled={loading}
+              className="flex-1 sm:flex-none"
+            >
+              Cancelar
+            </Button>
+            <Button 
+              onClick={handleSubmit}
+              disabled={loading}
+              className="flex-1 sm:flex-none"
+            >
+              {loading ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Generando...
+                </>
+              ) : (
+                <>
+                  <Wrench className="mr-2 h-4 w-4" />
+                  Crear {itemsWithIssues.length} Órdenes de Trabajo
+                </>
+              )}
+            </Button>
+          </DialogFooter>
         </div>
-
-        <DialogFooter>
-          <Button 
-            variant="outline" 
-            onClick={() => onOpenChange(false)}
-            disabled={loading}
-          >
-            Cancelar
-          </Button>
-          <Button 
-            onClick={handleSubmit}
-            disabled={loading || !description.trim()}
-          >
-            {loading ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Generando...
-              </>
-            ) : (
-              <>
-                <Wrench className="mr-2 h-4 w-4" />
-                Generar Orden de Trabajo
-              </>
-            )}
-          </Button>
-        </DialogFooter>
       </DialogContent>
     </Dialog>
   )

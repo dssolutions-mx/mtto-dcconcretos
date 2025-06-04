@@ -37,12 +37,8 @@ export async function POST(request: Request) {
       )
     }
 
-    if (!description || !description.trim()) {
-      return NextResponse.json(
-        { error: "La descripción de la orden de trabajo es requerida" },
-        { status: 400 }
-      )
-    }
+    // Description is now optional - each work order gets its own specific description
+    // Additional notes from user will be appended if provided
 
     // Get checklist and asset information
     const { data: checklistData, error: checklistError } = await supabase
@@ -71,34 +67,7 @@ export async function POST(request: Request) {
       )
     }
 
-    // Generate unique work order ID
-    const currentYear = new Date().getFullYear()
-    const { data: sequenceData, error: seqError } = await supabase
-      .from('work_order_sequence')
-      .select('nextval(*)')
-      .single()
-
-    if (seqError) {
-      // Try alternative approach with raw SQL
-      const { data: altData, error: altError } = await supabase
-        .rpc('execute_sql', { 
-          query: "SELECT nextval('work_order_sequence') as next_val" 
-        })
-      
-      if (altError) {
-        console.error('Error getting sequence value:', altError)
-        return NextResponse.json(
-          { error: "Error al generar ID de orden de trabajo" },
-          { status: 500 }
-        )
-      }
-      
-      const orderNumber = String(altData[0]?.next_val || Date.now()).padStart(4, '0')
-      var orderId = `OT-${currentYear}-${orderNumber}`
-    } else {
-      const orderNumber = String(sequenceData?.nextval || Date.now()).padStart(4, '0')
-      var orderId = `OT-${currentYear}-${orderNumber}`
-    }
+    // Note: order_id will be generated automatically by database trigger
 
     // First, save the checklist issues
     const issuesData = items_with_issues.map((item: any) => ({
@@ -133,39 +102,29 @@ export async function POST(request: Request) {
     for (const issue of savedIssues) {
       const item = items_with_issues.find((i: any) => i.id === issue.item_id)
       
-      // Generate unique work order ID for each issue
-      const { data: seqData, error: seqError } = await supabase
-        .rpc('execute_sql', { 
-          query: "SELECT nextval('work_order_sequence') as next_val" 
-        })
-      
-      const currentYear = new Date().getFullYear()
-      const orderNumber = String(seqData?.[0]?.next_val || Date.now()).padStart(4, '0')
-      const issueOrderId = `OT-${currentYear}-${orderNumber}`
+      // Note: order_id will be generated automatically by database trigger
 
       // Create individual work order description
-      const workOrderDescription = `ACCIÓN CORRECTIVA - ${issue.description}
+      let workOrderDescription = `${issue.description}
 
-Activo: ${(checklistData.assets as any)?.name || 'N/A'}
-Código: ${(checklistData.assets as any)?.asset_id || 'N/A'}
-Ubicación: ${(checklistData.assets as any)?.location || 'N/A'}
+PROBLEMA: ${issue.status === 'fail' ? 'FALLA DETECTADA' : 'REQUIERE REVISIÓN'}
+${issue.notes ? `Observaciones: ${issue.notes}` : ''}${issue.photo_url ? '\nEvidencia fotográfica disponible' : ''}
 
-PROBLEMA DETECTADO:
-• Estado: ${issue.status === 'fail' ? 'Falla' : 'Requiere revisión'}
-• Descripción: ${issue.description}
-• Notas: ${issue.notes || 'Sin notas adicionales'}
-${issue.photo_url ? '• Evidencia fotográfica disponible' : ''}
+ORIGEN:
+• Checklist: ${(checklistData.checklists as any)?.name || 'N/A'}
+• Fecha: ${new Date().toLocaleDateString()}
+• Activo: ${(checklistData.assets as any)?.name || 'N/A'} (${(checklistData.assets as any)?.asset_id || 'N/A'})
+• Ubicación: ${(checklistData.assets as any)?.location || 'N/A'}`
 
-Fuente: Checklist completado por ${description.split('\n')[0].replace('Acción correctiva generada desde checklist: ', '')}
-Fecha detección: ${new Date().toLocaleDateString()}
+      // Add additional context if provided by user
+      if (description && description.trim()) {
+        workOrderDescription += `\n\nCONTEXTO ADICIONAL:\n${description.trim()}`
+      }
 
-${description.includes('NOTAS ADICIONALES') ? description.split('NOTAS ADICIONALES:')[1] : ''}`
-
-      // Create work order
+      // Create work order (order_id will be generated automatically by trigger)
       const { data: workOrder, error: workOrderError } = await supabase
         .from('work_orders')
         .insert({
-          order_id: issueOrderId,
           asset_id: asset_id,
           description: workOrderDescription.trim(),
           type: 'corrective',
