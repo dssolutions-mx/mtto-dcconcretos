@@ -1,11 +1,15 @@
 import { createClient } from '@/lib/supabase-server'
 import { NextResponse } from 'next/server'
 
-export async function GET() {
+export async function GET(
+  request: Request,
+  { params }: { params: { id: string } }
+) {
   try {
     const supabase = await createClient()
+    const { id } = params
     
-    const { data: assets, error } = await supabase
+    const { data: asset, error } = await supabase
       .from('assets')
       .select(`
         id,
@@ -15,20 +19,27 @@ export async function GET() {
         location,
         department,
         current_hours,
+        serial_number,
+        notes,
         equipment_models (
           id,
           name,
           manufacturer
         )
       `)
-      .order('name', { ascending: true })
+      .eq('id', id)
+      .single()
 
     if (error) {
-      console.error('Error fetching assets:', error)
+      console.error('Error fetching asset:', error)
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
-    return NextResponse.json(assets)
+    if (!asset) {
+      return NextResponse.json({ error: 'Asset not found' }, { status: 404 })
+    }
+
+    return NextResponse.json(asset)
   } catch (error: any) {
     console.error('Server error:', error)
     return NextResponse.json(

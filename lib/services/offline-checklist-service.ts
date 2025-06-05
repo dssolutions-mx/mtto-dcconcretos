@@ -55,6 +55,14 @@ interface ChecklistDB extends DBSchema {
       timestamp: number
     }
   }
+  'asset-data': {
+    key: string
+    value: {
+      id: string
+      assetData: any
+      lastUpdated: number
+    }
+  }
 }
 
 // Tipo para eventos del servicio offline
@@ -88,36 +96,77 @@ class OfflineChecklistService {
     }
   }
 
+  // Force database upgrade - useful for development
+  async forceDBUpgrade() {
+    if (!this.isClient) return false
+    
+    try {
+      // Close existing connection
+      if (this.db) {
+        const currentDB = await this.db
+        currentDB.close()
+      }
+      
+      // Delete the database to force recreation
+      await new Promise((resolve, reject) => {
+        const deleteRequest = indexedDB.deleteDatabase('checklists-offline')
+        deleteRequest.onsuccess = () => resolve(undefined)
+        deleteRequest.onerror = () => reject(deleteRequest.error)
+        deleteRequest.onblocked = () => {
+          console.warn('Database deletion blocked - please close other tabs')
+          reject(new Error('Database deletion blocked'))
+        }
+      })
+      
+      console.log('🗑️ Old database deleted, forcing recreation...')
+      
+      // Reinitialize
+      this.db = null
+      this.initializeDB()
+      
+      return true
+    } catch (error) {
+      console.error('Error forcing database upgrade:', error)
+      return false
+    }
+  }
+
   private initializeDB() {
     if (!this.isClient || this.db) return
     
-    this.db = openDB<ChecklistDB>('checklists-offline', 4, {
+    this.db = openDB<ChecklistDB>('checklists-offline', 5, {
       upgrade(db, oldVersion, newVersion) {
-        console.log(`Upgrading IndexedDB from version ${oldVersion} to ${newVersion}`)
+        console.log(`🔄 Upgrading IndexedDB from version ${oldVersion} to ${newVersion}`)
         
-        // Crear stores si no existen
+        // Crear stores básicos (versiones 1-4)
         if (!db.objectStoreNames.contains('offline-checklists')) {
-          console.log('Creating offline-checklists store')
+          console.log('📦 Creating offline-checklists store')
           db.createObjectStore('offline-checklists', { keyPath: 'id' })
         }
         if (!db.objectStoreNames.contains('checklist-templates')) {
-          console.log('Creating checklist-templates store')
+          console.log('📦 Creating checklist-templates store')
           db.createObjectStore('checklist-templates', { keyPath: 'id' })
         }
         if (!db.objectStoreNames.contains('checklist-schedules')) {
-          console.log('Creating checklist-schedules store')
+          console.log('📦 Creating checklist-schedules store')
           db.createObjectStore('checklist-schedules', { keyPath: 'id' })
         }
         if (!db.objectStoreNames.contains('checklist-lists')) {
-          console.log('Creating checklist-lists store')
+          console.log('📦 Creating checklist-lists store')
           db.createObjectStore('checklist-lists', { keyPath: 'id' })
         }
         if (!db.objectStoreNames.contains('offline-photos')) {
-          console.log('Creating offline-photos store')
+          console.log('📦 Creating offline-photos store')
           db.createObjectStore('offline-photos', { keyPath: 'id' })
         }
         
-        console.log('IndexedDB upgrade completed')
+        // Nuevo store para versión 5: asset data cache
+        if (!db.objectStoreNames.contains('asset-data')) {
+          console.log('📦 Creating asset-data store (v5)')
+          db.createObjectStore('asset-data', { keyPath: 'id' })
+        }
+        
+        console.log(`✅ IndexedDB upgrade completed to version ${newVersion}`)
       },
       blocked() {
         console.warn('IndexedDB upgrade blocked by another tab/window')
@@ -827,6 +876,70 @@ class OfflineChecklistService {
     return false
   }
   
+  // Cache asset data for offline use
+  async cacheAssetData(assetId: string, assetData: any) {
+    try {
+      const db = await this.getDB()
+      if (!db) {
+        console.warn('📦 Cannot cache asset data: database not available')
+        return
+      }
+
+      // Check if the object store exists
+      if (!db.objectStoreNames.contains('asset-data')) {
+        console.error('📦 Asset data store not found - database may need upgrade')
+        return
+      }
+
+      await db.put('asset-data', {
+        id: assetId,
+        assetData,
+        lastUpdated: Date.now()
+      })
+
+      console.log('📦 Asset data cached:', assetId)
+    } catch (error) {
+      console.error('📦 Error caching asset data:', error)
+      // Don't throw - this is a cache operation that shouldn't break the main flow
+    }
+  }
+
+  // Get cached asset data
+  async getCachedAssetData(assetId: string) {
+    try {
+      const db = await this.getDB()
+      if (!db) {
+        console.warn('📦 Cannot get cached asset data: database not available')
+        return null
+      }
+
+      // Check if the object store exists
+      if (!db.objectStoreNames.contains('asset-data')) {
+        console.warn('📦 Asset data store not found - returning null')
+        return null
+      }
+
+      const cached = await db.get('asset-data', assetId)
+      if (!cached) {
+        console.log('📦 No cached data found for asset:', assetId)
+        return null
+      }
+
+      // Check if cache is still fresh (4 hours)
+      const maxAge = 4 * 60 * 60 * 1000 // 4 horas
+      if (Date.now() - cached.lastUpdated > maxAge) {
+        console.log('🗂️ Asset cache expired for:', assetId)
+        return null
+      }
+
+      console.log('📦 Asset data retrieved from cache:', assetId)
+      return cached.assetData
+    } catch (error) {
+      console.error('📦 Error getting cached asset data:', error)
+      return null
+    }
+  }
+
   // Limpiar datos antiguos (más de 30 días)
   async cleanOldData() {
     const db = await this.getDB()
@@ -866,6 +979,15 @@ class OfflineChecklistService {
     for (const list of lists) {
       if (list.lastUpdated < thirtyDaysAgo) {
         await db.delete('checklist-lists', list.id)
+        cleaned++
+      }
+    }
+
+    // Limpiar asset data cache antiguo
+    const assets = await db.getAll('asset-data')
+    for (const asset of assets) {
+      if (asset.lastUpdated < thirtyDaysAgo) {
+        await db.delete('asset-data', asset.id)
         cleaned++
       }
     }

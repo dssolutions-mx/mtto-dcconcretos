@@ -7,7 +7,7 @@ import { DashboardHeader } from "@/components/dashboard/dashboard-header"
 import { DashboardShell } from "@/components/dashboard/dashboard-shell"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Plus, FileDown, ClipboardCheck, Loader2, Check, WifiOff, ChevronDown } from "lucide-react"
+import { Plus, FileDown, ClipboardCheck, Loader2, Check, WifiOff, ChevronDown, Truck } from "lucide-react"
 import Link from "next/link"
 import { useSearchParams } from "next/navigation"
 import { DailyChecklistList } from "@/components/checklists/daily-checklist-list"
@@ -212,6 +212,12 @@ function ChecklistsContent() {
           </div>
           
           <div className="flex gap-2">
+            <Button asChild className="bg-blue-600 hover:bg-blue-700">
+              <Link href="/checklists/assets">
+                <Truck className="mr-2 h-4 w-4" />
+                <span className="hidden sm:inline">Vista por Activos</span>
+              </Link>
+            </Button>
             <Button variant="outline" asChild>
               <Link href="/checklists/programar">
                 <ClipboardCheck className="mr-2 h-4 w-4" />
@@ -352,6 +358,40 @@ function ChecklistsContent() {
             </div>
           ) : (
             <>
+              {/* Nueva vista por activos */}
+              <Card className="mb-6 border-2 border-blue-200 bg-blue-50/50">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-xl flex items-center gap-2">
+                    <Truck className="h-6 w-6 text-blue-600" />
+                    🚀 Nueva Vista por Activos
+                  </CardTitle>
+                  <CardDescription>
+                    Accede a los checklists organizados por activo para una gestión más clara y eficiente
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex flex-col md:flex-row gap-4 md:gap-8 items-center">
+                    <div className="flex-1">
+                      <div className="space-y-2">
+                        <p className="text-sm">✅ <strong>Encuentra fácilmente</strong> qué checklists necesita cada activo</p>
+                        <p className="text-sm">🎯 <strong>Identifica rápidamente</strong> activos con checklists atrasados</p>
+                        <p className="text-sm">📅 <strong>Ve el estado</strong> de cada activo de un vistazo</p>
+                        <p className="text-sm">🔍 <strong>Filtra y busca</strong> por ubicación, departamento o estado</p>
+                      </div>
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      <Button size="lg" asChild className="bg-blue-600 hover:bg-blue-700">
+                        <Link href="/checklists/assets">
+                          <Truck className="mr-2 h-5 w-5" />
+                          Probar Vista por Activos
+                        </Link>
+                      </Button>
+                      <p className="text-xs text-center text-muted-foreground">Más fácil para operadores</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
               {/* Resumen ejecutivo */}
               {(() => {
                 const totalToday = stats.daily.total + stats.weekly.total + stats.monthly.total
@@ -359,10 +399,10 @@ function ChecklistsContent() {
                 
                 if (totalToday > 0 || totalOverdue > 0) {
                   return (
-                    <Card className="mb-6 border-2 border-blue-200 bg-blue-50/50">
+                    <Card className="mb-6 border-2 border-amber-200 bg-amber-50/50">
                       <CardHeader className="pb-3">
                         <CardTitle className="text-xl flex items-center gap-2">
-                          <ClipboardCheck className="h-6 w-6 text-blue-600" />
+                          <ClipboardCheck className="h-6 w-6 text-amber-600" />
                           Resumen del Día
                         </CardTitle>
                       </CardHeader>
@@ -370,8 +410,8 @@ function ChecklistsContent() {
                         <div className="flex flex-col md:flex-row gap-4 md:gap-8">
                           {totalToday > 0 && (
                             <div className="flex items-center gap-3">
-                              <div className="h-12 w-12 rounded-full bg-blue-100 flex items-center justify-center">
-                                <span className="text-lg font-bold text-blue-700">{totalToday}</span>
+                              <div className="h-12 w-12 rounded-full bg-amber-100 flex items-center justify-center">
+                                <span className="text-lg font-bold text-amber-700">{totalToday}</span>
                               </div>
                               <div>
                                 <p className="font-medium">Checklists para hoy</p>

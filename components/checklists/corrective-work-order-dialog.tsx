@@ -17,8 +17,10 @@ import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
-import { AlertTriangle, Clock, Flag, Wrench, Loader2, Info } from "lucide-react"
+import { AlertTriangle, Clock, Flag, Wrench, Loader2, Info, Search } from "lucide-react"
 import { toast } from "sonner"
+import { SimilarIssuesSection } from "./similar-issues-section"
+import { DeduplicationResultsDialog } from "./deduplication-results-dialog"
 
 interface CorrectiveWorkOrderDialogProps {
   open: boolean
@@ -45,6 +47,11 @@ export function CorrectiveWorkOrderDialog({
   const [priority, setPriority] = useState("Media")
   const [description, setDescription] = useState("")
   const [loading, setLoading] = useState(false)
+  const [checkingSimilar, setCheckingSimilar] = useState(false)
+  const [similarIssuesResults, setSimilarIssuesResults] = useState<any[]>([])
+  const [consolidationChoices, setConsolidationChoices] = useState<Record<string, 'consolidate' | 'create_new' | 'escalate'>>({})
+  const [showResults, setShowResults] = useState(false)
+  const [processingResults, setProcessingResults] = useState<any>(null)
 
   // Generate default description from issues
   const generateDefaultDescription = () => {
@@ -77,12 +84,52 @@ export function CorrectiveWorkOrderDialog({
     return desc.trim()
   }
 
-  // Initialize description when dialog opens - leave empty for user to add optional notes
+  // Initialize description and check for similar issues when dialog opens
   useEffect(() => {
     if (open) {
       setDescription("")
+      setSimilarIssuesResults([])
+      setConsolidationChoices({})
+      setShowResults(false)
+      setProcessingResults(null)
+      checkForSimilarIssues()
     }
-  }, [open])
+  }, [open, itemsWithIssues])
+
+  const checkForSimilarIssues = async () => {
+    if (!checklist.assetId || itemsWithIssues.length === 0) return
+    
+    setCheckingSimilar(true)
+    try {
+      const response = await fetch('/api/checklists/issues/check-similar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          asset_id: checklist.assetId,
+          items: itemsWithIssues,
+          consolidation_window_days: 30
+        })
+      })
+      
+      if (response.ok) {
+        const data = await response.json()
+        setSimilarIssuesResults(data.similar_issues_results || [])
+        
+        // Set default choices for items with similar issues
+        const defaultChoices: Record<string, 'consolidate' | 'create_new' | 'escalate'> = {}
+        data.similar_issues_results?.forEach((result: any) => {
+          if (result.similar_issues.length > 0) {
+            defaultChoices[result.item.id] = result.recurrence_count >= 3 ? 'escalate' : 'consolidate'
+          }
+        })
+        setConsolidationChoices(defaultChoices)
+      }
+    } catch (error) {
+      console.error('Error checking for similar issues:', error)
+    } finally {
+      setCheckingSimilar(false)
+    }
+  }
 
   const handleSubmit = async () => {
     // Note: description is now optional since each work order gets its own specific description
@@ -101,7 +148,10 @@ export function CorrectiveWorkOrderDialog({
           items_with_issues: itemsWithIssues,
           priority,
           description: description.trim(),
-          asset_id: checklist.assetId
+          asset_id: checklist.assetId,
+          consolidation_choices: consolidationChoices,
+          enable_smart_deduplication: true,
+          consolidation_window_days: 30
         }),
       })
       
@@ -111,18 +161,17 @@ export function CorrectiveWorkOrderDialog({
         throw new Error(result.error || 'Error al crear orden de trabajo correctiva')
       }
       
-      toast.success(
-        `${result.message || 'Órdenes de trabajo correctivas creadas exitosamente'} ` +
-        `Se registraron ${result.incidents_created || 0} incidencia(s).`
-      )
+      // Store results and show detailed dialog
+      setProcessingResults(result)
       
-      // If multiple work orders were created, navigate to the first one or show a summary
-      if (result.work_orders && result.work_orders.length > 0) {
-        onWorkOrderCreated(result.work_orders[0].id)
-      } else if (result.work_order_id) {
-        onWorkOrderCreated(result.work_order_id)
-      }
+      // Close main dialog first
       onOpenChange(false)
+      
+      // Show detailed results dialog
+      setShowResults(true)
+      
+      // Simple toast for immediate feedback
+      toast.success('Órdenes de trabajo procesadas exitosamente. Ver detalles...')
       
     } catch (error: any) {
       console.error('Error creating corrective work order:', error)
@@ -172,21 +221,42 @@ export function CorrectiveWorkOrderDialog({
   }
 
   return (
+    <>
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[90vh] w-[95vw] sm:w-[90vw] md:w-[80vw] p-0">
-        <div className="flex flex-col h-full max-h-[90vh]">
-          <DialogHeader className="p-6 pb-4">
-            <DialogTitle className="flex items-center gap-2 text-lg">
-              <Wrench className="h-5 w-5 text-orange-500" />
-              Generar Órdenes de Trabajo Correctivas
+      <DialogContent className="max-w-4xl max-h-[95vh] w-[95vw] sm:w-[90vw] md:w-[80vw] p-0">
+        <div className="flex flex-col h-full max-h-[95vh]">
+          <DialogHeader className="p-4 sm:p-6 pb-2 sm:pb-4">
+            <DialogTitle className="flex items-center gap-2 text-base sm:text-lg">
+              <Wrench className="h-4 w-4 sm:h-5 sm:w-5 text-orange-500" />
+              <span className="hidden sm:inline">Generar Órdenes de Trabajo Correctivas</span>
+              <span className="sm:hidden">Órdenes Correctivas</span>
             </DialogTitle>
-            <DialogDescription>
+            <DialogDescription className="text-sm">
               Configure los detalles de las órdenes de trabajo que se generarán para corregir los problemas detectados.
             </DialogDescription>
           </DialogHeader>
 
-          <ScrollArea className="flex-1 px-6">
-            <div className="space-y-6 pb-4">
+          <ScrollArea className="flex-1 px-4 sm:px-6">
+            <div className="space-y-4 sm:space-y-6 pb-4">
+              {/* Checking for Similar Issues */}
+              {checkingSimilar && (
+                <Alert>
+                  <Search className="h-4 w-4 animate-spin" />
+                  <AlertDescription>
+                    <strong>Verificando problemas similares...</strong><br />
+                    Analizando el historial para detectar problemas recurrentes y optimizar las órdenes de trabajo.
+                  </AlertDescription>
+                </Alert>
+              )}
+
+              {/* Similar Issues Section */}
+              {!checkingSimilar && similarIssuesResults.length > 0 && (
+                <SimilarIssuesSection 
+                  similarIssuesResults={similarIssuesResults}
+                  onConsolidationChoiceChange={setConsolidationChoices}
+                />
+              )}
+
               {/* Individual Work Orders Info */}
               <Alert>
                 <Info className="h-4 w-4" />
@@ -255,13 +325,13 @@ export function CorrectiveWorkOrderDialog({
               <div>
                 <Label className="text-base font-medium">Prioridad para Todas las Órdenes</Label>
                 <RadioGroup value={priority} onValueChange={setPriority} className="mt-3">
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3">
                     {["Alta", "Media", "Baja"].map((priorityLevel) => (
-                      <div key={priorityLevel} className="flex items-center space-x-2">
-                        <RadioGroupItem value={priorityLevel} id={priorityLevel} />
+                      <div key={priorityLevel} className="flex items-center space-x-2 touch-manipulation">
+                        <RadioGroupItem value={priorityLevel} id={priorityLevel} className="flex-shrink-0" />
                         <Label 
                           htmlFor={priorityLevel} 
-                          className={`flex items-center gap-2 cursor-pointer px-3 py-2 rounded border transition-colors flex-1 ${
+                          className={`flex items-center gap-2 cursor-pointer px-3 py-3 sm:py-2 rounded border transition-colors flex-1 min-h-[44px] ${
                             priority === priorityLevel ? getPriorityColor(priorityLevel) : 'hover:bg-gray-50'
                           }`}
                         >
@@ -309,7 +379,7 @@ export function CorrectiveWorkOrderDialog({
 
           <Separator />
           
-          <DialogFooter className="p-6 pt-4">
+          <DialogFooter className="p-4 sm:p-6 pt-4 gap-2">
             <Button 
               variant="outline" 
               onClick={() => onOpenChange(false)}
@@ -325,13 +395,15 @@ export function CorrectiveWorkOrderDialog({
             >
               {loading ? (
                 <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Generando...
+                  <Loader2 className="mr-1 sm:mr-2 h-4 w-4 animate-spin" />
+                  <span className="hidden sm:inline">Generando...</span>
+                  <span className="sm:hidden">...</span>
                 </>
               ) : (
                 <>
-                  <Wrench className="mr-2 h-4 w-4" />
-                  Crear {itemsWithIssues.length} Órdenes de Trabajo
+                  <Wrench className="mr-1 sm:mr-2 h-4 w-4" />
+                  <span className="hidden sm:inline">Crear {itemsWithIssues.length} Órdenes de Trabajo</span>
+                  <span className="sm:hidden">Crear {itemsWithIssues.length} OT</span>
                 </>
               )}
             </Button>
@@ -339,5 +411,17 @@ export function CorrectiveWorkOrderDialog({
         </div>
       </DialogContent>
     </Dialog>
+
+    {/* Results Dialog */}
+    <DeduplicationResultsDialog
+      open={showResults}
+      onOpenChange={setShowResults}
+      results={processingResults}
+      onNavigateToWorkOrder={(workOrderId) => {
+        setShowResults(false)
+        onWorkOrderCreated(workOrderId)
+      }}
+    />
+  </>
   )
 } 

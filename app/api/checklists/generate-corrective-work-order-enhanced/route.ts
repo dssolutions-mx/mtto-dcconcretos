@@ -1,15 +1,15 @@
-import { createClient } from "@/lib/supabase-server"
-import { NextResponse } from "next/server"
+import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@/lib/supabase-server'
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   try {
     const supabase = await createClient()
     
-    // Verify user is authenticated
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    if (authError || !user) {
+    // Get the current user
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    if (userError || !user) {
       return NextResponse.json(
-        { error: "No autorizado" },
+        { error: 'Usuario no autenticado' },
         { status: 401 }
       )
     }
@@ -18,165 +18,240 @@ export async function POST(request: Request) {
     const { 
       checklist_id, 
       items_with_issues, 
-      priority = "Media",
-      description,
-      asset_id 
+      priority = 'Media', 
+      description = '',
+      asset_id,
+      enable_smart_deduplication = true,
+      consolidation_window_days = 30,
+      allow_manual_override = false,
+      consolidation_choices = {}
     } = body
 
-    if (!checklist_id) {
+    if (!checklist_id || !items_with_issues || !Array.isArray(items_with_issues) || items_with_issues.length === 0) {
       return NextResponse.json(
-        { error: "ID de checklist completado es requerido" },
+        { error: 'checklist_id e items_with_issues son requeridos' },
         { status: 400 }
       )
     }
 
-    if (!items_with_issues || items_with_issues.length === 0) {
+    if (!asset_id) {
       return NextResponse.json(
-        { error: "Se requieren elementos con problemas para generar la orden correctiva" },
+        { error: 'asset_id es requerido' },
         { status: 400 }
       )
     }
 
-    // Description is now optional - each work order gets its own specific description
-    // Additional notes from user will be appended if provided
-
-    // Get checklist and asset information
+    // Get checklist and asset data
     const { data: checklistData, error: checklistError } = await supabase
       .from('completed_checklists')
       .select(`
         id,
-        checklist_id,
-        assets!inner(
-          id,
-          name,
-          asset_id,
-          location
-        ),
-        checklists!inner(
-          name
-        )
+        asset_id,
+        technician,
+        completion_date,
+        checklists:checklist_id(name),
+        assets:asset_id(name, asset_id, location)
       `)
       .eq('id', checklist_id)
       .single()
 
     if (checklistError || !checklistData) {
-      console.error('Error fetching checklist info:', checklistError)
       return NextResponse.json(
-        { error: "No se pudo obtener información del checklist" },
-        { status: 500 }
+        { error: 'Checklist no encontrado' },
+        { status: 404 }
       )
     }
 
-    // Note: order_id will be generated automatically by database trigger
-
-    // First, save the checklist issues
-    const issuesData = items_with_issues.map((item: any) => ({
-      checklist_id: checklist_id,
-      item_id: item.id,
-      status: item.status,
-      description: item.description,
-      notes: item.notes || null,
-      photo_url: item.photo || null,
-      resolved: false,
-      created_at: new Date().toISOString(),
-      created_by: user.id
-    }))
-
-    const { data: savedIssues, error: issuesError } = await supabase
-      .from('checklist_issues')
-      .insert(issuesData)
-      .select('id, item_id, status, description, notes, photo_url')
-
-    if (issuesError) {
-      console.error('Error saving checklist issues:', issuesError)
-      return NextResponse.json(
-        { error: `Error al guardar problemas del checklist: ${issuesError.message}` },
-        { status: 500 }
-      )
-    }
-
-    // Create individual work orders and incidents for each issue
     const createdWorkOrders = []
-    const createdIncidents = []
+    const consolidatedIssues = []
+    const newWorkOrders = []
+    const similarIssuesFound = []
 
-    for (const issue of savedIssues) {
-      const item = items_with_issues.find((i: any) => i.id === issue.item_id)
-      
-      // Note: order_id will be generated automatically by database trigger
+    // Process each issue with smart deduplication
+    for (const issue of items_with_issues) {
+      try {
+        // First save the issue
+        const { data: savedIssue, error: issueError } = await supabase
+          .from('checklist_issues')
+          .insert({
+            checklist_id,
+            item_id: issue.id,
+            status: issue.status,
+            description: issue.description,
+            notes: issue.notes,
+            photo_url: issue.photo_url,
+            created_by: user.id
+          })
+          .select('id')
+          .single()
 
-      // Create individual work order description
-      let workOrderDescription = `${issue.description}
+        if (issueError) {
+          console.error(`Error saving issue ${issue.id}:`, issueError)
+          continue
+        }
+
+        // Generate fingerprint for this issue
+        const { data: fingerprint, error: fingerprintError } = await supabase
+          .rpc('generate_issue_fingerprint', {
+            p_asset_id: asset_id,
+            p_item_description: issue.description,
+            p_status: issue.status,
+            p_notes: issue.notes
+          })
+
+        if (fingerprintError) {
+          console.error('Error generating fingerprint:', fingerprintError)
+          // Continue without deduplication
+        }
+
+        // Update the saved issue with fingerprint
+        await supabase
+          .from('checklist_issues')
+          .update({ issue_fingerprint: fingerprint })
+          .eq('id', savedIssue.id)
+
+        let workOrderCreated = false
+        let consolidatedInto = null
+
+        // Check for similar issues if smart deduplication is enabled
+        // Also check user's consolidation choice for this item
+        const userChoice = consolidation_choices[issue.id] || 'consolidate'
+        const shouldCheckSimilar = enable_smart_deduplication && fingerprint && userChoice !== 'create_new'
+        
+        if (shouldCheckSimilar) {
+          const { data: similarIssues, error: similarError } = await supabase
+            .rpc('find_similar_open_issues', {
+              p_fingerprint: fingerprint,
+              p_asset_id: asset_id,
+              p_consolidation_window: `${consolidation_window_days} days`
+            })
+
+          if (!similarError && similarIssues && similarIssues.length > 0) {
+            // Found similar open issues
+            const existingIssue = similarIssues[0]
+            similarIssuesFound.push({
+              issue: issue,
+              existing_issue_id: existingIssue.issue_id,
+              existing_work_order_id: existingIssue.work_order_id,
+              recurrence_count: existingIssue.recurrence_count + 1,
+              item_description: existingIssue.item_description,
+              priority: existingIssue.priority
+            })
+
+            // Consolidate the issue
+            const { data: consolidationResult, error: consolidationError } = await supabase
+              .rpc('consolidate_issues', {
+                p_existing_issue_id: existingIssue.issue_id,
+                p_new_issue_id: savedIssue.id,
+                p_work_order_id: existingIssue.work_order_id
+              })
+
+            if (!consolidationError) {
+              consolidatedIssues.push({
+                new_issue_id: savedIssue.id,
+                consolidated_into: existingIssue.work_order_id,
+                recurrence_count: existingIssue.recurrence_count + 1,
+                escalated: (existingIssue.recurrence_count + 1) >= 2
+              })
+              workOrderCreated = true
+              consolidatedInto = existingIssue.work_order_id
+            }
+          }
+        }
+
+        // If no similar issue found or deduplication disabled, create new work order
+        if (!workOrderCreated) {
+          // Create individual work order description using new clean format
+          let workOrderDescription = `${issue.description}
 
 PROBLEMA: ${issue.status === 'fail' ? 'FALLA DETECTADA' : 'REQUIERE REVISIÓN'}
 ${issue.notes ? `Observaciones: ${issue.notes}` : ''}${issue.photo_url ? '\nEvidencia fotográfica disponible' : ''}
 
 ORIGEN:
 • Checklist: ${(checklistData.checklists as any)?.name || 'N/A'}
-• Fecha: ${new Date().toLocaleDateString()}
+• Fecha: ${new Date(checklistData.completion_date).toLocaleDateString()}
 • Activo: ${(checklistData.assets as any)?.name || 'N/A'} (${(checklistData.assets as any)?.asset_id || 'N/A'})
 • Ubicación: ${(checklistData.assets as any)?.location || 'N/A'}`
 
-      // Add additional context if provided by user
-      if (description && description.trim()) {
-        workOrderDescription += `\n\nCONTEXTO ADICIONAL:\n${description.trim()}`
-      }
+          // Add user notes as additional context if provided
+          if (description && description.trim()) {
+            workOrderDescription += `\n\nCONTEXTO ADICIONAL:\n${description.trim()}`
+          }
 
-      // Create work order (order_id will be generated automatically by trigger)
-      const { data: workOrder, error: workOrderError } = await supabase
-        .from('work_orders')
-        .insert({
-          asset_id: asset_id,
-          description: workOrderDescription.trim(),
-          type: 'corrective',
-          priority: priority,
-          status: 'Pendiente',
-          checklist_id: checklist_id,
-          issue_items: [issue],
-          requested_by: user.id,
-          created_at: new Date().toISOString()
-        })
-        .select('id, order_id, description, status, priority')
-        .single()
+          // Determine priority based on status, recurrence, and user choice
+          let workOrderPriority = priority
+          if (issue.status === 'fail') {
+            workOrderPriority = priority === 'Baja' ? 'Media' : priority
+          }
+          
+          // Escalate priority if user chose 'escalate' option
+          if (userChoice === 'escalate') {
+            workOrderPriority = 'Alta'
+          }
 
-      if (workOrderError) {
-        console.error(`Error creating work order for issue ${issue.id}:`, workOrderError)
-        continue // Continue with other issues
-      }
+          // Create work order (order_id will be generated automatically by trigger)
+          const { data: workOrder, error: workOrderError } = await supabase
+            .from('work_orders')
+            .insert({
+              asset_id: asset_id,
+              description: workOrderDescription.trim(),
+              type: 'corrective',
+              priority: workOrderPriority,
+              status: 'Pendiente',
+              checklist_id: checklist_id,
+              issue_items: [issue],
+              requested_by: user.id,
+              original_priority: workOrderPriority,
+              related_issues_count: 1,
+              created_at: new Date().toISOString()
+            })
+            .select('id, order_id, description, status, priority')
+            .single()
 
-      createdWorkOrders.push(workOrder)
+          if (workOrderError) {
+            console.error(`Error creating work order for issue ${issue.id}:`, workOrderError)
+            continue
+          }
 
-      // Update checklist issue with work order ID
-      await supabase
-        .from('checklist_issues')
-        .update({ work_order_id: workOrder.id })
-        .eq('id', issue.id)
+          newWorkOrders.push(workOrder)
+          createdWorkOrders.push(workOrder)
 
-      // Create individual incident
-      const { data: incident, error: incidentError } = await supabase
-        .from('incident_history')
-        .insert({
-          asset_id: asset_id,
-          date: new Date().toISOString(),
-          type: 'Mantenimiento',
-          description: `${issue.description} - ${issue.notes || 'Problema detectado en checklist'}`,
-          impact: priority === 'Alta' ? 'Alto' : (priority === 'Media' ? 'Medio' : 'Bajo'),
-          status: 'Abierto',
-          reported_by: user.id,
-          created_by: user.id,
-          work_order_id: workOrder.id,
-          created_at: new Date().toISOString()
-        })
-        .select('id')
-        .single()
+          // Update checklist issue with work order ID
+          await supabase
+            .from('checklist_issues')
+            .update({ work_order_id: workOrder.id })
+            .eq('id', savedIssue.id)
 
-      if (!incidentError && incident) {
-        createdIncidents.push(incident)
-        
-        // Update checklist issue with incident ID
-        await supabase
-          .from('checklist_issues')
-          .update({ incident_id: incident.id })
-          .eq('id', issue.id)
+          // Create individual incident
+          const { data: incident, error: incidentError } = await supabase
+            .from('incident_history')
+            .insert({
+              asset_id: asset_id,
+              date: new Date().toISOString(),
+              type: 'Mantenimiento',
+              description: `${issue.description} - ${issue.notes || 'Problema detectado en checklist'}`,
+              impact: workOrderPriority === 'Alta' ? 'Alto' : (workOrderPriority === 'Media' ? 'Medio' : 'Bajo'),
+              status: 'Abierto',
+              reported_by: user.id,
+              created_by: user.id,
+              work_order_id: workOrder.id,
+              created_at: new Date().toISOString()
+            })
+            .select('id')
+            .single()
+
+          if (!incidentError && incident) {
+            // Update checklist issue with incident ID
+            await supabase
+              .from('checklist_issues')
+              .update({ incident_id: incident.id })
+              .eq('id', savedIssue.id)
+          }
+        }
+
+      } catch (itemError) {
+        console.error(`Error processing issue ${issue.id}:`, itemError)
+        continue
       }
     }
 
@@ -188,13 +263,41 @@ ORIGEN:
         .eq('id', asset_id)
     }
 
+    // Prepare response message
+    let message = ''
+    const totalCreated = newWorkOrders.length
+    const totalConsolidated = consolidatedIssues.length
+    
+    if (enable_smart_deduplication) {
+      if (totalCreated > 0 && totalConsolidated > 0) {
+        message = `✅ Órdenes de trabajo procesadas: ${totalCreated} nuevas creadas, ${totalConsolidated} consolidadas con existentes`
+      } else if (totalCreated > 0) {
+        message = `✅ ${totalCreated} órdenes de trabajo correctivas creadas con prioridad ${priority.toLowerCase()}`
+      } else if (totalConsolidated > 0) {
+        message = `🔄 Todos los problemas fueron consolidados con órdenes existentes (${totalConsolidated} issues recurring)`
+      } else {
+        message = 'No se pudieron procesar las órdenes de trabajo'
+      }
+    } else {
+      message = `Se crearon ${totalCreated} órdenes de trabajo correctivas (una por cada problema detectado) con prioridad ${priority.toLowerCase()}`
+    }
+
     return NextResponse.json({
       success: true,
-      work_orders_created: createdWorkOrders.length,
+      smart_deduplication_enabled: enable_smart_deduplication,
+      work_orders_created: totalCreated,
       work_orders: createdWorkOrders,
-      incidents_created: createdIncidents.length,
-      issues_saved: savedIssues?.length || 0,
-      message: `Se crearon ${createdWorkOrders.length} órdenes de trabajo correctivas (una por cada problema detectado) con prioridad ${priority.toLowerCase()}`
+      new_work_orders: newWorkOrders,
+      consolidated_issues: consolidatedIssues,
+      similar_issues_found: similarIssuesFound,
+      issues_processed: items_with_issues.length,
+      deduplication_stats: {
+        new_work_orders: totalCreated,
+        consolidated_issues: totalConsolidated,
+        total_similar_found: similarIssuesFound.length,
+        consolidation_window_days: consolidation_window_days
+      },
+      message: message
     })
 
   } catch (error) {
