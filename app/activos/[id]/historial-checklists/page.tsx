@@ -39,6 +39,7 @@ interface CompletedChecklist {
   status: string
   equipment_hours_reading: number | null
   equipment_kilometers_reading: number | null
+  created_by: string | null
   checklists: {
     id: string
     name: string
@@ -107,12 +108,13 @@ export default function ChecklistHistoryPage({ params }: { params: Promise<{ id:
             status,
             equipment_hours_reading,
             equipment_kilometers_reading,
+            created_by,
             checklists (
               id,
               name,
               frequency
             ),
-            profiles (
+            created_by_profile:profiles!created_by (
               id,
               nombre,
               apellido
@@ -127,7 +129,7 @@ export default function ChecklistHistoryPage({ params }: { params: Promise<{ id:
         const transformedData = (checklistsData || []).map((item: any) => ({
           ...item,
           checklists: Array.isArray(item.checklists) ? item.checklists[0] : item.checklists,
-          profiles: Array.isArray(item.profiles) ? item.profiles[0] : item.profiles
+          profiles: Array.isArray(item.created_by_profile) ? item.created_by_profile[0] : item.created_by_profile
         }))
         
         setChecklists(transformedData)

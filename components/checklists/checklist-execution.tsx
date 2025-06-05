@@ -553,8 +553,8 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
   }
 
   const handleWorkOrderCreated = async (workOrderId: string) => {
-    // Checklist is already completed, just navigate to checklists
-    router.push('/checklists')
+    // Navigate to the specific work order that was created
+    router.push(`/ordenes/${workOrderId}`)
   }
   
   const findSectionAndItemById = (itemId: string) => {

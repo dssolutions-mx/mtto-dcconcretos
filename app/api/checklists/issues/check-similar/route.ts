@@ -64,8 +64,7 @@ export async function POST(request: NextRequest) {
               priority,
               status,
               created_at,
-              updated_at,
-              profiles:assigned_to(nombre, apellido)
+              updated_at
             `)
             .in('id', workOrderIds)
 
@@ -75,9 +74,7 @@ export async function POST(request: NextRequest) {
               return {
                 ...issue,
                 work_order: workOrder,
-                assignee_name: workOrder?.profiles ? 
-                  `${(workOrder.profiles as any).nombre} ${(workOrder.profiles as any).apellido}` : 
-                  'Sin asignar'
+                assignee_name: 'Sin asignar' // Simplificado por ahora
               }
             })
 
@@ -87,6 +84,15 @@ export async function POST(request: NextRequest) {
               similar_issues: enrichedSimilarIssues,
               consolidation_recommended: true,
               recurrence_count: enrichedSimilarIssues[0]?.recurrence_count + 1 || 2
+            })
+          } else {
+            // Still add the result but without work order details
+            similarIssuesResults.push({
+              item: item,
+              fingerprint: fingerprint,
+              similar_issues: similarIssues || [],
+              consolidation_recommended: true,
+              recurrence_count: (similarIssues && similarIssues[0]?.recurrence_count) ? similarIssues[0].recurrence_count + 1 : 2
             })
           }
         } else {

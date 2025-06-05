@@ -22,7 +22,7 @@ export async function GET(
           department,
           status,
           current_hours,
-          model
+          model_id
         `)
         .eq('id', assetId)
         .single(),

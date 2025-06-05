@@ -84,7 +84,7 @@ export function CorrectiveWorkOrderDialog({
     return desc.trim()
   }
 
-  // Initialize description and check for similar issues when dialog opens
+  // Initialize and check for similar issues IMMEDIATELY when dialog opens
   useEffect(() => {
     if (open) {
       setDescription("")
@@ -92,6 +92,8 @@ export function CorrectiveWorkOrderDialog({
       setConsolidationChoices({})
       setShowResults(false)
       setProcessingResults(null)
+      
+      // Check for similar issues immediately - this is priority #1
       checkForSimilarIssues()
     }
   }, [open, itemsWithIssues])
@@ -220,6 +222,85 @@ export function CorrectiveWorkOrderDialog({
     }
   }
 
+  const getActionButtonText = () => {
+    if (loading) {
+      return {
+        desktop: "Procesando...",
+        mobile: "...",
+        icon: <Loader2 className="mr-1 sm:mr-2 h-4 w-4 animate-spin" />
+      }
+    }
+    
+    if (checkingSimilar) {
+      return {
+        desktop: "Analizando...",
+        mobile: "...",
+        icon: <Search className="mr-1 sm:mr-2 h-4 w-4 animate-spin" />
+      }
+    }
+
+    // Count different action types based on user choices
+    const itemsWithSimilarIssues = similarIssuesResults.filter(result => 
+      result.similar_issues && result.similar_issues.length > 0
+    )
+    
+    let consolidateCount = 0
+    let createNewCount = 0
+    let escalateCount = 0
+
+    if (itemsWithSimilarIssues.length > 0) {
+      // Check user choices for items with similar issues
+      itemsWithSimilarIssues.forEach(result => {
+        const choice = consolidationChoices[result.item.id] || 'consolidate'
+        if (choice === 'consolidate') consolidateCount++
+        else if (choice === 'create_new') createNewCount++
+        else if (choice === 'escalate') escalateCount++
+      })
+      
+      // Add items without similar issues (always create new)
+      createNewCount += itemsWithIssues.length - itemsWithSimilarIssues.length
+    } else {
+      // No similar issues found, all will be new work orders
+      createNewCount = itemsWithIssues.length
+    }
+
+    // Generate button text based on actions
+    if (consolidateCount > 0 && createNewCount === 0 && escalateCount === 0) {
+      // Only consolidations
+      return {
+        desktop: `Consolidar ${consolidateCount} Problema${consolidateCount > 1 ? 's' : ''} con Órdenes Existentes`,
+        mobile: `Consolidar ${consolidateCount}`,
+        icon: <Wrench className="mr-1 sm:mr-2 h-4 w-4" />
+      }
+    } else if (createNewCount > 0 && consolidateCount === 0 && escalateCount === 0) {
+      // Only new work orders
+      return {
+        desktop: `Crear ${createNewCount} Nueva${createNewCount > 1 ? 's' : ''} Orden${createNewCount > 1 ? 'es' : ''} de Trabajo`,
+        mobile: `Crear ${createNewCount} OT`,
+        icon: <Wrench className="mr-1 sm:mr-2 h-4 w-4" />
+      }
+    } else if (escalateCount > 0 && consolidateCount === 0 && createNewCount === 0) {
+      // Only escalations
+      return {
+        desktop: `Escalar ${escalateCount} Problema${escalateCount > 1 ? 's' : ''} Recurrente${escalateCount > 1 ? 's' : ''}`,
+        mobile: `Escalar ${escalateCount}`,
+        icon: <AlertTriangle className="mr-1 sm:mr-2 h-4 w-4" />
+      }
+    } else {
+      // Mixed actions
+      const actions = []
+      if (consolidateCount > 0) actions.push(`${consolidateCount} consolidar`)
+      if (createNewCount > 0) actions.push(`${createNewCount} crear`)
+      if (escalateCount > 0) actions.push(`${escalateCount} escalar`)
+      
+      return {
+        desktop: `Procesar ${itemsWithIssues.length} Problema${itemsWithIssues.length > 1 ? 's' : ''} (${actions.join(', ')})`,
+        mobile: `Procesar ${itemsWithIssues.length}`,
+        icon: <Wrench className="mr-1 sm:mr-2 h-4 w-4" />
+      }
+    }
+  }
+
   return (
     <>
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -232,29 +313,64 @@ export function CorrectiveWorkOrderDialog({
               <span className="sm:hidden">Órdenes Correctivas</span>
             </DialogTitle>
             <DialogDescription className="text-sm">
-              Configure los detalles de las órdenes de trabajo que se generarán para corregir los problemas detectados.
+              {checkingSimilar ? (
+                <span className="text-blue-600 font-medium">🔍 Analizando historial de problemas para optimizar el proceso...</span>
+              ) : similarIssuesResults.some(result => result.similar_issues && result.similar_issues.length > 0) ? (
+                <span className="text-amber-600 font-medium">⚠️ Se detectaron problemas similares. Revise las opciones de consolidación.</span>
+              ) : (
+                "Configure los detalles de las órdenes de trabajo que se generarán para corregir los problemas detectados."
+              )}
             </DialogDescription>
           </DialogHeader>
 
           <ScrollArea className="flex-1 px-4 sm:px-6">
             <div className="space-y-4 sm:space-y-6 pb-4">
-              {/* Checking for Similar Issues */}
+              {/* PRIORITY: Similar Issues Detection */}
               {checkingSimilar && (
-                <Alert>
-                  <Search className="h-4 w-4 animate-spin" />
-                  <AlertDescription>
-                    <strong>Verificando problemas similares...</strong><br />
-                    Analizando el historial para detectar problemas recurrentes y optimizar las órdenes de trabajo.
-                  </AlertDescription>
-                </Alert>
+                <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border-2 border-blue-200 rounded-lg p-4">
+                  <div className="flex items-center gap-3">
+                    <Search className="h-5 w-5 animate-spin text-blue-600" />
+                    <div>
+                      <h3 className="font-semibold text-blue-900">🔍 Analizando Problemas Recurrentes</h3>
+                      <p className="text-sm text-blue-700 mt-1">
+                        Verificando el historial del activo para detectar problemas similares...
+                        <br />
+                        <strong>Esto puede evitar trabajo duplicado y optimizar recursos.</strong>
+                      </p>
+                    </div>
+                  </div>
+                </div>
               )}
 
-              {/* Similar Issues Section */}
-              {!checkingSimilar && similarIssuesResults.length > 0 && (
-                <SimilarIssuesSection 
-                  similarIssuesResults={similarIssuesResults}
-                  onConsolidationChoiceChange={setConsolidationChoices}
-                />
+              {/* Similar Issues Results - MOST PROMINENT */}
+              {!checkingSimilar && similarIssuesResults.some(result => result.similar_issues && result.similar_issues.length > 0) && (
+                <div className="bg-gradient-to-r from-amber-50 to-orange-50 border-2 border-amber-300 rounded-lg p-1">
+                  <div className="bg-white rounded-md p-3">
+                    <div className="flex items-center gap-2 mb-3">
+                      <AlertTriangle className="h-5 w-5 text-amber-600" />
+                      <h3 className="font-semibold text-amber-900">⚠️ Problemas Recurrentes Detectados</h3>
+                    </div>
+                    <p className="text-sm text-amber-800 mb-4">
+                      <strong>Se encontraron problemas similares en el historial.</strong> Revise las opciones antes de continuar 
+                      para evitar duplicar trabajo y optimizar recursos.
+                    </p>
+                    <SimilarIssuesSection 
+                      similarIssuesResults={similarIssuesResults}
+                      onConsolidationChoiceChange={setConsolidationChoices}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Summary when no similar issues found */}
+              {!checkingSimilar && !similarIssuesResults.some(result => result.similar_issues && result.similar_issues.length > 0) && (
+                <Alert className="border-green-200 bg-green-50">
+                  <Info className="h-4 w-4 text-green-600" />
+                  <AlertDescription className="text-green-800">
+                    <strong>✅ No se detectaron problemas similares recientes.</strong><br />
+                    Se procederá a crear nuevas órdenes de trabajo para todos los problemas detectados.
+                  </AlertDescription>
+                </Alert>
               )}
 
               {/* Individual Work Orders Info */}
@@ -366,12 +482,54 @@ export function CorrectiveWorkOrderDialog({
                 </p>
               </div>
 
-              {/* Final Warning */}
+              {/* Final Action Summary */}
               <Alert>
-                <AlertTriangle className="h-4 w-4" />
+                <Info className="h-4 w-4" />
                 <AlertDescription>
-                  Se crearán <strong>{itemsWithIssues.length} órdenes de trabajo correctivas independientes</strong> y 
-                  se registrarán <strong>{itemsWithIssues.length} incidentes individuales</strong> en el historial del activo.
+                  {(() => {
+                    const itemsWithSimilarIssues = similarIssuesResults.filter(result => 
+                      result.similar_issues && result.similar_issues.length > 0
+                    )
+                    
+                    let consolidateCount = 0
+                    let createNewCount = 0
+
+                    if (itemsWithSimilarIssues.length > 0) {
+                      itemsWithSimilarIssues.forEach(result => {
+                        const choice = consolidationChoices[result.item.id] || 'consolidate'
+                        if (choice === 'consolidate') consolidateCount++
+                        else createNewCount++
+                      })
+                      createNewCount += itemsWithIssues.length - itemsWithSimilarIssues.length
+                    } else {
+                      createNewCount = itemsWithIssues.length
+                    }
+
+                    if (consolidateCount > 0 && createNewCount === 0) {
+                      return (
+                        <>
+                          <strong>{consolidateCount} problema{consolidateCount > 1 ? 's' : ''} será{consolidateCount > 1 ? 'n' : ''} consolidado{consolidateCount > 1 ? 's' : ''}</strong> con órdenes de trabajo existentes. 
+                          Esto optimiza recursos y mantiene el historial completo del problema.
+                        </>
+                      )
+                    } else if (createNewCount > 0 && consolidateCount === 0) {
+                      return (
+                        <>
+                          Se crearán <strong>{createNewCount} nueva{createNewCount > 1 ? 's' : ''} orden{createNewCount > 1 ? 'es' : ''} de trabajo correctiva{createNewCount > 1 ? 's' : ''}</strong> y 
+                          se registrarán <strong>{createNewCount} incidente{createNewCount > 1 ? 's' : ''} individual{createNewCount > 1 ? 'es' : ''}</strong> en el historial del activo.
+                        </>
+                      )
+                    } else {
+                      return (
+                        <>
+                          Se procesarán <strong>{itemsWithIssues.length} problema{itemsWithIssues.length > 1 ? 's' : ''}</strong>: 
+                          {consolidateCount > 0 && <> <strong>{consolidateCount} consolidado{consolidateCount > 1 ? 's' : ''}</strong></>}
+                          {consolidateCount > 0 && createNewCount > 0 && <> y</>}
+                          {createNewCount > 0 && <> <strong>{createNewCount} nuevo{createNewCount > 1 ? 's' : ''}</strong></>}.
+                        </>
+                      )
+                    }
+                  })()}
                 </AlertDescription>
               </Alert>
             </div>
@@ -390,22 +548,19 @@ export function CorrectiveWorkOrderDialog({
             </Button>
             <Button 
               onClick={handleSubmit}
-              disabled={loading}
+              disabled={loading || checkingSimilar}
               className="flex-1 sm:flex-none"
             >
-              {loading ? (
-                <>
-                  <Loader2 className="mr-1 sm:mr-2 h-4 w-4 animate-spin" />
-                  <span className="hidden sm:inline">Generando...</span>
-                  <span className="sm:hidden">...</span>
-                </>
-              ) : (
-                <>
-                  <Wrench className="mr-1 sm:mr-2 h-4 w-4" />
-                  <span className="hidden sm:inline">Crear {itemsWithIssues.length} Órdenes de Trabajo</span>
-                  <span className="sm:hidden">Crear {itemsWithIssues.length} OT</span>
-                </>
-              )}
+              {(() => {
+                const buttonText = getActionButtonText()
+                return (
+                  <>
+                    {buttonText.icon}
+                    <span className="hidden sm:inline">{buttonText.desktop}</span>
+                    <span className="sm:hidden">{buttonText.mobile}</span>
+                  </>
+                )
+              })()}
             </Button>
           </DialogFooter>
         </div>

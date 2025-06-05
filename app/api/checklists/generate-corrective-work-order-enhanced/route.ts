@@ -115,8 +115,12 @@ export async function POST(request: NextRequest) {
 
         // Check for similar issues if smart deduplication is enabled
         // Also check user's consolidation choice for this item
+        console.log('🎯 Consolidation choices received:', consolidation_choices)
+        console.log('🔍 Looking for choice for issue ID:', issue.id)
         const userChoice = consolidation_choices[issue.id] || 'consolidate'
+        console.log('✅ User choice for this issue:', userChoice)
         const shouldCheckSimilar = enable_smart_deduplication && fingerprint && userChoice !== 'create_new'
+        console.log('🔎 Should check similar?', shouldCheckSimilar, '(enable_smart_deduplication:', enable_smart_deduplication, ', userChoice !== create_new:', userChoice !== 'create_new', ')')
         
         if (shouldCheckSimilar) {
           const { data: similarIssues, error: similarError } = await supabase
@@ -129,6 +133,9 @@ export async function POST(request: NextRequest) {
           if (!similarError && similarIssues && similarIssues.length > 0) {
             // Found similar open issues
             const existingIssue = similarIssues[0]
+            console.log('🔗 Found similar issue, user choice is:', userChoice)
+            console.log('📋 Existing work order ID:', existingIssue.work_order_id)
+            
             similarIssuesFound.push({
               issue: issue,
               existing_issue_id: existingIssue.issue_id,
@@ -138,23 +145,32 @@ export async function POST(request: NextRequest) {
               priority: existingIssue.priority
             })
 
-            // Consolidate the issue
-            const { data: consolidationResult, error: consolidationError } = await supabase
-              .rpc('consolidate_issues', {
-                p_existing_issue_id: existingIssue.issue_id,
-                p_new_issue_id: savedIssue.id,
-                p_work_order_id: existingIssue.work_order_id
-              })
+            // Only consolidate if user chose 'consolidate' or default
+            if (userChoice === 'consolidate') {
+              console.log('✅ Consolidating with existing work order')
+              // Consolidate the issue
+              const { data: consolidationResult, error: consolidationError } = await supabase
+                .rpc('consolidate_issues', {
+                  p_existing_issue_id: existingIssue.issue_id,
+                  p_new_issue_id: savedIssue.id,
+                  p_work_order_id: existingIssue.work_order_id
+                })
 
-            if (!consolidationError) {
-              consolidatedIssues.push({
-                new_issue_id: savedIssue.id,
-                consolidated_into: existingIssue.work_order_id,
-                recurrence_count: existingIssue.recurrence_count + 1,
-                escalated: (existingIssue.recurrence_count + 1) >= 2
-              })
-              workOrderCreated = true
-              consolidatedInto = existingIssue.work_order_id
+              if (!consolidationError) {
+                console.log('🎉 Successfully consolidated issue')
+                consolidatedIssues.push({
+                  new_issue_id: savedIssue.id,
+                  consolidated_into: existingIssue.work_order_id,
+                  recurrence_count: existingIssue.recurrence_count + 1,
+                  escalated: (existingIssue.recurrence_count + 1) >= 2
+                })
+                workOrderCreated = true
+                consolidatedInto = existingIssue.work_order_id
+              } else {
+                console.error('❌ Error consolidating issue:', consolidationError)
+              }
+            } else {
+              console.log('⚠️ User chose not to consolidate, will create new work order')
             }
           }
         }
