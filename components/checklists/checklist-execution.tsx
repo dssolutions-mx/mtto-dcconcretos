@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import { useRouter } from "next/navigation"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -70,6 +70,10 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
   // Estados para auto-guardar
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
   const [lastSaved, setLastSaved] = useState<Date | null>(null)
+  const [isLoadingFromStorage, setIsLoadingFromStorage] = useState(false)
+  const hasUnsavedChangesRef = useRef(false)
+
+  // Remove this useEffect that was causing the infinite loop
 
   // Inicializar servicio offline solo cuando sea necesario
   useEffect(() => {
@@ -91,10 +95,10 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
     }, 30000)
     
     return () => clearInterval(autoSaveInterval)
-  }, [hasUnsavedChanges, checklist])
+  }, [hasUnsavedChanges, !!checklist])
 
   // Guardar en localStorage para recuperación
-  const saveToLocalStorage = () => {
+  const saveToLocalStorage = useCallback(() => {
     if (!checklist) return
     
     const saveData = {
@@ -114,9 +118,10 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
     
     localStorage.setItem(`checklist-draft-${id}`, JSON.stringify(saveData))
     setHasUnsavedChanges(false)
+    hasUnsavedChangesRef.current = false
     setLastSaved(new Date())
     toast.success("Borrador guardado localmente", { duration: 2000 })
-  }
+  }, [checklist, itemStatus, itemNotes, itemPhotos, notes, technician, signature, showCorrective, selectedItem, equipmentReadings, evidenceData, id])
 
   // Recuperar datos guardados localmente
   const loadFromLocalStorage = () => {
@@ -126,16 +131,24 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
         const data = JSON.parse(saved)
         // Solo cargar si los datos tienen menos de 24 horas
         if (Date.now() - data.timestamp < 24 * 60 * 60 * 1000) {
-          setItemStatus(data.itemStatus || {})
-          setItemNotes(data.itemNotes || {})
-          setItemPhotos(data.itemPhotos || {})
-          setNotes(data.notes || "")
-          setTechnician(data.technician || "")
-          setSignature(data.signature || null)
-          setShowCorrective(data.showCorrective || false)
-          setSelectedItem(data.selectedItem || null)
-          setEquipmentReadings(data.equipmentReadings || {})
-          setEvidenceData(data.evidenceData || {})
+          setIsLoadingFromStorage(true)
+          // Batch all state updates to prevent multiple re-renders
+          setTimeout(() => {
+            setItemStatus(data.itemStatus || {})
+            setItemNotes(data.itemNotes || {})
+            setItemPhotos(data.itemPhotos || {})
+            setNotes(data.notes || "")
+            setTechnician(data.technician || "")
+            setSignature(data.signature || null)
+            setShowCorrective(data.showCorrective || false)
+            setSelectedItem(data.selectedItem || null)
+            setEquipmentReadings(data.equipmentReadings || {})
+            setEvidenceData(data.evidenceData || {})
+            // Reset unsaved changes flag after loading
+            setHasUnsavedChanges(false)
+            hasUnsavedChangesRef.current = false
+            setIsLoadingFromStorage(false)
+          }, 0)
           toast.info("Borrador restaurado desde almacenamiento local")
           return true
         }
@@ -146,13 +159,7 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
     return false
   }
 
-  // Manejar cambios en evidencias
-  const handleEvidenceChange = (sectionId: string, evidences: any[]) => {
-    setEvidenceData(prev => ({
-      ...prev,
-      [sectionId]: evidences
-    }))
-  }
+  // Moved after markAsUnsaved declaration
 
   // Validar si las evidencias están completas
   const validateEvidenceRequirements = () => {
@@ -227,7 +234,8 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
               maintenanceUnit: cached.template.checklists?.equipment_models?.maintenance_unit || 'hours'
             })
             setLoading(false)
-            loadFromLocalStorage()
+            // Call loadFromLocalStorage in the next tick to avoid interference
+            setTimeout(() => loadFromLocalStorage(), 0)
             console.log('📱 Checklist cargado desde cache offline')
             return
           } else {
@@ -307,8 +315,8 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
           
           setChecklist(checklistData)
           
-          // Intentar cargar datos guardados
-          loadFromLocalStorage()
+          // Intentar cargar datos guardados in the next tick
+          setTimeout(() => loadFromLocalStorage(), 0)
         }
       } catch (error: any) {
         console.error('Error loading checklist data:', error)
@@ -322,29 +330,66 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
     fetchChecklistData()
   }, [id, isOnline, router])
 
-  // Marcar cambios sin guardar
-  useEffect(() => {
-    setHasUnsavedChanges(true)
-  }, [itemStatus, itemNotes, itemPhotos, notes, technician, signature, equipmentReadings, evidenceData])
+  // Simple approach: mark as unsaved on any user interaction
+  const markAsUnsaved = useCallback(() => {
+    if (!isLoadingFromStorage && !hasUnsavedChangesRef.current) {
+      setHasUnsavedChanges(true)
+      hasUnsavedChangesRef.current = true
+    }
+  }, [isLoadingFromStorage])
 
-  const handleStatusChange = (itemId: string, status: "pass" | "flag" | "fail") => {
+  // Manejar cambios en evidencias - wrapped in useCallback to prevent infinite loops
+  const handleEvidenceChange = useCallback((sectionId: string, evidences: any[]) => {
+    setEvidenceData(prev => ({
+      ...prev,
+      [sectionId]: evidences
+    }))
+    markAsUnsaved()
+  }, [markAsUnsaved])
+
+  const handleStatusChange = useCallback((itemId: string, status: "pass" | "flag" | "fail") => {
     setItemStatus(prev => ({ ...prev, [itemId]: status }))
-  }
+    markAsUnsaved()
+  }, [markAsUnsaved])
 
-
-
-  const handleItemNotesChange = (itemId: string, note: string) => {
+  const handleItemNotesChange = useCallback((itemId: string, note: string) => {
     setItemNotes(prev => ({ ...prev, [itemId]: note }))
-  }
+    markAsUnsaved()
+  }, [markAsUnsaved])
 
-  const prepareCompletedItems = () => {
+  const handleEquipmentReadingsChange = useCallback((readings: any) => {
+    setEquipmentReadings(readings)
+    markAsUnsaved()
+  }, [markAsUnsaved])
+
+  const handleNotesChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setNotes(e.target.value)
+    markAsUnsaved()
+  }, [markAsUnsaved])
+
+  const handleTechnicianChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    setTechnician(e.target.value)
+    markAsUnsaved()
+  }, [markAsUnsaved])
+
+  const handleSignatureChange = useCallback((signature: string | null) => {
+    setSignature(signature)
+    markAsUnsaved()
+  }, [markAsUnsaved])
+
+  const handlePhotoChange = useCallback((itemId: string) => (url: string | null) => {
+    setItemPhotos(prev => ({ ...prev, [itemId]: url }))
+    markAsUnsaved()
+  }, [markAsUnsaved])
+
+  const prepareCompletedItems = useCallback(() => {
     return Object.keys(itemStatus).map(itemId => ({
       item_id: itemId,
       status: itemStatus[itemId],
       notes: itemNotes[itemId] || null,
       photo_url: itemPhotos[itemId] || null
     }))
-  }
+  }, [itemStatus, itemNotes, itemPhotos])
   
   const handleSubmit = async () => {
     if (!isChecklistComplete()) {
@@ -439,17 +484,37 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
             return null
           }
         } else {
-          const errorData = await response.json()
+          // Enhanced error logging
+          const errorText = await response.text()
+          console.error('=== CHECKLIST SUBMISSION ERROR ===')
+          console.error('Status:', response.status)
+          console.error('Status Text:', response.statusText)
+          console.error('Response:', errorText)
+          console.error('Submission Data:', JSON.stringify(submissionData, null, 2))
+          
+          let errorData
+          try {
+            errorData = JSON.parse(errorText)
+          } catch (e) {
+            console.error('Failed to parse error response as JSON:', e)
+            toast.error(`Error del servidor: ${response.status} ${response.statusText}`)
+            throw new Error(`Server error: ${response.status} ${response.statusText}`)
+          }
+          
           if (errorData.validation_errors || errorData.validation_warnings) {
             toast.error('Error en las validaciones')
             if (errorData.validation_errors?.length > 0) {
+              console.error('Validation errors:', errorData.validation_errors)
               errorData.validation_errors.forEach((error: string) => toast.error(error))
             }
             if (errorData.validation_warnings?.length > 0) {
+              console.error('Validation warnings:', errorData.validation_warnings)
               errorData.validation_warnings.forEach((warning: string) => toast.warning(warning))
             }
           } else {
-            throw new Error(errorData.error || 'Error al enviar el checklist')
+            console.error('General error:', errorData.error || errorData.details)
+            toast.error(errorData.error || errorData.details || 'Error al enviar el checklist')
+            throw new Error(errorData.error || errorData.details || 'Error al enviar el checklist')
           }
         }
       } else {
@@ -530,6 +595,27 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
   }
 
   const handleWorkOrderCreated = async (workOrderId: string) => {
+    // Check if we have offline work order data that needs to be processed
+    const offlineData = localStorage.getItem(`offline-work-orders-${id}`)
+    if (offlineData && isOnline) {
+      try {
+        // Process offline work orders when connection is restored
+        const data = JSON.parse(offlineData)
+        const response = await fetch('/api/checklists/generate-corrective-work-order-enhanced', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data)
+        })
+        
+        if (response.ok) {
+          localStorage.removeItem(`offline-work-orders-${id}`)
+          toast.success("Órdenes de trabajo offline procesadas exitosamente")
+        }
+      } catch (error) {
+        console.error('Error processing offline work orders:', error)
+      }
+    }
+    
     // Navigate to the specific work order that was created
     router.push(`/ordenes/${workOrderId}`)
   }
@@ -758,7 +844,7 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
                             checklistId={checklist.id}
                             itemId={item.id}
                             currentPhotoUrl={itemPhotos[item.id]}
-                            onPhotoChange={(url) => setItemPhotos(prev => ({ ...prev, [item.id]: url }))}
+                            onPhotoChange={handlePhotoChange(item.id)}
                             disabled={submitting}
                             category="problema"
                           />
@@ -802,7 +888,7 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
         maintenanceUnit={checklist.maintenanceUnit}
         currentHours={checklist.currentHours}
         currentKilometers={checklist.currentKilometers}
-        onReadingsChange={setEquipmentReadings}
+        onReadingsChange={handleEquipmentReadingsChange}
         disabled={submitting}
       />
 
@@ -814,7 +900,7 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
             placeholder="Agregue notas generales sobre el mantenimiento realizado"
             rows={3}
             value={notes}
-            onChange={(e) => setNotes(e.target.value)}
+            onChange={handleNotesChange}
           />
         </div>
 
@@ -823,14 +909,14 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
           <Input 
             id="technician" 
             value={technician} 
-            onChange={(e) => setTechnician(e.target.value)}
+            onChange={handleTechnicianChange}
             placeholder="Nombre del técnico responsable"
           />
         </div>
 
         <div className="space-y-2">
           <Label htmlFor="signature">Firma</Label>
-          <SignatureCanvas onSave={setSignature} />
+          <SignatureCanvas onSave={handleSignatureChange} />
           {signature && <p className="text-sm text-green-600 mt-1">Firma guardada</p>}
         </div>
 

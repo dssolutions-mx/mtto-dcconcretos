@@ -17,10 +17,12 @@ import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
-import { AlertTriangle, Clock, Flag, Wrench, Loader2, Info, Search } from "lucide-react"
+import { AlertTriangle, Clock, Flag, Wrench, Loader2, Info, Search, WifiOff, Wifi, CheckCircle2, Package, Zap, Target, Users, Plus, Link2, X, Layers, StickyNote, MessageSquare } from "lucide-react"
 import { toast } from "sonner"
 import { SimilarIssuesSection } from "./similar-issues-section"
 import { DeduplicationResultsDialog } from "./deduplication-results-dialog"
+import { useOfflineSync } from "@/hooks/useOfflineSync"
+import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card"
 
 interface CorrectiveWorkOrderDialogProps {
   open: boolean
@@ -44,7 +46,15 @@ export function CorrectiveWorkOrderDialog({
   itemsWithIssues,
   onWorkOrderCreated
 }: CorrectiveWorkOrderDialogProps) {
-  const [priority, setPriority] = useState("Media")
+  // Global priority (fallback for when individual priorities are not set)
+  const [globalPriority, setGlobalPriority] = useState("Media")
+  
+  // Individual priorities per work order item
+  const [individualPriorities, setIndividualPriorities] = useState<Record<string, string>>({})
+  
+  // Priority mode: 'global' or 'individual' 
+  const [priorityMode, setPriorityMode] = useState<'global' | 'individual'>('global')
+  
   const [description, setDescription] = useState("")
   const [loading, setLoading] = useState(false)
   const [checkingSimilar, setCheckingSimilar] = useState(false)
@@ -52,6 +62,33 @@ export function CorrectiveWorkOrderDialog({
   const [consolidationChoices, setConsolidationChoices] = useState<Record<string, 'consolidate' | 'create_new' | 'escalate'>>({})
   const [showResults, setShowResults] = useState(false)
   const [processingResults, setProcessingResults] = useState<any>(null)
+  
+  // Offline functionality
+  const { isOnline } = useOfflineSync()
+  const [offlineWorkOrderData, setOfflineWorkOrderData] = useState<any>(null)
+
+  // Initialize individual priorities when dialog opens
+  useEffect(() => {
+    if (open && itemsWithIssues.length > 0) {
+      // Set default individual priorities based on issue severity
+      const newIndividualPriorities: Record<string, string> = {}
+      itemsWithIssues.forEach(item => {
+        // Auto-assign priority based on issue type: fail = Alta, flag = Media
+        newIndividualPriorities[item.id] = item.status === 'fail' ? 'Alta' : 'Media'
+      })
+      setIndividualPriorities(newIndividualPriorities)
+      
+      // If there are multiple issues with different severities, default to individual mode
+      const hasFailures = itemsWithIssues.some(item => item.status === 'fail')
+      const hasFlags = itemsWithIssues.some(item => item.status === 'flag')
+      
+      if (hasFailures && hasFlags && itemsWithIssues.length > 1) {
+        setPriorityMode('individual')
+      } else {
+        setPriorityMode('global')
+      }
+    }
+  }, [open, itemsWithIssues])
 
   // Generate default description from issues
   const generateDefaultDescription = () => {
@@ -92,11 +129,18 @@ export function CorrectiveWorkOrderDialog({
       setConsolidationChoices({})
       setShowResults(false)
       setProcessingResults(null)
+      setOfflineWorkOrderData(null)
       
-      // Check for similar issues immediately - this is priority #1
-      checkForSimilarIssues()
+      // Only check for similar issues if online
+      if (isOnline) {
+        checkForSimilarIssues()
+      } else {
+        toast.info("Modo offline: La deduplicación inteligente no está disponible sin conexión", {
+          description: "Las órdenes de trabajo se crearán sin verificar duplicados"
+        })
+      }
     }
-  }, [open, itemsWithIssues])
+  }, [open, itemsWithIssues, isOnline])
 
   const checkForSimilarIssues = async () => {
     if (!checklist.assetId || itemsWithIssues.length === 0) return
@@ -128,18 +172,63 @@ export function CorrectiveWorkOrderDialog({
       }
     } catch (error) {
       console.error('Error checking for similar issues:', error)
+      toast.error('Error al verificar problemas similares. Continuando sin deduplicación.')
     } finally {
       setCheckingSimilar(false)
     }
   }
 
   const handleSubmit = async () => {
-    // Note: description is now optional since each work order gets its own specific description
-    // The user can add additional notes that will be included in all work orders
+    // Validate priorities
+    if (priorityMode === 'individual') {
+      const missingPriorities = itemsWithIssues.filter(item => !individualPriorities[item.id])
+      if (missingPriorities.length > 0) {
+        toast.error('Por favor asigne prioridad a todos los elementos')
+        return
+      }
+    }
 
     setLoading(true)
     
     try {
+      // Prepare items with their individual priorities
+      const itemsWithPriorities = itemsWithIssues.map(item => ({
+        ...item,
+        priority: priorityMode === 'individual' 
+          ? individualPriorities[item.id] 
+          : globalPriority
+      }))
+
+      // Check if we're offline
+      if (!isOnline) {
+        // Store work order data for offline processing
+        const offlineData = {
+          checklist_id: checklist.id,
+          items_with_issues: itemsWithPriorities,
+          description: description.trim(),
+          asset_id: checklist.assetId,
+          consolidation_choices: {},
+          enable_smart_deduplication: false, // Disabled in offline mode
+          consolidation_window_days: 30,
+          timestamp: Date.now(),
+          offline: true
+        }
+        
+        setOfflineWorkOrderData(offlineData)
+        
+        // Store in localStorage as backup
+        localStorage.setItem(`offline-work-orders-${checklist.id}`, JSON.stringify(offlineData))
+        
+        toast.success("Órdenes de trabajo guardadas para procesamiento offline", {
+          description: "Se procesarán automáticamente cuando vuelva la conexión"
+        })
+        
+        // Close dialog and navigate back to checklist
+        onOpenChange(false)
+        return
+      }
+
+      // Online processing with full deduplication support
       const response = await fetch('/api/checklists/generate-corrective-work-order-enhanced', {
         method: 'POST',
         headers: {
@@ -147,8 +236,8 @@ export function CorrectiveWorkOrderDialog({
         },
         body: JSON.stringify({
           checklist_id: checklist.id,
-          items_with_issues: itemsWithIssues,
-          priority,
+          items_with_issues: itemsWithPriorities,
+          priority: globalPriority, // Fallback priority
           description: description.trim(),
           asset_id: checklist.assetId,
           consolidation_choices: consolidationChoices,
@@ -181,6 +270,13 @@ export function CorrectiveWorkOrderDialog({
     } finally {
       setLoading(false)
     }
+  }
+
+  const updateIndividualPriority = (itemId: string, priority: string) => {
+    setIndividualPriorities(prev => ({
+      ...prev,
+      [itemId]: priority
+    }))
   }
 
   const getPriorityIcon = (priorityLevel: string) => {
@@ -223,80 +319,59 @@ export function CorrectiveWorkOrderDialog({
   }
 
   const getActionButtonText = () => {
-    if (loading) {
+    if (checkingSimilar) {
       return {
-        desktop: "Procesando...",
-        mobile: "...",
-        icon: <Loader2 className="mr-1 sm:mr-2 h-4 w-4 animate-spin" />
+        icon: <Search className="mr-2 h-4 w-4 animate-pulse" />,
+        desktop: "Verificando similares...",
+        mobile: "Verificando..."
       }
     }
     
-    if (checkingSimilar) {
+    if (loading) {
       return {
-        desktop: "Analizando...",
-        mobile: "...",
-        icon: <Search className="mr-1 sm:mr-2 h-4 w-4 animate-spin" />
+        icon: <Loader2 className="mr-2 h-4 w-4 animate-spin" />,
+        desktop: isOnline ? "Creando órdenes..." : "Guardando offline...",
+        mobile: isOnline ? "Creando..." : "Guardando..."
       }
     }
-
-    // Count different action types based on user choices
+    
     const itemsWithSimilarIssues = similarIssuesResults.filter(result => 
       result.similar_issues && result.similar_issues.length > 0
     )
     
     let consolidateCount = 0
     let createNewCount = 0
-    let escalateCount = 0
 
-    if (itemsWithSimilarIssues.length > 0) {
-      // Check user choices for items with similar issues
+    if (itemsWithSimilarIssues.length > 0 && isOnline) {
       itemsWithSimilarIssues.forEach(result => {
         const choice = consolidationChoices[result.item.id] || 'consolidate'
         if (choice === 'consolidate') consolidateCount++
-        else if (choice === 'create_new') createNewCount++
-        else if (choice === 'escalate') escalateCount++
+        else createNewCount++
       })
-      
-      // Add items without similar issues (always create new)
       createNewCount += itemsWithIssues.length - itemsWithSimilarIssues.length
     } else {
-      // No similar issues found, all will be new work orders
       createNewCount = itemsWithIssues.length
     }
 
-    // Generate button text based on actions
-    if (consolidateCount > 0 && createNewCount === 0 && escalateCount === 0) {
-      // Only consolidations
+    if (consolidateCount > 0 && createNewCount === 0) {
       return {
-        desktop: `Consolidar ${consolidateCount} Problema${consolidateCount > 1 ? 's' : ''} con Órdenes Existentes`,
-        mobile: `Consolidar ${consolidateCount}`,
-        icon: <Wrench className="mr-1 sm:mr-2 h-4 w-4" />
+        icon: <Wrench className="mr-2 h-4 w-4" />,
+        desktop: `Consolidar ${consolidateCount} problema${consolidateCount > 1 ? 's' : ''}`,
+        mobile: "Consolidar"
       }
-    } else if (createNewCount > 0 && consolidateCount === 0 && escalateCount === 0) {
-      // Only new work orders
+    } else if (createNewCount > 0 && consolidateCount === 0) {
       return {
-        desktop: `Crear ${createNewCount} Nueva${createNewCount > 1 ? 's' : ''} Orden${createNewCount > 1 ? 'es' : ''} de Trabajo`,
-        mobile: `Crear ${createNewCount} OT`,
-        icon: <Wrench className="mr-1 sm:mr-2 h-4 w-4" />
-      }
-    } else if (escalateCount > 0 && consolidateCount === 0 && createNewCount === 0) {
-      // Only escalations
-      return {
-        desktop: `Escalar ${escalateCount} Problema${escalateCount > 1 ? 's' : ''} Recurrente${escalateCount > 1 ? 's' : ''}`,
-        mobile: `Escalar ${escalateCount}`,
-        icon: <AlertTriangle className="mr-1 sm:mr-2 h-4 w-4" />
+        icon: <Wrench className="mr-2 h-4 w-4" />,
+        desktop: isOnline 
+          ? `Crear ${createNewCount} orden${createNewCount > 1 ? 'es' : ''}`
+          : `Guardar ${createNewCount} orden${createNewCount > 1 ? 'es' : ''} offline`,
+        mobile: isOnline ? "Crear" : "Guardar"
       }
     } else {
-      // Mixed actions
-      const actions = []
-      if (consolidateCount > 0) actions.push(`${consolidateCount} consolidar`)
-      if (createNewCount > 0) actions.push(`${createNewCount} crear`)
-      if (escalateCount > 0) actions.push(`${escalateCount} escalar`)
-      
       return {
-        desktop: `Procesar ${itemsWithIssues.length} Problema${itemsWithIssues.length > 1 ? 's' : ''} (${actions.join(', ')})`,
-        mobile: `Procesar ${itemsWithIssues.length}`,
-        icon: <Wrench className="mr-1 sm:mr-2 h-4 w-4" />
+        icon: <Wrench className="mr-2 h-4 w-4" />,
+        desktop: isOnline ? "Procesar órdenes" : "Guardar offline",
+        mobile: isOnline ? "Procesar" : "Guardar"
       }
     }
   }
@@ -304,240 +379,358 @@ export function CorrectiveWorkOrderDialog({
   return (
     <>
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[95vh] w-[95vw] sm:w-[90vw] md:w-[80vw] p-0">
-        <div className="flex flex-col h-full max-h-[95vh]">
-          <DialogHeader className="p-4 sm:p-6 pb-2 sm:pb-4">
-            <DialogTitle className="flex items-center gap-2 text-base sm:text-lg">
-              <Wrench className="h-4 w-4 sm:h-5 sm:w-5 text-orange-500" />
-              <span className="hidden sm:inline">Generar Órdenes de Trabajo Correctivas</span>
-              <span className="sm:hidden">Órdenes Correctivas</span>
-            </DialogTitle>
-            <DialogDescription className="text-sm">
-              {checkingSimilar ? (
-                <span className="text-blue-600 font-medium">🔍 Analizando historial de problemas para optimizar el proceso...</span>
-              ) : similarIssuesResults.some(result => result.similar_issues && result.similar_issues.length > 0) ? (
-                <span className="text-amber-600 font-medium">⚠️ Se detectaron problemas similares. Revise las opciones de consolidación.</span>
-              ) : (
-                "Configure los detalles de las órdenes de trabajo que se generarán para corregir los problemas detectados."
-              )}
-            </DialogDescription>
-          </DialogHeader>
+      <DialogContent className="w-[95vw] sm:w-[90vw] md:w-[80vw] max-w-3xl h-[85vh] flex flex-col p-0">
+        <DialogHeader className="flex-shrink-0 p-4 sm:p-6 pb-3">
+          <DialogTitle className="flex items-center gap-2 text-lg">
+            {!isOnline ? (
+              <WifiOff className="h-5 w-5 text-orange-600" />
+            ) : (
+              <Wrench className="h-5 w-5 text-blue-600" />
+            )}
+            Órdenes de Trabajo Correctivas
+            {!isOnline && (
+              <Badge variant="outline" className="text-orange-600 border-orange-300">
+                Offline
+              </Badge>
+            )}
+          </DialogTitle>
+          <DialogDescription className="text-sm">
+            Configure las órdenes de trabajo correctivas para los problemas detectados
+          </DialogDescription>
+        </DialogHeader>
 
-          <ScrollArea className="flex-1 px-4 sm:px-6">
-            <div className="space-y-4 sm:space-y-6 pb-4">
-              {/* PRIORITY: Similar Issues Detection */}
-              {checkingSimilar && (
-                <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border-2 border-blue-200 rounded-lg p-4">
-                  <div className="flex items-center gap-3">
-                    <Search className="h-5 w-5 animate-spin text-blue-600" />
-                    <div>
-                      <h3 className="font-semibold text-blue-900">🔍 Analizando Problemas Recurrentes</h3>
-                      <p className="text-sm text-blue-700 mt-1">
-                        Verificando el historial del activo para detectar problemas similares...
-                        <br />
-                        <strong>Esto puede evitar trabajo duplicado y optimizar recursos.</strong>
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Similar Issues Results - MOST PROMINENT */}
-              {!checkingSimilar && similarIssuesResults.some(result => result.similar_issues && result.similar_issues.length > 0) && (
-                <div className="bg-gradient-to-r from-amber-50 to-orange-50 border-2 border-amber-300 rounded-lg p-1">
-                  <div className="bg-white rounded-md p-3">
-                    <div className="flex items-center gap-2 mb-3">
-                      <AlertTriangle className="h-5 w-5 text-amber-600" />
-                      <h3 className="font-semibold text-amber-900">⚠️ Problemas Recurrentes Detectados</h3>
-                    </div>
-                    <p className="text-sm text-amber-800 mb-4">
-                      <strong>Se encontraron problemas similares en el historial.</strong> Revise las opciones antes de continuar 
-                      para evitar duplicar trabajo y optimizar recursos.
-                    </p>
-                    <SimilarIssuesSection 
-                      similarIssuesResults={similarIssuesResults}
-                      onConsolidationChoiceChange={setConsolidationChoices}
-                    />
-                  </div>
-                </div>
-              )}
-
-              {/* Summary when no similar issues found */}
-              {!checkingSimilar && !similarIssuesResults.some(result => result.similar_issues && result.similar_issues.length > 0) && (
+        <div className="flex-1 min-h-0 flex flex-col">
+          <div className="flex-1 min-h-0">
+            <ScrollArea className="h-full px-4 sm:px-6">
+              <div className="space-y-4 pb-4">
+                {/* Info Alert */}
                 <Alert className="border-green-200 bg-green-50">
-                  <Info className="h-4 w-4 text-green-600" />
-                  <AlertDescription className="text-green-800">
-                    <strong>✅ No se detectaron problemas similares recientes.</strong><br />
-                    Se procederá a crear nuevas órdenes de trabajo para todos los problemas detectados.
+                  <CheckCircle2 className="h-4 w-4 text-green-600" />
+                  <AlertDescription className="text-sm text-green-800">
+                    <span className="font-medium">✨ Proceso inteligente:</span> Se crea una orden individual por problema para mejor seguimiento
                   </AlertDescription>
                 </Alert>
-              )}
 
-              {/* Individual Work Orders Info */}
-              <Alert>
-                <Info className="h-4 w-4" />
-                <AlertDescription>
-                  <strong>Se creará una orden de trabajo individual para cada problema detectado</strong>, 
-                  no una sola orden agrupada. Esto permite un mejor seguimiento y resolución específica de cada incidencia.
-                </AlertDescription>
-              </Alert>
-
-              {/* Asset Information */}
-              <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
-                <h4 className="font-medium text-blue-900 mb-2">Información del Activo</h4>
-                <div className="text-sm text-blue-800 space-y-1">
-                  <div><strong>Activo:</strong> {checklist.asset}</div>
-                  <div><strong>Código:</strong> {checklist.assetCode}</div>
-                  {checklist.assetLocation && (
-                    <div><strong>Ubicación:</strong> {checklist.assetLocation}</div>
-                  )}
+                {/* Asset Information */}
+                <div className="bg-gradient-to-r from-blue-50 to-indigo-50 p-3 rounded-lg border border-blue-200">
+                  <div className="flex items-center gap-2 mb-2">
+                    <div className="bg-blue-100 p-1 rounded">
+                      <Package className="h-4 w-4 text-blue-600" />
+                    </div>
+                    <h4 className="font-medium text-blue-900 text-sm">Activo a Reparar</h4>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-sm">
+                    <div className="flex items-center gap-2">
+                      <span className="text-blue-600">🏭</span>
+                      <span className="font-medium">{checklist.assets?.name || checklist.asset || 'Sin nombre'}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-blue-600">🏷️</span>
+                      <span>{checklist.assets?.asset_id || checklist.assetCode || checklist.assetId || 'Sin código'}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-blue-600">📍</span>
+                      <span>{checklist.assets?.location || checklist.assetLocation || 'Sin ubicación'}</span>
+                    </div>
+                  </div>
                 </div>
-              </div>
 
-              {/* Issues Summary */}
-              <div>
-                <h4 className="font-medium mb-3">
-                  Problemas Detectados ({itemsWithIssues.length})
-                  <span className="text-sm text-muted-foreground ml-2">
-                    → {itemsWithIssues.length} Órdenes de Trabajo
-                  </span>
-                </h4>
-                <ScrollArea className="h-64 border rounded-lg">
-                  <div className="space-y-3 p-4">
-                    {itemsWithIssues.map((item, index) => (
-                      <div key={item.id}>
-                        <div className="flex items-start gap-3 p-3 bg-gray-50 rounded border">
-                          <div className="flex flex-col items-center gap-1 min-w-[60px]">
-                            <Badge 
-                              variant={item.status === "fail" ? "destructive" : "secondary"}
-                              className="text-xs"
-                            >
-                              {item.status === "fail" ? "Falla" : "Revisar"}
-                            </Badge>
-                            <span className="text-xs text-muted-foreground">OT #{index + 1}</span>
+                {/* Problems Summary */}
+                <div>
+                  <div className="flex items-center gap-2 mb-3">
+                    <div className="bg-red-100 p-1 rounded">
+                      <AlertTriangle className="h-4 w-4 text-red-600" />
+                    </div>
+                    <h4 className="font-medium text-sm">
+                      Problemas Encontrados ({itemsWithIssues.length})
+                    </h4>
+                    <Badge variant="outline" className="text-xs">
+                      → {itemsWithIssues.length} Órdenes
+                    </Badge>
+                  </div>
+                  
+                  <div className="border rounded-lg bg-gradient-to-r from-gray-50 to-slate-50">
+                    <div className="max-h-48 overflow-y-auto p-2">
+                      <div className="space-y-2">
+                        {itemsWithIssues.map((item, index) => (
+                          <div key={item.id} className="bg-white rounded-lg border p-3 shadow-sm hover:shadow-md transition-shadow">
+                            <div className="flex items-start gap-3">
+                              <div className="flex flex-col items-center gap-1">
+                                <div className={`p-1 rounded-full ${
+                                  item.status === "fail" 
+                                    ? "bg-red-100" 
+                                    : "bg-yellow-100"
+                                }`}>
+                                  {item.status === "fail" ? (
+                                    <X className="h-3 w-3 text-red-600" />
+                                  ) : (
+                                    <AlertTriangle className="h-3 w-3 text-yellow-600" />
+                                  )}
+                                </div>
+                                <Badge 
+                                  variant={item.status === "fail" ? "destructive" : "secondary"}
+                                  className="text-xs font-medium"
+                                >
+                                  OT #{index + 1}
+                                </Badge>
+                              </div>
+                              
+                              <div className="flex-1 min-w-0">
+                                <div className="font-medium text-sm text-gray-900 mb-1">
+                                  {item.description}
+                                </div>
+                                {item.sectionTitle && (
+                                  <div className="flex items-center gap-1 text-xs text-gray-500 mb-1">
+                                    <Layers className="h-3 w-3" />
+                                    {item.sectionTitle}
+                                  </div>
+                                )}
+                                {item.notes && (
+                                  <div className="bg-amber-50 border border-amber-200 p-2 rounded text-xs">
+                                    <div className="flex items-start gap-1">
+                                      <StickyNote className="h-3 w-3 text-amber-600 mt-0.5 flex-shrink-0" />
+                                      <span className="text-amber-800">{item.notes}</span>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
                           </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="font-medium text-sm leading-tight">{item.description}</div>
-                            {item.sectionTitle && (
-                              <div className="text-xs text-muted-foreground mt-1">
-                                Sección: {item.sectionTitle}
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Similar Issues Section - FIRST PRIORITY */}
+                {isOnline && similarIssuesResults.length > 0 && (
+                  <SimilarIssuesSection 
+                    similarIssuesResults={similarIssuesResults}
+                    onConsolidationChoiceChange={setConsolidationChoices}
+                  />
+                )}
+
+                {/* Priority Configuration */}
+                <div className="bg-gradient-to-r from-purple-50 to-pink-50 rounded-lg border border-purple-200">
+                  <div className="p-3">
+                    <div className="flex items-center gap-2 mb-3">
+                      <div className="bg-purple-100 p-1 rounded">
+                        <Zap className="h-4 w-4 text-purple-600" />
+                      </div>
+                      <h4 className="font-medium text-sm text-purple-900">Configurar Prioridades</h4>
+                    </div>
+                    
+                    <div className="space-y-3">
+                      <RadioGroup value={priorityMode} onValueChange={(value: 'global' | 'individual') => setPriorityMode(value)}>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          <div className={`flex items-center space-x-2 p-2 rounded border transition-colors ${
+                            priorityMode === 'global' ? 'bg-white border-purple-300' : 'bg-purple-50/50 border-purple-200'
+                          }`}>
+                            <RadioGroupItem value="global" id="global-priority" />
+                            <Label htmlFor="global-priority" className="cursor-pointer text-sm flex items-center gap-2">
+                              <Users className="h-4 w-4 text-purple-600" />
+                              <div>
+                                <div className="font-medium">Prioridad Global</div>
+                                <div className="text-xs text-gray-500">Misma para todas</div>
                               </div>
-                            )}
-                            {item.notes && (
-                              <div className="text-xs text-muted-foreground mt-1 bg-white p-2 rounded border">
-                                <strong>Notas:</strong> {item.notes}
+                            </Label>
+                          </div>
+                          <div className={`flex items-center space-x-2 p-2 rounded border transition-colors ${
+                            priorityMode === 'individual' ? 'bg-white border-purple-300' : 'bg-purple-50/50 border-purple-200'
+                          }`}>
+                            <RadioGroupItem value="individual" id="individual-priority" />
+                            <Label htmlFor="individual-priority" className="cursor-pointer text-sm flex items-center gap-2">
+                              <Target className="h-4 w-4 text-purple-600" />
+                              <div>
+                                <div className="font-medium">Prioridad Individual</div>
+                                <div className="text-xs text-gray-500">Personalizada</div>
                               </div>
-                            )}
+                            </Label>
                           </div>
                         </div>
-                        {index < itemsWithIssues.length - 1 && <Separator />}
-                      </div>
-                    ))}
-                  </div>
-                </ScrollArea>
-              </div>
+                      </RadioGroup>
 
-              {/* Priority Selection */}
-              <div>
-                <Label className="text-base font-medium">Prioridad para Todas las Órdenes</Label>
-                <RadioGroup value={priority} onValueChange={setPriority} className="mt-3">
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3">
-                    {["Alta", "Media", "Baja"].map((priorityLevel) => (
-                      <div key={priorityLevel} className="flex items-center space-x-2 touch-manipulation">
-                        <RadioGroupItem value={priorityLevel} id={priorityLevel} className="flex-shrink-0" />
-                        <Label 
-                          htmlFor={priorityLevel} 
-                          className={`flex items-center gap-2 cursor-pointer px-3 py-3 sm:py-2 rounded border transition-colors flex-1 min-h-[44px] ${
-                            priority === priorityLevel ? getPriorityColor(priorityLevel) : 'hover:bg-gray-50'
-                          }`}
-                        >
-                          {getPriorityIcon(priorityLevel)}
-                          <div className="flex flex-col">
-                            <span className="font-medium text-sm">{priorityLevel}</span>
-                            <span className="text-xs text-muted-foreground">
-                              {getPriorityLabel(priorityLevel)}
-                            </span>
+                      {/* Global Priority Selection */}
+                      {priorityMode === 'global' && (
+                        <div className="bg-white p-3 rounded-lg border border-gray-200">
+                          <div className="flex items-center gap-2 mb-2">
+                            <Users className="h-4 w-4 text-gray-600" />
+                            <Label className="font-medium text-sm">Prioridad para Todas las Órdenes</Label>
                           </div>
-                        </Label>
-                      </div>
-                    ))}
+                          <RadioGroup value={globalPriority} onValueChange={setGlobalPriority}>
+                            <div className="grid grid-cols-3 gap-2">
+                              {["Alta", "Media", "Baja"].map((priorityLevel) => (
+                                <div key={priorityLevel}>
+                                  <RadioGroupItem 
+                                    value={priorityLevel} 
+                                    id={`global-${priorityLevel}`}
+                                    className="sr-only" 
+                                  />
+                                  <Label 
+                                    htmlFor={`global-${priorityLevel}`} 
+                                    className={`flex flex-col items-center gap-1 cursor-pointer p-3 rounded-lg border-2 transition-all hover:shadow-md ${
+                                      globalPriority === priorityLevel 
+                                        ? `${getPriorityColor(priorityLevel)} border-current shadow-md` 
+                                        : 'bg-gray-50 border-gray-200 hover:border-gray-300'
+                                    }`}
+                                  >
+                                    <div className="flex items-center gap-1">
+                                      {getPriorityIcon(priorityLevel)}
+                                      <span className="font-medium text-sm">{priorityLevel}</span>
+                                    </div>
+                                    <span className="text-xs text-center text-gray-600">
+                                      {getPriorityLabel(priorityLevel)}
+                                    </span>
+                                  </Label>
+                                </div>
+                              ))}
+                            </div>
+                          </RadioGroup>
+                        </div>
+                      )}
+
+                      {/* Individual Priority Selection */}
+                      {priorityMode === 'individual' && (
+                        <div className="bg-white p-3 rounded-lg border border-gray-200">
+                          <div className="flex items-center gap-2 mb-2">
+                            <Target className="h-4 w-4 text-gray-600" />
+                            <Label className="font-medium text-sm">Prioridad por Orden</Label>
+                          </div>
+                          <div className="space-y-3 max-h-40 overflow-y-auto">
+                            {itemsWithIssues.map((item, index) => (
+                              <div key={item.id} className="bg-gray-50 p-3 rounded-lg border">
+                                <div className="flex items-center gap-2 mb-2">
+                                  <div className={`p-1 rounded-full ${
+                                    item.status === "fail" ? "bg-red-100" : "bg-yellow-100"
+                                  }`}>
+                                    {item.status === "fail" ? (
+                                      <X className="h-3 w-3 text-red-600" />
+                                    ) : (
+                                      <AlertTriangle className="h-3 w-3 text-yellow-600" />
+                                    )}
+                                  </div>
+                                  <Badge variant="outline" className="text-xs">
+                                    OT #{index + 1}
+                                  </Badge>
+                                  <span className="text-xs text-gray-600 flex-1 truncate">{item.description}</span>
+                                </div>
+                                <RadioGroup 
+                                  value={individualPriorities[item.id] || (item.status === 'fail' ? 'Alta' : 'Media')}
+                                  onValueChange={(value) => updateIndividualPriority(item.id, value)}
+                                >
+                                  <div className="grid grid-cols-3 gap-1">
+                                    {["Alta", "Media", "Baja"].map((priorityLevel) => (
+                                      <div key={priorityLevel}>
+                                        <RadioGroupItem 
+                                          value={priorityLevel} 
+                                          id={`${item.id}-${priorityLevel}`}
+                                          className="sr-only"
+                                        />
+                                        <Label 
+                                          htmlFor={`${item.id}-${priorityLevel}`} 
+                                          className={`flex items-center justify-center gap-1 cursor-pointer py-2 px-1 rounded text-xs transition-all ${
+                                            (individualPriorities[item.id] || (item.status === 'fail' ? 'Alta' : 'Media')) === priorityLevel 
+                                              ? `${getPriorityColor(priorityLevel)} font-medium border-2 border-current` 
+                                              : 'bg-white border border-gray-200 hover:border-gray-300'
+                                          }`}
+                                        >
+                                          {getPriorityIcon(priorityLevel)}
+                                          <span className="hidden sm:inline">{priorityLevel}</span>
+                                          <span className="sm:hidden">{priorityLevel.charAt(0)}</span>
+                                        </Label>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </RadioGroup>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   </div>
-                </RadioGroup>
+                </div>
+
+                {/* Description */}
+                <div className="bg-gradient-to-r from-gray-50 to-zinc-50 p-3 rounded-lg border border-gray-200">
+                  <div className="flex items-center gap-2 mb-2">
+                    <MessageSquare className="h-4 w-4 text-gray-600" />
+                    <Label htmlFor="description" className="font-medium text-sm text-gray-900">
+                      Notas Adicionales (Opcional)
+                    </Label>
+                  </div>
+                  <Textarea
+                    id="description"
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    placeholder="💬 Agregue contexto adicional que ayude al técnico..."
+                    className="min-h-[60px] max-h-[80px] text-sm border-gray-300 focus:border-blue-500 resize-none"
+                  />
+                  <p className="text-xs text-gray-500 mt-1 flex items-center gap-1">
+                    <Info className="h-3 w-3" />
+                    Se incluirá en todas las órdenes como contexto adicional
+                  </p>
+                </div>
+
+                {/* Action Summary */}
+                <Alert className="border-blue-200 bg-gradient-to-r from-blue-50 to-indigo-50">
+                  <CheckCircle2 className="h-4 w-4 text-blue-600" />
+                  <AlertDescription className="text-sm text-blue-800">
+                    <div className="font-medium mb-1">📋 Resumen de Acciones:</div>
+                    {(() => {
+                      if (!isOnline) {
+                        return (
+                          <div className="flex items-center gap-1">
+                            <WifiOff className="h-3 w-3" />
+                            <span>Se guardarán <strong>{itemsWithIssues.length} orden{itemsWithIssues.length > 1 ? 'es' : ''}</strong> offline</span>
+                          </div>
+                        )
+                      }
+
+                      const itemsWithSimilarIssues = similarIssuesResults.filter(result => 
+                        result.similar_issues && result.similar_issues.length > 0
+                      )
+                      
+                      let consolidateCount = 0
+                      let createNewCount = 0
+
+                      if (itemsWithSimilarIssues.length > 0) {
+                        itemsWithSimilarIssues.forEach(result => {
+                          const choice = consolidationChoices[result.item.id] || 'consolidate'
+                          if (choice === 'consolidate') consolidateCount++
+                          else createNewCount++
+                        })
+                        createNewCount += itemsWithIssues.length - itemsWithSimilarIssues.length
+                      } else {
+                        createNewCount = itemsWithIssues.length
+                      }
+
+                      return (
+                        <div className="flex items-center gap-2 flex-wrap">
+                          {createNewCount > 0 && (
+                            <div className="flex items-center gap-1">
+                              <Plus className="h-3 w-3 text-green-600" />
+                              <span><strong>{createNewCount}</strong> nueva{createNewCount > 1 ? 's' : ''}</span>
+                            </div>
+                          )}
+                          {consolidateCount > 0 && (
+                            <div className="flex items-center gap-1">
+                              <Link2 className="h-3 w-3 text-blue-600" />
+                              <span><strong>{consolidateCount}</strong> consolidada{consolidateCount > 1 ? 's' : ''}</span>
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })()}
+                  </AlertDescription>
+                </Alert>
               </div>
-
-              {/* Description */}
-              <div>
-                <Label htmlFor="description" className="text-base font-medium">
-                  Notas Adicionales (Opcional)
-                </Label>
-                <Textarea
-                  id="description"
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  placeholder="Agregue observaciones adicionales, instrucciones especiales, o contexto que se incluirá en todas las órdenes..."
-                  className="mt-2 min-h-[100px] max-h-[150px]"
-                />
-                <p className="text-sm text-muted-foreground mt-1">
-                  Cada orden tendrá una descripción específica del problema detectado. Estas notas se agregarán a todas las órdenes como contexto adicional.
-                </p>
-              </div>
-
-              {/* Final Action Summary */}
-              <Alert>
-                <Info className="h-4 w-4" />
-                <AlertDescription>
-                  {(() => {
-                    const itemsWithSimilarIssues = similarIssuesResults.filter(result => 
-                      result.similar_issues && result.similar_issues.length > 0
-                    )
-                    
-                    let consolidateCount = 0
-                    let createNewCount = 0
-
-                    if (itemsWithSimilarIssues.length > 0) {
-                      itemsWithSimilarIssues.forEach(result => {
-                        const choice = consolidationChoices[result.item.id] || 'consolidate'
-                        if (choice === 'consolidate') consolidateCount++
-                        else createNewCount++
-                      })
-                      createNewCount += itemsWithIssues.length - itemsWithSimilarIssues.length
-                    } else {
-                      createNewCount = itemsWithIssues.length
-                    }
-
-                    if (consolidateCount > 0 && createNewCount === 0) {
-                      return (
-                        <>
-                          <strong>{consolidateCount} problema{consolidateCount > 1 ? 's' : ''} será{consolidateCount > 1 ? 'n' : ''} consolidado{consolidateCount > 1 ? 's' : ''}</strong> con órdenes de trabajo existentes. 
-                          Esto optimiza recursos y mantiene el historial completo del problema.
-                        </>
-                      )
-                    } else if (createNewCount > 0 && consolidateCount === 0) {
-                      return (
-                        <>
-                          Se crearán <strong>{createNewCount} nueva{createNewCount > 1 ? 's' : ''} orden{createNewCount > 1 ? 'es' : ''} de trabajo correctiva{createNewCount > 1 ? 's' : ''}</strong> y 
-                          se registrarán <strong>{createNewCount} incidente{createNewCount > 1 ? 's' : ''} individual{createNewCount > 1 ? 'es' : ''}</strong> en el historial del activo.
-                        </>
-                      )
-                    } else {
-                      return (
-                        <>
-                          Se procesarán <strong>{itemsWithIssues.length} problema{itemsWithIssues.length > 1 ? 's' : ''}</strong>: 
-                          {consolidateCount > 0 && <> <strong>{consolidateCount} consolidado{consolidateCount > 1 ? 's' : ''}</strong></>}
-                          {consolidateCount > 0 && createNewCount > 0 && <> y</>}
-                          {createNewCount > 0 && <> <strong>{createNewCount} nuevo{createNewCount > 1 ? 's' : ''}</strong></>}.
-                        </>
-                      )
-                    }
-                  })()}
-                </AlertDescription>
-              </Alert>
-            </div>
-          </ScrollArea>
+            </ScrollArea>
+          </div>
 
           <Separator />
           
-          <DialogFooter className="p-4 sm:p-6 pt-4 gap-2">
+          <DialogFooter className="flex-shrink-0 p-4 pt-3 gap-2">
             <Button 
               variant="outline" 
               onClick={() => onOpenChange(false)}
@@ -548,7 +741,7 @@ export function CorrectiveWorkOrderDialog({
             </Button>
             <Button 
               onClick={handleSubmit}
-              disabled={loading || checkingSimilar}
+              disabled={loading || (checkingSimilar && isOnline)}
               className="flex-1 sm:flex-none"
             >
               {(() => {
@@ -568,15 +761,17 @@ export function CorrectiveWorkOrderDialog({
     </Dialog>
 
     {/* Results Dialog */}
-    <DeduplicationResultsDialog
-      open={showResults}
-      onOpenChange={setShowResults}
-      results={processingResults}
-      onNavigateToWorkOrder={(workOrderId) => {
-        setShowResults(false)
-        onWorkOrderCreated(workOrderId)
-      }}
-    />
+    {isOnline && (
+      <DeduplicationResultsDialog
+        open={showResults}
+        onOpenChange={setShowResults}
+        results={processingResults}
+        onNavigateToWorkOrder={(workOrderId) => {
+          setShowResults(false)
+          onWorkOrderCreated(workOrderId)
+        }}
+      />
+    )}
   </>
   )
 } 

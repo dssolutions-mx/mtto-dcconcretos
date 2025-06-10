@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useCallback, useEffect } from "react"
+import { useState, useCallback, useEffect, useRef } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -131,9 +131,20 @@ export function EvidenceCaptureSection({
     }
   }, [])
 
-  // Update parent when evidences change
+  // Update parent when evidences change (use a ref to track if we should call on mount)
+  const hasInitialized = useRef(false)
+  
   useEffect(() => {
-    onEvidenceChange(sectionId, evidences)
+    if (!hasInitialized.current) {
+      // On mount, only call if we have initial evidences
+      if (evidences.length > 0) {
+        onEvidenceChange(sectionId, evidences)
+      }
+      hasInitialized.current = true
+    } else {
+      // After mount, always call when evidences change
+      onEvidenceChange(sectionId, evidences)
+    }
   }, [evidences, sectionId, onEvidenceChange])
 
   // Validar requisitos

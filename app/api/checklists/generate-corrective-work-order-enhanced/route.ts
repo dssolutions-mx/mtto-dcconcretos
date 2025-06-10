@@ -194,9 +194,11 @@ ORIGEN:
             workOrderDescription += `\n\nCONTEXTO ADICIONAL:\n${description.trim()}`
           }
 
-          // Determine priority based on status, recurrence, and user choice
-          let workOrderPriority = priority
-          if (issue.status === 'fail') {
+          // Determine priority based on individual item priority or fallback
+          let workOrderPriority = issue.priority || priority || 'Media'
+          
+          // Auto-adjust priority based on issue status if no specific priority set
+          if (!issue.priority && issue.status === 'fail') {
             workOrderPriority = priority === 'Baja' ? 'Media' : priority
           }
           

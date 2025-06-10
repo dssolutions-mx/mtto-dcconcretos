@@ -120,19 +120,19 @@ export function SimilarIssuesSection({
                     🔄 Problema Recurrente #{index + 1}
                   </CardTitle>
                   <CardDescription className="text-sm">
-                    <strong className="block text-ellipsis overflow-hidden whitespace-nowrap">{result.item.description}</strong>
-                    <div className="mt-1 flex items-center gap-2">
-                      <Badge 
-                        variant={result.item.status === "fail" ? "destructive" : "secondary"}
-                        className="text-xs"
-                      >
-                        {result.item.status === "fail" ? "Falla" : "Revisar"}
-                      </Badge>
-                      <Badge variant="outline" className="text-xs sm:hidden">
-                        {result.recurrence_count}ª vez
-                      </Badge>
-                    </div>
+                    <span className="block text-ellipsis overflow-hidden whitespace-nowrap font-medium">{result.item.description}</span>
                   </CardDescription>
+                  <div className="mt-1 flex items-center gap-2">
+                    <Badge 
+                      variant={result.item.status === "fail" ? "destructive" : "secondary"}
+                      className="text-xs"
+                    >
+                      {result.item.status === "fail" ? "Falla" : "Revisar"}
+                    </Badge>
+                    <Badge variant="outline" className="text-xs sm:hidden">
+                      {result.recurrence_count}ª vez
+                    </Badge>
+                  </div>
                 </div>
                 <div className="text-right hidden sm:block">
                   <Badge variant="outline" className="text-xs">

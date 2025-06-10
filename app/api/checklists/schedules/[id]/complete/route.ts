@@ -26,9 +26,19 @@ export async function POST(
     console.log('Kilometers reading:', kilometers_reading)
     console.log('Items count:', completed_items?.length)
     console.log('Evidence sections:', Object.keys(evidence_data || {}).length)
+    console.log('Full payload:', JSON.stringify({
+      completed_items,
+      technician,
+      notes,
+      signature,
+      hours_reading,
+      kilometers_reading,
+      evidence_data
+    }, null, 2))
 
     // Validar parámetros requeridos
     if (!completed_items || !Array.isArray(completed_items)) {
+      console.error('Missing or invalid completed_items:', completed_items)
       return NextResponse.json(
         { error: 'Se requieren los items completados' },
         { status: 400 }
@@ -36,10 +46,30 @@ export async function POST(
     }
 
     if (!technician || typeof technician !== 'string') {
+      console.error('Missing or invalid technician:', technician)
       return NextResponse.json(
         { error: 'Se requiere el nombre del técnico' },
         { status: 400 }
       )
+    }
+
+    // Validate completed_items structure
+    for (let i = 0; i < completed_items.length; i++) {
+      const item = completed_items[i]
+      if (!item.item_id || !item.status) {
+        console.error(`Invalid item at index ${i}:`, item)
+        return NextResponse.json(
+          { error: `Item ${i} inválido: se requiere item_id y status` },
+          { status: 400 }
+        )
+      }
+      if (!['pass', 'fail', 'flag', 'na'].includes(item.status)) {
+        console.error(`Invalid status for item ${i}:`, item.status)
+        return NextResponse.json(
+          { error: `Item ${i} tiene status inválido: ${item.status}` },
+          { status: 400 }
+        )
+      }
     }
 
     // Obtener información del activo para validar lecturas
@@ -149,6 +179,17 @@ export async function POST(
     }
 
     // Usar la función mejorada para completar el checklist
+    console.log('=== CALLING complete_checklist_with_readings RPC ===')
+    console.log('Parameters:', {
+      p_schedule_id: id,
+      p_completed_items: completed_items,
+      p_technician: technician,
+      p_notes: notes || null,
+      p_signature_data: signature || null,
+      p_hours_reading: hours_reading,
+      p_kilometers_reading: kilometers_reading
+    })
+
     const { data: completionResult, error: completionError } = await supabase
       .rpc('complete_checklist_with_readings', {
         p_schedule_id: id,
@@ -161,13 +202,33 @@ export async function POST(
       })
 
     if (completionError) {
-      console.error('Error completing checklist:', completionError)
+      console.error('=== RPC ERROR ===')
+      console.error('Error details:', completionError)
+      console.error('Error message:', completionError.message)
+      console.error('Error code:', completionError.code)
+      console.error('Error hint:', completionError.hint)
+      console.error('Error details:', completionError.details)
+      
       return NextResponse.json(
-        { error: completionError.message || 'Error completando el checklist' },
+        { 
+          error: completionError.message || 'Error completando el checklist',
+          details: completionError.details || '',
+          code: completionError.code || '',
+          hint: completionError.hint || ''
+        },
         { status: 500 }
       )
     }
 
+    if (!completionResult) {
+      console.error('=== NO RESULT FROM RPC ===')
+      return NextResponse.json(
+        { error: 'No se obtuvo resultado del procedimiento de completado' },
+        { status: 500 }
+      )
+    }
+
+    console.log('=== RPC SUCCESS ===')
     console.log('Checklist completion result:', completionResult)
 
     // Guardar evidencias si se proporcionaron
