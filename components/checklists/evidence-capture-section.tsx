@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useCallback } from "react"
+import { useState, useCallback, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Progress } from "@/components/ui/progress"
 import { 
   Camera, 
   Upload, 
@@ -17,7 +18,12 @@ import {
   AlertTriangle, 
   CheckCircle,
   Eye,
-  Trash2
+  Trash2,
+  Loader2,
+  WifiOff,
+  AlertCircle,
+  RefreshCw,
+  CheckCircle2
 } from "lucide-react"
 import { toast } from "sonner"
 
@@ -28,13 +34,17 @@ interface EvidenceConfig {
   descriptions?: Record<string, string>
 }
 
-interface Evidence {
+interface SmartEvidence {
   id: string
   section_id: string
   category: string
   description: string
   photo_url: string
+  preview?: string
   sequence_order: number
+  status: 'stored' | 'uploading' | 'uploaded' | 'failed'
+  error?: string
+  photoId?: string
   file?: File
 }
 
@@ -42,8 +52,9 @@ interface EvidenceCaptureProps {
   sectionId: string
   sectionTitle: string
   config: EvidenceConfig
-  onEvidenceChange: (sectionId: string, evidences: Evidence[]) => void
+  onEvidenceChange: (sectionId: string, evidences: SmartEvidence[]) => void
   disabled?: boolean
+  checklistId?: string
 }
 
 export function EvidenceCaptureSection({
@@ -51,14 +62,81 @@ export function EvidenceCaptureSection({
   sectionTitle,
   config,
   onEvidenceChange,
-  disabled = false
+  disabled = false,
+  checklistId = 'evidence'
 }: EvidenceCaptureProps) {
-  const [evidences, setEvidences] = useState<Evidence[]>([])
+  const [evidences, setEvidences] = useState<SmartEvidence[]>([])
   const [selectedCategory, setSelectedCategory] = useState<string>(config.categories[0] || '')
   const [currentDescription, setCurrentDescription] = useState('')
   const [uploading, setUploading] = useState(false)
+  const [isOnline, setIsOnline] = useState(typeof window !== 'undefined' ? navigator.onLine : true)
+  
+  // Dynamic import of photo service
+  const [photoService, setPhotoService] = useState<any>(null)
+  
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      import('@/lib/services/simple-photo-service').then(module => {
+        setPhotoService(module.simplePhotoService)
+      })
+    }
+  }, [])
 
-  // Validar si se cumplen los requisitos
+  // Monitor online status
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    
+    const handleOnline = () => setIsOnline(true)
+    const handleOffline = () => setIsOnline(false)
+    
+    window.addEventListener('online', handleOnline)
+    window.addEventListener('offline', handleOffline)
+    
+    return () => {
+      window.removeEventListener('online', handleOnline)
+      window.removeEventListener('offline', handleOffline)
+    }
+  }, [])
+
+  // Listen for photo upload status events
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    
+    const handleUploadStatus = (event: CustomEvent) => {
+      const { photoId, status, url, error } = event.detail
+      
+      setEvidences(prev => prev.map(evidence => {
+        if (evidence.photoId === photoId) {
+          return {
+            ...evidence,
+            status: status as any,
+            photo_url: url || evidence.photo_url,
+            error: error
+          }
+        }
+        return evidence
+      }))
+      
+      if (status === 'uploaded') {
+        toast.success("Evidencia subida exitosamente")
+      } else if (status === 'failed') {
+        toast.error(`Error al subir evidencia: ${error}`)
+      }
+    }
+    
+    window.addEventListener('photo-upload-status', handleUploadStatus as EventListener)
+    
+    return () => {
+      window.removeEventListener('photo-upload-status', handleUploadStatus as EventListener)
+    }
+  }, [])
+
+  // Update parent when evidences change
+  useEffect(() => {
+    onEvidenceChange(sectionId, evidences)
+  }, [evidences, sectionId, onEvidenceChange])
+
+  // Validar requisitos
   const validateRequirements = useCallback(() => {
     const errors: string[] = []
     const warnings: string[] = []
@@ -78,9 +156,9 @@ export function EvidenceCaptureSection({
     return { errors, warnings, isValid: errors.length === 0 }
   }, [evidences, config])
 
-  // Subir foto
+  // Smart photo upload - ENHANCED VERSION
   const handlePhotoUpload = async (file: File) => {
-    if (!selectedCategory) {
+    if (!photoService || !selectedCategory) {
       toast.error('Seleccione una categoría primero')
       return
     }
@@ -93,62 +171,115 @@ export function EvidenceCaptureSection({
     setUploading(true)
     
     try {
-      const formData = new FormData()
-      formData.append('file', file)
-      formData.append('bucket', 'checklist-photos')
+      // Use smart photo service instead of direct upload
+      const result = await photoService.storePhoto(
+        checklistId,
+        `${sectionId}_${selectedCategory}_${Date.now()}`,
+        file,
+        {
+          quality: 0.8,
+          maxWidth: 1920,
+          maxHeight: 1080,
+          immediate: true,
+          category: selectedCategory
+        }
+      )
       
-      const response = await fetch('/api/storage/upload', {
-        method: 'POST',
-        body: formData
-      })
-      
-      if (!response.ok) {
-        const errorData = await response.text().catch(() => 'Error desconocido')
-        throw new Error(`Error al subir archivo: ${errorData}`)
-      }
-      
-      const { url } = await response.json()
-      
-      const newEvidence: Evidence = {
+      const newEvidence: SmartEvidence = {
         id: `evidence_${Date.now()}_${Math.random()}`,
         section_id: sectionId,
         category: selectedCategory,
         description: currentDescription || config.descriptions?.[selectedCategory] || '',
-        photo_url: url,
+        photo_url: result.url || result.preview,
+        preview: result.preview,
         sequence_order: evidences.filter(e => e.category === selectedCategory).length + 1,
+        status: result.status,
+        photoId: result.id,
         file
       }
       
-      const updatedEvidences = [...evidences, newEvidence]
-      setEvidences(updatedEvidences)
-      onEvidenceChange(sectionId, updatedEvidences)
-      
+      setEvidences(prev => [...prev, newEvidence])
       setCurrentDescription('')
-      toast.success('Evidencia agregada exitosamente')
-    } catch (error: any) {
-      console.error('Error uploading evidence:', error)
-      const errorMessage = error?.message || 'Error desconocido al subir la evidencia'
-      toast.error(`Error al subir la evidencia: ${errorMessage}`)
+      
+      // Enhanced feedback based on connection status
+      if (isOnline) {
+        toast.success("Evidencia guardada - subiendo en segundo plano", {
+          description: "La evidencia se está subiendo automáticamente"
+        })
+      } else {
+        toast.info("Evidencia guardada sin conexión", {
+          description: "Se subirá automáticamente cuando vuelva la conexión"
+        })
+      }
+      
+    } catch (error) {
+      console.error('Error storing evidence photo:', error)
+      toast.error("Error al procesar la evidencia")
     } finally {
       setUploading(false)
     }
   }
 
   // Eliminar evidencia
-  const removeEvidence = (evidenceId: string) => {
-    const updatedEvidences = evidences.filter(e => e.id !== evidenceId)
-    setEvidences(updatedEvidences)
-    onEvidenceChange(sectionId, updatedEvidences)
+  const removeEvidence = async (evidenceId: string) => {
+    const evidence = evidences.find(e => e.id === evidenceId)
+    if (evidence?.photoId && photoService) {
+      await photoService.deletePhoto(evidence.photoId)
+    }
+    
+    setEvidences(prev => prev.filter(e => e.id !== evidenceId))
     toast.success('Evidencia eliminada')
   }
 
-  // Ver imagen en tamaño completo
+  // Ver imagen
   const viewImage = (imageUrl: string) => {
     window.open(imageUrl, '_blank')
   }
 
+  // Retry upload
+  const retryUpload = async () => {
+    if (!photoService) return
+    
+    try {
+      await photoService.retryFailedUploads()
+      toast.info("Reintentando subida...")
+    } catch (error) {
+      toast.error("Error al reintentar subida")
+    }
+  }
+
   const { errors, warnings, isValid } = validateRequirements()
   const categoryCount = evidences.filter(e => e.category === selectedCategory).length
+  
+  // Get upload statistics
+  const getUploadStats = () => {
+    const total = evidences.length
+    const uploaded = evidences.filter(e => e.status === 'uploaded').length
+    const uploading = evidences.filter(e => e.status === 'uploading').length
+    const failed = evidences.filter(e => e.status === 'failed').length
+    
+    return { total, uploaded, uploading, failed }
+  }
+
+  const uploadStats = getUploadStats()
+  const uploadProgress = uploadStats.total > 0 ? Math.round((uploadStats.uploaded / uploadStats.total) * 100) : 0
+
+  const getStatusIcon = (evidence: SmartEvidence) => {
+    switch (evidence.status) {
+      case 'stored':
+        return isOnline ? 
+          <Loader2 className="h-3 w-3 animate-spin text-blue-500" /> :
+          <WifiOff className="h-3 w-3 text-gray-500" />
+      case 'uploading':
+        return <Loader2 className="h-3 w-3 animate-spin text-blue-500" />
+      case 'uploaded':
+        return <CheckCircle2 className="h-3 w-3 text-green-500" />
+      case 'failed':
+        return <AlertCircle className="h-3 w-3 text-red-500" />
+      default:
+        return null
+    }
+  }
 
   return (
     <Card className="mb-6">
@@ -156,12 +287,37 @@ export function EvidenceCaptureSection({
         <CardTitle className="flex items-center gap-2">
           <Camera className="h-5 w-5 text-blue-600" />
           {sectionTitle}
+          {!isOnline && <WifiOff className="h-4 w-4 text-red-500" />}
         </CardTitle>
         <CardDescription>
           Capture evidencias fotográficas del estado del equipo según las categorías requeridas
+          {!isOnline && " (Modo offline - las fotos se subirán automáticamente al volver la conexión)"}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
+        {/* NEW: Upload progress and stats */}
+        {evidences.length > 0 && (
+          <div className="space-y-3 p-4 bg-gray-50 rounded-lg">
+            <div className="flex justify-between items-center">
+              <h4 className="text-sm font-medium">Estado de Evidencias</h4>
+              <div className="flex items-center gap-2 text-xs">
+                <span>{uploadStats.uploaded}/{uploadStats.total} subidas</span>
+                {uploadStats.failed > 0 && (
+                  <Badge variant="destructive" className="text-xs">
+                    {uploadStats.failed} fallidas
+                  </Badge>
+                )}
+                {uploadStats.uploading > 0 && (
+                  <Badge variant="secondary" className="text-xs">
+                    {uploadStats.uploading} subiendo
+                  </Badge>
+                )}
+              </div>
+            </div>
+            <Progress value={uploadProgress} className="w-full h-2" />
+          </div>
+        )}
+
         {/* Resumen de requisitos */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 bg-gray-50 rounded-lg">
           <div className="text-center">
@@ -240,14 +396,17 @@ export function EvidenceCaptureSection({
           </div>
         )}
 
-        {/* Captura de foto */}
+        {/* ENHANCED photo capture with smart upload */}
         {selectedCategory && (
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <Label>Agregar Evidencia Fotográfica</Label>
-              <Badge variant="outline">
-                {categoryCount}/{config.max_photos} fotos en "{selectedCategory}"
-              </Badge>
+              <div className="flex items-center gap-2">
+                {!isOnline && <WifiOff className="h-4 w-4 text-gray-500" />}
+                <Badge variant="outline">
+                  {categoryCount}/{config.max_photos} fotos en "{selectedCategory}"
+                </Badge>
+              </div>
             </div>
             
             {categoryCount < config.max_photos ? (
@@ -258,17 +417,23 @@ export function EvidenceCaptureSection({
                 >
                   <div className="flex items-center gap-2">
                     {uploading ? (
-                      <div className="animate-spin h-5 w-5 border-2 border-blue-600 border-t-transparent rounded-full" />
+                      <Loader2 className="h-5 w-5 animate-spin text-blue-500" />
                     ) : (
                       <Camera className="h-5 w-5 text-gray-400" />
                     )}
                     <span className="text-sm text-gray-600">
-                      {uploading ? 'Subiendo...' : 'Tomar foto o seleccionar archivo'}
+                      {uploading ? 'Procesando...' : 'Tomar foto o seleccionar archivo'}
                     </span>
                   </div>
-                  <span className="text-xs text-gray-500">
-                    Categoría: {selectedCategory}
-                  </span>
+                  <div className="text-xs text-gray-500 space-y-1">
+                    <div>Categoría: {selectedCategory}</div>
+                    {!isOnline && (
+                      <div className="flex items-center gap-1 text-orange-600">
+                        <WifiOff className="h-3 w-3" />
+                        Sin conexión - se guardará localmente
+                      </div>
+                    )}
+                  </div>
                 </Label>
                 <input
                   id={`evidence-upload-${sectionId}`}
@@ -295,7 +460,7 @@ export function EvidenceCaptureSection({
           </div>
         )}
 
-        {/* Evidencias capturadas */}
+        {/* ENHANCED evidence gallery with upload status */}
         {evidences.length > 0 && (
           <div className="space-y-4">
             <Label>Evidencias Capturadas</Label>
@@ -304,7 +469,7 @@ export function EvidenceCaptureSection({
                 <Card key={evidence.id} className="overflow-hidden">
                   <div className="relative aspect-video">
                     <img
-                      src={evidence.photo_url}
+                      src={evidence.preview || evidence.photo_url}
                       alt={`Evidencia ${evidence.category}`}
                       className="w-full h-full object-cover"
                     />
@@ -314,6 +479,7 @@ export function EvidenceCaptureSection({
                       </Badge>
                     </div>
                     <div className="absolute top-2 right-2 flex gap-1">
+                      {getStatusIcon(evidence)}
                       <Button
                         size="sm"
                         variant="secondary"
@@ -322,6 +488,17 @@ export function EvidenceCaptureSection({
                       >
                         <Eye className="h-3 w-3" />
                       </Button>
+                      {evidence.status === 'failed' && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-6 w-6 p-0"
+                          onClick={retryUpload}
+                          disabled={!isOnline}
+                        >
+                          <RefreshCw className="h-3 w-3" />
+                        </Button>
+                      )}
                       <Button
                         size="sm"
                         variant="destructive"
@@ -332,6 +509,16 @@ export function EvidenceCaptureSection({
                         <Trash2 className="h-3 w-3" />
                       </Button>
                     </div>
+                    
+                    {/* NEW: Status overlay showing upload progress */}
+                    {evidence.status !== 'uploaded' && (
+                      <div className="absolute bottom-0 left-0 right-0 bg-black/70 text-white text-xs px-2 py-1">
+                        {evidence.status === 'stored' && !isOnline && 'Guardado offline'}
+                        {evidence.status === 'stored' && isOnline && 'En cola'}
+                        {evidence.status === 'uploading' && 'Subiendo...'}
+                        {evidence.status === 'failed' && `Error: ${evidence.error || 'Fallo de subida'}`}
+                      </div>
+                    )}
                   </div>
                   {evidence.description && (
                     <CardContent className="p-2">
@@ -384,33 +571,54 @@ export function EvidenceCaptureSection({
           )}
         </div>
 
-        {/* Resumen por categoría */}
+        {/* ENHANCED category summary with upload status */}
         <div className="space-y-2">
           <Label>Resumen por Categoría</Label>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
             {config.categories.map(category => {
               const categoryEvidences = evidences.filter(e => e.category === category)
               const isComplete = categoryEvidences.length >= config.min_photos
+              const uploaded = categoryEvidences.filter(e => e.status === 'uploaded').length
+              const pending = categoryEvidences.filter(e => e.status !== 'uploaded').length
               
               return (
                 <div
                   key={category}
-                  className={`flex items-center justify-between p-2 rounded border ${
+                  className={`flex items-center justify-between p-3 rounded border ${
                     isComplete ? 'border-green-200 bg-green-50' : 'border-gray-200 bg-gray-50'
                   }`}
                 >
                   <span className="text-sm font-medium">{category}</span>
                   <div className="flex items-center gap-2">
+                    <div className="text-xs text-gray-600">
+                      {uploaded}/{categoryEvidences.length} subidas
+                    </div>
                     <Badge variant={isComplete ? "default" : "secondary"}>
                       {categoryEvidences.length}/{config.min_photos}
                     </Badge>
                     {isComplete && <CheckCircle className="h-4 w-4 text-green-600" />}
+                    {pending > 0 && (
+                      <Badge variant="outline" className="text-xs">
+                        {pending} pendientes
+                      </Badge>
+                    )}
                   </div>
                 </div>
               )
             })}
           </div>
         </div>
+
+        {/* NEW: Offline warning */}
+        {!isOnline && evidences.length > 0 && (
+          <Alert>
+            <WifiOff className="h-4 w-4" />
+            <AlertDescription>
+              Modo sin conexión activo. Las evidencias se guardan localmente y se subirán automáticamente 
+              cuando se restablezca la conexión.
+            </AlertDescription>
+          </Alert>
+        )}
       </CardContent>
     </Card>
   )

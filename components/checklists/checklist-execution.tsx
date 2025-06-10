@@ -21,10 +21,11 @@ import {
 } from "@/components/ui/alert-dialog"
 import { Camera, Check, Clock, FileText, Flag, Loader2, Save, Upload, X, Wifi, WifiOff, RefreshCw } from "lucide-react"
 import { SignatureCanvas } from "@/components/checklists/signature-canvas"
-import { OfflineStatus } from "@/components/checklists/offline-status"
+import { EnhancedOfflineStatus } from "@/components/checklists/enhanced-offline-status"
 import { EquipmentReadingsForm } from "@/components/checklists/equipment-readings-form"
 import { EvidenceCaptureSection } from "@/components/checklists/evidence-capture-section"
 import { CorrectiveWorkOrderDialog } from "@/components/checklists/corrective-work-order-dialog"
+import { SmartPhotoUpload } from "@/components/checklists/smart-photo-upload"
 import { useOfflineSync } from "@/hooks/useOfflineSync"
 import { toast } from "sonner"
 import { createBrowserClient } from '@supabase/ssr'
@@ -330,31 +331,7 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
     setItemStatus(prev => ({ ...prev, [itemId]: status }))
   }
 
-  const handlePhotoUpload = async (itemId: string, file: File) => {
-    try {
-      const formData = new FormData()
-      formData.append('file', file)
-      formData.append('bucket', 'checklist-photos')
-      
-      const response = await fetch('/api/storage/upload', {
-        method: 'POST',
-        body: formData
-      })
-      
-      if (!response.ok) {
-        const errorData = await response.text().catch(() => 'Error desconocido')
-        throw new Error(`Error al subir archivo: ${errorData}`)
-      }
-      
-      const { url } = await response.json()
-      setItemPhotos(prev => ({ ...prev, [itemId]: url }))
-      toast.success('Foto subida exitosamente')
-    } catch (error: any) {
-      console.error('Error uploading photo:', error)
-      const errorMessage = error?.message || 'Error desconocido al subir la foto'
-      toast.error(`Error al subir la foto: ${errorMessage}`)
-    }
-  }
+
 
   const handleItemNotesChange = (itemId: string, note: string) => {
     setItemNotes(prev => ({ ...prev, [itemId]: note }))
@@ -777,47 +754,14 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
                             />
                           </div>
 
-                          <div className="space-y-2">
-                            <Label>Fotografía</Label>
-                            {itemPhotos[item.id] ? (
-                              <div className="relative">
-                                <img
-                                  src={itemPhotos[item.id] || ""}
-                                  alt="Foto del problema"
-                                  className="w-full h-48 object-cover rounded-md"
-                                />
-                                <Button
-                                  variant="destructive"
-                                  size="sm"
-                                  className="absolute top-2 right-2"
-                                  onClick={() => setItemPhotos(prev => ({ ...prev, [item.id]: null }))}
-                                >
-                                  Eliminar
-                                </Button>
-                              </div>
-                            ) : (
-                              <div className="border-2 border-dashed border-muted-foreground/50 rounded-md p-8 text-center">
-                                <Label
-                                  htmlFor={`photo-upload-${item.id}`}
-                                  className="cursor-pointer"
-                                >
-                                  <Upload className="h-6 w-6 mx-auto mb-2 text-muted-foreground" />
-                                  <span className="text-sm text-muted-foreground">Subir foto</span>
-                                </Label>
-                                <input
-                                  id={`photo-upload-${item.id}`}
-                                  type="file"
-                                  accept="image/*"
-                                  className="hidden"
-                                  onChange={(e) => {
-                                    if (e.target.files && e.target.files[0]) {
-                                      handlePhotoUpload(item.id, e.target.files[0])
-                                    }
-                                  }}
-                                />
-                              </div>
-                            )}
-                          </div>
+                          <SmartPhotoUpload
+                            checklistId={checklist.id}
+                            itemId={item.id}
+                            currentPhotoUrl={itemPhotos[item.id]}
+                            onPhotoChange={(url) => setItemPhotos(prev => ({ ...prev, [item.id]: url }))}
+                            disabled={submitting}
+                            category="problema"
+                          />
                         </div>
                       )}
                     </CardContent>
@@ -969,7 +913,7 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
       />
 
       {/* Estado offline integrado */}
-      <OfflineStatus showDetails={true} />
+      <EnhancedOfflineStatus showDetails={true} />
 
       {hasUnsavedChanges && (
         <Alert>
