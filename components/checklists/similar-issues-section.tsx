@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
@@ -59,32 +59,36 @@ export function SimilarIssuesSection({
   onConsolidationChoiceChange 
 }: SimilarIssuesSectionProps) {
   const [consolidationChoices, setConsolidationChoices] = useState<Record<string, 'consolidate' | 'create_new' | 'escalate'>>({})
+  const initialChoicesSet = useRef(false)
 
   const issuesWithSimilar = similarIssuesResults.filter(result => result.similar_issues.length > 0)
   
   // Initialize default choices when component mounts or similarIssuesResults change
   useEffect(() => {
+    // Reset flag when similarIssuesResults change
+    initialChoicesSet.current = false
+    
     const defaultChoices: Record<string, 'consolidate' | 'create_new' | 'escalate'> = {}
     issuesWithSimilar.forEach(result => {
       // Set default to 'consolidate' for all items with similar issues
       defaultChoices[result.item.id] = 'consolidate'
     })
     
-    console.log('🎯 SimilarIssues: Initializing default choices:', defaultChoices)
-    setConsolidationChoices(defaultChoices)
-    onConsolidationChoiceChange(defaultChoices)
-  }, [similarIssuesResults, onConsolidationChoiceChange])
+    if (Object.keys(defaultChoices).length > 0 && !initialChoicesSet.current) {
+      setConsolidationChoices(defaultChoices)
+      onConsolidationChoiceChange(defaultChoices)
+      initialChoicesSet.current = true
+    }
+  }, [similarIssuesResults]) // Removed onConsolidationChoiceChange from dependencies
   
   if (issuesWithSimilar.length === 0) {
     return null
   }
 
   const handleChoiceChange = (itemId: string, choice: 'consolidate' | 'create_new' | 'escalate') => {
-    console.log(`🔄 SimilarIssues: Choice changed for ${itemId}: ${choice}`)
     const newChoices = { ...consolidationChoices, [itemId]: choice }
     setConsolidationChoices(newChoices)
     onConsolidationChoiceChange(newChoices)
-    console.log('📋 SimilarIssues: All choices now:', newChoices)
   }
 
   const getPriorityIcon = (priority: string) => {

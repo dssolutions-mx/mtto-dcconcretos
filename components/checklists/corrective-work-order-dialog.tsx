@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { 
   Dialog, 
@@ -37,6 +37,7 @@ interface CorrectiveWorkOrderDialogProps {
     sectionTitle?: string
   }>
   onWorkOrderCreated: (workOrderId: string) => void
+  onNavigateToAssetsPage?: () => void
 }
 
 export function CorrectiveWorkOrderDialog({
@@ -44,16 +45,13 @@ export function CorrectiveWorkOrderDialog({
   onOpenChange,
   checklist,
   itemsWithIssues,
-  onWorkOrderCreated
+  onWorkOrderCreated,
+  onNavigateToAssetsPage
 }: CorrectiveWorkOrderDialogProps) {
-  // Global priority (fallback for when individual priorities are not set)
-  const [globalPriority, setGlobalPriority] = useState("Media")
-  
-  // Individual priorities per work order item
-  const [individualPriorities, setIndividualPriorities] = useState<Record<string, string>>({})
-  
-  // Priority mode: 'global' or 'individual' 
+  // Priority management - simplified but supporting both modes
   const [priorityMode, setPriorityMode] = useState<'global' | 'individual'>('global')
+  const [globalPriority, setGlobalPriority] = useState("Media")
+  const [individualPriorities, setIndividualPriorities] = useState<Record<string, string>>({})
   
   const [description, setDescription] = useState("")
   const [loading, setLoading] = useState(false)
@@ -67,28 +65,46 @@ export function CorrectiveWorkOrderDialog({
   const { isOnline } = useOfflineSync()
   const [offlineWorkOrderData, setOfflineWorkOrderData] = useState<any>(null)
 
-  // Initialize individual priorities when dialog opens
+  // Stabilize the consolidation choice handler with useCallback
+  const handleConsolidationChoiceChange = useCallback((choices: Record<string, 'consolidate' | 'create_new' | 'escalate'>) => {
+    setConsolidationChoices(choices)
+  }, [])
+
+  // Simple initialization - more stable
   useEffect(() => {
-    if (open && itemsWithIssues.length > 0) {
-      // Set default individual priorities based on issue severity
-      const newIndividualPriorities: Record<string, string> = {}
-      itemsWithIssues.forEach(item => {
-        // Auto-assign priority based on issue type: fail = Alta, flag = Media
-        newIndividualPriorities[item.id] = item.status === 'fail' ? 'Alta' : 'Media'
-      })
-      setIndividualPriorities(newIndividualPriorities)
-      
-      // If there are multiple issues with different severities, default to individual mode
+    if (open) {
+      // Set default priority based on most severe issue
       const hasFailures = itemsWithIssues.some(item => item.status === 'fail')
       const hasFlags = itemsWithIssues.some(item => item.status === 'flag')
       
+      // Auto-detect if we should use individual mode
       if (hasFailures && hasFlags && itemsWithIssues.length > 1) {
         setPriorityMode('individual')
+        // Initialize individual priorities
+        const newIndividualPriorities: Record<string, string> = {}
+        itemsWithIssues.forEach(item => {
+          newIndividualPriorities[item.id] = item.status === 'fail' ? 'Alta' : 'Media'
+        })
+        setIndividualPriorities(newIndividualPriorities)
       } else {
         setPriorityMode('global')
+        setGlobalPriority(hasFailures ? 'Alta' : 'Media')
+        setIndividualPriorities({})
+      }
+      
+      setDescription("")
+      setSimilarIssuesResults([])
+      setConsolidationChoices({})
+      setShowResults(false)
+      setProcessingResults(null)
+      setOfflineWorkOrderData(null)
+      
+      // Only check for similar issues if online
+      if (isOnline) {
+        checkForSimilarIssues()
       }
     }
-  }, [open, itemsWithIssues])
+  }, [open, itemsWithIssues, isOnline])
 
   // Generate default description from issues
   const generateDefaultDescription = () => {
@@ -120,27 +136,6 @@ export function CorrectiveWorkOrderDialog({
     
     return desc.trim()
   }
-
-  // Initialize and check for similar issues IMMEDIATELY when dialog opens
-  useEffect(() => {
-    if (open) {
-      setDescription("")
-      setSimilarIssuesResults([])
-      setConsolidationChoices({})
-      setShowResults(false)
-      setProcessingResults(null)
-      setOfflineWorkOrderData(null)
-      
-      // Only check for similar issues if online
-      if (isOnline) {
-        checkForSimilarIssues()
-      } else {
-        toast.info("Modo offline: La deduplicación inteligente no está disponible sin conexión", {
-          description: "Las órdenes de trabajo se crearán sin verificar duplicados"
-        })
-      }
-    }
-  }, [open, itemsWithIssues, isOnline])
 
   const checkForSimilarIssues = async () => {
     if (!checklist.assetId || itemsWithIssues.length === 0) return
@@ -179,7 +174,7 @@ export function CorrectiveWorkOrderDialog({
   }
 
   const handleSubmit = async () => {
-    // Validate priorities
+    // Simple validation for individual mode
     if (priorityMode === 'individual') {
       const missingPriorities = itemsWithIssues.filter(item => !individualPriorities[item.id])
       if (missingPriorities.length > 0) {
@@ -187,11 +182,11 @@ export function CorrectiveWorkOrderDialog({
         return
       }
     }
-
+    
     setLoading(true)
     
     try {
-      // Prepare items with their individual priorities
+      // Prepare items with their priorities
       const itemsWithPriorities = itemsWithIssues.map(item => ({
         ...item,
         priority: priorityMode === 'individual' 
@@ -199,86 +194,55 @@ export function CorrectiveWorkOrderDialog({
           : globalPriority
       }))
 
-      // Check if we're offline
+      const submissionData = {
+        checklist_id: checklist.id,
+        asset_id: checklist.assetId,
+        asset_name: checklist.assets?.name || checklist.asset || 'Sin nombre',
+        items: itemsWithPriorities,
+        global_priority: globalPriority,
+        description: description || generateDefaultDescription(),
+        similar_issues_results: similarIssuesResults,
+        consolidation_choices: consolidationChoices,
+        smart_deduplication_enabled: isOnline
+      }
+
       if (!isOnline) {
-        // Store work order data for offline processing
-        const offlineData = {
-          checklist_id: checklist.id,
-          items_with_issues: itemsWithPriorities,
-          description: description.trim(),
-          asset_id: checklist.assetId,
-          consolidation_choices: {},
-          enable_smart_deduplication: false, // Disabled in offline mode
-          consolidation_window_days: 30,
-          timestamp: Date.now(),
-          offline: true
-        }
+        // Save offline
+        const offlineId = `work-orders-${checklist.id}-${Date.now()}`
+        localStorage.setItem(`offline-work-orders-${checklist.id}`, JSON.stringify(submissionData))
+        setOfflineWorkOrderData(submissionData)
         
-        setOfflineWorkOrderData(offlineData)
-        
-        // Store in localStorage as backup
-        localStorage.setItem(`offline-work-orders-${checklist.id}`, JSON.stringify(offlineData))
-        
-        toast.success("Órdenes de trabajo guardadas para procesamiento offline", {
+        toast.success("Órdenes de trabajo guardadas offline", {
           description: "Se procesarán automáticamente cuando vuelva la conexión"
         })
         
-        // Close dialog and navigate back to checklist
         onOpenChange(false)
         return
       }
 
-      // Online processing with full deduplication support
-      console.log('🎯 FRONTEND: Sending consolidation choices:', consolidationChoices)
-      console.log('🔍 FRONTEND: Items with issues:', itemsWithIssues.map(item => ({ id: item.id, description: item.description })))
-      console.log('📋 FRONTEND: Similar issues results:', similarIssuesResults.map(result => ({ 
-        itemId: result.item.id, 
-        hasSimilar: result.similar_issues.length > 0 
-      })))
-      
       const response = await fetch('/api/checklists/generate-corrective-work-order-enhanced', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          checklist_id: checklist.id,
-          items_with_issues: itemsWithPriorities,
-          priority: globalPriority, // Fallback priority
-          description: description.trim(),
-          asset_id: checklist.assetId,
-          consolidation_choices: consolidationChoices,
-          enable_smart_deduplication: true,
-          consolidation_window_days: 30
-        }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(submissionData)
       })
-      
-      const result = await response.json()
-      
-      if (!response.ok || result.error) {
-        throw new Error(result.error || 'Error al crear orden de trabajo correctiva')
+
+      if (response.ok) {
+        const result = await response.json()
+        setProcessingResults(result)
+        setShowResults(true)
+      } else {
+        const errorData = await response.json()
+        toast.error(errorData.error || 'Error al crear las órdenes de trabajo')
       }
-      
-      // Store results and show detailed dialog
-      setProcessingResults(result)
-      
-      // Close main dialog first
-      onOpenChange(false)
-      
-      // Show detailed results dialog
-      setShowResults(true)
-      
-      // Simple toast for immediate feedback
-      toast.success('Órdenes de trabajo procesadas exitosamente. Ver detalles...')
-      
-    } catch (error: any) {
-      console.error('Error creating corrective work order:', error)
-      toast.error(`Error al crear orden de trabajo: ${error.message}`)
+    } catch (error) {
+      console.error('Error submitting work orders:', error)
+      toast.error('Error al procesar las órdenes de trabajo')
     } finally {
       setLoading(false)
     }
   }
 
+  // Simple helper to update individual priority
   const updateIndividualPriority = (itemId: string, priority: string) => {
     setIndividualPriorities(prev => ({
       ...prev,
@@ -485,21 +449,17 @@ export function CorrectiveWorkOrderDialog({
                               </div>
                               
                               <div className="flex-1 min-w-0">
-                                <div className="font-medium text-sm text-gray-900 mb-1">
+                                <div className="font-medium text-sm text-gray-900 line-clamp-2">
                                   {item.description}
                                 </div>
                                 {item.sectionTitle && (
-                                  <div className="flex items-center gap-1 text-xs text-gray-500 mb-1">
-                                    <Layers className="h-3 w-3" />
-                                    {item.sectionTitle}
+                                  <div className="text-xs text-gray-500 mt-1">
+                                    📋 {item.sectionTitle}
                                   </div>
                                 )}
                                 {item.notes && (
-                                  <div className="bg-amber-50 border border-amber-200 p-2 rounded text-xs">
-                                    <div className="flex items-start gap-1">
-                                      <StickyNote className="h-3 w-3 text-amber-600 mt-0.5 flex-shrink-0" />
-                                      <span className="text-amber-800">{item.notes}</span>
-                                    </div>
+                                  <div className="text-xs text-gray-600 mt-1 bg-gray-50 p-2 rounded border-l-2 border-gray-300">
+                                    💬 {item.notes}
                                   </div>
                                 )}
                               </div>
@@ -511,153 +471,158 @@ export function CorrectiveWorkOrderDialog({
                   </div>
                 </div>
 
-                {/* Similar Issues Section - FIRST PRIORITY */}
+                {/* Similar Issues Section - Only show if online and has results */}
                 {isOnline && similarIssuesResults.length > 0 && (
-                  <SimilarIssuesSection 
+                  <SimilarIssuesSection
                     similarIssuesResults={similarIssuesResults}
-                    onConsolidationChoiceChange={setConsolidationChoices}
+                    onConsolidationChoiceChange={handleConsolidationChoiceChange}
                   />
                 )}
 
-                {/* Priority Configuration */}
-                <div className="bg-gradient-to-r from-purple-50 to-pink-50 rounded-lg border border-purple-200">
-                  <div className="p-3">
-                    <div className="flex items-center gap-2 mb-3">
-                      <div className="bg-purple-100 p-1 rounded">
-                        <Zap className="h-4 w-4 text-purple-600" />
-                      </div>
-                      <h4 className="font-medium text-sm text-purple-900">Configurar Prioridades</h4>
+                {/* Simplified but Complete Priority Configuration */}
+                <div className="bg-gradient-to-r from-yellow-50 to-amber-50 p-4 rounded-lg border border-yellow-200">
+                  <div className="flex items-center gap-2 mb-3">
+                    <div className="bg-yellow-100 p-1 rounded">
+                      <Zap className="h-4 w-4 text-yellow-600" />
                     </div>
-                    
-                    <div className="space-y-3">
-                      <RadioGroup value={priorityMode} onValueChange={(value: 'global' | 'individual') => setPriorityMode(value)}>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                          <div className={`flex items-center space-x-2 p-2 rounded border transition-colors ${
-                            priorityMode === 'global' ? 'bg-white border-purple-300' : 'bg-purple-50/50 border-purple-200'
-                          }`}>
-                            <RadioGroupItem value="global" id="global-priority" />
-                            <Label htmlFor="global-priority" className="cursor-pointer text-sm flex items-center gap-2">
-                              <Users className="h-4 w-4 text-purple-600" />
-                              <div>
-                                <div className="font-medium">Prioridad Global</div>
-                                <div className="text-xs text-gray-500">Misma para todas</div>
-                              </div>
-                            </Label>
-                          </div>
-                          <div className={`flex items-center space-x-2 p-2 rounded border transition-colors ${
-                            priorityMode === 'individual' ? 'bg-white border-purple-300' : 'bg-purple-50/50 border-purple-200'
-                          }`}>
-                            <RadioGroupItem value="individual" id="individual-priority" />
-                            <Label htmlFor="individual-priority" className="cursor-pointer text-sm flex items-center gap-2">
-                              <Target className="h-4 w-4 text-purple-600" />
-                              <div>
-                                <div className="font-medium">Prioridad Individual</div>
-                                <div className="text-xs text-gray-500">Personalizada</div>
-                              </div>
-                            </Label>
-                          </div>
+                    <h4 className="font-medium text-sm">Configuración de Prioridades</h4>
+                    <Badge variant="secondary" className="text-xs">
+                      {priorityMode === 'global' ? 'Misma Prioridad' : 'Prioridad Individual'}
+                    </Badge>
+                  </div>
+                  
+                  {/* Mode Selection */}
+                  <RadioGroup 
+                    value={priorityMode} 
+                    onValueChange={(value: 'global' | 'individual') => setPriorityMode(value)}
+                    className="mb-4"
+                  >
+                    <div className="grid grid-cols-2 gap-3">
+                      <Label 
+                        htmlFor="global-mode" 
+                        className={`cursor-pointer flex items-center gap-3 p-3 rounded-lg border transition-all ${
+                          priorityMode === 'global' 
+                            ? 'border-blue-300 bg-blue-50 text-blue-900' 
+                            : 'border-gray-200 bg-white hover:border-gray-300'
+                        }`}
+                      >
+                        <RadioGroupItem value="global" id="global-mode" />
+                        <div className="flex-1">
+                          <div className="font-medium text-sm">Misma Prioridad</div>
+                          <div className="text-xs text-gray-600">Todas las órdenes</div>
+                        </div>
+                      </Label>
+                      
+                      <Label 
+                        htmlFor="individual-mode" 
+                        className={`cursor-pointer flex items-center gap-3 p-3 rounded-lg border transition-all ${
+                          priorityMode === 'individual' 
+                            ? 'border-blue-300 bg-blue-50 text-blue-900' 
+                            : 'border-gray-200 bg-white hover:border-gray-300'
+                        }`}
+                      >
+                        <RadioGroupItem value="individual" id="individual-mode" />
+                        <div className="flex-1">
+                          <div className="font-medium text-sm">Prioridad Individual</div>
+                          <div className="text-xs text-gray-600">Por cada orden</div>
+                        </div>
+                      </Label>
+                    </div>
+                  </RadioGroup>
+
+                  {/* Global Priority Selection */}
+                  {priorityMode === 'global' && (
+                    <div className="bg-white p-3 rounded-lg border border-gray-200">
+                      <RadioGroup value={globalPriority} onValueChange={setGlobalPriority}>
+                        <div className="grid grid-cols-3 gap-3">
+                          {["Alta", "Media", "Baja"].map((priorityLevel) => (
+                            <div key={priorityLevel}>
+                              <RadioGroupItem 
+                                value={priorityLevel} 
+                                id={`global-${priorityLevel}`}
+                                className="sr-only"
+                              />
+                              <Label 
+                                htmlFor={`global-${priorityLevel}`} 
+                                className={`cursor-pointer flex flex-col items-center gap-2 p-4 rounded-lg border transition-all hover:shadow-md ${
+                                  globalPriority === priorityLevel 
+                                    ? `${getPriorityColor(priorityLevel)} font-medium border-2 border-current shadow-lg` 
+                                    : 'bg-white border-gray-200 hover:border-gray-300'
+                                }`}
+                              >
+                                <div className="flex items-center gap-2">
+                                  {getPriorityIcon(priorityLevel)}
+                                  <span className="font-medium text-sm">{priorityLevel}</span>
+                                </div>
+                                <span className="text-xs text-center text-gray-600">
+                                  {getPriorityLabel(priorityLevel)}
+                                </span>
+                              </Label>
+                            </div>
+                          ))}
                         </div>
                       </RadioGroup>
-
-                      {/* Global Priority Selection */}
-                      {priorityMode === 'global' && (
-                        <div className="bg-white p-3 rounded-lg border border-gray-200">
-                          <div className="flex items-center gap-2 mb-2">
-                            <Users className="h-4 w-4 text-gray-600" />
-                            <Label className="font-medium text-sm">Prioridad para Todas las Órdenes</Label>
-                          </div>
-                          <RadioGroup value={globalPriority} onValueChange={setGlobalPriority}>
-                            <div className="grid grid-cols-3 gap-2">
-                              {["Alta", "Media", "Baja"].map((priorityLevel) => (
-                                <div key={priorityLevel}>
-                                  <RadioGroupItem 
-                                    value={priorityLevel} 
-                                    id={`global-${priorityLevel}`}
-                                    className="sr-only" 
-                                  />
-                                  <Label 
-                                    htmlFor={`global-${priorityLevel}`} 
-                                    className={`flex flex-col items-center gap-1 cursor-pointer p-3 rounded-lg border-2 transition-all hover:shadow-md ${
-                                      globalPriority === priorityLevel 
-                                        ? `${getPriorityColor(priorityLevel)} border-current shadow-md` 
-                                        : 'bg-gray-50 border-gray-200 hover:border-gray-300'
-                                    }`}
-                                  >
-                                    <div className="flex items-center gap-1">
-                                      {getPriorityIcon(priorityLevel)}
-                                      <span className="font-medium text-sm">{priorityLevel}</span>
-                                    </div>
-                                    <span className="text-xs text-center text-gray-600">
-                                      {getPriorityLabel(priorityLevel)}
-                                    </span>
-                                  </Label>
-                                </div>
-                              ))}
-                            </div>
-                          </RadioGroup>
-                        </div>
-                      )}
-
-                      {/* Individual Priority Selection */}
-                      {priorityMode === 'individual' && (
-                        <div className="bg-white p-3 rounded-lg border border-gray-200">
-                          <div className="flex items-center gap-2 mb-2">
-                            <Target className="h-4 w-4 text-gray-600" />
-                            <Label className="font-medium text-sm">Prioridad por Orden</Label>
-                          </div>
-                          <div className="space-y-3 max-h-40 overflow-y-auto">
-                            {itemsWithIssues.map((item, index) => (
-                              <div key={item.id} className="bg-gray-50 p-3 rounded-lg border">
-                                <div className="flex items-center gap-2 mb-2">
-                                  <div className={`p-1 rounded-full ${
-                                    item.status === "fail" ? "bg-red-100" : "bg-yellow-100"
-                                  }`}>
-                                    {item.status === "fail" ? (
-                                      <X className="h-3 w-3 text-red-600" />
-                                    ) : (
-                                      <AlertTriangle className="h-3 w-3 text-yellow-600" />
-                                    )}
-                                  </div>
-                                  <Badge variant="outline" className="text-xs">
-                                    OT #{index + 1}
-                                  </Badge>
-                                  <span className="text-xs text-gray-600 flex-1 truncate">{item.description}</span>
-                                </div>
-                                <RadioGroup 
-                                  value={individualPriorities[item.id] || (item.status === 'fail' ? 'Alta' : 'Media')}
-                                  onValueChange={(value) => updateIndividualPriority(item.id, value)}
-                                >
-                                  <div className="grid grid-cols-3 gap-1">
-                                    {["Alta", "Media", "Baja"].map((priorityLevel) => (
-                                      <div key={priorityLevel}>
-                                        <RadioGroupItem 
-                                          value={priorityLevel} 
-                                          id={`${item.id}-${priorityLevel}`}
-                                          className="sr-only"
-                                        />
-                                        <Label 
-                                          htmlFor={`${item.id}-${priorityLevel}`} 
-                                          className={`flex items-center justify-center gap-1 cursor-pointer py-2 px-1 rounded text-xs transition-all ${
-                                            (individualPriorities[item.id] || (item.status === 'fail' ? 'Alta' : 'Media')) === priorityLevel 
-                                              ? `${getPriorityColor(priorityLevel)} font-medium border-2 border-current` 
-                                              : 'bg-white border border-gray-200 hover:border-gray-300'
-                                          }`}
-                                        >
-                                          {getPriorityIcon(priorityLevel)}
-                                          <span className="hidden sm:inline">{priorityLevel}</span>
-                                          <span className="sm:hidden">{priorityLevel.charAt(0)}</span>
-                                        </Label>
-                                      </div>
-                                    ))}
-                                  </div>
-                                </RadioGroup>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
                     </div>
-                  </div>
+                  )}
+
+                  {/* Individual Priority Selection */}
+                  {priorityMode === 'individual' && (
+                    <div className="bg-white p-3 rounded-lg border border-gray-200">
+                      <div className="flex items-center gap-2 mb-3">
+                        <Target className="h-4 w-4 text-gray-600" />
+                        <Label className="font-medium text-sm">Prioridad por Orden</Label>
+                      </div>
+                      <div className="space-y-3 max-h-48 overflow-y-auto">
+                        {itemsWithIssues.map((item, index) => (
+                          <div key={item.id} className="bg-gray-50 p-3 rounded-lg border">
+                            <div className="flex items-center gap-2 mb-2">
+                              <div className={`p-1 rounded-full ${
+                                item.status === "fail" ? "bg-red-100" : "bg-yellow-100"
+                              }`}>
+                                {item.status === "fail" ? (
+                                  <X className="h-3 w-3 text-red-600" />
+                                ) : (
+                                  <AlertTriangle className="h-3 w-3 text-yellow-600" />
+                                )}
+                              </div>
+                              <Badge variant="outline" className="text-xs">
+                                OT #{index + 1}
+                              </Badge>
+                              <span className="text-xs text-gray-600 flex-1 truncate">{item.description}</span>
+                            </div>
+                            <RadioGroup 
+                              value={individualPriorities[item.id] || (item.status === 'fail' ? 'Alta' : 'Media')}
+                              onValueChange={(value) => updateIndividualPriority(item.id, value)}
+                            >
+                              <div className="grid grid-cols-3 gap-2">
+                                {["Alta", "Media", "Baja"].map((priorityLevel) => (
+                                  <div key={priorityLevel}>
+                                    <RadioGroupItem 
+                                      value={priorityLevel} 
+                                      id={`${item.id}-${priorityLevel}`}
+                                      className="sr-only"
+                                    />
+                                    <Label 
+                                      htmlFor={`${item.id}-${priorityLevel}`} 
+                                      className={`flex items-center justify-center gap-1 cursor-pointer py-2 px-2 rounded text-xs transition-all ${
+                                        (individualPriorities[item.id] || (item.status === 'fail' ? 'Alta' : 'Media')) === priorityLevel 
+                                          ? `${getPriorityColor(priorityLevel)} font-medium border-2 border-current` 
+                                          : 'bg-white border border-gray-200 hover:border-gray-300'
+                                      }`}
+                                    >
+                                      {getPriorityIcon(priorityLevel)}
+                                      <span className="hidden sm:inline">{priorityLevel}</span>
+                                      <span className="sm:hidden">{priorityLevel.charAt(0)}</span>
+                                    </Label>
+                                  </div>
+                                ))}
+                              </div>
+                            </RadioGroup>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Description */}
@@ -795,6 +760,7 @@ export function CorrectiveWorkOrderDialog({
           setShowResults(false)
           onWorkOrderCreated(workOrderId)
         }}
+        onNavigateToAssetsPage={onNavigateToAssetsPage}
       />
     )}
   </>

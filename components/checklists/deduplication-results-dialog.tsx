@@ -45,13 +45,15 @@ interface DeduplicationResultsDialogProps {
     offline?: boolean
   } | null
   onNavigateToWorkOrder: (workOrderId: string) => void
+  onNavigateToAssetsPage?: () => void
 }
 
 export function DeduplicationResultsDialog({
   open,
   onOpenChange,
   results,
-  onNavigateToWorkOrder
+  onNavigateToWorkOrder,
+  onNavigateToAssetsPage
 }: DeduplicationResultsDialogProps) {
   if (!results) return null
 
@@ -249,7 +251,12 @@ export function DeduplicationResultsDialog({
           <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
             <Button 
               variant="outline" 
-              onClick={() => onOpenChange(false)}
+              onClick={() => {
+                onOpenChange(false)
+                if (onNavigateToAssetsPage) {
+                  onNavigateToAssetsPage()
+                }
+              }}
               className="order-2 sm:order-1"
             >
               Cerrar

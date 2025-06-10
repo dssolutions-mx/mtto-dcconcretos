@@ -538,7 +538,7 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
           if (result.data?.completed_id) {
             return result.data.completed_id
           } else {
-            router.push('/checklists')
+            handleNavigateToAssetsPage()
             return null
           }
         } else {
@@ -588,7 +588,7 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
             description: "Se sincronizará automáticamente cuando vuelva la conexión"
           })
           
-          router.push('/checklists')
+          handleNavigateToAssetsPage()
           return null
         } else {
           throw new Error('Servicio offline no disponible')
@@ -676,6 +676,12 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
     
     // Navigate to the specific work order that was created
     router.push(`/ordenes/${workOrderId}`)
+  }
+
+  // New function to handle when user cancels or closes dialogs without creating work orders
+  const handleNavigateToAssetsPage = () => {
+    // Navigate to assets page which works offline and shows asset status
+    router.push('/checklists/assets')
   }
   
   const findSectionAndItemById = (itemId: string) => {
@@ -1025,6 +1031,8 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
             <AlertDialogCancel onClick={() => {
               setShowCorrective(false)
               submitChecklist()
+              // Navigate to assets page instead of staying on completed checklist
+              handleNavigateToAssetsPage()
             }}>No, solo guardar</AlertDialogCancel>
             <AlertDialogAction onClick={prepareCorrectiveAction}>Sí, crear orden correctiva</AlertDialogAction>
           </AlertDialogFooter>
@@ -1034,7 +1042,13 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
       {/* Corrective Work Order Dialog */}
       <CorrectiveWorkOrderDialog
         open={correctiveDialogOpen}
-        onOpenChange={setCorrectiveDialogOpen}
+        onOpenChange={(open) => {
+          setCorrectiveDialogOpen(open)
+          // When dialog is closed without creating work orders, navigate to assets page
+          if (!open) {
+            handleNavigateToAssetsPage()
+          }
+        }}
         checklist={{
           ...checklist,
           id: completedChecklistId || checklist.id // Use completed checklist ID if available
@@ -1054,6 +1068,7 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
             }
           })}
         onWorkOrderCreated={handleWorkOrderCreated}
+        onNavigateToAssetsPage={handleNavigateToAssetsPage}
       />
 
       {/* Estado offline integrado */}
