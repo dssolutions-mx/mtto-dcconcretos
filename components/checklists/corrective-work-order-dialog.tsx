@@ -229,6 +229,13 @@ export function CorrectiveWorkOrderDialog({
       }
 
       // Online processing with full deduplication support
+      console.log('🎯 FRONTEND: Sending consolidation choices:', consolidationChoices)
+      console.log('🔍 FRONTEND: Items with issues:', itemsWithIssues.map(item => ({ id: item.id, description: item.description })))
+      console.log('📋 FRONTEND: Similar issues results:', similarIssuesResults.map(result => ({ 
+        itemId: result.item.id, 
+        hasSimilar: result.similar_issues.length > 0 
+      })))
+      
       const response = await fetch('/api/checklists/generate-corrective-work-order-enhanced', {
         method: 'POST',
         headers: {
@@ -341,11 +348,13 @@ export function CorrectiveWorkOrderDialog({
     
     let consolidateCount = 0
     let createNewCount = 0
+    let escalateCount = 0
 
     if (itemsWithSimilarIssues.length > 0 && isOnline) {
       itemsWithSimilarIssues.forEach(result => {
         const choice = consolidationChoices[result.item.id] || 'consolidate'
         if (choice === 'consolidate') consolidateCount++
+        else if (choice === 'escalate') escalateCount++
         else createNewCount++
       })
       createNewCount += itemsWithIssues.length - itemsWithSimilarIssues.length
@@ -693,30 +702,46 @@ export function CorrectiveWorkOrderDialog({
                       
                       let consolidateCount = 0
                       let createNewCount = 0
+                      let escalateCount = 0
 
-                      if (itemsWithSimilarIssues.length > 0) {
-                        itemsWithSimilarIssues.forEach(result => {
-                          const choice = consolidationChoices[result.item.id] || 'consolidate'
-                          if (choice === 'consolidate') consolidateCount++
-                          else createNewCount++
-                        })
-                        createNewCount += itemsWithIssues.length - itemsWithSimilarIssues.length
-                      } else {
-                        createNewCount = itemsWithIssues.length
-                      }
+                      // Count user choices for items with similar issues
+                      itemsWithSimilarIssues.forEach(result => {
+                        const choice = consolidationChoices[result.item.id] || 'consolidate'
+                        if (choice === 'consolidate') consolidateCount++
+                        else if (choice === 'escalate') escalateCount++
+                        else createNewCount++
+                      })
+                      
+                      // Items without similar issues will always create new orders
+                      createNewCount += itemsWithIssues.length - itemsWithSimilarIssues.length
 
                       return (
-                        <div className="flex items-center gap-2 flex-wrap">
-                          {createNewCount > 0 && (
-                            <div className="flex items-center gap-1">
-                              <Plus className="h-3 w-3 text-green-600" />
-                              <span><strong>{createNewCount}</strong> nueva{createNewCount > 1 ? 's' : ''}</span>
-                            </div>
-                          )}
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            {createNewCount > 0 && (
+                              <div className="flex items-center gap-1">
+                                <Plus className="h-3 w-3 text-green-600" />
+                                <span><strong>{createNewCount}</strong> nueva{createNewCount > 1 ? 's' : ''}</span>
+                              </div>
+                            )}
+                            {consolidateCount > 0 && (
+                              <div className="flex items-center gap-1">
+                                <Link2 className="h-3 w-3 text-blue-600" />
+                                <span><strong>{consolidateCount}</strong> consolidada{consolidateCount > 1 ? 's' : ''}</span>
+                              </div>
+                            )}
+                            {escalateCount > 0 && (
+                              <div className="flex items-center gap-1">
+                                <AlertTriangle className="h-3 w-3 text-red-600" />
+                                <span><strong>{escalateCount}</strong> escalada{escalateCount > 1 ? 's' : ''}</span>
+                              </div>
+                            )}
+                          </div>
+                          
+                          {/* Show details for consolidations */}
                           {consolidateCount > 0 && (
-                            <div className="flex items-center gap-1">
-                              <Link2 className="h-3 w-3 text-blue-600" />
-                              <span><strong>{consolidateCount}</strong> consolidada{consolidateCount > 1 ? 's' : ''}</span>
+                            <div className="text-xs text-blue-600 mt-1">
+                              💡 Los problemas consolidados se agregarán a órdenes existentes
                             </div>
                           )}
                         </div>

@@ -392,16 +392,65 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
   }, [itemStatus, itemNotes, itemPhotos])
   
   const handleSubmit = async () => {
+    // Validación de completitud del checklist
     if (!isChecklistComplete()) {
-      toast.error('Por favor complete todos los campos requeridos')
+      const missingFields = []
+      
+      // Verificar técnico
+      if (!technician?.trim()) {
+        missingFields.push("Nombre del técnico")
+      }
+      
+      // Verificar firma
+      if (!signature) {
+        missingFields.push("Firma")
+      }
+      
+      // Verificar items sin completar
+      const totalItems = getTotalItems()
+      const completedItems = getCompletedItems()
+      if (completedItems < totalItems) {
+        missingFields.push(`${totalItems - completedItems} item(s) del checklist`)
+      }
+      
+      if (missingFields.length > 0) {
+        toast.error("⚠️ Campos obligatorios faltantes:", {
+          description: missingFields.join(", "),
+          duration: 5000
+        })
+      } else {
+        toast.error('Por favor complete todos los campos requeridos')
+      }
       return
     }
-    
+
     // Validar evidencias
     const evidenceValidation = validateEvidenceRequirements()
     if (!evidenceValidation.isValid) {
-      toast.error('Evidencias fotográficas incompletas')
+      toast.error('📸 Evidencias fotográficas incompletas', {
+        description: evidenceValidation.errors.length > 0 
+          ? evidenceValidation.errors[0] 
+          : "Faltan fotos requeridas",
+        duration: 5000
+      })
       evidenceValidation.errors.forEach(error => toast.error(error))
+      return
+    }
+
+    // Validar lecturas de equipo si están presentes
+    if (equipmentReadings.hours_reading && equipmentReadings.hours_reading <= 0) {
+      toast.error("⏱️ Lectura de horas inválida", {
+        description: "Las horas deben ser un número positivo",
+        duration: 4000
+      })
+      return
+    }
+
+    if (equipmentReadings.kilometers_reading && equipmentReadings.kilometers_reading <= 0) {
+      toast.error("📏 Lectura de kilómetros inválida", {
+        description: "Los kilómetros deben ser un número positivo", 
+        duration: 4000
+      })
       return
     }
 
@@ -411,6 +460,11 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
 
     if (itemsWithIssues.length > 0) {
       // Complete the checklist first, then show dialog
+      toast.info("🔄 Procesando checklist...", {
+        description: "Guardando datos y preparando órdenes de trabajo",
+        duration: 3000
+      })
+      
       const completedId = await submitChecklist()
       if (completedId) {
         setCompletedChecklistId(completedId)
@@ -420,6 +474,10 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
     }
 
     // If no issues, proceed with normal submission
+    toast.info("✅ Completando checklist...", {
+      description: "No se encontraron problemas",
+      duration: 2000
+    })
     await submitChecklist()
   }
 
