@@ -1520,28 +1520,7 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
             })}
           </div>
         </CardContent>
-        <CardFooter className="flex justify-between">
-          <Button
-            variant="outline"
-            onClick={() => router.back()}
-            disabled={submitting}
-          >
-            Cancelar
-          </Button>
-          <Button
-            onClick={handleSubmit}
-            disabled={submitting}
-          >
-            {submitting ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                Enviando...
-              </>
-            ) : (
-              "Enviar"
-            )}
-          </Button>
-        </CardFooter>
+
       </Card>
 
       {/* Componente de lecturas de equipo */}
