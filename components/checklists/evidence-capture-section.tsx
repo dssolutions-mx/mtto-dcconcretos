@@ -23,7 +23,10 @@ import {
   WifiOff,
   AlertCircle,
   RefreshCw,
-  CheckCircle2
+  CheckCircle2,
+  Download,
+  Wifi,
+  HardDrive
 } from "lucide-react"
 import { toast } from "sonner"
 
@@ -46,6 +49,11 @@ interface SmartEvidence {
   error?: string
   photoId?: string
   file?: File
+  // Enhanced metadata for better tracking
+  originalSize?: number
+  compressedSize?: number
+  compressionRatio?: number
+  timestamp?: number
 }
 
 interface EvidenceCaptureProps {
@@ -71,23 +79,49 @@ export function EvidenceCaptureSection({
   const [uploading, setUploading] = useState(false)
   const [isOnline, setIsOnline] = useState(typeof window !== 'undefined' ? navigator.onLine : true)
   
-  // Dynamic import of photo service
+  // Enhanced photo service handling
   const [photoService, setPhotoService] = useState<any>(null)
+  const [serviceReady, setServiceReady] = useState(false)
   
+  // Local storage key for persistence
+  const storageKey = `evidence-${checklistId}-${sectionId}`
+  
+  // Initialize photo service
   useEffect(() => {
     if (typeof window !== 'undefined') {
       import('@/lib/services/simple-photo-service').then(module => {
         setPhotoService(module.simplePhotoService)
+        setServiceReady(true)
+        console.log('📸 Evidence photo service initialized')
+      }).catch(error => {
+        console.error('Failed to initialize photo service:', error)
+        toast.error('Error al inicializar el servicio de fotos')
       })
     }
   }, [])
 
-  // Monitor online status
+  // Enhanced online/offline monitoring
   useEffect(() => {
     if (typeof window === 'undefined') return
     
-    const handleOnline = () => setIsOnline(true)
-    const handleOffline = () => setIsOnline(false)
+    const handleOnline = () => {
+      setIsOnline(true)
+      console.log('🌐 Evidence section back online - checking for pending uploads')
+      
+      // Trigger upload retry when back online
+      if (photoService && serviceReady) {
+        setTimeout(() => {
+          photoService.retryFailedUploads()
+          toast.success("Conexión restaurada - reintentando subidas de evidencias")
+        }, 1000)
+      }
+    }
+    
+    const handleOffline = () => {
+      setIsOnline(false)
+      console.log('📱 Evidence section offline - photos will be stored locally')
+      toast.info("Sin conexión - las evidencias se guardarán localmente")
+    }
     
     window.addEventListener('online', handleOnline)
     window.addEventListener('offline', handleOffline)
@@ -96,14 +130,14 @@ export function EvidenceCaptureSection({
       window.removeEventListener('online', handleOnline)
       window.removeEventListener('offline', handleOffline)
     }
-  }, [])
+  }, [photoService, serviceReady])
 
-  // Listen for photo upload status events
+  // Enhanced upload status listener with better error handling
   useEffect(() => {
     if (typeof window === 'undefined') return
     
     const handleUploadStatus = (event: CustomEvent) => {
-      const { photoId, status, url, error } = event.detail
+      const { photoId, status, url, error, metadata } = event.detail
       
       setEvidences(prev => prev.map(evidence => {
         if (evidence.photoId === photoId) {
@@ -111,16 +145,30 @@ export function EvidenceCaptureSection({
             ...evidence,
             status: status as any,
             photo_url: url || evidence.photo_url,
-            error: error
+            error: error,
+            ...(metadata && {
+              originalSize: metadata.originalSize,
+              compressedSize: metadata.compressedSize,
+              compressionRatio: metadata.compressionRatio
+            })
           }
         }
         return evidence
       }))
       
+      // Enhanced feedback messages
       if (status === 'uploaded') {
-        toast.success("Evidencia subida exitosamente")
+        toast.success("✅ Evidencia subida exitosamente", {
+          description: "La evidencia está ahora disponible en línea"
+        })
       } else if (status === 'failed') {
-        toast.error(`Error al subir evidencia: ${error}`)
+        toast.error(`❌ Error al subir evidencia: ${error}`, {
+          description: "La evidencia permanece guardada localmente"
+        })
+      } else if (status === 'stored') {
+        toast.info("💾 Evidencia guardada localmente", {
+          description: "Se subirá automáticamente cuando vuelva la conexión"
+        })
       }
     }
     
@@ -130,6 +178,40 @@ export function EvidenceCaptureSection({
       window.removeEventListener('photo-upload-status', handleUploadStatus as EventListener)
     }
   }, [])
+
+  // Enhanced persistence - save evidences to localStorage
+  useEffect(() => {
+    if (evidences.length > 0) {
+      try {
+        localStorage.setItem(storageKey, JSON.stringify({
+          evidences: evidences.map(e => ({
+            ...e,
+            file: undefined // Don't store file objects in localStorage
+          })),
+          timestamp: Date.now()
+        }))
+      } catch (error) {
+        console.error('Failed to save evidences to localStorage:', error)
+      }
+    }
+  }, [evidences, storageKey])
+
+  // Load evidences from localStorage on mount
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(storageKey)
+      if (saved) {
+        const data = JSON.parse(saved)
+        // Only load if less than 24 hours old
+        if (Date.now() - (data.timestamp || 0) < 24 * 60 * 60 * 1000) {
+          setEvidences(data.evidences || [])
+          console.log(`📂 Loaded ${data.evidences?.length || 0} evidences from localStorage`)
+        }
+      }
+    } catch (error) {
+      console.error('Failed to load evidences from localStorage:', error)
+    }
+  }, [storageKey])
 
   // Update parent when evidences change (use a ref to track if we should call on mount)
   const hasInitialized = useRef(false)
@@ -167,22 +249,40 @@ export function EvidenceCaptureSection({
     return { errors, warnings, isValid: errors.length === 0 }
   }, [evidences, config])
 
-  // Smart photo upload - ENHANCED VERSION
+  // Enhanced photo upload with better error handling and feedback
   const handlePhotoUpload = async (file: File) => {
-    if (!photoService || !selectedCategory) {
-      toast.error('Seleccione una categoría primero')
+    if (!serviceReady || !photoService) {
+      toast.error('📸 Servicio de fotos no disponible - intente nuevamente')
+      return
+    }
+
+    if (!selectedCategory) {
+      toast.error('📂 Seleccione una categoría primero')
       return
     }
 
     if (evidences.filter(e => e.category === selectedCategory).length >= config.max_photos) {
-      toast.error(`Máximo ${config.max_photos} fotos permitidas para "${selectedCategory}"`)
+      toast.error(`📊 Máximo ${config.max_photos} fotos permitidas para "${selectedCategory}"`)
+      return
+    }
+
+    // Validate file size (10MB limit)
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error('📏 Archivo muy grande - máximo 10MB permitido')
+      return
+    }
+
+    // Validate file type
+    if (!file.type.startsWith('image/')) {
+      toast.error('📷 Solo se permiten archivos de imagen')
       return
     }
 
     setUploading(true)
+    const originalSize = file.size
     
     try {
-      // Use smart photo service instead of direct upload
+      // Enhanced photo service call with progress tracking
       const result = await photoService.storePhoto(
         checklistId,
         `${sectionId}_${selectedCategory}_${Date.now()}`,
@@ -196,8 +296,11 @@ export function EvidenceCaptureSection({
         }
       )
       
+      const compressedSize = result.compressedSize || originalSize
+      const compressionRatio = originalSize > 0 ? Math.round((1 - compressedSize / originalSize) * 100) : 0
+      
       const newEvidence: SmartEvidence = {
-        id: `evidence_${Date.now()}_${Math.random()}`,
+        id: `evidence_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
         section_id: sectionId,
         category: selectedCategory,
         description: currentDescription || config.descriptions?.[selectedCategory] || '',
@@ -206,81 +309,129 @@ export function EvidenceCaptureSection({
         sequence_order: evidences.filter(e => e.category === selectedCategory).length + 1,
         status: result.status,
         photoId: result.id,
-        file
+        file,
+        originalSize,
+        compressedSize,
+        compressionRatio,
+        timestamp: Date.now()
       }
       
       setEvidences(prev => [...prev, newEvidence])
       setCurrentDescription('')
       
-      // Enhanced feedback based on connection status
+      // Enhanced feedback with compression info
+      const compressionText = compressionRatio > 0 ? ` (${compressionRatio}% compresión)` : ''
+      
       if (isOnline) {
-        toast.success("Evidencia guardada - subiendo en segundo plano", {
+        toast.success(`✅ Evidencia guardada - subiendo en segundo plano${compressionText}`, {
           description: "La evidencia se está subiendo automáticamente"
         })
       } else {
-        toast.info("Evidencia guardada sin conexión", {
+        toast.info(`💾 Evidencia guardada sin conexión${compressionText}`, {
           description: "Se subirá automáticamente cuando vuelva la conexión"
         })
       }
       
     } catch (error) {
       console.error('Error storing evidence photo:', error)
-      toast.error("Error al procesar la evidencia")
+      toast.error("❌ Error al procesar la evidencia", {
+        description: error instanceof Error ? error.message : "Error desconocido"
+      })
     } finally {
       setUploading(false)
     }
   }
 
-  // Eliminar evidencia
+  // Enhanced evidence removal with cleanup
   const removeEvidence = async (evidenceId: string) => {
     const evidence = evidences.find(e => e.id === evidenceId)
+    
     if (evidence?.photoId && photoService) {
-      await photoService.deletePhoto(evidence.photoId)
+      try {
+        await photoService.deletePhoto(evidence.photoId)
+        console.log(`🗑️ Deleted photo ${evidence.photoId} from storage`)
+      } catch (error) {
+        console.error('Error deleting photo from storage:', error)
+      }
     }
     
     setEvidences(prev => prev.filter(e => e.id !== evidenceId))
-    toast.success('Evidencia eliminada')
+    toast.success('🗑️ Evidencia eliminada', {
+      description: 'La evidencia y sus archivos han sido eliminados'
+    })
   }
 
-  // Ver imagen
-  const viewImage = (imageUrl: string) => {
-    window.open(imageUrl, '_blank')
-  }
-
-  // Retry upload
-  const retryUpload = async () => {
-    if (!photoService) return
-    
-    try {
-      await photoService.retryFailedUploads()
-      toast.info("Reintentando subida...")
-    } catch (error) {
-      toast.error("Error al reintentar subida")
+  // Enhanced image viewing
+  const viewImage = (evidence: SmartEvidence) => {
+    // Use preview if available and main URL if uploaded
+    const imageUrl = evidence.status === 'uploaded' && evidence.photo_url.startsWith('http') 
+      ? evidence.photo_url 
+      : evidence.preview || evidence.photo_url
+      
+    if (imageUrl) {
+      window.open(imageUrl, '_blank')
+    } else {
+      toast.error('Imagen no disponible')
     }
   }
 
-  const { errors, warnings, isValid } = validateRequirements()
-  const categoryCount = evidences.filter(e => e.category === selectedCategory).length
-  
-  // Get upload statistics
+  // Enhanced retry functionality
+  const retryUpload = async (evidenceId?: string) => {
+    if (!photoService) return
+    
+    try {
+      if (evidenceId) {
+        // Retry specific evidence
+        const evidence = evidences.find(e => e.id === evidenceId)
+        if (evidence?.photoId) {
+          await photoService.retrySpecificUpload(evidence.photoId)
+          toast.info(`🔄 Reintentando subida de evidencia específica...`)
+        }
+      } else {
+        // Retry all failed uploads
+        await photoService.retryFailedUploads()
+        toast.info("🔄 Reintentando todas las subidas fallidas...")
+      }
+    } catch (error) {
+      console.error('Error retrying uploads:', error)
+      toast.error("❌ Error al reintentar subida")
+    }
+  }
+
+  // Get comprehensive upload statistics
   const getUploadStats = () => {
     const total = evidences.length
     const uploaded = evidences.filter(e => e.status === 'uploaded').length
     const uploading = evidences.filter(e => e.status === 'uploading').length
+    const stored = evidences.filter(e => e.status === 'stored').length
     const failed = evidences.filter(e => e.status === 'failed').length
     
-    return { total, uploaded, uploading, failed }
+    const totalOriginalSize = evidences.reduce((sum, e) => sum + (e.originalSize || 0), 0)
+    const totalCompressedSize = evidences.reduce((sum, e) => sum + (e.compressedSize || 0), 0)
+    const totalCompressionSaved = totalOriginalSize - totalCompressedSize
+    
+    return { 
+      total, 
+      uploaded, 
+      uploading, 
+      stored, 
+      failed,
+      totalOriginalSize,
+      totalCompressedSize,
+      totalCompressionSaved
+    }
   }
 
   const uploadStats = getUploadStats()
   const uploadProgress = uploadStats.total > 0 ? Math.round((uploadStats.uploaded / uploadStats.total) * 100) : 0
 
+  // Enhanced status icon with tooltips
   const getStatusIcon = (evidence: SmartEvidence) => {
     switch (evidence.status) {
       case 'stored':
         return isOnline ? 
           <Loader2 className="h-3 w-3 animate-spin text-blue-500" /> :
-          <WifiOff className="h-3 w-3 text-gray-500" />
+          <HardDrive className="h-3 w-3 text-gray-500" />
       case 'uploading':
         return <Loader2 className="h-3 w-3 animate-spin text-blue-500" />
       case 'uploaded':
@@ -292,13 +443,25 @@ export function EvidenceCaptureSection({
     }
   }
 
+  const { errors, warnings, isValid } = validateRequirements()
+  const categoryCount = evidences.filter(e => e.category === selectedCategory).length
+
   return (
     <Card className="mb-6">
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Camera className="h-5 w-5 text-blue-600" />
           {sectionTitle}
-          {!isOnline && <WifiOff className="h-4 w-4 text-red-500" />}
+                     <div className="flex items-center gap-1">
+             {isOnline ? (
+               <Wifi className="h-4 w-4 text-green-500" />
+             ) : (
+               <WifiOff className="h-4 w-4 text-red-500" />
+             )}
+             {!serviceReady && (
+               <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
+             )}
+           </div>
         </CardTitle>
         <CardDescription>
           Capture evidencias fotográficas del estado del equipo según las categorías requeridas
@@ -306,26 +469,52 @@ export function EvidenceCaptureSection({
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
-        {/* NEW: Upload progress and stats */}
+        {/* Enhanced upload progress and stats */}
         {evidences.length > 0 && (
           <div className="space-y-3 p-4 bg-gray-50 rounded-lg">
             <div className="flex justify-between items-center">
               <h4 className="text-sm font-medium">Estado de Evidencias</h4>
               <div className="flex items-center gap-2 text-xs">
                 <span>{uploadStats.uploaded}/{uploadStats.total} subidas</span>
+                {uploadStats.stored > 0 && (
+                  <Badge variant="secondary" className="text-xs">
+                    {uploadStats.stored} locales
+                  </Badge>
+                )}
                 {uploadStats.failed > 0 && (
                   <Badge variant="destructive" className="text-xs">
                     {uploadStats.failed} fallidas
                   </Badge>
                 )}
                 {uploadStats.uploading > 0 && (
-                  <Badge variant="secondary" className="text-xs">
+                  <Badge variant="secondary" className="text-xs animate-pulse">
                     {uploadStats.uploading} subiendo
                   </Badge>
                 )}
               </div>
             </div>
             <Progress value={uploadProgress} className="w-full h-2" />
+            
+            {/* Compression statistics */}
+            {uploadStats.totalCompressionSaved > 0 && (
+              <div className="text-xs text-green-600 flex items-center gap-1">
+                <Download className="h-3 w-3" />
+                Ahorro por compresión: {Math.round(uploadStats.totalCompressionSaved / 1024)}KB
+              </div>
+            )}
+            
+            {/* Retry all failed uploads button */}
+            {uploadStats.failed > 0 && isOnline && (
+              <Button 
+                size="sm" 
+                variant="outline" 
+                onClick={() => retryUpload()}
+                className="text-xs"
+              >
+                <RefreshCw className="h-3 w-3 mr-1" />
+                Reintentar subidas fallidas
+              </Button>
+            )}
           </div>
         )}
 
@@ -367,17 +556,17 @@ export function EvidenceCaptureSection({
                   size="sm"
                   onClick={() => setSelectedCategory(category)}
                   disabled={disabled}
-                  className={`relative ${isSelected ? 'bg-blue-600' : ''}`}
+                  className={`relative ${isComplete ? 'border-green-500' : ''}`}
                 >
                   {category}
                   <Badge 
-                    variant={isComplete ? "default" : "secondary"}
-                    className={`ml-2 ${isComplete ? 'bg-green-500' : 'bg-gray-400'}`}
+                    variant={isComplete ? "default" : "secondary"} 
+                    className="ml-2 text-xs"
                   >
-                    {categoryEvidences.length}/{config.min_photos}
+                    {categoryEvidences.length}
                   </Badge>
                   {isComplete && (
-                    <CheckCircle className="h-3 w-3 text-green-500 absolute -top-1 -right-1" />
+                    <CheckCircle className="h-3 w-3 text-green-500 absolute -top-1 -right-1 bg-white rounded-full" />
                   )}
                 </Button>
               )
@@ -385,7 +574,7 @@ export function EvidenceCaptureSection({
           </div>
         </div>
 
-        {/* Descripción opcional */}
+        {/* Description input */}
         {selectedCategory && (
           <div className="space-y-2">
             <Label htmlFor="evidence-description">
@@ -393,21 +582,16 @@ export function EvidenceCaptureSection({
             </Label>
             <Textarea
               id="evidence-description"
-              placeholder={`Describa el estado observado en ${selectedCategory}...`}
+              placeholder={`Describa el estado observado en "${selectedCategory}"`}
               value={currentDescription}
               onChange={(e) => setCurrentDescription(e.target.value)}
               disabled={disabled}
               rows={2}
             />
-            {config.descriptions?.[selectedCategory] && (
-              <p className="text-xs text-gray-600">
-                Sugerencia: {config.descriptions[selectedCategory]}
-              </p>
-            )}
           </div>
         )}
 
-        {/* ENHANCED photo capture with smart upload */}
+        {/* Photo upload section */}
         {selectedCategory && (
           <div className="space-y-4">
             <div className="flex items-center justify-between">
@@ -421,7 +605,7 @@ export function EvidenceCaptureSection({
             </div>
             
             {categoryCount < config.max_photos ? (
-              <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
+              <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-blue-400 transition-colors">
                 <Label
                   htmlFor={`evidence-upload-${sectionId}`}
                   className="cursor-pointer flex flex-col items-center gap-2"
@@ -433,15 +617,22 @@ export function EvidenceCaptureSection({
                       <Camera className="h-5 w-5 text-gray-400" />
                     )}
                     <span className="text-sm text-gray-600">
-                      {uploading ? 'Procesando...' : 'Tomar foto o seleccionar archivo'}
+                      {uploading ? 'Procesando y comprimiendo...' : 'Tomar foto o seleccionar archivo'}
                     </span>
                   </div>
                   <div className="text-xs text-gray-500 space-y-1">
                     <div>Categoría: {selectedCategory}</div>
+                    <div>Máximo 10MB • Se comprimirá automáticamente</div>
                     {!isOnline && (
                       <div className="flex items-center gap-1 text-orange-600">
-                        <WifiOff className="h-3 w-3" />
+                        <HardDrive className="h-3 w-3" />
                         Sin conexión - se guardará localmente
+                      </div>
+                    )}
+                    {!serviceReady && (
+                      <div className="flex items-center gap-1 text-blue-600">
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                        Inicializando servicio de fotos...
                       </div>
                     )}
                   </div>
@@ -452,10 +643,11 @@ export function EvidenceCaptureSection({
                   accept="image/*"
                   capture="environment"
                   className="hidden"
-                  disabled={disabled || uploading}
+                  disabled={disabled || uploading || !serviceReady}
                   onChange={(e) => {
                     if (e.target.files && e.target.files[0]) {
                       handlePhotoUpload(e.target.files[0])
+                      e.target.value = '' // Reset input
                     }
                   }}
                 />
@@ -471,31 +663,31 @@ export function EvidenceCaptureSection({
           </div>
         )}
 
-        {/* ENHANCED evidence gallery with upload status */}
+        {/* Enhanced evidence gallery with comprehensive status information */}
         {evidences.length > 0 && (
           <div className="space-y-4">
-            <Label>Evidencias Capturadas</Label>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <h4 className="text-sm font-medium">Evidencias Capturadas</h4>
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
               {evidences.map(evidence => (
-                <Card key={evidence.id} className="overflow-hidden">
-                  <div className="relative aspect-video">
+                <div 
+                  key={evidence.id} 
+                  className="relative group border rounded-lg overflow-hidden hover:shadow-md transition-shadow"
+                >
+                  <div className="aspect-square relative">
                     <img
                       src={evidence.preview || evidence.photo_url}
                       alt={`Evidencia ${evidence.category}`}
                       className="w-full h-full object-cover"
                     />
-                    <div className="absolute top-2 left-2">
-                      <Badge variant="secondary" className="text-xs">
-                        {evidence.category}
-                      </Badge>
-                    </div>
+                    
+                    {/* Status and action overlay */}
                     <div className="absolute top-2 right-2 flex gap-1">
                       {getStatusIcon(evidence)}
                       <Button
                         size="sm"
                         variant="secondary"
-                        className="h-6 w-6 p-0"
-                        onClick={() => viewImage(evidence.photo_url)}
+                        className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                        onClick={() => viewImage(evidence)}
                       >
                         <Eye className="h-3 w-3" />
                       </Button>
@@ -503,8 +695,8 @@ export function EvidenceCaptureSection({
                         <Button
                           size="sm"
                           variant="outline"
-                          className="h-6 w-6 p-0"
-                          onClick={retryUpload}
+                          className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                          onClick={() => retryUpload(evidence.id)}
                           disabled={!isOnline}
                         >
                           <RefreshCw className="h-3 w-3" />
@@ -513,7 +705,7 @@ export function EvidenceCaptureSection({
                       <Button
                         size="sm"
                         variant="destructive"
-                        className="h-6 w-6 p-0"
+                        className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
                         onClick={() => removeEvidence(evidence.id)}
                         disabled={disabled}
                       >
@@ -521,7 +713,7 @@ export function EvidenceCaptureSection({
                       </Button>
                     </div>
                     
-                    {/* NEW: Status overlay showing upload progress */}
+                    {/* Status overlay at bottom */}
                     {evidence.status !== 'uploaded' && (
                       <div className="absolute bottom-0 left-0 right-0 bg-black/70 text-white text-xs px-2 py-1">
                         {evidence.status === 'stored' && !isOnline && 'Guardado offline'}
@@ -531,102 +723,68 @@ export function EvidenceCaptureSection({
                       </div>
                     )}
                   </div>
-                  {evidence.description && (
-                    <CardContent className="p-2">
-                      <p className="text-xs text-gray-600 truncate">
+                  
+                  {/* Enhanced evidence info */}
+                  <div className="p-2 text-xs space-y-1">
+                    <div className="font-medium text-gray-700">
+                      {evidence.category}
+                    </div>
+                    {evidence.description && (
+                      <div className="text-gray-500 line-clamp-2">
                         {evidence.description}
-                      </p>
-                    </CardContent>
-                  )}
-                </Card>
+                      </div>
+                    )}
+                    {evidence.compressionRatio && evidence.compressionRatio > 0 && (
+                      <div className="text-green-600 flex items-center gap-1">
+                        <Download className="h-2 w-2" />
+                        {evidence.compressionRatio}% compresión
+                      </div>
+                    )}
+                    {evidence.timestamp && (
+                      <div className="text-gray-400">
+                        {new Date(evidence.timestamp).toLocaleTimeString()}
+                      </div>
+                    )}
+                  </div>
+                </div>
               ))}
             </div>
           </div>
         )}
 
-        {/* Validación de requisitos */}
-        <div className="space-y-2">
-          {errors.length > 0 && (
-            <Alert className="border-red-200 bg-red-50">
-              <AlertTriangle className="h-4 w-4 text-red-600" />
-              <AlertDescription className="text-red-800">
-                <ul className="list-disc list-inside space-y-1">
-                  {errors.map((error, index) => (
-                    <li key={index}>{error}</li>
-                  ))}
-                </ul>
-              </AlertDescription>
-            </Alert>
-          )}
-          
-          {warnings.length > 0 && (
-            <Alert className="border-yellow-200 bg-yellow-50">
-              <AlertTriangle className="h-4 w-4 text-yellow-600" />
-              <AlertDescription className="text-yellow-800">
-                <ul className="list-disc list-inside space-y-1">
-                  {warnings.map((warning, index) => (
-                    <li key={index}>{warning}</li>
-                  ))}
-                </ul>
-              </AlertDescription>
-            </Alert>
-          )}
-          
-          {isValid && evidences.length > 0 && (
-            <Alert className="border-green-200 bg-green-50">
-              <CheckCircle className="h-4 w-4 text-green-600" />
-              <AlertDescription className="text-green-800">
-                ✓ Todos los requisitos de evidencias están completos
-              </AlertDescription>
-            </Alert>
-          )}
-        </div>
-
-        {/* ENHANCED category summary with upload status */}
-        <div className="space-y-2">
-          <Label>Resumen por Categoría</Label>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-            {config.categories.map(category => {
-              const categoryEvidences = evidences.filter(e => e.category === category)
-              const isComplete = categoryEvidences.length >= config.min_photos
-              const uploaded = categoryEvidences.filter(e => e.status === 'uploaded').length
-              const pending = categoryEvidences.filter(e => e.status !== 'uploaded').length
-              
-              return (
-                <div
-                  key={category}
-                  className={`flex items-center justify-between p-3 rounded border ${
-                    isComplete ? 'border-green-200 bg-green-50' : 'border-gray-200 bg-gray-50'
-                  }`}
-                >
-                  <span className="text-sm font-medium">{category}</span>
-                  <div className="flex items-center gap-2">
-                    <div className="text-xs text-gray-600">
-                      {uploaded}/{categoryEvidences.length} subidas
-                    </div>
-                    <Badge variant={isComplete ? "default" : "secondary"}>
-                      {categoryEvidences.length}/{config.min_photos}
-                    </Badge>
-                    {isComplete && <CheckCircle className="h-4 w-4 text-green-600" />}
-                    {pending > 0 && (
-                      <Badge variant="outline" className="text-xs">
-                        {pending} pendientes
-                      </Badge>
-                    )}
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        </div>
-
-        {/* NEW: Offline warning */}
-        {!isOnline && evidences.length > 0 && (
-          <Alert>
-            <WifiOff className="h-4 w-4" />
+        {/* Validation feedback */}
+        {errors.length > 0 && (
+          <Alert variant="destructive">
+            <AlertTriangle className="h-4 w-4" />
             <AlertDescription>
-              Modo sin conexión activo. Las evidencias se guardan localmente y se subirán automáticamente 
-              cuando se restablezca la conexión.
+              <div className="space-y-1">
+                {errors.map((error, index) => (
+                  <div key={index}>• {error}</div>
+                ))}
+              </div>
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {warnings.length > 0 && (
+          <Alert>
+            <AlertTriangle className="h-4 w-4" />
+            <AlertDescription>
+              <div className="space-y-1">
+                {warnings.map((warning, index) => (
+                  <div key={index}>• {warning}</div>
+                ))}
+              </div>
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {/* Success feedback */}
+        {isValid && evidences.length > 0 && (
+          <Alert className="border-green-200 bg-green-50">
+            <CheckCircle className="h-4 w-4 text-green-600" />
+            <AlertDescription className="text-green-700">
+              ✅ Todos los requisitos de evidencia han sido cumplidos
             </AlertDescription>
           </Alert>
         )}

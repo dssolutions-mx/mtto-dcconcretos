@@ -19,7 +19,34 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import { Camera, Check, Clock, FileText, Flag, Loader2, Save, Upload, X, Wifi, WifiOff, RefreshCw } from "lucide-react"
+import { 
+  Camera, 
+  Check, 
+  Clock, 
+  FileText, 
+  Flag, 
+  Loader2, 
+  Save, 
+  Upload, 
+  X, 
+  Wifi, 
+  WifiOff, 
+  RefreshCw,
+  ChevronDown,
+  ChevronUp,
+  ChevronRight,
+  Menu,
+  BarChart3,
+  ArrowUp,
+  ArrowDown,
+  Target,
+  CheckCircle2,
+  AlertTriangle,
+  XCircle,
+  List,
+  Minimize2,
+  Maximize2
+} from "lucide-react"
 import { SignatureCanvas } from "@/components/checklists/signature-canvas"
 import { EnhancedOfflineStatus } from "@/components/checklists/enhanced-offline-status"
 import { EquipmentReadingsForm } from "@/components/checklists/equipment-readings-form"
@@ -31,6 +58,12 @@ import { toast } from "sonner"
 import { createBrowserClient } from '@supabase/ssr'
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible"
+
 // Importación dinámica del servicio offline para evitar problemas de SSR
 let offlineChecklistService: any = null
 
@@ -38,10 +71,21 @@ interface ChecklistExecutionProps {
   id: string
 }
 
+interface SectionProgress {
+  id: string
+  title: string
+  type: 'checklist' | 'evidence'
+  total: number
+  completed: number
+  hasIssues: boolean
+  isCollapsed: boolean
+}
+
 export function ChecklistExecution({ id }: ChecklistExecutionProps) {
   const router = useRouter()
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
+  const [completed, setCompleted] = useState(false)
   const [checklist, setChecklist] = useState<any>(null)
   
   const [itemStatus, setItemStatus] = useState<Record<string, "pass" | "flag" | "fail" | null>>({})
@@ -63,6 +107,10 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
   
   // Estados para evidencias fotográficas
   const [evidenceData, setEvidenceData] = useState<Record<string, any[]>>({})
+  
+  // Section Navigation States
+  const [sectionCollapsed, setSectionCollapsed] = useState<Record<string, boolean>>({})
+  const [autoCollapseCompleted, setAutoCollapseCompleted] = useState(false)
   
   // Usar el nuevo hook para estado offline
   const { isOnline, hasPendingSyncs } = useOfflineSync()
@@ -97,6 +145,159 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
     return () => clearInterval(autoSaveInterval)
   }, [hasUnsavedChanges, !!checklist])
 
+  // Enhanced Section Progress Calculation
+  const getSectionProgress = useCallback((): SectionProgress[] => {
+    if (!checklist?.sections) return []
+    
+    return checklist.sections.map((section: any) => {
+      if (section.section_type === 'evidence') {
+        const sectionEvidences = evidenceData[section.id] || []
+        const config = section.evidence_config || {}
+        const requiredPhotos = (config.categories || []).length * (config.min_photos || 1)
+        
+        return {
+          id: section.id,
+          title: section.title,
+          type: 'evidence' as const,
+          total: requiredPhotos,
+          completed: sectionEvidences.length,
+          hasIssues: sectionEvidences.some(e => e.status === 'failed'),
+          isCollapsed: sectionCollapsed[section.id] || false
+        }
+      } else {
+        const items = section.checklist_items || section.items || []
+        const completed = items.filter((item: any) => itemStatus[item.id]).length
+        const hasIssues = items.some((item: any) => 
+          itemStatus[item.id] === 'flag' || itemStatus[item.id] === 'fail'
+        )
+        
+        return {
+          id: section.id,
+          title: section.title,
+          type: 'checklist' as const,
+          total: items.length,
+          completed,
+          hasIssues,
+          isCollapsed: sectionCollapsed[section.id] || false
+        }
+      }
+    })
+  }, [checklist, itemStatus, evidenceData, sectionCollapsed])
+
+  // Auto-collapse completed sections when enabled
+  useEffect(() => {
+    if (!autoCollapseCompleted) return
+    
+    const sectionProgress = getSectionProgress()
+    const newCollapsed = { ...sectionCollapsed }
+    
+    sectionProgress.forEach(section => {
+      if (section.completed === section.total && section.total > 0) {
+        newCollapsed[section.id] = true
+      }
+    })
+    
+    setSectionCollapsed(newCollapsed)
+  }, [itemStatus, evidenceData, autoCollapseCompleted, getSectionProgress])
+
+  // Scroll to section functionality
+  const scrollToSection = useCallback((sectionId: string) => {
+    // First expand the section if it's collapsed
+    if (sectionCollapsed[sectionId]) {
+      setSectionCollapsed(prev => ({ ...prev, [sectionId]: false }))
+    }
+    
+    // Use setTimeout to ensure the section is expanded before scrolling
+    setTimeout(() => {
+      const element = document.getElementById(`section-${sectionId}`)
+      if (element) {
+        // Get the navigation header height to account for sticky positioning
+        const navHeader = document.querySelector('[data-navigation-header]')
+        const headerOffset = navHeader ? navHeader.getBoundingClientRect().height + 20 : 100
+        
+        // Calculate the target position
+        const elementPosition = element.getBoundingClientRect().top + window.pageYOffset
+        const targetPosition = elementPosition - headerOffset
+        
+        // Smooth scroll to the calculated position
+        window.scrollTo({
+          top: targetPosition,
+          behavior: 'smooth'
+        })
+        
+        // Section highlighted and navigation completed
+        
+        // Highlight the section briefly
+        element.style.transition = 'box-shadow 0.3s ease'
+        element.style.boxShadow = '0 0 0 3px rgba(59, 130, 246, 0.5)'
+        setTimeout(() => {
+          element.style.boxShadow = ''
+        }, 2000)
+      } else {
+        console.warn(`Section element not found: section-${sectionId}`)
+      }
+    }, sectionCollapsed[sectionId] ? 300 : 50) // Wait longer if section was collapsed
+  }, [sectionCollapsed])
+
+  // Toggle section collapse
+  const toggleSectionCollapse = useCallback((sectionId: string) => {
+    setSectionCollapsed(prev => ({
+      ...prev,
+      [sectionId]: !prev[sectionId]
+    }))
+    markAsUnsaved()
+  }, [])
+
+  // Bulk section operations
+  const collapseAllSections = useCallback(() => {
+    const newCollapsed: Record<string, boolean> = {}
+    checklist?.sections?.forEach((section: any) => {
+      newCollapsed[section.id] = true
+    })
+    setSectionCollapsed(newCollapsed)
+    toast.success("Todas las secciones han sido colapsadas")
+  }, [checklist])
+
+  const expandAllSections = useCallback(() => {
+    setSectionCollapsed({})
+    toast.success("Todas las secciones han sido expandidas")
+  }, [])
+
+  const collapseCompletedSections = useCallback(() => {
+    const sectionProgress = getSectionProgress()
+    const newCollapsed: Record<string, boolean> = {}
+    
+    sectionProgress.forEach(section => {
+      if (section.completed === section.total && section.total > 0) {
+        newCollapsed[section.id] = true
+      }
+    })
+    
+    setSectionCollapsed(newCollapsed)
+    toast.success("Secciones completadas han sido colapsadas")
+  }, [getSectionProgress])
+
+  // Jump to next incomplete section
+  const jumpToNextIncomplete = useCallback(() => {
+    const sectionProgress = getSectionProgress()
+    const nextIncomplete = sectionProgress.find(section => 
+      section.completed < section.total
+    )
+    
+    if (nextIncomplete) {
+      scrollToSection(nextIncomplete.id)
+      toast.info(`📍 Navegando a: ${nextIncomplete.title}`, {
+        description: `${nextIncomplete.completed}/${nextIncomplete.total} completado`,
+        duration: 3000
+      })
+    } else {
+      toast.success("🎉 ¡Todas las secciones están completas!", {
+        description: "El checklist está listo para ser enviado",
+        duration: 4000
+      })
+    }
+  }, [getSectionProgress, scrollToSection])
+
   // Guardar en localStorage para recuperación
   const saveToLocalStorage = useCallback(() => {
     if (!checklist) return
@@ -113,6 +314,7 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
       selectedItem,
       equipmentReadings,
       evidenceData,
+      sectionCollapsed, // Save section collapse state
       timestamp: Date.now()
     }
     
@@ -121,7 +323,7 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
     hasUnsavedChangesRef.current = false
     setLastSaved(new Date())
     toast.success("Borrador guardado localmente", { duration: 2000 })
-  }, [checklist, itemStatus, itemNotes, itemPhotos, notes, technician, signature, showCorrective, selectedItem, equipmentReadings, evidenceData, id])
+  }, [checklist, itemStatus, itemNotes, itemPhotos, notes, technician, signature, showCorrective, selectedItem, equipmentReadings, evidenceData, sectionCollapsed, id])
 
   // Recuperar datos guardados localmente
   const loadFromLocalStorage = () => {
@@ -144,6 +346,7 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
             setSelectedItem(data.selectedItem || null)
             setEquipmentReadings(data.equipmentReadings || {})
             setEvidenceData(data.evidenceData || {})
+            setSectionCollapsed(data.sectionCollapsed || {}) // Restore section collapse state
             // Reset unsaved changes flag after loading
             setHasUnsavedChanges(false)
             hasUnsavedChangesRef.current = false
@@ -392,71 +595,127 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
   }, [itemStatus, itemNotes, itemPhotos])
   
   const handleSubmit = async () => {
-    // Validación de completitud del checklist
+    // =====================================================
+    // ENHANCED VALIDATION WITH DETAILED NOTIFICATIONS
+    // =====================================================
+    
+    // Collect all validation errors
+    const validationErrors: string[] = []
+    const validationWarnings: string[] = []
+
+    // 1. Check basic checklist completion
     if (!isChecklistComplete()) {
-      const missingFields = []
-      
       // Verificar técnico
       if (!technician?.trim()) {
-        missingFields.push("Nombre del técnico")
+        validationErrors.push("👤 Nombre del técnico")
       }
       
       // Verificar firma
       if (!signature) {
-        missingFields.push("Firma")
+        validationErrors.push("✍️ Firma del técnico")
       }
       
       // Verificar items sin completar
       const totalItems = getTotalItems()
       const completedItems = getCompletedItems()
       if (completedItems < totalItems) {
-        missingFields.push(`${totalItems - completedItems} item(s) del checklist`)
-      }
-      
-      if (missingFields.length > 0) {
-        toast.error("⚠️ Campos obligatorios faltantes:", {
-          description: missingFields.join(", "),
-          duration: 5000
+        const missingCount = totalItems - completedItems
+        validationErrors.push(`📋 ${missingCount} item${missingCount > 1 ? 's' : ''} del checklist sin evaluar`)
+        
+        // Find specific uncompleted items
+        const uncompletedItems: string[] = []
+        checklist.sections.forEach((section: any) => {
+          const items = section.checklist_items || section.items
+          if (items) {
+            items.forEach((item: any) => {
+              if (!itemStatus[item.id]) {
+                uncompletedItems.push(`"${item.description.substring(0, 50)}${item.description.length > 50 ? '...' : ''}"`)
+              }
+            })
+          }
         })
-      } else {
-        toast.error('Por favor complete todos los campos requeridos')
+        
+        // Show first few incomplete items
+        if (uncompletedItems.length > 0) {
+          const itemsToShow = uncompletedItems.slice(0, 3)
+          validationWarnings.push(`Items pendientes: ${itemsToShow.join(', ')}${uncompletedItems.length > 3 ? ` y ${uncompletedItems.length - 3} más...` : ''}`)
+        }
       }
-      return
     }
 
-    // Validar evidencias
+    // 2. Validate evidence requirements
     const evidenceValidation = validateEvidenceRequirements()
     if (!evidenceValidation.isValid) {
-      toast.error('📸 Evidencias fotográficas incompletas', {
-        description: evidenceValidation.errors.length > 0 
-          ? evidenceValidation.errors[0] 
-          : "Faltan fotos requeridas",
-        duration: 5000
-      })
-      evidenceValidation.errors.forEach(error => toast.error(error))
-      return
+      validationErrors.push("📸 Evidencias fotográficas requeridas")
+      evidenceValidation.errors.forEach(error => validationWarnings.push(error))
     }
 
-    // Validar lecturas de equipo si están presentes
-    if (equipmentReadings.hours_reading && equipmentReadings.hours_reading <= 0) {
-      toast.error("⏱️ Lectura de horas inválida", {
-        description: "Las horas deben ser un número positivo",
-        duration: 4000
-      })
-      return
+    // 3. Validate equipment readings if present
+    if (equipmentReadings.hours_reading !== undefined && equipmentReadings.hours_reading !== null) {
+      if (equipmentReadings.hours_reading <= 0) {
+        validationErrors.push("⏱️ Lectura de horas inválida (debe ser mayor a 0)")
+      } else if (equipmentReadings.hours_reading <= checklist.currentHours) {
+        validationWarnings.push(`⚠️ Lectura de horas (${equipmentReadings.hours_reading}) no mayor a la actual (${checklist.currentHours})`)
+      }
     }
 
-    if (equipmentReadings.kilometers_reading && equipmentReadings.kilometers_reading <= 0) {
-      toast.error("📏 Lectura de kilómetros inválida", {
-        description: "Los kilómetros deben ser un número positivo", 
-        duration: 4000
-      })
-      return
+    if (equipmentReadings.kilometers_reading !== undefined && equipmentReadings.kilometers_reading !== null) {
+      if (equipmentReadings.kilometers_reading <= 0) {
+        validationErrors.push("📏 Lectura de kilómetros inválida (debe ser mayor a 0)")
+      } else if (equipmentReadings.kilometers_reading <= checklist.currentKilometers) {
+        validationWarnings.push(`⚠️ Lectura de kilómetros (${equipmentReadings.kilometers_reading}) no mayor a la actual (${checklist.currentKilometers})`)
+      }
     }
 
-    // Check if there are any items with issues BEFORE submitting
+    // 4. Validate items with issues have proper notes
     const itemsWithIssues = Object.entries(itemStatus)
       .filter(([_, status]) => status === "flag" || status === "fail")
+    
+    const itemsWithoutNotes = itemsWithIssues.filter(([itemId]) => !itemNotes[itemId]?.trim())
+    if (itemsWithoutNotes.length > 0) {
+      validationWarnings.push(`💬 ${itemsWithoutNotes.length} problema${itemsWithoutNotes.length > 1 ? 's' : ''} sin notas explicativas`)
+    }
+
+    // 5. Check for mandatory preventive maintenance requirements
+    if (checklist.maintenance_plan_id) {
+      if (validationErrors.length > 0) {
+        validationErrors.push("🔧 Checklist de mantenimiento preventivo debe estar 100% completo")
+      }
+    }
+
+    // =====================================================
+    // SHOW VALIDATION RESULTS
+    // =====================================================
+    
+    if (validationErrors.length > 0) {
+      // Show primary error with all missing items
+      toast.error("⚠️ No se puede enviar el checklist", {
+        description: `Faltan: ${validationErrors.join(", ")}`,
+        duration: 8000
+      })
+      
+      // Show warnings as separate toasts
+      validationWarnings.forEach((warning, index) => {
+        setTimeout(() => {
+          toast.warning(warning, { duration: 6000 })
+        }, (index + 1) * 500) // Stagger warnings
+      })
+      
+      return
+    }
+
+    // Show warnings only if no errors
+    if (validationWarnings.length > 0) {
+      validationWarnings.forEach((warning, index) => {
+        setTimeout(() => {
+          toast.warning(warning, { duration: 5000 })
+        }, index * 300)
+      })
+    }
+
+    // =====================================================
+    // PROCEED WITH SUBMISSION
+    // =====================================================
 
     if (itemsWithIssues.length > 0) {
       // Complete the checklist first, then show dialog
@@ -466,9 +725,26 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
       })
       
       const completedId = await submitChecklist()
-      if (completedId) {
+      if (completedId && completedId !== "success" && completedId !== "offline-success") {
+        toast.success("✅ Checklist procesado correctamente", {
+          description: "Preparando órdenes de trabajo...",
+          duration: 3000
+        })
         setCompletedChecklistId(completedId)
         setShowCorrective(true)
+      } else if (completedId === "success" || completedId === "offline-success") {
+        // Handle success case for issues
+        toast.success("✅ Checklist guardado exitosamente", {
+          description: "Mostrando opciones de acción correctiva...",
+          duration: 3000
+        })
+        setShowCorrective(true)
+      } else {
+        // Submission failed
+        toast.error("❌ No se pudo procesar el checklist", {
+          description: "Verifique su conexión e intente nuevamente",
+          duration: 5000
+        })
       }
       return
     }
@@ -478,7 +754,38 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
       description: "No se encontraron problemas",
       duration: 2000
     })
-    await submitChecklist()
+    
+    const result = await submitChecklist()
+    
+    // Navigate after successful submission when no issues
+    if (result && result !== null) {
+      setCompleted(true)
+      
+      if (result === "offline-success") {
+        // For offline success, show additional confirmation and navigate
+        toast.success("✅ Checklist guardado correctamente", {
+          description: "Navegando a la lista de activos...",
+          duration: 4000
+        })
+        setTimeout(() => {
+          handleNavigateToAssetsPage()
+        }, 3000)
+      } else {
+        // For online success, show confirmation and navigate
+        toast.success("🎉 Checklist completado exitosamente", {
+          description: "Navegando a la lista de activos...",
+          duration: 4000
+        })
+        
+        // Longer delay to ensure message is visible on mobile
+        setTimeout(() => {
+          handleNavigateToAssetsPage()
+        }, 3000)
+      }
+    } else {
+      // Submission failed - error already shown in submitChecklist
+      console.log("Checklist submission failed or was cancelled")
+    }
   }
 
   const submitChecklist = async (): Promise<string | null> => {
@@ -534,12 +841,12 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
             )
           }
           
-          // Return completed ID for work order creation, or navigate if no issues
+          // Return completed ID - navigation will be handled by the caller
           if (result.data?.completed_id) {
             return result.data.completed_id
           } else {
-            handleNavigateToAssetsPage()
-            return null
+            // Return a success indicator even if no completed_id
+            return "success"
           }
         } else {
           // Enhanced error logging
@@ -584,41 +891,58 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
           // Limpiar datos locales
           localStorage.removeItem(`checklist-draft-${id}`)
           
-          toast.success("Checklist guardado sin conexión", {
-            description: "Se sincronizará automáticamente cuando vuelva la conexión"
+          toast.success("📱 Checklist guardado sin conexión", {
+            description: "Se sincronizará automáticamente cuando vuelva la conexión",
+            duration: 4000
           })
           
-          handleNavigateToAssetsPage()
-          return null
+          // Return success indicator for offline mode
+          return "offline-success"
         } else {
           throw new Error('Servicio offline no disponible')
         }
       }
     } catch (error) {
       console.error('Error al enviar el checklist:', error)
-      toast.error("Error al completar el checklist")
+      
+      // Provide more specific error feedback
+      const errorMessage = error instanceof Error ? error.message : "Error desconocido"
+      toast.error("Error al completar el checklist", {
+        description: isOnline ? 
+          `No se pudo enviar: ${errorMessage}` : 
+          "Sin conexión - guardado localmente",
+        duration: 5000
+      })
       
       // Si falla, guardar offline como respaldo
       if (isOnline && offlineChecklistService) {
-        const offlineId = `checklist-${id}-${Date.now()}`
-        const submissionData = {
-          scheduleId: id,
-          technician: technician || 'Técnico',
-          notes,
-          signature,
-          completed_items: Object.keys(itemStatus).map(itemId => ({
-            item_id: itemId,
-            status: itemStatus[itemId],
-            notes: itemNotes[itemId] || null,
-            photo_url: itemPhotos[itemId] || null
-          })),
-          hours_reading: equipmentReadings.hours_reading || null,
-          kilometers_reading: equipmentReadings.kilometers_reading || null,
-          evidence_data: evidenceData
+        try {
+          const offlineId = `checklist-${id}-${Date.now()}`
+          const submissionData = {
+            scheduleId: id,
+            technician: technician || 'Técnico',
+            notes,
+            signature,
+            completed_items: Object.keys(itemStatus).map(itemId => ({
+              item_id: itemId,
+              status: itemStatus[itemId],
+              notes: itemNotes[itemId] || null,
+              photo_url: itemPhotos[itemId] || null
+            })),
+            hours_reading: equipmentReadings.hours_reading || null,
+            kilometers_reading: equipmentReadings.kilometers_reading || null,
+            evidence_data: evidenceData
+          }
+          
+          await offlineChecklistService.saveOfflineChecklist(offlineId, submissionData)
+          toast.success("Checklist guardado localmente como respaldo", {
+            description: "Se sincronizará cuando vuelva la conexión",
+            duration: 5000
+          })
+        } catch (offlineError) {
+          console.error('Error saving offline backup:', offlineError)
+          toast.error("No se pudo guardar respaldo local")
         }
-        
-        await offlineChecklistService.saveOfflineChecklist(offlineId, submissionData)
-        toast.info("Checklist guardado localmente como respaldo")
       }
       return null
     } finally {
@@ -748,6 +1072,55 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
            signature !== null
   }
 
+  // Enhanced Section Status Calculation
+  const getSectionStatus = (section: any) => {
+    if (section.section_type === 'evidence') {
+      const sectionEvidences = evidenceData[section.id] || []
+      const config = section.evidence_config || {}
+      const requiredPhotos = (config.categories || []).length * (config.min_photos || 1)
+      
+      return {
+        completed: sectionEvidences.length,
+        total: requiredPhotos,
+        hasIssues: sectionEvidences.some(e => e.status === 'failed'),
+        isComplete: sectionEvidences.length >= requiredPhotos
+      }
+    } else {
+      const items = section.checklist_items || section.items || []
+      const completed = items.filter((item: any) => itemStatus[item.id]).length
+      const hasIssues = items.some((item: any) => 
+        itemStatus[item.id] === 'flag' || itemStatus[item.id] === 'fail'
+      )
+      
+      return {
+        completed,
+        total: items.length,
+        hasIssues,
+        isComplete: completed === items.length
+      }
+    }
+  }
+
+  // Get overall progress statistics
+  const getOverallProgress = () => {
+    const sectionProgress = getSectionProgress()
+    const totalItems = sectionProgress.reduce((sum, section) => sum + section.total, 0)
+    const completedItems = sectionProgress.reduce((sum, section) => sum + section.completed, 0)
+    const sectionsWithIssues = sectionProgress.filter(section => section.hasIssues).length
+    const completedSections = sectionProgress.filter(section => 
+      section.completed === section.total && section.total > 0
+    ).length
+    
+    return {
+      totalItems,
+      completedItems,
+      sectionsWithIssues,
+      completedSections,
+      totalSections: sectionProgress.length,
+      progressPercentage: totalItems > 0 ? Math.round((completedItems / totalItems) * 100) : 0
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
@@ -771,11 +1144,79 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
     )
   }
 
+  const sectionProgress = getSectionProgress()
+  const overallProgress = getOverallProgress()
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 relative">
+      {/* Simplified Navigation Bar */}
+      <div className="sticky top-0 z-50 bg-white border-b shadow-sm" data-navigation-header>
+        <div className="flex items-center justify-between p-4">
+          <div className="flex items-center gap-4">
+            {/* Progress Indicator */}
+            <div className="flex items-center gap-2 text-sm text-gray-600">
+              <BarChart3 className="h-4 w-4" />
+              <span>{overallProgress.progressPercentage}% completado</span>
+              <span>({overallProgress.completedItems}/{overallProgress.totalItems})</span>
+            </div>
+          </div>
+
+          {/* Quick Actions */}
+          <div className="flex items-center gap-2">
+            {/* Collapse/Expand Actions */}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={collapseAllSections}
+              title="Colapsar todas las secciones"
+            >
+              <Minimize2 className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={expandAllSections}
+              title="Expandir todas las secciones"
+            >
+              <Maximize2 className="h-4 w-4" />
+            </Button>
+            
+            {/* Jump to Next Incomplete */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={jumpToNextIncomplete}
+              disabled={overallProgress.progressPercentage === 100}
+              title="Ir a siguiente sección incompleta"
+            >
+              <Target className="h-4 w-4" />
+            </Button>
+            
+            {/* Save Draft */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={saveToLocalStorage}
+              disabled={!hasUnsavedChanges}
+              title="Guardar borrador"
+            >
+              <Save className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+      </div>
+
       <Card>
-        <CardHeader className="bg-blue-500 text-white">
-          <CardTitle className="text-2xl">{checklist.name}</CardTitle>
+        <CardHeader className={`${completed ? 'bg-green-500' : 'bg-blue-500'} text-white transition-colors duration-300`}>
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-2xl">{checklist.name}</CardTitle>
+            {completed && (
+              <div className="flex items-center gap-2 bg-white/20 rounded-full px-3 py-1">
+                <Check className="h-4 w-4" />
+                <span className="text-sm font-medium">Completado</span>
+              </div>
+            )}
+          </div>
           <div className="text-white/90 mt-2">
             <div className="space-y-1">
               <div className="font-medium text-lg">{checklist.asset || 'Sin activo'}</div>
@@ -808,118 +1249,276 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
             </Alert>
           )}
           
-          <div className="flex justify-between items-center mb-4">
-            <div className="flex items-center gap-2">
-              <Clock className="h-5 w-5 text-muted-foreground" />
-              <span className="text-sm text-muted-foreground">Fecha: {checklist.scheduledDate}</span>
-            </div>
-            <div className="flex items-center gap-4">
-              <div className="text-sm text-muted-foreground">
-                Completado: {getCompletedItems()}/{getTotalItems()}
+          {/* Enhanced Progress Summary */}
+          <div className="mb-6 p-4 bg-gray-50 rounded-lg">
+            <div className="flex justify-between items-center mb-3">
+              <div className="flex items-center gap-2">
+                <Clock className="h-5 w-5 text-muted-foreground" />
+                <span className="text-sm text-muted-foreground">Fecha: {checklist.scheduledDate}</span>
               </div>
-              <div className="w-32 bg-gray-200 rounded-full h-2">
-                <div 
-                  className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-                  style={{ 
-                    width: `${getTotalItems() > 0 ? (getCompletedItems() / getTotalItems()) * 100 : 0}%` 
-                  }}
-                ></div>
+              <div className="flex items-center gap-4">
+                <div className="text-sm text-muted-foreground">
+                  {overallProgress.completedItems}/{overallProgress.totalItems} items
+                </div>
+                <div className="w-32 bg-gray-200 rounded-full h-2">
+                  <div 
+                    className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                    style={{ width: `${overallProgress.progressPercentage}%` }}
+                  />
+                </div>
+              </div>
+            </div>
+            
+            {/* Section Status Summary */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="h-4 w-4 text-green-500" />
+                <span>{overallProgress.completedSections} secciones completas</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="h-4 w-4 text-amber-500" />
+                <span>{overallProgress.sectionsWithIssues} con problemas</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <BarChart3 className="h-4 w-4 text-blue-500" />
+                <span>{overallProgress.progressPercentage}% completado</span>
               </div>
             </div>
           </div>
 
-          {checklist.sections && checklist.sections.map((section: any, sectionIndex: number) => {
-            if (section.section_type === 'evidence') {
-              // Renderizar sección de evidencias
-              return (
-                <EvidenceCaptureSection
-                  key={section.id}
-                  sectionId={section.id}
-                  sectionTitle={section.title}
-                  config={section.evidence_config || {
-                    min_photos: 1,
-                    max_photos: 5,
-                    categories: ['Estado General']
-                  }}
-                  onEvidenceChange={handleEvidenceChange}
-                  disabled={submitting}
-                />
-              )
-            }
-            
-            // Renderizar sección normal de checklist
-            return (
-            <div key={sectionIndex} className="mb-8">
-              <h3 className="text-lg font-semibold mb-4">{section.title}</h3>
-              <div className="space-y-6">
-                {(section.checklist_items || section.items) && (section.checklist_items || section.items).map((item: any) => {
-                  return (
-                  <Card key={item.id} className="overflow-hidden">
-                    <CardHeader className="py-3">
-                      <CardTitle className="text-base">{item.description}</CardTitle>
-                    </CardHeader>
-                    <CardContent className="pb-3">
-                      <div className="grid grid-cols-3 gap-2">
-                        <Button
-                          variant={itemStatus[item.id] === "pass" ? "default" : "outline"}
-                          className={`h-12 ${itemStatus[item.id] === "pass" ? "bg-green-500 hover:bg-green-600" : ""}`}
-                          onClick={() => handleStatusChange(item.id, "pass")}
-                        >
-                          <Check
-                            className={`mr-2 h-5 w-5 ${itemStatus[item.id] === "pass" ? "text-white" : "text-green-500"}`}
-                          />
-                          <span className={itemStatus[item.id] === "pass" ? "text-white" : "text-green-500"}>Pass</span>
-                        </Button>
-                        <Button
-                          variant={itemStatus[item.id] === "flag" ? "default" : "outline"}
-                          className={`h-12 ${itemStatus[item.id] === "flag" ? "bg-amber-500 hover:bg-amber-600" : ""}`}
-                          onClick={() => handleStatusChange(item.id, "flag")}
-                        >
-                          <Flag
-                            className={`mr-2 h-5 w-5 ${itemStatus[item.id] === "flag" ? "text-white" : "text-amber-500"}`}
-                          />
-                          <span className={itemStatus[item.id] === "flag" ? "text-white" : "text-amber-500"}>Flag</span>
-                        </Button>
-                        <Button
-                          variant={itemStatus[item.id] === "fail" ? "default" : "outline"}
-                          className={`h-12 ${itemStatus[item.id] === "fail" ? "bg-red-500 hover:bg-red-600" : ""}`}
-                          onClick={() => handleStatusChange(item.id, "fail")}
-                        >
-                          <X
-                            className={`mr-2 h-5 w-5 ${itemStatus[item.id] === "fail" ? "text-white" : "text-red-500"}`}
-                          />
-                          <span className={itemStatus[item.id] === "fail" ? "text-white" : "text-red-500"}>Fail</span>
-                        </Button>
-                      </div>
-
-                      {(itemStatus[item.id] === "flag" || itemStatus[item.id] === "fail") && (
-                        <div className="mt-4 space-y-4">
-                          <div className="space-y-2">
-                            <Label htmlFor={`notes-${item.id}`}>Notas</Label>
-                            <Textarea
-                              id={`notes-${item.id}`}
-                              placeholder="Describa el problema encontrado"
-                              value={itemNotes[item.id] || ""}
-                              onChange={(e) => handleItemNotesChange(item.id, e.target.value)}
-                            />
-                          </div>
-
-                          <SmartPhotoUpload
-                            checklistId={checklist.id}
-                            itemId={item.id}
-                            currentPhotoUrl={itemPhotos[item.id]}
-                            onPhotoChange={handlePhotoChange(item.id)}
+          {/* Enhanced Collapsible Sections */}
+          <div className="space-y-4">
+            {checklist.sections && checklist.sections.map((section: any, sectionIndex: number) => {
+              const sectionStatus = getSectionStatus(section)
+              const isCollapsed = sectionCollapsed[section.id] || false
+              
+              if (section.section_type === 'evidence') {
+                // Enhanced Evidence Section with Collapsible Wrapper
+                return (
+                  <div 
+                    id={`section-${section.id}`}
+                    className="scroll-mt-20"
+                  >
+                    <Collapsible
+                      key={section.id}
+                      open={!isCollapsed}
+                      onOpenChange={() => toggleSectionCollapse(section.id)}
+                    >
+                      <CollapsibleTrigger asChild>
+                        <Card className="cursor-pointer hover:shadow-md transition-shadow">
+                          <CardHeader className="pb-3">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-3">
+                                <Camera className="h-5 w-5 text-blue-600" />
+                                <div>
+                                  <CardTitle className="text-lg">{section.title}</CardTitle>
+                                  <CardDescription>
+                                    Sección de evidencias fotográficas
+                                  </CardDescription>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                {/* Section Progress Badge */}
+                                <Badge 
+                                  variant={sectionStatus.isComplete ? "default" : "secondary"}
+                                  className={sectionStatus.isComplete ? "bg-green-500" : ""}
+                                >
+                                  {sectionStatus.completed}/{sectionStatus.total}
+                                </Badge>
+                                {sectionStatus.hasIssues && (
+                                  <AlertTriangle className="h-4 w-4 text-amber-500" />
+                                )}
+                                {sectionStatus.isComplete && (
+                                  <CheckCircle2 className="h-4 w-4 text-green-500" />
+                                )}
+                                {isCollapsed ? (
+                                  <ChevronRight className="h-4 w-4 text-gray-400" />
+                                ) : (
+                                  <ChevronDown className="h-4 w-4 text-gray-400" />
+                                )}
+                              </div>
+                            </div>
+                          </CardHeader>
+                        </Card>
+                      </CollapsibleTrigger>
+                      <CollapsibleContent>
+                        <div className="mt-2">
+                          <EvidenceCaptureSection
+                            sectionId={section.id}
+                            sectionTitle={section.title}
+                            config={section.evidence_config || {
+                              min_photos: 1,
+                              max_photos: 5,
+                              categories: ['Estado General']
+                            }}
+                            onEvidenceChange={handleEvidenceChange}
                             disabled={submitting}
-                            category="problema"
                           />
                         </div>
-                      )}
-                    </CardContent>
-                  </Card>
-                )})}
-              </div>
-            </div>
-          )})}
+                      </CollapsibleContent>
+                    </Collapsible>
+                  </div>
+                )
+              }
+              
+              // Enhanced Regular Checklist Section with Collapsible Items
+              const items = section.checklist_items || section.items || []
+              
+              return (
+                <div 
+                  id={`section-${section.id}`}
+                  className="scroll-mt-20"
+                >
+                  <Collapsible
+                    key={section.id}
+                    open={!isCollapsed}
+                    onOpenChange={() => toggleSectionCollapse(section.id)}
+                  >
+                    <CollapsibleTrigger asChild>
+                      <Card className="cursor-pointer hover:shadow-md transition-shadow">
+                        <CardHeader className="pb-3">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                              <List className="h-5 w-5 text-blue-600" />
+                              <div>
+                                <CardTitle className="text-lg">{section.title}</CardTitle>
+                                <CardDescription>
+                                  {items.length} item{items.length !== 1 ? 's' : ''} de verificación
+                                </CardDescription>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              {/* Section Progress Badge */}
+                              <Badge 
+                                variant={sectionStatus.isComplete ? "default" : "secondary"}
+                                className={sectionStatus.isComplete ? "bg-green-500" : ""}
+                              >
+                                {sectionStatus.completed}/{sectionStatus.total}
+                              </Badge>
+                              {sectionStatus.hasIssues && (
+                                <AlertTriangle className="h-4 w-4 text-amber-500" />
+                              )}
+                              {sectionStatus.isComplete && (
+                                <CheckCircle2 className="h-4 w-4 text-green-500" />
+                              )}
+                              {isCollapsed ? (
+                                <ChevronRight className="h-4 w-4 text-gray-400" />
+                              ) : (
+                                <ChevronDown className="h-4 w-4 text-gray-400" />
+                              )}
+                            </div>
+                          </div>
+                          
+                          {/* Quick Progress Bar */}
+                          <div className="mt-3">
+                            <div className="w-full bg-gray-200 rounded-full h-1">
+                              <div 
+                                className={`h-1 rounded-full transition-all duration-300 ${
+                                  sectionStatus.isComplete ? 'bg-green-500' : 
+                                  sectionStatus.hasIssues ? 'bg-amber-500' : 'bg-blue-500'
+                                }`}
+                                style={{ 
+                                  width: `${sectionStatus.total > 0 ? (sectionStatus.completed / sectionStatus.total) * 100 : 0}%` 
+                                }}
+                              />
+                            </div>
+                          </div>
+                        </CardHeader>
+                      </Card>
+                    </CollapsibleTrigger>
+                    
+                    <CollapsibleContent>
+                      <div className="mt-2 space-y-4">
+                        {items.map((item: any) => (
+                          <Card key={item.id} className="overflow-hidden">
+                            <CardHeader className="py-3">
+                              <div className="flex items-center justify-between">
+                                <CardTitle className="text-base flex-1">{item.description}</CardTitle>
+                                {itemStatus[item.id] && (
+                                  <div className="ml-2">
+                                    {itemStatus[item.id] === "pass" && (
+                                      <CheckCircle2 className="h-5 w-5 text-green-500" />
+                                    )}
+                                    {itemStatus[item.id] === "flag" && (
+                                      <AlertTriangle className="h-5 w-5 text-amber-500" />
+                                    )}
+                                    {itemStatus[item.id] === "fail" && (
+                                      <XCircle className="h-5 w-5 text-red-500" />
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            </CardHeader>
+                            <CardContent className="pb-3">
+                              <div className="grid grid-cols-3 gap-2">
+                                <Button
+                                  variant={itemStatus[item.id] === "pass" ? "default" : "outline"}
+                                  className={`h-12 ${itemStatus[item.id] === "pass" ? "bg-green-500 hover:bg-green-600" : ""}`}
+                                  onClick={() => handleStatusChange(item.id, "pass")}
+                                  disabled={submitting}
+                                >
+                                  <Check
+                                    className={`mr-2 h-5 w-5 ${itemStatus[item.id] === "pass" ? "text-white" : "text-green-500"}`}
+                                  />
+                                  <span className={itemStatus[item.id] === "pass" ? "text-white" : "text-green-500"}>Pass</span>
+                                </Button>
+                                <Button
+                                  variant={itemStatus[item.id] === "flag" ? "default" : "outline"}
+                                  className={`h-12 ${itemStatus[item.id] === "flag" ? "bg-amber-500 hover:bg-amber-600" : ""}`}
+                                  onClick={() => handleStatusChange(item.id, "flag")}
+                                  disabled={submitting}
+                                >
+                                  <Flag
+                                    className={`mr-2 h-5 w-5 ${itemStatus[item.id] === "flag" ? "text-white" : "text-amber-500"}`}
+                                  />
+                                  <span className={itemStatus[item.id] === "flag" ? "text-white" : "text-amber-500"}>Flag</span>
+                                </Button>
+                                <Button
+                                  variant={itemStatus[item.id] === "fail" ? "default" : "outline"}
+                                  className={`h-12 ${itemStatus[item.id] === "fail" ? "bg-red-500 hover:bg-red-600" : ""}`}
+                                  onClick={() => handleStatusChange(item.id, "fail")}
+                                  disabled={submitting}
+                                >
+                                  <X
+                                    className={`mr-2 h-5 w-5 ${itemStatus[item.id] === "fail" ? "text-white" : "text-red-500"}`}
+                                  />
+                                  <span className={itemStatus[item.id] === "fail" ? "text-white" : "text-red-500"}>Fail</span>
+                                </Button>
+                              </div>
+
+                              {(itemStatus[item.id] === "flag" || itemStatus[item.id] === "fail") && (
+                                <div className="mt-4 space-y-4">
+                                  <div className="space-y-2">
+                                    <Label htmlFor={`notes-${item.id}`}>Notas</Label>
+                                    <Textarea
+                                      id={`notes-${item.id}`}
+                                      placeholder="Describa el problema encontrado"
+                                      value={itemNotes[item.id] || ""}
+                                      onChange={(e) => handleItemNotesChange(item.id, e.target.value)}
+                                      disabled={submitting}
+                                    />
+                                  </div>
+
+                                  <SmartPhotoUpload
+                                    checklistId={checklist.id}
+                                    itemId={item.id}
+                                    currentPhotoUrl={itemPhotos[item.id]}
+                                    onPhotoChange={handlePhotoChange(item.id)}
+                                    disabled={submitting}
+                                    category="problema"
+                                  />
+                                </div>
+                              )}
+                            </CardContent>
+                          </Card>
+                        ))}
+                      </div>
+                    </CollapsibleContent>
+                  </Collapsible>
+                </div>
+              )
+            })}
+          </div>
         </CardContent>
         <CardFooter className="flex justify-between">
           <Button
@@ -965,6 +1564,7 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
             rows={3}
             value={notes}
             onChange={handleNotesChange}
+            disabled={submitting}
           />
         </div>
 
@@ -975,6 +1575,7 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
             value={technician} 
             onChange={handleTechnicianChange}
             placeholder="Nombre del técnico responsable"
+            disabled={submitting}
           />
         </div>
 
@@ -990,17 +1591,29 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
           </Button>
           <div className="flex flex-col items-end gap-2">
             <div className="text-sm text-muted-foreground">
-              Progreso: {getCompletedItems()}/{getTotalItems()} items completados
+              Progreso: {overallProgress.completedItems}/{overallProgress.totalItems} items completados
+            </div>
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              {isOnline ? (
+                <><Wifi className="h-3 w-3 text-green-500" /> Se enviará al servidor</>
+              ) : (
+                <><WifiOff className="h-3 w-3 text-amber-500" /> Se guardará localmente</>
+              )}
             </div>
             <Button 
               onClick={handleSubmit} 
-              disabled={!isChecklistComplete() || submitting}
-              className={!isChecklistComplete() ? "opacity-50 cursor-not-allowed" : ""}
+              disabled={!isChecklistComplete() || submitting || completed}
+              className={!isChecklistComplete() ? "opacity-50 cursor-not-allowed" : completed ? "bg-green-500 hover:bg-green-600" : ""}
             >
-              {submitting ? (
+              {completed ? (
+                <>
+                  <Check className="mr-2 h-4 w-4" />
+                  ¡Completado! Redirigiendo...
+                </>
+              ) : submitting ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Guardando...
+                  {isOnline ? "Enviando..." : "Guardando offline..."}
                 </>
               ) : !isChecklistComplete() ? (
                 <>
@@ -1074,7 +1687,7 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
       {/* Estado offline integrado */}
       <EnhancedOfflineStatus showDetails={true} />
 
-      {hasUnsavedChanges && (
+      {hasUnsavedChanges && !completed && (
         <Alert>
           <AlertDescription className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
             <div className="flex items-center gap-2">
@@ -1091,6 +1704,31 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
           </AlertDescription>
         </Alert>
       )}
+
+      {/* Mobile-friendly completion overlay */}
+      {completed && (
+        <Alert className="border-green-200 bg-green-50">
+          <Check className="h-4 w-4 text-green-600" />
+          <AlertTitle className="text-green-800">¡Checklist Completado!</AlertTitle>
+          <AlertDescription className="text-green-700">
+            El checklist se ha guardado exitosamente. Redirigiendo a la lista de activos...
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {/* Floating Quick Navigation for Mobile */}
+      <div className="fixed bottom-4 right-4 z-40 md:hidden">
+        {overallProgress.progressPercentage < 100 && (
+          <Button
+            size="sm"
+            onClick={jumpToNextIncomplete}
+            className="rounded-full shadow-lg"
+            title="Ir a siguiente sección incompleta"
+          >
+            <Target className="h-4 w-4" />
+          </Button>
+        )}
+      </div>
     </div>
   )
 }

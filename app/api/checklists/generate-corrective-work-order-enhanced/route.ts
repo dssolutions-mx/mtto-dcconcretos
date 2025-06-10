@@ -148,26 +148,98 @@ export async function POST(request: NextRequest) {
             // Only consolidate if user chose 'consolidate' or default
             if (userChoice === 'consolidate') {
               console.log('✅ Consolidating with existing work order')
-              // Consolidate the issue
-              const { data: consolidationResult, error: consolidationError } = await supabase
-                .rpc('consolidate_issues', {
-                  p_existing_issue_id: existingIssue.issue_id,
-                  p_new_issue_id: savedIssue.id,
-                  p_work_order_id: existingIssue.work_order_id
-                })
+              
+              // Get current work order details to check priority
+              const { data: currentWorkOrder, error: woError } = await supabase
+                .from('work_orders')
+                .select('id, priority, description, escalation_count, issue_history')
+                .eq('id', existingIssue.work_order_id)
+                .single()
 
-              if (!consolidationError) {
+              if (woError || !currentWorkOrder) {
+                console.error('❌ Error fetching work order for consolidation:', woError)
+                continue // Skip this consolidation and create new work order instead
+              }
+
+              // Determine if we need to update priority
+              const currentPriority = currentWorkOrder.priority
+              const newIssuePriority = issue.priority || priority || 'Media'
+              
+              // Priority hierarchy: Alta > Media > Baja
+              const priorityOrder: Record<string, number> = { 'Alta': 3, 'Media': 2, 'Baja': 1 }
+              const shouldUpdatePriority = (priorityOrder[newIssuePriority] || 2) > (priorityOrder[currentPriority] || 2)
+              
+              console.log(`🔧 Priority comparison: Current=${currentPriority}, New=${newIssuePriority}, ShouldUpdate=${shouldUpdatePriority}`)
+
+              // Prepare updated history
+              const updatedHistory = [
+                ...(currentWorkOrder.issue_history || []),
+                {
+                  date: new Date().toISOString(),
+                  checklist: (checklistData.checklists as any)?.name || 'N/A',
+                  description: issue.description,
+                  notes: issue.notes || '',
+                  status: issue.status,
+                  priority: newIssuePriority
+                }
+              ]
+
+              // Prepare updated description
+              const newOccurrence = `
+
+NUEVA OCURRENCIA - ${new Date().toLocaleDateString()}:
+• Checklist: ${(checklistData.checklists as any)?.name || 'N/A'}
+• Estado: ${issue.status === 'fail' ? 'FALLA DETECTADA' : 'REQUIERE REVISIÓN'}
+• Prioridad: ${newIssuePriority}
+${issue.notes ? `• Observaciones: ${issue.notes}` : ''}
+${issue.photo_url ? '• Evidencia fotográfica disponible' : ''}`
+
+              const updatedDescription = currentWorkOrder.description + newOccurrence
+
+              // Update work order with consolidation info and potentially new priority
+              const updateData: any = {
+                description: updatedDescription,
+                issue_history: updatedHistory,
+                escalation_count: (currentWorkOrder.escalation_count || 0) + 1,
+                updated_at: new Date().toISOString()
+              }
+
+              // Update priority if new issue has higher priority
+              if (shouldUpdatePriority) {
+                updateData.priority = newIssuePriority
+                console.log(`🔥 Escalating work order priority from ${currentPriority} to ${newIssuePriority}`)
+              }
+
+              // Update the work order
+              const { error: updateError } = await supabase
+                .from('work_orders')
+                .update(updateData)
+                .eq('id', existingIssue.work_order_id)
+
+              if (!updateError) {
+                // Link the new issue to the existing work order
+                await supabase
+                  .from('checklist_issues')
+                  .update({ 
+                    work_order_id: existingIssue.work_order_id,
+                    parent_issue_id: existingIssue.issue_id
+                  })
+                  .eq('id', savedIssue.id)
+
                 console.log('🎉 Successfully consolidated issue')
                 consolidatedIssues.push({
                   new_issue_id: savedIssue.id,
                   consolidated_into: existingIssue.work_order_id,
                   recurrence_count: existingIssue.recurrence_count + 1,
-                  escalated: (existingIssue.recurrence_count + 1) >= 2
+                  escalated: (existingIssue.recurrence_count + 1) >= 2,
+                  priority_updated: shouldUpdatePriority,
+                  old_priority: currentPriority,
+                  new_priority: shouldUpdatePriority ? newIssuePriority : currentPriority
                 })
                 workOrderCreated = true
                 consolidatedInto = existingIssue.work_order_id
               } else {
-                console.error('❌ Error consolidating issue:', consolidationError)
+                console.error('❌ Error updating work order during consolidation:', updateError)
               }
             } else {
               console.log('⚠️ User chose not to consolidate, will create new work order')

@@ -171,14 +171,24 @@ export function DeduplicationResultsDialog({
                             <div className="font-medium text-sm sm:text-base text-blue-900">
                               Consolidado en orden existente
                             </div>
-                            <div className="flex items-center gap-2 text-xs sm:text-sm text-blue-700">
+                            <div className="flex items-center gap-2 text-xs sm:text-sm text-blue-700 flex-wrap">
                               <span>Recurrencia #{consolidation.recurrence_count}</span>
                               {consolidation.escalated && (
                                 <Badge variant="destructive" className="text-xs">
                                   Escalado
                                 </Badge>
                               )}
+                              {consolidation.priority_updated && (
+                                <Badge variant="outline" className="text-xs bg-yellow-50 border-yellow-300 text-yellow-800">
+                                  Prioridad: {consolidation.old_priority} → {consolidation.new_priority}
+                                </Badge>
+                              )}
                             </div>
+                            {consolidation.priority_updated && (
+                              <div className="text-xs text-yellow-700 bg-yellow-50 p-2 rounded border-l-2 border-yellow-300">
+                                🔥 Prioridad escalada automáticamente debido a la severidad del nuevo incidente
+                              </div>
+                            )}
                           </div>
                           <Button 
                             size="sm" 
@@ -214,6 +224,14 @@ export function DeduplicationResultsDialog({
                     <span>Órdenes evitadas por consolidación:</span>
                     <span className="font-medium text-blue-600">{stats.consolidated_issues}</span>
                   </div>
+                  {results.consolidated_issues?.some((c: any) => c.priority_updated) && (
+                    <div className="flex justify-between items-center">
+                      <span>Prioridades escaladas:</span>
+                      <span className="font-medium text-yellow-600">
+                        {results.consolidated_issues?.filter((c: any) => c.priority_updated).length}
+                      </span>
+                    </div>
+                  )}
                   <div className="flex justify-between items-center">
                     <span>Ventana de consolidación:</span>
                     <span className="font-medium">{stats.consolidation_window_days} días</span>
@@ -224,6 +242,11 @@ export function DeduplicationResultsDialog({
                       <span className="font-bold text-lg">
                         {Math.round((stats.consolidated_issues / (stats.new_work_orders + stats.consolidated_issues)) * 100)}%
                       </span>
+                    </div>
+                  )}
+                  {results.consolidated_issues?.some((c: any) => c.priority_updated) && (
+                    <div className="text-xs text-yellow-700 bg-yellow-50 p-2 rounded border-l-2 border-yellow-300 mt-2">
+                      💡 El sistema escaló automáticamente la prioridad de órdenes existentes cuando detectó incidentes más severos
                     </div>
                   )}
                 </div>
