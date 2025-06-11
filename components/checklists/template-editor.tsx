@@ -33,8 +33,10 @@ import {
   Edit3,
   Copy,
   CheckSquare,
-  Camera
+  Camera,
+  Sparkles
 } from 'lucide-react'
+
 import { createClient } from '@/lib/supabase'
 
 interface ChecklistItem {
@@ -54,12 +56,20 @@ interface EvidenceConfig {
   descriptions: Record<string, string>
 }
 
+interface CleanlinessConfig {
+  min_photos: number
+  max_photos: number
+  areas: string[]
+  descriptions: Record<string, string>
+}
+
 interface ChecklistSection {
   id?: string
   title: string
   order_index: number
-  section_type?: 'checklist' | 'evidence'
+  section_type?: 'checklist' | 'evidence' | 'cleanliness_bonus'
   evidence_config?: EvidenceConfig
+  cleanliness_config?: CleanlinessConfig
   items: ChecklistItem[]
 }
 
@@ -75,6 +85,17 @@ const EVIDENCE_CATEGORIES = [
   'Documentación',
   'Antes del Trabajo',
   'Después del Trabajo'
+]
+
+const CLEANLINESS_AREAS = [
+  'Interior',
+  'Exterior',
+  'Cabina',
+  'Carrocería',
+  'Motor',
+  'Llantas',
+  'Ventanas',
+  'Área de Trabajo'
 ]
 
 interface ChecklistTemplate {
@@ -138,6 +159,7 @@ export function TemplateEditor({ templateId, onSave, onCancel }: TemplateEditorP
   const [showVersionHistory, setShowVersionHistory] = useState(false)
   const [showPreview, setShowPreview] = useState(false)
   const [changeSummary, setChangeSummary] = useState('')
+  const [showChangeSummaryDialog, setShowChangeSummaryDialog] = useState(false)
   const [models, setModels] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -300,10 +322,23 @@ export function TemplateEditor({ templateId, onSave, onCancel }: TemplateEditorP
     if (!templateId) return
     
     try {
-      // Since checklist_template_versions doesn't exist in schema, skip this
-      setVersions([])
+      const supabase = createClient()
+      const { data, error } = await supabase
+        .from('checklist_template_versions' as any)
+        .select('*')
+        .eq('template_id', templateId)
+        .order('version_number', { ascending: false })
+
+      if (error) {
+        console.error('Error loading version history:', error)
+        setVersions([])
+        return
+      }
+
+      setVersions((data as unknown as TemplateVersion[]) || [])
     } catch (error) {
       console.error('Error loading version history:', error)
+      setVersions([])
     }
   }
 
@@ -352,6 +387,50 @@ export function TemplateEditor({ templateId, onSave, onCancel }: TemplateEditorP
         }
       },
       items: []
+    }
+    
+    const newSectionIndex = template.sections.length
+    setSectionTitles(prev => ({ 
+      ...prev, 
+      [newSectionIndex]: newTitle 
+    }))
+    
+    setTemplate(prev => ({
+      ...prev,
+      sections: [...prev.sections, newSection]
+    }))
+    setHasChanges(true)
+  }
+
+  const addCleanlinessSection = () => {
+    const newTitle = `Verificación de Limpieza ${template.sections.filter(s => s.section_type === 'cleanliness_bonus').length + 1}`
+    const newSection: ChecklistSection = {
+      title: newTitle,
+      order_index: template.sections.length,
+      section_type: 'cleanliness_bonus',
+      cleanliness_config: {
+        min_photos: 2,
+        max_photos: 4,
+        areas: ['Interior', 'Exterior'],
+        descriptions: {
+          'Interior': 'Fotografiar evidencia del estado de limpieza interior',
+          'Exterior': 'Fotografiar evidencia del estado de limpieza exterior'
+        }
+      },
+      items: [
+        {
+          description: 'Interior está limpio',
+          required: true,
+          order_index: 0,
+          item_type: 'check'
+        },
+        {
+          description: 'Exterior está limpio',
+          required: true,
+          order_index: 1,
+          item_type: 'check'
+        }
+      ]
     }
     
     const newSectionIndex = template.sections.length
@@ -793,7 +872,7 @@ export function TemplateEditor({ templateId, onSave, onCancel }: TemplateEditorP
     setEvidenceDescriptions(newEvidenceDescriptions)
   }
 
-  const updateSectionType = (sectionIndex: number, newType: 'checklist' | 'evidence') => {
+  const updateSectionType = (sectionIndex: number, newType: 'checklist' | 'evidence' | 'cleanliness_bonus') => {
     updateSection(sectionIndex, { 
       section_type: newType,
       evidence_config: newType === 'evidence' ? {
@@ -1126,141 +1205,153 @@ export function TemplateEditor({ templateId, onSave, onCancel }: TemplateEditorP
 
         if (updateError) throw updateError
 
-        console.log('🔄 Updating template sections. Total sections:', template.sections.length)
+        console.log('🔄 Using versioning system to save template safely')
 
-        // Update sections with their evidence configurations
+        // First, update the template sections in the database to match the current state
+        // We'll use a transaction-like approach: create new sections, then clean up old ones
+        
+        // Step 1: Create all new sections (they'll have new IDs)
+        const newSectionIds: string[] = []
+        
         for (let i = 0; i < template.sections.length; i++) {
           const section = template.sections[i]
           
-          console.log(`📝 Processing section ${i + 1}:`, {
-            title: section.title,
-            section_type: section.section_type,
-            has_id: !!section.id,
-            has_evidence_config: !!section.evidence_config,
-            evidence_config: section.evidence_config
-          })
+          console.log(`🆕 Creating section ${i + 1}: ${section.title}`)
           
-          if (section.id) {
-            console.log(`⚡ Updating existing section ${section.id}`)
-            // Update existing section
-            const { error: sectionError } = await supabase
-              .from('checklist_sections')
-              .update({
-                title: section.title,
-                order_index: i,
-                section_type: section.section_type || 'checklist',
-                evidence_config: section.evidence_config || null
-              })
-              .eq('id', section.id)
+          const { data: newSection, error: sectionError } = await supabase
+            .from('checklist_sections')
+            .insert({
+              checklist_id: templateId,
+              title: section.title,
+              order_index: i,
+              section_type: section.section_type || 'checklist',
+              evidence_config: section.evidence_config || null,
+              cleanliness_config: section.cleanliness_config || null
+            })
+            .select('id')
+            .single()
 
-            if (sectionError) {
-              console.error('❌ Error updating section:', sectionError)
-              throw sectionError
-            }
-            console.log('✅ Section updated successfully')
+          if (sectionError) {
+            console.error('❌ Error creating section:', sectionError)
+            throw sectionError
+          }
 
-            // Update items for checklist sections
-            if (section.section_type === 'checklist' || !section.section_type) {
-              // Delete existing items
+          console.log('✅ Section created with ID:', newSection.id)
+          newSectionIds.push(newSection.id)
+
+          // Update the template state with the new section ID
+          setTemplate(prev => {
+            const updatedSections = [...prev.sections]
+            updatedSections[i] = { ...updatedSections[i], id: newSection.id }
+            return { ...prev, sections: updatedSections }
+          })
+
+          // Create items for checklist and cleanliness sections
+          if (section.section_type === 'checklist' || section.section_type === 'cleanliness_bonus' || !section.section_type) {
+            console.log(`📋 Adding ${section.items.length} items to section`)
+            for (let j = 0; j < section.items.length; j++) {
+              const item = section.items[j]
               await supabase
                 .from('checklist_items')
-                .delete()
-                .eq('section_id', section.id)
-
-              // Insert updated items
-              for (let j = 0; j < section.items.length; j++) {
-                const item = section.items[j]
-                await supabase
-                  .from('checklist_items')
-                  .insert({
-                    section_id: section.id,
-                    description: item.description,
-                    required: item.required,
-                    order_index: j,
-                    item_type: item.item_type,
-                    expected_value: item.expected_value || null,
-                    tolerance: item.tolerance || null
-                  })
-              }
+                .insert({
+                  section_id: newSection.id,
+                  description: item.description,
+                  required: item.required,
+                  order_index: j,
+                  item_type: item.item_type,
+                  expected_value: item.expected_value || null,
+                  tolerance: item.tolerance || null
+                })
             }
           } else {
-            console.log(`🆕 Creating new section: ${section.title}`)
-            // Create new section
-            const { data: newSection, error: sectionError } = await supabase
-              .from('checklist_sections')
-              .insert({
-                checklist_id: templateId,
-                title: section.title,
-                order_index: i,
-                section_type: section.section_type || 'checklist',
-                evidence_config: section.evidence_config || null
-              })
-              .select('id')
-              .single()
-
-            if (sectionError) {
-              console.error('❌ Error creating new section:', sectionError)
-              throw sectionError
-            }
-            console.log('✅ New section created with ID:', newSection.id)
-
-            // ⚡ CRITICAL FIX: Update the template state with the new section ID
-            // This ensures the new section is included in the cleanup logic
-            setTemplate(prev => {
-              const updatedSections = [...prev.sections]
-              updatedSections[i] = { ...updatedSections[i], id: newSection.id }
-              return { ...prev, sections: updatedSections }
-            })
-
-            // Add items for new checklist sections
-            if (section.section_type === 'checklist' || !section.section_type) {
-              console.log(`📋 Adding ${section.items.length} items to new section`)
-              for (let j = 0; j < section.items.length; j++) {
-                const item = section.items[j]
-                await supabase
-                  .from('checklist_items')
-                  .insert({
-                    section_id: newSection.id,
-                    description: item.description,
-                    required: item.required,
-                    order_index: j,
-                    item_type: item.item_type,
-                    expected_value: item.expected_value || null,
-                    tolerance: item.tolerance || null
-                  })
-              }
-            } else {
-              console.log('📸 Evidence section - no items to add')
-            }
+            console.log('📸 Evidence section - no items to add')
           }
         }
 
-        // Wait for all state updates to complete and get the most up-to-date template
-        await new Promise(resolve => setTimeout(resolve, 100))
+        // Step 2: Create version snapshot of the new state
+        try {
+          console.log('📝 Creating version snapshot of new template state')
+          
+          const { data: versionData, error: versionError } = await (supabase as any).rpc(
+            'create_template_version',
+            {
+              p_template_id: templateId,
+              p_change_summary: changeSummary || 'Cambios en plantilla desde el editor',
+              p_migration_notes: 'Versión creada desde editor de plantillas'
+            }
+          )
 
-        // Delete any sections that were removed
-        // Re-fetch the current template state to get all section IDs including newly created ones
-        setTemplate(currentTemplate => {
-          const existingSectionIds = currentTemplate.sections.map(s => s.id).filter(Boolean)
-          console.log('🗑️ Final section IDs for cleanup:', existingSectionIds)
-          
-          if (existingSectionIds.length > 0) {
-            supabase
-              .from('checklist_sections')
-              .delete()
-              .eq('checklist_id', templateId)
-              .not('id', 'in', `(${existingSectionIds.join(',')})`)
-              .then(({ error: deleteError }) => {
-                if (deleteError) {
-                  console.error('❌ Error deleting old sections:', deleteError)
-                } else {
-                  console.log('✅ Old sections cleaned up')
-                }
-              })
+          if (versionError) {
+            console.error('❌ Error creating template version:', versionError)
+            // Continue with cleanup anyway
+          } else {
+            console.log('✅ New template version created:', versionData)
+            
+            // Reload version history to show the new version
+            await loadVersionHistory()
           }
+        } catch (versioningError) {
+          console.error('⚠️ Versioning system not available:', versioningError)
+          // Continue anyway
+        }
+
+        // Step 3: Clean up old sections (keep only the new ones we just created)
+        try {
+          console.log('🧹 Cleaning up old sections...')
           
-          return currentTemplate // Return the template unchanged
-        })
+          // Get all existing sections for this template
+          const { data: allSections, error: fetchError } = await supabase
+            .from('checklist_sections')
+            .select('id')
+            .eq('checklist_id', templateId)
+
+          if (fetchError) {
+            console.error('⚠️ Could not fetch sections for cleanup:', fetchError)
+          } else if (allSections) {
+            // Find old sections to delete (those not in newSectionIds)
+            const oldSectionIds = allSections
+              .map(s => s.id)
+              .filter(id => !newSectionIds.includes(id))
+
+            if (oldSectionIds.length > 0) {
+              console.log(`🗑️ Cleaning up ${oldSectionIds.length} old sections`)
+
+              // Delete items from old sections first
+              await supabase
+                .from('checklist_items')
+                .delete()
+                .in('section_id', oldSectionIds)
+
+              // Clean up any evidence records pointing to old sections  
+              try {
+                await supabase
+                  .from('checklist_evidence' as any)
+                  .delete()
+                  .in('section_id', oldSectionIds)
+              } catch (evidenceError) {
+                console.log('⚠️ Could not clean evidence records (may not exist)')
+              }
+
+              // Delete old sections
+              const { error: oldSectionsError } = await supabase
+                .from('checklist_sections')
+                .delete()
+                .in('id', oldSectionIds)
+
+              if (oldSectionsError) {
+                console.error('⚠️ Could not clean up old sections:', oldSectionsError)
+                // Don't throw - the new sections are created successfully
+              } else {
+                console.log('✅ Old sections cleaned up successfully')
+              }
+            } else {
+              console.log('ℹ️ No old sections to clean up')
+            }
+          }
+        } catch (cleanupError) {
+          console.error('⚠️ Cleanup error (non-critical):', cleanupError)
+          // Don't throw - the save was successful
+        }
 
         toast({
           title: "Plantilla actualizada",
@@ -1474,7 +1565,7 @@ export function TemplateEditor({ templateId, onSave, onCancel }: TemplateEditorP
           <Button variant="outline" onClick={onCancel}>
             Cancelar
           </Button>
-          <Button onClick={saveTemplate} disabled={saving}>
+          <Button onClick={() => templateId && hasChanges ? setShowChangeSummaryDialog(true) : saveTemplate()} disabled={saving}>
             <Save className="h-4 w-4 mr-2" />
             {saving ? 'Guardando...' : 'Guardar'}
           </Button>
@@ -1591,18 +1682,25 @@ export function TemplateEditor({ templateId, onSave, onCancel }: TemplateEditorP
               <Camera className="h-4 w-4 mr-2" />
               Agregar Sección de Evidencia
             </Button>
+            <Button variant="outline" onClick={addCleanlinessSection} className="bg-green-50 border-green-200 text-green-700 hover:bg-green-100">
+              <Sparkles className="h-4 w-4 mr-2" />
+              Verificación de Limpieza
+            </Button>
           </div>
         </div>
 
         {template.sections.map((section, sectionIndex) => (
-          <Card key={sectionIndex} className={section.section_type === 'evidence' ? 'border-blue-200 bg-blue-50/50' : ''}>
+          <Card key={sectionIndex} className={
+            section.section_type === 'evidence' ? 'border-blue-200 bg-blue-50/50' : 
+            section.section_type === 'cleanliness_bonus' ? 'border-green-200 bg-green-50/50' : ''
+          }>
             <CardHeader className="pb-3">
               <div className="flex justify-between items-center">
                 <div className="flex-1 space-y-3">
                   <div className="flex items-center gap-3">
                     <Select
                       value={section.section_type || 'checklist'}
-                      onValueChange={(value: 'checklist' | 'evidence') => updateSectionType(sectionIndex, value)}
+                      onValueChange={(value: 'checklist' | 'evidence' | 'cleanliness_bonus') => updateSectionType(sectionIndex, value)}
                     >
                       <SelectTrigger className="w-48">
                         <SelectValue />
@@ -1618,6 +1716,12 @@ export function TemplateEditor({ templateId, onSave, onCancel }: TemplateEditorP
                           <div className="flex items-center gap-2">
                             <Camera className="h-4 w-4" />
                             Evidencia Fotográfica
+                          </div>
+                        </SelectItem>
+                        <SelectItem value="cleanliness_bonus">
+                          <div className="flex items-center gap-2">
+                            <Sparkles className="h-4 w-4" />
+                            Limpieza
                           </div>
                         </SelectItem>
                       </SelectContent>
@@ -1660,6 +1764,167 @@ export function TemplateEditor({ templateId, onSave, onCancel }: TemplateEditorP
             <CardContent className="space-y-3">
               {section.section_type === 'evidence' ? (
                 renderEvidenceSection(section, sectionIndex)
+                            ) : section.section_type === 'cleanliness_bonus' ? (
+                // Render cleanliness section - hybrid of checklist items + evidence photos
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2 mb-4 border-l-4 border-green-500 pl-4">
+                    <Sparkles className="h-5 w-5 text-green-600" />
+                    <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
+                      Verificación de Limpieza (Checklist + Fotos)
+                    </Badge>
+                  </div>
+                  
+                  {/* Checklist Items */}
+                  <div className="space-y-3">
+                    <h4 className="font-medium text-sm text-gray-700">Items a Verificar:</h4>
+                    {section.items.map((item, itemIndex) => (
+                      <div key={itemIndex} className="border rounded-lg p-4 space-y-3">
+                        <div className="flex justify-between items-start">
+                          <div className="flex-1 space-y-3">
+                            <div className="flex items-center gap-2">
+                              {getItemTypeIcon(item.item_type)}
+                              <Input
+                                value={itemDescriptions[`${sectionIndex}-${itemIndex}`] || item.description}
+                                onChange={(e) => updateItemDescriptionLocal(sectionIndex, itemIndex, e.target.value)}
+                                placeholder="Descripción del item"
+                              />
+                            </div>
+                            
+                            <div className="grid grid-cols-4 gap-2">
+                              <Select
+                                value={item.item_type}
+                                onValueChange={(value: any) => updateItem(sectionIndex, itemIndex, { item_type: value })}
+                              >
+                                <SelectTrigger>
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="check">Verificación</SelectItem>
+                                  <SelectItem value="measure">Medición</SelectItem>
+                                  <SelectItem value="text">Texto</SelectItem>
+                                </SelectContent>
+                              </Select>
+                              
+                              {(item.item_type === 'measure' || item.item_type === 'text') && (
+                                <>
+                                  <Input
+                                    value={itemExpectedValues[`${sectionIndex}-${itemIndex}`] || item.expected_value || ''}
+                                    onChange={(e) => updateItemExpectedValueLocal(sectionIndex, itemIndex, e.target.value)}
+                                    placeholder="Valor esperado"
+                                  />
+                                  <Input
+                                    value={itemTolerances[`${sectionIndex}-${itemIndex}`] || item.tolerance || ''}
+                                    onChange={(e) => updateItemToleranceLocal(sectionIndex, itemIndex, e.target.value)}
+                                    placeholder="Tolerancia"
+                                  />
+                                </>
+                              )}
+                              
+                              <div className="flex items-center space-x-2">
+                                <Switch
+                                  checked={item.required}
+                                  onCheckedChange={(checked) => updateItem(sectionIndex, itemIndex, { required: checked })}
+                                />
+                                <Label className="text-sm">Requerido</Label>
+                              </div>
+                            </div>
+                          </div>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => deleteItem(sectionIndex, itemIndex)}
+                            className="ml-2"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                    
+                    <Button
+                      variant="outline"
+                      onClick={() => addItem(sectionIndex)}
+                      className="w-full"
+                    >
+                      <Plus className="h-4 w-4 mr-2" />
+                      Agregar Item de Limpieza
+                    </Button>
+                  </div>
+
+                  {/* Photo Evidence Configuration */}
+                  <div className="border-t pt-4 space-y-4">
+                    <h4 className="font-medium text-sm text-gray-700 flex items-center gap-2">
+                      <Camera className="h-4 w-4" />
+                      Configuración de Evidencia Fotográfica:
+                    </h4>
+                    
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label>Fotos Mínimas</Label>
+                        <Input
+                          type="number"
+                          min="1"
+                          max="10"
+                          value={section.cleanliness_config?.min_photos ?? 2}
+                          onChange={(e) => {
+                            const minPhotos = parseInt(e.target.value) || 2
+                            updateSection(sectionIndex, {
+                              cleanliness_config: {
+                                min_photos: minPhotos,
+                                max_photos: section.cleanliness_config?.max_photos ?? 4,
+                                areas: section.cleanliness_config?.areas ?? [],
+                                descriptions: section.cleanliness_config?.descriptions ?? {}
+                              }
+                            })
+                          }}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Fotos Máximas</Label>
+                        <Input
+                          type="number"
+                          min="1"
+                          max="20"
+                          value={section.cleanliness_config?.max_photos ?? 4}
+                          onChange={(e) => {
+                            const maxPhotos = parseInt(e.target.value) || 4
+                            updateSection(sectionIndex, {
+                              cleanliness_config: {
+                                min_photos: section.cleanliness_config?.min_photos ?? 2,
+                                max_photos: maxPhotos,
+                                areas: section.cleanliness_config?.areas ?? [],
+                                descriptions: section.cleanliness_config?.descriptions ?? {}
+                              }
+                            })
+                          }}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label>Áreas de Evidencia</Label>
+                      <Textarea
+                        value={section.cleanliness_config?.areas.join(', ') || ''}
+                        onChange={(e) => {
+                          const areas = e.target.value.split(',').map(a => a.trim()).filter(a => a.length > 0)
+                          updateSection(sectionIndex, {
+                            cleanliness_config: {
+                              min_photos: section.cleanliness_config?.min_photos ?? 2,
+                              max_photos: section.cleanliness_config?.max_photos ?? 4,
+                              descriptions: section.cleanliness_config?.descriptions ?? {},
+                              areas: areas
+                            }
+                          })
+                        }}
+                        placeholder="Ejemplo: Interior, Exterior"
+                        rows={2}
+                      />
+                      <p className="text-sm text-muted-foreground">
+                        Áreas que requieren evidencia fotográfica para respaldar la evaluación de limpieza.
+                      </p>
+                    </div>
+                  </div>
+                </div>
               ) : (
                 <>
                   {section.items.map((item, itemIndex) => (
@@ -1744,11 +2009,121 @@ export function TemplateEditor({ templateId, onSave, onCancel }: TemplateEditorP
       <Dialog open={showVersionHistory} onOpenChange={setShowVersionHistory}>
         <DialogContent className="max-w-4xl">
           <DialogHeader>
-            <DialogTitle>Historial de Versiones</DialogTitle>
+            <DialogTitle>Historial de Versiones - {template.name}</DialogTitle>
+            <DialogDescription>
+              Versiones de esta plantilla de checklist
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 max-h-96 overflow-y-auto">
+            {versions.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                <History className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                <p>No hay versiones guardadas aún</p>
+                <p className="text-sm">Se creará una versión automáticamente cuando guardes cambios</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {versions.map((version) => (
+                  <Card key={version.id} className={version.is_active ? 'border-blue-500 bg-blue-50' : ''}>
+                    <CardHeader className="pb-3">
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <CardTitle className="text-base flex items-center gap-2">
+                            Versión {version.version_number}
+                            {version.is_active && (
+                              <Badge variant="default" className="bg-blue-600">Activa</Badge>
+                            )}
+                          </CardTitle>
+                          <CardDescription>
+                                                         {new Date(version.created_at).toLocaleDateString('es-ES', { 
+                               year: 'numeric', 
+                               month: '2-digit', 
+                               day: '2-digit',
+                               hour: '2-digit',
+                               minute: '2-digit'
+                             })}
+                            {version.created_by && ` • ${version.created_by}`}
+                          </CardDescription>
+                        </div>
+                        <div className="flex gap-2">
+                          <Button variant="outline" size="sm">
+                            <Eye className="h-4 w-4 mr-1" />
+                            Ver
+                          </Button>
+                          {!version.is_active && (
+                            <Button variant="outline" size="sm">
+                              <Copy className="h-4 w-4 mr-1" />
+                              Restaurar
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="pt-0">
+                      <div className="space-y-2">
+                        <div>
+                          <Label className="text-sm font-medium">Resumen de cambios:</Label>
+                          <p className="text-sm text-muted-foreground">{version.change_summary || 'Sin descripción'}</p>
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          {version.sections?.length || 0} secciones
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowVersionHistory(false)}>
+              Cerrar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showChangeSummaryDialog} onOpenChange={setShowChangeSummaryDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Guardar Cambios</DialogTitle>
+            <DialogDescription>
+              Describe los cambios realizados en esta versión de la plantilla
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
-            <p className="text-muted-foreground">Función de versionado en desarrollo</p>
+            <div className="space-y-2">
+              <Label htmlFor="changeSummary">Resumen de Cambios</Label>
+              <Textarea
+                id="changeSummary"
+                value={changeSummary}
+                onChange={(e) => setChangeSummary(e.target.value)}
+                placeholder="Ej: Agregué nueva sección de verificación de limpieza, eliminé item duplicado de accesorios..."
+                rows={3}
+              />
+            </div>
           </div>
+          <DialogFooter>
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                setShowChangeSummaryDialog(false)
+                setChangeSummary('')
+              }}
+            >
+              Cancelar
+            </Button>
+            <Button 
+              onClick={() => {
+                setShowChangeSummaryDialog(false)
+                saveTemplate()
+              }}
+              disabled={saving}
+            >
+              <Save className="h-4 w-4 mr-2" />
+              Guardar
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

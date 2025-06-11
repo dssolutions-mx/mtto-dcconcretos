@@ -45,7 +45,8 @@ import {
   XCircle,
   List,
   Minimize2,
-  Maximize2
+  Maximize2,
+  Sparkles
 } from "lucide-react"
 import { SignatureCanvas } from "@/components/checklists/signature-canvas"
 import { EnhancedOfflineStatus } from "@/components/checklists/enhanced-offline-status"
@@ -74,7 +75,7 @@ interface ChecklistExecutionProps {
 interface SectionProgress {
   id: string
   title: string
-  type: 'checklist' | 'evidence'
+  type: 'checklist' | 'evidence' | 'cleanliness_bonus'
   total: number
   completed: number
   hasIssues: boolean
@@ -159,6 +160,20 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
           id: section.id,
           title: section.title,
           type: 'evidence' as const,
+          total: requiredPhotos,
+          completed: sectionEvidences.length,
+          hasIssues: sectionEvidences.some(e => e.status === 'failed'),
+          isCollapsed: sectionCollapsed[section.id] || false
+        }
+      } else if (section.section_type === 'cleanliness_bonus') {
+        const sectionEvidences = evidenceData[section.id] || []
+        const config = section.cleanliness_config || {}
+        const requiredPhotos = (config.areas || []).length * (config.min_photos || 2)
+        
+        return {
+          id: section.id,
+          title: section.title,
+          type: 'cleanliness_bonus' as const,
           total: requiredPhotos,
           completed: sectionEvidences.length,
           hasIssues: sectionEvidences.some(e => e.status === 'failed'),
@@ -371,19 +386,33 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
     const errors: string[] = []
     
     checklist.sections
-      .filter((section: any) => section.section_type === 'evidence')
+      .filter((section: any) => section.section_type === 'evidence' || section.section_type === 'cleanliness_bonus')
       .forEach((section: any) => {
         const sectionEvidences = evidenceData[section.id] || []
-        const config = section.evidence_config || {}
-        const minPhotos = config.min_photos || 1
-        const categories = config.categories || []
         
-        categories.forEach((category: string) => {
-          const categoryCount = sectionEvidences.filter(e => e.category === category).length
-          if (categoryCount < minPhotos) {
-            errors.push(`Se requieren al menos ${minPhotos} fotos para "${category}" en ${section.title}`)
-          }
-        })
+        if (section.section_type === 'evidence') {
+          const config = section.evidence_config || {}
+          const minPhotos = config.min_photos || 1
+          const categories = config.categories || []
+          
+          categories.forEach((category: string) => {
+            const categoryCount = sectionEvidences.filter(e => e.category === category).length
+            if (categoryCount < minPhotos) {
+              errors.push(`Se requieren al menos ${minPhotos} fotos para "${category}" en ${section.title}`)
+            }
+          })
+        } else if (section.section_type === 'cleanliness_bonus') {
+          const config = section.cleanliness_config || {}
+          const minPhotos = config.min_photos || 2
+          const areas = config.areas || []
+          
+          areas.forEach((area: string) => {
+            const areaCount = sectionEvidences.filter(e => e.category === area).length
+            if (areaCount < minPhotos) {
+              errors.push(`Se requieren al menos ${minPhotos} fotos para "${area}" en ${section.title}`)
+            }
+          })
+        }
       })
     
     return { isValid: errors.length === 0, errors }
@@ -667,20 +696,36 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
       }
     }
 
-    // 4. Validate items with issues have proper notes
-    const itemsWithIssues = Object.entries(itemStatus)
+    // 4. Separate cleanliness items from maintenance items
+    const allItemsWithIssues = Object.entries(itemStatus)
       .filter(([_, status]) => status === "flag" || status === "fail")
     
-    const itemsWithoutNotes = itemsWithIssues.filter(([itemId]) => !itemNotes[itemId]?.trim())
-    if (itemsWithoutNotes.length > 0) {
-      validationWarnings.push(`💬 ${itemsWithoutNotes.length} problema${itemsWithoutNotes.length > 1 ? 's' : ''} sin notas explicativas`)
+    const maintenanceItemsWithIssues = allItemsWithIssues.filter(([itemId]) => {
+      const sectionAndItem = findSectionAndItemById(itemId)
+      return sectionAndItem?.section?.section_type !== 'cleanliness_bonus'
+    })
+
+    const cleanlinessItemsWithIssues = allItemsWithIssues.filter(([itemId]) => {
+      const sectionAndItem = findSectionAndItemById(itemId)
+      return sectionAndItem?.section?.section_type === 'cleanliness_bonus'
+    })
+
+    // 5. Validate items with issues have proper notes (excluding cleanliness items)
+    const maintenanceItemsWithoutNotes = maintenanceItemsWithIssues.filter(([itemId]) => !itemNotes[itemId]?.trim())
+    if (maintenanceItemsWithoutNotes.length > 0) {
+      validationWarnings.push(`💬 ${maintenanceItemsWithoutNotes.length} problema${maintenanceItemsWithoutNotes.length > 1 ? 's' : ''} de mantenimiento sin notas explicativas`)
     }
 
-    // 5. Check for mandatory preventive maintenance requirements
+    // 6. Check for mandatory preventive maintenance requirements
     if (checklist.maintenance_plan_id) {
       if (validationErrors.length > 0) {
         validationErrors.push("🔧 Checklist de mantenimiento preventivo debe estar 100% completo")
       }
+    }
+
+    // Show info about cleanliness items if any failed
+    if (cleanlinessItemsWithIssues.length > 0) {
+      validationWarnings.push(`🧹 ${cleanlinessItemsWithIssues.length} item${cleanlinessItemsWithIssues.length > 1 ? 's' : ''} de limpieza no aprobado${cleanlinessItemsWithIssues.length > 1 ? 's' : ''} (solo afecta bonos de RH)`)
     }
 
     // =====================================================
@@ -717,7 +762,7 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
     // PROCEED WITH SUBMISSION
     // =====================================================
 
-    if (itemsWithIssues.length > 0) {
+    if (maintenanceItemsWithIssues.length > 0) {
       // Complete the checklist first, then show dialog
       toast.info("🔄 Procesando checklist...", {
         description: "Guardando datos y preparando órdenes de trabajo",
@@ -953,7 +998,7 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
   }
 
   const prepareCorrectiveAction = () => {
-    // Check if there are any items with issues
+    // Check if there are any items with issues (excluding cleanliness items)
     const itemsWithIssues = Object.entries(itemStatus)
       .filter(([_, status]) => status === "flag" || status === "fail")
       .map(([itemId]) => {
@@ -964,9 +1009,12 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
           notes: itemNotes[itemId] || '',
           photo: itemPhotos[itemId] || null,
           status: itemStatus[itemId],
-          sectionTitle: sectionAndItem?.section?.title
+          sectionTitle: sectionAndItem?.section?.title,
+          sectionType: sectionAndItem?.section?.section_type
         }
       })
+      // Exclude cleanliness verification items from corrective work orders
+      .filter(item => item.sectionType !== 'cleanliness_bonus')
 
     if (itemsWithIssues.length === 0) {
       toast.error("No hay elementos con problemas para generar una orden correctiva")
@@ -1078,6 +1126,17 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
       const sectionEvidences = evidenceData[section.id] || []
       const config = section.evidence_config || {}
       const requiredPhotos = (config.categories || []).length * (config.min_photos || 1)
+      
+      return {
+        completed: sectionEvidences.length,
+        total: requiredPhotos,
+        hasIssues: sectionEvidences.some(e => e.status === 'failed'),
+        isComplete: sectionEvidences.length >= requiredPhotos
+      }
+    } else if (section.section_type === 'cleanliness_bonus') {
+      const sectionEvidences = evidenceData[section.id] || []
+      const config = section.cleanliness_config || {}
+      const requiredPhotos = (config.areas || []).length * (config.min_photos || 2)
       
       return {
         completed: sectionEvidences.length,
@@ -1354,6 +1413,79 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
                             onEvidenceChange={handleEvidenceChange}
                             disabled={submitting}
                           />
+                        </div>
+                      </CollapsibleContent>
+                    </Collapsible>
+                  </div>
+                )
+              }
+
+              if (section.section_type === 'cleanliness_bonus') {
+                // Enhanced Cleanliness Section with Collapsible Wrapper
+                return (
+                  <div 
+                    id={`section-${section.id}`}
+                    className="scroll-mt-20"
+                  >
+                    <Collapsible
+                      key={section.id}
+                      open={!isCollapsed}
+                      onOpenChange={() => toggleSectionCollapse(section.id)}
+                    >
+                      <CollapsibleTrigger asChild>
+                        <Card className="cursor-pointer hover:shadow-md transition-shadow border-green-200 bg-green-50/50">
+                          <CardHeader className="pb-3">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-3">
+                                <Sparkles className="h-5 w-5 text-green-600" />
+                                <div>
+                                  <CardTitle className="text-lg">{section.title}</CardTitle>
+                                  <CardDescription>
+                                    Evaluación de limpieza para bonos de RH
+                                  </CardDescription>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                {/* Section Progress Badge */}
+                                <Badge 
+                                  variant={sectionStatus.isComplete ? "default" : "secondary"}
+                                  className={sectionStatus.isComplete ? "bg-green-500" : ""}
+                                >
+                                  {sectionStatus.completed}/{sectionStatus.total}
+                                </Badge>
+                                {sectionStatus.hasIssues && (
+                                  <AlertTriangle className="h-4 w-4 text-amber-500" />
+                                )}
+                                {sectionStatus.isComplete && (
+                                  <CheckCircle2 className="h-4 w-4 text-green-500" />
+                                )}
+                                {isCollapsed ? (
+                                  <ChevronRight className="h-4 w-4 text-gray-400" />
+                                ) : (
+                                  <ChevronDown className="h-4 w-4 text-gray-400" />
+                                )}
+                              </div>
+                            </div>
+                          </CardHeader>
+                        </Card>
+                      </CollapsibleTrigger>
+                      <CollapsibleContent>
+                        <div className="mt-2">
+                                                     <EvidenceCaptureSection
+                             sectionId={section.id}
+                             sectionTitle={section.title}
+                             config={{
+                               min_photos: section.cleanliness_config?.min_photos || 2,
+                               max_photos: section.cleanliness_config?.max_photos || 6,
+                               categories: section.cleanliness_config?.areas || ['Interior - Cabina', 'Exterior - Carrocería'],
+                               descriptions: section.cleanliness_config?.descriptions || {
+                                 'Interior - Cabina': 'Documentar el estado de limpieza del interior',
+                                 'Exterior - Carrocería': 'Fotografiar la limpieza exterior del equipo'
+                               }
+                             }}
+                             onEvidenceChange={handleEvidenceChange}
+                             disabled={submitting}
+                           />
                         </div>
                       </CollapsibleContent>
                     </Collapsible>

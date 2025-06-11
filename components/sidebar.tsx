@@ -30,6 +30,8 @@ import {
   ChevronDown,
   ChevronRight,
   Building2,
+  Users,
+  Sparkles,
 } from "lucide-react"
 import { UserNav } from "@/components/user-nav"
 import { ModeToggle } from "@/components/mode-toggle"
@@ -97,6 +99,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
   const [operationsOpen, setOperationsOpen] = useState(false)
   const [procurementOpen, setProcurementOpen] = useState(false)
   const [recordsOpen, setRecordsOpen] = useState(false)
+  const [hrOpen, setHrOpen] = useState(false)
 
   const handleLinkClick = () => {
     if (onLinkClick) {
@@ -333,6 +336,41 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
             </CollapsibleContent>
           </Collapsible>
         </div>
+
+        {/* HR Section */}
+        <div className="px-4">
+          <Collapsible open={hrOpen} onOpenChange={setHrOpen}>
+            <CollapsibleTrigger asChild>
+              <Button
+                variant="ghost"
+                className="w-full justify-between p-2 h-auto font-medium"
+              >
+                <div className="flex items-center">
+                  <Users className="mr-2 h-4 w-4" />
+                  Recursos Humanos
+                </div>
+                {hrOpen ? (
+                  <ChevronDown className="h-4 w-4" />
+                ) : (
+                  <ChevronRight className="h-4 w-4" />
+                )}
+              </Button>
+            </CollapsibleTrigger>
+            <CollapsibleContent className="space-y-1 mt-2">
+              <Button
+                variant={isPathActive("/rh/limpieza") ? "secondary" : "ghost"}
+                className="w-full justify-start pl-8"
+                asChild
+                onClick={handleLinkClick}
+              >
+                <Link href="/rh/limpieza">
+                  <Sparkles className="mr-2 h-4 w-4" />
+                  Reportes de Limpieza
+                </Link>
+              </Button>
+            </CollapsibleContent>
+          </Collapsible>
+        </div>
       </div>
     </div>
   )
@@ -412,6 +450,15 @@ export function CollapsedSidebar({ className, onLinkClick }: SidebarProps) {
       items: [
         { href: "/servicios", icon: CheckCircle, label: "Órdenes de Servicio", active: isPathActive("/servicios") },
         { href: "/reportes", icon: BarChart3, label: "Reportes", active: isPathActive("/reportes") }
+      ]
+    },
+    {
+      id: "hr",
+      icon: Users,
+      label: "Recursos Humanos",
+      active: isSectionActive(["/rh/limpieza"]),
+      items: [
+        { href: "/rh/limpieza", icon: Sparkles, label: "Reportes de Limpieza", active: isPathActive("/rh/limpieza") }
       ]
     }
   ]
