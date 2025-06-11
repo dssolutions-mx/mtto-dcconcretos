@@ -35,7 +35,7 @@ import {
 } from "lucide-react"
 import { format, formatDistance, parseISO } from "date-fns";
 import { es } from "date-fns/locale";
-import { Asset, AssetWithModel, EquipmentModel } from "@/types";
+import { Asset, AssetWithModel, AssetWithOrganization, EquipmentModel } from "@/types";
 import { createClient } from "@/lib/supabase";
 import { CompletedChecklistEvidenceViewer } from "@/components/checklists/completed-checklist-evidence-viewer"
 
@@ -470,11 +470,11 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
                 <div className="flex flex-col space-y-2 sm:space-y-0 sm:flex-row sm:items-center sm:gap-4 text-sm text-muted-foreground">
                   <span className="flex items-center gap-2">
                     <MapPin className="h-4 w-4 flex-shrink-0" />
-                    <span className="break-words">{asset?.location || "Sin ubicación"}</span>
+                    <span className="break-words">{(asset as any)?.plants?.name || asset?.location || "Sin planta"}</span>
                   </span>
                   <span className="flex items-center gap-2">
                     <Users className="h-4 w-4 flex-shrink-0" />
-                    <span className="break-words">{asset?.department || "Sin departamento"}</span>
+                    <span className="break-words">{(asset as any)?.departments?.name || asset?.department || "Sin departamento"}</span>
                   </span>
                   {asset?.purchase_date && (
                     <span className="flex items-center gap-2">

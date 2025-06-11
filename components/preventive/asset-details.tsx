@@ -137,8 +137,8 @@ export function AssetDetails({ id }: AssetDetailsProps) {
                   <dd>{asset.serialNumber}</dd>
                 </div>
                 <div className="flex justify-between">
-                  <dt className="text-muted-foreground">Ubicación:</dt>
-                  <dd>{asset.location}</dd>
+                  <dt className="text-muted-foreground">Planta:</dt>
+                  <dd>{(asset as any).plants?.name || asset.location || 'Sin planta'}</dd>
                 </div>
                 <div className="flex justify-between">
                   <dt className="text-muted-foreground">Criticidad:</dt>
@@ -164,7 +164,7 @@ export function AssetDetails({ id }: AssetDetailsProps) {
                 </div>
                 <div className="flex justify-between">
                   <dt className="text-muted-foreground">Departamento:</dt>
-                  <dd>{asset.department}</dd>
+                  <dd>{(asset as any).departments?.name || asset.department || 'Sin departamento'}</dd>
                 </div>
               </dl>
             </div>

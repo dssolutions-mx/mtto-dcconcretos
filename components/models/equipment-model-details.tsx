@@ -451,7 +451,7 @@ export function EquipmentModelDetails({ id }: EquipmentModelDetailsProps) {
                               </Badge>
                             </div>
                             <div className="text-sm">
-                              <span className="font-medium">Ubicación:</span> {asset.location}
+                              <span className="font-medium">Planta:</span> {(asset as any).plants?.name || asset.location || 'Sin planta'}
                             </div>
                             <Button variant="outline" size="sm" asChild className="w-full">
                               <Link href={`/activos/${asset.id}`}>
@@ -482,7 +482,7 @@ export function EquipmentModelDetails({ id }: EquipmentModelDetailsProps) {
                           <TableRow key={asset.id}>
                             <TableCell className="font-medium">{asset.asset_id}</TableCell>
                             <TableCell>{asset.name}</TableCell>
-                            <TableCell>{asset.location}</TableCell>
+                            <TableCell>{(asset as any).plants?.name || asset.location || 'Sin planta'}</TableCell>
                             <TableCell>
                               <Badge className={asset.status === 'Operativo' ? 'bg-green-100 text-green-800' : 
                                             asset.status === 'En Mantenimiento' ? 'bg-amber-100 text-amber-800' : 

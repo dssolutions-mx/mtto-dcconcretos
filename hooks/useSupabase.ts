@@ -136,7 +136,25 @@ export function useAssets() {
       setLoading(true);
       const { data, error } = await supabase
         .from('assets')
-        .select('*, equipment_models(*)')
+        .select(`
+          *,
+          plants (
+            id,
+            name,
+            code,
+            business_units (
+              id,
+              name,
+              code
+            )
+          ),
+          departments (
+            id,
+            name,
+            code
+          ),
+          equipment_models(*)
+        `)
         .order('name');
 
       if (error) throw error;
@@ -172,7 +190,25 @@ export function useAsset(assetId: string | null) {
       setLoading(true);
       const { data, error } = await supabase
         .from('assets')
-        .select('*, equipment_models(*)')
+        .select(`
+          *,
+          plants (
+            id,
+            name,
+            code,
+            business_units (
+              id,
+              name,
+              code
+            )
+          ),
+          departments (
+            id,
+            name,
+            code
+          ),
+          equipment_models(*)
+        `)
         .eq('id', assetId)
         .single();
 

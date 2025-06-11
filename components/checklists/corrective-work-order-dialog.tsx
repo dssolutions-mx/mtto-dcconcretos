@@ -640,7 +640,7 @@ export function CorrectiveWorkOrderDialog({
                       </div>
                       <div className="flex items-center gap-2">
                         <span className="text-blue-600">📍</span>
-                        <span>{checklist.assets?.location || checklist.assetLocation || 'Sin ubicación'}</span>
+                        <span>{(checklist.assets as any)?.plants?.name || checklist.assets?.location || checklist.assetLocation || 'Sin planta'}</span>
                       </div>
                     </div>
                   </div>

@@ -39,6 +39,62 @@ export type Asset = DbTables['assets']['Row'];
 export type InsertAsset = DbTables['assets']['Insert'];
 export type UpdateAsset = DbTables['assets']['Update'];
 
+// Tipos para unidades de negocio
+export type BusinessUnit = {
+  id: string;
+  name: string;
+  code: string;
+  description?: string;
+  manager_id?: string;
+  status: string;
+  created_at: string;
+  updated_at: string;
+  created_by?: string;
+  updated_by?: string;
+};
+
+// Tipos para plantas
+export type Plant = {
+  id: string;
+  business_unit_id: string;
+  name: string;
+  code: string;
+  location?: string;
+  address?: string;
+  plant_manager_id?: string;
+  maintenance_supervisor_id?: string;
+  status: string;
+  operating_hours?: any;
+  contact_info?: any;
+  created_at: string;
+  updated_at: string;
+  created_by?: string;
+  updated_by?: string;
+  business_unit?: BusinessUnit;
+};
+
+// Tipos para departamentos
+export type Department = {
+  id: string;
+  plant_id: string;
+  name: string;
+  code: string;
+  supervisor_id?: string;
+  budget_code?: string;
+  cost_center?: string;
+  description?: string;
+  created_at: string;
+  updated_at: string;
+  plant?: Plant;
+};
+
+// Interfaz extendida para activos con información organizacional
+export interface AssetWithOrganization extends Asset {
+  plant?: Plant;
+  department?: Department;
+  equipment_models?: EquipmentModel;
+}
+
 // Tipos para historiales de mantenimiento
 export type MaintenanceHistory = DbTables['maintenance_history']['Row'];
 export type InsertMaintenanceHistory = DbTables['maintenance_history']['Insert'];

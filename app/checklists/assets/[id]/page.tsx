@@ -375,7 +375,7 @@ export default function AssetChecklistDetailPage({ params }: { params: Promise<{
     <DashboardShell>
       <DashboardHeader
         heading={`Checklists - ${asset.name}`}
-        text={`Gestión de checklists para ${asset.asset_id} • ${asset.location || 'Sin ubicación'} • ${asset.department || 'Sin departamento'}`}
+        text={`Gestión de checklists para ${asset.asset_id} • ${(asset as any).plants?.name || asset.location || 'Sin planta'} • ${(asset as any).departments?.name || asset.department || 'Sin departamento'}`}
       >
         <div className="flex gap-2">
           <Button variant="outline" onClick={() => router.back()}>
@@ -446,13 +446,13 @@ export default function AssetChecklistDetailPage({ params }: { params: Promise<{
             </div>
             <div className="flex items-center gap-2">
               <MapPin className="h-4 w-4 text-muted-foreground" />
-              <span className="font-medium">Ubicación:</span>
-              <span>{asset.location || 'Sin ubicación'}</span>
+              <span className="font-medium">Planta:</span>
+              <span>{(asset as any).plants?.name || asset.location || 'Sin planta'}</span>
             </div>
             <div className="flex items-center gap-2">
               <Users className="h-4 w-4 text-muted-foreground" />
               <span className="font-medium">Departamento:</span>
-              <span>{asset.department || 'Sin departamento'}</span>
+              <span>{(asset as any).departments?.name || asset.department || 'Sin departamento'}</span>
             </div>
           </div>
         </CardContent>

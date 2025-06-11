@@ -7,7 +7,7 @@ export async function GET() {
     
     // Get all active assets, pending schedules, and completed schedules in parallel
     const [assetsResult, pendingResult, completedResult] = await Promise.all([
-      // Get all assets with location and department
+      // Get all assets with organizational structure
       supabase
         .from('assets')
         .select(`
@@ -17,7 +17,19 @@ export async function GET() {
           location,
           department,
           status,
-          current_hours
+          current_hours,
+          plant_id,
+          department_id,
+          plants (
+            id,
+            name,
+            code
+          ),
+          departments (
+            id,
+            name,
+            code
+          )
         `)
         .in('status', ['operational', 'maintenance']),
       
@@ -147,8 +159,12 @@ export async function GET() {
       return idA.localeCompare(idB)
     })
 
-    // Get unique departments for filtering
-    const departments = [...new Set(assets.map(asset => asset.department).filter(Boolean))]
+    // Get unique departments for filtering from organizational structure
+    const departments = [...new Set(
+      assets
+        .map(asset => (asset as any).departments?.name || asset.department)
+        .filter(Boolean)
+    )]
 
     return NextResponse.json({ 
       data: {

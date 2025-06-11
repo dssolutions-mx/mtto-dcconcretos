@@ -325,7 +325,7 @@ export function ServiceOrdersList() {
                             <div className="text-xs text-muted-foreground">ID: {order.assetData.asset_id}</div>
                           )}
                           {order.assetData?.location && (
-                            <div className="text-xs text-muted-foreground">📍 {order.assetData.location}</div>
+                            <div className="text-xs text-muted-foreground">📍 {(order.assetData as any).plants?.name || order.assetData.location || 'Sin planta'}</div>
                           )}
                         </div>
                         
@@ -421,7 +421,7 @@ export function ServiceOrdersList() {
                               <p className="font-medium">{order.asset_name}</p>
                               <p className="text-xs text-muted-foreground">{order.assetData?.asset_id}</p>
                               {order.assetData?.location && (
-                                <p className="text-xs text-muted-foreground">{order.assetData.location}</p>
+                                <p className="text-xs text-muted-foreground">{(order.assetData as any).plants?.name || order.assetData.location || 'Sin planta'}</p>
                               )}
                             </div>
                           </TableCell>

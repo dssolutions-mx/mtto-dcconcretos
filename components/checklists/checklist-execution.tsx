@@ -1289,7 +1289,7 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
               )}
               {checklist.assetLocation && (
                 <div className="text-xs opacity-75">
-                  📍 {checklist.assetLocation}
+                  📍 {(checklist as any).assets?.plants?.name || checklist.assetLocation || 'Sin planta'}
                 </div>
               )}
             </div>

@@ -99,6 +99,13 @@ export type Database = {
             referencedRelation: "work_orders"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "additional_expenses_work_order_id_fkey"
+            columns: ["work_order_id"]
+            isOneToOne: false
+            referencedRelation: "work_orders_with_checklist_status"
+            referencedColumns: ["id"]
+          },
         ]
       }
       assets: {
@@ -109,6 +116,7 @@ export type Database = {
           current_hours: number | null
           current_kilometers: number | null
           department: string | null
+          department_id: string | null
           id: string
           initial_hours: number | null
           initial_kilometers: number | null
@@ -125,6 +133,7 @@ export type Database = {
           name: string
           notes: string | null
           photos: string[] | null
+          plant_id: string | null
           purchase_cost: number | null
           purchase_date: string | null
           registration_info: string | null
@@ -141,6 +150,7 @@ export type Database = {
           current_hours?: number | null
           current_kilometers?: number | null
           department?: string | null
+          department_id?: string | null
           id?: string
           initial_hours?: number | null
           initial_kilometers?: number | null
@@ -157,6 +167,7 @@ export type Database = {
           name: string
           notes?: string | null
           photos?: string[] | null
+          plant_id?: string | null
           purchase_cost?: number | null
           purchase_date?: string | null
           registration_info?: string | null
@@ -173,6 +184,7 @@ export type Database = {
           current_hours?: number | null
           current_kilometers?: number | null
           department?: string | null
+          department_id?: string | null
           id?: string
           initial_hours?: number | null
           initial_kilometers?: number | null
@@ -189,6 +201,7 @@ export type Database = {
           name?: string
           notes?: string | null
           photos?: string[] | null
+          plant_id?: string | null
           purchase_cost?: number | null
           purchase_date?: string | null
           registration_info?: string | null
@@ -200,10 +213,230 @@ export type Database = {
         }
         Relationships: [
           {
+            foreignKeyName: "assets_department_id_fkey"
+            columns: ["department_id"]
+            isOneToOne: false
+            referencedRelation: "departments"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "assets_model_id_fkey"
             columns: ["model_id"]
             isOneToOne: false
             referencedRelation: "equipment_models"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "assets_plant_id_fkey"
+            columns: ["plant_id"]
+            isOneToOne: false
+            referencedRelation: "plants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      business_units: {
+        Row: {
+          code: string
+          created_at: string | null
+          created_by: string | null
+          description: string | null
+          id: string
+          manager_id: string | null
+          name: string
+          status: string | null
+          updated_at: string | null
+          updated_by: string | null
+        }
+        Insert: {
+          code: string
+          created_at?: string | null
+          created_by?: string | null
+          description?: string | null
+          id?: string
+          manager_id?: string | null
+          name: string
+          status?: string | null
+          updated_at?: string | null
+          updated_by?: string | null
+        }
+        Update: {
+          code?: string
+          created_at?: string | null
+          created_by?: string | null
+          description?: string | null
+          id?: string
+          manager_id?: string | null
+          name?: string
+          status?: string | null
+          updated_at?: string | null
+          updated_by?: string | null
+        }
+        Relationships: []
+      }
+      departments: {
+        Row: {
+          budget_code: string | null
+          code: string
+          cost_center: string | null
+          created_at: string | null
+          description: string | null
+          id: string
+          name: string
+          plant_id: string
+          supervisor_id: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          budget_code?: string | null
+          code: string
+          cost_center?: string | null
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          name: string
+          plant_id: string
+          supervisor_id?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          budget_code?: string | null
+          code?: string
+          cost_center?: string | null
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          name?: string
+          plant_id?: string
+          supervisor_id?: string | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "departments_plant_id_fkey"
+            columns: ["plant_id"]
+            isOneToOne: false
+            referencedRelation: "plants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "departments_supervisor_id_fkey"
+            columns: ["supervisor_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      equipment_models: {
+        Row: {
+          category: string
+          created_at: string | null
+          created_by: string | null
+          description: string | null
+          expected_lifespan: number | null
+          id: string
+          maintenance_unit: string
+          manufacturer: string
+          model_id: string
+          name: string
+          specifications: Json | null
+          updated_at: string | null
+          updated_by: string | null
+          year_introduced: number | null
+        }
+        Insert: {
+          category: string
+          created_at?: string | null
+          created_by?: string | null
+          description?: string | null
+          expected_lifespan?: number | null
+          id?: string
+          maintenance_unit?: string
+          manufacturer: string
+          model_id: string
+          name: string
+          specifications?: Json | null
+          updated_at?: string | null
+          updated_by?: string | null
+          year_introduced?: number | null
+        }
+        Update: {
+          category?: string
+          created_at?: string | null
+          created_by?: string | null
+          description?: string | null
+          expected_lifespan?: number | null
+          id?: string
+          maintenance_unit?: string
+          manufacturer?: string
+          model_id?: string
+          name?: string
+          specifications?: Json | null
+          updated_at?: string | null
+          updated_by?: string | null
+          year_introduced?: number | null
+        }
+        Relationships: []
+      }
+      plants: {
+        Row: {
+          address: string | null
+          business_unit_id: string | null
+          code: string
+          contact_info: Json | null
+          created_at: string | null
+          created_by: string | null
+          id: string
+          location: string | null
+          maintenance_supervisor_id: string | null
+          name: string
+          operating_hours: Json | null
+          plant_manager_id: string | null
+          status: string | null
+          updated_at: string | null
+          updated_by: string | null
+        }
+        Insert: {
+          address?: string | null
+          business_unit_id?: string | null
+          code: string
+          contact_info?: Json | null
+          created_at?: string | null
+          created_by?: string | null
+          id?: string
+          location?: string | null
+          maintenance_supervisor_id?: string | null
+          name: string
+          operating_hours?: Json | null
+          plant_manager_id?: string | null
+          status?: string | null
+          updated_at?: string | null
+          updated_by?: string | null
+        }
+        Update: {
+          address?: string | null
+          business_unit_id?: string | null
+          code?: string
+          contact_info?: Json | null
+          created_at?: string | null
+          created_by?: string | null
+          id?: string
+          location?: string | null
+          maintenance_supervisor_id?: string | null
+          name?: string
+          operating_hours?: Json | null
+          plant_manager_id?: string | null
+          status?: string | null
+          updated_at?: string | null
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "plants_business_unit_id_fkey"
+            columns: ["business_unit_id"]
+            isOneToOne: false
+            referencedRelation: "business_units"
             referencedColumns: ["id"]
           },
         ]
@@ -568,57 +801,6 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
-      }
-      equipment_models: {
-        Row: {
-          category: string
-          created_at: string | null
-          created_by: string | null
-          description: string | null
-          expected_lifespan: number | null
-          id: string
-          maintenance_unit: string
-          manufacturer: string
-          model_id: string
-          name: string
-          specifications: Json | null
-          updated_at: string | null
-          updated_by: string | null
-          year_introduced: number | null
-        }
-        Insert: {
-          category: string
-          created_at?: string | null
-          created_by?: string | null
-          description?: string | null
-          expected_lifespan?: number | null
-          id?: string
-          maintenance_unit?: string
-          manufacturer: string
-          model_id: string
-          name: string
-          specifications?: Json | null
-          updated_at?: string | null
-          updated_by?: string | null
-          year_introduced?: number | null
-        }
-        Update: {
-          category?: string
-          created_at?: string | null
-          created_by?: string | null
-          description?: string | null
-          expected_lifespan?: number | null
-          id?: string
-          maintenance_unit?: string
-          manufacturer?: string
-          model_id?: string
-          name?: string
-          specifications?: Json | null
-          updated_at?: string | null
-          updated_by?: string | null
-          year_introduced?: number | null
-        }
-        Relationships: []
       }
       incident_history: {
         Row: {

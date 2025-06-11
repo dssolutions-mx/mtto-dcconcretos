@@ -169,7 +169,7 @@ export function OfflineChecklistList({ className = "" }: OfflineChecklistListPro
                           {asset?.asset_id && (
                             <p className="text-xs text-muted-foreground">
                               ID: {asset.asset_id}
-                              {asset.location && ` • 📍 ${asset.location}`}
+                              {((asset as any).plants?.name || asset.location) && ` • 📍 ${(asset as any).plants?.name || asset.location}`}
                             </p>
                           )}
                           {checklist.scheduled_date && (

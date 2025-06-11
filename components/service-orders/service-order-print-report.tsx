@@ -95,7 +95,7 @@ export function ServiceOrderPrintReport({ serviceOrder, onClose }: ServiceOrderP
                 <strong>Activo Intervenido:</strong> {serviceOrder.asset_name} ({serviceOrder.asset?.asset_id})
               </p>
               <p className="mb-2">
-                <strong>Ubicación:</strong> {serviceOrder.asset?.location || 'Instalaciones principales'}
+                <strong>Ubicación:</strong> {(serviceOrder.asset as any)?.plants?.name || serviceOrder.asset?.location || 'Sin planta'}
               </p>
             </div>
             <div>
@@ -186,7 +186,7 @@ export function ServiceOrderPrintReport({ serviceOrder, onClose }: ServiceOrderP
               )}
               <div className="flex justify-between">
                 <span className="font-medium">Ubicación:</span>
-                <span>{serviceOrder.asset?.location || 'No especificada'}</span>
+                <span>{(serviceOrder.asset as any)?.plants?.name || serviceOrder.asset?.location || 'Sin planta'}</span>
               </div>
               {serviceOrder.asset?.serial_number && (
                 <div className="flex justify-between">

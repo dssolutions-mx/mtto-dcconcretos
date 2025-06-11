@@ -15,6 +15,23 @@ export async function GET() {
         location,
         department,
         current_hours,
+        plant_id,
+        department_id,
+        plants (
+          id,
+          name,
+          code,
+          business_units (
+            id,
+            name,
+            code
+          )
+        ),
+        departments (
+          id,
+          name,
+          code
+        ),
         equipment_models (
           id,
           name,

@@ -666,7 +666,7 @@ export function ServiceOrderDetail({ id }: ServiceOrderDetailProps) {
                 <div>
                     <p><strong>Tipo de Intervención:</strong> ${serviceOrder?.type === 'preventive' ? 'Mantenimiento Preventivo Programado' : 'Mantenimiento Correctivo de Emergencia'}</p>
                     <p><strong>Activo Intervenido:</strong> ${serviceOrder?.asset_name} (${serviceOrder?.asset?.asset_id})</p>
-                    <p><strong>Ubicación:</strong> ${serviceOrder?.asset?.location || 'Instalaciones principales'}</p>
+                    <p><strong>Ubicación:</strong> ${(serviceOrder?.asset as any)?.plants?.name || serviceOrder?.asset?.location || 'Sin planta'}</p>
                 </div>
                 <div>
                     <p><strong>Duración Total:</strong> ${serviceOrder?.labor_hours || 0} horas de trabajo</p>
@@ -737,7 +737,7 @@ export function ServiceOrderDetail({ id }: ServiceOrderDetailProps) {
                 ` : ''}
                 <div class="info-row">
                     <span class="label">Ubicación:</span>
-                    <span>${serviceOrder?.asset?.location || 'No especificada'}</span>
+                    <span>${(serviceOrder?.asset as any)?.plants?.name || serviceOrder?.asset?.location || 'Sin planta'}</span>
                 </div>
                 ${serviceOrder?.asset?.serial_number ? `
                 <div class="info-row">
@@ -971,7 +971,7 @@ INFORMACIÓN GENERAL DEL SERVICIO
 Orden ID:               ${serviceOrder?.order_id}
 Activo:                 ${serviceOrder?.asset_name}
 ID del Activo:          ${serviceOrder?.asset?.asset_id || serviceOrder?.asset_id}
-Ubicación:              ${serviceOrder?.asset?.location || 'No especificada'}
+Ubicación:              ${(serviceOrder?.asset as any)?.plants?.name || serviceOrder?.asset?.location || 'Sin planta'}
 Fecha de Servicio:      ${formatDate(serviceOrder?.date)}
 Técnico Responsable:    ${serviceOrder?.technician}
 Tipo de Mantenimiento:  ${serviceOrder?.type === 'preventive' ? 'Preventivo' : 'Correctivo'}
@@ -1220,7 +1220,7 @@ Documento confidencial - Solo para uso interno de la organización
                                          <Building className="h-5 w-5 text-muted-foreground" />
                      <div>
                        <p className="text-sm text-muted-foreground">Ubicación</p>
-                       <p className="font-medium">{serviceOrder.asset?.location || 'No especificada'}</p>
+                       <p className="font-medium">{(serviceOrder?.asset as any)?.plants?.name || serviceOrder?.asset?.location || 'Sin planta'}</p>
                      </div>
                   </div>
                 </div>
@@ -1311,7 +1311,7 @@ Documento confidencial - Solo para uso interno de la organización
                 )}
                 <div>
                   <p className="text-sm text-muted-foreground">Ubicación</p>
-                  <p className="font-medium">{serviceOrder.asset?.location || 'No especificada'}</p>
+                  <p className="font-medium">{(serviceOrder?.asset as any)?.plants?.name || serviceOrder?.asset?.location || 'Sin planta'}</p>
                 </div>
               </div>
             </CardContent>

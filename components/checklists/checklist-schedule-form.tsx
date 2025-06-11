@@ -467,7 +467,7 @@ export function ChecklistScheduleForm() {
                         <SelectContent>
                           {assets.map((asset) => (
                             <SelectItem key={asset.id} value={asset.id}>
-                              {asset.name} - {asset.asset_id} ({asset.location})
+                              {asset.name} - {asset.asset_id} ({(asset as any).plants?.name || asset.location || 'Sin planta'})
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -539,7 +539,7 @@ export function ChecklistScheduleForm() {
                         <SelectContent>
                           {assets.map((asset) => (
                             <SelectItem key={asset.id} value={asset.id}>
-                              {asset.name} - {asset.asset_id} ({asset.location})
+                              {asset.name} - {asset.asset_id} ({(asset as any).plants?.name || asset.location || 'Sin planta'})
                             </SelectItem>
                           ))}
                         </SelectContent>

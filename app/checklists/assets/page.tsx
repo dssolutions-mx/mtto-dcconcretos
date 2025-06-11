@@ -177,9 +177,10 @@ export default function AssetChecklistDashboard() {
              // Search filter
        if (searchQuery) {
          const searchLower = searchQuery.toLowerCase()
+         const plantName = (asset as any).plants?.name || asset.location || ''
          if (!asset.name.toLowerCase().includes(searchLower) && 
              !asset.asset_id.toLowerCase().includes(searchLower) &&
-             !(asset.location || '').toLowerCase().includes(searchLower)) {
+             !plantName.toLowerCase().includes(searchLower)) {
            return false
          }
        }
@@ -193,8 +194,8 @@ export default function AssetChecklistDashboard() {
 
       // Department filter
       if (departmentFilter !== 'all') {
-        // Handle null/undefined departments
-        const assetDepartment = asset.department || 'Sin departamento'
+        // Handle new organizational structure - use department name from related table
+        const assetDepartment = (asset as any).departments?.name || asset.department || 'Sin departamento'
         if (assetDepartment !== departmentFilter) {
           return false
         }
@@ -456,14 +457,14 @@ export default function AssetChecklistDashboard() {
                 </CardHeader>
                 <CardContent className="pt-0">
                   <div className="space-y-3">
-                                         <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                       <MapPin className="h-4 w-4" />
-                       <span className="truncate">{asset.location || 'Sin ubicación'}</span>
-                     </div>
-                                         <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                       <Users className="h-4 w-4" />
-                       <span className="truncate">{asset.department || 'Sin departamento'}</span>
-                     </div>
+                                                             <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <MapPin className="h-4 w-4" />
+                      <span className="truncate">{(asset as any).plants?.name || asset.location || 'Sin planta'}</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <Users className="h-4 w-4" />
+                      <span className="truncate">{(asset as any).departments?.name || asset.department || 'Sin departamento'}</span>
+                    </div>
                     
                     {asset.pending_checklists > 0 && (
                       <div className="flex items-center justify-between p-2 bg-white rounded border">
@@ -515,14 +516,14 @@ export default function AssetChecklistDashboard() {
                             <h3 className="font-semibold truncate">{asset.name}</h3>
                             <span className="text-sm text-muted-foreground">({asset.asset_id})</span>
                           </div>
-                          <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                                                         <span className="flex items-center gap-1">
-                               <MapPin className="h-3 w-3" />
-                               {asset.location || 'Sin ubicación'}
-                             </span>
+                                                    <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                            <span className="flex items-center gap-1">
+                              <MapPin className="h-3 w-3" />
+                              {(asset as any).plants?.name || asset.location || 'Sin planta'}
+                            </span>
                             <span className="flex items-center gap-1">
                               <Users className="h-3 w-3" />
-                              {asset.department}
+                              {(asset as any).departments?.name || asset.department || 'Sin departamento'}
                             </span>
                           </div>
                         </div>

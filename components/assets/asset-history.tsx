@@ -618,7 +618,7 @@ export function AssetHistory({ id }: AssetHistoryProps) {
             </div>
             <div className="flex flex-wrap gap-2">
               <Badge variant="outline">ID: {asset?.id}</Badge>
-              <Badge variant="outline">Ubicación: {asset?.location || "N/A"}</Badge>
+              <Badge variant="outline">Ubicación: {(asset as any)?.plants?.name || asset?.location || "Sin planta"}</Badge>
               <Badge variant="outline">Compra: {asset?.purchase_date ? formatDate(asset.purchase_date) : "N/A"}</Badge>
             </div>
           </div>

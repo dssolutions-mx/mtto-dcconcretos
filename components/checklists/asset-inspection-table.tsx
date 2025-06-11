@@ -70,7 +70,7 @@ export function AssetInspectionTable({ assets }: { assets: Asset[] }) {
             <TableCell>
               {asset.manufacturer} {asset.model_name}
             </TableCell>
-            <TableCell>{asset.location}</TableCell>
+                            <TableCell>{(asset as any).plants?.name || asset.location || 'Sin planta'}</TableCell>
             <TableCell>{renderLastInspection(asset)}</TableCell>
             <TableCell className="text-right">
               <Button asChild size="sm" variant="outline">

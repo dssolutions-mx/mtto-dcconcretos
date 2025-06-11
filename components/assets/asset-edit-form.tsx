@@ -117,8 +117,8 @@ const formSchema = z.object({
   assetId: z.string().min(1, "El ID del activo es requerido"),
   name: z.string().min(1, "El nombre es requerido"),
   serialNumber: z.string().min(1, "El número de serie es requerido"),
-  location: z.string().min(1, "La ubicación es requerida"),
-  department: z.string().min(1, "El departamento es requerido"),
+  plantId: z.string().min(1, "La planta es requerida"),
+  departmentId: z.string().min(1, "El departamento es requerido"),
   purchaseDate: z.date({
     required_error: "La fecha de adquisición es requerida",
     invalid_type_error: "La fecha de adquisición debe ser una fecha válida",
@@ -328,7 +328,9 @@ export function AssetEditForm({ assetId }: AssetEditFormProps) {
           .from("assets")
           .select(`
             *,
-            equipment_models (*)
+            equipment_models (*),
+            plants(id, name, code),
+            departments(id, name, code)
           `)
           .eq("id", assetId)
           .single()
@@ -342,8 +344,8 @@ export function AssetEditForm({ assetId }: AssetEditFormProps) {
             assetId: asset.asset_id || "",
             name: asset.name || "",
             serialNumber: asset.serial_number || "",
-            location: asset.location || "",
-            department: asset.department || "",
+            plantId: asset.plant_id || "",
+            departmentId: asset.department_id || "",
             purchaseDate: new Date(asset.purchase_date || new Date()),
             installationDate: asset.installation_date ? new Date(asset.installation_date) : undefined,
             initialHours: (asset.initial_hours || 0).toString(),

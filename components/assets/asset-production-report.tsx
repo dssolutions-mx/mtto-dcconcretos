@@ -284,10 +284,10 @@ export function AssetProductionReport({ assetId, onClose }: AssetProductionRepor
                 <strong>Estado Actual:</strong> <span className={`font-medium ${asset.status === 'operational' ? 'text-green-600' : 'text-red-600'}`}>{asset.status?.toUpperCase()}</span>
               </p>
               <p className="mb-2">
-                <strong>Ubicación:</strong> {asset.location || 'No especificada'}
+                <strong>Planta:</strong> {(asset as any).plants?.name || asset.location || 'No especificada'}
               </p>
               <p className="mb-2">
-                <strong>Departamento:</strong> {asset.department || 'No especificado'}
+                <strong>Departamento:</strong> {(asset as any).departments?.name || asset.department || 'No especificado'}
               </p>
             </div>
             <div>

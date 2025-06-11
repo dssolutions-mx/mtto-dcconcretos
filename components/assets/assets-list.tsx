@@ -14,9 +14,9 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { createClient } from "@/lib/supabase"
 
 interface AssetsListProps {
-  assets?: Asset[];
-  isLoading?: boolean;
-  onRefresh?: () => void;
+  assets: Asset[] | null
+  loading?: boolean
+  error?: Error | null
 }
 
 interface MaintenanceData {
@@ -28,7 +28,7 @@ interface MaintenanceData {
   }
 }
 
-export function AssetsList({ assets, isLoading = false, onRefresh }: AssetsListProps) {
+export function AssetsList({ assets, loading = false, error }: AssetsListProps) {
   const [searchTerm, setSearchTerm] = useState("")
   const [statusFilter, setStatusFilter] = useState<string>("all")
   const [locationFilter, setLocationFilter] = useState<string>("all")
@@ -171,7 +171,17 @@ export function AssetsList({ assets, isLoading = false, onRefresh }: AssetsListP
   // Get unique locations for filter
   const locations = useMemo(() => {
     if (!assets) return []
-    const uniqueLocations = Array.from(new Set(assets.map(asset => asset.location).filter((location): location is string => Boolean(location))))
+    // Use plant names and fallback to location
+    const uniqueLocations = Array.from(new Set(
+      assets.map(asset => {
+        // If asset has plant information, use plant name, otherwise fall back to location
+        const assetWithPlant = asset as any
+        if (assetWithPlant.plants?.name) {
+          return assetWithPlant.plants.name
+        }
+        return asset.location
+      }).filter((location): location is string => Boolean(location))
+    ))
     return uniqueLocations.sort()
   }, [assets])
 
@@ -180,30 +190,21 @@ export function AssetsList({ assets, isLoading = false, onRefresh }: AssetsListP
     if (!assets) return []
     
     return assets.filter(asset => {
-      // Search filter
-      const searchFields = [
-        asset.asset_id,
-        asset.name,
-        asset.location,
-        asset.department,
-        (asset as any).equipment_models?.name,
-        (asset as any).equipment_models?.manufacturer
-      ]
-      
-      const matchesSearch = searchTerm === "" || 
-        searchFields.some(field => 
-          field?.toLowerCase().includes(searchTerm.toLowerCase())
-        )
-      
-      // Status filter
-      const matchesStatus = statusFilter === "all" || asset.status === statusFilter
-      
-      // Location filter
-      const matchesLocation = locationFilter === "all" || (asset.location && asset.location === locationFilter)
-      
-      return matchesSearch && matchesStatus && matchesLocation
+      const assetWithPlant = asset as any
+      const matchesSearch = searchTerm === '' || 
+        asset.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        asset.asset_id.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (assetWithPlant.plants?.name && assetWithPlant.plants.name.toLowerCase().includes(searchTerm.toLowerCase()))
+
+      const matchesLocation = locationFilter === 'all' || 
+        (assetWithPlant.plants?.name === locationFilter) ||
+        asset.location === locationFilter
+
+      const matchesStatus = statusFilter === 'all' || asset.status === statusFilter
+
+      return matchesSearch && matchesLocation && matchesStatus
     })
-  }, [assets, searchTerm, statusFilter, locationFilter])
+  }, [assets, searchTerm, locationFilter, statusFilter])
 
   // Función para mostrar el estado con un color adecuado
   const getStatusBadge = (status: string) => {
@@ -298,7 +299,7 @@ export function AssetsList({ assets, isLoading = false, onRefresh }: AssetsListP
 
   const hasActiveFilters = searchTerm !== "" || statusFilter !== "all" || locationFilter !== "all"
 
-  if (isLoading) {
+  if (loading) {
     return (
       <Card>
         <CardContent className="p-6">
@@ -430,15 +431,19 @@ export function AssetsList({ assets, isLoading = false, onRefresh }: AssetsListP
                   <div className="grid grid-cols-2 gap-2 text-sm">
                     <div className="flex items-center gap-2">
                       <Users className="h-4 w-4 text-muted-foreground" />
-                      <span className="truncate">{asset.department || "Sin dep."}</span>
+                      <span className="truncate">
+                        {(asset as any).departments?.name || asset.department || "Sin dep."}
+                      </span>
                     </div>
                     <div className="flex items-center gap-2">
                       <Gauge className="h-4 w-4 text-blue-600" />
                       <span className="font-medium">{asset.current_hours || 0}h</span>
                     </div>
                     <div className="flex items-center gap-2 col-span-2">
-                      <MapPin className="h-4 w-4 text-muted-foreground" />
-                      <span className="truncate">{asset.location || "Sin ubicación"}</span>
+                      <MapPin className="h-4 w-4 text-green-600" />
+                      <span className="text-green-700 font-medium truncate">
+                        {(asset as any).plants?.name || asset.location || "Sin ubicación"}
+                      </span>
                     </div>
                   </div>
                   

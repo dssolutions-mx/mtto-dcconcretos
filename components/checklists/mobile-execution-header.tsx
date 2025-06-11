@@ -82,7 +82,7 @@ export function MobileExecutionHeader({ schedule }: { schedule: ChecklistSchedul
               <MapPin className="h-5 w-5 text-primary mt-0.5" />
               <div>
                 <div className="font-medium">Ubicación</div>
-                <div className="text-sm">{asset.location}</div>
+                <div className="text-sm">{(asset as any).plants?.name || asset.location || 'Sin planta'}</div>
               </div>
             </div>
             

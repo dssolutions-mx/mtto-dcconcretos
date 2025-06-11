@@ -138,9 +138,9 @@ export function PreventiveChecklistList() {
                           ID: {checklist.assets?.asset_id || 'N/A'}
                         </p>
                         {checklist.assets?.location && (
-                          <p className="text-xs text-muted-foreground">
-                            📍 {checklist.assets.location}
-                          </p>
+                          <div className="text-sm text-gray-500">
+                            📍 {(checklist.assets as any).plants?.name || checklist.assets.location || 'Sin planta'}
+                          </div>
                         )}
                       </div>
                     </TableCell>
