@@ -207,22 +207,44 @@ export function EquipmentModelForm() {
   const savePart = (part: MaintenancePart) => {
     if (currentIntervalIndex === null || currentTaskIndex === null) return
 
-    const updatedIntervals = [...maintenanceIntervals]
-
-    if (isEditingPart && currentPart) {
-      // Editar repuesto existente
-      const partIndex = updatedIntervals[currentIntervalIndex].tasks[currentTaskIndex].parts.findIndex(
-        (p) => p.id === currentPart.id,
-      )
-      if (partIndex !== -1) {
-        updatedIntervals[currentIntervalIndex].tasks[currentTaskIndex].parts[partIndex] = part
+    // Si estamos trabajando con una tarea temporal (currentTaskIndex === -1)
+    if (currentTaskIndex === -1 && currentTask) {
+      if (isEditingPart && currentPart) {
+        // Editar repuesto existente en la tarea temporal
+        const updatedParts = currentTask.parts.map(p => 
+          p.id === currentPart.id ? part : p
+        )
+        setCurrentTask({ ...currentTask, parts: updatedParts })
+      } else {
+        // Agregar nuevo repuesto a la tarea temporal
+        setCurrentTask({ ...currentTask, parts: [...currentTask.parts, part] })
       }
     } else {
-      // Agregar nuevo repuesto
-      updatedIntervals[currentIntervalIndex].tasks[currentTaskIndex].parts.push(part)
+      // Trabajar con tareas ya guardadas en los intervalos
+      const updatedIntervals = [...maintenanceIntervals]
+      
+      // Verificar que la tarea existe en el array
+      if (!updatedIntervals[currentIntervalIndex].tasks[currentTaskIndex]) {
+        console.error("Task not found at index:", currentTaskIndex)
+        return
+      }
+
+      if (isEditingPart && currentPart) {
+        // Editar repuesto existente
+        const partIndex = updatedIntervals[currentIntervalIndex].tasks[currentTaskIndex].parts.findIndex(
+          (p) => p.id === currentPart.id,
+        )
+        if (partIndex !== -1) {
+          updatedIntervals[currentIntervalIndex].tasks[currentTaskIndex].parts[partIndex] = part
+        }
+      } else {
+        // Agregar nuevo repuesto
+        updatedIntervals[currentIntervalIndex].tasks[currentTaskIndex].parts.push(part)
+      }
+
+      setMaintenanceIntervals(updatedIntervals)
     }
 
-    setMaintenanceIntervals(updatedIntervals)
     setIsPartDialogOpen(false)
     setCurrentPart(null)
     setIsEditingPart(false)
@@ -230,11 +252,18 @@ export function EquipmentModelForm() {
 
   // Función para eliminar un repuesto
   const removePart = (intervalIndex: number, taskIndex: number, partId: string) => {
-    const updatedIntervals = [...maintenanceIntervals]
-    updatedIntervals[intervalIndex].tasks[taskIndex].parts = updatedIntervals[intervalIndex].tasks[
-      taskIndex
-    ].parts.filter((part) => part.id !== partId)
-    setMaintenanceIntervals(updatedIntervals)
+    // Si es una tarea temporal (taskIndex === -1)
+    if (taskIndex === -1 && currentTask) {
+      const updatedParts = currentTask.parts.filter((part) => part.id !== partId)
+      setCurrentTask({ ...currentTask, parts: updatedParts })
+    } else {
+      // Tarea existente en los intervalos
+      const updatedIntervals = [...maintenanceIntervals]
+      updatedIntervals[intervalIndex].tasks[taskIndex].parts = updatedIntervals[intervalIndex].tasks[
+        taskIndex
+      ].parts.filter((part) => part.id !== partId)
+      setMaintenanceIntervals(updatedIntervals)
+    }
   }
 
   // Funciones para manejo de documentos
@@ -1103,10 +1132,9 @@ export function EquipmentModelForm() {
                       }
                       setCurrentTask(newTask);
                       
-                      // Ahora que tenemos una tarea temporal, podemos abrir el diálogo de repuestos
+                      // Para tareas temporales, usamos un índice especial (-1)
                       if (currentIntervalIndex !== null) {
-                        const taskIndex = maintenanceIntervals[currentIntervalIndex].tasks.length;
-                        openPartDialog(currentIntervalIndex, taskIndex);
+                        openPartDialog(currentIntervalIndex, -1);
                       }
                     } else if (currentTask && currentIntervalIndex !== null) {
                       // Para tareas existentes, hacemos lo mismo que antes
@@ -1149,11 +1177,17 @@ export function EquipmentModelForm() {
                               className="h-6 w-6 p-0"
                               onClick={() => {
                                 if (currentTask && currentIntervalIndex !== null) {
-                                  const taskIndex = maintenanceIntervals[currentIntervalIndex].tasks.findIndex(
-                                    (t) => t.id === currentTask.id,
-                                  )
-                                  if (taskIndex !== -1) {
-                                    openPartDialog(currentIntervalIndex, taskIndex, part)
+                                  if (isEditingTask) {
+                                    // Para tareas existentes
+                                    const taskIndex = maintenanceIntervals[currentIntervalIndex].tasks.findIndex(
+                                      (t) => t.id === currentTask.id,
+                                    )
+                                    if (taskIndex !== -1) {
+                                      openPartDialog(currentIntervalIndex, taskIndex, part)
+                                    }
+                                  } else {
+                                    // Para tareas temporales
+                                    openPartDialog(currentIntervalIndex, -1, part)
                                   }
                                 }
                               }}
@@ -1166,16 +1200,17 @@ export function EquipmentModelForm() {
                               className="h-6 w-6 p-0 text-red-500"
                               onClick={() => {
                                 if (currentTask && currentIntervalIndex !== null) {
-                                  const taskIndex = maintenanceIntervals[currentIntervalIndex].tasks.findIndex(
-                                    (t) => t.id === currentTask.id,
-                                  )
-                                  if (taskIndex !== -1) {
-                                    removePart(currentIntervalIndex, taskIndex, part.id)
-                                    // Actualizar la tarea actual para reflejar el cambio
-                                    setCurrentTask({
-                                      ...currentTask,
-                                      parts: currentTask.parts.filter(p => p.id !== part.id)
-                                    })
+                                  if (isEditingTask) {
+                                    // Para tareas existentes
+                                    const taskIndex = maintenanceIntervals[currentIntervalIndex].tasks.findIndex(
+                                      (t) => t.id === currentTask.id,
+                                    )
+                                    if (taskIndex !== -1) {
+                                      removePart(currentIntervalIndex, taskIndex, part.id)
+                                    }
+                                  } else {
+                                    // Para tareas temporales
+                                    removePart(currentIntervalIndex, -1, part.id)
                                   }
                                 }
                               }}
@@ -1268,14 +1303,6 @@ export function EquipmentModelForm() {
                   cost: (document.getElementById("partCost") as HTMLInputElement).value,
                 }
                 savePart(newPart)
-                
-                // Si estamos añadiendo un repuesto a una tarea nueva, actualizamos la tarea actual
-                if (currentTask && !isEditingTask) {
-                  setCurrentTask({
-                    ...currentTask,
-                    parts: [...(currentTask.parts || []), newPart]
-                  })
-                }
               }}
             >
               {isEditingPart ? "Actualizar" : "Agregar"}
