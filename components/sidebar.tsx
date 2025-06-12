@@ -31,6 +31,7 @@ import {
   ChevronRight,
   Building2,
   Users,
+  UserCheck,
   Sparkles,
 } from "lucide-react"
 import { UserNav } from "@/components/user-nav"
@@ -99,6 +100,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
   const [operationsOpen, setOperationsOpen] = useState(false)
   const [procurementOpen, setProcurementOpen] = useState(false)
   const [recordsOpen, setRecordsOpen] = useState(false)
+  const [organizationOpen, setOrganizationOpen] = useState(false)
   const [hrOpen, setHrOpen] = useState(false)
 
   const handleLinkClick = () => {
@@ -337,6 +339,63 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
           </Collapsible>
         </div>
 
+        {/* Organization Section */}
+        <div className="px-4">
+          <Collapsible open={organizationOpen} onOpenChange={setOrganizationOpen}>
+            <CollapsibleTrigger asChild>
+              <Button
+                variant="ghost"
+                className="w-full justify-between p-2 h-auto font-medium"
+              >
+                <div className="flex items-center">
+                  <Building2 className="mr-2 h-4 w-4" />
+                  Organización
+                </div>
+                {organizationOpen ? (
+                  <ChevronDown className="h-4 w-4" />
+                ) : (
+                  <ChevronRight className="h-4 w-4" />
+                )}
+              </Button>
+            </CollapsibleTrigger>
+            <CollapsibleContent className="space-y-1 mt-2">
+              <Button
+                variant={isPathActive("/personal") ? "secondary" : "ghost"}
+                className="w-full justify-start pl-8"
+                asChild
+                onClick={handleLinkClick}
+              >
+                <Link href="/personal">
+                  <Users className="mr-2 h-4 w-4" />
+                  Gestión de Personal
+                </Link>
+              </Button>
+              <Button
+                variant={isPathActive("/activos/asignacion") ? "secondary" : "ghost"}
+                className="w-full justify-start pl-8"
+                asChild
+                onClick={handleLinkClick}
+              >
+                <Link href="/activos/asignacion">
+                  <UserCheck className="mr-2 h-4 w-4" />
+                  Asignación de Activos
+                </Link>
+              </Button>
+              <Button
+                variant={isPathActive("/plantas") ? "secondary" : "ghost"}
+                className="w-full justify-start pl-8"
+                asChild
+                onClick={handleLinkClick}
+              >
+                <Link href="/plantas">
+                  <Building2 className="mr-2 h-4 w-4" />
+                  Configuración de Plantas
+                </Link>
+              </Button>
+            </CollapsibleContent>
+          </Collapsible>
+        </div>
+
         {/* HR Section */}
         <div className="px-4">
           <Collapsible open={hrOpen} onOpenChange={setHrOpen}>
@@ -450,6 +509,17 @@ export function CollapsedSidebar({ className, onLinkClick }: SidebarProps) {
       items: [
         { href: "/servicios", icon: CheckCircle, label: "Órdenes de Servicio", active: isPathActive("/servicios") },
         { href: "/reportes", icon: BarChart3, label: "Reportes", active: isPathActive("/reportes") }
+      ]
+    },
+    {
+      id: "organization",
+      icon: Building2,
+      label: "Organización",
+      active: isSectionActive(["/personal", "/activos/asignacion", "/plantas"]),
+      items: [
+        { href: "/personal", icon: Users, label: "Gestión de Personal", active: isPathActive("/personal") },
+        { href: "/activos/asignacion", icon: UserCheck, label: "Asignación de Activos", active: isPathActive("/activos/asignacion") },
+        { href: "/plantas", icon: Building2, label: "Configuración de Plantas", active: isPathActive("/plantas") }
       ]
     },
     {

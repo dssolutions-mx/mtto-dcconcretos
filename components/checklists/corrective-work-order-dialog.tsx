@@ -36,6 +36,7 @@ interface CorrectiveWorkOrderDialogProps {
     photo: string | null
     status: "flag" | "fail"
     sectionTitle?: string
+    sectionType?: string
   }>
   onWorkOrderCreated: (workOrderId: string) => void
   onNavigateToAssetsPage?: () => void

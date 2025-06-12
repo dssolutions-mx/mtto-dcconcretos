@@ -152,7 +152,7 @@ export async function POST(request: NextRequest) {
               // Get current work order details to check priority
               const { data: currentWorkOrder, error: woError } = await supabase
                 .from('work_orders')
-                .select('id, priority, description, escalation_count, issue_history')
+                .select('id, priority, description, escalation_count, issue_history, related_issues_count')
                 .eq('id', existingIssue.work_order_id)
                 .single()
 
@@ -201,6 +201,7 @@ ${issue.photo_url ? '• Evidencia fotográfica disponible' : ''}`
                 description: updatedDescription,
                 issue_history: updatedHistory,
                 escalation_count: (currentWorkOrder.escalation_count || 0) + 1,
+                related_issues_count: (currentWorkOrder.related_issues_count || 1) + 1,
                 updated_at: new Date().toISOString()
               }
 

@@ -166,18 +166,32 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
           isCollapsed: sectionCollapsed[section.id] || false
         }
       } else if (section.section_type === 'cleanliness_bonus') {
+        const items = section.checklist_items || section.items || []
         const sectionEvidences = evidenceData[section.id] || []
         const config = section.cleanliness_config || {}
-        const requiredPhotos = (config.areas || []).length * (config.min_photos || 2)
         
+        // Count checklist items completion
+        const itemsCompleted = items.filter((item: any) => itemStatus[item.id]).length
+        
+        // Count evidence requirements (optional for cleanliness)
+        const requiredPhotos = (config.areas || []).length * (config.min_photos || 2)
+        const evidenceCompleted = Math.min(sectionEvidences.length, requiredPhotos)
+        
+        // For cleanliness sections, we primarily count checklist items
+        // Evidence is supplementary for HR documentation
         return {
           id: section.id,
           title: section.title,
           type: 'cleanliness_bonus' as const,
-          total: requiredPhotos,
-          completed: sectionEvidences.length,
-          hasIssues: sectionEvidences.some(e => e.status === 'failed'),
-          isCollapsed: sectionCollapsed[section.id] || false
+          total: items.length, // Only count checklist items in main progress
+          completed: itemsCompleted,
+          hasIssues: items.some((item: any) => 
+            itemStatus[item.id] === 'flag' || itemStatus[item.id] === 'fail'
+          ) || sectionEvidences.some(e => e.status === 'failed'),
+          isCollapsed: sectionCollapsed[section.id] || false,
+          // Additional info for evidence tracking (not counted in main progress)
+          evidenceTotal: requiredPhotos,
+          evidenceCompleted: evidenceCompleted
         }
       } else {
         const items = section.checklist_items || section.items || []
@@ -1134,15 +1148,29 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
         isComplete: sectionEvidences.length >= requiredPhotos
       }
     } else if (section.section_type === 'cleanliness_bonus') {
+      const items = section.checklist_items || section.items || []
       const sectionEvidences = evidenceData[section.id] || []
       const config = section.cleanliness_config || {}
+      
+      // Count checklist items completion
+      const itemsCompleted = items.filter((item: any) => itemStatus[item.id]).length
+      const hasItemIssues = items.some((item: any) => 
+        itemStatus[item.id] === 'flag' || itemStatus[item.id] === 'fail'
+      )
+      
+      // Evidence requirements (supplementary)
       const requiredPhotos = (config.areas || []).length * (config.min_photos || 2)
+      const evidenceCompleted = Math.min(sectionEvidences.length, requiredPhotos)
       
       return {
-        completed: sectionEvidences.length,
-        total: requiredPhotos,
-        hasIssues: sectionEvidences.some(e => e.status === 'failed'),
-        isComplete: sectionEvidences.length >= requiredPhotos
+        completed: itemsCompleted,
+        total: items.length,
+        hasIssues: hasItemIssues || sectionEvidences.some(e => e.status === 'failed'),
+        isComplete: itemsCompleted === items.length,
+        // Additional evidence info
+        evidenceCompleted: evidenceCompleted,
+        evidenceTotal: requiredPhotos,
+        evidenceComplete: evidenceCompleted >= requiredPhotos
       }
     } else {
       const items = section.checklist_items || section.items || []
@@ -1355,11 +1383,11 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
                 // Enhanced Evidence Section with Collapsible Wrapper
                 return (
                   <div 
+                    key={`evidence-${section.id}`}
                     id={`section-${section.id}`}
                     className="scroll-mt-20"
                   >
                     <Collapsible
-                      key={section.id}
                       open={!isCollapsed}
                       onOpenChange={() => toggleSectionCollapse(section.id)}
                     >
@@ -1424,11 +1452,11 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
                 // Enhanced Cleanliness Section with Collapsible Wrapper
                 return (
                   <div 
+                    key={`cleanliness-${section.id}`}
                     id={`section-${section.id}`}
                     className="scroll-mt-20"
                   >
                     <Collapsible
-                      key={section.id}
                       open={!isCollapsed}
                       onOpenChange={() => toggleSectionCollapse(section.id)}
                     >
@@ -1453,6 +1481,16 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
                                 >
                                   {sectionStatus.completed}/{sectionStatus.total}
                                 </Badge>
+                                {/* Evidence Progress Badge (supplementary) */}
+                                {(sectionStatus as any).evidenceTotal > 0 && (
+                                  <Badge 
+                                    variant="outline"
+                                    className="text-xs"
+                                    title="Evidencias fotográficas"
+                                  >
+                                    📸 {(sectionStatus as any).evidenceCompleted}/{(sectionStatus as any).evidenceTotal}
+                                  </Badge>
+                                )}
                                 {sectionStatus.hasIssues && (
                                   <AlertTriangle className="h-4 w-4 text-amber-500" />
                                 )}
@@ -1470,22 +1508,114 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
                         </Card>
                       </CollapsibleTrigger>
                       <CollapsibleContent>
-                        <div className="mt-2">
-                                                     <EvidenceCaptureSection
-                             sectionId={section.id}
-                             sectionTitle={section.title}
-                             config={{
-                               min_photos: section.cleanliness_config?.min_photos || 2,
-                               max_photos: section.cleanliness_config?.max_photos || 6,
-                               categories: section.cleanliness_config?.areas || ['Interior - Cabina', 'Exterior - Carrocería'],
-                               descriptions: section.cleanliness_config?.descriptions || {
-                                 'Interior - Cabina': 'Documentar el estado de limpieza del interior',
-                                 'Exterior - Carrocería': 'Fotografiar la limpieza exterior del equipo'
-                               }
-                             }}
-                             onEvidenceChange={handleEvidenceChange}
-                             disabled={submitting}
-                           />
+                        <div className="mt-2 space-y-4">
+                          {/* Render cleanliness checklist items first */}
+                          {(section.checklist_items || section.items || []).map((item: any) => (
+                            <Card key={item.id} className="overflow-hidden">
+                              <CardHeader className="py-3">
+                                <div className="flex items-center justify-between">
+                                  <CardTitle className="text-base flex-1">{item.description}</CardTitle>
+                                  {itemStatus[item.id] && (
+                                    <div className="ml-2">
+                                      {itemStatus[item.id] === "pass" && (
+                                        <CheckCircle2 className="h-5 w-5 text-green-500" />
+                                      )}
+                                      {itemStatus[item.id] === "flag" && (
+                                        <AlertTriangle className="h-5 w-5 text-amber-500" />
+                                      )}
+                                      {itemStatus[item.id] === "fail" && (
+                                        <XCircle className="h-5 w-5 text-red-500" />
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                              </CardHeader>
+                              <CardContent className="pb-3">
+                                <div className="grid grid-cols-3 gap-2">
+                                  <Button
+                                    variant={itemStatus[item.id] === "pass" ? "default" : "outline"}
+                                    className={`h-12 ${itemStatus[item.id] === "pass" ? "bg-green-500 hover:bg-green-600" : ""}`}
+                                    onClick={() => handleStatusChange(item.id, "pass")}
+                                    disabled={submitting}
+                                  >
+                                    <Check
+                                      className={`mr-2 h-5 w-5 ${itemStatus[item.id] === "pass" ? "text-white" : "text-green-500"}`}
+                                    />
+                                    <span className={itemStatus[item.id] === "pass" ? "text-white" : "text-green-500"}>Pass</span>
+                                  </Button>
+                                  <Button
+                                    variant={itemStatus[item.id] === "flag" ? "default" : "outline"}
+                                    className={`h-12 ${itemStatus[item.id] === "flag" ? "bg-amber-500 hover:bg-amber-600" : ""}`}
+                                    onClick={() => handleStatusChange(item.id, "flag")}
+                                    disabled={submitting}
+                                  >
+                                    <Flag
+                                      className={`mr-2 h-5 w-5 ${itemStatus[item.id] === "flag" ? "text-white" : "text-amber-500"}`}
+                                    />
+                                    <span className={itemStatus[item.id] === "flag" ? "text-white" : "text-amber-500"}>Flag</span>
+                                  </Button>
+                                  <Button
+                                    variant={itemStatus[item.id] === "fail" ? "default" : "outline"}
+                                    className={`h-12 ${itemStatus[item.id] === "fail" ? "bg-red-500 hover:bg-red-600" : ""}`}
+                                    onClick={() => handleStatusChange(item.id, "fail")}
+                                    disabled={submitting}
+                                  >
+                                    <X
+                                      className={`mr-2 h-5 w-5 ${itemStatus[item.id] === "fail" ? "text-white" : "text-red-500"}`}
+                                    />
+                                    <span className={itemStatus[item.id] === "fail" ? "text-white" : "text-red-500"}>Fail</span>
+                                  </Button>
+                                </div>
+
+                                {(itemStatus[item.id] === "flag" || itemStatus[item.id] === "fail") && (
+                                  <div className="mt-4 space-y-4">
+                                    <div className="space-y-2">
+                                      <Label htmlFor={`notes-${item.id}`}>Notas</Label>
+                                      <Textarea
+                                        id={`notes-${item.id}`}
+                                        placeholder="Describa el problema encontrado con la limpieza"
+                                        value={itemNotes[item.id] || ""}
+                                        onChange={(e) => handleItemNotesChange(item.id, e.target.value)}
+                                        disabled={submitting}
+                                      />
+                                    </div>
+
+                                    <SmartPhotoUpload
+                                      checklistId={checklist.id}
+                                      itemId={item.id}
+                                      currentPhotoUrl={itemPhotos[item.id]}
+                                      onPhotoChange={handlePhotoChange(item.id)}
+                                      disabled={submitting}
+                                      category="limpieza"
+                                    />
+                                  </div>
+                                )}
+                              </CardContent>
+                            </Card>
+                          ))}
+                          
+                          {/* Then render evidence capture section */}
+                          <div className="border-t pt-4">
+                            <h4 className="font-medium text-sm text-gray-700 mb-4 flex items-center gap-2">
+                              <Camera className="h-4 w-4" />
+                              Evidencia Fotográfica para Verificación de Limpieza
+                            </h4>
+                            <EvidenceCaptureSection
+                              sectionId={section.id}
+                              sectionTitle={section.title}
+                              config={{
+                                min_photos: section.cleanliness_config?.min_photos || 2,
+                                max_photos: section.cleanliness_config?.max_photos || 6,
+                                categories: section.cleanliness_config?.areas || ['Interior', 'Exterior'],
+                                descriptions: section.cleanliness_config?.descriptions || {
+                                  'Interior': 'Documentar el estado de limpieza del interior',
+                                  'Exterior': 'Fotografiar la limpieza exterior del equipo'
+                                }
+                              }}
+                              onEvidenceChange={handleEvidenceChange}
+                              disabled={submitting}
+                            />
+                          </div>
                         </div>
                       </CollapsibleContent>
                     </Collapsible>
@@ -1498,11 +1628,11 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
               
               return (
                 <div 
+                  key={`checklist-${section.id}`}
                   id={`section-${section.id}`}
                   className="scroll-mt-20"
                 >
                   <Collapsible
-                    key={section.id}
                     open={!isCollapsed}
                     onOpenChange={() => toggleSectionCollapse(section.id)}
                   >
@@ -1788,9 +1918,12 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
               notes: itemNotes[itemId] || '',
               photo: itemPhotos[itemId] || null,
               status: currentStatus as "flag" | "fail",
-              sectionTitle: sectionAndItem?.section?.title
+              sectionTitle: sectionAndItem?.section?.title,
+              sectionType: sectionAndItem?.section?.section_type
             }
-          })}
+          })
+          // Exclude cleanliness verification items from corrective work orders
+          .filter(item => item.sectionType !== 'cleanliness_bonus')}
         onWorkOrderCreated={handleWorkOrderCreated}
         onNavigateToAssetsPage={handleNavigateToAssetsPage}
       />
