@@ -15,37 +15,10 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
+    // Use the optimized view we created
     let query = supabase
-      .from('asset_operators')
-      .select(`
-        *,
-        assets (
-          id,
-          name,
-          model,
-          plant_id,
-          status,
-          plants (
-            id,
-            name,
-            code
-          )
-        ),
-        operators:profiles!asset_operators_operator_id_fkey (
-          id,
-          nombre,
-          apellido,
-          role,
-          employee_code,
-          shift,
-          status,
-          plants (
-            id,
-            name,
-            code
-          )
-        )
-      `)
+      .from('asset_operators_full')
+      .select('*')
       .eq('status', status)
 
     if (assetId) {
@@ -60,10 +33,46 @@ export async function GET(request: NextRequest) {
 
     if (error) {
       console.error('Error fetching asset operators:', error)
-      return NextResponse.json({ error: 'Error fetching assignments' }, { status: 500 })
+      
+      // Fallback to basic query if view fails
+      let fallbackQuery = supabase
+        .from('asset_operators')
+        .select(`
+          id,
+          asset_id,
+          operator_id,
+          assignment_type,
+          start_date,
+          end_date,
+          status,
+          notes,
+          assigned_by,
+          created_at,
+          updated_at,
+          created_by,
+          updated_by
+        `)
+        .eq('status', status)
+
+      if (assetId) {
+        fallbackQuery = fallbackQuery.eq('asset_id', assetId)
+      }
+
+      if (operatorId) {
+        fallbackQuery = fallbackQuery.eq('operator_id', operatorId)
+      }
+
+      const { data: fallbackAssignments, error: fallbackError } = await fallbackQuery.order('created_at', { ascending: false })
+
+      if (fallbackError) {
+        console.error('Fallback query also failed:', fallbackError)
+        return NextResponse.json({ error: 'Error fetching assignments' }, { status: 500 })
+      }
+
+      return NextResponse.json(fallbackAssignments || [])
     }
 
-    return NextResponse.json(assignments)
+    return NextResponse.json(assignments || [])
   } catch (error) {
     console.error('Error in asset-operators GET:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
@@ -142,25 +151,7 @@ export async function POST(request: NextRequest) {
         created_by: user.id,
         updated_by: user.id
       })
-      .select(`
-        *,
-        assets (
-          id,
-          name,
-          model,
-          plant_id,
-          status
-        ),
-        operators:profiles!asset_operators_operator_id_fkey (
-          id,
-          nombre,
-          apellido,
-          role,
-          employee_code,
-          shift,
-          status
-        )
-      `)
+      .select()
       .single()
 
     if (error) {
@@ -168,7 +159,36 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Error creating assignment' }, { status: 500 })
     }
 
-    return NextResponse.json(assignment, { status: 201 })
+    // If this is a primary operator assignment, update the asset status to 'active'
+    if (assignment_type === 'primary') {
+      const { error: assetUpdateError } = await supabase
+        .from('assets')
+        .update({ 
+          status: 'active',
+          updated_by: user.id,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', asset_id)
+
+      if (assetUpdateError) {
+        console.error('Error updating asset status:', assetUpdateError)
+        // Don't fail the assignment creation, just log the error
+      }
+    }
+
+    // Fetch the complete assignment with related data
+    const { data: completeAssignment, error: fetchError } = await supabase
+      .from('asset_operators_full')
+      .select('*')
+      .eq('id', assignment.id)
+      .single()
+
+    if (fetchError) {
+      console.error('Error fetching complete assignment:', fetchError)
+      return NextResponse.json(assignment, { status: 201 })
+    }
+
+    return NextResponse.json(completeAssignment, { status: 201 })
   } catch (error) {
     console.error('Error in asset-operators POST:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
@@ -212,25 +232,7 @@ export async function PUT(request: NextRequest) {
         updated_at: new Date().toISOString()
       })
       .eq('id', id)
-      .select(`
-        *,
-        assets (
-          id,
-          name,
-          model,
-          plant_id,
-          status
-        ),
-        operators:profiles!asset_operators_operator_id_fkey (
-          id,
-          nombre,
-          apellido,
-          role,
-          employee_code,
-          shift,
-          status
-        )
-      `)
+      .select()
       .single()
 
     if (error) {
@@ -238,7 +240,23 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: 'Error updating assignment' }, { status: 500 })
     }
 
-    return NextResponse.json(assignment)
+    if (!assignment) {
+      return NextResponse.json({ error: 'Assignment not found' }, { status: 404 })
+    }
+
+    // Fetch the complete assignment with related data
+    const { data: completeAssignment, error: fetchError } = await supabase
+      .from('asset_operators_full')
+      .select('*')
+      .eq('id', assignment.id)
+      .single()
+
+    if (fetchError) {
+      console.error('Error fetching complete assignment:', fetchError)
+      return NextResponse.json(assignment)
+    }
+
+    return NextResponse.json(completeAssignment)
   } catch (error) {
     console.error('Error in asset-operators PUT:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
@@ -263,7 +281,18 @@ export async function DELETE(request: NextRequest) {
       }, { status: 400 })
     }
 
-    // Soft delete by setting status to inactive and end_date
+    // First, get the assignment details before deleting
+    const { data: assignmentToDelete, error: fetchError } = await supabase
+      .from('asset_operators')
+      .select('asset_id, assignment_type')
+      .eq('id', id)
+      .single()
+
+    if (fetchError || !assignmentToDelete) {
+      return NextResponse.json({ error: 'Assignment not found' }, { status: 404 })
+    }
+
+    // Soft delete by setting status to 'inactive' and end_date
     const { data: assignment, error } = await supabase
       .from('asset_operators')
       .update({
@@ -279,6 +308,38 @@ export async function DELETE(request: NextRequest) {
     if (error) {
       console.error('Error deleting asset operator assignment:', error)
       return NextResponse.json({ error: 'Error deleting assignment' }, { status: 500 })
+    }
+
+    if (!assignment) {
+      return NextResponse.json({ error: 'Assignment not found' }, { status: 404 })
+    }
+
+    // If we deleted a primary operator, check if there are any remaining primary operators
+    if (assignmentToDelete.assignment_type === 'primary') {
+      const { data: remainingPrimary } = await supabase
+        .from('asset_operators')
+        .select('id')
+        .eq('asset_id', assignmentToDelete.asset_id)
+        .eq('assignment_type', 'primary')
+        .eq('status', 'active')
+        .single()
+
+      // If no primary operators remain, set asset status to 'inactive'
+      if (!remainingPrimary) {
+        const { error: assetUpdateError } = await supabase
+          .from('assets')
+          .update({ 
+            status: 'inactive',
+            updated_by: user.id,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', assignmentToDelete.asset_id)
+
+        if (assetUpdateError) {
+          console.error('Error updating asset status:', assetUpdateError)
+          // Don't fail the deletion, just log the error
+        }
+      }
     }
 
     return NextResponse.json({ message: 'Assignment deleted successfully' })

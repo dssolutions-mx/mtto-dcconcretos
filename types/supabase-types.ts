@@ -108,6 +108,111 @@ export type Database = {
           },
         ]
       }
+      asset_operators: {
+        Row: {
+          asset_id: string
+          assigned_by: string | null
+          assignment_type: string
+          created_at: string | null
+          created_by: string | null
+          end_date: string | null
+          id: string
+          notes: string | null
+          operator_id: string
+          start_date: string
+          status: string | null
+          updated_at: string | null
+          updated_by: string | null
+        }
+        Insert: {
+          asset_id: string
+          assigned_by?: string | null
+          assignment_type?: string
+          created_at?: string | null
+          created_by?: string | null
+          end_date?: string | null
+          id?: string
+          notes?: string | null
+          operator_id: string
+          start_date?: string
+          status?: string | null
+          updated_at?: string | null
+          updated_by?: string | null
+        }
+        Update: {
+          asset_id?: string
+          assigned_by?: string | null
+          assignment_type?: string
+          created_at?: string | null
+          created_by?: string | null
+          end_date?: string | null
+          id?: string
+          notes?: string | null
+          operator_id?: string
+          start_date?: string
+          status?: string | null
+          updated_at?: string | null
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "asset_operators_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "active_assets_without_recent_inspection"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "asset_operators_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "assets"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "asset_operators_assigned_by_fkey"
+            columns: ["assigned_by"]
+            isOneToOne: false
+            referencedRelation: "authorization_limits"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "asset_operators_assigned_by_fkey"
+            columns: ["assigned_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "asset_operators_assigned_by_fkey"
+            columns: ["assigned_by"]
+            isOneToOne: false
+            referencedRelation: "user_roles_summary"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "asset_operators_operator_id_fkey"
+            columns: ["operator_id"]
+            isOneToOne: false
+            referencedRelation: "authorization_limits"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "asset_operators_operator_id_fkey"
+            columns: ["operator_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "asset_operators_operator_id_fkey"
+            columns: ["operator_id"]
+            isOneToOne: false
+            referencedRelation: "user_roles_summary"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       assets: {
         Row: {
           asset_id: string

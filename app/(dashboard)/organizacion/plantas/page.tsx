@@ -6,10 +6,6 @@ export const metadata: Metadata = {
   description: 'Gestiona plantas, personal y permisos con drag and drop',
 }
 
-export default function PlantConfigurationPage() {
-  return (
-    <div className="container mx-auto py-6">
-      <PlantConfigurationDragDrop />
-    </div>
-  )
+export default function PlantasPage() {
+  return <PlantConfigurationDragDrop />
 } 

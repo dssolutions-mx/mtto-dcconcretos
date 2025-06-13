@@ -1,4 +1,4 @@
-import { Database } from '../lib/database.types';
+import { Database } from './supabase-types';
 
 // Alias para tipos de tablas
 export type DbTables = Database['public']['Tables'];
@@ -40,59 +40,41 @@ export type InsertAsset = DbTables['assets']['Insert'];
 export type UpdateAsset = DbTables['assets']['Update'];
 
 // Tipos para unidades de negocio
-export type BusinessUnit = {
-  id: string;
-  name: string;
-  code: string;
-  description?: string;
-  manager_id?: string;
-  status: string;
-  created_at: string;
-  updated_at: string;
-  created_by?: string;
-  updated_by?: string;
-};
+export type BusinessUnit = DbTables['business_units']['Row'];
+export type InsertBusinessUnit = DbTables['business_units']['Insert'];
+export type UpdateBusinessUnit = DbTables['business_units']['Update'];
 
 // Tipos para plantas
-export type Plant = {
-  id: string;
-  business_unit_id: string;
-  name: string;
-  code: string;
-  location?: string;
-  address?: string;
-  plant_manager_id?: string;
-  maintenance_supervisor_id?: string;
-  status: string;
-  operating_hours?: any;
-  contact_info?: any;
-  created_at: string;
-  updated_at: string;
-  created_by?: string;
-  updated_by?: string;
+export type Plant = DbTables['plants']['Row'] & {
   business_unit?: BusinessUnit;
 };
+export type InsertPlant = DbTables['plants']['Insert'];
+export type UpdatePlant = DbTables['plants']['Update'];
 
 // Tipos para departamentos
-export type Department = {
-  id: string;
-  plant_id: string;
-  name: string;
-  code: string;
-  supervisor_id?: string;
-  budget_code?: string;
-  cost_center?: string;
-  description?: string;
-  created_at: string;
-  updated_at: string;
+export type Department = DbTables['departments']['Row'] & {
   plant?: Plant;
 };
+export type InsertDepartment = DbTables['departments']['Insert'];
+export type UpdateDepartment = DbTables['departments']['Update'];
+
+// Tipos para operadores de activos (Phase 2)
+export type AssetOperator = DbTables['asset_operators']['Row'] & {
+  asset?: Asset;
+  operator?: Profile;
+  assigned_by_profile?: Profile;
+};
+export type InsertAssetOperator = DbTables['asset_operators']['Insert'];
+export type UpdateAssetOperator = DbTables['asset_operators']['Update'];
 
 // Interfaz extendida para activos con información organizacional
-export interface AssetWithOrganization extends Asset {
+export interface AssetWithOrganization extends Omit<Asset, 'department'> {
   plant?: Plant;
-  department?: Department;
+  department_info?: Department;
   equipment_models?: EquipmentModel;
+  operators?: AssetOperator[];
+  primary_operator?: AssetOperator;
+  secondary_operators?: AssetOperator[];
 }
 
 // Tipos para historiales de mantenimiento
@@ -166,8 +148,12 @@ export interface WorkOrderCompletion {
   created_at?: string;
 }
 
-// Tipos para perfiles de usuario
-export type Profile = DbTables['profiles']['Row'];
+// Tipos para perfiles de usuario (Enhanced for Phase 2)
+export type Profile = DbTables['profiles']['Row'] & {
+  plant?: Plant;
+  business_unit?: BusinessUnit;
+  assigned_assets?: AssetOperator[];
+};
 export type InsertProfile = DbTables['profiles']['Insert'];
 export type UpdateProfile = DbTables['profiles']['Update'];
 
@@ -225,11 +211,44 @@ export enum ChecklistIssueStatus {
   Fail = 'fail'
 }
 
+// Enhanced User Roles for Phase 2 Multi-Plant Organization
 export enum UserRole {
+  // Legacy roles (for backward compatibility)
   User = 'user',
-  MaintenanceManager = 'ENCARGADO DE MANTENIMIENTO',
-  PlantManager = 'JEFE DE PLANTA',
-  Executive = 'EJECUTIVO'
+  MaintenanceManager = 'ENCARGADO_MANTENIMIENTO',
+  PlantManager = 'JEFE_PLANTA',
+  Executive = 'EJECUTIVO',
+  
+  // New Phase 2 organizational roles
+  GeneralManagement = 'GERENCIA_GENERAL',
+  BusinessUnitManager = 'JEFE_UNIDAD_NEGOCIO',
+  MaintenanceSpecialist = 'ENCARGADO_MANTENIMIENTO',
+  PlantManager2 = 'JEFE_PLANTA',
+  Dosificador = 'DOSIFICADOR',
+  Operator = 'OPERADOR',
+  PurchasingAssistant = 'AUXILIAR_COMPRAS',
+  AdministrativeArea = 'AREA_ADMINISTRATIVA',
+  Viewer = 'VISUALIZADOR'
+}
+
+// Assignment types for asset operators
+export enum AssignmentType {
+  Primary = 'primary',
+  Secondary = 'secondary'
+}
+
+// Employee status
+export enum EmployeeStatus {
+  Active = 'active',
+  Inactive = 'inactive',
+  Suspended = 'suspended'
+}
+
+// Shift types
+export enum ShiftType {
+  Morning = 'morning',
+  Afternoon = 'afternoon',
+  Night = 'night'
 }
 
 // Interfaz extendida para activos con modelo incluido
@@ -380,4 +399,73 @@ export interface PurchaseOrderReceipt {
 export enum ExpenseType {
   Materials = 'materials',
   Labor = 'labor'
+}
+
+// Phase 2 Organizational Interfaces
+
+// User organizational context
+export interface UserOrganizationalContext {
+  profile_id: string;
+  user_name: string;
+  user_role: UserRole;
+  plant_id?: string;
+  plant_name?: string;
+  business_unit_id?: string;
+  business_unit_name?: string;
+  authorization_limit: number;
+  can_manage_operators: boolean;
+  can_assign_assets: boolean;
+  employee_code?: string;
+}
+
+// Asset assignment request
+export interface AssetAssignmentRequest {
+  asset_id: string;
+  operator_id: string;
+  assignment_type: AssignmentType;
+  start_date?: string;
+  end_date?: string;
+  notes?: string;
+}
+
+// Asset assignment response
+export interface AssetAssignmentResponse {
+  success: boolean;
+  assignment_id?: string;
+  error?: string;
+  message?: string;
+}
+
+// Operator with organizational info
+export interface OperatorWithOrganization extends Profile {
+  plant?: Plant;
+  business_unit?: BusinessUnit;
+  current_assignments?: AssetOperator[];
+  assignment_count?: number;
+}
+
+// Plant with personnel summary
+export interface PlantWithPersonnel extends Plant {
+  total_operators?: number;
+  active_operators?: number;
+  total_assets?: number;
+  assigned_assets?: number;
+  personnel?: Profile[];
+}
+
+// Emergency contact structure
+export interface EmergencyContact {
+  name: string;
+  relationship: string;
+  phone: string;
+  email?: string;
+}
+
+// Authorization matrix entry
+export interface AuthorizationMatrix {
+  role: UserRole;
+  max_amount: number;
+  requires_approval: boolean;
+  approver_role?: UserRole;
+  description: string;
 } 

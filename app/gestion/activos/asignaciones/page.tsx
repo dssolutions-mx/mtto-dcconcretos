@@ -6,10 +6,6 @@ export const metadata: Metadata = {
   description: 'Asigna operadores a activos con drag and drop',
 }
 
-export default function AssetAssignmentPage() {
-  return (
-    <div className="container mx-auto py-6">
-      <AssetAssignmentDragDrop />
-    </div>
-  )
+export default function AsignacionesPage() {
+  return <AssetAssignmentDragDrop />
 } 
