@@ -7,7 +7,7 @@ import { DashboardHeader } from "@/components/dashboard/dashboard-header"
 import { DashboardShell } from "@/components/dashboard/dashboard-shell"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Plus, FileDown, ClipboardCheck, Loader2, Check, WifiOff, ChevronDown, Truck } from "lucide-react"
+import { Plus, FileDown, ClipboardCheck, Loader2, Check, WifiOff, ChevronDown, Truck, AlertTriangle } from "lucide-react"
 import Link from "next/link"
 import { useSearchParams } from "next/navigation"
 import { DailyChecklistList } from "@/components/checklists/daily-checklist-list"
@@ -24,6 +24,59 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 
 // Importación dinámica del servicio offline
 let offlineChecklistService: any = null
+
+// Component for unresolved issues card with offline support
+function UnresolvedIssuesCard() {
+  const [unresolvedCount, setUnresolvedCount] = useState(0)
+  
+  useEffect(() => {
+    const loadUnresolvedCount = async () => {
+      try {
+        if (offlineChecklistService) {
+          const issues = await offlineChecklistService.getUnresolvedIssues()
+          setUnresolvedCount(issues.length)
+        } else {
+          // Fallback to localStorage
+          const stored = localStorage?.getItem('all-unresolved-issues')
+          setUnresolvedCount(stored ? JSON.parse(stored).length : 0)
+        }
+      } catch {
+        setUnresolvedCount(0)
+      }
+    }
+    
+    loadUnresolvedCount()
+    
+    // Listen for unresolved issues updates
+    if (offlineChecklistService) {
+      const handleStatsUpdate = () => loadUnresolvedCount()
+      offlineChecklistService.on('stats-update', handleStatsUpdate)
+      
+      return () => {
+        offlineChecklistService.off('stats-update', handleStatsUpdate)
+      }
+    }
+  }, [])
+  
+  return (
+    <Link href="/checklists/problemas-pendientes" className="block">
+      <Card className="hover:bg-muted/50 transition-colors border-orange-200 bg-orange-50/30">
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+          <CardTitle className="text-sm font-medium text-orange-800">Problemas Pendientes</CardTitle>
+          <AlertTriangle className="h-4 w-4 text-orange-600" />
+        </CardHeader>
+        <CardContent>
+          <div className="text-2xl font-bold text-orange-700">
+            {unresolvedCount}
+          </div>
+          <p className="text-xs text-orange-600">
+            Requieren órdenes de trabajo
+          </p>
+        </CardContent>
+      </Card>
+    </Link>
+  )
+}
 
 // Create a client component that uses useSearchParams
 function ChecklistsContent() {
@@ -513,6 +566,8 @@ function ChecklistsContent() {
                     </CardContent>
                   </Card>
                 </Link>
+
+                <UnresolvedIssuesCard />
 
                 <Link href="/checklists?tab=preventive" className="block">
                   <Card className="hover:bg-muted/50 transition-colors">

@@ -1,17 +1,21 @@
 import { createClient } from "@/lib/supabase-server"
 import { PurchaseOrderStatus } from "@/types"
+import { PurchaseOrderType, EnhancedPOStatus } from "@/types/purchase-orders"
 import { cn } from "@/lib/utils"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
-import { ArrowLeft, FileCheck, Package, ShoppingCart, Truck, FileText, Download, ExternalLink } from "lucide-react"
+import { ArrowLeft, FileCheck, Package, ShoppingCart, Truck, FileText, Download, ExternalLink, Store, Wrench, Building2, Receipt } from "lucide-react"
 import Link from "next/link"
 import { notFound } from "next/navigation"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
 import { ReactNode, use } from "react"
 import { ReceiptSection } from "@/components/work-orders/receipt-section"
+import { WorkflowStatusDisplay } from "@/components/purchase-orders/workflow/WorkflowStatusDisplay"
+import { TypeBadge } from "@/components/purchase-orders/shared/TypeBadge"
+import { ReceiptDisplaySection } from "@/components/purchase-orders/ReceiptDisplaySection"
 
 // Helper function to format currency
 function formatCurrency(amount: string | null): string {
@@ -146,9 +150,16 @@ async function PurchaseOrderDetailsContent({ id }: { id: string }) {
   }
   
   // Get action buttons based on status
-  function getActionButtons(): ReactNode {
+  function getActionButtons(order: any): ReactNode {
     if (!order) return null
     
+    // Check if this is an enhanced purchase order with po_type
+    if (order.po_type) {
+      // For enhanced purchase orders, let the WorkflowStatusDisplay handle actions
+      return null
+    }
+    
+    // Legacy purchase order status handling
     switch (order.status) {
       case PurchaseOrderStatus.Pending:
         return (
@@ -189,10 +200,46 @@ async function PurchaseOrderDetailsContent({ id }: { id: string }) {
     }
   }
 
+  // Helper function to get purchase order type display info
+  function getPurchaseOrderTypeInfo(poType: string | null) {
+    switch (poType) {
+      case PurchaseOrderType.DIRECT_PURCHASE:
+        return {
+          label: "Compra Directa",
+          description: "Ferretería, tienda local",
+          icon: Store,
+          color: "bg-blue-100 text-blue-700"
+        }
+      case PurchaseOrderType.DIRECT_SERVICE:
+        return {
+          label: "Servicio Directo", 
+          description: "Técnico especialista",
+          icon: Wrench,
+          color: "bg-green-100 text-green-700"
+        }
+      case PurchaseOrderType.SPECIAL_ORDER:
+        return {
+          label: "Pedido Especial",
+          description: "Proveedor formal",
+          icon: Building2,
+          color: "bg-purple-100 text-purple-700"
+        }
+      default:
+        return null
+    }
+  }
+
   return (
     <div className="container py-4 md:py-8">
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold">Orden de Compra: {order.order_id}</h1>
+        <div>
+          <h1 className="text-2xl font-bold">Orden de Compra: {order.order_id}</h1>
+                     {order.po_type && (
+             <div className="mt-2">
+               <TypeBadge type={order.po_type as PurchaseOrderType} />
+             </div>
+           )}
+        </div>
         <Button variant="outline" size="icon" asChild>
           <Link href="/compras">
             <ArrowLeft className="h-4 w-4" />
@@ -200,225 +247,244 @@ async function PurchaseOrderDetailsContent({ id }: { id: string }) {
         </Button>
       </div>
       
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+      <div className="grid gap-8 md:grid-cols-2">
+        {/* Order Information */}
         <Card>
           <CardHeader>
-            <CardTitle>Información General</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div>
-              <p className="text-sm font-medium text-muted-foreground">Estado</p>
-              <Badge variant={getStatusVariant(order.status)} className="mt-1">
-                {order.status || 'Pendiente'}
+            <CardTitle className="flex items-center justify-between">
+              Información General
+              <Badge variant={getStatusVariant(order.status)}>
+                {order.status}
               </Badge>
-            </div>
-            <div>
-              <p className="text-sm font-medium text-muted-foreground">Orden de Trabajo</p>
-              <p className="font-medium">
-                {workOrder ? (
-                  <Link href={`/ordenes/${workOrder.id}`} className="text-blue-600 hover:underline">
-                    {workOrder.order_id}
-                  </Link>
-                ) : 'N/A'}
-              </p>
-            </div>
-            <div>
-              <p className="text-sm font-medium text-muted-foreground">Solicitada por</p>
-              <p className="font-medium">{requesterName}</p>
-            </div>
-            <div>
-              <p className="text-sm font-medium text-muted-foreground">Fecha de Creación</p>
-              <p className="font-medium">{formatDate(order.created_at, 'dd/MM/yyyy HH:mm')}</p>
-            </div>
-          </CardContent>
-        </Card>
-        
-        <Card>
-          <CardHeader>
-            <CardTitle>Proveedor</CardTitle>
+            </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
+            {/* Purchase Order Type - only show for enhanced orders */}
+            {order.po_type && (
+              <div>
+                <dt className="font-medium text-sm text-muted-foreground">Tipo de Orden</dt>
+                <dd className="mt-1">
+                  <div className="flex items-center space-x-2">
+                    {(() => {
+                      const typeInfo = getPurchaseOrderTypeInfo(order.po_type)
+                      if (!typeInfo) return <span>{order.po_type}</span>
+                      
+                      const Icon = typeInfo.icon
+                      return (
+                        <>
+                          <div className={`p-1 rounded ${typeInfo.color.replace('text-', 'bg-').replace('-700', '-200')}`}>
+                            <Icon className="h-4 w-4" />
+                          </div>
+                          <div>
+                            <span className="font-medium">{typeInfo.label}</span>
+                            <span className="text-sm text-muted-foreground ml-2">
+                              {typeInfo.description}
+                            </span>
+                          </div>
+                        </>
+                      )
+                    })()}
+                  </div>
+                </dd>
+              </div>
+            )}
+
+            {/* Enhanced order specific fields */}
+            {order.store_location && (
+              <div>
+                <dt className="font-medium text-sm text-muted-foreground">Tienda/Ubicación</dt>
+                <dd className="mt-1">{order.store_location}</dd>
+              </div>
+            )}
+
+            {order.service_provider && (
+              <div>
+                <dt className="font-medium text-sm text-muted-foreground">Proveedor de Servicio</dt>
+                <dd className="mt-1">{order.service_provider}</dd>
+              </div>
+            )}
+
+            {order.payment_method && (
+              <div>
+                <dt className="font-medium text-sm text-muted-foreground">Forma de Pago</dt>
+                <dd className="mt-1 capitalize">{order.payment_method}</dd>
+              </div>
+            )}
+
+            {order.requires_quote !== undefined && (
+              <div>
+                <dt className="font-medium text-sm text-muted-foreground">Requiere Cotización</dt>
+                <dd className="mt-1">
+                  <Badge variant={order.requires_quote ? "default" : "secondary"}>
+                    {order.requires_quote ? "Sí" : "No"}
+                  </Badge>
+                </dd>
+              </div>
+            )}
+
             <div>
-              <p className="text-sm font-medium text-muted-foreground">Nombre del Proveedor</p>
-              <p className="font-medium">{order.supplier || 'No especificado'}</p>
+              <dt className="font-medium text-sm text-muted-foreground">Proveedor</dt>
+              <dd className="mt-1">{order.supplier || "No especificado"}</dd>
             </div>
+
             <div>
-              <p className="text-sm font-medium text-muted-foreground">Fecha Estimada de Entrega</p>
-              <p className="font-medium">{formatDate(order.expected_delivery_date, 'dd/MM/yyyy')}</p>
+              <dt className="font-medium text-sm text-muted-foreground">Monto Total</dt>
+              <dd className="mt-1 text-lg font-semibold">{formatCurrency(order.total_amount)}</dd>
             </div>
+
+            {order.actual_amount && (
+              <div>
+                <dt className="font-medium text-sm text-muted-foreground">Monto Real Gastado</dt>
+                <dd className="mt-1 text-lg font-semibold text-green-600">{formatCurrency(order.actual_amount.toString())}</dd>
+              </div>
+            )}
+
             <div>
-              <p className="text-sm font-medium text-muted-foreground">Notas para el Proveedor</p>
-              <p className="font-medium">{order.notes || 'No hay notas'}</p>
+              <dt className="font-medium text-sm text-muted-foreground">Solicitado por</dt>
+              <dd className="mt-1">{requesterName}</dd>
             </div>
+
+            {order.approved_by && (
+              <div>
+                <dt className="font-medium text-sm text-muted-foreground">Aprobado por</dt>
+                <dd className="mt-1">{approverName}</dd>
+              </div>
+            )}
+
+            <div>
+              <dt className="font-medium text-sm text-muted-foreground">Fecha de Creación</dt>
+              <dd className="mt-1">{formatDate(order.created_at)}</dd>
+            </div>
+
+            {order.approval_date && (
+              <div>
+                <dt className="font-medium text-sm text-muted-foreground">Fecha de Aprobación</dt>
+                <dd className="mt-1">{formatDate(order.approval_date)}</dd>
+              </div>
+            )}
+
+            {order.purchased_at && (
+              <div>
+                <dt className="font-medium text-sm text-muted-foreground">Fecha de Compra</dt>
+                <dd className="mt-1">{formatDate(order.purchased_at)}</dd>
+              </div>
+            )}
+
+            {order.notes && (
+              <div>
+                <dt className="font-medium text-sm text-muted-foreground">Notas</dt>
+                <dd className="mt-1">{order.notes}</dd>
+              </div>
+            )}
           </CardContent>
         </Card>
-        
-        <Card>
-          <CardHeader>
-            <CardTitle>Aprobación</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div>
-              <p className="text-sm font-medium text-muted-foreground">Estado de Aprobación</p>
-              <Badge
-                variant={
-                  order.status === PurchaseOrderStatus.Approved || 
-                  order.status === PurchaseOrderStatus.Ordered || 
-                  order.status === PurchaseOrderStatus.Received 
-                    ? "secondary"
-                    : order.status === PurchaseOrderStatus.Rejected 
-                      ? "destructive" 
-                      : "outline"
-                }
-                className="mt-1"
-              >
-                {order.status === PurchaseOrderStatus.Approved || 
-                 order.status === PurchaseOrderStatus.Ordered || 
-                 order.status === PurchaseOrderStatus.Received 
-                  ? "Aprobada" 
-                  : order.status === PurchaseOrderStatus.Rejected 
-                    ? "Rechazada" 
-                    : "Pendiente de Aprobación"}
-              </Badge>
-            </div>
-            <div>
-              <p className="text-sm font-medium text-muted-foreground">Aprobada por</p>
-              <p className="font-medium">{approverName}</p>
-            </div>
-            <div>
-              <p className="text-sm font-medium text-muted-foreground">Fecha de Aprobación</p>
-              <p className="font-medium">{order.approval_date ? formatDate(order.approval_date, 'dd/MM/yyyy HH:mm') : 'Pendiente'}</p>
-            </div>
-            <div>
-              <p className="text-sm font-medium text-muted-foreground">Comentarios</p>
-              <p className="font-medium">{'approval_comments' in order && order.approval_comments ? order.approval_comments : 'No hay comentarios'}</p>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-      
-      {/* File Viewer Section */}
-      {order.quotation_url && (
-        <Card className="mb-6">
-          <CardHeader>
-            <CardTitle>Documentos Adjuntos</CardTitle>
-            <CardDescription>
-              Archivos relacionados con esta orden de compra
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              <div className="flex items-center gap-4 p-4 border rounded-md bg-slate-50">
-                <FileText className="h-8 w-8 text-blue-500" />
-                <div className="flex-1">
-                  <p className="font-medium">Cotización de Proveedor</p>
-                  <p className="text-sm text-muted-foreground">
-                    {order.quotation_url.split('/').pop()}
-                  </p>
-                </div>
-                <div className="flex gap-2">
-                  <Button variant="outline" size="sm" asChild>
-                    <a href={order.quotation_url} target="_blank" rel="noopener noreferrer">
-                      <ExternalLink className="h-4 w-4 mr-2" />
-                      Ver
-                    </a>
-                  </Button>
-                  <Button variant="outline" size="sm" asChild>
-                    <a href={order.quotation_url} download>
-                      <Download className="h-4 w-4 mr-2" />
-                      Descargar
-                    </a>
-                  </Button>
-                </div>
+
+        {/* Receipt/Comprobante Section - Always show if exists */}
+        <ReceiptDisplaySection purchaseOrderId={order.id} poType={order.po_type} />
+
+        {/* Work Order Information */}
+        {workOrder && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Orden de Trabajo Relacionada</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div>
+                <dt className="font-medium text-sm text-muted-foreground">ID de Orden</dt>
+                <dd className="mt-1">{workOrder.order_id}</dd>
               </div>
               
-              {isPdfFile(order.quotation_url) && (
-                <div className="border rounded-md p-4 bg-white">
-                  <iframe
-                    src={`${order.quotation_url}#toolbar=0&navpanes=0`}
-                    className="w-full h-[400px] rounded border"
-                    title="PDF Viewer"
-                  />
-                </div>
-              )}
+              <div>
+                <dt className="font-medium text-sm text-muted-foreground">Descripción</dt>
+                <dd className="mt-1">{workOrder.description}</dd>
+              </div>
               
-              {isImageFile(order.quotation_url) && (
-                <div className="border rounded-md p-4 bg-white">
-                  <img 
-                    src={order.quotation_url} 
-                    alt="Documento adjunto" 
-                    className="max-w-full max-h-[400px] mx-auto rounded" 
-                  />
-                </div>
-              )}
+              <div>
+                <dt className="font-medium text-sm text-muted-foreground">Estado</dt>
+                <dd className="mt-1">
+                  <Badge variant="outline">{workOrder.status}</Badge>
+                </dd>
+              </div>
+              
+              <div className="pt-4">
+                <Button asChild variant="outline" size="sm">
+                  <Link href={`/ordenes/${workOrder.id}`}>
+                    <ExternalLink className="mr-2 h-4 w-4" />
+                    Ver Orden de Trabajo
+                  </Link>
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+      </div>
+
+      {/* Items */}
+      {items && items.length > 0 && (
+        <Card className="mt-8">
+          <CardHeader>
+            <CardTitle>Artículos Solicitados</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse">
+                <thead>
+                  <tr className="border-b">
+                    <th className="text-left p-2">Descripción</th>
+                    <th className="text-left p-2">Parte/Código</th>
+                    <th className="text-right p-2">Cantidad</th>
+                    <th className="text-right p-2">Precio Unitario</th>
+                    <th className="text-right p-2">Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {items.map((item: any, index: number) => (
+                    <tr key={index} className="border-b">
+                      <td className="p-2">{item.description || item.item || "Sin descripción"}</td>
+                      <td className="p-2">{item.part_number || item.code || "N/A"}</td>
+                      <td className="p-2 text-right">{item.quantity || 1}</td>
+                      <td className="p-2 text-right">{formatCurrency(item.unit_price?.toString() || item.price?.toString() || "0")}</td>
+                      <td className="p-2 text-right">{formatCurrency(item.total_price?.toString() || (item.quantity * (item.unit_price || item.price || 0)).toString())}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </CardContent>
         </Card>
       )}
-      
-      <Card className="mb-6">
-        <CardHeader>
-          <CardTitle>Repuestos Solicitados</CardTitle>
-          <CardDescription>
-            Monto Total: <span className="font-bold">{formatCurrency(order.total_amount)}</span>
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="rounded-md border">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead>
-                <tr>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Repuesto</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Número de Parte</th>
-                  <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Cantidad</th>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Precio Unitario</th>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Total</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200">
-                {items && items.length > 0 ? (
-                  items.map((item: any, index: number) => (
-                    <tr key={index} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                      <td className="px-4 py-3 text-sm text-gray-900">{item.name}</td>
-                      <td className="px-4 py-3 text-sm text-gray-500">{item.partNumber || 'N/A'}</td>
-                      <td className="px-4 py-3 text-sm text-gray-500 text-center">{item.quantity}</td>
-                      <td className="px-4 py-3 text-sm text-gray-500 text-right">${item.unit_price.toFixed(2)}</td>
-                      <td className="px-4 py-3 text-sm text-gray-900 text-right font-medium">${item.total_price.toFixed(2)}</td>
-                    </tr>
-                  ))
-                ) : (
-                  <tr>
-                    <td colSpan={5} className="px-4 py-8 text-center text-sm text-gray-500">
-                      No hay repuestos registrados para esta orden de compra.
-                    </td>
-                  </tr>
-                )}
-                {items && items.length > 0 && (
-                  <tr className="bg-gray-50">
-                    <td colSpan={4} className="px-4 py-3 text-right text-sm font-medium text-gray-900">Total:</td>
-                    <td className="px-4 py-3 text-right text-sm font-bold text-gray-900">{formatCurrency(order.total_amount)}</td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </CardContent>
-      </Card>
-      
-      {/* Add Receipt Section for completed orders */}
-      {(order.status === PurchaseOrderStatus.Received || order.is_adjustment) && (
-        <ReceiptSection 
-          purchaseOrderId={order.id} 
-          isAdjustment={Boolean(order.is_adjustment)} 
-        />
+
+      {/* Enhanced Workflow Status Display */}
+      {order.po_type && (
+        <div className="mt-8">
+          <WorkflowStatusDisplay
+            purchaseOrderId={order.id}
+            poType={order.po_type as PurchaseOrderType}
+            currentStatus={order.status}
+          />
+        </div>
       )}
-      
-      <div className="flex justify-end gap-4 mt-6">
-        <Button variant="outline" asChild>
-          <Link href="/compras">Volver</Link>
-        </Button>
-        {getActionButtons()}
-      </div>
+
+      {/* Legacy Action Buttons and Receipt Section for old system */}
+      {!order.po_type && (
+        <>
+          <Card className="mt-8">
+            <CardHeader>
+              <CardTitle>Acciones</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex gap-4">
+                {getActionButtons(order)}
+              </div>
+            </CardContent>
+          </Card>
+          
+          {/* Receipt Section - only for legacy orders */}
+          <div className="mt-8">
+            <ReceiptSection purchaseOrderId={order.id} isAdjustment={order.is_adjustment || false} />
+          </div>
+        </>
+      )}
     </div>
   )
 } 

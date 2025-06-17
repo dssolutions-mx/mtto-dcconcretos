@@ -28,6 +28,7 @@ import {
   Profile,
   WorkOrder
 } from "@/types"
+import { PurchaseOrderType, EnhancedPOStatus } from "@/types/purchase-orders"
 import { 
   Select, 
   SelectContent, 
@@ -35,6 +36,7 @@ import {
   SelectTrigger, 
   SelectValue 
 } from "@/components/ui/select"
+import { TypeBadge } from "@/components/purchase-orders/shared/TypeBadge"
 
 interface PurchaseOrderWithWorkOrder extends PurchaseOrder {
   work_orders?: {
@@ -43,8 +45,17 @@ interface PurchaseOrderWithWorkOrder extends PurchaseOrder {
     description: string;
     asset_id: string | null;
   } | null;
-  is_adjustment?: boolean;
+  is_adjustment?: boolean | null;
   original_purchase_order_id?: string;
+  // Enhanced purchase order fields
+  po_type?: string;
+  payment_method?: string;
+  requires_quote?: boolean;
+  store_location?: string;
+  service_provider?: string;
+  actual_amount?: number | null;
+  purchased_at?: string;
+  // receipt_url?: string; // Deprecated - now using purchase_order_receipts table
 }
 
 // Helper function to get badge variant based on status
@@ -68,6 +79,131 @@ function getStatusVariant(status: string | null) {
 // Helper function to get work order from purchase order
 function getWorkOrder(order: PurchaseOrderWithWorkOrder) {
   return order.work_orders;
+}
+
+// Helper function to determine if this is an enhanced purchase order
+function isEnhancedPurchaseOrder(order: PurchaseOrderWithWorkOrder): boolean {
+  return Boolean(order.po_type)
+}
+
+// Helper function to get enhanced status info
+function getEnhancedStatusConfig(status: string, poType?: string) {
+  const isEnhanced = Boolean(poType)
+  
+  if (!isEnhanced) {
+    // Legacy status handling
+    return getStatusVariant(status)
+  }
+
+  // Enhanced status handling
+  switch (status) {
+    case EnhancedPOStatus.DRAFT:
+      return "outline"
+    case EnhancedPOStatus.PENDING_APPROVAL:
+      return "default"
+    case EnhancedPOStatus.APPROVED:
+      return "secondary"
+    case EnhancedPOStatus.PURCHASED:
+      return "default"
+    case EnhancedPOStatus.RECEIPT_UPLOADED:
+      return "secondary"
+    case EnhancedPOStatus.VALIDATED:
+      return "secondary"
+    case EnhancedPOStatus.QUOTED:
+      return "outline"
+    case EnhancedPOStatus.ORDERED:
+      return "default"
+    case EnhancedPOStatus.RECEIVED:
+      return "default"
+    case EnhancedPOStatus.INVOICED:
+      return "secondary"
+    case EnhancedPOStatus.REJECTED:
+      return "destructive"
+    default:
+      return "outline"
+  }
+}
+
+// Helper function to get action buttons for enhanced orders
+function getEnhancedActionButtons(order: PurchaseOrderWithWorkOrder) {
+  if (!order.po_type) return null
+
+  const actions = []
+
+  // Common actions for all enhanced orders
+  actions.push(
+    <Button key="view" variant="outline" size="sm" asChild className="flex-1">
+      <Link href={`/compras/${order.id}`}>
+        <Eye className="h-4 w-4 mr-1" />
+        Ver
+      </Link>
+    </Button>
+  )
+
+  // Status-specific actions for enhanced orders
+  switch (order.status) {
+    case EnhancedPOStatus.DRAFT:
+      actions.push(
+        <Button key="edit" variant="outline" size="sm" asChild className="flex-1">
+          <Link href={`/compras/${order.id}`}>
+            <Edit className="h-4 w-4 mr-1" />
+            Completar
+          </Link>
+        </Button>
+      )
+      break
+
+    case EnhancedPOStatus.PENDING_APPROVAL:
+      actions.push(
+        <Button key="approve" variant="default" size="sm" asChild className="flex-1">
+          <Link href={`/compras/${order.id}#workflow-actions`}>
+            <Check className="h-4 w-4 mr-1" />
+            Aprobar
+          </Link>
+        </Button>
+      )
+      break
+
+    case EnhancedPOStatus.APPROVED:
+      const actionLabel = order.po_type === PurchaseOrderType.DIRECT_PURCHASE ? "Comprar" :
+                          order.po_type === PurchaseOrderType.DIRECT_SERVICE ? "Contratar" : 
+                          "Pedir"
+      actions.push(
+        <Button key="purchase" variant="default" size="sm" asChild className="flex-1">
+          <Link href={`/compras/${order.id}#workflow-actions`}>
+            <ShoppingCart className="h-4 w-4 mr-1" />
+            {actionLabel}
+          </Link>
+        </Button>
+      )
+      break
+
+    case EnhancedPOStatus.PURCHASED:
+    case EnhancedPOStatus.ORDERED:
+    case EnhancedPOStatus.RECEIVED:
+      actions.push(
+        <Button key="receipt" variant="default" size="sm" asChild className="flex-1">
+          <Link href={`/compras/${order.id}#receipt-section`}>
+            <FileCheck className="h-4 w-4 mr-1" />
+            Subir Comprobante
+          </Link>
+        </Button>
+      )
+      break
+
+    case EnhancedPOStatus.RECEIPT_UPLOADED:
+      actions.push(
+        <Button key="validate" variant="default" size="sm" asChild className="flex-1">
+          <Link href={`/compras/${order.id}#workflow-actions`}>
+            <CheckCircle className="h-4 w-4 mr-1" />
+            Validar
+          </Link>
+        </Button>
+      )
+      break
+  }
+
+  return actions
 }
 
 export function PurchaseOrdersList() {
@@ -483,92 +619,133 @@ function RenderTable({ orders, isLoading, getTechnicianName, formatCurrency }: R
   }
 
   // Mobile Card Component
-  const PurchaseOrderCard = ({ order }: { order: PurchaseOrderWithWorkOrder }) => (
-    <Card className={`mb-4 ${order.is_adjustment ? "bg-yellow-50/50 border-yellow-200" : ""}`}>
-      <CardContent className="p-4">
-        <div className="flex justify-between items-start mb-3">
-          <div className="flex items-center gap-2">
-            <Link href={`/compras/${order.id}`} className="font-medium hover:underline">
-              {order.order_id}
-            </Link>
-            <Badge variant={getStatusVariant(order.status)} className="capitalize">
-              {order.status || 'Pendiente'}
+  const PurchaseOrderCard = ({ order }: { order: PurchaseOrderWithWorkOrder }) => {
+    const workOrder = getWorkOrder(order);
+    const isEnhanced = isEnhancedPurchaseOrder(order)
+    const enhancedActions = isEnhanced ? getEnhancedActionButtons(order) : null
+
+    return (
+      <Card className="h-fit">
+        <CardHeader className="pb-3">
+          <div className="flex justify-between items-start">
+            <div className="space-y-1">
+              <CardTitle className="text-lg">{order.order_id}</CardTitle>
+              {isEnhanced && order.po_type && (
+                <TypeBadge type={order.po_type as PurchaseOrderType} size="sm" />
+              )}
+            </div>
+            <Badge variant={getEnhancedStatusConfig(order.status || "Pendiente", order.po_type)}>
+              {order.status || "Pendiente"}
             </Badge>
-            {order.is_adjustment && (
-              <Badge variant="secondary" className="bg-yellow-100 hover:bg-yellow-200 text-yellow-800">
-                Ajuste
-              </Badge>
+          </div>
+        </CardHeader>
+        
+        <CardContent className="space-y-3">
+          <div>
+            <p className="text-sm font-medium text-muted-foreground">Proveedor</p>
+            <p className="text-sm">{order.supplier || "No especificado"}</p>
+          </div>
+          
+          {isEnhanced && order.store_location && (
+            <div>
+              <p className="text-sm font-medium text-muted-foreground">Tienda</p>
+              <p className="text-sm">{order.store_location}</p>
+            </div>
+          )}
+          
+          {isEnhanced && order.service_provider && (
+            <div>
+              <p className="text-sm font-medium text-muted-foreground">Proveedor de Servicio</p>
+              <p className="text-sm">{order.service_provider}</p>
+            </div>
+          )}
+
+          <div>
+            <p className="text-sm font-medium text-muted-foreground">Monto</p>
+            <p className="text-sm font-bold">{formatCurrency(order.total_amount?.toString() || "0")}</p>
+            {isEnhanced && order.actual_amount && (
+              <p className="text-xs text-green-600">
+                Real: {formatCurrency(order.actual_amount.toString())}
+              </p>
             )}
           </div>
-          <div className="text-lg font-semibold">
-            {formatCurrency(order.total_amount)}
-          </div>
-        </div>
-        
-        <div className="space-y-2 text-sm">
-          <div>
-            <span className="font-medium">Proveedor:</span> {order.supplier || 'N/A'}
-          </div>
-          
-          {order.work_orders && order.work_orders.order_id && (
+
+          {workOrder && (
             <div>
-              <span className="font-medium">OT:</span>{' '}
-              <Link href={`/ordenes/${order.work_orders.id}`} className="text-blue-600 hover:underline">
-                {order.work_orders.order_id}
-              </Link>
+              <p className="text-sm font-medium text-muted-foreground">Orden de Trabajo</p>
+              <p className="text-sm text-blue-600 hover:underline">
+                <Link href={`/ordenes/${workOrder.id}`}>
+                  {workOrder.order_id}
+                </Link>
+              </p>
             </div>
           )}
-          
-          <div>
-            <span className="font-medium">Solicitada por:</span> {getTechnicianName(order.requested_by)}
-          </div>
-          
-          {order.expected_delivery_date && (
+
+          {isEnhanced && order.payment_method && (
             <div>
-              <span className="font-medium">Entrega esperada:</span> {formatDate(order.expected_delivery_date)}
+              <p className="text-sm font-medium text-muted-foreground">Forma de Pago</p>
+              <p className="text-sm capitalize">{order.payment_method}</p>
             </div>
           )}
-        </div>
+
+          {isEnhanced && order.requires_quote !== undefined && (
+            <div>
+              <p className="text-sm font-medium text-muted-foreground">Requiere Cotización</p>
+              <Badge variant={order.requires_quote ? "default" : "secondary"} className="text-xs">
+                {order.requires_quote ? "Sí" : "No"}
+              </Badge>
+            </div>
+          )}
+        </CardContent>
         
-        <div className="flex gap-2 mt-4">
-          <Button variant="outline" size="sm" asChild className="flex-1">
-            <Link href={`/compras/${order.id}`}>
-              <Eye className="h-4 w-4 mr-1" />
-              Ver
-            </Link>
-          </Button>
-          
-          {/* Quick actions based on status */}
-          {order.status === PurchaseOrderStatus.Pending && !order.is_adjustment && (
-            <Button variant="default" size="sm" asChild className="flex-1">
-              <Link href={`/compras/${order.id}/aprobar`}>
-                <Check className="h-4 w-4 mr-1" />
-                Aprobar
-              </Link>
-            </Button>
-          )}
-          
-          {order.status === PurchaseOrderStatus.Approved && !order.is_adjustment && (
-            <Button variant="default" size="sm" asChild className="flex-1">
-              <Link href={`/compras/${order.id}/pedido`}>
-                <ShoppingCart className="h-4 w-4 mr-1" />
-                Pedir
-              </Link>
-            </Button>
-          )}
-          
-          {order.status === PurchaseOrderStatus.Ordered && !order.is_adjustment && (
-            <Button variant="default" size="sm" asChild className="flex-1">
-              <Link href={`/compras/${order.id}/recibido`}>
-                <Package className="h-4 w-4 mr-1" />
-                Recibir
-              </Link>
-            </Button>
-          )}
-        </div>
-      </CardContent>
-    </Card>
-  );
+        <CardFooter className="pt-3">
+          <div className="flex gap-2 w-full">
+            {isEnhanced && enhancedActions ? (
+              enhancedActions
+            ) : (
+              // Legacy action buttons
+              <>
+                <Button variant="outline" size="sm" asChild className="flex-1">
+                  <Link href={`/compras/${order.id}`}>
+                    <Eye className="h-4 w-4 mr-1" />
+                    Ver
+                  </Link>
+                </Button>
+                
+                {/* Legacy quick actions based on status */}
+                {order.status === PurchaseOrderStatus.Pending && !order.is_adjustment && (
+                  <Button variant="default" size="sm" asChild className="flex-1">
+                    <Link href={`/compras/${order.id}/aprobar`}>
+                      <Check className="h-4 w-4 mr-1" />
+                      Aprobar
+                    </Link>
+                  </Button>
+                )}
+                
+                {order.status === PurchaseOrderStatus.Approved && !order.is_adjustment && (
+                  <Button variant="default" size="sm" asChild className="flex-1">
+                    <Link href={`/compras/${order.id}/pedido`}>
+                      <ShoppingCart className="h-4 w-4 mr-1" />
+                      Pedir
+                    </Link>
+                  </Button>
+                )}
+                
+                {order.status === PurchaseOrderStatus.Ordered && !order.is_adjustment && (
+                  <Button variant="default" size="sm" asChild className="flex-1">
+                    <Link href={`/compras/${order.id}/recibido`}>
+                      <Package className="h-4 w-4 mr-1" />
+                      Recibir
+                    </Link>
+                  </Button>
+                )}
+              </>
+            )}
+          </div>
+        </CardFooter>
+      </Card>
+    )
+  }
 
   return (
     <>
@@ -619,10 +796,10 @@ function RenderTable({ orders, isLoading, getTechnicianName, formatCurrency }: R
                   )}
                 </TableCell>
                 <TableCell>{getTechnicianName(order.requested_by)}</TableCell> 
-                <TableCell>{formatCurrency(order.total_amount)}</TableCell>
+                <TableCell>{formatCurrency(order.total_amount?.toString() || null)}</TableCell>
                 <TableCell>
-                  <Badge variant={getStatusVariant(order.status)} className="capitalize">
-                    {order.status || 'Pendiente'}
+                  <Badge variant={getEnhancedStatusConfig(order.status || "Pendiente", order.po_type)}>
+                    {order.status || "Pendiente"}
                   </Badge>
                 </TableCell>
                 <TableCell>
@@ -647,45 +824,84 @@ function RenderTable({ orders, isLoading, getTechnicianName, formatCurrency }: R
                         </Link>
                       </DropdownMenuItem>
                       
-                      {/* Only show approve options for pending orders and not adjustments */}
-                      {order.status === PurchaseOrderStatus.Pending && !order.is_adjustment && (
+                      {/* Enhanced order workflow actions */}
+                      {isEnhancedPurchaseOrder(order) ? (
                         <>
-                          <DropdownMenuItem asChild>
-                            <Link href={`/compras/${order.id}/aprobar`}>
-                              <Check className="mr-2 h-4 w-4" />
-                              <span>Aprobar</span>
-                            </Link>
-                          </DropdownMenuItem>
-                          <DropdownMenuItem asChild>
-                            <Link href={`/compras/${order.id}/rechazar`}>
-                              <X className="mr-2 h-4 w-4" />
-                              <span>Rechazar</span>
-                            </Link>
-                          </DropdownMenuItem>
+                          {order.status === EnhancedPOStatus.PENDING_APPROVAL && (
+                            <DropdownMenuItem asChild>
+                              <Link href={`/compras/${order.id}#workflow-actions`}>
+                                <Check className="mr-2 h-4 w-4" />
+                                <span>Aprobar</span>
+                              </Link>
+                            </DropdownMenuItem>
+                          )}
+                          
+                          {order.status === EnhancedPOStatus.APPROVED && (
+                            <DropdownMenuItem asChild>
+                              <Link href={`/compras/${order.id}#workflow-actions`}>
+                                <ShoppingCart className="mr-2 h-4 w-4" />
+                                <span>
+                                  {order.po_type === PurchaseOrderType.DIRECT_PURCHASE ? "Marcar como Comprada" :
+                                   order.po_type === PurchaseOrderType.DIRECT_SERVICE ? "Marcar como Contratada" :
+                                   "Marcar como Pedida"}
+                                </span>
+                              </Link>
+                            </DropdownMenuItem>
+                          )}
+                          
+                          {(order.status === EnhancedPOStatus.PURCHASED || 
+                            order.status === EnhancedPOStatus.ORDERED || 
+                            order.status === EnhancedPOStatus.RECEIVED) && (
+                            <DropdownMenuItem asChild>
+                              <Link href={`/compras/${order.id}#receipt-section`}>
+                                <FileCheck className="mr-2 h-4 w-4" />
+                                <span>Registrar Comprobante</span>
+                              </Link>
+                            </DropdownMenuItem>
+                          )}
+
+                          {order.status === EnhancedPOStatus.RECEIPT_UPLOADED && (
+                            <DropdownMenuItem asChild>
+                              <Link href={`/compras/${order.id}#workflow-actions`}>
+                                <CheckCircle className="mr-2 h-4 w-4" />
+                                <span>Validar</span>
+                              </Link>
+                            </DropdownMenuItem>
+                          )}
+                        </>
+                      ) : (
+                        // Legacy order actions
+                        <>
+                          {order.status === PurchaseOrderStatus.Pending && !order.is_adjustment && (
+                            <DropdownMenuItem asChild>
+                              <Link href={`/compras/${order.id}/aprobar`}>
+                                <Check className="mr-2 h-4 w-4" />
+                                <span>Aprobar</span>
+                              </Link>
+                            </DropdownMenuItem>
+                          )}
+                          
+                          {order.status === PurchaseOrderStatus.Approved && !order.is_adjustment && (
+                            <DropdownMenuItem asChild>
+                              <Link href={`/compras/${order.id}/pedido`}>
+                                <ShoppingCart className="mr-2 h-4 w-4" />
+                                <span>Marcar como Pedida</span>
+                              </Link>
+                            </DropdownMenuItem>
+                          )}
+                          
+                          {order.status === PurchaseOrderStatus.Ordered && !order.is_adjustment && (
+                            <DropdownMenuItem asChild>
+                              <Link href={`/compras/${order.id}/recibido`}>
+                                <Package className="mr-2 h-4 w-4" />
+                                <span>Marcar como Recibida</span>
+                              </Link>
+                            </DropdownMenuItem>
+                          )}
                         </>
                       )}
                       
-                      {/* Show mark as ordered option for approved orders and not adjustments */}
-                      {order.status === PurchaseOrderStatus.Approved && !order.is_adjustment && (
-                        <DropdownMenuItem asChild>
-                          <Link href={`/compras/${order.id}/pedido`}>
-                            <ShoppingCart className="mr-2 h-4 w-4" />
-                            <span>Marcar como Pedida</span>
-                          </Link>
-                        </DropdownMenuItem>
-                      )}
-                      
-                      {/* Show mark as received option for ordered orders and not adjustments */}
-                      {order.status === PurchaseOrderStatus.Ordered && !order.is_adjustment && (
-                        <DropdownMenuItem asChild>
-                          <Link href={`/compras/${order.id}/recibido`}>
-                            <Package className="mr-2 h-4 w-4" />
-                            <span>Marcar como Recibida</span>
-                          </Link>
-                        </DropdownMenuItem>
-                      )}
-                      
-                      {/* No edit option for adjustment orders */}
+                      {/* Edit option */}
                       {!order.is_adjustment && (
                         <DropdownMenuItem asChild>
                           <Link href={`/compras/${order.id}/editar`}>
@@ -695,11 +911,13 @@ function RenderTable({ orders, isLoading, getTechnicianName, formatCurrency }: R
                         </DropdownMenuItem>
                       )}
                       
-                      {/* Register invoice option for non-adjustment orders */}
+                      {/* Register invoice option - works for both enhanced and legacy orders */}
                       {!order.is_adjustment && (
-                        <DropdownMenuItem>
-                          <FileCheck className="mr-2 h-4 w-4" />
-                          <span>Registrar Factura</span>
+                        <DropdownMenuItem asChild>
+                          <Link href={`/compras/${order.id}#receipt-section`}>
+                            <FileCheck className="mr-2 h-4 w-4" />
+                            <span>Registrar Factura</span>
+                          </Link>
                         </DropdownMenuItem>
                       )}
                       

@@ -26,6 +26,7 @@ export async function POST(request: NextRequest) {
     const formData = await request.formData()
     const file = formData.get('file') as File
     const bucket = formData.get('bucket') as string || 'asset-photos'
+    const purchaseOrderId = formData.get('purchaseOrderId') as string
 
     if (!file) {
       return NextResponse.json(
@@ -34,10 +35,11 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Validate file type
-    if (!file.type.startsWith('image/')) {
+    // Validate file type - Allow images and PDFs for purchase orders
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/jpg', 'application/pdf']
+    if (!allowedTypes.includes(file.type)) {
       return NextResponse.json(
-        { error: 'Solo se permiten archivos de imagen' },
+        { error: 'Solo se permiten archivos PDF, JPG, JPEG o PNG' },
         { status: 400 }
       )
     }
@@ -51,15 +53,20 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Generate unique filename
+    // Generate unique filename - use purchase-receipts bucket for PO receipts
     const timestamp = Date.now()
     const randomString = Math.random().toString(36).substring(2, 15)
     const fileExt = file.name.split('.').pop()
-    const fileName = `${timestamp}_${randomString}.${fileExt}`
+    
+    // If it's for a purchase order, use specific bucket and folder structure
+    const finalBucket = purchaseOrderId ? 'purchase-receipts' : bucket
+    const fileName = purchaseOrderId 
+      ? `receipts/${purchaseOrderId}/${timestamp}_${randomString}.${fileExt}`
+      : `${timestamp}_${randomString}.${fileExt}`
 
     // Upload to Supabase Storage
     const { data, error } = await supabase.storage
-      .from(bucket)
+      .from(finalBucket)
       .upload(fileName, file, {
         cacheControl: '3600',
         upsert: false
@@ -75,14 +82,15 @@ export async function POST(request: NextRequest) {
 
     // Get public URL
     const { data: urlData } = supabase.storage
-      .from(bucket)
+      .from(finalBucket)
       .getPublicUrl(fileName)
 
     return NextResponse.json({
       url: urlData.publicUrl,
       path: fileName,
-      bucket: bucket,
-      message: 'Archivo subido exitosamente'
+      bucket: finalBucket,
+      message: 'Archivo subido exitosamente',
+      purchaseOrderId: purchaseOrderId || null
     })
 
   } catch (error: any) {

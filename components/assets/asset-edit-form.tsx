@@ -246,8 +246,8 @@ export function AssetEditForm({ assetId }: AssetEditFormProps) {
       assetId: "ID del Activo",
       name: "Nombre",
       serialNumber: "Número de Serie",
-      location: "Ubicación",
-      department: "Departamento",
+      plantId: "Planta",
+      departmentId: "Departamento",
       purchaseDate: "Fecha de Adquisición",
       installationDate: "Fecha de Instalación",
       initialHours: "Horas Iniciales",
@@ -300,8 +300,8 @@ export function AssetEditForm({ assetId }: AssetEditFormProps) {
     }
 
     // Verificar errores en campos específicos
-    if (errors.assetId || errors.name || errors.serialNumber || errors.location || 
-        errors.department || errors.purchaseDate || errors.installationDate || 
+    if (errors.assetId || errors.name || errors.serialNumber || errors.plantId || 
+        errors.departmentId || errors.purchaseDate || errors.installationDate || 
         errors.status || errors.notes || errors.warrantyExpiration || errors.isNew) {
       tabErrors.general = true
     }
@@ -927,8 +927,8 @@ export function AssetEditForm({ assetId }: AssetEditFormProps) {
         name: data.name,
         status: data.status,
         serial_number: data.serialNumber,
-        location: data.location,
-        department: data.department,
+        plant_id: data.plantId,
+        department_id: data.departmentId,
         purchase_date: data.purchaseDate.toISOString(),
         installation_date: data.installationDate?.toISOString(),
         warranty_expiration: data.warrantyExpiration?.toISOString(),

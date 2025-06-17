@@ -587,7 +587,7 @@ export function CorrectiveWorkOrderDialog({
   return (
     <>
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="w-[95vw] sm:w-[90vw] md:w-[80vw] max-w-3xl h-[85vh] flex flex-col p-0">
+      <DialogContent className="w-[95vw] sm:w-[90vw] md:w-[80vw] max-w-3xl h-[90vh] sm:h-[85vh] flex flex-col p-0">
         <DialogHeader className="flex-shrink-0 p-4 sm:p-6 pb-3">
           <DialogTitle className="flex items-center gap-2 text-lg">
             {!isOnline ? (

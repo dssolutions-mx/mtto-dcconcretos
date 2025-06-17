@@ -399,6 +399,10 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
     
     const errors: string[] = []
     
+    if (process.env.NODE_ENV === 'development') {
+      console.log('🔍 validateEvidenceRequirements - checking sections:', checklist.sections.length)
+    }
+    
     checklist.sections
       .filter((section: any) => section.section_type === 'evidence' || section.section_type === 'cleanliness_bonus')
       .forEach((section: any) => {
@@ -429,7 +433,13 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
         }
       })
     
-    return { isValid: errors.length === 0, errors }
+    const result = { isValid: errors.length === 0, errors }
+    
+    if (process.env.NODE_ENV === 'development') {
+      console.log('🔍 validateEvidenceRequirements result:', result)
+    }
+
+    return result
   }
 
   useEffect(() => {
@@ -636,83 +646,197 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
       photo_url: itemPhotos[itemId] || null
     }))
   }, [itemStatus, itemNotes, itemPhotos])
+
+  // Essential helper functions - MOVED UP to fix hoisting issue
+  const getTotalItems = () => {
+    if (!checklist || !checklist.sections) return 0
+    
+    let total = 0
+    checklist.sections.forEach((section: any) => {
+      const items = section.checklist_items || section.items
+      if (items) {
+        total += items.length
+      }
+    })
+    return total
+  }
+
+  const getCompletedItems = () => {
+    return Object.values(itemStatus).filter(Boolean).length
+  }
+
+  // Helper validation functions - MOVED ABOVE handleSubmit to fix hoisting issue
+  const validateBasicCompletion = () => {
+    const errors: string[] = []
+    const warnings: string[] = []
+
+    if (process.env.NODE_ENV === 'development') {
+      console.log('🔍 validateBasicCompletion - technician:', technician?.trim())
+      console.log('🔍 validateBasicCompletion - signature:', !!signature)
+    }
+
+    // Verify technician
+    if (!technician?.trim()) {
+      errors.push("👤 Nombre del técnico")
+    }
+    
+    // Verify signature
+    if (!signature) {
+      errors.push("✍️ Firma del técnico")
+    }
+    
+    // Verify items completion
+    const totalItems = getTotalItems()
+    const completedItems = getCompletedItems()
+    
+    if (process.env.NODE_ENV === 'development') {
+      console.log('🔍 validateBasicCompletion - totalItems:', totalItems)
+      console.log('🔍 validateBasicCompletion - completedItems:', completedItems)
+    }
+
+    if (completedItems < totalItems) {
+      const missingCount = totalItems - completedItems
+      errors.push(`📋 ${missingCount} item${missingCount > 1 ? 's' : ''} del checklist sin evaluar`)
+      
+      // Find specific uncompleted items
+      const uncompletedItems: string[] = []
+      checklist.sections.forEach((section: any) => {
+        const items = section.checklist_items || section.items
+        if (items) {
+          items.forEach((item: any) => {
+            if (!itemStatus[item.id]) {
+              uncompletedItems.push(`"${item.description.substring(0, 50)}${item.description.length > 50 ? '...' : ''}"`)
+            }
+          })
+        }
+      })
+      
+      // Show first few incomplete items
+      if (uncompletedItems.length > 0) {
+        const itemsToShow = uncompletedItems.slice(0, 3)
+        warnings.push(`Items pendientes: ${itemsToShow.join(', ')}${uncompletedItems.length > 3 ? ` y ${uncompletedItems.length - 3} más...` : ''}`)
+      }
+    }
+
+    const result = { isValid: errors.length === 0, errors, warnings }
+    
+    if (process.env.NODE_ENV === 'development') {
+      console.log('🔍 validateBasicCompletion result:', result)
+    }
+
+    return result
+  }
+
+  const validateEquipmentReadings = () => {
+    const errors: string[] = []
+    const warnings: string[] = []
+
+    if (process.env.NODE_ENV === 'development') {
+      console.log('🔍 validateEquipmentReadings - readings:', equipmentReadings)
+    }
+
+    if (equipmentReadings.hours_reading !== undefined && equipmentReadings.hours_reading !== null) {
+      if (equipmentReadings.hours_reading <= 0) {
+        errors.push("⏱️ Lectura de horas inválida (debe ser mayor a 0)")
+      } else if (equipmentReadings.hours_reading <= checklist.currentHours) {
+        warnings.push(`⚠️ Lectura de horas (${equipmentReadings.hours_reading}) no mayor a la actual (${checklist.currentHours})`)
+      }
+    }
+
+    if (equipmentReadings.kilometers_reading !== undefined && equipmentReadings.kilometers_reading !== null) {
+      if (equipmentReadings.kilometers_reading <= 0) {
+        errors.push("📏 Lectura de kilómetros inválida (debe ser mayor a 0)")
+      } else if (equipmentReadings.kilometers_reading <= checklist.currentKilometers) {
+        warnings.push(`⚠️ Lectura de kilómetros (${equipmentReadings.kilometers_reading}) no mayor a la actual (${checklist.currentKilometers})`)
+      }
+    }
+
+    const result = { isValid: errors.length === 0, errors, warnings }
+    
+    if (process.env.NODE_ENV === 'development') {
+      console.log('🔍 validateEquipmentReadings result:', result)
+    }
+
+    return result
+  }
   
   const handleSubmit = async () => {
     // =====================================================
     // ENHANCED VALIDATION WITH DETAILED NOTIFICATIONS
     // =====================================================
     
-    // Collect all validation errors
-    const validationErrors: string[] = []
-    const validationWarnings: string[] = []
-
-    // 1. Check basic checklist completion
-    if (!isChecklistComplete()) {
-      // Verificar técnico
-      if (!technician?.trim()) {
-        validationErrors.push("👤 Nombre del técnico")
-      }
-      
-      // Verificar firma
-      if (!signature) {
-        validationErrors.push("✍️ Firma del técnico")
-      }
-      
-      // Verificar items sin completar
-      const totalItems = getTotalItems()
-      const completedItems = getCompletedItems()
-      if (completedItems < totalItems) {
-        const missingCount = totalItems - completedItems
-        validationErrors.push(`📋 ${missingCount} item${missingCount > 1 ? 's' : ''} del checklist sin evaluar`)
-        
-        // Find specific uncompleted items
-        const uncompletedItems: string[] = []
-        checklist.sections.forEach((section: any) => {
-          const items = section.checklist_items || section.items
-          if (items) {
-            items.forEach((item: any) => {
-              if (!itemStatus[item.id]) {
-                uncompletedItems.push(`"${item.description.substring(0, 50)}${item.description.length > 50 ? '...' : ''}"`)
-              }
-            })
-          }
-        })
-        
-        // Show first few incomplete items
-        if (uncompletedItems.length > 0) {
-          const itemsToShow = uncompletedItems.slice(0, 3)
-          validationWarnings.push(`Items pendientes: ${itemsToShow.join(', ')}${uncompletedItems.length > 3 ? ` y ${uncompletedItems.length - 3} más...` : ''}`)
-        }
-      }
+    // Debug logging for mobile issues
+    if (process.env.NODE_ENV === 'development') {
+      console.log('🔍 Submit button clicked - Debug Info:', {
+        isChecklistComplete: isChecklistComplete(),
+        technician: technician?.trim(),
+        signature: !!signature,
+        totalItems: getTotalItems(),
+        completedItems: getCompletedItems(),
+        submitting,
+        completed
+      })
+      console.log('🚀 Starting handleSubmit execution...')
     }
 
+    try {
+      if (process.env.NODE_ENV === 'development') {
+        console.log('📋 Starting validation checks...')
+      }
+    
+      // Collect all validation errors
+      const validationErrors: string[] = []
+      const validationWarnings: string[] = []
+
+      // 1. Check basic checklist completion
+      if (process.env.NODE_ENV === 'development') {
+        console.log('🔍 Running basic validation...')
+      }
+      const basicValidation = validateBasicCompletion()
+      if (process.env.NODE_ENV === 'development') {
+        console.log('✅ Basic validation completed:', basicValidation)
+      }
+      if (!basicValidation.isValid) {
+        validationErrors.push(...basicValidation.errors)
+        validationWarnings.push(...basicValidation.warnings)
+      }
+
     // 2. Validate evidence requirements
+    if (process.env.NODE_ENV === 'development') {
+      console.log('🔍 Running evidence validation...')
+    }
     const evidenceValidation = validateEvidenceRequirements()
+    if (process.env.NODE_ENV === 'development') {
+      console.log('✅ Evidence validation completed:', evidenceValidation)
+    }
     if (!evidenceValidation.isValid) {
       validationErrors.push("📸 Evidencias fotográficas requeridas")
       evidenceValidation.errors.forEach(error => validationWarnings.push(error))
     }
 
     // 3. Validate equipment readings if present
-    if (equipmentReadings.hours_reading !== undefined && equipmentReadings.hours_reading !== null) {
-      if (equipmentReadings.hours_reading <= 0) {
-        validationErrors.push("⏱️ Lectura de horas inválida (debe ser mayor a 0)")
-      } else if (equipmentReadings.hours_reading <= checklist.currentHours) {
-        validationWarnings.push(`⚠️ Lectura de horas (${equipmentReadings.hours_reading}) no mayor a la actual (${checklist.currentHours})`)
-      }
+    if (process.env.NODE_ENV === 'development') {
+      console.log('🔍 Running equipment readings validation...')
     }
-
-    if (equipmentReadings.kilometers_reading !== undefined && equipmentReadings.kilometers_reading !== null) {
-      if (equipmentReadings.kilometers_reading <= 0) {
-        validationErrors.push("📏 Lectura de kilómetros inválida (debe ser mayor a 0)")
-      } else if (equipmentReadings.kilometers_reading <= checklist.currentKilometers) {
-        validationWarnings.push(`⚠️ Lectura de kilómetros (${equipmentReadings.kilometers_reading}) no mayor a la actual (${checklist.currentKilometers})`)
-      }
+    const readingsValidation = validateEquipmentReadings()
+    if (process.env.NODE_ENV === 'development') {
+      console.log('✅ Equipment readings validation completed:', readingsValidation)
+    }
+    if (!readingsValidation.isValid) {
+      validationErrors.push(...readingsValidation.errors)
+      validationWarnings.push(...readingsValidation.warnings)
     }
 
     // 4. Separate cleanliness items from maintenance items
+    if (process.env.NODE_ENV === 'development') {
+      console.log('🔍 Analyzing items with issues...')
+    }
     const allItemsWithIssues = Object.entries(itemStatus)
       .filter(([_, status]) => status === "flag" || status === "fail")
+    
+    if (process.env.NODE_ENV === 'development') {
+      console.log('📋 All items with issues:', allItemsWithIssues.length)
+    }
     
     const maintenanceItemsWithIssues = allItemsWithIssues.filter(([itemId]) => {
       const sectionAndItem = findSectionAndItemById(itemId)
@@ -723,6 +847,11 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
       const sectionAndItem = findSectionAndItemById(itemId)
       return sectionAndItem?.section?.section_type === 'cleanliness_bonus'
     })
+
+    if (process.env.NODE_ENV === 'development') {
+      console.log('🔧 Maintenance items with issues:', maintenanceItemsWithIssues.length)
+      console.log('🧹 Cleanliness items with issues:', cleanlinessItemsWithIssues.length)
+    }
 
     // 5. Validate items with issues have proper notes (excluding cleanliness items)
     const maintenanceItemsWithoutNotes = maintenanceItemsWithIssues.filter(([itemId]) => !itemNotes[itemId]?.trim())
@@ -746,7 +875,19 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
     // SHOW VALIDATION RESULTS
     // =====================================================
     
+    if (process.env.NODE_ENV === 'development') {
+      console.log('📊 Final validation results:', {
+        validationErrors: validationErrors.length,
+        validationWarnings: validationWarnings.length,
+        errors: validationErrors,
+        warnings: validationWarnings
+      })
+    }
+    
     if (validationErrors.length > 0) {
+      if (process.env.NODE_ENV === 'development') {
+        console.log('❌ Validation failed, showing errors and returning early')
+      }
       // Show primary error with all missing items
       toast.error("⚠️ No se puede enviar el checklist", {
         description: `Faltan: ${validationErrors.join(", ")}`,
@@ -765,6 +906,9 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
 
     // Show warnings only if no errors
     if (validationWarnings.length > 0) {
+      if (process.env.NODE_ENV === 'development') {
+        console.log('⚠️ Showing validation warnings')
+      }
       validationWarnings.forEach((warning, index) => {
         setTimeout(() => {
           toast.warning(warning, { duration: 5000 })
@@ -776,76 +920,199 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
     // PROCEED WITH SUBMISSION
     // =====================================================
 
-    if (maintenanceItemsWithIssues.length > 0) {
-      // Complete the checklist first, then show dialog
-      toast.info("🔄 Procesando checklist...", {
-        description: "Guardando datos y preparando órdenes de trabajo",
-        duration: 3000
-      })
-      
-      const completedId = await submitChecklist()
-      if (completedId && completedId !== "success" && completedId !== "offline-success") {
-        toast.success("✅ Checklist procesado correctamente", {
-          description: "Preparando órdenes de trabajo...",
-          duration: 3000
-        })
-        setCompletedChecklistId(completedId)
-        setShowCorrective(true)
-      } else if (completedId === "success" || completedId === "offline-success") {
-        // Handle success case for issues
-        toast.success("✅ Checklist guardado exitosamente", {
-          description: "Mostrando opciones de acción correctiva...",
-          duration: 3000
-        })
-        setShowCorrective(true)
-      } else {
-        // Submission failed
-        toast.error("❌ No se pudo procesar el checklist", {
-          description: "Verifique su conexión e intente nuevamente",
-          duration: 5000
-        })
+    if (process.env.NODE_ENV === 'development') {
+      console.log('🚀 Proceeding with submission...')
+    }
+
+    // Always submit the checklist first
+    if (process.env.NODE_ENV === 'development') {
+      console.log('📤 Calling submitChecklist()...')
+    }
+    const completedId = await submitChecklist()
+    
+    if (process.env.NODE_ENV === 'development') {
+      console.log('📨 submitChecklist result:', completedId)
+    }
+    
+    // Check if submission failed - allow for UUID format completed IDs
+    const isSubmissionFailed = !completedId || 
+      (completedId !== "success" && 
+       completedId !== "offline-success" && 
+       !completedId.startsWith('sched_') && 
+       !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(completedId))
+    
+    if (isSubmissionFailed) {
+      // Submission failed
+      if (process.env.NODE_ENV === 'development') {
+        console.log('❌ Submission failed, returning early')
       }
+      toast.error("❌ No se pudo procesar el checklist", {
+        description: "Verifique su conexión e intente nuevamente",
+        duration: 5000
+      })
       return
     }
 
-    // If no issues, proceed with normal submission
-    toast.info("✅ Completando checklist...", {
-      description: "No se encontraron problemas",
-      duration: 2000
+    // Checklist submitted successfully
+    if (process.env.NODE_ENV === 'development') {
+      console.log('✅ Submission successful, completedId:', completedId)
+    }
+    toast.success("✅ Checklist guardado exitosamente", {
+      duration: 3000
     })
-    
-    const result = await submitChecklist()
-    
-    // Navigate after successful submission when no issues
-    if (result && result !== null) {
-      setCompleted(true)
-      
-      if (result === "offline-success") {
-        // For offline success, show additional confirmation and navigate
-        toast.success("✅ Checklist guardado correctamente", {
-          description: "Navegando a la lista de activos...",
-          duration: 4000
+
+    if (maintenanceItemsWithIssues.length > 0) {
+      if (process.env.NODE_ENV === 'development') {
+        console.log('⚠️ Found maintenance issues, handling corrective actions...', {
+          issueCount: maintenanceItemsWithIssues.length,
+          completedId
         })
+      }
+      
+      // Store the completed checklist ID for corrective work orders
+      if (completedId !== "success" && completedId !== "offline-success") {
+        setCompletedChecklistId(completedId)
+      }
+      
+      // Show issues and offer to create work orders
+      const handleCreateWorkOrders = () => {
+        if (process.env.NODE_ENV === 'development') {
+          console.log('🔧 User chose to create work orders')
+        }
+        setShowCorrective(false) // Close the alert dialog
         setTimeout(() => {
-          handleNavigateToAssetsPage()
-        }, 3000)
-      } else {
-        // For online success, show confirmation and navigate
-        toast.success("🎉 Checklist completado exitosamente", {
-          description: "Navegando a la lista de activos...",
-          duration: 4000
+          handleCorrectiveDialogOpen() // Open the corrective work order dialog
+        }, 100) // Small delay to ensure proper state transition
+      }
+
+      const handleSkipWorkOrders = async () => {
+        if (process.env.NODE_ENV === 'development') {
+          console.log('⏭️ User chose to skip work orders, storing unresolved issues...')
+        }
+        
+        try {
+          // Store unresolved issues for later action
+          await storeUnresolvedIssues(completedId, maintenanceItemsWithIssues)
+          
+          if (process.env.NODE_ENV === 'development') {
+            console.log('💾 Unresolved issues stored successfully')
+          }
+        } catch (error) {
+          console.error('❌ Error storing unresolved issues:', error)
+        }
+        
+        setShowCorrective(false)
+        setCompleted(true)
+        
+        toast.info("⏳ Problemas guardados para acción posterior", {
+          description: "Puede crear órdenes de trabajo más tarde desde el historial",
+          duration: 5000
         })
         
-        // Longer delay to ensure message is visible on mobile
         setTimeout(() => {
           handleNavigateToAssetsPage()
-        }, 3000)
+        }, 2000)
       }
-    } else {
-      // Submission failed - error already shown in submitChecklist
-      console.log("Checklist submission failed or was cancelled")
+
+      // Show the corrective action dialog
+      setShowCorrective(true)
+      
+      // Set up the dialog handlers
+      setCorrectiveDialogHandlers({
+        onCreate: handleCreateWorkOrders,
+        onSkip: handleSkipWorkOrders
+      })
+      
+      return
+    }
+
+    // If no issues, complete normally
+    if (process.env.NODE_ENV === 'development') {
+      console.log('✅ No issues found, completing normally')
+    }
+    setCompleted(true)
+    
+    setTimeout(() => {
+      handleNavigateToAssetsPage()
+    }, 2000)
+    
+    } catch (error) {
+      console.error('❌ Error in handleSubmit:', error)
+      toast.error("Error inesperado al procesar el checklist", {
+        description: "Por favor intente nuevamente",
+        duration: 5000
+      })
     }
   }
+
+  // Store unresolved issues for later action using offline service
+  const storeUnresolvedIssues = async (completedChecklistId: string, issues: any[]) => {
+    try {
+      const issuesData = issues.map(([itemId]) => {
+        const sectionAndItem = findSectionAndItemById(itemId)
+        return {
+          id: itemId,
+          description: sectionAndItem?.item?.description || '',
+          notes: itemNotes[itemId] || '',
+          photo: itemPhotos[itemId] || null,
+          status: itemStatus[itemId],
+          sectionTitle: sectionAndItem?.section?.title,
+          sectionType: sectionAndItem?.section?.section_type
+        }
+      })
+
+      // Use offline service for persistent storage
+      if (offlineChecklistService) {
+        const tempChecklistId = completedChecklistId.startsWith('checklist-') ? completedChecklistId : undefined
+        await offlineChecklistService.saveUnresolvedIssues(
+          completedChecklistId,
+          issuesData,
+          {
+            id: checklist.assetId,
+            name: checklist.asset
+          },
+          tempChecklistId
+        )
+        
+        console.log('💾 Unresolved issues stored using offline service:', {
+          checklistId: completedChecklistId,
+          tempChecklistId,
+          issueCount: issuesData.length
+        })
+      } else {
+        // Fallback to localStorage if offline service not available
+        const unresolvedKey = `unresolved-issues-${completedChecklistId}`
+        localStorage.setItem(unresolvedKey, JSON.stringify({
+          checklistId: completedChecklistId,
+          assetId: checklist.assetId,
+          assetName: checklist.asset,
+          issues: issuesData,
+          timestamp: Date.now()
+        }))
+
+        // Also add to a general index for tracking
+        const allUnresolvedKey = 'all-unresolved-issues'
+        const existing = JSON.parse(localStorage.getItem(allUnresolvedKey) || '[]')
+        existing.push({
+          checklistId: completedChecklistId,
+          assetId: checklist.assetId,
+          assetName: checklist.asset,
+          issueCount: issuesData.length,
+          timestamp: Date.now()
+        })
+        localStorage.setItem(allUnresolvedKey, JSON.stringify(existing))
+      }
+
+    } catch (error) {
+      console.error('Error storing unresolved issues:', error)
+    }
+  }
+
+  // State for corrective dialog handlers
+  const [correctiveDialogHandlers, setCorrectiveDialogHandlers] = useState<{
+    onCreate?: () => void
+    onSkip?: () => void
+  }>({})
 
   const submitChecklist = async (): Promise<string | null> => {
     setSubmitting(true)
@@ -1011,7 +1278,17 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
     return null
   }
 
-  const prepareCorrectiveAction = () => {
+  // Enhanced dialog handling with better mobile support
+  const handleCorrectiveDialogOpen = () => {
+    // Debug logging for mobile issues
+    if (process.env.NODE_ENV === 'development') {
+      console.log('🔧 Opening corrective dialog:', {
+        correctiveDialogOpen,
+        itemsWithIssues: Object.entries(itemStatus).filter(([_, status]) => status === "flag" || status === "fail").length,
+        completedChecklistId
+      })
+    }
+
     // Check if there are any items with issues (excluding cleanliness items)
     const itemsWithIssues = Object.entries(itemStatus)
       .filter(([_, status]) => status === "flag" || status === "fail")
@@ -1035,7 +1312,18 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
       return
     }
 
+    // Force a state update to ensure the dialog opens
     setCorrectiveDialogOpen(true)
+    
+    // Additional debug logging
+    if (process.env.NODE_ENV === 'development') {
+      setTimeout(() => {
+        console.log('🔧 Dialog state after opening attempt:', {
+          correctiveDialogOpen: true,
+          showCorrective: false
+        })
+      }, 100)
+    }
   }
 
   const handleWorkOrderCreated = async (workOrderId: string) => {
@@ -1087,28 +1375,27 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
     return null
   }
 
-  const getTotalItems = () => {
-    if (!checklist || !checklist.sections) return 0
-    
-    let total = 0
-    checklist.sections.forEach((section: any) => {
-      const items = section.checklist_items || section.items
-      if (items) {
-        total += items.length
-      }
-    })
-    return total
-  }
-
-  const getCompletedItems = () => {
-    return Object.values(itemStatus).filter(Boolean).length
-  }
-
+  // Simplified completion check - more mobile-friendly
   const isChecklistComplete = () => {
     if (!checklist || !checklist.sections) return false
     
-    // Verificar si TODOS los items tienen un estado
-    let complete = true
+    // Check if we have basic requirements met
+    const hasBasicInfo = technician.trim() !== "" && signature !== null
+    
+    // Check if we have some progress on items
+    const totalItems = getTotalItems()
+    const completedItems = getCompletedItems()
+    const hasProgress = totalItems > 0 && completedItems > 0
+    
+    // For mobile, be more lenient - allow submission if we have basic info and some progress
+    // Full validation will happen in handleSubmit
+    return hasBasicInfo && hasProgress
+  }
+
+  // Strict completion check for final validation
+  const isFullyComplete = () => {
+    if (!checklist || !checklist.sections) return false
+    
     let totalItems = 0
     let completedItems = 0
     
@@ -1119,16 +1406,12 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
           totalItems++
           if (itemStatus[item.id]) {
             completedItems++
-          } else {
-            complete = false
           }
         })
       }
     })
     
-    // Verificar que todos los items estén completados y que se hayan llenado los campos obligatorios
-    return complete && 
-           totalItems > 0 && 
+    return totalItems > 0 && 
            completedItems === totalItems && 
            technician.trim() !== "" && 
            signature !== null
@@ -1841,54 +2124,77 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
                 <><WifiOff className="h-3 w-3 text-amber-500" /> Se guardará localmente</>
               )}
             </div>
-            <Button 
-              onClick={handleSubmit} 
-              disabled={!isChecklistComplete() || submitting || completed}
-              className={!isChecklistComplete() ? "opacity-50 cursor-not-allowed" : completed ? "bg-green-500 hover:bg-green-600" : ""}
-            >
-              {completed ? (
-                <>
-                  <Check className="mr-2 h-4 w-4" />
-                  ¡Completado! Redirigiendo...
-                </>
-              ) : submitting ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  {isOnline ? "Enviando..." : "Guardando offline..."}
-                </>
-              ) : !isChecklistComplete() ? (
-                <>
-                  <X className="mr-2 h-4 w-4" />
-                  Completar todos los items
-                </>
-              ) : (
-                <>
-                  <Save className="mr-2 h-4 w-4" />
-                  Completar Checklist
-                </>
+            
+            {/* Mobile-friendly submission button with better validation feedback */}
+            <div className="flex flex-col gap-2 w-full sm:w-auto">
+              {/* Validation feedback for mobile */}
+              {!isChecklistComplete() && (
+                <div className="text-xs text-amber-600 text-right">
+                  {!technician.trim() && "• Falta nombre del técnico"}
+                  {!signature && "• Falta firma"}
+                  {getCompletedItems() === 0 && "• Ningún item evaluado"}
+                </div>
               )}
-            </Button>
+              
+              <Button 
+                onClick={handleSubmit} 
+                disabled={submitting || completed}
+                className={`w-full sm:w-auto ${completed ? "bg-green-500 hover:bg-green-600" : ""}`}
+                size="lg"
+              >
+                {completed ? (
+                  <>
+                    <Check className="mr-2 h-4 w-4" />
+                    ¡Completado! Redirigiendo...
+                  </>
+                ) : submitting ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    {isOnline ? "Enviando..." : "Guardando offline..."}
+                  </>
+                ) : !isChecklistComplete() ? (
+                  <>
+                    <Save className="mr-2 h-4 w-4" />
+                    Enviar Checklist
+                  </>
+                ) : (
+                  <>
+                    <Save className="mr-2 h-4 w-4" />
+                    Completar Checklist
+                  </>
+                )}
+              </Button>
+            </div>
           </div>
         </div>
       </div>
 
       <AlertDialog open={showCorrective} onOpenChange={setShowCorrective}>
-        <AlertDialogContent>
+        <AlertDialogContent className="w-[95vw] sm:w-[80vw] max-w-md">
           <AlertDialogHeader>
-            <AlertDialogTitle>Crear Acción Correctiva</AlertDialogTitle>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-amber-500" />
+              Problemas Detectados
+            </AlertDialogTitle>
             <AlertDialogDescription>
-              Se han detectado problemas en este checklist. ¿Desea crear una Orden de Trabajo correctiva para solucionar
-              estos problemas?
+              Se han detectado {Object.entries(itemStatus).filter(([_, status]) => status === "flag" || status === "fail").length} problema(s) en este checklist.
+              <br /><br />
+              ¿Desea crear órdenes de trabajo correctivas ahora o guardar los problemas para acción posterior?
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => {
-              setShowCorrective(false)
-              submitChecklist()
-              // Navigate to assets page instead of staying on completed checklist
-              handleNavigateToAssetsPage()
-            }}>No, solo guardar</AlertDialogCancel>
-            <AlertDialogAction onClick={prepareCorrectiveAction}>Sí, crear orden correctiva</AlertDialogAction>
+          <AlertDialogFooter className="flex-col gap-2 sm:flex-row">
+            <AlertDialogCancel 
+              onClick={correctiveDialogHandlers.onSkip}
+              className="w-full sm:w-auto"
+            >
+              Guardar para después
+            </AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={correctiveDialogHandlers.onCreate}
+              className="w-full sm:w-auto bg-blue-600 hover:bg-blue-700"
+            >
+              Crear órdenes ahora
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

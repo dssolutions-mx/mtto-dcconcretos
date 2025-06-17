@@ -63,6 +63,41 @@ interface ChecklistDB extends DBSchema {
       lastUpdated: number
     }
   }
+  'unresolved-issues': {
+    key: string
+    value: {
+      id: string
+      tempChecklistId?: string // For offline checklists
+      checklistId: string
+      assetId: string
+      assetName: string
+      issues: Array<{
+        id: string
+        description: string
+        notes: string
+        photo: string | null
+        status: "flag" | "fail"
+        sectionTitle?: string
+        sectionType?: string
+      }>
+      timestamp: number
+      synced: boolean
+      workOrdersCreated: boolean
+    }
+  }
+  'offline-work-orders': {
+    key: string
+    value: {
+      id: string
+      checklistId: string
+      issues: any[]
+      priority: string
+      description: string
+      timestamp: number
+      synced: boolean
+      retryCount: number
+    }
+  }
 }
 
 // Tipo para eventos del servicio offline
@@ -134,7 +169,7 @@ class OfflineChecklistService {
   private initializeDB() {
     if (!this.isClient || this.db) return
     
-    this.db = openDB<ChecklistDB>('checklists-offline', 5, {
+    this.db = openDB<ChecklistDB>('checklists-offline', 6, {
       upgrade(db, oldVersion, newVersion) {
         console.log(`🔄 Upgrading IndexedDB from version ${oldVersion} to ${newVersion}`)
         
@@ -160,10 +195,20 @@ class OfflineChecklistService {
           db.createObjectStore('offline-photos', { keyPath: 'id' })
         }
         
-        // Nuevo store para versión 5: asset data cache
+        // Store para versión 5: asset data cache
         if (!db.objectStoreNames.contains('asset-data')) {
           console.log('📦 Creating asset-data store (v5)')
           db.createObjectStore('asset-data', { keyPath: 'id' })
+        }
+        
+        // Nuevos stores para versión 6: unresolved issues and offline work orders
+        if (!db.objectStoreNames.contains('unresolved-issues')) {
+          console.log('📦 Creating unresolved-issues store (v6)')
+          db.createObjectStore('unresolved-issues', { keyPath: 'id' })
+        }
+        if (!db.objectStoreNames.contains('offline-work-orders')) {
+          console.log('📦 Creating offline-work-orders store (v6)')
+          db.createObjectStore('offline-work-orders', { keyPath: 'id' })
         }
         
         console.log(`✅ IndexedDB upgrade completed to version ${newVersion}`)
@@ -1187,6 +1232,222 @@ class OfflineChecklistService {
     
     console.warn('Database initialization timeout')
     return false
+  }
+
+  // =====================================================
+  // UNRESOLVED ISSUES MANAGEMENT
+  // =====================================================
+
+  // Save unresolved issues from a completed checklist
+  async saveUnresolvedIssues(
+    checklistId: string, 
+    issues: any[], 
+    assetData: { id: string, name: string },
+    tempChecklistId?: string
+  ) {
+    const db = await this.getDB()
+    if (!db) return
+
+    const unresolvedId = `issues-${checklistId}-${Date.now()}`
+    
+    await db.put('unresolved-issues', {
+      id: unresolvedId,
+      tempChecklistId,
+      checklistId,
+      assetId: assetData.id,
+      assetName: assetData.name,
+      issues,
+      timestamp: Date.now(),
+      synced: false,
+      workOrdersCreated: false
+    })
+
+    console.log('💾 Saved unresolved issues:', {
+      unresolvedId,
+      checklistId,
+      tempChecklistId,
+      issueCount: issues.length
+    })
+
+    this.emit('stats-update', await this.getSyncStats())
+  }
+
+  // Get all unresolved issues (offline-first)
+  async getUnresolvedIssues(): Promise<any[]> {
+    const db = await this.getDB()
+    if (!db) return []
+
+    const issues = await db.getAll('unresolved-issues')
+    
+    // Sort by timestamp (newest first)
+    return issues
+      .filter(issue => !issue.workOrdersCreated)
+      .sort((a, b) => b.timestamp - a.timestamp)
+      .map(issue => ({
+        id: issue.id,
+        checklistId: issue.checklistId,
+        tempChecklistId: issue.tempChecklistId,
+        assetId: issue.assetId,
+        assetName: issue.assetName,
+        issueCount: issue.issues.length,
+        timestamp: issue.timestamp,
+        synced: issue.synced
+      }))
+  }
+
+  // Get detailed unresolved issues by ID
+  async getUnresolvedIssueDetails(unresolvedId: string) {
+    const db = await this.getDB()
+    if (!db) return null
+
+    return await db.get('unresolved-issues', unresolvedId)
+  }
+
+  // Mark unresolved issues as resolved (work orders created)
+  async markIssuesResolved(unresolvedId: string) {
+    const db = await this.getDB()
+    if (!db) return
+
+    const issue = await db.get('unresolved-issues', unresolvedId)
+    if (issue) {
+      issue.workOrdersCreated = true
+      await db.put('unresolved-issues', issue)
+    }
+  }
+
+  // Remove unresolved issues (dismissed)
+  async removeUnresolvedIssues(unresolvedId: string) {
+    const db = await this.getDB()
+    if (!db) return
+
+    await db.delete('unresolved-issues', unresolvedId)
+    this.emit('stats-update', await this.getSyncStats())
+  }
+
+  // Update checklist ID when offline checklist syncs
+  async updateUnresolvedIssuesChecklistId(tempChecklistId: string, realChecklistId: string) {
+    const db = await this.getDB()
+    if (!db) return
+
+    const allIssues = await db.getAll('unresolved-issues')
+    const matchingIssues = allIssues.filter(issue => issue.tempChecklistId === tempChecklistId)
+
+    for (const issue of matchingIssues) {
+      issue.checklistId = realChecklistId
+      issue.tempChecklistId = undefined
+      issue.synced = true
+      await db.put('unresolved-issues', issue)
+    }
+
+    if (matchingIssues.length > 0) {
+      console.log(`🔄 Updated ${matchingIssues.length} unresolved issues with real checklist ID: ${realChecklistId}`)
+    }
+  }
+
+  // =====================================================
+  // OFFLINE WORK ORDERS MANAGEMENT
+  // =====================================================
+
+  // Save work order data for offline creation
+  async saveOfflineWorkOrder(workOrderData: {
+    checklistId: string
+    issues: any[]
+    priority: string
+    description: string
+  }) {
+    const db = await this.getDB()
+    if (!db) return
+
+    const workOrderId = `wo-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+    
+    await db.put('offline-work-orders', {
+      id: workOrderId,
+      ...workOrderData,
+      timestamp: Date.now(),
+      synced: false,
+      retryCount: 0
+    })
+
+    console.log('💾 Saved offline work order:', workOrderId)
+    this.emit('stats-update', await this.getSyncStats())
+    
+    return workOrderId
+  }
+
+  // Get pending offline work orders
+  async getPendingWorkOrders() {
+    const db = await this.getDB()
+    if (!db) return []
+
+    const workOrders = await db.getAll('offline-work-orders')
+    return workOrders.filter(wo => !wo.synced && wo.retryCount < 5)
+  }
+
+  // Sync offline work orders when connection is restored
+  async syncOfflineWorkOrders() {
+    if (!navigator.onLine) return { success: 0, errors: 0 }
+
+    const pending = await this.getPendingWorkOrders()
+    let success = 0
+    let errors = 0
+
+    for (const workOrder of pending) {
+      try {
+        const response = await fetch('/api/checklists/generate-corrective-work-order-enhanced', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            checklist: { id: workOrder.checklistId },
+            itemsWithIssues: workOrder.issues,
+            priority: workOrder.priority,
+            description: workOrder.description,
+            offline_created: true
+          })
+        })
+
+        if (response.ok) {
+          await this.markWorkOrderSynced(workOrder.id)
+          success++
+        } else {
+          await this.incrementWorkOrderRetryCount(workOrder.id)
+          errors++
+        }
+      } catch (error) {
+        await this.incrementWorkOrderRetryCount(workOrder.id)
+        errors++
+      }
+    }
+
+    if (success > 0 || errors > 0) {
+      console.log(`🔄 Work order sync completed: ${success} success, ${errors} errors`)
+      this.emit('stats-update', await this.getSyncStats())
+    }
+
+    return { success, errors }
+  }
+
+  // Mark offline work order as synced
+  async markWorkOrderSynced(workOrderId: string) {
+    const db = await this.getDB()
+    if (!db) return
+
+    const workOrder = await db.get('offline-work-orders', workOrderId)
+    if (workOrder) {
+      workOrder.synced = true
+      await db.put('offline-work-orders', workOrder)
+    }
+  }
+
+  // Increment retry count for failed work order sync
+  async incrementWorkOrderRetryCount(workOrderId: string) {
+    const db = await this.getDB()
+    if (!db) return
+
+    const workOrder = await db.get('offline-work-orders', workOrderId)
+    if (workOrder) {
+      workOrder.retryCount = (workOrder.retryCount || 0) + 1
+      await db.put('offline-work-orders', workOrder)
+    }
   }
 }
 

@@ -79,8 +79,7 @@ export async function POST(request: NextRequest) {
             status: issue.status,
             description: issue.description,
             notes: issue.notes,
-            photo_url: issue.photo_url,
-            created_by: user.id
+            photo_url: issue.photo_url
           })
           .select('id')
           .single()

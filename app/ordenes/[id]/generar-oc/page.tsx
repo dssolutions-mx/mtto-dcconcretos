@@ -1,22 +1,16 @@
-import { PurchaseOrderForm } from "@/components/work-orders/purchase-order-form"
 import { createClient } from "@/lib/supabase-server"
 import { redirect } from "next/navigation"
 import { use } from "react"
 
-export default function GeneratePurchaseOrderPage({
+export default async function GeneratePurchaseOrderPage({
   params,
 }: {
   params: Promise<{ id: string }>;
 }) {
   // Unwrap the params promise using React.use()
-  const resolvedParams = use(params);
+  const resolvedParams = await params;
   const id = resolvedParams.id;
   
-  return <GeneratePurchaseOrderContent id={id} />;
-}
-
-// Async server component
-async function GeneratePurchaseOrderContent({ id }: { id: string }) {
   const supabase = await createClient();
   
   // Check if work order exists and doesn't already have a purchase order
@@ -46,10 +40,8 @@ async function GeneratePurchaseOrderContent({ id }: { id: string }) {
   if (!canGeneratePO) {
     redirect(`/ordenes/${id}/editar`);
   }
-  
-  return (
-    <div className="container py-4 md:py-8">
-      <PurchaseOrderForm workOrderId={id} />
-    </div>
-  );
+
+  // Redirect to the new typed purchase order creation system
+  // This integrates work orders with the new enhanced purchase order system
+  redirect(`/compras/crear-tipificada?workOrderId=${id}`);
 } 
