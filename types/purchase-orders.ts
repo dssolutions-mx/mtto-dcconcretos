@@ -66,7 +66,7 @@ export interface EnhancedPurchaseOrder {
 // Interfaces específicas por tipo
 export interface DirectPurchaseOrder extends EnhancedPurchaseOrder {
   po_type: PurchaseOrderType.DIRECT_PURCHASE
-  store_location: string                  // Obligatorio
+  store_location?: string                 // Opcional, ya no es obligatorio
   requires_quote: false                   // Siempre false
 }
 
@@ -92,7 +92,7 @@ export interface CreatePurchaseOrderRequest {
   notes?: string
   
   // Campos específicos por tipo
-  store_location?: string      // Para direct_purchase (required)
+  store_location?: string      // Para direct_purchase (opcional)
   service_provider?: string    // Para direct_service (required)
 }
 

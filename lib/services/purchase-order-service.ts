@@ -530,9 +530,7 @@ export class PurchaseOrderValidationService {
     // Validaciones específicas por tipo
     switch (request.po_type) {
       case PurchaseOrderType.DIRECT_PURCHASE:
-        if (!request.store_location) {
-          errors.push('store_location es requerido para compras directas')
-        }
+        // store_location is optional - not required anymore
         break
         
       case PurchaseOrderType.DIRECT_SERVICE:

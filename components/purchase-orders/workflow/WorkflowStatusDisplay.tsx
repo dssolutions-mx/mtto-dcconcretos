@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { useRouter } from "next/navigation"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -35,14 +36,17 @@ interface WorkflowStatusDisplayProps {
   poType: PurchaseOrderType
   currentStatus: string
   className?: string
+  onStatusChange?: () => void
 }
 
 export function WorkflowStatusDisplay({ 
   purchaseOrderId, 
   poType, 
   currentStatus,
-  className = ""
+  className = "",
+  onStatusChange
 }: WorkflowStatusDisplayProps) {
+  const router = useRouter()
   const { 
     workflowStatus, 
     loadWorkflowStatus, 
@@ -210,19 +214,22 @@ export function WorkflowStatusDisplay({
       [PurchaseOrderType.DIRECT_PURCHASE]: {
         'approved': 'Aprobar Compra',
         'receipt_uploaded': 'Subir Comprobante',
-        'validated': 'Validar Comprobante'
+        'validated': 'Validar Comprobante',
+        'rejected': 'Rechazar Compra'
       },
       [PurchaseOrderType.DIRECT_SERVICE]: {
         'approved': 'Aprobar Servicio', 
         'receipt_uploaded': 'Subir Comprobante',
-        'validated': 'Validar Comprobante'
+        'validated': 'Validar Comprobante',
+        'rejected': 'Rechazar Servicio'
       },
       [PurchaseOrderType.SPECIAL_ORDER]: {
         'pending_approval': 'Enviar a Aprobación',
         'approved': 'Aprobar Pedido',
         'ordered': 'Marcar como Pedida',
         'received': 'Marcar como Recibida',
-        'invoiced': 'Marcar como Facturada'
+        'invoiced': 'Marcar como Facturada',
+        'rejected': 'Rechazar Pedido'
       }
     }
 
@@ -237,6 +244,109 @@ export function WorkflowStatusDisplay({
     }
 
     return placeholders[action] || 'Agregar comentarios sobre esta acción...'
+  }
+
+  // Helper function to get action display information (not status)
+  const getActionDisplayInfo = (action: string, poType: PurchaseOrderType) => {
+    const actionInfo: Record<string, Record<string, { label: string; description: string; icon: any; color: string }>> = {
+      [PurchaseOrderType.DIRECT_PURCHASE]: {
+        'approved': {
+          label: 'Aprobar Compra',
+          description: 'Autorizar la compra directa para proceder',
+          icon: CheckCircle,
+          color: 'bg-green-100 text-green-700'
+        },
+        'receipt_uploaded': {
+          label: 'Subir Comprobante',
+          description: 'Cargar el comprobante de compra realizada',
+          icon: Receipt,
+          color: 'bg-purple-100 text-purple-700'
+        },
+        'validated': {
+          label: 'Validar Comprobante',
+          description: 'Revisar y validar el comprobante subido',
+          icon: CheckCircle,
+          color: 'bg-green-100 text-green-700'
+        },
+        'rejected': {
+          label: 'Rechazar Compra',
+          description: 'Rechazar la solicitud de compra directa',
+          icon: AlertTriangle,
+          color: 'bg-red-100 text-red-700'
+        }
+      },
+      [PurchaseOrderType.DIRECT_SERVICE]: {
+        'approved': {
+          label: 'Aprobar Servicio',
+          description: 'Autorizar la contratación del servicio directo',
+          icon: CheckCircle,
+          color: 'bg-green-100 text-green-700'
+        },
+        'receipt_uploaded': {
+          label: 'Subir Comprobante',
+          description: 'Cargar el comprobante del servicio contratado',
+          icon: Receipt,
+          color: 'bg-purple-100 text-purple-700'
+        },
+        'validated': {
+          label: 'Validar Comprobante',
+          description: 'Revisar y validar el comprobante subido',
+          icon: CheckCircle,
+          color: 'bg-green-100 text-green-700'
+        },
+        'rejected': {
+          label: 'Rechazar Servicio',
+          description: 'Rechazar la solicitud de servicio directo',
+          icon: AlertTriangle,
+          color: 'bg-red-100 text-red-700'
+        }
+      },
+      [PurchaseOrderType.SPECIAL_ORDER]: {
+        'pending_approval': {
+          label: 'Enviar a Aprobación',
+          description: 'Solicitar autorización para el pedido especial',
+          icon: Clock,
+          color: 'bg-yellow-100 text-yellow-700'
+        },
+        'approved': {
+          label: 'Aprobar Pedido',
+          description: 'Autorizar el pedido especial para proceder',
+          icon: CheckCircle,
+          color: 'bg-green-100 text-green-700'
+        },
+        'ordered': {
+          label: 'Marcar como Pedida',
+          description: 'Confirmar que el pedido fue enviado al proveedor',
+          icon: ShoppingCart,
+          color: 'bg-cyan-100 text-cyan-700'
+        },
+        'received': {
+          label: 'Marcar como Recibida',
+          description: 'Registrar la recepción de productos/servicios',
+          icon: Package,
+          color: 'bg-teal-100 text-teal-700'
+        },
+        'invoiced': {
+          label: 'Marcar como Facturada',
+          description: 'Confirmar el procesamiento de la factura',
+          icon: Receipt,
+          color: 'bg-emerald-100 text-emerald-700'
+        },
+        'rejected': {
+          label: 'Rechazar Pedido',
+          description: 'Rechazar la solicitud de pedido especial',
+          icon: AlertTriangle,
+          color: 'bg-red-100 text-red-700'
+        }
+      }
+    }
+
+    return actionInfo[poType]?.[action] || {
+      label: `Realizar ${action}`,
+      description: 'Continuar con el siguiente paso del proceso',
+      icon: ArrowRight,
+      color: 'bg-gray-100 text-gray-700'
+    }
   }
 
   // Simplified advance handler with file upload and amount update integration
@@ -290,11 +400,6 @@ export function WorkflowStatusDisplay({
     
     // Advance workflow
     let workflowNotes = notes.trim()
-    if (fileUrl) {
-      workflowNotes = workflowNotes 
-        ? `${workflowNotes}\n\nComprobante: ${fileUrl}`
-        : `Comprobante: ${fileUrl}`
-    }
     if (actualAmount) {
       workflowNotes = workflowNotes 
         ? `${workflowNotes}\n\nMonto real: $${actualAmount}`
@@ -313,6 +418,10 @@ export function WorkflowStatusDisplay({
       if (fileUrl) setReceiptUrl(fileUrl)
       // Reload workflow status
       await loadWorkflowStatus(purchaseOrderId)
+      if (onStatusChange) {
+        onStatusChange()
+      }
+      router.refresh()
     }
   }
 
@@ -522,7 +631,7 @@ export function WorkflowStatusDisplay({
                 )
               }
 
-              const actionConfig = getStatusConfig(primaryAction, poType)
+              const actionConfig = getActionDisplayInfo(primaryAction, poType)
               const ActionIcon = actionConfig.icon
               const requiresNotes = ['rejected', 'receipt_uploaded'].includes(primaryAction)
 
@@ -702,7 +811,7 @@ export function WorkflowStatusDisplay({
                         {workflowStatus.allowed_next_statuses
                           .filter(status => status !== primaryAction)
                           .map((status) => {
-                            const config = getStatusConfig(status, poType)
+                            const config = getActionDisplayInfo(status, poType)
                             const SecondaryIcon = config.icon
                             
                             return (

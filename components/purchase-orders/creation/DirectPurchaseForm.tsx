@@ -38,8 +38,8 @@ interface PurchaseOrderItem {
   id: string
   name: string
   partNumber: string
-  quantity: number
-  unit_price: number
+  quantity: number | string
+  unit_price: number | string
   total_price: number
   supplier?: string
 }
@@ -78,7 +78,6 @@ export function DirectPurchaseForm({
     items: [],
     total_amount: 0,
     payment_method: PaymentMethod.CASH,
-    store_location: "",
     notes: ""
   })
 
@@ -87,30 +86,21 @@ export function DirectPurchaseForm({
   const [newItem, setNewItem] = useState<Partial<PurchaseOrderItem>>({
     name: '',
     partNumber: '',
-    quantity: 1,
-    unit_price: 0,
+    quantity: '',
+    unit_price: '',
     total_price: 0
   })
+
+  // Supplier suggestions (loaded from recent purchase orders)
+  const [recentSuppliers, setRecentSuppliers] = useState<string[]>([])
+  const [supplierSuggestions, setSupplierSuggestions] = useState<string[]>([])
+  const [showSuggestions, setShowSuggestions] = useState(false)
 
   // Validation
   const [validationResult, setValidationResult] = useState<QuoteValidationResponse | null>(null)
   const [formErrors, setFormErrors] = useState<string[]>([])
 
-  // Store suggestions (could be loaded from API)
-  const commonStores = [
-    "Ferretería Central Saltillo",
-    "Home Depot Saltillo",
-    "Comex Saltillo Centro",
-    "Ferretería del Norte",
-    "Casa de Herramientas",
-    "Súper Ferretería",
-    "Refaccionaria Industrial",
-    "Materiales Eléctricos del Bajío",
-    "Ferretería San José",
-    "Grupo Ferretero del Norte"
-  ]
-
-  // Load work order data and pre-populate items
+  // Load work order data and recent suppliers
   useEffect(() => {
     const loadWorkOrderData = async () => {
       setIsLoadingWorkOrder(true)
@@ -119,53 +109,64 @@ export function DirectPurchaseForm({
       try {
         const supabase = createClient()
         
+        // Load recent suppliers from existing purchase orders
+        const { data: supplierData, error: supplierError } = await supabase
+          .from("purchase_orders")
+          .select("supplier")
+          .not("supplier", "is", null)
+          .order("created_at", { ascending: false })
+          .limit(50)
+          
+        if (!supplierError && supplierData) {
+          const uniqueSuppliers = Array.from(
+            new Set(supplierData
+              .map(item => item.supplier)
+              .filter(supplier => supplier && supplier.trim() !== "")
+            )
+          ) as string[]
+          setRecentSuppliers(uniqueSuppliers.slice(0, 15)) // Keep top 15
+        }
+        
         // Get work order with asset
         const { data: workOrderData, error: workOrderError } = await supabase
           .from("work_orders")
           .select(`
-            id,
-            order_id,
-            description,
-            required_parts,
-            estimated_cost,
-            asset:assets (
-              id,
-              name,
-              asset_id
-            )
+            *,
+            asset:assets (*)
           `)
           .eq("id", workOrderId)
           .single()
           
         if (workOrderError) {
-          throw new Error("Error al cargar la orden de trabajo")
+          setWorkOrderError("Error al cargar la orden de trabajo")
+          console.error("Error fetching work order:", workOrderError)
+          return
         }
         
         if (!workOrderData) {
-          throw new Error("Orden de trabajo no encontrada")
+          setWorkOrderError("Orden de trabajo no encontrada")
+          return
         }
         
-        setWorkOrder(workOrderData as WorkOrderData)
+        setWorkOrder(workOrderData)
         
-        // Extract and pre-populate required parts from work order
+        // Pre-populate items from work order required_parts
         let partsToLoad: PurchaseOrderItem[] = []
         
         if (workOrderData.required_parts) {
           try {
-            const partsData = typeof workOrderData.required_parts === 'string' 
-              ? JSON.parse(workOrderData.required_parts) 
-              : workOrderData.required_parts
-              
-            if (Array.isArray(partsData)) {
-              partsToLoad = partsData.map((part: any) => ({
-                id: part.id || `part-${Date.now()}-${Math.random()}`,
-                name: part.name || part.description || 'Repuesto sin nombre',
-                partNumber: part.partNumber || part.part_number || '',
-                quantity: Number(part.quantity) || 1,
-                unit_price: Number(part.unit_price) || 0,
-                total_price: Number(part.total_price) || (Number(part.quantity) || 1) * (Number(part.unit_price) || 0)
-              }))
-            }
+            const requiredParts = Array.isArray(workOrderData.required_parts) 
+              ? workOrderData.required_parts 
+              : JSON.parse(workOrderData.required_parts)
+            
+            partsToLoad = requiredParts.map((part: any, index: number) => ({
+              id: `wo-part-${index}`,
+              name: part.name || part.item || 'Artículo',
+              partNumber: part.partNumber || part.part_number || '',
+              quantity: Number(part.quantity) || 1,
+              unit_price: Number(part.unit_price) || Number(part.price) || 0,
+              total_price: Number(part.total_price) || (Number(part.quantity) || 1) * (Number(part.unit_price) || Number(part.price) || 0)
+            }))
           } catch (e) {
             console.error('Error parsing required parts:', e)
           }
@@ -218,6 +219,29 @@ export function DirectPurchaseForm({
     clearError()
   }
 
+  // Handle supplier input with suggestions
+  const handleSupplierChange = (value: string) => {
+    handleInputChange('supplier', value)
+    
+    if (value && value.length > 0) {
+      const filtered = recentSuppliers.filter(supplier =>
+        supplier.toLowerCase().includes(value.toLowerCase())
+      )
+      setSupplierSuggestions(filtered)
+      setShowSuggestions(filtered.length > 0)
+    } else {
+      setSupplierSuggestions([])
+      setShowSuggestions(false)
+    }
+  }
+
+  // Select supplier from suggestions
+  const selectSupplier = (supplier: string) => {
+    handleInputChange('supplier', supplier)
+    setShowSuggestions(false)
+    setSupplierSuggestions([])
+  }
+
   // Handle new item changes
   const handleNewItemChange = (field: string, value: any) => {
     setNewItem(prev => {
@@ -225,8 +249,8 @@ export function DirectPurchaseForm({
       
       // Auto-calculate total price
       if (field === 'quantity' || field === 'unit_price') {
-        const quantity = field === 'quantity' ? value : prev.quantity || 0
-        const unitPrice = field === 'unit_price' ? value : prev.unit_price || 0
+        const quantity = field === 'quantity' ? Number(value) || 0 : Number(prev.quantity) || 0
+        const unitPrice = field === 'unit_price' ? Number(value) || 0 : Number(prev.unit_price) || 0
         updated.total_price = quantity * unitPrice
       }
       
@@ -237,7 +261,7 @@ export function DirectPurchaseForm({
   // Add new item to list
   const addItem = () => {
     if (!newItem.name || !newItem.quantity || !newItem.unit_price) {
-      setFormErrors(['Todos los campos del artículo son requeridos'])
+      setFormErrors(['Nombre, cantidad y precio unitario son requeridos'])
       return
     }
 
@@ -254,8 +278,8 @@ export function DirectPurchaseForm({
     setNewItem({
       name: '',
       partNumber: '',
-      quantity: 1,
-      unit_price: 0,
+      quantity: '',
+      unit_price: '',
       total_price: 0
     })
     setFormErrors([])
@@ -275,8 +299,8 @@ export function DirectPurchaseForm({
       
       // Recalculate total price if quantity or unit price changes
       if (field === 'quantity' || field === 'unit_price') {
-        const quantity = field === 'quantity' ? value : item.quantity
-        const unitPrice = field === 'unit_price' ? value : item.unit_price
+        const quantity = field === 'quantity' ? Number(value) || 0 : Number(item.quantity) || 0
+        const unitPrice = field === 'unit_price' ? Number(value) || 0 : Number(item.unit_price) || 0
         updated.total_price = quantity * unitPrice
       }
       
@@ -290,10 +314,6 @@ export function DirectPurchaseForm({
 
     if (!formData.supplier?.trim()) {
       errors.push('Proveedor es requerido')
-    }
-
-    if (!formData.store_location?.trim()) {
-      errors.push('Ubicación de la tienda es requerida')
     }
 
     if (!formData.payment_method) {
@@ -328,7 +348,6 @@ export function DirectPurchaseForm({
         items: items,
         total_amount: formData.total_amount!,
         payment_method: formData.payment_method,
-        store_location: formData.store_location!,
         notes: formData.notes
       }
 
@@ -435,16 +454,16 @@ export function DirectPurchaseForm({
       )}
 
       {/* Validation Results */}
-      {formData.total_amount && formData.total_amount > 0 && (
+      {(formData.total_amount && formData.total_amount > 0) ? (
         <QuotationValidator
           poType={PurchaseOrderType.DIRECT_PURCHASE}
           amount={formData.total_amount}
           onValidationResult={setValidationResult}
         />
-      )}
+      ) : null}
 
       {/* Form Errors */}
-      {formErrors.length > 0 && (
+      {formErrors.length > 0 ? (
         <Alert variant="destructive">
           <AlertCircle className="h-4 w-4" />
           <AlertDescription>
@@ -455,17 +474,17 @@ export function DirectPurchaseForm({
             </ul>
           </AlertDescription>
         </Alert>
-      )}
+      ) : null}
 
       {/* API Error */}
-      {error && (
+      {error ? (
         <Alert variant="destructive">
           <AlertCircle className="h-4 w-4" />
           <AlertDescription>{error}</AlertDescription>
         </Alert>
-      )}
+      ) : null}
 
-      {/* Supplier and Store Information */}
+      {/* Supplier Information */}
       <Card>
         <CardHeader>
           <CardTitle className="text-lg">Información del Proveedor</CardTitle>
@@ -473,54 +492,64 @@ export function DirectPurchaseForm({
         <CardContent className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="supplier">Proveedor / Tienda</Label>
-              <Input
-                id="supplier"
-                placeholder="Nombre de la tienda o proveedor"
-                value={formData.supplier || ""}
-                onChange={(e) => handleInputChange('supplier', e.target.value)}
-                required
-              />
+              <Label htmlFor="supplier">Proveedor</Label>
+              <div className="relative">
+                <Input
+                  id="supplier"
+                  placeholder="Nombre del proveedor o tienda"
+                  value={formData.supplier || ""}
+                  onChange={(e) => handleSupplierChange(e.target.value)}
+                  onFocus={() => {
+                    if (recentSuppliers.length > 0) {
+                      setSupplierSuggestions(recentSuppliers)
+                      setShowSuggestions(true)
+                    }
+                  }}
+                  onBlur={() => {
+                    // Delay hiding suggestions to allow for selection
+                    setTimeout(() => setShowSuggestions(false), 200)
+                  }}
+                  required
+                />
+                {(showSuggestions && supplierSuggestions.length > 0) ? (
+                  <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-md shadow-lg max-h-60 overflow-auto">
+                    <div className="p-2 text-xs text-gray-500 border-b">
+                      Proveedores recientes:
+                    </div>
+                    {supplierSuggestions.map((supplier, index) => (
+                      <button
+                        key={index}
+                        type="button"
+                        className="w-full text-left px-3 py-2 hover:bg-gray-100 text-sm"
+                        onClick={() => selectSupplier(supplier)}
+                      >
+                        {supplier}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Escribe el nombre del proveedor o selecciona uno de los recientes
+              </p>
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="store_location">Ubicación de la Tienda</Label>
+              <Label htmlFor="payment_method">Método de Pago</Label>
               <Select
-                value={formData.store_location || ""}
-                onValueChange={(value) => handleInputChange('store_location', value)}
+                value={formData.payment_method || ""}
+                onValueChange={(value) => handleInputChange('payment_method', value)}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Selecciona ubicación" />
+                  <SelectValue placeholder="Selecciona método de pago" />
                 </SelectTrigger>
                 <SelectContent>
-                  {commonStores.map((store) => (
-                    <SelectItem key={store} value={store}>
-                      {store}
-                    </SelectItem>
-                  ))}
+                  <SelectItem value={PaymentMethod.CASH}>Efectivo</SelectItem>
+                  <SelectItem value={PaymentMethod.CARD}>Tarjeta</SelectItem>
+                  <SelectItem value={PaymentMethod.TRANSFER}>Transferencia</SelectItem>
                 </SelectContent>
               </Select>
-              <p className="text-xs text-muted-foreground">
-                Selecciona la tienda o ubica manualmente
-              </p>
             </div>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="payment_method">Método de Pago</Label>
-            <Select
-              value={formData.payment_method || ""}
-              onValueChange={(value) => handleInputChange('payment_method', value)}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Selecciona método de pago" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={PaymentMethod.CASH}>Efectivo</SelectItem>
-                <SelectItem value={PaymentMethod.CARD}>Tarjeta</SelectItem>
-                <SelectItem value={PaymentMethod.TRANSFER}>Transferencia</SelectItem>
-              </SelectContent>
-            </Select>
           </div>
         </CardContent>
       </Card>
@@ -561,8 +590,9 @@ export function DirectPurchaseForm({
                   id="quantity"
                   type="number"
                   min="1"
+                  placeholder="1"
                   value={newItem.quantity || ""}
-                  onChange={(e) => handleNewItemChange('quantity', parseInt(e.target.value) || 0)}
+                  onChange={(e) => handleNewItemChange('quantity', e.target.value)}
                 />
               </div>
 
@@ -573,8 +603,9 @@ export function DirectPurchaseForm({
                   type="number"
                   min="0"
                   step="0.01"
+                  placeholder="0.00"
                   value={newItem.unit_price || ""}
-                  onChange={(e) => handleNewItemChange('unit_price', parseFloat(e.target.value) || 0)}
+                  onChange={(e) => handleNewItemChange('unit_price', e.target.value)}
                 />
               </div>
 
@@ -586,15 +617,15 @@ export function DirectPurchaseForm({
               </div>
             </div>
 
-            {newItem.total_price && newItem.total_price > 0 && (
+            {(newItem.total_price && newItem.total_price > 0) ? (
               <div className="mt-2 text-sm text-muted-foreground">
                 Total: ${newItem.total_price.toFixed(2)}
               </div>
-            )}
+            ) : null}
           </div>
 
           {/* Items List */}
-          {items.length > 0 && (
+          {items.length > 0 ? (
             <div className="border rounded-lg">
               <Table>
                 <TableHeader>
@@ -615,6 +646,7 @@ export function DirectPurchaseForm({
                           value={item.name}
                           onChange={(e) => updateItem(item.id, 'name', e.target.value)}
                           className="border-0 p-0 h-auto"
+                          placeholder="Nombre del artículo"
                         />
                       </TableCell>
                       <TableCell>
@@ -622,23 +654,28 @@ export function DirectPurchaseForm({
                           value={item.partNumber}
                           onChange={(e) => updateItem(item.id, 'partNumber', e.target.value)}
                           className="border-0 p-0 h-auto"
+                          placeholder="Código"
                         />
                       </TableCell>
                       <TableCell>
                         <Input
                           type="number"
-                          value={item.quantity}
-                          onChange={(e) => updateItem(item.id, 'quantity', parseInt(e.target.value) || 0)}
+                          min="1"
+                          value={item.quantity || ""}
+                          onChange={(e) => updateItem(item.id, 'quantity', e.target.value)}
                           className="border-0 p-0 h-auto w-20"
+                          placeholder="1"
                         />
                       </TableCell>
                       <TableCell>
                         <Input
                           type="number"
+                          min="0"
                           step="0.01"
-                          value={item.unit_price}
-                          onChange={(e) => updateItem(item.id, 'unit_price', parseFloat(e.target.value) || 0)}
+                          value={item.unit_price || ""}
+                          onChange={(e) => updateItem(item.id, 'unit_price', e.target.value)}
                           className="border-0 p-0 h-auto w-24"
+                          placeholder="0.00"
                         />
                       </TableCell>
                       <TableCell>
@@ -671,7 +708,7 @@ export function DirectPurchaseForm({
                 </div>
               </div>
             </div>
-          )}
+          ) : null}
         </CardContent>
       </Card>
 
