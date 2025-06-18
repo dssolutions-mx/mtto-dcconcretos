@@ -201,7 +201,9 @@ export function WorkflowStatusDisplay({
         'pending_approval': 'Pedido especial esperando aprobación.',
         'approved': 'Pedido aprobado. Realiza el pedido formal con el proveedor.',
         'ordered': 'Pedido realizado. Esperando recepción de productos/servicios.',
-        'received': 'Productos/servicios recibidos. Procesa la factura para completar.'
+        'received': 'Productos/servicios recibidos. Sube el comprobante para completar.',
+        'receipt_uploaded': 'Comprobante subido. Esperando validación administrativa.',
+        'validated': 'Proceso completado'
       }
     }
 
@@ -228,7 +230,8 @@ export function WorkflowStatusDisplay({
         'approved': 'Aprobar Pedido',
         'ordered': 'Marcar como Pedida',
         'received': 'Marcar como Recibida',
-        'invoiced': 'Marcar como Facturada',
+        'receipt_uploaded': 'Subir Comprobante',
+        'validated': 'Validar Comprobante',
         'rejected': 'Rechazar Pedido'
       }
     }
@@ -326,11 +329,17 @@ export function WorkflowStatusDisplay({
           icon: Package,
           color: 'bg-teal-100 text-teal-700'
         },
-        'invoiced': {
-          label: 'Marcar como Facturada',
-          description: 'Confirmar el procesamiento de la factura',
+        'receipt_uploaded': {
+          label: 'Subir Comprobante',
+          description: 'Cargar el comprobante del pedido especial',
           icon: Receipt,
-          color: 'bg-emerald-100 text-emerald-700'
+          color: 'bg-purple-100 text-purple-700'
+        },
+        'validated': {
+          label: 'Validar Comprobante',
+          description: 'Revisar y validar el comprobante subido',
+          icon: CheckCircle,
+          color: 'bg-green-100 text-green-700'
         },
         'rejected': {
           label: 'Rechazar Pedido',
@@ -530,8 +539,9 @@ export function WorkflowStatusDisplay({
         'pending_approval': 35,
         'approved': 50,
         'ordered': 65,
-        'received': 80,
-        'invoiced': 100,
+        'received': 75,
+        'receipt_uploaded': 90,
+        'validated': 100,
         'rejected': 0
       }
     }

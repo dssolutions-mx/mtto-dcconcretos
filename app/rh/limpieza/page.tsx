@@ -1,5 +1,5 @@
 import { Suspense } from 'react'
-import { CleanlinessReportsView } from '@/components/hr/cleanliness-reports-view'
+import CleanlinessReportsView from '@/components/hr/cleanliness-reports-view'
 
 export default function CleanlinessReportsPage() {
   return (

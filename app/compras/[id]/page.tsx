@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
-import { ArrowLeft, FileCheck, Package, ShoppingCart, Truck, FileText, Download, ExternalLink, Store, Wrench, Building2, Receipt } from "lucide-react"
+import { ArrowLeft, FileCheck, Package, ShoppingCart, Truck, FileText, Download, ExternalLink, Store, Wrench, Building2, Receipt, AlertCircle } from "lucide-react"
 import Link from "next/link"
 import { notFound } from "next/navigation"
 import { format } from "date-fns"
@@ -230,7 +230,7 @@ async function PurchaseOrderDetailsContent({ id }: { id: string }) {
   }
 
   return (
-    <div className="container py-4 md:py-8">
+    <div className="container mx-auto px-6 py-4 md:py-8">
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold">Orden de Compra: {order.order_id}</h1>
@@ -373,7 +373,33 @@ async function PurchaseOrderDetailsContent({ id }: { id: string }) {
             {order.notes && (
               <div>
                 <dt className="font-medium text-sm text-muted-foreground">Notas</dt>
-                <dd className="mt-1">{order.notes}</dd>
+                <dd className="mt-1 break-words whitespace-pre-wrap">{order.notes}</dd>
+              </div>
+            )}
+
+            {order.quotation_url && (
+              <div>
+                <dt className="font-medium text-sm text-muted-foreground">Cotización</dt>
+                <dd className="mt-1">
+                  <div className="flex items-center space-x-2">
+                    <Badge variant="outline" className="text-green-600 border-green-200">
+                      <FileText className="h-3 w-3 mr-1" />
+                      Cotización Disponible
+                    </Badge>
+                    <Button asChild variant="outline" size="sm">
+                      <a 
+                        href={order.quotation_url} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="flex items-center space-x-1"
+                      >
+                        <Download className="h-4 w-4" />
+                        <span>Ver Cotización</span>
+                        <ExternalLink className="h-3 w-3" />
+                      </a>
+                    </Button>
+                  </div>
+                </dd>
               </div>
             )}
           </CardContent>
@@ -381,6 +407,108 @@ async function PurchaseOrderDetailsContent({ id }: { id: string }) {
 
         {/* Receipt/Comprobante Section - Always show if exists */}
         <ReceiptDisplaySection purchaseOrderId={order.id} poType={order.po_type} />
+
+        {/* Quotation Section - Show for enhanced orders with quotation */}
+        {order.po_type && (order.quotation_url || order.requires_quote) && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center space-x-2">
+                <FileText className="h-5 w-5" />
+                <span>Cotización</span>
+                {order.requires_quote && (
+                  <Badge variant={order.quotation_url ? "default" : "destructive"}>
+                    {order.quotation_url ? "Completada" : "Requerida"}
+                  </Badge>
+                )}
+              </CardTitle>
+              {order.requires_quote && (
+                <CardDescription>
+                  {order.po_type === PurchaseOrderType.DIRECT_SERVICE
+                    ? `Esta orden de servicio por ${formatCurrency(order.total_amount)} requiere cotización por ser mayor a $10,000 MXN`
+                    : "Esta orden requiere cotización antes de ser aprobada"
+                  }
+                </CardDescription>
+              )}
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {order.quotation_url ? (
+                <div className="space-y-3">
+                  <div className="flex items-center space-x-2">
+                    <Badge variant="secondary" className="text-green-600 bg-green-50">
+                      <FileCheck className="h-3 w-3 mr-1" />
+                      Cotización Disponible
+                    </Badge>
+                    <span className="text-sm text-muted-foreground">
+                      Los aprobadores pueden revisar la cotización antes de aprobar
+                    </span>
+                  </div>
+                  
+                  <div className="flex flex-col sm:flex-row gap-3">
+                    <Button asChild variant="outline" size="sm" className="flex-1">
+                      <a 
+                        href={order.quotation_url} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="flex items-center justify-center space-x-2"
+                      >
+                        <Download className="h-4 w-4" />
+                        <span>Descargar</span>
+                      </a>
+                    </Button>
+                    
+                    <Button asChild variant="secondary" size="sm" className="flex-1">
+                      <a 
+                        href={order.quotation_url} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="flex items-center justify-center space-x-2"
+                      >
+                        <ExternalLink className="h-4 w-4" />
+                        <span>Ver en Pestaña</span>
+                      </a>
+                    </Button>
+                  </div>
+                  
+                  {/* Preview for PDF files */}
+                  {isPdfFile(order.quotation_url) && (
+                    <div className="border rounded-lg p-4 bg-gray-50">
+                      <p className="text-sm text-muted-foreground mb-2">Vista previa de la cotización:</p>
+                      <iframe
+                        src={`${order.quotation_url}#toolbar=0`}
+                        className="w-full h-96 border rounded"
+                        title="Vista previa de cotización"
+                      />
+                    </div>
+                  )}
+                  
+                  {/* Preview for images */}
+                  {isImageFile(order.quotation_url) && (
+                    <div className="border rounded-lg p-4 bg-gray-50">
+                      <p className="text-sm text-muted-foreground mb-2">Vista previa de la cotización:</p>
+                      <img
+                        src={order.quotation_url}
+                        alt="Cotización"
+                        className="max-w-full h-auto rounded border"
+                        style={{ maxHeight: '400px' }}
+                      />
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="text-center py-8">
+                  <div className="rounded-full bg-yellow-100 p-3 mx-auto w-12 h-12 flex items-center justify-center mb-4">
+                    <AlertCircle className="h-6 w-6 text-yellow-600" />
+                  </div>
+                  <h3 className="text-lg font-medium mb-2">Cotización Pendiente</h3>
+                  <p className="text-muted-foreground mb-4">
+                    Esta orden requiere cotización antes de poder ser aprobada.
+                  </p>
+                  <Badge variant="destructive">Pendiente de Cotización</Badge>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
 
         {/* Work Order Information */}
         {workOrder && (
@@ -419,36 +547,85 @@ async function PurchaseOrderDetailsContent({ id }: { id: string }) {
         )}
       </div>
 
-      {/* Items */}
+      {/* Items/Services */}
       {items && items.length > 0 && (
         <Card className="mt-8">
           <CardHeader>
-            <CardTitle>Artículos Solicitados</CardTitle>
+            <CardTitle>
+              {order.po_type === PurchaseOrderType.DIRECT_SERVICE 
+                ? "Servicios Solicitados" 
+                : order.po_type === PurchaseOrderType.DIRECT_PURCHASE 
+                ? "Productos Solicitados"
+                : "Artículos Solicitados"
+              }
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="overflow-x-auto">
-              <table className="w-full border-collapse">
-                <thead>
-                  <tr className="border-b">
-                    <th className="text-left p-2">Descripción</th>
-                    <th className="text-left p-2">Parte/Código</th>
-                    <th className="text-right p-2">Cantidad</th>
-                    <th className="text-right p-2">Precio Unitario</th>
-                    <th className="text-right p-2">Total</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {items.map((item: any, index: number) => (
-                    <tr key={index} className="border-b">
-                      <td className="p-2">{item.description || item.item || "Sin descripción"}</td>
-                      <td className="p-2">{item.part_number || item.code || "N/A"}</td>
-                      <td className="p-2 text-right">{item.quantity || 1}</td>
-                      <td className="p-2 text-right">{formatCurrency(item.unit_price?.toString() || item.price?.toString() || "0")}</td>
-                      <td className="p-2 text-right">{formatCurrency(item.total_price?.toString() || (item.quantity * (item.unit_price || item.price || 0)).toString())}</td>
+              {/* Direct Service Display */}
+              {order.po_type === PurchaseOrderType.DIRECT_SERVICE ? (
+                <table className="w-full border-collapse">
+                  <thead>
+                    <tr className="border-b">
+                      <th className="text-left p-2">Descripción del Servicio</th>
+                      <th className="text-left p-2">Categoría</th>
+                      <th className="text-right p-2">Horas Estimadas</th>
+                      <th className="text-right p-2">Tarifa por Hora</th>
+                      <th className="text-right p-2">Costo Total</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {items.map((service: any, index: number) => (
+                      <tr key={index} className="border-b">
+                        <td className="p-2">
+                          <div>
+                            <p className="font-medium">{service.description || "Sin descripción"}</p>
+                            {service.specialist_required && (
+                              <Badge variant="secondary" className="text-xs mt-1">
+                                Especialista Requerido
+                              </Badge>
+                            )}
+                          </div>
+                        </td>
+                        <td className="p-2">{service.category || "General"}</td>
+                        <td className="p-2 text-right">
+                          {service.estimated_hours ? `${Number(service.estimated_hours).toFixed(1)}h` : "N/A"}
+                        </td>
+                        <td className="p-2 text-right">
+                          {formatCurrency(service.hourly_rate?.toString() || "0")}
+                        </td>
+                        <td className="p-2 text-right font-medium">
+                          {formatCurrency(service.total_cost?.toString() || "0")}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                /* Generic Items Display for other types */
+                <table className="w-full border-collapse">
+                  <thead>
+                    <tr className="border-b">
+                      <th className="text-left p-2">Descripción</th>
+                      <th className="text-left p-2">Parte/Código</th>
+                      <th className="text-right p-2">Cantidad</th>
+                      <th className="text-right p-2">Precio Unitario</th>
+                      <th className="text-right p-2">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {items.map((item: any, index: number) => (
+                      <tr key={index} className="border-b">
+                        <td className="p-2">{item.description || item.item || item.name || "Sin descripción"}</td>
+                        <td className="p-2">{item.part_number || item.code || "N/A"}</td>
+                        <td className="p-2 text-right">{item.quantity || 1}</td>
+                        <td className="p-2 text-right">{formatCurrency(item.unit_price?.toString() || item.price?.toString() || "0")}</td>
+                        <td className="p-2 text-right">{formatCurrency(item.total_price?.toString() || (item.quantity * (item.unit_price || item.price || 0)).toString())}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
             </div>
           </CardContent>
         </Card>

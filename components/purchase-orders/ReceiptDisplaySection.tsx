@@ -122,8 +122,8 @@ export function ReceiptDisplaySection({ purchaseOrderId, poType }: ReceiptDispla
       </CardHeader>
       <CardContent className="space-y-4">
         {receipts.map((receipt) => (
-          <div key={receipt.id} className="flex items-center justify-between p-4 border rounded-lg bg-green-50 border-green-200">
-            <div className="flex items-center space-x-3">
+          <div key={receipt.id} className="p-4 border rounded-lg bg-green-50 border-green-200 space-y-3">
+            <div className="flex items-start space-x-3">
               <div className="flex-shrink-0">
                 {isPdfFile(receipt.file_url) ? (
                   <FileText className="h-8 w-8 text-red-500" />
@@ -131,7 +131,7 @@ export function ReceiptDisplaySection({ purchaseOrderId, poType }: ReceiptDispla
                   <FileText className="h-8 w-8 text-blue-500" />
                 )}
               </div>
-              <div>
+              <div className="flex-1 min-w-0">
                 <p className="font-medium text-green-800">
                   Comprobante de {poType === 'direct_purchase' ? 'Compra' : 
                                 poType === 'direct_service' ? 'Servicio' : 'Pedido'}
@@ -141,14 +141,14 @@ export function ReceiptDisplaySection({ purchaseOrderId, poType }: ReceiptDispla
                   Subido el {formatDate(receipt.created_at)}
                 </p>
                 {receipt.description && (
-                  <p className="text-sm text-green-600">
+                  <p className="text-sm text-green-600 break-words">
                     {receipt.description}
                   </p>
                 )}
               </div>
             </div>
             
-            <div className="flex space-x-2">
+            <div className="flex space-x-2 justify-end">
               <Button asChild variant="outline" size="sm">
                 <a 
                   href={receipt.file_url} 

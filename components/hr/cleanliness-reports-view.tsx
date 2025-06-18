@@ -8,18 +8,19 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { 
   Users, 
   TrendingUp, 
-  Download, 
-  Sparkles, 
-  CheckCircle2, 
-  XCircle,
-  Calendar,
-  Trophy
+  Calendar, 
+  Eye,
+  CheckCircle, 
+  XCircle, 
+  AlertTriangle,
+  FileText,
+  User,
+  Truck
 } from 'lucide-react'
-import { toast } from 'sonner'
 
 interface CleanlinessReport {
   id: string
@@ -46,364 +47,488 @@ interface CleanlinessStats {
   }>
 }
 
-export function CleanlinessReportsView() {
-  const [reports, setReports] = useState<CleanlinessReport[]>([])
-  const [stats, setStats] = useState<CleanlinessStats>({
-    total_evaluations: 0,
-    pass_rate: 0,
-    passed_count: 0,
-    top_performers: []
-  })
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const [selectedPeriod, setSelectedPeriod] = useState('current_month')
-  const [filterTechnician, setFilterTechnician] = useState('')
+interface EvaluationDetails {
+  id: string
+  asset_name: string
+  asset_code: string
+  technician_name: string
+  completed_date: string
+  checklist_name: string
+  cleanliness_sections: Array<{
+    title: string
+    items: Array<{
+      id: string
+      description: string
+      status: 'pass' | 'fail' | 'flag'
+      notes?: string
+    }>
+  }>
+  notes: string
+  signature_data?: string
+  evidence: Array<{
+    id: string
+    category: string
+    description: string
+    photo_url: string
+    sequence_order: number
+    created_at: string
+  }>
+}
 
-  useEffect(() => {
-    loadCleanlinessData()
-  }, [selectedPeriod])
+function EvaluationViewDialog({ reportId }: { reportId: string }) {
+  const [evaluation, setEvaluation] = useState<EvaluationDetails | null>(null)
+  const [loading, setLoading] = useState(false)
 
-  const loadCleanlinessData = async () => {
+  const fetchEvaluationDetails = async () => {
+    if (!reportId) return
+    
+    setLoading(true)
     try {
-      setLoading(true)
-      setError(null)
-      
-      // Calculate date range based on selected period
-      const now = new Date()
-      let startDate: string
-      let endDate = now.toISOString()
-      
-      switch (selectedPeriod) {
-        case 'current_month':
-          startDate = new Date(now.getFullYear(), now.getMonth(), 1).toISOString()
-          break
-        case 'last_month':
-          const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1)
-          startDate = lastMonth.toISOString()
-          endDate = new Date(now.getFullYear(), now.getMonth(), 0).toISOString()
-          break
-        case 'last_week':
-          startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString()
-          break
-        default: // quarter
-          startDate = new Date(now.getFullYear(), now.getMonth() - 3, 1).toISOString()
+      const response = await fetch(`/api/hr/cleanliness-reports?evaluation_id=${reportId}`)
+      if (response.ok) {
+        const data = await response.json()
+        setEvaluation(data.evaluation)
       }
-      
-      const params = new URLSearchParams({
-        start_date: startDate,
-        end_date: endDate
-      })
-      
-      const response = await fetch(`/api/hr/cleanliness-reports?${params}`)
-      const data = await response.json()
-      
-      if (!response.ok) {
-        throw new Error(data.error || 'Error al cargar los datos')
-      }
-      
-      setReports(data.reports || [])
-      setStats(data.stats || {
-        total_evaluations: 0,
-        pass_rate: 0,
-        passed_count: 0,
-        top_performers: []
-      })
     } catch (error) {
-      console.error('Error loading cleanliness data:', error)
-      setError(error instanceof Error ? error.message : 'Error desconocido')
-      setReports([])
-      setStats({
-        total_evaluations: 0,
-        pass_rate: 0,
-        passed_count: 0,
-        top_performers: []
-      })
-      toast.error('Error al cargar los datos de limpieza')
+      console.error('Error fetching evaluation details:', error)
     } finally {
       setLoading(false)
     }
   }
 
-  const filteredReports = reports.filter(report => 
-    filterTechnician === '' || 
-    report.technician_name.toLowerCase().includes(filterTechnician.toLowerCase())
+  return (
+    <Dialog>
+      <DialogTrigger asChild>
+        <Button 
+          variant="outline" 
+          size="sm"
+          onClick={fetchEvaluationDetails}
+        >
+          <Eye className="h-4 w-4 mr-1" />
+          Ver Evaluación
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Detalles de Evaluación de Limpieza</DialogTitle>
+        </DialogHeader>
+        
+        {loading ? (
+          <div className="flex items-center justify-center p-8">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+          </div>
+        ) : evaluation ? (
+          <div className="space-y-6">
+            {/* Información General */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 bg-gray-50 rounded-lg">
+              <div className="flex items-center space-x-2">
+                <Truck className="h-4 w-4 text-gray-600" />
+                <div>
+                  <p className="text-sm font-medium">{evaluation.asset_name}</p>
+                  <p className="text-xs text-gray-600">{evaluation.asset_code}</p>
+                </div>
+              </div>
+              <div className="flex items-center space-x-2">
+                <User className="h-4 w-4 text-gray-600" />
+                <div>
+                  <p className="text-sm font-medium">{evaluation.technician_name}</p>
+                  <p className="text-xs text-gray-600">Técnico</p>
+                </div>
+              </div>
+              <div className="flex items-center space-x-2">
+                <Calendar className="h-4 w-4 text-gray-600" />
+                <div>
+                  <p className="text-sm font-medium">
+                    {new Date(evaluation.completed_date).toLocaleDateString('es-MX')}
+                  </p>
+                  <p className="text-xs text-gray-600">
+                    {new Date(evaluation.completed_date).toLocaleTimeString('es-MX')}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center space-x-2">
+                <FileText className="h-4 w-4 text-gray-600" />
+                <div>
+                  <p className="text-sm font-medium">{evaluation.checklist_name}</p>
+                  <p className="text-xs text-gray-600">Checklist</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Secciones de Limpieza */}
+            <div className="space-y-4">
+              <h3 className="text-lg font-semibold">Evaluación de Limpieza</h3>
+              {evaluation.cleanliness_sections.map((section, sectionIndex) => (
+                <Card key={sectionIndex}>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-base">{section.title}</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-3">
+                      {section.items.map((item, itemIndex) => (
+                        <div key={item.id} className="flex items-start justify-between p-3 border rounded-lg">
+                          <div className="flex-1">
+                            <p className="font-medium">{item.description}</p>
+                            {item.notes && (
+                              <p className="text-sm text-gray-600 mt-1">{item.notes}</p>
+                            )}
+                          </div>
+                          <div className="ml-4">
+                            {item.status === 'pass' && (
+                              <Badge variant="default" className="bg-green-100 text-green-800">
+                                <CheckCircle className="h-3 w-3 mr-1" />
+                                Aprobado
+                              </Badge>
+                            )}
+                            {item.status === 'fail' && (
+                              <Badge variant="destructive">
+                                <XCircle className="h-3 w-3 mr-1" />
+                                Falló
+                              </Badge>
+                            )}
+                            {item.status === 'flag' && (
+                              <Badge variant="secondary" className="bg-yellow-100 text-yellow-800">
+                                <AlertTriangle className="h-3 w-3 mr-1" />
+                                Observación
+                              </Badge>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+
+            {/* Evidencias Fotográficas */}
+            {evaluation.evidence && evaluation.evidence.length > 0 && (
+              <div className="space-y-4">
+                <h3 className="text-lg font-semibold">Evidencias Fotográficas</h3>
+                {/* Group evidence by category */}
+                {Object.entries(
+                  evaluation.evidence.reduce((acc, ev) => {
+                    const category = ev.category || 'General'
+                    if (!acc[category]) acc[category] = []
+                    acc[category].push(ev)
+                    return acc
+                  }, {} as Record<string, typeof evaluation.evidence>)
+                ).map(([category, evidenceItems]) => (
+                  <div key={category} className="border rounded-lg p-4">
+                    <h4 className="font-medium mb-3 text-blue-600">{category}</h4>
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                      {evidenceItems.map((evidence) => (
+                        <div key={evidence.id} className="space-y-2">
+                          <div className="aspect-square bg-gray-100 rounded-lg overflow-hidden cursor-pointer hover:opacity-80 transition-opacity">
+                            <img
+                              src={evidence.photo_url}
+                              alt={evidence.description}
+                              className="w-full h-full object-cover"
+                              onClick={() => window.open(evidence.photo_url, '_blank')}
+                            />
+                          </div>
+                          <p className="text-xs text-gray-600 text-center">
+                            {evidence.description}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Notas Generales */}
+            {evaluation.notes && (
+              <div className="space-y-2">
+                <h3 className="text-lg font-semibold">Notas Generales</h3>
+                <div className="p-4 bg-gray-50 rounded-lg">
+                  <p className="text-sm">{evaluation.notes}</p>
+                </div>
+              </div>
+            )}
+
+            {/* Firma */}
+            {evaluation.signature_data && (
+              <div className="space-y-2">
+                <h3 className="text-lg font-semibold">Firma del Técnico</h3>
+                <div className="p-4 border-2 border-dashed border-gray-300 rounded-lg text-center">
+                  <img 
+                    src={evaluation.signature_data} 
+                    alt="Firma" 
+                    className="max-h-24 mx-auto"
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="text-center p-8">
+            <p className="text-gray-500">No se pudieron cargar los detalles de la evaluación</p>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
   )
+}
 
-  const exportReports = () => {
-    // Simple CSV export
-    const csvData = [
-      ['Fecha', 'Técnico', 'Activo', 'Interior', 'Exterior', 'Puntuación', 'Ambos Aprobados'],
-      ...filteredReports.map(report => [
-        new Date(report.completed_date).toLocaleDateString('es-ES'),
-        report.technician_name,
-        `${report.asset_name} (${report.asset_code})`,
-        report.interior_status === 'pass' ? 'Aprobado' : 'No Aprobado',
-        report.exterior_status === 'pass' ? 'Aprobado' : 'No Aprobado',
-        `${report.overall_score}%`,
-        report.passed_both ? 'Sí' : 'No'
-      ])
-    ]
-    
-    const csvContent = csvData.map(row => row.join(',')).join('\n')
-    const blob = new Blob([csvContent], { type: 'text/csv' })
-    const url = window.URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `reporte-limpieza-${selectedPeriod}.csv`
-    link.click()
-    window.URL.revokeObjectURL(url)
-    
-    toast.success('Reporte exportado exitosamente')
+export default function CleanlinessReportsView() {
+  const [reports, setReports] = useState<CleanlinessReport[]>([])
+  const [stats, setStats] = useState<CleanlinessStats | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [dateFilter, setDateFilter] = useState('week')
+  const [technicianFilter, setTechnicianFilter] = useState('all')
+  const [searchTerm, setSearchTerm] = useState('')
+
+  const fetchReports = async () => {
+    setLoading(true)
+    try {
+      const params = new URLSearchParams({
+        period: dateFilter,
+        ...(technicianFilter !== 'all' && { technician: technicianFilter }),
+        ...(searchTerm && { search: searchTerm })
+      })
+      
+      const response = await fetch(`/api/hr/cleanliness-reports?${params}`)
+      if (response.ok) {
+        const data = await response.json()
+        setReports(data.reports)
+        setStats(data.stats)
+      }
+    } catch (error) {
+      console.error('Error fetching reports:', error)
+    } finally {
+      setLoading(false)
+    }
   }
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center py-12">
-        <div className="text-center">
-          <Sparkles className="h-8 w-8 animate-spin mx-auto mb-4 text-green-500" />
-          <p className="text-muted-foreground">Cargando reportes de limpieza...</p>
-        </div>
-      </div>
-    )
+  useEffect(() => {
+    fetchReports()
+  }, [dateFilter, technicianFilter])
+
+  const handleSearch = () => {
+    fetchReports()
   }
 
-  if (error) {
-    return (
-      <Alert>
-        <XCircle className="h-4 w-4" />
-        <AlertDescription>
-          {error}
-        </AlertDescription>
-      </Alert>
-    )
-  }
+  const uniqueTechnicians = Array.from(new Set(reports.map(r => r.technician_name)))
 
   return (
     <div className="space-y-6">
-      {/* Controls */}
+      <div className="flex justify-between items-center">
+        <div>
+          <h1 className="text-3xl font-bold">Reportes de Limpieza</h1>
+          <p className="text-gray-600">
+            Control de evaluaciones de limpieza de unidades
+          </p>
+        </div>
+      </div>
+
+      {/* Filtros */}
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Calendar className="h-5 w-5" />
-            Filtros y Controles
-          </CardTitle>
+          <CardTitle>Filtros</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div>
               <Label htmlFor="period">Período</Label>
-              <Select value={selectedPeriod} onValueChange={setSelectedPeriod}>
+              <Select value={dateFilter} onValueChange={setDateFilter}>
                 <SelectTrigger>
-                  <SelectValue placeholder="Seleccionar período" />
+                  <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="current_month">Mes Actual</SelectItem>
-                  <SelectItem value="last_month">Mes Anterior</SelectItem>
-                  <SelectItem value="last_week">Última Semana</SelectItem>
-                  <SelectItem value="quarter">Último Trimestre</SelectItem>
+                  <SelectItem value="week">Última semana</SelectItem>
+                  <SelectItem value="month">Último mes</SelectItem>
+                  <SelectItem value="quarter">Último trimestre</SelectItem>
                 </SelectContent>
               </Select>
             </div>
             
             <div>
-              <Label htmlFor="technician">Filtrar por Técnico</Label>
+              <Label htmlFor="technician">Técnico</Label>
+              <Select value={technicianFilter} onValueChange={setTechnicianFilter}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos los técnicos</SelectItem>
+                  {uniqueTechnicians.map(tech => (
+                    <SelectItem key={tech} value={tech}>{tech}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            
+            <div>
+              <Label htmlFor="search">Buscar unidad</Label>
               <Input
-                id="technician"
-                placeholder="Buscar técnico..."
-                value={filterTechnician}
-                onChange={(e) => setFilterTechnician(e.target.value)}
+                id="search"
+                placeholder="Código o nombre de unidad"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
               />
             </div>
             
             <div className="flex items-end">
-              <Button onClick={exportReports} variant="outline" className="w-full">
-                <Download className="h-4 w-4 mr-2" />
-                Exportar CSV
+              <Button onClick={handleSearch} className="w-full">
+                Buscar
               </Button>
             </div>
           </div>
         </CardContent>
       </Card>
 
-      {/* Statistics Overview */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Evaluaciones</CardTitle>
-            <Users className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{stats.total_evaluations}</div>
-            <p className="text-xs text-muted-foreground">Evaluaciones de limpieza</p>
-          </CardContent>
-        </Card>
-        
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Tasa de Aprobación</CardTitle>
-            <TrendingUp className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{stats.pass_rate}%</div>
-            <p className="text-xs text-muted-foreground">Operadores que pasaron ambas evaluaciones</p>
-          </CardContent>
-        </Card>
-        
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Evaluaciones Completas</CardTitle>
-            <CheckCircle2 className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{stats.passed_count}</div>
-            <p className="text-xs text-muted-foreground">Interior y exterior aprobados</p>
-          </CardContent>
-        </Card>
-      </div>
-
-      <Tabs defaultValue="reports" className="space-y-4">
-        <TabsList>
-          <TabsTrigger value="reports">Reportes Detallados</TabsTrigger>
-          <TabsTrigger value="performers">Mejores Operadores</TabsTrigger>
-        </TabsList>
-        
-        <TabsContent value="reports" className="space-y-4">
+      {/* Estadísticas */}
+      {stats && (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <Card>
-            <CardHeader>
-              <CardTitle>Evaluaciones de Limpieza</CardTitle>
-              <CardDescription>
-                Resultados detallados de las verificaciones de limpieza
-              </CardDescription>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Total Evaluaciones</CardTitle>
+              <Users className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              {filteredReports.length === 0 ? (
-                <div className="text-center py-8">
-                  <Sparkles className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-                  <p className="text-muted-foreground">No hay evaluaciones para este período</p>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {filteredReports.map((report) => (
-                    <Card key={report.id} className="border-l-4 border-l-green-500">
-                      <CardContent className="pt-4">
-                        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                          <div>
-                            <p className="text-sm font-medium">Técnico</p>
-                            <p className="text-sm text-muted-foreground">{report.technician_name}</p>
-                          </div>
-                          
-                          <div>
-                            <p className="text-sm font-medium">Activo</p>
-                            <p className="text-sm text-muted-foreground">
-                              {report.asset_name} ({report.asset_code})
-                            </p>
-                          </div>
-                          
-                          <div>
-                            <p className="text-sm font-medium">Fecha</p>
-                            <p className="text-sm text-muted-foreground">
-                              {new Date(report.completed_date).toLocaleDateString('es-ES')}
-                            </p>
-                          </div>
-                          
-                          <div>
-                            <p className="text-sm font-medium">Puntuación</p>
-                            <p className="text-sm text-muted-foreground">{report.overall_score}%</p>
-                          </div>
-                        </div>
-                        
-                        <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
-                          <div className="flex items-center justify-between">
-                            <span className="text-sm">Interior:</span>
-                            <Badge variant={report.interior_status === 'pass' ? 'default' : 'destructive'}>
-                              {report.interior_status === 'pass' ? (
-                                <><CheckCircle2 className="h-3 w-3 mr-1" /> Aprobado</>
-                              ) : (
-                                <><XCircle className="h-3 w-3 mr-1" /> No Aprobado</>
-                              )}
-                            </Badge>
-                          </div>
-                          
-                          <div className="flex items-center justify-between">
-                            <span className="text-sm">Exterior:</span>
-                            <Badge variant={report.exterior_status === 'pass' ? 'default' : 'destructive'}>
-                              {report.exterior_status === 'pass' ? (
-                                <><CheckCircle2 className="h-3 w-3 mr-1" /> Aprobado</>
-                              ) : (
-                                <><XCircle className="h-3 w-3 mr-1" /> No Aprobado</>
-                              )}
-                            </Badge>
-                          </div>
-                        </div>
-                        
-                        {(report.interior_notes || report.exterior_notes) && (
-                          <div className="mt-4 space-y-2">
-                            {report.interior_notes && (
-                              <div>
-                                <p className="text-sm font-medium">Notas Interior:</p>
-                                <p className="text-sm text-muted-foreground">{report.interior_notes}</p>
-                              </div>
-                            )}
-                            {report.exterior_notes && (
-                              <div>
-                                <p className="text-sm font-medium">Notas Exterior:</p>
-                                <p className="text-sm text-muted-foreground">{report.exterior_notes}</p>
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
-              )}
+              <div className="text-2xl font-bold">{stats.total_evaluations}</div>
+              <p className="text-xs text-muted-foreground">
+                Evaluaciones realizadas
+              </p>
             </CardContent>
           </Card>
-        </TabsContent>
-        
-        <TabsContent value="performers">
+          
           <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Trophy className="h-5 w-5" />
-                Mejores Operadores
-              </CardTitle>
-              <CardDescription>
-                Operadores con mejor desempeño en evaluaciones de limpieza
-              </CardDescription>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Tasa de Aprobación</CardTitle>
+              <TrendingUp className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              {stats.top_performers.length === 0 ? (
-                <div className="text-center py-8">
-                  <Trophy className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-                  <p className="text-muted-foreground">No hay datos de rendimiento disponibles</p>
-                </div>
+              <div className="text-2xl font-bold">{stats.pass_rate.toFixed(1)}%</div>
+              <p className="text-xs text-muted-foreground">
+                {stats.passed_count} de {stats.total_evaluations} aprobadas
+              </p>
+            </CardContent>
+          </Card>
+          
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Mejor Técnico</CardTitle>
+              <Users className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                {stats.top_performers[0]?.technician || 'N/A'}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {stats.top_performers[0]?.score.toFixed(1)}% de aprobación
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Lista de Reportes */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Evaluaciones de Limpieza</CardTitle>
+          <CardDescription>
+            Lista de evaluaciones realizadas en el período seleccionado
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {loading ? (
+            <div className="flex items-center justify-center p-8">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {reports.length === 0 ? (
+                <Alert>
+                  <AlertTriangle className="h-4 w-4" />
+                  <AlertDescription>
+                    No se encontraron evaluaciones para los filtros seleccionados.
+                  </AlertDescription>
+                </Alert>
               ) : (
-                <div className="space-y-4">
-                  {stats.top_performers.map((performer, index) => (
-                    <div key={performer.technician} className="flex items-center justify-between p-4 border rounded-lg">
-                      <div className="flex items-center space-x-4">
-                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary text-primary-foreground">
-                          #{index + 1}
+                reports.map((report) => (
+                  <div key={report.id} className="border rounded-lg p-4 hover:bg-gray-50">
+                    <div className="flex justify-between items-start">
+                      <div className="space-y-2 flex-1">
+                        <div className="flex items-center space-x-4">
+                          <div>
+                            <p className="font-semibold">Técnico</p>
+                            <p className="text-sm text-gray-600">{report.technician_name}</p>
+                          </div>
+                          <div>
+                            <p className="font-semibold">Activo</p>
+                            <p className="text-sm text-gray-600">
+                              {report.asset_name} - {report.asset_code}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="font-semibold">Fecha</p>
+                            <p className="text-sm text-gray-600">
+                              {new Date(report.completed_date).toLocaleDateString('es-MX')}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="font-semibold">Puntuación</p>
+                            <p className="text-sm text-gray-600">{report.overall_score}%</p>
+                          </div>
                         </div>
-                        <div>
-                          <p className="font-medium">{performer.technician}</p>
-                          <p className="text-sm text-muted-foreground">
-                            {performer.evaluations} evaluaciones
-                          </p>
+                        
+                        <div className="flex items-center space-x-4">
+                          <div>
+                            <span className="text-sm font-medium">Interior:</span>
+                            <Badge 
+                              variant={report.interior_status === 'pass' ? 'default' : 'destructive'}
+                              className={report.interior_status === 'pass' ? 'bg-green-100 text-green-800 ml-2' : 'ml-2'}
+                            >
+                              {report.interior_status === 'pass' ? (
+                                <>
+                                  <CheckCircle className="h-3 w-3 mr-1" />
+                                  Aprobado
+                                </>
+                              ) : (
+                                <>
+                                  <XCircle className="h-3 w-3 mr-1" />
+                                  Falló
+                                </>
+                              )}
+                            </Badge>
+                          </div>
+                          
+                          <div>
+                            <span className="text-sm font-medium">Exterior:</span>
+                            <Badge 
+                              variant={report.exterior_status === 'pass' ? 'default' : 'destructive'}
+                              className={report.exterior_status === 'pass' ? 'bg-green-100 text-green-800 ml-2' : 'ml-2'}
+                            >
+                              {report.exterior_status === 'pass' ? (
+                                <>
+                                  <CheckCircle className="h-3 w-3 mr-1" />
+                                  Aprobado
+                                </>
+                              ) : (
+                                <>
+                                  <XCircle className="h-3 w-3 mr-1" />
+                                  Falló
+                                </>
+                              )}
+                            </Badge>
+                          </div>
                         </div>
                       </div>
-                      <Badge variant="outline" className="text-lg">
-                        {performer.score}%
-                      </Badge>
+                      
+                      <div>
+                        <EvaluationViewDialog reportId={report.id} />
+                      </div>
                     </div>
-                  ))}
-                </div>
+                  </div>
+                ))
               )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   )
 } 

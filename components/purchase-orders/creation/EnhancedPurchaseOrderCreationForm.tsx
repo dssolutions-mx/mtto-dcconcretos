@@ -17,6 +17,8 @@ import {
 import { PurchaseOrderType } from "@/types/purchase-orders"
 import { PurchaseOrderTypeSelector } from "./PurchaseOrderTypeSelector"
 import { DirectPurchaseForm } from "./DirectPurchaseForm"
+import { DirectServiceForm } from "./DirectServiceForm"
+import { SpecialOrderForm } from "./SpecialOrderForm"
 
 interface EnhancedPurchaseOrderCreationFormProps {
   workOrderId?: string
@@ -208,29 +210,19 @@ export function EnhancedPurchaseOrderCreationForm({
           )}
           
           {selectedType === PurchaseOrderType.DIRECT_SERVICE && (
-            <div className="text-center py-12">
-              <Wrench className="h-16 w-16 mx-auto text-muted-foreground mb-4" />
-              <h3 className="text-lg font-medium mb-2">Servicio Directo</h3>
-              <p className="text-muted-foreground mb-4">
-                El formulario para servicios directos estará disponible próximamente.
-              </p>
-              <Button variant="outline" onClick={handleBackToTypeSelection}>
-                Volver a Selección de Tipo
-              </Button>
-            </div>
+            <DirectServiceForm
+              workOrderId={workOrderIdState}
+              onSuccess={handleFormSuccess}
+              onCancel={handleFormCancel}
+            />
           )}
 
           {selectedType === PurchaseOrderType.SPECIAL_ORDER && (
-            <div className="text-center py-12">
-              <Building2 className="h-16 w-16 mx-auto text-muted-foreground mb-4" />
-              <h3 className="text-lg font-medium mb-2">Pedido Especial</h3>
-              <p className="text-muted-foreground mb-4">
-                El formulario para pedidos especiales estará disponible próximamente.
-              </p>
-              <Button variant="outline" onClick={handleBackToTypeSelection}>
-                Volver a Selección de Tipo
-              </Button>
-            </div>
+            <SpecialOrderForm
+              workOrderId={workOrderIdState}
+              onSuccess={handleFormSuccess}
+              onCancel={handleFormCancel}
+            />
           )}
         </div>
       )}

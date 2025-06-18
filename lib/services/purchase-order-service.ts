@@ -79,6 +79,7 @@ export class PurchaseOrderService {
           service_provider: request.service_provider,
           items: request.items,
           notes: request.notes,
+          quotation_url: request.quotation_url,
           requested_by: user_id,
           status: initialStatus, // Auto-advance to pending approval
           created_at: new Date().toISOString(),
@@ -148,20 +149,25 @@ export class PurchaseOrderService {
         throw new Error('Purchase order not found')
       }
       
-      // Get allowed statuses using function from Stage 1
-      const { data: allowedStatuses, error: statusError } = await supabase
-        .rpc('get_allowed_statuses', { p_po_type: po.po_type })
+      // Get valid next statuses based on current status using the new function
+      const { data: nextStatuses, error: statusError } = await supabase
+        .rpc('get_valid_next_statuses', { 
+          p_current_status: po.status, 
+          p_po_type: po.po_type 
+        })
       
       if (statusError) {
-        throw new Error('Failed to get allowed statuses')
+        console.error('Error getting valid next statuses:', statusError)
+        console.error('Function parameters:', { p_current_status: po.status, p_po_type: po.po_type })
+        throw new Error(`Failed to get valid next statuses: ${statusError.message}`)
       }
       
       return {
         current_status: po.status,
-        allowed_next_statuses: allowedStatuses || [],
+        allowed_next_statuses: nextStatuses || [],
         po_type: po.po_type as PurchaseOrderType,
         requires_quote: po.requires_quote,
-        can_advance: (allowedStatuses?.length || 0) > 0,
+        can_advance: (nextStatuses?.length || 0) > 0,
         workflow_stage: this.getWorkflowStage(po.status, po.po_type),
         recommendation: this.getWorkflowRecommendation(po.status, po.po_type)
       }
@@ -347,8 +353,9 @@ export class PurchaseOrderService {
         pending_approval: 'Esperando Aprobación',
         approved: 'Aprobada - Realizar Pedido',
         ordered: 'Pedido Realizado - Esperando Entrega',
-        received: 'Recibida - Procesar Factura',
-        invoiced: 'Facturada - Proceso Completado'
+        received: 'Recibida - Subir Comprobante',
+        receipt_uploaded: 'En Validación Administrativa',
+        validated: 'Proceso Completado'
       }
     }
     
@@ -368,8 +375,12 @@ export class PurchaseOrderService {
       if (poType === 'special_order') return 'Realice el pedido formal con el proveedor'
     }
     
-    if (status === 'purchased') {
+    if (status === 'purchased' || status === 'received') {
       return 'Suba el comprobante/factura para completar el proceso'
+    }
+    
+    if (status === 'receipt_uploaded') {
+      return 'Comprobante subido. Esperando validación administrativa.'
     }
     
     return 'Continúe con el siguiente paso del proceso'

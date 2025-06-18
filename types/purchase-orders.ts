@@ -29,8 +29,7 @@ export enum EnhancedPOStatus {
   // Para SPECIAL_ORDER (estados adicionales)
   QUOTED = "quoted",                      // Cotizado
   ORDERED = "ordered",                    // Pedido realizado
-  RECEIVED = "received",                  // Recibido/Completado
-  INVOICED = "invoiced"                  // Facturado
+  RECEIVED = "received"                   // Recibido/Completado
 }
 
 // Base interface extending existing purchase_orders table
@@ -61,6 +60,7 @@ export interface EnhancedPurchaseOrder {
   purchased_at?: string                   // Timestamp de compra
   quote_required_reason?: string          // Razón de cotización
   enhanced_status?: string                // Enhanced workflow status
+  quotation_url?: string                  // URL del archivo de cotización
 }
 
 // Interfaces específicas por tipo
@@ -90,6 +90,7 @@ export interface CreatePurchaseOrderRequest {
   total_amount: number
   payment_method?: PaymentMethod
   notes?: string
+  quotation_url?: string       // URL del archivo de cotización (requerido si requires_quote = true)
   
   // Campos específicos por tipo
   store_location?: string      // Para direct_purchase (opcional)

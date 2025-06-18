@@ -58,22 +58,34 @@ export async function PATCH(
       updateData.purchased_at = new Date().toISOString()
     }
 
-    // Handle receipt upload separately
+    // Handle receipt upload separately - prevent duplicates
     if (body.receipt_url) {
-      const { error: receiptError } = await supabase
+      // Check if a receipt with this URL already exists
+      const { data: existingReceipt, error: checkError } = await supabase
         .from('purchase_order_receipts')
-        .insert({
-          purchase_order_id: id,
-          file_url: body.receipt_url,
-          expense_type: 'purchase',
-          description: 'Comprobante de compra',
-          uploaded_by: user.id,
-        })
+        .select('id')
+        .eq('purchase_order_id', id)
+        .eq('file_url', body.receipt_url)
+        .single()
 
-      if (receiptError) {
-        console.error('Error inserting receipt:', receiptError)
-        return NextResponse.json({ error: 'Failed to save receipt' }, { status: 500 })
+      // Only insert if receipt doesn't exist
+      if (!existingReceipt && !checkError) {
+        const { error: receiptError } = await supabase
+          .from('purchase_order_receipts')
+          .insert({
+            purchase_order_id: id,
+            file_url: body.receipt_url,
+            expense_type: 'purchase',
+            description: 'Comprobante de compra',
+            uploaded_by: user.id,
+          })
+
+        if (receiptError) {
+          console.error('Error inserting receipt:', receiptError)
+          return NextResponse.json({ error: 'Failed to save receipt' }, { status: 500 })
+        }
       }
+      // If receipt already exists, we just continue without error
     }
 
     // Update purchase order if there are changes

@@ -12,6 +12,7 @@ ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS service_provider VARCHAR(25
 ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS actual_amount DECIMAL(10,2);
 ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS purchased_at TIMESTAMP WITH TIME ZONE;
 ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS quote_required_reason TEXT;
+ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS quotation_url TEXT;
 
 -- 2. Create enums for better type safety
 CREATE TYPE purchase_order_type AS ENUM ('direct_purchase', 'direct_service', 'special_order');
