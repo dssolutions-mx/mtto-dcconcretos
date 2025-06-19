@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, Suspense } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription } from "@/components/ui/alert"
@@ -26,7 +26,7 @@ import { useRouter, useSearchParams } from "next/navigation"
 import Link from "next/link"
 import { getRoleDisplayName, type ModulePermissions } from "@/lib/auth/role-permissions"
 
-export default function DashboardPage() {
+function DashboardContent() {
   const { profile, ui, authorizationLimit, organizationalContext } = useAuth()
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -365,5 +365,34 @@ export default function DashboardPage() {
         </Alert>
       )}
     </div>
+  )
+}
+
+function DashboardFallback() {
+  return (
+    <div className="space-y-6">
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Shield className="h-5 w-5" />
+            Cargando Panel de Control...
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="animate-pulse space-y-4">
+            <div className="h-4 bg-gray-200 rounded w-3/4"></div>
+            <div className="h-4 bg-gray-200 rounded w-1/2"></div>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
+
+export default function DashboardPage() {
+  return (
+    <Suspense fallback={<DashboardFallback />}>
+      <DashboardContent />
+    </Suspense>
   )
 }
