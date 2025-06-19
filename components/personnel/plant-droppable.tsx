@@ -47,9 +47,10 @@ interface PlantDroppableProps {
   plant: Plant
   operators: Profile[]
   isOver?: boolean
+  compact?: boolean
 }
 
-export function PlantDroppable({ plant, operators, isOver }: PlantDroppableProps) {
+export function PlantDroppable({ plant, operators, isOver, compact = false }: PlantDroppableProps) {
   const { setNodeRef } = useDroppable({
     id: plant.id,
   })
@@ -64,17 +65,19 @@ export function PlantDroppable({ plant, operators, isOver }: PlantDroppableProps
         isOver 
           ? 'ring-2 ring-blue-500 bg-blue-50 dark:bg-blue-950/20' 
           : 'hover:shadow-md'
-      }`}
+      } ${compact ? 'border-l-4 border-l-blue-500' : ''}`}
     >
-      <CardHeader className="pb-3">
+      <CardHeader className={compact ? "pb-2 pt-3" : "pb-3"}>
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-2">
-            <Building2 className="h-5 w-5 text-blue-600" />
+            <Building2 className={`text-blue-600 ${compact ? 'h-4 w-4' : 'h-5 w-5'}`} />
             <div>
-              <CardTitle className="text-lg">{plant.name}</CardTitle>
-              <p className="text-sm text-muted-foreground">
-                Código: {plant.code}
-              </p>
+              <CardTitle className={compact ? "text-sm" : "text-lg"}>{plant.name}</CardTitle>
+              {!compact && (
+                <p className="text-sm text-muted-foreground">
+                  Código: {plant.code}
+                </p>
+              )}
             </div>
           </div>
           <Badge variant="secondary" className="flex items-center space-x-1">
@@ -83,7 +86,7 @@ export function PlantDroppable({ plant, operators, isOver }: PlantDroppableProps
           </Badge>
         </div>
         
-        {plant.business_units && (
+        {plant.business_units && !compact && (
           <div className="flex items-center space-x-1 text-sm text-muted-foreground">
             <MapPin className="h-3 w-3" />
             <span>{plant.business_units.name}</span>
@@ -92,20 +95,20 @@ export function PlantDroppable({ plant, operators, isOver }: PlantDroppableProps
       </CardHeader>
 
       <CardContent className="pt-0">
-        <ScrollArea className="h-64">
+        <ScrollArea className={compact ? "h-32" : "h-64"}>
           <div className="space-y-2">
             {plantOperators.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground">
-                <Users className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                <p className="text-sm">Sin personal asignado</p>
-                <p className="text-xs">Arrastra operadores aquí</p>
+              <div className="text-center py-4 text-muted-foreground">
+                <Users className={`mx-auto mb-2 opacity-50 ${compact ? 'h-6 w-6' : 'h-8 w-8'}`} />
+                <p className={compact ? "text-xs" : "text-sm"}>Sin personal asignado</p>
+                {!compact && <p className="text-xs">Arrastra operadores aquí</p>}
               </div>
             ) : (
               plantOperators.map((operator) => (
                 <PersonnelDraggableItem
                   key={operator.id}
                   operator={operator}
-                  compact={true}
+                  compact={compact}
                 />
               ))
             )}
@@ -140,7 +143,7 @@ export function BusinessUnitDroppable({ businessUnit, operators, isOver }: Busin
   return (
     <Card 
       ref={setNodeRef}
-      className={`h-full transition-all duration-200 ${
+      className={`h-full transition-all duration-200 border-l-4 border-l-green-500 ${
         isOver 
           ? 'ring-2 ring-green-500 bg-green-50 dark:bg-green-950/20' 
           : 'hover:shadow-md'
@@ -171,7 +174,7 @@ export function BusinessUnitDroppable({ businessUnit, operators, isOver }: Busin
               <div className="text-center py-8 text-muted-foreground">
                 <Users className="h-8 w-8 mx-auto mb-2 opacity-50" />
                 <p className="text-sm">Sin personal de unidad</p>
-                <p className="text-xs">Personal asignado a plantas específicas</p>
+                <p className="text-xs">Arrastra personal aquí para asignar a nivel unidad</p>
               </div>
             ) : (
               businessUnitOperators.map((operator) => (
@@ -200,30 +203,30 @@ export function UnassignedDroppable({ operators, isOver }: UnassignedDroppablePr
     id: 'unassigned',
   })
 
-  // Show operators that are not assigned to any specific plant (regardless of business unit assignment)
-  const unassignedOperators = operators.filter(op => !op.plant_id)
+  // Show operators not assigned to any plant or business unit
+  const unassignedOperators = operators.filter(op => !op.plant_id && !op.business_unit_id)
 
   return (
     <Card 
       ref={setNodeRef}
-      className={`h-full transition-all duration-200 ${
+      className={`h-full transition-all duration-200 border-l-4 border-l-gray-400 ${
         isOver 
-          ? 'ring-2 ring-orange-500 bg-orange-50 dark:bg-orange-950/20' 
+          ? 'ring-2 ring-gray-500 bg-gray-50 dark:bg-gray-950/20' 
           : 'hover:shadow-md'
       }`}
     >
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-2">
-            <Users className="h-5 w-5 text-orange-600" />
+            <Users className="h-5 w-5 text-gray-600" />
             <div>
               <CardTitle className="text-lg">Sin Asignar</CardTitle>
               <p className="text-sm text-muted-foreground">
-                Personal disponible
+                Personal disponible para asignación
               </p>
             </div>
           </div>
-          <Badge variant="outline" className="flex items-center space-x-1">
+          <Badge variant="secondary" className="flex items-center space-x-1">
             <Users className="h-3 w-3" />
             <span>{unassignedOperators.length}</span>
           </Badge>
@@ -237,15 +240,16 @@ export function UnassignedDroppable({ operators, isOver }: UnassignedDroppablePr
               <div className="text-center py-8 text-muted-foreground">
                 <Users className="h-8 w-8 mx-auto mb-2 opacity-50" />
                 <p className="text-sm">Todo el personal está asignado</p>
+                <p className="text-xs">Arrastra personal aquí para desasignar</p>
               </div>
             ) : (
-                             unassignedOperators.map((operator) => (
-                 <PersonnelDraggableItem
-                   key={operator.id}
-                   operator={operator}
-                   compact={true}
-                 />
-               ))
+              unassignedOperators.map((operator) => (
+                <PersonnelDraggableItem
+                  key={operator.id}
+                  operator={operator}
+                  compact={true}
+                />
+              ))
             )}
           </div>
         </ScrollArea>

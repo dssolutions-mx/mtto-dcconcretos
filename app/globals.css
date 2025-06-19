@@ -11,6 +11,61 @@ body {
     text-wrap: balance;
   }
   
+  /* Custom scrollbar styles for better UX */
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(209 213 219) transparent;
+  }
+  
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background-color: rgb(209 213 219);
+    border-radius: 3px;
+    border: 1px solid transparent;
+  }
+  
+  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+    background-color: rgb(156 163 175);
+  }
+  
+  .scrollbar-thumb-green-200::-webkit-scrollbar-thumb {
+    background-color: rgb(187 247 208);
+  }
+  
+  .scrollbar-thumb-green-200::-webkit-scrollbar-thumb:hover {
+    background-color: rgb(134 239 172);
+  }
+  
+  .scrollbar-thumb-blue-200::-webkit-scrollbar-thumb {
+    background-color: rgb(191 219 254);
+  }
+  
+  .scrollbar-thumb-blue-200::-webkit-scrollbar-thumb:hover {
+    background-color: rgb(147 197 253);
+  }
+  
+  /* Smooth scroll behavior */
+  .smooth-scroll {
+    scroll-behavior: smooth;
+  }
+  
+  /* Custom background colors */
+  .bg-green-25 {
+    background-color: rgb(247 254 231);
+  }
+  
+  .bg-blue-25 {
+    background-color: rgb(239 246 255);
+  }
+  
   /* Z-index utilities for proper layering */
   .z-sidebar-tooltip {
     z-index: 9999999;
