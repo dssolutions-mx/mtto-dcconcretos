@@ -1155,7 +1155,7 @@ export function AssetEditForm({ assetId }: AssetEditFormProps) {
                 downtime: incident.downtime?.toString(),
                 laborHours: incident.labor_hours?.toString(),
                 laborCost: incident.labor_cost,
-                parts: incident.parts ? JSON.parse(incident.parts) : undefined,
+                parts: incident.parts ? (typeof incident.parts === 'string' ? JSON.parse(incident.parts) : incident.parts) : undefined,
                 totalCost: incident.total_cost,
                 workOrder: incident.work_order,
                 status: incident.status,
