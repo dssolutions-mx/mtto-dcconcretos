@@ -8,8 +8,18 @@ import { DashboardShell } from "@/components/dashboard/dashboard-shell";
 import { DashboardHeader } from "@/components/dashboard/dashboard-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { ArrowLeft, Loader2, Edit } from "lucide-react";
+import { ArrowLeft, Loader2, Edit, Trash2 } from "lucide-react";
 import Link from "next/link";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 interface MaintenancePageProps {
   params: Promise<{
@@ -30,6 +40,8 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
   const [error, setError] = useState<Error | null>(null);
   const [isEditMode, setIsEditMode] = useState<boolean>(false);
   const [saving, setSaving] = useState<boolean>(false);
+  const [showDeleteDialog, setShowDeleteDialog] = useState<boolean>(false);
+  const [deleting, setDeleting] = useState<boolean>(false);
   const router = useRouter();
 
   // Fetch maintenance data on the client side
@@ -147,6 +159,31 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
     }
   };
 
+  const handleDelete = async () => {
+    setDeleting(true);
+    try {
+      const supabase = createClient();
+      
+      const { error } = await supabase
+        .from("maintenance_history")
+        .delete()
+        .eq("id", maintenanceId);
+
+      if (error) {
+        throw error;
+      }
+
+      // Redirigir a la lista de mantenimientos después de eliminar exitosamente
+      router.push(`/activos/${id}/mantenimiento`);
+    } catch (err) {
+      console.error("Error al eliminar:", err);
+      alert("Error al eliminar el registro de mantenimiento. Por favor intente nuevamente.");
+    } finally {
+      setDeleting(false);
+      setShowDeleteDialog(false);
+    }
+  };
+
   if (error) {
     return (
       <DashboardShell>
@@ -228,6 +265,16 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
               Editar
             </Button>
           )}
+          {!isEditMode && (
+            <Button 
+              variant="destructive" 
+              onClick={() => setShowDeleteDialog(true)}
+              disabled={deleting}
+            >
+              <Trash2 className="mr-2 h-4 w-4" />
+              Eliminar
+            </Button>
+          )}
         </div>
       </DashboardHeader>
       
@@ -266,6 +313,35 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
         onCancelEdit={() => setIsEditMode(false)}
         saving={saving}
       />
+      
+      <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Está seguro que desea eliminar este registro?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Esta acción no se puede deshacer. Se eliminará permanentemente el registro de mantenimiento 
+              del {maintenance?.date || ''} con {maintenance?.hours || 0} horas registradas.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDelete}
+              disabled={deleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Eliminando...
+                </>
+              ) : (
+                'Eliminar'
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </DashboardShell>
   )
 }
