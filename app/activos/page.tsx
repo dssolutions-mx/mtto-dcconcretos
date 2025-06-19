@@ -7,6 +7,7 @@ import { DashboardShell } from "@/components/dashboard/dashboard-shell"
 import { AssetsList } from "@/components/assets/assets-list"
 import { Plus, Calendar, CheckCircle, AlertTriangle, Package, Wrench, FileText, Settings } from "lucide-react"
 import { useAssets } from "@/hooks/useSupabase"
+import { useAuth } from "@/components/auth/auth-provider"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { useState, useEffect } from "react"
@@ -24,6 +25,7 @@ interface AssetStats {
 
 export default function AssetsPage() {
   const { assets, loading: assetsLoading, error: assetsError, refetch } = useAssets()
+  const { ui } = useAuth()
   const [stats, setStats] = useState<AssetStats>({
     total: 0,
     operational: 0,
@@ -118,13 +120,14 @@ export default function AssetsPage() {
         heading="Gestión de Activos"
         text="Administra y supervisa todos los equipos de la empresa"
       >
-        {/* Primary action - most important */}
-        <Button asChild size="default">
-          <Link href="/activos/crear">
-            <Plus className="mr-2 h-4 w-4" />
-            Nuevo Activo
-          </Link>
-        </Button>
+        {ui.canShowCreateButton('assets') && (
+          <Button asChild size="default">
+            <Link href="/activos/crear">
+              <Plus className="mr-2 h-4 w-4" />
+              Nuevo Activo
+            </Link>
+          </Button>
+        )}
       </DashboardHeader>
       
       {/* Summary Cards */}
@@ -200,37 +203,38 @@ export default function AssetsPage() {
           <h3 className="text-lg font-medium">Acciones Rápidas</h3>
           
           <div className="flex flex-wrap gap-2">
-            {/* Calendar - High priority */}
-            <Button variant="outline" size="sm" asChild>
-              <Link href="/calendario">
-                <Calendar className="h-4 w-4 mr-2" />
-                Calendario
-              </Link>
-            </Button>
-            
-            {/* Models management */}
-            <Button variant="outline" size="sm" asChild>
-              <Link href="/modelos">
-                <Settings className="h-4 w-4 mr-2" />
-                Modelos
-              </Link>
-            </Button>
-            
-            {/* Reports */}
-            <Button variant="outline" size="sm" asChild>
-              <Link href="/reportes">
-                <FileText className="h-4 w-4 mr-2" />
-                Reportes
-              </Link>
-            </Button>
-
-            {/* Preventive maintenance overview */}
-            <Button variant="outline" size="sm" asChild>
-              <Link href="/preventivo">
-                <Wrench className="h-4 w-4 mr-2" />
-                Preventivo
-              </Link>
-            </Button>
+            {ui.shouldShowInNavigation('maintenance') && (
+              <Button variant="outline" size="sm" asChild>
+                <Link href="/calendario">
+                  <Calendar className="h-4 w-4 mr-2" />
+                  Calendario
+                </Link>
+              </Button>
+            )}
+            {ui.canShowCreateButton('maintenance') && (
+              <Button variant="outline" size="sm" asChild>
+                <Link href="/modelos">
+                  <Settings className="h-4 w-4 mr-2" />
+                  Modelos
+                </Link>
+              </Button>
+            )}
+            {ui.shouldShowInNavigation('reports') && (
+              <Button variant="outline" size="sm" asChild>
+                <Link href="/reportes">
+                  <FileText className="h-4 w-4 mr-2" />
+                  Reportes
+                </Link>
+              </Button>
+            )}
+            {ui.shouldShowInNavigation('maintenance') && (
+              <Button variant="outline" size="sm" asChild>
+                <Link href="/preventivo">
+                  <Wrench className="h-4 w-4 mr-2" />
+                  Preventivo
+                </Link>
+              </Button>
+            )}
           </div>
         </div>
       </div>
@@ -243,8 +247,7 @@ export default function AssetsPage() {
       
       <AssetsList 
         assets={assets || []} 
-        isLoading={assetsLoading}
-        onRefresh={refetch}
+        loading={assetsLoading}
       />
     </DashboardShell>
   )

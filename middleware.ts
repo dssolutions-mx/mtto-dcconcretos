@@ -55,6 +55,72 @@ export async function middleware(request: NextRequest) {
     return response
   }
 
+  // Role-based route protection for authenticated users
+  if (user && !isPublicRoute && !isApiRoute) {
+    try {
+      // Get user profile with role information
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('role, status')
+        .eq('id', user.id)
+        .eq('status', 'active')
+        .single()
+
+      if (profileError || !profile) {
+        console.error('Profile not found or inactive:', profileError)
+        const loginUrl = new URL("/login", request.url)
+        loginUrl.searchParams.set("error", "profile_not_found")
+        const response = NextResponse.redirect(loginUrl)
+        supabaseResponse.cookies.getAll().forEach(cookie => {
+          response.cookies.set(cookie.name, cookie.value, cookie)
+        })
+        return response
+      }
+
+      // Define role-based route restrictions
+      const routeRestrictions: Record<string, string[]> = {
+        '/checklists': ['GERENCIA_GENERAL', 'JEFE_UNIDAD_NEGOCIO', 'ENCARGADO_MANTENIMIENTO', 'JEFE_PLANTA', 'OPERADOR', 'DOSIFICADOR'],
+        '/gestion/personal': ['GERENCIA_GENERAL', 'JEFE_UNIDAD_NEGOCIO', 'AREA_ADMINISTRATIVA', 'JEFE_PLANTA'],
+        '/compras': ['GERENCIA_GENERAL', 'JEFE_UNIDAD_NEGOCIO', 'AREA_ADMINISTRATIVA', 'JEFE_PLANTA', 'ENCARGADO_MANTENIMIENTO']
+      }
+
+      // Check if current route has role restrictions
+      for (const [restrictedPath, allowedRoles] of Object.entries(routeRestrictions)) {
+        if (pathname.startsWith(restrictedPath)) {
+          if (!allowedRoles.includes(profile.role)) {
+            console.log(`Access denied for role ${profile.role} to ${restrictedPath}`)
+            const dashboardUrl = new URL("/dashboard", request.url)
+            dashboardUrl.searchParams.set("error", "access_denied")
+            dashboardUrl.searchParams.set("module", restrictedPath.replace('/', ''))
+            const response = NextResponse.redirect(dashboardUrl)
+            supabaseResponse.cookies.getAll().forEach(cookie => {
+              response.cookies.set(cookie.name, cookie.value, cookie)
+            })
+            return response
+          }
+          break
+        }
+      }
+
+      // Special case: AREA_ADMINISTRATIVA cannot access checklists
+      if (pathname.startsWith('/checklists') && profile.role === 'AREA_ADMINISTRATIVA') {
+        console.log('Access denied for AREA_ADMINISTRATIVA to checklists')
+        const dashboardUrl = new URL("/dashboard", request.url)
+        dashboardUrl.searchParams.set("error", "access_denied")
+        dashboardUrl.searchParams.set("module", "checklists")
+        const response = NextResponse.redirect(dashboardUrl)
+        supabaseResponse.cookies.getAll().forEach(cookie => {
+          response.cookies.set(cookie.name, cookie.value, cookie)
+        })
+        return response
+      }
+
+    } catch (error) {
+      console.error('Error checking role permissions:', error)
+      // Continue with normal flow if there's an error
+    }
+  }
+
   // Si no hay sesión y no es una ruta pública, redirigir al login
   if (!user && !isPublicRoute) {
     // Para rutas de API, devolver 401 en lugar de redirigir

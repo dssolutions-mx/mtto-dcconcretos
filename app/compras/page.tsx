@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Plus, Store, Wrench, Building2, Sparkles, Loader2, Receipt } from "lucide-react"
+import { RoleGuard } from "@/components/auth/role-guard"
 
 export const metadata: Metadata = {
   title: "Órdenes de Compra | Sistema de Gestión de Mantenimiento",
@@ -34,20 +35,25 @@ export default function PurchaseOrdersPage() {
           text="Gestiona las órdenes de compra generadas a partir de órdenes de trabajo."
         />
         <div className="flex space-x-2">
-          <Link href="/compras/comprobantes">
-            <Button variant="outline">
-              <Receipt className="mr-2 h-4 w-4" />
-              Ver Comprobantes
-            </Button>
-          </Link>
-          <Link href="/compras/crear-tipificada">
-            <Button>
-              <Plus className="mr-2 h-4 w-4" />
-              Nueva Orden Tipificada
-            </Button>
-          </Link>
+          <RoleGuard module="purchases">
+            <Link href="/compras/comprobantes">
+              <Button variant="outline">
+                <Receipt className="mr-2 h-4 w-4" />
+                Ver Comprobantes
+              </Button>
+            </Link>
+          </RoleGuard>
+          <RoleGuard module="purchases" requireCreate>
+            <Link href="/compras/crear-tipificada">
+              <Button>
+                <Plus className="mr-2 h-4 w-4" />
+                Nueva Orden Tipificada
+              </Button>
+            </Link>
+          </RoleGuard>
         </div>
       </div>
+
 
       {/* Enhanced Purchase Order System Banner */}
       <Card className="mb-6 bg-gradient-to-r from-blue-50 to-purple-50 border-blue-200">
@@ -103,12 +109,14 @@ export default function PurchaseOrdersPage() {
           </div>
 
           <div className="flex justify-center pt-4">
-            <Link href="/compras/crear-tipificada">
-              <Button size="lg" className="min-w-[200px]">
-                <Plus className="mr-2 h-4 w-4" />
-                Crear Orden Tipificada
-              </Button>
-            </Link>
+            <RoleGuard module="purchases" requireCreate>
+              <Link href="/compras/crear-tipificada">
+                <Button size="lg" className="min-w-[200px]">
+                  <Plus className="mr-2 h-4 w-4" />
+                  Crear Orden Tipificada
+                </Button>
+              </Link>
+            </RoleGuard>
           </div>
         </CardContent>
       </Card>

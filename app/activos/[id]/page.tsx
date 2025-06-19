@@ -2,6 +2,7 @@
 
 import { useState, useMemo, useEffect, use } from "react";
 import { useAsset, useMaintenanceHistory, useIncidents, useUpcomingMaintenance } from "@/hooks/useSupabase";
+import { useAuth } from "@/components/auth/auth-provider";
 import { DashboardHeader } from "@/components/dashboard/dashboard-header";
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -71,6 +72,7 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
   const { asset: rawAsset, loading, error } = useAsset(assetId);
   const { history: maintenanceHistory, loading: maintenanceLoading } = useMaintenanceHistory(assetId);
   const { incidents, loading: incidentsLoading } = useIncidents(assetId);
+  const { ui } = useAuth();
   const [activeTab, setActiveTab] = useState("status");
   const [upcomingMaintenances, setUpcomingMaintenances] = useState<any[]>([]);
   const [upcomingLoading, setUpcomingLoading] = useState(true);
@@ -485,30 +487,36 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
                 </div>
                 
                 <div className="flex flex-col space-y-2 sm:space-y-0 sm:flex-row sm:gap-2">
-                  <Button size="sm" asChild className="w-full sm:w-auto justify-center">
-                    <Link href={`/activos/${assetId}/mantenimiento/nuevo`}>
-                      <Wrench className="h-4 w-4 mr-2" />
-                      Nueva Orden
-                    </Link>
-                  </Button>
-                  <Button size="sm" variant="outline" asChild className="w-full sm:w-auto justify-center">
-                    <Link href={`/activos/${assetId}/incidentes`}>
-                      <AlertTriangle className="h-4 w-4 mr-2" />
-                      Incidente
-                    </Link>
-                  </Button>
+                  {ui.shouldShowInNavigation('work_orders') && (
+                    <Button size="sm" asChild className="w-full sm:w-auto justify-center">
+                      <Link href={`/activos/${assetId}/mantenimiento/nuevo`}>
+                        <Wrench className="h-4 w-4 mr-2" />
+                        Nueva Orden
+                      </Link>
+                    </Button>
+                  )}
+                  {ui.shouldShowInNavigation('maintenance') && (
+                    <Button size="sm" variant="outline" asChild className="w-full sm:w-auto justify-center">
+                      <Link href={`/activos/${assetId}/incidentes`}>
+                        <AlertTriangle className="h-4 w-4 mr-2" />
+                        Incidente
+                      </Link>
+                    </Button>
+                  )}
                   <Button size="sm" variant="outline" asChild className="w-full sm:w-auto justify-center">
                     <Link href={`/activos/${assetId}/reporte-produccion`}>
                       <FileText className="h-4 w-4 mr-2" />
                       Reporte Producción
                     </Link>
                   </Button>
-                  <Button size="sm" variant="outline" asChild className="w-full sm:w-auto justify-center">
-                    <Link href={`/activos/${assetId}/editar`}>
-                      <Edit className="h-4 w-4 mr-2" />
-                      Editar
-                    </Link>
-                  </Button>
+                  {ui.canShowEditButton('assets') && (
+                    <Button size="sm" variant="outline" asChild className="w-full sm:w-auto justify-center">
+                      <Link href={`/activos/${assetId}/editar`}>
+                        <Edit className="h-4 w-4 mr-2" />
+                        Editar
+                      </Link>
+                    </Button>
+                  )}
                 </div>
               </div>
             </CardContent>

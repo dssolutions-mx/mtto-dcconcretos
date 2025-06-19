@@ -7,6 +7,7 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
+import { useAuth } from "@/components/auth/auth-provider"
 import {
   BarChart3,
   Boxes,
@@ -96,12 +97,20 @@ function AppLogo({
 
 export function Sidebar({ className, onLinkClick }: SidebarProps) {
   const pathname = usePathname()
+  const { profile, ui } = useAuth()
   const [equipmentOpen, setEquipmentOpen] = useState(false)
   const [operationsOpen, setOperationsOpen] = useState(false)
-  const [procurementOpen, setProcurementOpen] = useState(false)
+  const [procurementOpen, setProcurementOpen] = useState(profile?.role === 'AREA_ADMINISTRATIVA')
   const [recordsOpen, setRecordsOpen] = useState(false)
   const [organizationOpen, setOrganizationOpen] = useState(false)
   const [hrOpen, setHrOpen] = useState(false)
+
+  // Auto-open procurement section for AREA_ADMINISTRATIVA
+  useEffect(() => {
+    if (profile?.role === 'AREA_ADMINISTRATIVA') {
+      setProcurementOpen(true)
+    }
+  }, [profile])
 
   const handleLinkClick = () => {
     if (onLinkClick) {
@@ -111,6 +120,28 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
 
   const isPathActive = (path: string) => {
     return pathname === path || pathname.startsWith(path + "/")
+  }
+
+  // Return loading state if no profile yet
+  if (!profile) {
+    return (
+      <div className={cn("pb-12", className)}>
+        <div className="space-y-4 py-4">
+          <div className="px-4 py-2">
+            <div className="space-y-1">
+              <Button
+                variant="ghost"
+                className="w-full justify-start"
+                disabled
+              >
+                <Home className="mr-2 h-4 w-4" />
+                Cargando...
+              </Button>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -133,268 +164,477 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
           </div>
         </div>
 
-        {/* Equipment Section */}
-        <div className="px-4">
-          <Collapsible open={equipmentOpen} onOpenChange={setEquipmentOpen}>
-            <CollapsibleTrigger asChild>
-              <Button
-                variant="ghost"
-                className="w-full justify-between p-2 h-auto font-medium"
-              >
-                <div className="flex items-center">
-                  <Wrench className="mr-2 h-4 w-4" />
-                  Equipos
-                </div>
-                {equipmentOpen ? (
-                  <ChevronDown className="h-4 w-4" />
-                ) : (
-                  <ChevronRight className="h-4 w-4" />
-                )}
-              </Button>
-            </CollapsibleTrigger>
-            <CollapsibleContent className="space-y-1 mt-2">
-              <Button
-                variant={isPathActive("/modelos") ? "secondary" : "ghost"}
-                className="w-full justify-start pl-8"
-                asChild
-                onClick={handleLinkClick}
-              >
-                <Link href="/modelos">
-                  <Settings className="mr-2 h-4 w-4" />
-                  Modelos
-                </Link>
-              </Button>
-              <Button
-                variant={isPathActive("/activos") ? "secondary" : "ghost"}
-                className="w-full justify-start pl-8"
-                asChild
-                onClick={handleLinkClick}
-              >
-                <Link href="/activos">
-                  <Package className="mr-2 h-4 w-4" />
-                  Activos
-                </Link>
-              </Button>
-            </CollapsibleContent>
-          </Collapsible>
-        </div>
+        {/* For AREA_ADMINISTRATIVA: Show Procurement first, then Organization, then others */}
+        {profile.role === 'AREA_ADMINISTRATIVA' ? (
+          <>
+            {/* Procurement Section - Priority for AREA_ADMINISTRATIVA */}
+            {(ui.shouldShowInNavigation('purchases') || ui.shouldShowInNavigation('inventory')) && (
+              <div className="px-4">
+                <Collapsible open={procurementOpen} onOpenChange={setProcurementOpen}>
+                  <CollapsibleTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      className="w-full justify-between p-2 h-auto font-medium"
+                    >
+                      <div className="flex items-center">
+                        <ShoppingCart className="mr-2 h-4 w-4" />
+                        Compras
+                      </div>
+                      {procurementOpen ? (
+                        <ChevronDown className="h-4 w-4" />
+                      ) : (
+                        <ChevronRight className="h-4 w-4" />
+                      )}
+                    </Button>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent className="space-y-1 mt-2">
+                    {ui.shouldShowInNavigation('purchases') && (
+                      <Button
+                        variant={isPathActive("/compras") ? "secondary" : "ghost"}
+                        className="w-full justify-start pl-8"
+                        asChild
+                        onClick={handleLinkClick}
+                      >
+                        <Link href="/compras">
+                          <CreditCard className="mr-2 h-4 w-4" />
+                          Órdenes de Compra
+                        </Link>
+                      </Button>
+                    )}
+                    {ui.shouldShowInNavigation('inventory') && (
+                      <Button
+                        variant={isPathActive("/inventario") ? "secondary" : "ghost"}
+                        className="w-full justify-start pl-8"
+                        asChild
+                        onClick={handleLinkClick}
+                      >
+                        <Link href="/inventario">
+                          <Boxes className="mr-2 h-4 w-4" />
+                          Inventario
+                        </Link>
+                      </Button>
+                    )}
+                  </CollapsibleContent>
+                </Collapsible>
+              </div>
+            )}
 
-        {/* Operations Section */}
-        <div className="px-4">
-          <Collapsible open={operationsOpen} onOpenChange={setOperationsOpen}>
-            <CollapsibleTrigger asChild>
-              <Button
-                variant="ghost"
-                className="w-full justify-between p-2 h-auto font-medium"
-              >
-                <div className="flex items-center">
-                  <ClipboardCheck className="mr-2 h-4 w-4" />
-                  Operaciones
-                </div>
-                {operationsOpen ? (
-                  <ChevronDown className="h-4 w-4" />
-                ) : (
-                  <ChevronRight className="h-4 w-4" />
-                )}
-              </Button>
-            </CollapsibleTrigger>
-            <CollapsibleContent className="space-y-1 mt-2">
-              <Button
-                variant={isPathActive("/checklists") ? "secondary" : "ghost"}
-                className="w-full justify-start pl-8"
-                asChild
-                onClick={handleLinkClick}
-              >
-                <Link href="/checklists">
-                  <ClipboardCheck className="mr-2 h-4 w-4" />
-                  Checklists
-                </Link>
-              </Button>
-              <Button
-                variant={isPathActive("/incidentes") ? "secondary" : "ghost"}
-                className="w-full justify-start pl-8"
-                asChild
-                onClick={handleLinkClick}
-              >
-                <Link href="/incidentes">
-                  <AlertTriangle className="mr-2 h-4 w-4" />
-                  Incidentes
-                </Link>
-              </Button>
-              <Button
-                variant={isPathActive("/ordenes") ? "secondary" : "ghost"}
-                className="w-full justify-start pl-8"
-                asChild
-                onClick={handleLinkClick}
-              >
-                <Link href="/ordenes">
-                  <Tool className="mr-2 h-4 w-4" />
-                  Órdenes de Trabajo
-                </Link>
-              </Button>
-              <Button
-                variant={isPathActive("/calendario") ? "secondary" : "ghost"}
-                className="w-full justify-start pl-8"
-                asChild
-                onClick={handleLinkClick}
-              >
-                <Link href="/calendario">
-                  <Calendar className="mr-2 h-4 w-4" />
-                  Calendario
-                </Link>
-              </Button>
-            </CollapsibleContent>
-          </Collapsible>
-        </div>
+            {/* Organization Section */}
+            {ui.shouldShowInNavigation('personnel') && (
+              <div className="px-4">
+                <Collapsible open={organizationOpen} onOpenChange={setOrganizationOpen}>
+                  <CollapsibleTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      className="w-full justify-between p-2 h-auto font-medium"
+                    >
+                      <div className="flex items-center">
+                        <Building2 className="mr-2 h-4 w-4" />
+                        Organización
+                      </div>
+                      {organizationOpen ? (
+                        <ChevronDown className="h-4 w-4" />
+                      ) : (
+                        <ChevronRight className="h-4 w-4" />
+                      )}
+                    </Button>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent className="space-y-1 mt-2">
+                    <Button
+                      variant={isPathActive("/personal") ? "secondary" : "ghost"}
+                      className="w-full justify-start pl-8"
+                      asChild
+                      onClick={handleLinkClick}
+                    >
+                      <Link href="/personal">
+                        <Users className="mr-2 h-4 w-4" />
+                        Gestión de Personal
+                      </Link>
+                    </Button>
+                    {(ui.canShowEditButton('assets') || profile.role === 'AREA_ADMINISTRATIVA') && (
+                      <Button
+                        variant={isPathActive("/activos/asignacion") ? "secondary" : "ghost"}
+                        className="w-full justify-start pl-8"
+                        asChild
+                        onClick={handleLinkClick}
+                      >
+                        <Link href="/activos/asignacion">
+                          <UserCheck className="mr-2 h-4 w-4" />
+                          Asignación de Activos
+                        </Link>
+                      </Button>
+                    )}
+                    {['GERENCIA_GENERAL', 'AREA_ADMINISTRATIVA'].includes(profile.role) && (
+                      <Button
+                        variant={isPathActive("/plantas") ? "secondary" : "ghost"}
+                        className="w-full justify-start pl-8"
+                        asChild
+                        onClick={handleLinkClick}
+                      >
+                        <Link href="/plantas">
+                          <Building2 className="mr-2 h-4 w-4" />
+                          Configuración de Plantas
+                        </Link>
+                      </Button>
+                    )}
+                  </CollapsibleContent>
+                </Collapsible>
+              </div>
+            )}
 
-        {/* Procurement Section */}
-        <div className="px-4">
-          <Collapsible open={procurementOpen} onOpenChange={setProcurementOpen}>
-            <CollapsibleTrigger asChild>
-              <Button
-                variant="ghost"
-                className="w-full justify-between p-2 h-auto font-medium"
-              >
-                <div className="flex items-center">
-                  <ShoppingCart className="mr-2 h-4 w-4" />
-                  Compras
-                </div>
-                {procurementOpen ? (
-                  <ChevronDown className="h-4 w-4" />
-                ) : (
-                  <ChevronRight className="h-4 w-4" />
-                )}
-              </Button>
-            </CollapsibleTrigger>
-            <CollapsibleContent className="space-y-1 mt-2">
-              <Button
-                variant={isPathActive("/compras") ? "secondary" : "ghost"}
-                className="w-full justify-start pl-8"
-                asChild
-                onClick={handleLinkClick}
-              >
-                <Link href="/compras">
-                  <CreditCard className="mr-2 h-4 w-4" />
-                  Órdenes de Compra
-                </Link>
-              </Button>
-              <Button
-                variant={isPathActive("/inventario") ? "secondary" : "ghost"}
-                className="w-full justify-start pl-8"
-                asChild
-                onClick={handleLinkClick}
-              >
-                <Link href="/inventario">
-                  <Boxes className="mr-2 h-4 w-4" />
-                  Inventario
-                </Link>
-              </Button>
-            </CollapsibleContent>
-          </Collapsible>
-        </div>
+            {/* Equipment Section - Lower priority for AREA_ADMINISTRATIVA */}
+            {(ui.shouldShowInNavigation('assets') || ui.shouldShowInNavigation('maintenance')) && (
+              <div className="px-4">
+                <Collapsible open={equipmentOpen} onOpenChange={setEquipmentOpen}>
+                  <CollapsibleTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      className="w-full justify-between p-2 h-auto font-medium"
+                    >
+                      <div className="flex items-center">
+                        <Wrench className="mr-2 h-4 w-4" />
+                        Equipos
+                      </div>
+                      {equipmentOpen ? (
+                        <ChevronDown className="h-4 w-4" />
+                      ) : (
+                        <ChevronRight className="h-4 w-4" />
+                      )}
+                    </Button>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent className="space-y-1 mt-2">
+                    {ui.canShowCreateButton('maintenance') && (
+                      <Button
+                        variant={isPathActive("/modelos") ? "secondary" : "ghost"}
+                        className="w-full justify-start pl-8"
+                        asChild
+                        onClick={handleLinkClick}
+                      >
+                        <Link href="/modelos">
+                          <Settings className="mr-2 h-4 w-4" />
+                          Modelos
+                        </Link>
+                      </Button>
+                    )}
+                    {ui.shouldShowInNavigation('assets') && (
+                      <Button
+                        variant={isPathActive("/activos") ? "secondary" : "ghost"}
+                        className="w-full justify-start pl-8"
+                        asChild
+                        onClick={handleLinkClick}
+                      >
+                        <Link href="/activos">
+                          <Package className="mr-2 h-4 w-4" />
+                          Activos
+                        </Link>
+                      </Button>
+                    )}
+                  </CollapsibleContent>
+                </Collapsible>
+              </div>
+            )}
+          </>
+        ) : (
+          <>
+            {/* Standard order for other roles */}
+            {/* Equipment Section */}
+            {(ui.shouldShowInNavigation('assets') || ui.shouldShowInNavigation('maintenance')) && (
+              <div className="px-4">
+                <Collapsible open={equipmentOpen} onOpenChange={setEquipmentOpen}>
+                  <CollapsibleTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      className="w-full justify-between p-2 h-auto font-medium"
+                    >
+                      <div className="flex items-center">
+                        <Wrench className="mr-2 h-4 w-4" />
+                        Equipos
+                      </div>
+                      {equipmentOpen ? (
+                        <ChevronDown className="h-4 w-4" />
+                      ) : (
+                        <ChevronRight className="h-4 w-4" />
+                      )}
+                    </Button>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent className="space-y-1 mt-2">
+                    {ui.canShowCreateButton('maintenance') && (
+                      <Button
+                        variant={isPathActive("/modelos") ? "secondary" : "ghost"}
+                        className="w-full justify-start pl-8"
+                        asChild
+                        onClick={handleLinkClick}
+                      >
+                        <Link href="/modelos">
+                          <Settings className="mr-2 h-4 w-4" />
+                          Modelos
+                        </Link>
+                      </Button>
+                    )}
+                    {ui.shouldShowInNavigation('assets') && (
+                      <Button
+                        variant={isPathActive("/activos") ? "secondary" : "ghost"}
+                        className="w-full justify-start pl-8"
+                        asChild
+                        onClick={handleLinkClick}
+                      >
+                        <Link href="/activos">
+                          <Package className="mr-2 h-4 w-4" />
+                          Activos
+                        </Link>
+                      </Button>
+                    )}
+                  </CollapsibleContent>
+                </Collapsible>
+              </div>
+            )}
+
+            {/* Operations Section */}
+            {(ui.shouldShowInNavigation('work_orders') || ui.shouldShowInNavigation('checklists') || ui.shouldShowInNavigation('maintenance')) && (
+              <div className="px-4">
+                <Collapsible open={operationsOpen} onOpenChange={setOperationsOpen}>
+                  <CollapsibleTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      className="w-full justify-between p-2 h-auto font-medium"
+                    >
+                      <div className="flex items-center">
+                        <ClipboardCheck className="mr-2 h-4 w-4" />
+                        Operaciones
+                      </div>
+                      {operationsOpen ? (
+                        <ChevronDown className="h-4 w-4" />
+                      ) : (
+                        <ChevronRight className="h-4 w-4" />
+                      )}
+                    </Button>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent className="space-y-1 mt-2">
+                    {ui.shouldShowInNavigation('checklists') && (
+                      <Button
+                        variant={isPathActive("/checklists") ? "secondary" : "ghost"}
+                        className="w-full justify-start pl-8"
+                        asChild
+                        onClick={handleLinkClick}
+                      >
+                        <Link href="/checklists">
+                          <ClipboardCheck className="mr-2 h-4 w-4" />
+                          Checklists
+                        </Link>
+                      </Button>
+                    )}
+                    {ui.shouldShowInNavigation('maintenance') && (
+                      <Button
+                        variant={isPathActive("/incidentes") ? "secondary" : "ghost"}
+                        className="w-full justify-start pl-8"
+                        asChild
+                        onClick={handleLinkClick}
+                      >
+                        <Link href="/incidentes">
+                          <AlertTriangle className="mr-2 h-4 w-4" />
+                          Incidentes
+                        </Link>
+                      </Button>
+                    )}
+                    {ui.shouldShowInNavigation('work_orders') && (
+                      <Button
+                        variant={isPathActive("/ordenes") ? "secondary" : "ghost"}
+                        className="w-full justify-start pl-8"
+                        asChild
+                        onClick={handleLinkClick}
+                      >
+                        <Link href="/ordenes">
+                          <Tool className="mr-2 h-4 w-4" />
+                          Órdenes de Trabajo
+                        </Link>
+                      </Button>
+                    )}
+                    {ui.shouldShowInNavigation('maintenance') && (
+                      <Button
+                        variant={isPathActive("/calendario") ? "secondary" : "ghost"}
+                        className="w-full justify-start pl-8"
+                        asChild
+                        onClick={handleLinkClick}
+                      >
+                        <Link href="/calendario">
+                          <Calendar className="mr-2 h-4 w-4" />
+                          Calendario
+                        </Link>
+                      </Button>
+                    )}
+                  </CollapsibleContent>
+                </Collapsible>
+              </div>
+            )}
+
+            {/* Procurement Section */}
+            {(ui.shouldShowInNavigation('purchases') || ui.shouldShowInNavigation('inventory')) && (
+              <div className="px-4">
+                <Collapsible open={procurementOpen} onOpenChange={setProcurementOpen}>
+                  <CollapsibleTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      className="w-full justify-between p-2 h-auto font-medium"
+                    >
+                      <div className="flex items-center">
+                        <ShoppingCart className="mr-2 h-4 w-4" />
+                        Compras
+                      </div>
+                      {procurementOpen ? (
+                        <ChevronDown className="h-4 w-4" />
+                      ) : (
+                        <ChevronRight className="h-4 w-4" />
+                      )}
+                    </Button>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent className="space-y-1 mt-2">
+                    {ui.shouldShowInNavigation('purchases') && (
+                      <Button
+                        variant={isPathActive("/compras") ? "secondary" : "ghost"}
+                        className="w-full justify-start pl-8"
+                        asChild
+                        onClick={handleLinkClick}
+                      >
+                        <Link href="/compras">
+                          <CreditCard className="mr-2 h-4 w-4" />
+                          Órdenes de Compra
+                        </Link>
+                      </Button>
+                    )}
+                    {ui.shouldShowInNavigation('inventory') && (
+                      <Button
+                        variant={isPathActive("/inventario") ? "secondary" : "ghost"}
+                        className="w-full justify-start pl-8"
+                        asChild
+                        onClick={handleLinkClick}
+                      >
+                        <Link href="/inventario">
+                          <Boxes className="mr-2 h-4 w-4" />
+                          Inventario
+                        </Link>
+                      </Button>
+                    )}
+                  </CollapsibleContent>
+                </Collapsible>
+              </div>
+            )}
+          </>
+        )}
+
+
 
         {/* Records Section */}
-        <div className="px-4">
-          <Collapsible open={recordsOpen} onOpenChange={setRecordsOpen}>
-            <CollapsibleTrigger asChild>
-              <Button
-                variant="ghost"
-                className="w-full justify-between p-2 h-auto font-medium"
-              >
-                <div className="flex items-center">
-                  <FileText className="mr-2 h-4 w-4" />
-                  Históricos
-                </div>
-                {recordsOpen ? (
-                  <ChevronDown className="h-4 w-4" />
-                ) : (
-                  <ChevronRight className="h-4 w-4" />
+        {ui.shouldShowInNavigation('reports') && (
+          <div className="px-4">
+            <Collapsible open={recordsOpen} onOpenChange={setRecordsOpen}>
+              <CollapsibleTrigger asChild>
+                <Button
+                  variant="ghost"
+                  className="w-full justify-between p-2 h-auto font-medium"
+                >
+                  <div className="flex items-center">
+                    <FileText className="mr-2 h-4 w-4" />
+                    Históricos
+                  </div>
+                  {recordsOpen ? (
+                    <ChevronDown className="h-4 w-4" />
+                  ) : (
+                    <ChevronRight className="h-4 w-4" />
+                  )}
+                </Button>
+              </CollapsibleTrigger>
+              <CollapsibleContent className="space-y-1 mt-2">
+                {ui.shouldShowInNavigation('work_orders') && (
+                  <Button
+                    variant={isPathActive("/servicios") ? "secondary" : "ghost"}
+                    className="w-full justify-start pl-8"
+                    asChild
+                    onClick={handleLinkClick}
+                  >
+                    <Link href="/servicios">
+                      <CheckCircle className="mr-2 h-4 w-4" />
+                      Órdenes de Servicio
+                    </Link>
+                  </Button>
                 )}
-              </Button>
-            </CollapsibleTrigger>
-            <CollapsibleContent className="space-y-1 mt-2">
-              <Button
-                variant={isPathActive("/servicios") ? "secondary" : "ghost"}
-                className="w-full justify-start pl-8"
-                asChild
-                onClick={handleLinkClick}
-              >
-                <Link href="/servicios">
-                  <CheckCircle className="mr-2 h-4 w-4" />
-                  Órdenes de Servicio
-                </Link>
-              </Button>
-              <Button
-                variant={isPathActive("/reportes") ? "secondary" : "ghost"}
-                className="w-full justify-start pl-8"
-                asChild
-                onClick={handleLinkClick}
-              >
-                <Link href="/reportes">
-                  <BarChart3 className="mr-2 h-4 w-4" />
-                  Reportes
-                </Link>
-              </Button>
-            </CollapsibleContent>
-          </Collapsible>
-        </div>
+                <Button
+                  variant={isPathActive("/reportes") ? "secondary" : "ghost"}
+                  className="w-full justify-start pl-8"
+                  asChild
+                  onClick={handleLinkClick}
+                >
+                  <Link href="/reportes">
+                    <BarChart3 className="mr-2 h-4 w-4" />
+                    Reportes
+                  </Link>
+                </Button>
+              </CollapsibleContent>
+            </Collapsible>
+          </div>
+        )}
 
         {/* Organization Section */}
-        <div className="px-4">
-          <Collapsible open={organizationOpen} onOpenChange={setOrganizationOpen}>
-            <CollapsibleTrigger asChild>
-              <Button
-                variant="ghost"
-                className="w-full justify-between p-2 h-auto font-medium"
-              >
-                <div className="flex items-center">
-                  <Building2 className="mr-2 h-4 w-4" />
-                  Organización
-                </div>
-                {organizationOpen ? (
-                  <ChevronDown className="h-4 w-4" />
-                ) : (
-                  <ChevronRight className="h-4 w-4" />
+        {ui.shouldShowInNavigation('personnel') && (
+          <div className="px-4">
+            <Collapsible open={organizationOpen} onOpenChange={setOrganizationOpen}>
+              <CollapsibleTrigger asChild>
+                <Button
+                  variant="ghost"
+                  className="w-full justify-between p-2 h-auto font-medium"
+                >
+                  <div className="flex items-center">
+                    <Building2 className="mr-2 h-4 w-4" />
+                    Organización
+                  </div>
+                  {organizationOpen ? (
+                    <ChevronDown className="h-4 w-4" />
+                  ) : (
+                    <ChevronRight className="h-4 w-4" />
+                  )}
+                </Button>
+              </CollapsibleTrigger>
+              <CollapsibleContent className="space-y-1 mt-2">
+                <Button
+                  variant={isPathActive("/personal") ? "secondary" : "ghost"}
+                  className="w-full justify-start pl-8"
+                  asChild
+                  onClick={handleLinkClick}
+                >
+                  <Link href="/personal">
+                    <Users className="mr-2 h-4 w-4" />
+                    Gestión de Personal
+                  </Link>
+                </Button>
+                {(ui.canShowEditButton('assets') || profile.role === 'AREA_ADMINISTRATIVA') && (
+                  <Button
+                    variant={isPathActive("/activos/asignacion") ? "secondary" : "ghost"}
+                    className="w-full justify-start pl-8"
+                    asChild
+                    onClick={handleLinkClick}
+                  >
+                    <Link href="/activos/asignacion">
+                      <UserCheck className="mr-2 h-4 w-4" />
+                      Asignación de Activos
+                    </Link>
+                  </Button>
                 )}
-              </Button>
-            </CollapsibleTrigger>
-            <CollapsibleContent className="space-y-1 mt-2">
-              <Button
-                variant={isPathActive("/personal") ? "secondary" : "ghost"}
-                className="w-full justify-start pl-8"
-                asChild
-                onClick={handleLinkClick}
-              >
-                <Link href="/personal">
-                  <Users className="mr-2 h-4 w-4" />
-                  Gestión de Personal
-                </Link>
-              </Button>
-              <Button
-                variant={isPathActive("/activos/asignacion") ? "secondary" : "ghost"}
-                className="w-full justify-start pl-8"
-                asChild
-                onClick={handleLinkClick}
-              >
-                <Link href="/activos/asignacion">
-                  <UserCheck className="mr-2 h-4 w-4" />
-                  Asignación de Activos
-                </Link>
-              </Button>
-              <Button
-                variant={isPathActive("/plantas") ? "secondary" : "ghost"}
-                className="w-full justify-start pl-8"
-                asChild
-                onClick={handleLinkClick}
-              >
-                <Link href="/plantas">
-                  <Building2 className="mr-2 h-4 w-4" />
-                  Configuración de Plantas
-                </Link>
-              </Button>
-            </CollapsibleContent>
-          </Collapsible>
-        </div>
+                {['GERENCIA_GENERAL', 'AREA_ADMINISTRATIVA'].includes(profile.role) && (
+                  <Button
+                    variant={isPathActive("/plantas") ? "secondary" : "ghost"}
+                    className="w-full justify-start pl-8"
+                    asChild
+                    onClick={handleLinkClick}
+                  >
+                    <Link href="/plantas">
+                      <Building2 className="mr-2 h-4 w-4" />
+                      Configuración de Plantas
+                    </Link>
+                  </Button>
+                )}
+              </CollapsibleContent>
+            </Collapsible>
+          </div>
+        )}
 
         {/* HR Section */}
         <div className="px-4">
@@ -438,6 +678,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
 // Enhanced Collapsed Sidebar with better tooltips
 export function CollapsedSidebar({ className, onLinkClick }: SidebarProps) {
   const pathname = usePathname()
+  const { profile } = useAuth()
   const [openTooltips, setOpenTooltips] = useState<Record<string, boolean>>({})
 
   const handleLinkClick = () => {
@@ -461,7 +702,18 @@ export function CollapsedSidebar({ className, onLinkClick }: SidebarProps) {
     return paths.some(path => isPathActive(path))
   }
 
-  const navigationSections = [
+  // Return loading state if no profile yet
+  if (!profile) {
+    return (
+      <div className={cn("pb-12", className)}>
+        <div className="flex justify-center items-center h-32">
+          <div className="text-xs text-muted-foreground">Cargando...</div>
+        </div>
+      </div>
+    )
+  }
+
+  const baseNavigationSections = [
     {
       id: "dashboard",
       icon: Home,
@@ -532,6 +784,28 @@ export function CollapsedSidebar({ className, onLinkClick }: SidebarProps) {
       ]
     }
   ]
+
+  // Filter and reorder sections for AREA_ADMINISTRATIVA
+  let navigationSections = baseNavigationSections
+  
+  if (profile.role === 'AREA_ADMINISTRATIVA') {
+    // Remove operations section and reorder to prioritize procurement
+    navigationSections = baseNavigationSections
+      .filter(section => section.id !== 'operations')
+      .sort((a, b) => {
+        // Dashboard always first
+        if (a.id === 'dashboard') return -1
+        if (b.id === 'dashboard') return 1
+        // Procurement second for AREA_ADMINISTRATIVA
+        if (a.id === 'procurement') return -1
+        if (b.id === 'procurement') return 1
+        // Organization third for AREA_ADMINISTRATIVA  
+        if (a.id === 'organization') return -1
+        if (b.id === 'organization') return 1
+        // Everything else maintains order
+        return 0
+      })
+  }
 
   return (
     <div className={cn("pb-12", className)}>
