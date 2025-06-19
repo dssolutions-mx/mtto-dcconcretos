@@ -1,3 +1,5 @@
+"use client"
+
 import type { Metadata } from "next"
 import Link from "next/link"
 import { Suspense } from "react"
@@ -7,13 +9,15 @@ import { DashboardShell } from "@/components/dashboard/dashboard-shell"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Plus, Store, Wrench, Building2, Sparkles, Loader2, Receipt } from "lucide-react"
+import { Plus, Store, Wrench, Building2, Sparkles, Loader2, Receipt, DollarSign, Shield } from "lucide-react"
 import { RoleGuard } from "@/components/auth/role-guard"
+import { useAuth } from "@/components/auth/auth-provider"
+import { formatCurrency } from "@/lib/utils"
 
-export const metadata: Metadata = {
-  title: "Órdenes de Compra | Sistema de Gestión de Mantenimiento",
-  description: "Lista y gestión de órdenes de compra",
-}
+// export const metadata: Metadata = {
+//   title: "Órdenes de Compra | Sistema de Gestión de Mantenimiento",
+//   description: "Lista y gestión de órdenes de compra",
+// }
 
 function PurchaseOrdersListFallback() {
   return (
@@ -27,6 +31,8 @@ function PurchaseOrdersListFallback() {
 }
 
 export default function PurchaseOrdersPage() {
+  const { profile, hasAuthorizationAccess, authorizationLimit } = useAuth()
+  const canAuthorize = hasAuthorizationAccess('purchases')
   return (
     <DashboardShell>
       <div className="flex justify-between items-center mb-6">
@@ -54,6 +60,67 @@ export default function PurchaseOrdersPage() {
         </div>
       </div>
 
+      {/* User Authorization Info */}
+      {profile && (
+        <Card className="mb-6 border-yellow-200 bg-yellow-50">
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-3">
+                <Shield className="h-6 w-6 text-yellow-600" />
+                <div>
+                  <CardTitle className="text-lg">Tu Información de Autorización</CardTitle>
+                  <CardDescription>
+                    {profile.role?.replace(/_/g, ' ')} - {profile.nombre} {profile.apellido}
+                  </CardDescription>
+                </div>
+              </div>
+              <Badge variant="secondary" className="bg-yellow-100 text-yellow-700">
+                {canAuthorize ? 'Puede Autorizar' : 'Sin Autorización'}
+              </Badge>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="flex items-center space-x-3">
+                <DollarSign className="h-5 w-5 text-yellow-600" />
+                <div>
+                  <p className="text-sm text-muted-foreground">Límite de Autorización</p>
+                  <p className="font-semibold text-lg">
+                    {authorizationLimit === Number.MAX_SAFE_INTEGER 
+                      ? 'Sin límite' 
+                      : authorizationLimit > 0 
+                        ? formatCurrency(authorizationLimit)
+                        : 'No puede autorizar'
+                    }
+                  </p>
+                </div>
+              </div>
+              
+              <div className="flex items-center space-x-3">
+                <Shield className="h-5 w-5 text-yellow-600" />
+                <div>
+                  <p className="text-sm text-muted-foreground">Permisos</p>
+                  <p className="font-semibold">
+                    {canAuthorize 
+                      ? 'Crear, Aprobar y Gestionar' 
+                      : 'Crear y Gestionar'
+                    }
+                  </p>
+                </div>
+              </div>
+            </div>
+            
+            {canAuthorize && authorizationLimit > 0 && authorizationLimit < Number.MAX_SAFE_INTEGER && (
+              <div className="mt-4 p-3 bg-yellow-100 rounded-lg">
+                <p className="text-sm text-yellow-800">
+                  <strong>Nota:</strong> Puedes autorizar órdenes de compra hasta {formatCurrency(authorizationLimit)}. 
+                  Para montos mayores, se requiere autorización de un superior.
+                </p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Enhanced Purchase Order System Banner */}
       <Card className="mb-6 bg-gradient-to-r from-blue-50 to-purple-50 border-blue-200">

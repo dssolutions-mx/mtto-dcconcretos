@@ -21,6 +21,8 @@ import { useChecklistSchedules, useChecklistTemplates } from "@/hooks/useCheckli
 import { toast } from "sonner"
 import { Badge } from "@/components/ui/badge"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { useAuth } from "@/components/auth/auth-provider"
+import { RoleGuard, OperatorGuard, MaintenanceTeamGuard } from "@/components/auth/role-guard"
 
 // Importación dinámica del servicio offline
 let offlineChecklistService: any = null
@@ -82,6 +84,7 @@ function UnresolvedIssuesCard() {
 function ChecklistsContent() {
   const searchParams = useSearchParams()
   const tabParam = searchParams.get('tab')
+  const { profile, ui } = useAuth()
   const { schedules, loading, error, fetchSchedules } = useChecklistSchedules()
   const { templates, fetchTemplates } = useChecklistTemplates()
   const [activeTab, setActiveTab] = useState('overview')
@@ -95,6 +98,11 @@ function ChecklistsContent() {
     templates: 0,
     preventive: { total: 0, pending: 0, overdue: 0 }
   })
+  
+  // Determinar si el usuario es un operador/dosificador
+  const isOperator = profile?.role && ['OPERADOR', 'DOSIFICADOR'].includes(profile.role)
+  const canCreateChecklists = ui?.canShowCreateButton('checklists') || false
+  const canScheduleChecklists = ui?.canShowEditButton('checklists') || false
   
   // Inicializar servicio offline
   useEffect(() => {
@@ -255,8 +263,8 @@ function ChecklistsContent() {
   return (
     <DashboardShell>
       <DashboardHeader
-        heading="Checklists de Mantenimiento"
-        text="Gestiona los checklists para diferentes frecuencias de mantenimiento."
+        heading={isOperator ? "Mis Checklists" : "Checklists de Mantenimiento"}
+        text={isOperator ? "Ejecuta los checklists asignados a tus activos." : "Gestiona los checklists para diferentes frecuencias de mantenimiento."}
       >
         <div className="flex flex-col sm:flex-row gap-2">
           {/* Estado offline compacto en header para móviles */}
@@ -271,18 +279,28 @@ function ChecklistsContent() {
                 <span className="hidden sm:inline">Vista por Activos</span>
               </Link>
             </Button>
-            <Button variant="outline" asChild>
-              <Link href="/checklists/programar">
-                <ClipboardCheck className="mr-2 h-4 w-4" />
-                <span className="hidden md:inline">Programar</span>
-              </Link>
-            </Button>
-            <Button asChild>
-              <Link href="/checklists/crear">
-                <Plus className="mr-2 h-4 w-4" />
-                <span className="hidden sm:inline">Nueva Plantilla</span>
-              </Link>
-            </Button>
+            
+            {/* Opciones solo para roles con permisos de edición */}
+            {canScheduleChecklists && (
+              <Button variant="outline" asChild>
+                <Link href="/checklists/programar">
+                  <ClipboardCheck className="mr-2 h-4 w-4" />
+                  <span className="hidden md:inline">Programar</span>
+                </Link>
+              </Button>
+            )}
+            
+            {/* Opciones solo para roles con permisos de creación */}
+            {canCreateChecklists && (
+              <Button asChild>
+                <Link href="/checklists/crear">
+                  <Plus className="mr-2 h-4 w-4" />
+                  <span className="hidden sm:inline">Nueva Plantilla</span>
+                </Link>
+              </Button>
+            )}
+            
+            {/* Preparar offline - disponible para todos */}
             <Button 
               variant="outline" 
               onClick={handlePrepareOffline}

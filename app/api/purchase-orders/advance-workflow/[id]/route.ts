@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { PurchaseOrderService } from '@/lib/services/purchase-order-service'
 import { AdvanceWorkflowRequest } from '@/types/purchase-orders'
 import { createClient } from '@/lib/supabase-server'
+import { canAuthorizeAmount, getRoleDisplayName } from '@/lib/auth/role-permissions'
 
 export async function PUT(
   request: NextRequest,
@@ -22,6 +23,19 @@ export async function PUT(
       }, { status: 401 })
     }
 
+    // Get user profile to check role
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('role')
+      .eq('id', user.id)
+      .single()
+    
+    if (!profile?.role) {
+      return NextResponse.json({ 
+        error: 'User role not found' 
+      }, { status: 403 })
+    }
+
     // Parse request body
     const body: AdvanceWorkflowRequest = await request.json()
     
@@ -29,6 +43,35 @@ export async function PUT(
       return NextResponse.json({ 
         error: 'new_status is required' 
       }, { status: 400 })
+    }
+    
+    // Special checks for approval actions
+    if (body.new_status === 'approved') {
+      // Get the purchase order to check amount
+      const { data: purchaseOrder } = await supabase
+        .from('purchase_orders')
+        .select('total_amount')
+        .eq('id', id)
+        .single()
+      
+      if (purchaseOrder) {
+        const amount = parseFloat(purchaseOrder.total_amount)
+        if (!canAuthorizeAmount(profile.role, amount)) {
+          return NextResponse.json({ 
+            error: `Tu rol ${getRoleDisplayName(profile.role)} no puede autorizar órdenes de ${amount.toLocaleString('es-MX', { style: 'currency', currency: 'MXN' })}` 
+          }, { status: 403 })
+        }
+      }
+    }
+    
+    // Special checks for validation actions
+    if (body.new_status === 'validated') {
+      const canValidateRoles = ['GERENCIA_GENERAL', 'JEFE_UNIDAD_NEGOCIO', 'AREA_ADMINISTRATIVA', 'JEFE_PLANTA']
+      if (!canValidateRoles.includes(profile.role)) {
+        return NextResponse.json({ 
+          error: `Tu rol ${getRoleDisplayName(profile.role)} no puede validar comprobantes` 
+        }, { status: 403 })
+      }
     }
     
     // Advance workflow using database function from Stage 1

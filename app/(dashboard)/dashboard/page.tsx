@@ -188,8 +188,373 @@ function DashboardContent() {
         </CardContent>
       </Card>
 
-      {/* AREA_ADMINISTRATIVA Specific Features */}
-      <AdminOnlyGuard>
+      {/* Role-Specific Features */}
+      
+      {/* GERENCIA GENERAL - Full Access Dashboard */}
+      {profile?.role === 'GERENCIA_GENERAL' && (
+        <Card className="border-purple-200 bg-gradient-to-r from-purple-50 to-pink-50">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-purple-800">
+              <Shield className="h-5 w-5" />
+              Panel de Gerencia General
+            </CardTitle>
+            <CardDescription className="text-purple-700">
+              Acceso completo a todos los módulos del sistema
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <Card className="bg-white">
+                <CardContent className="pt-6">
+                  <div className="flex items-center gap-2">
+                    <TrendingUp className="h-5 w-5 text-green-500" />
+                    <span className="font-medium">Sin Límite de Autorización</span>
+                  </div>
+                  <p className="text-sm text-muted-foreground mt-2">
+                    Autorización ilimitada para todas las operaciones
+                  </p>
+                </CardContent>
+              </Card>
+              
+              <Card className="bg-white">
+                <CardContent className="pt-6">
+                  <div className="flex items-center gap-2">
+                    <BarChart3 className="h-5 w-5 text-blue-500" />
+                    <span className="font-medium">Reportes Ejecutivos</span>
+                  </div>
+                  <p className="text-sm text-muted-foreground mt-2">
+                    Acceso a todos los reportes y análisis
+                  </p>
+                </CardContent>
+              </Card>
+              
+              <Card className="bg-white">
+                <CardContent className="pt-6">
+                  <div className="flex items-center gap-2">
+                    <Users className="h-5 w-5 text-purple-500" />
+                    <span className="font-medium">Gestión Global</span>
+                  </div>
+                  <p className="text-sm text-muted-foreground mt-2">
+                    Control total de todas las unidades
+                  </p>
+                </CardContent>
+              </Card>
+            </div>
+
+            <Separator />
+
+            <div className="flex gap-2 flex-wrap">
+              <Button asChild size="sm" className="bg-purple-600 hover:bg-purple-700">
+                <Link href="/reportes?type=executive">
+                  Dashboard Ejecutivo
+                </Link>
+              </Button>
+              <Button asChild size="sm" variant="outline">
+                <Link href="/compras?status=high_value">
+                  Compras Alto Valor
+                </Link>
+              </Button>
+              <Button asChild size="sm" variant="outline">
+                <Link href="/gestion">
+                  Configuración Sistema
+                </Link>
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ENCARGADO MANTENIMIENTO - Maintenance Focus */}
+      {profile?.role === 'ENCARGADO_MANTENIMIENTO' && (
+        <Card className="border-green-200 bg-gradient-to-r from-green-50 to-emerald-50">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-green-800">
+              <Wrench className="h-5 w-5" />
+              Panel de Mantenimiento
+            </CardTitle>
+            <CardDescription className="text-green-700">
+              Gestión completa de mantenimiento en tu planta
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <Card className="bg-white">
+                <CardContent className="pt-6">
+                  <div className="flex items-center gap-2">
+                    <Wrench className="h-5 w-5 text-green-500" />
+                    <span className="font-medium">Control Total Mantenimiento</span>
+                  </div>
+                  <p className="text-sm text-muted-foreground mt-2">
+                    Gestión completa de activos y planes
+                  </p>
+                </CardContent>
+              </Card>
+              
+              <Card className="bg-white">
+                <CardContent className="pt-6">
+                  <div className="flex items-center gap-2">
+                    <ShoppingCart className="h-5 w-5 text-orange-500" />
+                    <span className="font-medium">Compras de Mantenimiento</span>
+                  </div>
+                  <p className="text-sm text-muted-foreground mt-2">
+                    Crear y gestionar órdenes de compra
+                  </p>
+                </CardContent>
+              </Card>
+              
+              <Card className="bg-white">
+                <CardContent className="pt-6">
+                  <div className="flex items-center gap-2">
+                    <ClipboardList className="h-5 w-5 text-blue-500" />
+                    <span className="font-medium">Checklists Completos</span>
+                  </div>
+                  <p className="text-sm text-muted-foreground mt-2">
+                    Crear, editar y ejecutar checklists
+                  </p>
+                </CardContent>
+              </Card>
+            </div>
+
+            <Separator />
+
+            <div className="flex gap-2 flex-wrap">
+              <Button asChild size="sm" className="bg-green-600 hover:bg-green-700">
+                <Link href="/ordenes?filter=pending">
+                  Órdenes Pendientes
+                </Link>
+              </Button>
+              <Button asChild size="sm" variant="outline">
+                <Link href="/preventivo">
+                  Plan de Mantenimiento
+                </Link>
+              </Button>
+              <Button asChild size="sm" variant="outline">
+                <Link href="/checklists/crear">
+                  Nuevo Checklist
+                </Link>
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* JEFE_PLANTA - Plant Management */}
+      {profile?.role === 'JEFE_PLANTA' && (
+        <Card className="border-blue-200 bg-gradient-to-r from-blue-50 to-cyan-50">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-blue-800">
+              <Package className="h-5 w-5" />
+              Panel de Jefe de Planta
+            </CardTitle>
+            <CardDescription className="text-blue-700">
+              Supervisión completa de {organizationalContext.plantName || 'tu planta'}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <Card className="bg-white">
+                <CardContent className="pt-6">
+                  <div className="flex items-center gap-2">
+                    <Package className="h-5 w-5 text-blue-500" />
+                    <span className="font-medium">Gestión de Planta</span>
+                  </div>
+                  <p className="text-sm text-muted-foreground mt-2">
+                    Control de activos y personal
+                  </p>
+                </CardContent>
+              </Card>
+              
+              <Card className="bg-white">
+                <CardContent className="pt-6">
+                  <div className="flex items-center gap-2">
+                    <ShoppingCart className="h-5 w-5 text-green-500" />
+                    <span className="font-medium">Autorización $50,000</span>
+                  </div>
+                  <p className="text-sm text-muted-foreground mt-2">
+                    Aprobar compras de tu planta
+                  </p>
+                </CardContent>
+              </Card>
+              
+              <Card className="bg-white">
+                <CardContent className="pt-6">
+                  <div className="flex items-center gap-2">
+                    <Users className="h-5 w-5 text-purple-500" />
+                    <span className="font-medium">Personal de Planta</span>
+                  </div>
+                  <p className="text-sm text-muted-foreground mt-2">
+                    Gestión del equipo local
+                  </p>
+                </CardContent>
+              </Card>
+            </div>
+
+            <Separator />
+
+            <div className="flex gap-2 flex-wrap">
+              <Button asChild size="sm" className="bg-blue-600 hover:bg-blue-700">
+                <Link href="/activos?plant={organizationalContext.plantId}">
+                  Activos de Planta
+                </Link>
+              </Button>
+              <Button asChild size="sm" variant="outline">
+                <Link href="/ordenes?plant={organizationalContext.plantId}">
+                  Órdenes de Trabajo
+                </Link>
+              </Button>
+              <Button asChild size="sm" variant="outline">
+                <Link href="/reportes?type=plant">
+                  Reportes de Planta
+                </Link>
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* AUXILIAR_COMPRAS - Purchasing Focus */}
+      {profile?.role === 'AUXILIAR_COMPRAS' && (
+        <Card className="border-orange-200 bg-gradient-to-r from-orange-50 to-yellow-50">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-orange-800">
+              <ShoppingCart className="h-5 w-5" />
+              Panel de Compras
+            </CardTitle>
+            <CardDescription className="text-orange-700">
+              Gestión exclusiva de compras e inventario
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <Card className="bg-white">
+                <CardContent className="pt-6">
+                  <div className="flex items-center gap-2">
+                    <ShoppingCart className="h-5 w-5 text-orange-500" />
+                    <span className="font-medium">Gestión Total de Compras</span>
+                  </div>
+                  <p className="text-sm text-muted-foreground mt-2">
+                    Crear, editar y procesar órdenes
+                  </p>
+                </CardContent>
+              </Card>
+              
+              <Card className="bg-white">
+                <CardContent className="pt-6">
+                  <div className="flex items-center gap-2">
+                    <Package className="h-5 w-5 text-blue-500" />
+                    <span className="font-medium">Control de Inventario</span>
+                  </div>
+                  <p className="text-sm text-muted-foreground mt-2">
+                    Gestión completa de stock
+                  </p>
+                </CardContent>
+              </Card>
+            </div>
+
+            <Separator />
+
+            <div className="flex gap-2 flex-wrap">
+              <Button asChild size="sm" className="bg-orange-600 hover:bg-orange-700">
+                <Link href="/compras/crear-tipificada">
+                  Nueva Orden
+                </Link>
+              </Button>
+              <Button asChild size="sm" variant="outline">
+                <Link href="/compras?status=pending">
+                  Órdenes Pendientes
+                </Link>
+              </Button>
+              <Button asChild size="sm" variant="outline">
+                <Link href="/inventario">
+                  Gestionar Inventario
+                </Link>
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* OPERADOR/DOSIFICADOR - Checklist Focus */}
+      {(profile?.role === 'OPERADOR' || profile?.role === 'DOSIFICADOR') && (
+        <Card className="border-teal-200 bg-gradient-to-r from-teal-50 to-cyan-50">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-teal-800">
+              <ClipboardList className="h-5 w-5" />
+              Panel de Operación
+            </CardTitle>
+            <CardDescription className="text-teal-700">
+              Ejecución de checklists asignados
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="mb-4">
+              <Card className="bg-white">
+                <CardContent className="pt-6">
+                  <div className="flex items-center gap-2">
+                    <ClipboardList className="h-5 w-5 text-teal-500" />
+                    <span className="font-medium">Checklists Asignados</span>
+                  </div>
+                  <p className="text-sm text-muted-foreground mt-2">
+                    Ejecutar inspecciones y verificaciones diarias
+                  </p>
+                </CardContent>
+              </Card>
+            </div>
+
+            <Button asChild className="w-full bg-teal-600 hover:bg-teal-700">
+              <Link href="/checklists">
+                Ver Checklists Pendientes
+              </Link>
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* VISUALIZADOR - Read-Only Access */}
+      {profile?.role === 'VISUALIZADOR' && (
+        <Card className="border-gray-200 bg-gradient-to-r from-gray-50 to-slate-50">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-gray-800">
+              <BarChart3 className="h-5 w-5" />
+              Panel de Visualización
+            </CardTitle>
+            <CardDescription className="text-gray-700">
+              Acceso de solo lectura a la información del sistema
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="mb-4">
+              <Alert>
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>
+                  Tu rol permite visualizar información pero no realizar modificaciones en el sistema.
+                </AlertDescription>
+              </Alert>
+            </div>
+
+            <div className="flex gap-2 flex-wrap">
+              <Button asChild size="sm" variant="outline">
+                <Link href="/reportes">
+                  Ver Reportes
+                </Link>
+              </Button>
+              <Button asChild size="sm" variant="outline">
+                <Link href="/activos">
+                  Ver Activos
+                </Link>
+              </Button>
+              <Button asChild size="sm" variant="outline">
+                <Link href="/calendario">
+                  Ver Calendario
+                </Link>
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* AREA_ADMINISTRATIVA Specific Features (keep existing) */}
+      {profile?.role === 'AREA_ADMINISTRATIVA' && (
         <Card className="border-orange-200 bg-orange-50">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-orange-800">
@@ -202,7 +567,6 @@ function DashboardContent() {
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <AuthorizedOnlyGuard amount={50000}>
                 <Card className="bg-white">
                   <CardContent className="pt-6">
                     <div className="flex items-center gap-2">
@@ -214,7 +578,6 @@ function DashboardContent() {
                     </p>
                   </CardContent>
                 </Card>
-              </AuthorizedOnlyGuard>
               
               <Card className="bg-white">
                 <CardContent className="pt-6">
@@ -250,7 +613,7 @@ function DashboardContent() {
             </div>
           </CardContent>
         </Card>
-      </AdminOnlyGuard>
+      )}
 
       {/* Modules Grid */}
       <div>

@@ -22,7 +22,9 @@ import {
   Info,
   Upload,
   File,
-  ExternalLink
+  ExternalLink,
+  DollarSign,
+  Shield
 } from "lucide-react"
 import { 
   PurchaseOrderType, 
@@ -30,6 +32,8 @@ import {
   WorkflowStatusResponse 
 } from "@/types/purchase-orders"
 import { usePurchaseOrders } from "@/hooks/usePurchaseOrders"
+import { useAuth } from "@/components/auth/auth-provider"
+import { formatCurrency } from "@/lib/utils"
 
 interface WorkflowStatusDisplayProps {
   purchaseOrderId: string
@@ -47,6 +51,7 @@ export function WorkflowStatusDisplay({
   onStatusChange
 }: WorkflowStatusDisplayProps) {
   const router = useRouter()
+  const { profile, hasAuthorizationAccess, canAuthorizeAmount, authorizationLimit } = useAuth()
   const { 
     workflowStatus, 
     loadWorkflowStatus, 
@@ -61,6 +66,7 @@ export function WorkflowStatusDisplay({
   const [isUploading, setIsUploading] = useState(false)
   const [actualAmount, setActualAmount] = useState<string>("")
   const [receiptUrl, setReceiptUrl] = useState<string | null>(null)
+  const [purchaseOrderAmount, setPurchaseOrderAmount] = useState<number>(0)
 
   // Load workflow status on mount and fetch existing receipt if any
   useEffect(() => {
@@ -75,6 +81,9 @@ export function WorkflowStatusDisplay({
           const orderData = await orderResponse.json()
           if (orderData.actual_amount) {
             setActualAmount(orderData.actual_amount.toString())
+          }
+          if (orderData.total_amount) {
+            setPurchaseOrderAmount(parseFloat(orderData.total_amount))
           }
         }
 
@@ -499,12 +508,7 @@ export function WorkflowStatusDisplay({
         icon: Package,
         description: "Productos/servicios recibidos"
       },
-      [EnhancedPOStatus.INVOICED]: {
-        label: "Facturada",
-        color: "bg-emerald-100 text-emerald-700",
-        icon: Receipt,
-        description: "Factura procesada"
-      }
+
     }
 
     return commonStatuses[status] || {
@@ -615,6 +619,46 @@ export function WorkflowStatusDisplay({
         </CardContent>
       </Card>
 
+      {/* Authorization Check for Approval Actions */}
+      {currentStatus === 'pending_approval' && purchaseOrderAmount > 0 && (
+        <Card className="border-yellow-200 bg-yellow-50">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-yellow-800">
+              <DollarSign className="h-5 w-5" />
+              Información de Autorización
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium">Monto a Autorizar:</span>
+              <span className="text-lg font-bold">{formatCurrency(purchaseOrderAmount)}</span>
+            </div>
+            {profile && (
+              <>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium">Tu Límite de Autorización:</span>
+                  <span className="text-lg font-bold text-green-600">
+                    {authorizationLimit === Number.MAX_SAFE_INTEGER 
+                      ? 'Sin límite' 
+                      : formatCurrency(authorizationLimit)
+                    }
+                  </span>
+                </div>
+                {!canAuthorizeAmount(purchaseOrderAmount) && (
+                  <Alert className="border-red-200 bg-red-50">
+                    <AlertTriangle className="h-4 w-4 text-red-600" />
+                    <AlertDescription className="text-red-700">
+                      <strong>No puedes autorizar esta orden.</strong> El monto excede tu límite de autorización.
+                      Esta orden debe ser aprobada por un superior con mayor límite.
+                    </AlertDescription>
+                  </Alert>
+                )}
+              </>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       {/* Simplified Action Section - Show only NEXT logical action */}
       {workflowStatus?.allowed_next_statuses && workflowStatus.allowed_next_statuses.length > 0 && 
        !['validated', 'rejected'].includes(currentStatus) && (
@@ -629,6 +673,27 @@ export function WorkflowStatusDisplay({
             {(() => {
               // Get the primary next action (most logical next step)
               const primaryAction = getPrimaryNextAction(currentStatus, workflowStatus.allowed_next_statuses, poType)
+              
+              // Check authorization for approval actions
+              const isApprovalAction = primaryAction === 'approved'
+              const isValidationAction = primaryAction === 'validated'
+              
+              // Roles that can validate receipts
+              const canValidateReceipts = !!(profile?.role && [
+                'GERENCIA_GENERAL',
+                'JEFE_UNIDAD_NEGOCIO', 
+                'AREA_ADMINISTRATIVA',
+                'JEFE_PLANTA'
+              ].includes(profile.role))
+              
+              // Check if user can perform the action
+              let canPerformAction = true
+              
+              if (isApprovalAction) {
+                canPerformAction = canAuthorizeAmount(purchaseOrderAmount)
+              } else if (isValidationAction) {
+                canPerformAction = canValidateReceipts
+              }
               
               if (!primaryAction) {
                 return (
@@ -645,24 +710,77 @@ export function WorkflowStatusDisplay({
               const ActionIcon = actionConfig.icon
               const requiresNotes = ['rejected', 'receipt_uploaded'].includes(primaryAction)
 
-              return (
-                <div className="space-y-4">
-                  {/* Action Button */}
-                  <Card className="border-2 border-primary/20 bg-primary/5">
-                    <CardContent className="p-4">
-                      <div className="flex items-center space-x-3">
-                        <div className={`p-3 rounded-lg ${actionConfig.color.replace('text-', 'bg-').replace('-700', '-200')}`}>
-                          <ActionIcon className="h-6 w-6" />
-                        </div>
-                        <div className="flex-1">
-                          <h4 className="font-semibold text-lg">{actionConfig.label}</h4>
-                          <p className="text-sm text-muted-foreground">
-                            {actionConfig.description}
-                          </p>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
+                                return (
+                    <div className="space-y-4">
+                      {/* Show authorization warning if applicable */}
+                      {isApprovalAction && !canPerformAction && (
+                        <Alert className="border-orange-200 bg-orange-50">
+                          <Shield className="h-4 w-4 text-orange-600" />
+                          <AlertDescription className="text-orange-700">
+                            <div className="space-y-2">
+                              <strong>Autorización requerida por un superior</strong>
+                              <p className="text-sm">
+                                Esta orden de {formatCurrency(purchaseOrderAmount)} requiere autorización de:
+                              </p>
+                              <ul className="text-sm list-disc list-inside space-y-1">
+                                {purchaseOrderAmount > 500000 && (
+                                  <li>GERENCIA GENERAL (sin límite)</li>
+                                )}
+                                {purchaseOrderAmount > 100000 && purchaseOrderAmount <= 500000 && (
+                                  <li>JEFE UNIDAD DE NEGOCIO (hasta $500,000)</li>
+                                )}
+                                {purchaseOrderAmount > 50000 && purchaseOrderAmount <= 100000 && (
+                                  <li>ÁREA ADMINISTRATIVA (hasta $100,000)</li>
+                                )}
+                                {purchaseOrderAmount <= 50000 && (
+                                  <li>JEFE DE PLANTA (hasta $50,000)</li>
+                                )}
+                              </ul>
+                            </div>
+                          </AlertDescription>
+                        </Alert>
+                      )}
+                      
+                      {/* Show validation warning if applicable */}
+                      {isValidationAction && !canPerformAction && (
+                        <Alert className="border-blue-200 bg-blue-50">
+                          <Shield className="h-4 w-4 text-blue-600" />
+                          <AlertDescription className="text-blue-700">
+                            <div className="space-y-2">
+                              <strong>Validación administrativa requerida</strong>
+                              <p className="text-sm">
+                                Solo los siguientes roles pueden validar comprobantes:
+                              </p>
+                              <ul className="text-sm list-disc list-inside space-y-1">
+                                <li>GERENCIA GENERAL</li>
+                                <li>JEFE UNIDAD DE NEGOCIO</li>
+                                <li>ÁREA ADMINISTRATIVA</li>
+                                <li>JEFE DE PLANTA</li>
+                              </ul>
+                              <p className="text-sm mt-2">
+                                Como <strong>{profile?.role?.replace(/_/g, ' ')}</strong>, no tienes permisos para validar comprobantes.
+                              </p>
+                            </div>
+                          </AlertDescription>
+                        </Alert>
+                      )}
+
+                      {/* Action Button */}
+                      <Card className="border-2 border-primary/20 bg-primary/5">
+                        <CardContent className="p-4">
+                          <div className="flex items-center space-x-3">
+                            <div className={`p-3 rounded-lg ${actionConfig.color.replace('text-', 'bg-').replace('-700', '-200')}`}>
+                              <ActionIcon className="h-6 w-6" />
+                            </div>
+                            <div className="flex-1">
+                              <h4 className="font-semibold text-lg">{actionConfig.label}</h4>
+                              <p className="text-sm text-muted-foreground">
+                                {actionConfig.description}
+                              </p>
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
 
                   {/* File upload and amount update section for receipt */}
                   {primaryAction === 'receipt_uploaded' && (
@@ -784,7 +902,8 @@ export function WorkflowStatusDisplay({
                       isUpdating || 
                       isUploading ||
                       (requiresNotes && !notes.trim()) ||
-                      (primaryAction === 'receipt_uploaded' && !uploadedFile)
+                      (primaryAction === 'receipt_uploaded' && !uploadedFile) ||
+                      !canPerformAction
                     }
                     className="w-full"
                     size="lg"

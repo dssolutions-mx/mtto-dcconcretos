@@ -254,4 +254,92 @@ export function AdministrativeAreaGuard({ children, fallback }: { children: Reac
   }
   
   return <>{children}</>
+}
+
+// GERENCIA_GENERAL specific guard
+export function GeneralManagementGuard({ children, fallback }: { children: React.ReactNode, fallback?: React.ReactNode }) {
+  const { profile } = useAuth()
+  
+  if (!profile || profile.role !== 'GERENCIA_GENERAL') {
+    return <>{fallback}</>
+  }
+  
+  return <>{children}</>
+}
+
+// ENCARGADO_MANTENIMIENTO specific guard
+export function MaintenanceManagerGuard({ children, fallback }: { children: React.ReactNode, fallback?: React.ReactNode }) {
+  const { profile } = useAuth()
+  
+  if (!profile || profile.role !== 'ENCARGADO_MANTENIMIENTO') {
+    return <>{fallback}</>
+  }
+  
+  return <>{children}</>
+}
+
+// JEFE_PLANTA specific guard
+export function PlantManagerGuard({ children, fallback }: { children: React.ReactNode, fallback?: React.ReactNode }) {
+  const { profile } = useAuth()
+  
+  if (!profile || profile.role !== 'JEFE_PLANTA') {
+    return <>{fallback}</>
+  }
+  
+  return <>{children}</>
+}
+
+// AUXILIAR_COMPRAS specific guard
+export function PurchasingAssistantGuard({ children, fallback }: { children: React.ReactNode, fallback?: React.ReactNode }) {
+  const { profile } = useAuth()
+  
+  if (!profile || profile.role !== 'AUXILIAR_COMPRAS') {
+    return <>{fallback}</>
+  }
+  
+  return <>{children}</>
+}
+
+// OPERADOR/DOSIFICADOR specific guard (they have similar permissions)
+export function OperatorGuard({ children, fallback }: { children: React.ReactNode, fallback?: React.ReactNode }) {
+  const { profile } = useAuth()
+  
+  if (!profile || !['OPERADOR', 'DOSIFICADOR'].includes(profile.role)) {
+    return <>{fallback}</>
+  }
+  
+  return <>{children}</>
+}
+
+// VISUALIZADOR specific guard
+export function ViewerGuard({ children, fallback }: { children: React.ReactNode, fallback?: React.ReactNode }) {
+  const { profile } = useAuth()
+  
+  if (!profile || profile.role !== 'VISUALIZADOR') {
+    return <>{fallback}</>
+  }
+  
+  return <>{children}</>
+}
+
+// Maintenance roles guard (any role with maintenance access)
+export function MaintenanceTeamGuard({ children, fallback }: { children: React.ReactNode, fallback?: React.ReactNode }) {
+  const { profile } = useAuth()
+  
+  if (!profile || !['GERENCIA_GENERAL', 'JEFE_UNIDAD_NEGOCIO', 'ENCARGADO_MANTENIMIENTO', 'JEFE_PLANTA'].includes(profile.role)) {
+    return <>{fallback}</>
+  }
+  
+  return <>{children}</>
+}
+
+// Purchasing roles guard (any role with purchasing authorization)
+export function PurchasingTeamGuard({ children, fallback }: { children: React.ReactNode, fallback?: React.ReactNode }) {
+  const { profile } = useAuth()
+  
+  if (!profile || !['GERENCIA_GENERAL', 'JEFE_UNIDAD_NEGOCIO', 'AREA_ADMINISTRATIVA', 'JEFE_PLANTA', 'ENCARGADO_MANTENIMIENTO', 'AUXILIAR_COMPRAS'].includes(profile.role)) {
+    return <>{fallback}</>
+  }
+  
+  return <>{children}</>
 } 

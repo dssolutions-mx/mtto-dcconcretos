@@ -1,5 +1,4 @@
 import type { Metadata } from "next"
-import Link from "next/link"
 import { AuthForm } from "@/components/auth/auth-form"
 
 export const metadata: Metadata = {
@@ -9,19 +8,13 @@ export const metadata: Metadata = {
 
 export default function LoginPage() {
   return (
-    <div className="container flex h-screen w-screen flex-col items-center justify-center">
-      <div className="mx-auto flex w-full flex-col justify-center space-y-6 sm:w-[350px]">
-        <div className="flex flex-col space-y-2 text-center">
+    <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-md w-full space-y-8">
+        <div className="text-center">
           <h1 className="text-2xl font-semibold tracking-tight">Iniciar Sesión</h1>
-          <p className="text-sm text-muted-foreground">Ingrese sus credenciales para acceder al sistema</p>
+          <p className="text-sm text-muted-foreground mt-2">Ingrese sus credenciales para acceder al sistema</p>
         </div>
         <AuthForm mode="login" />
-        <p className="px-8 text-center text-sm text-muted-foreground">
-          ¿No tiene una cuenta?{" "}
-          <Link href="/register" className="underline underline-offset-4 hover:text-primary">
-            Registrarse
-          </Link>
-        </p>
       </div>
     </div>
   )
