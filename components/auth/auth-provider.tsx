@@ -7,7 +7,6 @@ import { User } from "@supabase/supabase-js"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import type { Database } from "@/types/supabase-types"
 import { createClient } from "@/lib/supabase"
-import { SessionRecovery } from "@/components/auth/session-recovery"
 import { 
   hasModuleAccess, 
   hasWriteAccess, 
@@ -86,8 +85,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [profile, setProfile] = useState<UserProfile | null>(null)
   const [loading, setLoading] = useState(true)
-  const [showSessionRecovery, setShowSessionRecovery] = useState(false)
-  const [sessionError, setSessionError] = useState<string | null>(null)
   const supabase = createClient()
 
   const fetchProfile = async (currentUser: User) => {
@@ -114,90 +111,66 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (error) {
         console.error('Error fetching profile:', error)
-        setSessionError('Error al cargar el perfil de usuario')
         return null
       }
 
       return data as UserProfile
     } catch (error) {
       console.error('Error in fetchProfile:', error)
-      setSessionError('Error inesperado al cargar el perfil')
       return null
     }
   }
 
   useEffect(() => {
-    let loadingTimeout: NodeJS.Timeout
-
-    const getUser = async () => {
+    // Get initial session
+    const initializeAuth = async () => {
       try {
-        // Set a timeout to show recovery options if loading takes too long
-        loadingTimeout = setTimeout(() => {
-          if (loading) {
-            setShowSessionRecovery(true)
-          }
-        }, 10000) // 10 seconds
-
-        const {
-          data: { user: currentUser },
-          error
-        } = await supabase.auth.getUser()
+        const { data: { session }, error } = await supabase.auth.getSession()
         
         if (error) {
-          // Check if it's an expected error after logout
-          if (error.message === 'Auth session missing!' || error.name === 'AuthSessionMissingError') {
-            // This is expected after logout, don't log as error
-            console.log('No active session found')
-          } else {
-            // This is an unexpected error
-            console.error('Error getting user:', error)
-            setSessionError('Error al obtener la sesión')
+          // Only log if it's not the expected "no session" error
+          if (error.message !== 'Auth session missing!' && error.name !== 'AuthSessionMissingError') {
+            console.error('Error getting session:', error)
           }
         }
-        
-        setUser(currentUser)
-        
-        if (currentUser) {
-          const userProfile = await fetchProfile(currentUser)
+
+        if (session?.user) {
+          setUser(session.user)
+          const userProfile = await fetchProfile(session.user)
           setProfile(userProfile)
         } else {
+          setUser(null)
           setProfile(null)
         }
       } catch (error) {
-        console.error('Unexpected error in getUser:', error)
-        setSessionError('Error inesperado al cargar la sesión')
+        console.error('Error initializing auth:', error)
       } finally {
         setLoading(false)
-        setShowSessionRecovery(false)
-        clearTimeout(loadingTimeout)
       }
     }
 
-    getUser()
+    initializeAuth()
 
-    const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
+    // Listen for auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       console.log('Auth state changed:', event)
       
-      const currentUser = session?.user ?? null
-      setUser(currentUser)
-      setSessionError(null)
-      
-      if (currentUser) {
-        const userProfile = await fetchProfile(currentUser)
+      if (session?.user) {
+        setUser(session.user)
+        const userProfile = await fetchProfile(session.user)
         setProfile(userProfile)
       } else {
+        setUser(null)
         setProfile(null)
       }
       
       setLoading(false)
-      setShowSessionRecovery(false)
     })
 
     return () => {
-      authListener.subscription.unsubscribe()
-      clearTimeout(loadingTimeout)
+      subscription.unsubscribe()
     }
-  }, [supabase.auth])
+  }, [])
 
   // Create permission checking functions bound to current user
   const permissionCheckers = {
@@ -256,23 +229,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       businessUnitId: profile?.business_unit_id || undefined,
       businessUnitName: profile?.business_units?.name || undefined
     }
-  }
-
-  // Show session recovery UI if needed
-  if (showSessionRecovery && loading) {
-    return (
-      <AuthContext.Provider value={contextValue}>
-        <div className="min-h-screen flex items-center justify-center bg-gray-50">
-          <SessionRecovery 
-            onRecovery={() => {
-              setLoading(true)
-              setShowSessionRecovery(false)
-              window.location.reload()
-            }}
-          />
-        </div>
-      </AuthContext.Provider>
-    )
   }
 
   return <AuthContext.Provider value={contextValue}>{children}</AuthContext.Provider>

@@ -5,6 +5,7 @@ import "./globals.css"
 import { ThemeProvider } from "@/components/theme-provider"
 import { SidebarWrapper } from "@/components/sidebar"
 import { AuthProvider } from "@/components/auth/auth-provider"
+import { RoleProvider } from "@/components/auth/role-provider"
 import { SessionMonitor } from "@/components/auth/session-monitor"
 import { Toaster } from "@/components/ui/toaster"
 
@@ -27,7 +28,9 @@ export default function RootLayout({
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
           <AuthProvider>
             <SessionMonitor />
-            <SidebarWrapper>{children}</SidebarWrapper>
+            <RoleProvider>
+              <SidebarWrapper>{children}</SidebarWrapper>
+            </RoleProvider>
             <Toaster />
           </AuthProvider>
         </ThemeProvider>
