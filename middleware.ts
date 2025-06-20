@@ -2,6 +2,10 @@ import { createServerClient } from "@supabase/ssr"
 import { NextResponse, type NextRequest } from "next/server"
 import { canAccessRoute, getRoleDisplayName } from "@/lib/auth/role-permissions"
 
+// Cache profile data for a short time to reduce database queries
+const profileCache = new Map<string, { profile: any; timestamp: number }>()
+const CACHE_DURATION = 5 * 60 * 1000 // 5 minutes
+
 export async function middleware(request: NextRequest) {
   let supabaseResponse = NextResponse.next({
     request,
@@ -36,6 +40,11 @@ export async function middleware(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser()
 
+  // Force session refresh on auth routes
+  if (request.nextUrl.pathname === '/auth/callback') {
+    return supabaseResponse
+  }
+
   // Rutas públicas que no requieren autenticación
   const publicRoutes = ["/login", "/register", "/auth/callback"]
   const isPublicRoute = publicRoutes.some((route) => request.nextUrl.pathname.startsWith(route))
@@ -60,19 +69,49 @@ export async function middleware(request: NextRequest) {
     return response
   }
 
+  // If user is on a public route and is authenticated, redirect to dashboard
+  if (user && (pathname === "/login" || pathname === "/register")) {
+    const dashboardUrl = new URL("/dashboard", request.url)
+    const response = NextResponse.redirect(dashboardUrl)
+    supabaseResponse.cookies.getAll().forEach(cookie => {
+      response.cookies.set(cookie.name, cookie.value, cookie)
+    })
+    return response
+  }
+
   // Role-based route protection for authenticated users
   if (user && !isPublicRoute && !isPublicApiRoute && !isApiRoute) {
     try {
-      // Get user profile with role information
-      const { data: profile, error: profileError } = await supabase
-        .from('profiles')
-        .select('role, status')
-        .eq('id', user.id)
-        .eq('status', 'active')
-        .single()
+      // Check cache first
+      const cacheKey = user.id
+      const cached = profileCache.get(cacheKey)
+      const now = Date.now()
+      
+      let profile = null
+      
+      if (cached && (now - cached.timestamp) < CACHE_DURATION) {
+        profile = cached.profile
+      } else {
+        // Get user profile with role information
+        const { data, error: profileError } = await supabase
+          .from('profiles')
+          .select('role, status')
+          .eq('id', user.id)
+          .eq('status', 'active')
+          .single()
 
-      if (profileError || !profile) {
-        console.error('Profile not found or inactive:', profileError)
+        if (!profileError && data) {
+          profile = data
+          // Cache the profile
+          profileCache.set(cacheKey, { profile: data, timestamp: now })
+        }
+      }
+
+      if (!profile) {
+        console.error('Profile not found or inactive for user:', user.id)
+        // Clear the invalid session
+        await supabase.auth.signOut()
+        
         const loginUrl = new URL("/login", request.url)
         loginUrl.searchParams.set("error", "profile_not_found")
         const response = NextResponse.redirect(loginUrl)
@@ -103,7 +142,10 @@ export async function middleware(request: NextRequest) {
 
     } catch (error) {
       console.error('Error checking role permissions:', error)
-      // Continue with normal flow if there's an error
+      // On error, allow access but clear cache for this user
+      if (user?.id) {
+        profileCache.delete(user.id)
+      }
     }
   }
 
@@ -123,6 +165,16 @@ export async function middleware(request: NextRequest) {
       response.cookies.set(cookie.name, cookie.value, cookie)
     })
     return response
+  }
+
+  // Clean up old cache entries periodically
+  if (Math.random() < 0.01) { // 1% chance to clean up
+    const cutoff = Date.now() - CACHE_DURATION
+    for (const [key, value] of profileCache.entries()) {
+      if (value.timestamp < cutoff) {
+        profileCache.delete(key)
+      }
+    }
   }
 
   // IMPORTANT: You must return the response as is for the Auth cookies to work correctly

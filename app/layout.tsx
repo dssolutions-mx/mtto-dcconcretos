@@ -5,6 +5,7 @@ import "./globals.css"
 import { ThemeProvider } from "@/components/theme-provider"
 import { SidebarWrapper } from "@/components/sidebar"
 import { AuthProvider } from "@/components/auth/auth-provider"
+import { SessionMonitor } from "@/components/auth/session-monitor"
 import { Toaster } from "@/components/ui/toaster"
 
 const inter = Inter({ subsets: ["latin"] })
@@ -25,6 +26,7 @@ export default function RootLayout({
       <body className={inter.className}>
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
           <AuthProvider>
+            <SessionMonitor />
             <SidebarWrapper>{children}</SidebarWrapper>
             <Toaster />
           </AuthProvider>

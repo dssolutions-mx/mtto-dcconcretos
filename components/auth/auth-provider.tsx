@@ -7,6 +7,7 @@ import { User } from "@supabase/supabase-js"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import type { Database } from "@/types/supabase-types"
 import { createClient } from "@/lib/supabase"
+import { SessionRecovery } from "@/components/auth/session-recovery"
 import { 
   hasModuleAccess, 
   hasWriteAccess, 
@@ -85,6 +86,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [profile, setProfile] = useState<UserProfile | null>(null)
   const [loading, setLoading] = useState(true)
+  const [showSessionRecovery, setShowSessionRecovery] = useState(false)
+  const [sessionError, setSessionError] = useState<string | null>(null)
   const supabase = createClient()
 
   const fetchProfile = async (currentUser: User) => {
@@ -111,39 +114,66 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (error) {
         console.error('Error fetching profile:', error)
+        setSessionError('Error al cargar el perfil de usuario')
         return null
       }
 
       return data as UserProfile
     } catch (error) {
       console.error('Error in fetchProfile:', error)
+      setSessionError('Error inesperado al cargar el perfil')
       return null
     }
   }
 
   useEffect(() => {
+    let loadingTimeout: NodeJS.Timeout
+
     const getUser = async () => {
-      const {
-        data: { user: currentUser },
-      } = await supabase.auth.getUser()
-      
-      setUser(currentUser)
-      
-      if (currentUser) {
-        const userProfile = await fetchProfile(currentUser)
-        setProfile(userProfile)
-      } else {
-        setProfile(null)
+      try {
+        // Set a timeout to show recovery options if loading takes too long
+        loadingTimeout = setTimeout(() => {
+          if (loading) {
+            setShowSessionRecovery(true)
+          }
+        }, 10000) // 10 seconds
+
+        const {
+          data: { user: currentUser },
+          error
+        } = await supabase.auth.getUser()
+        
+        if (error) {
+          console.error('Error getting user:', error)
+          setSessionError('Error al obtener la sesión')
+        }
+        
+        setUser(currentUser)
+        
+        if (currentUser) {
+          const userProfile = await fetchProfile(currentUser)
+          setProfile(userProfile)
+        } else {
+          setProfile(null)
+        }
+      } catch (error) {
+        console.error('Unexpected error in getUser:', error)
+        setSessionError('Error inesperado al cargar la sesión')
+      } finally {
+        setLoading(false)
+        setShowSessionRecovery(false)
+        clearTimeout(loadingTimeout)
       }
-      
-      setLoading(false)
     }
 
     getUser()
 
     const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log('Auth state changed:', event)
+      
       const currentUser = session?.user ?? null
       setUser(currentUser)
+      setSessionError(null)
       
       if (currentUser) {
         const userProfile = await fetchProfile(currentUser)
@@ -153,10 +183,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
       
       setLoading(false)
+      setShowSessionRecovery(false)
     })
 
     return () => {
       authListener.subscription.unsubscribe()
+      clearTimeout(loadingTimeout)
     }
   }, [supabase.auth])
 
@@ -217,6 +249,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       businessUnitId: profile?.business_unit_id || undefined,
       businessUnitName: profile?.business_units?.name || undefined
     }
+  }
+
+  // Show session recovery UI if needed
+  if (showSessionRecovery && loading) {
+    return (
+      <AuthContext.Provider value={contextValue}>
+        <div className="min-h-screen flex items-center justify-center bg-gray-50">
+          <SessionRecovery 
+            onRecovery={() => {
+              setLoading(true)
+              setShowSessionRecovery(false)
+              window.location.reload()
+            }}
+          />
+        </div>
+      </AuthContext.Provider>
+    )
   }
 
   return <AuthContext.Provider value={contextValue}>{children}</AuthContext.Provider>

@@ -22,6 +22,7 @@ export function UserNav() {
   const { user } = useAuth()
   const supabase = createClient()
   const [userInitials, setUserInitials] = useState("US")
+  const [isSigningOut, setIsSigningOut] = useState(false)
 
   useEffect(() => {
     if (user?.email) {
@@ -40,8 +41,31 @@ export function UserNav() {
   }, [user])
 
   const handleSignOut = async () => {
-    await supabase.auth.signOut()
-    router.push("/login")
+    if (isSigningOut) return
+    
+    setIsSigningOut(true)
+    
+    try {
+      // Clear any local storage or session storage
+      if (typeof window !== 'undefined') {
+        localStorage.clear()
+        sessionStorage.clear()
+      }
+      
+      // Sign out from Supabase
+      const { error } = await supabase.auth.signOut()
+      
+      if (error) {
+        console.error('Error signing out:', error)
+      }
+      
+      // Force a hard redirect to clear any stale state
+      window.location.href = "/login"
+    } catch (error) {
+      console.error('Sign out error:', error)
+      // Even on error, redirect to login
+      window.location.href = "/login"
+    }
   }
 
   return (
@@ -73,8 +97,8 @@ export function UserNav() {
           </DropdownMenuItem>
         </DropdownMenuGroup>
         <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={handleSignOut}>
-          Cerrar sesión
+        <DropdownMenuItem onClick={handleSignOut} disabled={isSigningOut}>
+          {isSigningOut ? "Cerrando sesión..." : "Cerrar sesión"}
           <DropdownMenuShortcut>⇧⌘Q</DropdownMenuShortcut>
         </DropdownMenuItem>
       </DropdownMenuContent>
