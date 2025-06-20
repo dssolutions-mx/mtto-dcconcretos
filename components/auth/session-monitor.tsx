@@ -18,6 +18,15 @@ export function SessionMonitor() {
         const { data: { session }, error } = await supabase.auth.getSession()
         
         if (error) {
+          // Check if it's an expected error (no session)
+          if (error.message === 'Auth session missing!' || error.name === 'AuthSessionMissingError') {
+            // This is expected if user logged out, stop monitoring
+            if (refreshIntervalRef.current) {
+              clearInterval(refreshIntervalRef.current)
+              refreshIntervalRef.current = null
+            }
+            return
+          }
           console.error('Session refresh error:', error)
           return
         }
@@ -33,6 +42,15 @@ export function SessionMonitor() {
               // Refresh the session
               const { error: refreshError } = await supabase.auth.refreshSession()
               if (refreshError) {
+                // Check if it's because there's no session
+                if (refreshError.message === 'Auth session missing!' || refreshError.name === 'AuthSessionMissingError') {
+                  // Stop monitoring
+                  if (refreshIntervalRef.current) {
+                    clearInterval(refreshIntervalRef.current)
+                    refreshIntervalRef.current = null
+                  }
+                  return
+                }
                 console.error('Session refresh failed:', refreshError)
               } else {
                 console.log('Session refreshed successfully')

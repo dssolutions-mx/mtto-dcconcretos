@@ -144,8 +144,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         } = await supabase.auth.getUser()
         
         if (error) {
-          console.error('Error getting user:', error)
-          setSessionError('Error al obtener la sesión')
+          // Check if it's an expected error after logout
+          if (error.message === 'Auth session missing!' || error.name === 'AuthSessionMissingError') {
+            // This is expected after logout, don't log as error
+            console.log('No active session found')
+          } else {
+            // This is an unexpected error
+            console.error('Error getting user:', error)
+            setSessionError('Error al obtener la sesión')
+          }
         }
         
         setUser(currentUser)
