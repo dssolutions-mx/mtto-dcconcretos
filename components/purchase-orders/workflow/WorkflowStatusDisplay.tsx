@@ -52,7 +52,7 @@ export function WorkflowStatusDisplay({
   onStatusChange
 }: WorkflowStatusDisplayProps) {
   const router = useRouter()
-  const { profile, hasAuthorizationAccess, canAuthorizeAmount } = useAuthZustand()
+  const { profile, hasAuthorizationAccess, canAuthorizeAmount, refreshProfile } = useAuthZustand()
   const { 
     workflowStatus, 
     loadWorkflowStatus, 
@@ -71,11 +71,12 @@ export function WorkflowStatusDisplay({
   const [effectiveAuthLimit, setEffectiveAuthLimit] = useState<number>(0)
   const [isLoadingAuth, setIsLoadingAuth] = useState(true)
 
+
   // Load workflow status on mount and fetch existing receipt if any
   useEffect(() => {
     loadWorkflowStatus(purchaseOrderId)
     
-    // Load existing purchase order data to get receipt URL and actual amount
+    // Load purchase order basic data
     const loadPurchaseOrderData = async () => {
       try {
         // Load purchase order basic data
@@ -117,11 +118,14 @@ export function WorkflowStatusDisplay({
         const data = await response.json()
         
         let userFound = false
+        let authSummaryUser = null
+        
         if (data.organization_summary) {
           for (const businessUnit of data.organization_summary) {
             for (const plant of businessUnit.plants) {
               const user = plant.users.find((u: any) => u.user_id === profile.id)
               if (user) {
+                authSummaryUser = user
                 setEffectiveAuthLimit(parseFloat(user.effective_global_authorization || 0))
                 userFound = true
                 break
@@ -134,6 +138,23 @@ export function WorkflowStatusDisplay({
         if (!userFound) {
           setEffectiveAuthLimit(profile.can_authorize_up_to || 0)
         }
+
+        // 🔄 AUTO-REFRESH: Detectar inconsistencias de rol y refrescar automáticamente
+        if (authSummaryUser && authSummaryUser.role !== profile.role) {
+          console.log('🔄 Inconsistencia de rol detectada en workflow:', {
+            profileRole: profile.role,
+            authSummaryRole: authSummaryUser.role,
+            triggeringAutoRefresh: true
+          })
+          
+          // Auto-refresh del perfil sin mostrar loading al usuario
+          try {
+            await refreshProfile()
+            console.log('✅ Auto-refresh del perfil completado en workflow')
+          } catch (error) {
+            console.error('❌ Error en auto-refresh del perfil:', error)
+          }
+        }
       } catch (error) {
         console.error('Error loading effective authorization in workflow:', error)
         setEffectiveAuthLimit(profile.can_authorize_up_to || 0)
@@ -143,7 +164,7 @@ export function WorkflowStatusDisplay({
     }
 
     loadEffectiveAuthorization()
-  }, [profile])
+  }, [profile, refreshProfile])
 
   // Helper function to upload receipt file
   const uploadReceiptFile = async (file: File): Promise<string | null> => {
@@ -242,8 +263,8 @@ export function WorkflowStatusDisplay({
       },
       [PurchaseOrderType.DIRECT_SERVICE]: {
         'pending_approval': 'Este servicio directo está esperando aprobación para proceder.',
-        'approved': 'Servicio aprobado. Puedes contratar el servicio con el proveedor especificado.',
-        'receipt_uploaded': 'Comprobante subido. Esperando validación administrativa.',
+        'approved': 'Servicio aprobado. Puedes proceder a contratar el servicio con el proveedor especificado.',
+        'receipt_uploaded': 'Comprobante del servicio subido. Esperando validación administrativa.',
         'validated': 'Proceso completado'
       },
       [PurchaseOrderType.SPECIAL_ORDER]: {
@@ -271,8 +292,8 @@ export function WorkflowStatusDisplay({
       },
       [PurchaseOrderType.DIRECT_SERVICE]: {
         'approved': 'Aprobar Servicio', 
-        'receipt_uploaded': 'Subir Comprobante',
-        'validated': 'Validar Comprobante',
+        'receipt_uploaded': 'Subir Comprobante de Servicio',
+        'validated': 'Validar Comprobante de Servicio',
         'rejected': 'Rechazar Servicio'
       },
       [PurchaseOrderType.SPECIAL_ORDER]: {
@@ -336,14 +357,14 @@ export function WorkflowStatusDisplay({
           color: 'bg-green-100 text-green-700'
         },
         'receipt_uploaded': {
-          label: 'Subir Comprobante',
+          label: 'Subir Comprobante de Servicio',
           description: 'Cargar el comprobante del servicio contratado',
           icon: Receipt,
           color: 'bg-purple-100 text-purple-700'
         },
         'validated': {
-          label: 'Validar Comprobante',
-          description: 'Revisar y validar el comprobante subido',
+          label: 'Validar Comprobante de Servicio',
+          description: 'Revisar y validar el comprobante del servicio',
           icon: CheckCircle,
           color: 'bg-green-100 text-green-700'
         },
@@ -493,7 +514,8 @@ export function WorkflowStatusDisplay({
       description: string
     }
 
-    const commonStatuses: Record<string, StatusConfig> = {
+    // Base configuration for common statuses
+    const baseStatuses: Record<string, StatusConfig> = {
       [EnhancedPOStatus.DRAFT]: {
         label: "Borrador",
         color: "bg-gray-100 text-gray-700",
@@ -505,12 +527,6 @@ export function WorkflowStatusDisplay({
         color: "bg-yellow-100 text-yellow-700",
         icon: Clock,
         description: "Esperando autorización"
-      },
-      [EnhancedPOStatus.APPROVED]: {
-        label: "Aprobada",
-        color: "bg-green-100 text-green-700",
-        icon: CheckCircle,
-        description: "Lista para proceder"
       },
       [EnhancedPOStatus.REJECTED]: {
         label: "Rechazada",
@@ -530,29 +546,61 @@ export function WorkflowStatusDisplay({
         icon: CheckCircle,
         description: "Proceso completado"
       },
-      // Special order specific
       [EnhancedPOStatus.QUOTED]: {
         label: "Cotizada",
         color: "bg-indigo-100 text-indigo-700",
         icon: FileText,
         description: "Cotización recibida"
-      },
-      [EnhancedPOStatus.ORDERED]: {
-        label: "Pedida",
-        color: "bg-cyan-100 text-cyan-700",
-        icon: Package,
-        description: "Pedido realizado al proveedor"
-      },
-      [EnhancedPOStatus.RECEIVED]: {
-        label: "Recibida",
-        color: "bg-teal-100 text-teal-700",
-        icon: Package,
-        description: "Productos/servicios recibidos"
-      },
-
+      }
     }
 
-    return commonStatuses[status] || {
+    // Type-specific status configurations
+    const typeSpecificStatuses: Record<PurchaseOrderType, Record<string, StatusConfig>> = {
+      [PurchaseOrderType.DIRECT_PURCHASE]: {
+        [EnhancedPOStatus.APPROVED]: {
+          label: "Aprobada",
+          color: "bg-green-100 text-green-700",
+          icon: CheckCircle,
+          description: "Lista para realizar la compra"
+        }
+      },
+      [PurchaseOrderType.DIRECT_SERVICE]: {
+        [EnhancedPOStatus.APPROVED]: {
+          label: "Aprobada",
+          color: "bg-green-100 text-green-700",
+          icon: CheckCircle,
+          description: "Lista para contratar el servicio"
+        }
+      },
+      [PurchaseOrderType.SPECIAL_ORDER]: {
+        [EnhancedPOStatus.APPROVED]: {
+          label: "Aprobada",
+          color: "bg-green-100 text-green-700",
+          icon: CheckCircle,
+          description: "Lista para realizar el pedido"
+        },
+        [EnhancedPOStatus.ORDERED]: {
+          label: "Pedida",
+          color: "bg-cyan-100 text-cyan-700",
+          icon: ShoppingCart,
+          description: "Pedido realizado al proveedor"
+        },
+        [EnhancedPOStatus.RECEIVED]: {
+          label: "Recibida",
+          color: "bg-teal-100 text-teal-700",
+          icon: Package,
+          description: "Productos/servicios recibidos"
+        }
+      }
+    }
+
+    // Check for type-specific status first, then fall back to base
+    const typeSpecific = typeSpecificStatuses[type]?.[status]
+    if (typeSpecific) {
+      return typeSpecific
+    }
+
+    return baseStatuses[status] || {
       label: status,
       color: "bg-gray-100 text-gray-700",
       icon: Info,
@@ -686,7 +734,7 @@ export function WorkflowStatusDisplay({
                       )}
                     </span>
                 </div>
-                {!canAuthorizeAmount(purchaseOrderAmount) && (
+                {!isLoadingAuth && effectiveAuthLimit > 0 && purchaseOrderAmount > effectiveAuthLimit && (
                   <Alert className="border-red-200 bg-red-50">
                     <AlertTriangle className="h-4 w-4 text-red-600" />
                     <AlertDescription className="text-red-700">
@@ -720,11 +768,23 @@ export function WorkflowStatusDisplay({
               const isApprovalAction = primaryAction === 'approved'
               const isValidationAction = primaryAction === 'validated'
               
-              // ✅ NUEVO SISTEMA: Roles que pueden validar comprobantes (solo administrativos)
-              const canValidateReceipts = !!(profile?.role && [
-                'GERENCIA_GENERAL',
-                'AREA_ADMINISTRATIVA'
-              ].includes(profile.role))
+              // ✅ SISTEMA HÍBRIDO: Validación de comprobantes con autorización dinámica + restricción administrativa
+              const canValidateReceipts = (() => {
+                // Primero verificar si tiene rol administrativo (restricción base)
+                const hasAdminRole = !!(profile?.role && [
+                  'GERENCIA_GENERAL',
+                  'AREA_ADMINISTRATIVA'
+                ].includes(profile.role))
+                
+                // Si no tiene rol administrativo, no puede validar
+                if (!hasAdminRole) return false
+                
+                // Si tiene rol administrativo, verificar si tiene autorización efectiva
+                // Para validar comprobantes, requerir al menos algún nivel de autorización
+                const hasAuthorizationLimit = effectiveAuthLimit > 0
+                
+                return hasAuthorizationLimit
+              })()
               
               // Check if user can perform the action
               let canPerformAction = true
@@ -735,15 +795,7 @@ export function WorkflowStatusDisplay({
                 const hasValidLimit = effectiveAuthLimit > 0
                 const canAuthorizeAmount = hasValidAmount && hasValidLimit && purchaseOrderAmount <= effectiveAuthLimit
                 
-                // DEBUG: Log the values for debugging
-                console.log('[WorkflowStatusDisplay] Authorization check:', {
-                  purchaseOrderAmount,
-                  effectiveAuthLimit,
-                  hasValidAmount,
-                  hasValidLimit,
-                  canAuthorizeAmount,
-                  isLoadingAuth
-                })
+
                 
                 canPerformAction = !isLoadingAuth && hasValidAmount && hasValidLimit && canAuthorizeAmount
               } else if (isValidationAction) {
@@ -778,17 +830,7 @@ export function WorkflowStatusDisplay({
                       )}
                       
                       {/* Show authorization warning if applicable - solo cuando no esté cargando */}
-                      {(() => {
-                        const shouldShowAlert = isApprovalAction && !canPerformAction && !isLoadingAuth && effectiveAuthLimit > 0
-                        console.log('[WorkflowStatusDisplay] Alert condition:', {
-                          isApprovalAction,
-                          canPerformAction,
-                          isLoadingAuth,
-                          effectiveAuthLimit,
-                          shouldShowAlert
-                        })
-                        return shouldShowAlert
-                      })() && (
+                      {isApprovalAction && !canPerformAction && !isLoadingAuth && effectiveAuthLimit > 0 && (
                         <Alert className="border-orange-200 bg-orange-50">
                           <Shield className="h-4 w-4 text-orange-600" />
                           <AlertDescription className="text-orange-700">
@@ -809,12 +851,30 @@ export function WorkflowStatusDisplay({
                           <AlertDescription className="text-blue-700">
                             <div className="space-y-2">
                               <strong>Validación administrativa requerida</strong>
-                              <p className="text-sm">
-                                Solo el área administrativa puede validar comprobantes de órdenes de compra.
-                              </p>
-                              <p className="text-sm mt-2">
-                                Como <strong>{profile?.role?.replace(/_/g, ' ')}</strong>, no tienes permisos para validar comprobantes.
-                              </p>
+                              {!profile?.role || !['GERENCIA_GENERAL', 'AREA_ADMINISTRATIVA'].includes(profile.role) ? (
+                                <>
+                                  <p className="text-sm">
+                                    Solo el área administrativa puede validar comprobantes de órdenes de compra.
+                                  </p>
+                                  <p className="text-sm mt-2">
+                                    Como <strong>{profile?.role?.replace(/_/g, ' ')}</strong>, no tienes permisos para validar comprobantes.
+                                  </p>
+                                </>
+                              ) : (
+                                <>
+                                  <p className="text-sm">
+                                    Aunque tienes rol administrativo, necesitas tener límites de autorización asignados para validar comprobantes.
+                                  </p>
+                                  <p className="text-sm mt-2">
+                                    Límite actual: <strong>{formatCurrency(effectiveAuthLimit)}</strong>
+                                  </p>
+                                  {effectiveAuthLimit === 0 && (
+                                    <p className="text-sm text-orange-600">
+                                      Contacta a tu supervisor para que te asigne límites de autorización.
+                                    </p>
+                                  )}
+                                </>
+                              )}
                             </div>
                           </AlertDescription>
                         </Alert>

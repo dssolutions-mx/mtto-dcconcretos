@@ -56,10 +56,18 @@ export default function PurchaseOrdersPage() {
                 userFound = true
                 console.log('✅ Found user effective limit:', user.effective_global_authorization)
                 
-                // 🔄 AUTO-REFRESH: Si el límite en el perfil es diferente al de la API, refrescar perfil
+                // 🔄 AUTO-REFRESH: Detectar inconsistencias de límite O rol
                 const profileLimit = profile.can_authorize_up_to || 0
-                if (Math.abs(profileLimit - apiLimit) > 0.01) { // Diferencia mayor a 1 centavo
-                  console.log(`🔄 Límites inconsistentes: Perfil=${profileLimit}, API=${apiLimit}. Refrescando perfil...`)
+                const limitInconsistent = Math.abs(profileLimit - apiLimit) > 0.01 // Diferencia mayor a 1 centavo
+                const roleInconsistent = user.role !== profile.role
+                
+                if (limitInconsistent || roleInconsistent) {
+                  console.log(`🔄 Inconsistencias detectadas:`, {
+                    limitInconsistent: limitInconsistent ? `Perfil=${profileLimit}, API=${apiLimit}` : false,
+                    roleInconsistent: roleInconsistent ? `Perfil=${profile.role}, API=${user.role}` : false,
+                    triggeringAutoRefresh: true
+                  })
+                  
                   try {
                     if (typeof refreshProfile === 'function') {
                       await refreshProfile()

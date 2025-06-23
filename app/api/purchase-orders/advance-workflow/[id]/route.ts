@@ -67,12 +67,22 @@ export async function PUT(
       }
     }
     
-    // ✅ NUEVO SISTEMA: Validación de comprobantes solo para roles específicos
+    // ✅ SISTEMA HÍBRIDO: Validación de comprobantes con autorización dinámica + restricción administrativa
     if (body.new_status === 'validated') {
       const canValidateRoles = ['GERENCIA_GENERAL', 'AREA_ADMINISTRATIVA']
+      
+      // Primero verificar rol administrativo
       if (!canValidateRoles.includes(profile.role)) {
         return NextResponse.json({ 
           error: `Solo ${canValidateRoles.map(r => getRoleDisplayName(r)).join(' y ')} pueden validar comprobantes` 
+        }, { status: 403 })
+      }
+      
+      // Segundo, verificar que tenga autorización efectiva asignada
+      const userLimit = profile.can_authorize_up_to || 0
+      if (userLimit === 0) {
+        return NextResponse.json({ 
+          error: `Aunque tienes rol administrativo, necesitas tener límites de autorización asignados para validar comprobantes. Contacta a tu supervisor.` 
         }, { status: 403 })
       }
     }
