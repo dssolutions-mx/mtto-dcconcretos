@@ -6,13 +6,12 @@ import { DashboardHeader } from "@/components/dashboard/dashboard-header"
 import { DashboardShell } from "@/components/dashboard/dashboard-shell"
 import { AssetsList } from "@/components/assets/assets-list"
 import { Plus, Calendar, CheckCircle, AlertTriangle, Package, Wrench, FileText, Settings } from "lucide-react"
-import { useAssets } from "@/hooks/useSupabase"
 import { useAuthZustand } from "@/hooks/use-auth-zustand"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { useState, useEffect } from "react"
-import { createClient } from "@/lib/supabase"
 import { Badge } from "@/components/ui/badge"
+import { useState, useEffect } from "react"
+import { toast } from "sonner"
 
 interface AssetStats {
   total: number
@@ -23,96 +22,49 @@ interface AssetStats {
   criticalAlerts: number
 }
 
+interface DashboardData {
+  assets: any[]
+  stats: AssetStats
+  locations: string[]
+  departments: string[]
+  metadata: {
+    total_maintenance_items: number
+    total_incidents: number
+    total_pending_schedules: number
+  }
+}
+
 export default function AssetsPage() {
-  const { assets, loading: assetsLoading, error: assetsError, refetch } = useAssets()
   const { ui } = useAuthZustand()
-  const [stats, setStats] = useState<AssetStats>({
-    total: 0,
-    operational: 0,
-    maintenance: 0,
-    repair: 0,
-    inactive: 0,
-    criticalAlerts: 0
-  })
-  const [statsLoading, setStatsLoading] = useState(true)
+  const [data, setData] = useState<DashboardData | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<Error | null>(null)
 
-  // Calculate asset statistics with maintenance data
+  // Fetch optimized dashboard data
   useEffect(() => {
-    const calculateStats = async () => {
-      if (!assets || assets.length === 0) {
-        setStats({
-          total: 0,
-          operational: 0,
-          maintenance: 0,
-          repair: 0,
-          inactive: 0,
-          criticalAlerts: 0
-        })
-        setStatsLoading(false)
-        return
-      }
-
+    const fetchDashboardData = async () => {
       try {
-        setStatsLoading(true)
+        setLoading(true)
+        const response = await fetch('/api/assets/dashboard')
         
-        // Count basic status
-        const total = assets.length
-        const operational = assets.filter(a => a.status === 'operational').length
-        const maintenance = assets.filter(a => a.status === 'maintenance').length
-        const repair = assets.filter(a => a.status === 'repair').length
-        const inactive = assets.filter(a => a.status === 'inactive').length
-
-        // Calculate critical alerts (overdue maintenance + pending incidents)
-        const supabase = createClient()
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`)
+        }
         
-        // Get upcoming maintenance for all assets to check for overdue
-        const response = await fetch('/api/calendar/upcoming-maintenance')
-        const maintenanceData = await response.json()
-        const overdueCount = maintenanceData.upcomingMaintenances?.filter((m: any) => 
-          m.status === 'overdue'
-        ).length || 0
-
-        // Get pending incidents count
-        const { data: incidents } = await supabase
-          .from('incident_history')
-          .select('id, status')
-          .eq('status', 'Pendiente')
-        
-        const pendingIncidents = incidents?.length || 0
-        const criticalAlerts = overdueCount + pendingIncidents
-
-        setStats({
-          total,
-          operational,
-          maintenance,
-          repair,
-          inactive,
-          criticalAlerts
-        })
-      } catch (error) {
-        console.error('Error calculating stats:', error)
-        // Fallback to basic stats without maintenance data
-        const total = assets.length
-        const operational = assets.filter(a => a.status === 'operational').length
-        const maintenance = assets.filter(a => a.status === 'maintenance').length
-        const repair = assets.filter(a => a.status === 'repair').length
-        const inactive = assets.filter(a => a.status === 'inactive').length
-
-        setStats({
-          total,
-          operational,
-          maintenance,
-          repair,
-          inactive,
-          criticalAlerts: 0
-        })
+        const result = await response.json()
+        setData(result.data)
+        setError(null)
+      } catch (err) {
+        console.error('Error fetching dashboard data:', err)
+        setError(err instanceof Error ? err : new Error(String(err)))
+        toast.error('Error al cargar los datos de activos')
       } finally {
-        setStatsLoading(false)
+        setLoading(false)
       }
     }
 
-    calculateStats()
-  }, [assets])
+    fetchDashboardData()
+  }, [])
   
   return (
     <DashboardShell>
@@ -140,7 +92,7 @@ export default function AssetsPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {statsLoading ? '...' : stats.total}
+              {loading ? '...' : data?.stats.total || 0}
             </div>
             <p className="text-xs text-muted-foreground">
               Equipos registrados
@@ -156,10 +108,10 @@ export default function AssetsPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-green-600">
-              {statsLoading ? '...' : stats.operational}
+              {loading ? '...' : data?.stats.operational || 0}
             </div>
             <p className="text-xs text-muted-foreground">
-              {statsLoading ? '...' : `${Math.round((stats.operational / stats.total) * 100) || 0}%`} del total
+              {loading ? '...' : `${Math.round(((data?.stats.operational || 0) / (data?.stats.total || 1)) * 100)}%`} del total
             </p>
           </CardContent>
         </Card>
@@ -172,10 +124,10 @@ export default function AssetsPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-amber-600">
-              {statsLoading ? '...' : stats.maintenance + stats.repair}
+              {loading ? '...' : (data?.stats.maintenance || 0) + (data?.stats.repair || 0)}
             </div>
             <p className="text-xs text-muted-foreground">
-              {statsLoading ? '...' : `${stats.maintenance} mant. + ${stats.repair} rep.`}
+              {loading ? '...' : `${data?.stats.maintenance || 0} mant. + ${data?.stats.repair || 0} rep.`}
             </p>
           </CardContent>
         </Card>
@@ -188,7 +140,7 @@ export default function AssetsPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-red-600">
-              {statsLoading ? '...' : stats.criticalAlerts}
+              {loading ? '...' : data?.stats.criticalAlerts || 0}
             </div>
             <p className="text-xs text-muted-foreground">
               Requieren atención inmediata
@@ -239,15 +191,17 @@ export default function AssetsPage() {
         </div>
       </div>
       
-      {assetsError && (
+      {error && (
         <Alert variant="destructive">
-          <AlertDescription>Error al cargar los activos: {assetsError.message}</AlertDescription>
+          <AlertDescription>Error al cargar los activos: {error.message}</AlertDescription>
         </Alert>
       )}
       
+      {/* Use original AssetsList component */}
       <AssetsList 
-        assets={assets || []} 
-        loading={assetsLoading}
+        assets={data?.assets || []} 
+        loading={loading}
+        error={error}
       />
     </DashboardShell>
   )

@@ -52,8 +52,11 @@ export async function middleware(request: NextRequest) {
     request.nextUrl.pathname.startsWith(route)
   )
 
-  // If user is not authenticated and trying to access protected route
-  if (!user && !isPublicRoute) {
+  // Skip authentication for API routes - they handle their own auth
+  const isApiRoute = request.nextUrl.pathname.startsWith('/api/')
+
+  // If user is not authenticated and trying to access protected route (excluding API routes)
+  if (!user && !isPublicRoute && !isApiRoute) {
     const url = request.nextUrl.clone()
     url.pathname = "/login"
     url.searchParams.set("redirectedFrom", request.nextUrl.pathname)

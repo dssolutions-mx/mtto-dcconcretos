@@ -34,7 +34,7 @@ export async function GET(request: NextRequest) {
       .eq('status', 'active')
       .order('name')
 
-    // Apply role-based filtering
+    // Apply role-based filtering - let RLS policies handle the actual access control
     if (currentProfile.role === 'GERENCIA_GENERAL') {
       // General management can see all business units
     } else if (currentProfile.role === 'JEFE_UNIDAD_NEGOCIO') {
@@ -42,14 +42,14 @@ export async function GET(request: NextRequest) {
       if (currentProfile.business_unit_id) {
         query = query.eq('id', currentProfile.business_unit_id)
       }
+      // If no business unit assigned, show all (for assignment purposes)
     } else {
-      // Other roles can see their business unit if assigned
+      // Other roles: if assigned, show their business unit; if unassigned, show all for assignment
       if (currentProfile.business_unit_id) {
         query = query.eq('id', currentProfile.business_unit_id)
-      } else {
-        // If no business unit assigned, return empty array
-        return NextResponse.json([])
       }
+      // If no business unit assigned, show all available options for assignment
+      // RLS policies will control actual access
     }
 
     const { data: businessUnits, error } = await query

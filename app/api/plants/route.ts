@@ -42,7 +42,7 @@ export async function GET(request: NextRequest) {
       .eq('status', 'active')
       .order('name')
 
-    // Apply role-based filtering
+    // Apply role-based filtering - let RLS policies handle the actual access control
     if (currentProfile.role === 'GERENCIA_GENERAL') {
       // General management can see all plants
     } else if (currentProfile.role === 'JEFE_UNIDAD_NEGOCIO') {
@@ -50,19 +50,23 @@ export async function GET(request: NextRequest) {
       if (currentProfile.business_unit_id) {
         query = query.eq('business_unit_id', currentProfile.business_unit_id)
       }
+      // If no business unit assigned, show all (for assignment purposes)
     } else if (currentProfile.role === 'JEFE_PLANTA' || currentProfile.role === 'ENCARGADO_MANTENIMIENTO') {
       // Plant managers and maintenance specialists can see their plant and related plants in same business unit
       if (currentProfile.business_unit_id) {
         query = query.eq('business_unit_id', currentProfile.business_unit_id)
       }
+      // If no business unit assigned, show all (for assignment purposes)
     } else {
-      // Other roles can only see their assigned plant
+      // Other roles: if assigned, show their plant; if unassigned, show all for assignment
       if (currentProfile.plant_id) {
         query = query.eq('id', currentProfile.plant_id)
-      } else {
-        // If no plant assigned, return empty array
-        return NextResponse.json([])
+      } else if (currentProfile.business_unit_id) {
+        // If assigned to business unit but not plant, show plants in their business unit
+        query = query.eq('business_unit_id', currentProfile.business_unit_id)
       }
+      // If no assignment at all, show all available options for assignment
+      // RLS policies will control actual access
     }
 
     // Apply additional filters if provided
