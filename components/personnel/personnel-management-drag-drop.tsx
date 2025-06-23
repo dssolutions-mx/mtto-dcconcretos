@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { toast } from 'react-hot-toast'
 import { Loader2, Search, Filter, Users, Building2, MapPin, RefreshCw, CheckCircle2, AlertCircle } from 'lucide-react'
 import { PersonnelDraggableItem } from './personnel-draggable-item'
+import { useAuthZustand } from '@/hooks/use-auth-zustand'
 
 interface Profile {
   id: string
@@ -77,12 +78,12 @@ function BusinessUnitContainer({
   })
   
   // Operadores asignados a esta business unit pero no a plantas específicas
-  const businessUnitOperators = operators.filter(op => 
+  const businessUnitOperators = Array.isArray(operators) ? operators.filter(op => 
     op.business_unit_id === businessUnit.id && !op.plant_id
-  )
+  ) : []
 
   // Plantas de esta business unit
-  const businessUnitPlants = plants.filter(p => p.business_unit_id === businessUnit.id)
+  const businessUnitPlants = Array.isArray(plants) ? plants.filter(p => p.business_unit_id === businessUnit.id) : []
 
   return (
     <Card 
@@ -188,7 +189,7 @@ function PlantContainer({
     id: plant.id,
   })
   
-  const plantOperators = operators.filter(op => op.plant_id === plant.id)
+  const plantOperators = Array.isArray(operators) ? operators.filter(op => op.plant_id === plant.id) : []
 
   return (
     <div
@@ -250,7 +251,7 @@ function UnassignedContainer({
     id: 'unassigned',
   })
   
-  const unassignedOperators = operators.filter(op => !op.plant_id && !op.business_unit_id)
+  const unassignedOperators = Array.isArray(operators) ? operators.filter(op => !op.plant_id && !op.business_unit_id) : []
 
   return (
     <Card 
@@ -312,6 +313,7 @@ function UnassignedContainer({
 }
 
 export function PersonnelManagementDragDrop() {
+  const { profile } = useAuthZustand()
   const [operators, setOperators] = useState<Profile[]>([])
   const [plants, setPlants] = useState<Plant[]>([])
   const [businessUnits, setBusinessUnits] = useState<BusinessUnit[]>([])
@@ -357,22 +359,62 @@ export function PersonnelManagementDragDrop() {
         businessUnitsRes.ok ? businessUnitsRes.json() : []
       ])
 
-      setOperators(operatorsData || [])
-      setPlants(plantsData || [])
-      setBusinessUnits(businessUnitsData || [])
+      // Extract arrays from API response objects
+      const operators = Array.isArray(operatorsData) ? operatorsData : (operatorsData?.operators || [])
+      const plants = Array.isArray(plantsData) ? plantsData : (plantsData?.plants || [])
+      const businessUnits = Array.isArray(businessUnitsData) ? businessUnitsData : (businessUnitsData?.business_units || [])
+
+      console.log('Personnel data loaded:', {
+        operators: operators.length,
+        plants: plants.length,
+        businessUnits: businessUnits.length,
+        plantsData: plantsData,
+        businessUnitsData: businessUnitsData
+      })
+
+      // Apply scope-based filtering based on user role
+      let filteredOperators = operators
+      let filteredPlants = plants
+      let filteredBusinessUnits = businessUnits
+
+      if (profile?.role === 'JEFE_UNIDAD_NEGOCIO' && profile?.business_unit_id) {
+        // JEFE_UNIDAD_NEGOCIO can only see their business unit and its personnel/plants
+        filteredBusinessUnits = businessUnits.filter((bu: BusinessUnit) => bu.id === profile.business_unit_id)
+        filteredPlants = plants.filter((p: Plant) => p.business_unit_id === profile.business_unit_id)
+        filteredOperators = operators.filter((op: Profile) => 
+          op.business_unit_id === profile.business_unit_id || 
+          filteredPlants.some((p: Plant) => p.id === op.plant_id)
+        )
+      } else if (profile?.role === 'JEFE_PLANTA' && profile?.plant_id) {
+        // JEFE_PLANTA can only see their plant and its personnel
+        const userPlant = plants.find((p: Plant) => p.id === profile.plant_id)
+        if (userPlant) {
+          filteredBusinessUnits = businessUnits.filter((bu: BusinessUnit) => bu.id === userPlant.business_unit_id)
+          filteredPlants = plants.filter((p: Plant) => p.id === profile.plant_id)
+          filteredOperators = operators.filter((op: Profile) => op.plant_id === profile.plant_id)
+        }
+      }
+
+      setOperators(filteredOperators)
+      setPlants(filteredPlants)
+      setBusinessUnits(filteredBusinessUnits)
     } catch (error) {
       console.error('Error fetching data:', error)
       toast.error('Error al cargar datos')
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [profile])
 
   useEffect(() => {
     fetchData()
   }, [fetchData])
 
   const handleDragStart = useCallback((event: DragStartEvent) => {
+    if (!Array.isArray(operators)) {
+      setDraggedOperator(null)
+      return
+    }
     const operator = operators.find(op => op.id === event.active.id)
     setDraggedOperator(operator || null)
   }, [operators])
@@ -521,6 +563,8 @@ export function PersonnelManagementDragDrop() {
 
   // Datos filtrados memoizados
   const filteredOperators = useMemo(() => {
+    if (!Array.isArray(operators)) return []
+    
     return operators.filter(operator => {
       const matchesSearch = 
         operator.nombre?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -536,6 +580,10 @@ export function PersonnelManagementDragDrop() {
 
   // Estadísticas memoizadas
   const stats = useMemo(() => {
+    if (!Array.isArray(filteredOperators)) {
+      return { total: 0, unassigned: 0, businessUnitOnly: 0, plantAssigned: 0, updating: 0 }
+    }
+    
     const total = filteredOperators.length
     const unassigned = filteredOperators.filter(op => !op.plant_id && !op.business_unit_id).length
     const businessUnitOnly = filteredOperators.filter(op => op.business_unit_id && !op.plant_id).length
@@ -596,7 +644,7 @@ export function PersonnelManagementDragDrop() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Todas las unidades</SelectItem>
-                {businessUnits.map(unit => (
+                {Array.isArray(businessUnits) && businessUnits.map(unit => (
                   <SelectItem key={unit.id} value={unit.id}>
                     {unit.name}
                   </SelectItem>
@@ -663,7 +711,7 @@ export function PersonnelManagementDragDrop() {
           />
 
           {/* Business Units con sus plantas */}
-          {businessUnits.map(businessUnit => (
+          {Array.isArray(businessUnits) && businessUnits.map(businessUnit => (
             <BusinessUnitContainer
               key={businessUnit.id}
               businessUnit={businessUnit}

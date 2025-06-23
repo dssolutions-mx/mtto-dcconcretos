@@ -170,7 +170,7 @@ function CreatePlantDialog({
                 <SelectValue placeholder="Seleccionar unidad de negocio" />
               </SelectTrigger>
               <SelectContent>
-                {businessUnits.map((bu) => (
+                {Array.isArray(businessUnits) && businessUnits.map((bu) => (
                   <SelectItem key={bu.id} value={bu.id}>
                     {bu.name}
                   </SelectItem>
@@ -242,15 +242,17 @@ export function PlantConfigurationDragDrop() {
 
       if (plantsRes.ok) {
         const plantsData = await plantsRes.json()
-        setPlants(plantsData || [])
-        if (plantsData && plantsData.length > 0 && !selectedPlant) {
-          setSelectedPlant(plantsData[0])
+        const plants = Array.isArray(plantsData.plants) ? plantsData.plants : (Array.isArray(plantsData) ? plantsData : [])
+        setPlants(plants)
+        if (plants && plants.length > 0 && !selectedPlant) {
+          setSelectedPlant(plants[0])
         }
       }
 
       if (businessUnitsRes.ok) {
         const businessUnitsData = await businessUnitsRes.json()
-        setBusinessUnits(businessUnitsData || [])
+        const businessUnits = Array.isArray(businessUnitsData.business_units) ? businessUnitsData.business_units : (Array.isArray(businessUnitsData) ? businessUnitsData : [])
+        setBusinessUnits(businessUnits)
       }
     } catch (error) {
       console.error('Error fetching data:', error)
@@ -364,6 +366,9 @@ export function PlantConfigurationDragDrop() {
 
   // Group users by role for display
   const usersByRole = useMemo(() => {
+    if (!Array.isArray(users)) {
+      return {}
+    }
     return users.reduce((acc, user) => {
       if (!acc[user.role]) acc[user.role] = []
       acc[user.role].push(user)
@@ -373,6 +378,9 @@ export function PlantConfigurationDragDrop() {
 
   // Group plants by business unit
   const plantsByBusinessUnit = useMemo(() => {
+    if (!Array.isArray(plants) || !Array.isArray(businessUnits)) {
+      return {}
+    }
     return plants.reduce((acc, plant) => {
       const businessUnit = businessUnits.find(bu => bu.id === plant.business_unit_id)
       if (businessUnit) {
@@ -530,7 +538,7 @@ export function PlantConfigurationDragDrop() {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        {businessUnits.map((bu) => (
+                        {Array.isArray(businessUnits) && businessUnits.map((bu) => (
                           <SelectItem key={bu.id} value={bu.id}>
                             {bu.name}
                           </SelectItem>

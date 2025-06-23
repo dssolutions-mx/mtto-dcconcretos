@@ -4,65 +4,21 @@ import { createClient } from '@/lib/supabase-server'
 export async function GET(request: NextRequest) {
   try {
     const supabase = await createClient()
-    
-    // Get current user and verify permissions
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    if (authError || !user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
 
-    // Get user profile to determine access level
-    const { data: currentProfile, error: profileError } = await supabase
-      .from('profiles')
-      .select('role, business_unit_id')
-      .eq('id', user.id)
-      .single()
-
-    if (profileError || !currentProfile) {
-      return NextResponse.json({ error: 'Profile not found' }, { status: 404 })
-    }
-
-    let query = supabase
+    const { data: businessUnits, error } = await supabase
       .from('business_units')
-      .select(`
-        id,
-        name,
-        code,
-        description,
-        status
-      `)
-      .eq('status', 'active')
+      .select('*')
       .order('name')
-
-    // Apply role-based filtering - let RLS policies handle the actual access control
-    if (currentProfile.role === 'GERENCIA_GENERAL') {
-      // General management can see all business units
-    } else if (currentProfile.role === 'JEFE_UNIDAD_NEGOCIO') {
-      // Business unit managers can see their business unit
-      if (currentProfile.business_unit_id) {
-        query = query.eq('id', currentProfile.business_unit_id)
-      }
-      // If no business unit assigned, show all (for assignment purposes)
-    } else {
-      // Other roles: if assigned, show their business unit; if unassigned, show all for assignment
-      if (currentProfile.business_unit_id) {
-        query = query.eq('id', currentProfile.business_unit_id)
-      }
-      // If no business unit assigned, show all available options for assignment
-      // RLS policies will control actual access
-    }
-
-    const { data: businessUnits, error } = await query
 
     if (error) {
       console.error('Error fetching business units:', error)
-      return NextResponse.json({ error: 'Failed to fetch business units' }, { status: 500 })
+      return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
-    return NextResponse.json(businessUnits || [])
+    return NextResponse.json({ business_units: businessUnits || [] })
 
   } catch (error) {
-    console.error('Error in business-units GET:', error)
+    console.error('Unexpected error in GET /api/business-units:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }

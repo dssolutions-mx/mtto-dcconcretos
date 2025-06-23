@@ -1,6 +1,6 @@
 import { Metadata } from 'next'
 import Link from 'next/link'
-import { Building2, Users, Package, BarChart3, Settings } from 'lucide-react'
+import { Building2, Users, Package, BarChart3, Settings, Shield } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Separator } from '@/components/ui/separator'
@@ -31,6 +31,12 @@ const navigationItems = [
     href: '/gestion/activos/asignaciones',
     icon: Package,
     description: 'Asignar operadores a activos'
+  },
+  {
+    title: 'Autorizaciones',
+    href: '/gestion/autorizaciones',
+    icon: Shield,
+    description: 'Configurar límites y delegaciones de autorización'
   },
   {
     title: 'Reportes',

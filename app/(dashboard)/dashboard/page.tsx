@@ -23,7 +23,6 @@ import {
 } from "lucide-react"
 import { useAuthZustand } from "@/hooks/use-auth-zustand"
 import { RoleGuard, AdminOnlyGuard, AuthorizedOnlyGuard } from "@/components/auth/role-guard"
-import { UserInfoEnhanced } from "@/components/auth/user-info-enhanced"
 import { useRouter, useSearchParams } from "next/navigation"
 import Link from "next/link"
 import { getRoleDisplayName, type ModulePermissions } from "@/lib/auth/role-permissions"
@@ -37,12 +36,27 @@ function DashboardContent() {
     isLoading, 
     isInitialized, 
     isAuthenticated,
-    error 
+    error,
+    refreshProfile
   } = useAuthZustand()
   
   const router = useRouter()
   const searchParams = useSearchParams()
   const [showAccessAlert, setShowAccessAlert] = useState(false)
+  const [isRefreshing, setIsRefreshing] = useState(false)
+
+  // Handler to refresh profile
+  const handleRefreshProfile = async () => {
+    setIsRefreshing(true)
+    try {
+      await refreshProfile()
+      console.log('✅ Profile refreshed successfully')
+    } catch (error) {
+      console.error('❌ Failed to refresh profile:', error)
+    } finally {
+      setIsRefreshing(false)
+    }
+  }
 
   // Check for access denied error from middleware
   useEffect(() => {
@@ -248,7 +262,22 @@ function DashboardContent() {
               </CardDescription>
             </div>
             <div className="text-right space-y-1">
-              <div className="text-sm text-muted-foreground">Límite de Autorización</div>
+              <div className="flex items-center gap-2 justify-end">
+                <div className="text-sm text-muted-foreground">Límite de Autorización</div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleRefreshProfile}
+                  disabled={isRefreshing}
+                  className="h-6 px-2"
+                >
+                  {isRefreshing ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  ) : (
+                    'Actualizar Perfil'
+                  )}
+                </Button>
+              </div>
               <div className="text-2xl font-bold text-green-600">
                 ${authorizationLimit.toLocaleString()}
               </div>

@@ -24,7 +24,8 @@ import {
   File,
   ExternalLink,
   DollarSign,
-  Shield
+  Shield,
+  User
 } from "lucide-react"
 import { 
   PurchaseOrderType, 
@@ -51,7 +52,7 @@ export function WorkflowStatusDisplay({
   onStatusChange
 }: WorkflowStatusDisplayProps) {
   const router = useRouter()
-  const { profile, hasAuthorizationAccess, canAuthorizeAmount, authorizationLimit } = useAuthZustand()
+  const { profile, hasAuthorizationAccess, canAuthorizeAmount } = useAuthZustand()
   const { 
     workflowStatus, 
     loadWorkflowStatus, 
@@ -67,6 +68,8 @@ export function WorkflowStatusDisplay({
   const [actualAmount, setActualAmount] = useState<string>("")
   const [receiptUrl, setReceiptUrl] = useState<string | null>(null)
   const [purchaseOrderAmount, setPurchaseOrderAmount] = useState<number>(0)
+  const [effectiveAuthLimit, setEffectiveAuthLimit] = useState<number>(0)
+  const [isLoadingAuth, setIsLoadingAuth] = useState(true)
 
   // Load workflow status on mount and fetch existing receipt if any
   useEffect(() => {
@@ -103,6 +106,44 @@ export function WorkflowStatusDisplay({
     
     loadPurchaseOrderData()
   }, [loadWorkflowStatus, purchaseOrderId])
+
+  // Load effective authorization limit - same logic as compras page
+  useEffect(() => {
+    const loadEffectiveAuthorization = async () => {
+      if (!profile?.id) return
+      
+      try {
+        const response = await fetch('/api/authorization/summary')
+        const data = await response.json()
+        
+        let userFound = false
+        if (data.organization_summary) {
+          for (const businessUnit of data.organization_summary) {
+            for (const plant of businessUnit.plants) {
+              const user = plant.users.find((u: any) => u.user_id === profile.id)
+              if (user) {
+                setEffectiveAuthLimit(parseFloat(user.effective_global_authorization || 0))
+                userFound = true
+                break
+              }
+            }
+            if (userFound) break
+          }
+        }
+        
+        if (!userFound) {
+          setEffectiveAuthLimit(profile.can_authorize_up_to || 0)
+        }
+      } catch (error) {
+        console.error('Error loading effective authorization in workflow:', error)
+        setEffectiveAuthLimit(profile.can_authorize_up_to || 0)
+      } finally {
+        setIsLoadingAuth(false)
+      }
+    }
+
+    loadEffectiveAuthorization()
+  }, [profile])
 
   // Helper function to upload receipt file
   const uploadReceiptFile = async (file: File): Promise<string | null> => {
@@ -637,12 +678,13 @@ export function WorkflowStatusDisplay({
               <>
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-medium">Tu Límite de Autorización:</span>
-                  <span className="text-lg font-bold text-green-600">
-                    {authorizationLimit === Number.MAX_SAFE_INTEGER 
-                      ? 'Sin límite' 
-                      : formatCurrency(authorizationLimit)
-                    }
-                  </span>
+                                      <span className="text-lg font-bold text-green-600">
+                      {isLoadingAuth ? 'Cargando...' : (
+                        effectiveAuthLimit === Number.MAX_SAFE_INTEGER
+                          ? 'Sin límite' 
+                          : formatCurrency(effectiveAuthLimit)
+                      )}
+                    </span>
                 </div>
                 {!canAuthorizeAmount(purchaseOrderAmount) && (
                   <Alert className="border-red-200 bg-red-50">
@@ -678,19 +720,32 @@ export function WorkflowStatusDisplay({
               const isApprovalAction = primaryAction === 'approved'
               const isValidationAction = primaryAction === 'validated'
               
-              // Roles that can validate receipts
+              // ✅ NUEVO SISTEMA: Roles que pueden validar comprobantes (solo administrativos)
               const canValidateReceipts = !!(profile?.role && [
                 'GERENCIA_GENERAL',
-                'JEFE_UNIDAD_NEGOCIO', 
-                'AREA_ADMINISTRATIVA',
-                'JEFE_PLANTA'
+                'AREA_ADMINISTRATIVA'
               ].includes(profile.role))
               
               // Check if user can perform the action
               let canPerformAction = true
               
               if (isApprovalAction) {
-                canPerformAction = canAuthorizeAmount(purchaseOrderAmount)
+                // Asegurar que todos los valores necesarios estén disponibles
+                const hasValidAmount = purchaseOrderAmount > 0
+                const hasValidLimit = effectiveAuthLimit > 0
+                const canAuthorizeAmount = hasValidAmount && hasValidLimit && purchaseOrderAmount <= effectiveAuthLimit
+                
+                // DEBUG: Log the values for debugging
+                console.log('[WorkflowStatusDisplay] Authorization check:', {
+                  purchaseOrderAmount,
+                  effectiveAuthLimit,
+                  hasValidAmount,
+                  hasValidLimit,
+                  canAuthorizeAmount,
+                  isLoadingAuth
+                })
+                
+                canPerformAction = !isLoadingAuth && hasValidAmount && hasValidLimit && canAuthorizeAmount
               } else if (isValidationAction) {
                 canPerformAction = canValidateReceipts
               }
@@ -712,30 +767,36 @@ export function WorkflowStatusDisplay({
 
                                 return (
                     <div className="space-y-4">
-                      {/* Show authorization warning if applicable */}
-                      {isApprovalAction && !canPerformAction && (
+                      {/* Loading authorization info */}
+                      {isApprovalAction && isLoadingAuth && (
+                        <Alert className="border-blue-200 bg-blue-50">
+                          <Clock className="h-4 w-4 text-blue-600" />
+                          <AlertDescription className="text-blue-700">
+                            Verificando límite de autorización...
+                          </AlertDescription>
+                        </Alert>
+                      )}
+                      
+                      {/* Show authorization warning if applicable - solo cuando no esté cargando */}
+                      {(() => {
+                        const shouldShowAlert = isApprovalAction && !canPerformAction && !isLoadingAuth && effectiveAuthLimit > 0
+                        console.log('[WorkflowStatusDisplay] Alert condition:', {
+                          isApprovalAction,
+                          canPerformAction,
+                          isLoadingAuth,
+                          effectiveAuthLimit,
+                          shouldShowAlert
+                        })
+                        return shouldShowAlert
+                      })() && (
                         <Alert className="border-orange-200 bg-orange-50">
                           <Shield className="h-4 w-4 text-orange-600" />
                           <AlertDescription className="text-orange-700">
                             <div className="space-y-2">
                               <strong>Autorización requerida por un superior</strong>
                               <p className="text-sm">
-                                Esta orden de {formatCurrency(purchaseOrderAmount)} requiere autorización de:
+                                Esta orden de {formatCurrency(purchaseOrderAmount)} excede tu límite de autorización de {formatCurrency(effectiveAuthLimit)}
                               </p>
-                              <ul className="text-sm list-disc list-inside space-y-1">
-                                {purchaseOrderAmount > 500000 && (
-                                  <li>GERENCIA GENERAL (sin límite)</li>
-                                )}
-                                {purchaseOrderAmount > 100000 && purchaseOrderAmount <= 500000 && (
-                                  <li>JEFE UNIDAD DE NEGOCIO (hasta $500,000)</li>
-                                )}
-                                {purchaseOrderAmount > 50000 && purchaseOrderAmount <= 100000 && (
-                                  <li>ÁREA ADMINISTRATIVA (hasta $100,000)</li>
-                                )}
-                                {purchaseOrderAmount <= 50000 && (
-                                  <li>JEFE DE PLANTA (hasta $50,000)</li>
-                                )}
-                              </ul>
                             </div>
                           </AlertDescription>
                         </Alert>
@@ -749,14 +810,8 @@ export function WorkflowStatusDisplay({
                             <div className="space-y-2">
                               <strong>Validación administrativa requerida</strong>
                               <p className="text-sm">
-                                Solo los siguientes roles pueden validar comprobantes:
+                                Solo el área administrativa puede validar comprobantes de órdenes de compra.
                               </p>
-                              <ul className="text-sm list-disc list-inside space-y-1">
-                                <li>GERENCIA GENERAL</li>
-                                <li>JEFE UNIDAD DE NEGOCIO</li>
-                                <li>ÁREA ADMINISTRATIVA</li>
-                                <li>JEFE DE PLANTA</li>
-                              </ul>
                               <p className="text-sm mt-2">
                                 Como <strong>{profile?.role?.replace(/_/g, ' ')}</strong>, no tienes permisos para validar comprobantes.
                               </p>

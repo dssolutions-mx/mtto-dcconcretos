@@ -2,15 +2,14 @@
 
 import type { Metadata } from "next"
 import Link from "next/link"
-import { Suspense } from "react"
+import { Suspense, useState, useEffect } from "react"
 import { PurchaseOrdersList } from "@/components/work-orders/purchase-orders-list"
 import { DashboardHeader } from "@/components/dashboard/dashboard-header"
 import { DashboardShell } from "@/components/dashboard/dashboard-shell"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Plus, Store, Wrench, Building2, Sparkles, Loader2, Receipt, DollarSign, Shield } from "lucide-react"
-import { RoleGuard } from "@/components/auth/role-guard"
+import { Plus, Store, Wrench, Building2, Sparkles, Loader2, Receipt, DollarSign, Shield, CheckCircle, AlertTriangle } from "lucide-react"
 import { useAuthZustand } from "@/hooks/use-auth-zustand"
 import { formatCurrency } from "@/lib/utils"
 
@@ -31,8 +30,90 @@ function PurchaseOrdersListFallback() {
 }
 
 export default function PurchaseOrdersPage() {
-  const { profile, hasAuthorizationAccess, authorizationLimit } = useAuthZustand()
-  const canAuthorize = hasAuthorizationAccess('purchases')
+  const { profile, hasCreateAccess, authorizationLimit, refreshProfile } = useAuthZustand()
+  const [effectiveAuthLimit, setEffectiveAuthLimit] = useState<number>(0)
+  const [isLoadingAuth, setIsLoadingAuth] = useState(true)
+
+  // Load effective authorization limit from the same source as authorization page
+  useEffect(() => {
+    const loadEffectiveAuthorization = async () => {
+      if (!profile?.id) return
+      
+      try {
+        // Hacer consulta directa a la vista que sabemos funciona correctamente
+        const response = await fetch('/api/authorization/summary')
+        const data = await response.json()
+        
+        // Buscar el usuario actual en la respuesta organizacional
+        let userFound = false
+        if (data.organization_summary) {
+          for (const businessUnit of data.organization_summary) {
+            for (const plant of businessUnit.plants) {
+              const user = plant.users.find((u: any) => u.user_id === profile.id)
+              if (user) {
+                const apiLimit = parseFloat(user.effective_global_authorization || 0)
+                setEffectiveAuthLimit(apiLimit)
+                userFound = true
+                console.log('✅ Found user effective limit:', user.effective_global_authorization)
+                
+                // 🔄 AUTO-REFRESH: Si el límite en el perfil es diferente al de la API, refrescar perfil
+                const profileLimit = profile.can_authorize_up_to || 0
+                if (Math.abs(profileLimit - apiLimit) > 0.01) { // Diferencia mayor a 1 centavo
+                  console.log(`🔄 Límites inconsistentes: Perfil=${profileLimit}, API=${apiLimit}. Refrescando perfil...`)
+                  try {
+                    if (typeof refreshProfile === 'function') {
+                      await refreshProfile()
+                      console.log('✅ Perfil refrescado exitosamente')
+                    }
+                  } catch (refreshError) {
+                    console.error('❌ Error refrescando perfil:', refreshError)
+                  }
+                }
+                break
+              }
+            }
+            if (userFound) break
+          }
+        }
+        
+        if (!userFound) {
+          console.log('⚠️ User not found in organization summary, using profile limit')
+          setEffectiveAuthLimit(profile.can_authorize_up_to || 0)
+        }
+      } catch (error) {
+        console.error('Error loading effective authorization:', error)
+        // Fallback to profile limit
+        setEffectiveAuthLimit(profile.can_authorize_up_to || 0)
+      } finally {
+        setIsLoadingAuth(false)
+      }
+    }
+
+    loadEffectiveAuthorization()
+  }, [profile])
+
+  const displayLimit = effectiveAuthLimit || authorizationLimit
+  
+  // ✅ NUEVO SISTEMA: Validación dinámica para creación de órdenes
+  const canCreateOrders = profile && hasCreateAccess('purchases')
+  
+  // ✅ NUEVO SISTEMA: Validación dinámica para aprobación
+  const canApproveOrders = profile && displayLimit > 0
+  
+  // Determinar capacidades del usuario
+  const getUserCapabilities = () => {
+    if (!profile) return { canCreate: false, canApprove: false, role: '', limit: 0 }
+    
+    return {
+      canCreate: canCreateOrders,
+      canApprove: displayLimit > 0,
+      role: profile.role,
+      limit: displayLimit
+    }
+  }
+  
+  const userCapabilities = getUserCapabilities()
+  
   return (
     <DashboardShell>
       <div className="flex justify-between items-center mb-6">
@@ -41,83 +122,125 @@ export default function PurchaseOrdersPage() {
           text="Gestiona las órdenes de compra generadas a partir de órdenes de trabajo."
         />
         <div className="flex space-x-2">
-          <RoleGuard module="purchases">
+          {/* ✅ Solo mostrar botón de comprobantes si tiene acceso de lectura */}
+          {profile && hasCreateAccess('purchases') && (
             <Link href="/compras/comprobantes">
               <Button variant="outline">
                 <Receipt className="mr-2 h-4 w-4" />
                 Ver Comprobantes
               </Button>
             </Link>
-          </RoleGuard>
-          <RoleGuard module="purchases" requireCreate>
+          )}
+          
+          {/* ✅ NUEVO SISTEMA: Solo mostrar si puede crear órdenes */}
+          {canCreateOrders && (
             <Link href="/compras/crear-tipificada">
               <Button>
                 <Plus className="mr-2 h-4 w-4" />
                 Nueva Orden Tipificada
               </Button>
             </Link>
-          </RoleGuard>
+          )}
         </div>
       </div>
 
-      {/* User Authorization Info */}
+      {/* ✅ NUEVO: Información de Capacidades del Usuario */}
       {profile && (
-        <Card className="mb-6 border-yellow-200 bg-yellow-50">
+        <Card className="mb-6 border-blue-200 bg-gradient-to-r from-blue-50 to-indigo-50">
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-3">
-                <Shield className="h-6 w-6 text-yellow-600" />
+                <Shield className="h-6 w-6 text-blue-600" />
                 <div>
-                  <CardTitle className="text-lg">Tu Información de Autorización</CardTitle>
+                  <CardTitle className="text-lg">Tus Capacidades de Compras</CardTitle>
                   <CardDescription>
                     {profile.role?.replace(/_/g, ' ')} - {profile.nombre} {profile.apellido}
                   </CardDescription>
                 </div>
               </div>
-              <Badge variant="secondary" className="bg-yellow-100 text-yellow-700">
-                {canAuthorize ? 'Puede Autorizar' : 'Sin Autorización'}
-              </Badge>
+              <div className="flex space-x-2">
+                {userCapabilities.canCreate && (
+                  <Badge variant="secondary" className="bg-green-100 text-green-700">
+                    <CheckCircle className="h-3 w-3 mr-1" />
+                    Puede Crear
+                  </Badge>
+                )}
+                {userCapabilities.canApprove && (
+                  <Badge variant="secondary" className="bg-blue-100 text-blue-700">
+                    <Shield className="h-3 w-3 mr-1" />
+                    Puede Aprobar
+                  </Badge>
+                )}
+                {!userCapabilities.canCreate && !userCapabilities.canApprove && (
+                  <Badge variant="outline" className="text-orange-600 border-orange-200">
+                    <AlertTriangle className="h-3 w-3 mr-1" />
+                    Solo Lectura
+                  </Badge>
+                )}
+              </div>
             </div>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="flex items-center space-x-3">
-                <DollarSign className="h-5 w-5 text-yellow-600" />
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="flex items-center space-x-3 p-3 rounded-lg bg-white/60">
+                <Plus className="h-8 w-8 text-blue-600" />
                 <div>
-                  <p className="text-sm text-muted-foreground">Límite de Autorización</p>
-                  <p className="font-semibold text-lg">
-                    {authorizationLimit === Number.MAX_SAFE_INTEGER 
-                      ? 'Sin límite' 
-                      : authorizationLimit > 0 
-                        ? formatCurrency(authorizationLimit)
-                        : 'No puede autorizar'
-                    }
+                  <h4 className="font-medium">Crear Órdenes</h4>
+                  <p className="text-sm text-muted-foreground">
+                    {userCapabilities.canCreate ? 'Permitido' : 'No permitido'}
                   </p>
                 </div>
               </div>
-              
-              <div className="flex items-center space-x-3">
-                <Shield className="h-5 w-5 text-yellow-600" />
+
+              <div className="flex items-center space-x-3 p-3 rounded-lg bg-white/60">
+                <DollarSign className="h-8 w-8 text-green-600" />
                 <div>
-                  <p className="text-sm text-muted-foreground">Permisos</p>
-                  <p className="font-semibold">
-                    {canAuthorize 
-                      ? 'Crear, Aprobar y Gestionar' 
-                      : 'Crear y Gestionar'
-                    }
+                  <h4 className="font-medium">Límite de Aprobación</h4>
+                  <p className="text-sm font-semibold">
+                    {isLoadingAuth ? 'Cargando...' : (
+                      userCapabilities.limit === Number.MAX_SAFE_INTEGER 
+                        ? 'Sin límite' 
+                        : userCapabilities.limit > 0 
+                          ? formatCurrency(userCapabilities.limit)
+                          : 'No puede aprobar'
+                    )}
+                  </p>
+                  {!isLoadingAuth && (
+                    <p className="text-xs text-green-600">
+                      ✓ Fuente: Sistema de autorización dinámico
+                    </p>
+                  )}
+                </div>
+              </div>
+              
+              <div className="flex items-center space-x-3 p-3 rounded-lg bg-white/60">
+                <Shield className="h-8 w-8 text-purple-600" />
+                <div>
+                  <h4 className="font-medium">Rol y Alcance</h4>
+                  <p className="text-sm text-muted-foreground">
+                    {profile.business_units?.name || profile.plants?.name || 'Sistema'}
                   </p>
                 </div>
               </div>
             </div>
             
-            {canAuthorize && authorizationLimit > 0 && authorizationLimit < Number.MAX_SAFE_INTEGER && (
-              <div className="mt-4 p-3 bg-yellow-100 rounded-lg">
-                <p className="text-sm text-yellow-800">
-                  <strong>Nota:</strong> Puedes autorizar órdenes de compra hasta {formatCurrency(authorizationLimit)}. 
-                  Para montos mayores, se requiere autorización de un superior.
-                </p>
-              </div>
-            )}
+            {/* Mensaje informativo basado en las capacidades */}
+            <div className="mt-4 p-3 bg-blue-100 rounded-lg">
+              <p className="text-sm text-blue-800">
+                {userCapabilities.canCreate && userCapabilities.canApprove && (
+                  <><strong>Capacidades completas:</strong> Puedes crear y aprobar órdenes de compra hasta {formatCurrency(userCapabilities.limit)}. Para montos mayores, se requiere autorización de un superior.</>
+                )}
+                {userCapabilities.canCreate && !userCapabilities.canApprove && (
+                  <><strong>Solo creación:</strong> Puedes crear órdenes de compra que serán enviadas para aprobación de tus superiores.</>
+                )}
+                {!userCapabilities.canCreate && userCapabilities.canApprove && (
+                  <><strong>Solo aprobación:</strong> Puedes aprobar órdenes de compra hasta {formatCurrency(userCapabilities.limit)}.</>
+                )}
+                {!userCapabilities.canCreate && !userCapabilities.canApprove && (
+                  <><strong>Solo consulta:</strong> Puedes ver las órdenes de compra pero no crear ni aprobar nuevas órdenes.</>
+                )}
+              </p>
+            </div>
           </CardContent>
         </Card>
       )}
@@ -175,16 +298,16 @@ export default function PurchaseOrdersPage() {
             </div>
           </div>
 
-          <div className="flex justify-center pt-4">
-            <RoleGuard module="purchases" requireCreate>
+          {canCreateOrders && (
+            <div className="flex justify-center pt-4">
               <Link href="/compras/crear-tipificada">
                 <Button size="lg" className="min-w-[200px]">
                   <Plus className="mr-2 h-4 w-4" />
                   Crear Orden Tipificada
                 </Button>
               </Link>
-            </RoleGuard>
-          </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 

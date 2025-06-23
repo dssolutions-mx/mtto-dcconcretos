@@ -45,16 +45,16 @@ export const ROLE_PERMISSIONS: Record<string, RoleConfig> = {
       assets: 'read_write',
       maintenance: 'full',
       work_orders: 'full_auth',
-      purchases: 'read',
+      purchases: 'full_auth',
       inventory: 'read_write',
-      personnel: 'full', // Solo su unidad
+      personnel: 'full',
       checklists: 'full',
       reports: 'full',
-      config: 'none'
+      config: 'read_write'
     },
     authorizationLimit: 500000,
     scope: 'business_unit',
-    description: 'Gestión completa de su unidad de negocio'
+    description: 'Gestión completa de su unidad de negocio, incluyendo autorización de compras'
   },
   AREA_ADMINISTRATIVA: {
     name: 'Área Administrativa',
@@ -83,12 +83,12 @@ export const ROLE_PERMISSIONS: Record<string, RoleConfig> = {
       inventory: 'read_write',
       personnel: 'none',
       checklists: 'full',
-      reports: 'read_write', // Mant level
+      reports: 'read_write',
       config: 'none'
     },
     authorizationLimit: 0,
     scope: 'plant',
-    description: 'Gestión completa de mantenimiento en su planta'
+    description: 'Gestión completa de mantenimiento, puede crear órdenes de compra que requieren aprobación'
   },
   JEFE_PLANTA: {
     name: 'Jefe de Planta',
@@ -96,7 +96,7 @@ export const ROLE_PERMISSIONS: Record<string, RoleConfig> = {
       assets: 'read_write', // Su planta
       maintenance: 'read_write', // Su planta
       work_orders: 'read_write', // Su planta
-      purchases: 'read',
+      purchases: 'read_write', // ✅ CAMBIADO: Puede crear órdenes, aprobar según su límite
       inventory: 'read_write', // Su planta
       personnel: 'read_write', // Su planta
       checklists: 'read_write', // Su planta
@@ -105,7 +105,7 @@ export const ROLE_PERMISSIONS: Record<string, RoleConfig> = {
     },
     authorizationLimit: 50000,
     scope: 'plant',
-    description: 'Supervisión completa de su planta'
+    description: 'Supervisión completa de su planta, incluyendo órdenes de compra hasta $50,000'
   },
   AUXILIAR_COMPRAS: {
     name: 'Auxiliar de Compras',
@@ -130,16 +130,16 @@ export const ROLE_PERMISSIONS: Record<string, RoleConfig> = {
       assets: 'none',
       maintenance: 'none',
       work_orders: 'none',
-      purchases: 'none',
+      purchases: 'read_write',
       inventory: 'none',
       personnel: 'none',
-      checklists: 'read', // Solo ejecutar
+      checklists: 'read',
       reports: 'none',
       config: 'none'
     },
     authorizationLimit: 0,
     scope: 'plant',
-    description: 'Solo ejecución de checklists asignados'
+    description: 'Ejecución de checklists y creación de órdenes de compra'
   },
   OPERADOR: {
     name: 'Operador',
@@ -147,16 +147,16 @@ export const ROLE_PERMISSIONS: Record<string, RoleConfig> = {
       assets: 'none',
       maintenance: 'none',
       work_orders: 'none',
-      purchases: 'none',
+      purchases: 'read_write',
       inventory: 'none',
       personnel: 'none',
-      checklists: 'read', // Solo ejecutar
+      checklists: 'read',
       reports: 'none',
       config: 'none'
     },
     authorizationLimit: 0,
     scope: 'plant',
-    description: 'Solo ejecución de checklists asignados'
+    description: 'Ejecución de checklists y creación de órdenes de compra'
   },
   VISUALIZADOR: {
     name: 'Visualizador',
@@ -164,7 +164,7 @@ export const ROLE_PERMISSIONS: Record<string, RoleConfig> = {
       assets: 'read',
       maintenance: 'read',
       work_orders: 'read',
-      purchases: 'read',
+      purchases: 'read_write',
       inventory: 'read',
       personnel: 'none',
       checklists: 'read',
@@ -173,7 +173,7 @@ export const ROLE_PERMISSIONS: Record<string, RoleConfig> = {
     },
     authorizationLimit: 0,
     scope: 'global',
-    description: 'Solo visualización de información general'
+    description: 'Visualización de información y creación de órdenes de compra'
   }
 }
 
@@ -246,9 +246,11 @@ export const ROUTE_PERMISSIONS: Record<string, keyof ModulePermissions> = {
   '/compras': 'purchases',
   '/inventario': 'inventory',
   '/gestion/personal': 'personnel',
+  '/gestion/autorizaciones': 'personnel', // Gestión de autorizaciones es parte de personnel
+  '/gestion/plantas': 'config',
   '/checklists': 'checklists',
   '/reportes': 'reports',
-  '/gestion': 'config'
+  '/gestion': 'personnel' // Por defecto, gestión se mapea a personnel
 }
 
 // Specific route access checks for AREA_ADMINISTRATIVA

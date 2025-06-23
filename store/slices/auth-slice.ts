@@ -21,6 +21,7 @@ export interface AuthSlice extends AuthState {
   clearAuth: () => void
   updateLastAuthCheck: (source: string) => void
   loadProfile: (userId: string) => Promise<void>
+  refreshProfile: () => Promise<void>
 }
 
 export const createAuthSlice: StateCreator<
@@ -478,6 +479,32 @@ export const createAuthSlice: StateCreator<
       } as Partial<AuthStore>)
       
       // Re-throw the error so signIn can handle it
+      throw error
+    }
+  },
+
+  refreshProfile: async () => {
+    const { user } = get()
+    if (!user) {
+      console.log('❌ No user found for profile refresh')
+      return
+    }
+
+    console.log('🔄 Force refreshing profile...')
+    
+    // Clear the cached profile to force a fresh fetch
+    const userId = user.id
+    const cache = get()
+    if (cache.profileCache && cache.profileCache.has(userId)) {
+      cache.profileCache.delete(userId)
+    }
+    
+    try {
+      // Force reload profile from database
+      await get().loadProfile(userId)
+      console.log('✅ Profile refreshed successfully')
+    } catch (error) {
+      console.error('❌ Failed to refresh profile:', error)
       throw error
     }
   }

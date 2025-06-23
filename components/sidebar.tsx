@@ -34,6 +34,7 @@ import {
   Users,
   UserCheck,
   Sparkles,
+  Shield,
 } from "lucide-react"
 import { UserNav } from "@/components/user-nav"
 import { ModeToggle } from "@/components/mode-toggle"
@@ -631,6 +632,19 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                     </Link>
                   </Button>
                 )}
+                {['GERENCIA_GENERAL', 'JEFE_UNIDAD_NEGOCIO', 'AREA_ADMINISTRATIVA'].includes(profile.role) && (
+                  <Button
+                    variant={isPathActive("/gestion/autorizaciones") ? "secondary" : "ghost"}
+                    className="w-full justify-start pl-8"
+                    asChild
+                    onClick={handleLinkClick}
+                  >
+                    <Link href="/gestion/autorizaciones">
+                      <Shield className="mr-2 h-4 w-4" />
+                      Gestión de Autorizaciones
+                    </Link>
+                  </Button>
+                )}
               </CollapsibleContent>
             </Collapsible>
           </div>
@@ -767,11 +781,12 @@ export function CollapsedSidebar({ className, onLinkClick }: SidebarProps) {
       id: "organization",
       icon: Building2,
       label: "Organización",
-      active: isSectionActive(["/personal", "/activos/asignacion", "/plantas"]),
+      active: isSectionActive(["/personal", "/activos/asignacion", "/plantas", "/gestion/autorizaciones"]),
       items: [
         { href: "/personal", icon: Users, label: "Gestión de Personal", active: isPathActive("/personal") },
         { href: "/activos/asignacion", icon: UserCheck, label: "Asignación de Activos", active: isPathActive("/activos/asignacion") },
-        { href: "/plantas", icon: Building2, label: "Configuración de Plantas", active: isPathActive("/plantas") }
+        { href: "/plantas", icon: Building2, label: "Configuración de Plantas", active: isPathActive("/plantas") },
+        { href: "/gestion/autorizaciones", icon: Shield, label: "Gestión de Autorizaciones", active: isPathActive("/gestion/autorizaciones") }
       ]
     },
     {

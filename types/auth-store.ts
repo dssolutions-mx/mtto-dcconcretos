@@ -140,6 +140,7 @@ export interface AuthStore extends
   clearAuth: () => void
   updateLastAuthCheck: (source: string) => void
   loadProfile: (userId: string) => Promise<void>
+  refreshProfile: () => Promise<void>
   
   // Session actions
   scheduleTokenRefresh: (session: Session) => void

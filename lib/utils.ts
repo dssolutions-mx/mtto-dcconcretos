@@ -6,14 +6,14 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 /**
- * Formats a number as currency in USD format
+ * Formats a number as currency in Mexican Pesos format
  */
 export function formatCurrency(amount: number | string): string {
   const numAmount = typeof amount === 'string' ? parseFloat(amount) : amount;
   
   return new Intl.NumberFormat('es-MX', {
     style: 'currency',
-    currency: 'USD',
+    currency: 'MXN',
     minimumFractionDigits: 2,
     maximumFractionDigits: 2
   }).format(numAmount);

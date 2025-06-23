@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { PurchaseOrderService } from '@/lib/services/purchase-order-service'
 import { AdvanceWorkflowRequest } from '@/types/purchase-orders'
 import { createClient } from '@/lib/supabase-server'
-import { canAuthorizeAmount, getRoleDisplayName } from '@/lib/auth/role-permissions'
+import { getRoleDisplayName } from '@/lib/auth/role-permissions'
 
 export async function PUT(
   request: NextRequest,
@@ -23,10 +23,10 @@ export async function PUT(
       }, { status: 401 })
     }
 
-    // Get user profile to check role
+    // ✅ NUEVO SISTEMA: Obtener perfil con límite dinámico de autorización
     const { data: profile } = await supabase
       .from('profiles')
-      .select('role')
+      .select('role, can_authorize_up_to, business_unit_id, plant_id')
       .eq('id', user.id)
       .single()
     
@@ -45,7 +45,7 @@ export async function PUT(
       }, { status: 400 })
     }
     
-    // Special checks for approval actions
+    // ✅ NUEVO SISTEMA: Validación dinámica para aprobación
     if (body.new_status === 'approved') {
       // Get the purchase order to check amount
       const { data: purchaseOrder } = await supabase
@@ -56,20 +56,23 @@ export async function PUT(
       
       if (purchaseOrder) {
         const amount = parseFloat(purchaseOrder.total_amount)
-        if (!canAuthorizeAmount(profile.role, amount)) {
+        const userLimit = profile.can_authorize_up_to || 0
+        
+        // ✅ Validación basada en límite dinámico del usuario
+        if (amount > userLimit) {
           return NextResponse.json({ 
-            error: `Tu rol ${getRoleDisplayName(profile.role)} no puede autorizar órdenes de ${amount.toLocaleString('es-MX', { style: 'currency', currency: 'MXN' })}` 
+            error: `Tu límite de autorización (${userLimit.toLocaleString('es-MX', { style: 'currency', currency: 'MXN' })}) no permite aprobar órdenes de ${amount.toLocaleString('es-MX', { style: 'currency', currency: 'MXN' })}. Esta orden debe ser aprobada por un superior.` 
           }, { status: 403 })
         }
       }
     }
     
-    // Special checks for validation actions
+    // ✅ NUEVO SISTEMA: Validación de comprobantes solo para roles específicos
     if (body.new_status === 'validated') {
-      const canValidateRoles = ['GERENCIA_GENERAL', 'JEFE_UNIDAD_NEGOCIO', 'AREA_ADMINISTRATIVA', 'JEFE_PLANTA']
+      const canValidateRoles = ['GERENCIA_GENERAL', 'AREA_ADMINISTRATIVA']
       if (!canValidateRoles.includes(profile.role)) {
         return NextResponse.json({ 
-          error: `Tu rol ${getRoleDisplayName(profile.role)} no puede validar comprobantes` 
+          error: `Solo ${canValidateRoles.map(r => getRoleDisplayName(r)).join(' y ')} pueden validar comprobantes` 
         }, { status: 403 })
       }
     }

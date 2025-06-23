@@ -1,4 +1,4 @@
-import { createClient } from '@supabase/supabase-js';
+import { createClient } from './supabase';
 import { Database } from './database.types';
 import { 
   Asset, 
@@ -14,10 +14,8 @@ import {
 } from '../types';
 import { Json } from './database.types';
 
-// Inicializar cliente Supabase
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
-const supabase = createClient<Database>(supabaseUrl, supabaseKey);
+// Use authenticated browser client
+const supabase = createClient();
 
 // API de Modelos de Equipos
 export const modelsApi = {

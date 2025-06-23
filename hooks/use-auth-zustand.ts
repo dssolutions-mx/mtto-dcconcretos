@@ -31,11 +31,12 @@ export function useAuthZustand() {
   )
 
   // Get auth actions
-  const { signIn, signOut, refreshSession } = useAuthStore(
+  const { signIn, signOut, refreshSession, refreshProfile } = useAuthStore(
     useShallow((state) => ({
       signIn: state.signIn,
       signOut: state.signOut,
       refreshSession: state.refreshSession,
+      refreshProfile: state.refreshProfile,
     }))
   )
 
@@ -57,7 +58,7 @@ export function useAuthZustand() {
       profile ? hasAuthorizationAccess(profile.role, module) : false,
     
     canAuthorizeAmount: (amount: number) => 
-      profile ? canAuthorizeAmount(profile.role, amount) : false,
+      profile ? amount <= (profile.can_authorize_up_to || 0) : false,
     
     canAccessRoute: (pathname: string) => 
       profile ? canAccessRoute(profile.role, pathname) : false
@@ -100,7 +101,7 @@ export function useAuthZustand() {
   }
 
   // Get authorization limit
-  const authorizationLimit = profile ? getAuthorizationLimit(profile.role) : 0
+  const authorizationLimit = profile ? (profile.can_authorize_up_to || 0) : 0
 
   // Get organizational context
   const organizationalContext = {
@@ -124,6 +125,7 @@ export function useAuthZustand() {
     signIn,
     signOut,
     refreshSession,
+    refreshProfile,
 
     // Permission checkers
     ...permissionCheckers,
