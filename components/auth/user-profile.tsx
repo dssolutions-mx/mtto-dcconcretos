@@ -12,7 +12,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { useAuth } from "@/components/auth/auth-provider"
+import { useAuthZustand } from "@/hooks/use-auth-zustand"
 import { createClient } from "@/lib/supabase"
 
 const profileSchema = z.object({
@@ -23,7 +23,7 @@ const profileSchema = z.object({
 type ProfileFormValues = z.infer<typeof profileSchema>
 
 export function UserProfile() {
-  const { user } = useAuth()
+  const { user, signOut } = useAuthZustand()
   const router = useRouter()
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -64,14 +64,16 @@ export function UserProfile() {
 
   async function handleSignOut() {
     setIsLoading(true)
-
-    const supabase = createClient()
+    setError(null)
 
     try {
-      await supabase.auth.signOut()
+      console.log('🚪 User profile logout initiated...')
+      await signOut()
+      console.log('✅ Logout successful, redirecting...')
       router.push("/login")
       router.refresh()
     } catch (error: any) {
+      console.error('❌ Logout error:', error)
       setError(error.message || "Ocurrió un error al cerrar sesión")
     } finally {
       setIsLoading(false)

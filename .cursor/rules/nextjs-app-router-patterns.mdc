@@ -1,0 +1,311 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+# Next.js App Router Patterns
+
+## 🚀 App Router Requirements
+
+This project uses **Next.js 15 with App Router**. All new pages and components must follow App Router conventions.
+
+## ✅ REQUIRED File Structure
+
+### 1. Page Components
+**Always use `page.tsx` for routes:**
+```
+app/
+  route-name/
+    page.tsx          # ✅ Route page
+    layout.tsx        # ✅ Optional layout
+    loading.tsx       # ✅ Optional loading UI
+    error.tsx         # ✅ Optional error UI
+    not-found.tsx     # ✅ Optional 404 page
+```
+
+### 2. API Routes
+**Use `route.ts` for API endpoints:**
+```
+app/
+  api/
+    endpoint-name/
+      route.ts        # ✅ API handler
+```
+
+## 🔧 Component Patterns
+
+### 1. Server Components (Default)
+**Use for data fetching and static content:**
+```typescript
+// ✅ Server Component (default)
+import { createClient } from '@/lib/supabase'
+
+export default async function ServerPage() {
+  const supabase = createClient()
+  const { data } = await supabase.from('table').select('*')
+  
+  return (
+    <div>
+      <h1>Server Rendered Data</h1>
+      {data?.map(item => <div key={item.id}>{item.name}</div>)}
+    </div>
+  )
+}
+```
+
+### 2. Client Components
+**Use "use client" directive for interactivity:**
+```typescript
+"use client"
+
+import { useAuthZustand } from "@/hooks/use-auth-zustand"
+import { useState, useEffect } from "react"
+
+export default function ClientPage() {
+  const { profile, isLoading } = useAuthZustand()
+  const [data, setData] = useState([])
+  
+  // Interactive logic here
+  
+  return <div>Interactive Content</div>
+}
+```
+
+## 📊 Data Fetching Patterns
+
+### 1. Server-Side Data Fetching
+**Replace old `getServerSideProps`:**
+```typescript
+// ✅ App Router pattern
+export default async function Page() {
+  // Direct async in component
+  const data = await fetchData()
+  
+  return <div>{data.content}</div>
+}
+
+// ❌ Old Pages Router pattern
+export async function getServerSideProps() {
+  // Don't use in App Router
+}
+```
+
+### 2. Static Data with Revalidation
+**Replace old `getStaticProps`:**
+```typescript
+// ✅ App Router with revalidation
+async function getData() {
+  const res = await fetch('https://api.example.com/data', {
+    next: { revalidate: 3600 } // Revalidate every hour
+  })
+  return res.json()
+}
+
+export default async function Page() {
+  const data = await getData()
+  return <div>{data.content}</div>
+}
+```
+
+### 3. Dynamic Data (No Cache)
+**For real-time data:**
+```typescript
+async function getDynamicData() {
+  const res = await fetch('https://api.example.com/data', {
+    cache: 'no-store' // Always fresh data
+  })
+  return res.json()
+}
+```
+
+## 🔀 Routing Patterns
+
+### 1. Dynamic Routes
+**Use bracket notation:**
+```
+app/
+  assets/
+    [id]/
+      page.tsx        # /assets/123
+  orders/
+    [...slug]/
+      page.tsx        # /orders/a/b/c (catch-all)
+```
+
+### 2. Route Groups
+**Use parentheses for organization:**
+```
+app/
+  (dashboard)/        # Group without affecting URL
+    layout.tsx        # Layout for dashboard routes
+    assets/
+      page.tsx        # /assets (layout applies)
+  (auth)/
+    layout.tsx        # Different layout for auth
+    login/
+      page.tsx        # /login
+```
+
+### 3. Parallel Routes
+**Use @folder for simultaneous rendering:**
+```
+app/
+  dashboard/
+    @sidebar/
+      page.tsx
+    @main/
+      page.tsx
+    layout.tsx        # Receives both as props
+```
+
+## 🎯 Navigation Patterns
+
+### 1. Programmatic Navigation
+**Use next/navigation hooks:**
+```typescript
+"use client"
+
+import { useRouter, usePathname, useSearchParams } from 'next/navigation'
+
+export default function NavigationComponent() {
+  const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
+  
+  const handleNavigation = () => {
+    router.push('/new-route')
+    router.replace('/replace-route')
+    router.back()
+  }
+  
+  return <button onClick={handleNavigation}>Navigate</button>
+}
+```
+
+### 2. Link Component
+**Use Next.js Link for navigation:**
+```typescript
+import Link from 'next/link'
+
+export default function NavigationLinks() {
+  return (
+    <nav>
+      <Link href="/dashboard">Dashboard</Link>
+      <Link href="/assets/123">Asset Detail</Link>
+      <Link href="/orders?status=pending">Pending Orders</Link>
+    </nav>
+  )
+}
+```
+
+## 🔒 Auth Integration Patterns
+
+### 1. Protected Routes
+**Use middleware for route protection:**
+```typescript
+// middleware.ts
+import { createServerClient } from '@supabase/ssr'
+import { NextResponse } from 'next/server'
+
+export async function middleware(request) {
+  const { data: { user } } = await supabase.auth.getUser()
+  
+  if (!user) {
+    return NextResponse.redirect(new URL('/login', request.url))
+  }
+  
+  return NextResponse.next()
+}
+
+export const config = {
+  matcher: ['/dashboard/:path*', '/assets/:path*']
+}
+```
+
+### 2. Layout-Based Auth
+**Check auth in layouts:**
+```typescript
+// app/(dashboard)/layout.tsx
+import { AuthInitializer } from '@/components/auth/auth-initializer'
+import { RoleProvider } from '@/components/auth/role-provider'
+
+export default function DashboardLayout({
+  children,
+}: {
+  children: React.ReactNode
+}) {
+  return (
+    <AuthInitializer>
+      <RoleProvider>
+        <div className="dashboard-layout">
+          {children}
+        </div>
+      </RoleProvider>
+    </AuthInitializer>
+  )
+}
+```
+
+## 📱 Loading and Error States
+
+### 1. Loading UI
+**Create loading.tsx files:**
+```typescript
+// app/dashboard/loading.tsx
+export default function Loading() {
+  return (
+    <div className="flex items-center justify-center h-screen">
+      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+    </div>
+  )
+}
+```
+
+### 2. Error Boundaries
+**Create error.tsx files:**
+```typescript
+// app/dashboard/error.tsx
+"use client"
+
+import { useEffect } from 'react'
+
+export default function Error({
+  error,
+  reset,
+}: {
+  error: Error & { digest?: string }
+  reset: () => void
+}) {
+  useEffect(() => {
+    console.error(error)
+  }, [error])
+
+  return (
+    <div>
+      <h2>Something went wrong!</h2>
+      <button onClick={() => reset()}>Try again</button>
+    </div>
+  )
+}
+```
+
+## 🚨 Migration Checklist
+
+When converting from Pages Router or creating new routes:
+
+1. ✅ Use `app/` directory structure
+2. ✅ Name files as `page.tsx`, not `index.tsx`
+3. ✅ Use `route.ts` for API routes
+4. ✅ Add `"use client"` only when needed
+5. ✅ Use new navigation hooks from `next/navigation`
+6. ✅ Replace data fetching methods with async components
+7. ✅ Update imports to use App Router patterns
+
+## 📝 File References
+
+- **Root Layout**: [layout.tsx](mdc:app/layout.tsx) - Main app layout
+- **Dashboard Layout**: [layout.tsx](mdc:app/(dashboard)/layout.tsx) - Dashboard wrapper
+- **Middleware**: [middleware.ts](mdc:middleware.ts) - Route protection
+- **API Examples**: [route.ts](mdc:app/api/assets/route.ts) - API route patterns
+
+Remember: **App Router provides better performance, SEO, and developer experience** when used correctly with these patterns.

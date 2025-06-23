@@ -2,13 +2,13 @@
 
 import { useEffect } from "react"
 import { useRouter, usePathname } from "next/navigation"
-import { useAuth } from "./auth-provider"
+import { useAuthZustand } from "@/hooks/use-auth-zustand"
 import { canAccessRoute } from "@/lib/auth/role-permissions"
 
 export function RoleProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter()
   const pathname = usePathname()
-  const { profile, loading, user } = useAuth()
+  const { profile, isLoading: loading, user } = useAuthZustand()
 
   useEffect(() => {
     // Skip checking during loading or if no user

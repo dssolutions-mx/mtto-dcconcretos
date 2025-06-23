@@ -1,0 +1,167 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+# Zustand Authentication System Rules
+
+## 🚨 CRITICAL: Always Use Zustand Auth System
+
+This project uses a **Zustand-based authentication system**. The old React Context auth system has been **COMPLETELY DEPRECATED** and removed.
+
+## ✅ REQUIRED Authentication Patterns
+
+### 1. Primary Auth Hook
+**ALWAYS use this hook for authentication:**
+```typescript
+import { useAuthZustand } from "@/hooks/use-auth-zustand"
+
+function MyComponent() {
+  const { user, profile, isLoading, signIn, signOut } = useAuthZustand()
+  // ... component logic
+}
+```
+
+### 2. Permission Checking
+**Use the built-in permission methods:**
+```typescript
+const { 
+  hasModuleAccess, 
+  hasWriteAccess, 
+  hasCreateAccess,
+  hasDeleteAccess,
+  hasAuthorizationAccess,
+  canAuthorizeAmount,
+  ui 
+} = useAuthZustand()
+
+// Check permissions
+if (hasModuleAccess('assets')) {
+  // Show assets module
+}
+
+// Use UI helpers
+if (ui.canShowCreateButton('purchases')) {
+  // Show create button
+}
+```
+
+### 3. Role Guards
+**Use these components for conditional rendering:**
+```typescript
+import { RoleGuard } from "@/components/auth/role-guard"
+
+<RoleGuard module="purchases" requireCreate>
+  <CreatePurchaseButton />
+</RoleGuard>
+```
+
+### 4. Direct Store Access (Advanced)
+**Only when needed for complex state management:**
+```typescript
+import { useAuthStore } from '@/store'
+
+const authState = useAuthStore((state) => ({
+  user: state.user,
+  profile: state.profile
+}))
+```
+
+## ❌ FORBIDDEN Authentication Patterns
+
+### 🚫 NEVER Use These Deprecated Imports:
+```typescript
+// ❌ FORBIDDEN - These will cause build errors
+import { useAuth } from "@/components/auth/auth-provider"
+import { AuthProvider } from "@/components/auth/auth-provider"
+import { AuthContext } from "@/components/auth/auth-provider"
+```
+
+### 🚫 NEVER Use These Deprecated Hooks:
+```typescript
+// ❌ FORBIDDEN - These no longer exist
+const auth = useAuth()
+const context = useContext(AuthContext)
+```
+
+## 🏗️ System Architecture
+
+### Core Files Structure:
+- **Main Hook**: [use-auth-zustand.ts](mdc:hooks/use-auth-zustand.ts) - Primary authentication interface
+- **Store**: [auth-slice.ts](mdc:store/slices/auth-slice.ts) - Zustand store for auth state
+- **Initializer**: [auth-initializer.tsx](mdc:components/auth/auth-initializer.tsx) - Auth system initialization
+- **Role System**: [role-guard.tsx](mdc:components/auth/role-guard.tsx) - Permission-based components
+
+### Layout Integration:
+The auth system is initialized in [layout.tsx](mdc:app/layout.tsx):
+```typescript
+<AuthInitializer />
+<SessionMonitor />
+<RoleProvider>
+  <SidebarWrapper>{children}</SidebarWrapper>
+</RoleProvider>
+```
+
+## 📋 Migration Checklist
+
+When working with authentication in any component:
+
+1. ✅ Import `useAuthZustand` from `@/hooks/use-auth-zustand`
+2. ✅ Use destructuring to get needed auth state/methods
+3. ✅ Use `RoleGuard` components for conditional rendering
+4. ✅ Check permissions using built-in methods
+5. ✅ Handle loading states with `isLoading`
+6. ❌ NEVER import from `auth-provider.tsx` (removed)
+7. ❌ NEVER use `useAuth()` from old context system
+
+## 🔧 Common Usage Patterns
+
+### Page-Level Authentication:
+```typescript
+"use client"
+
+import { useAuthZustand } from "@/hooks/use-auth-zustand"
+import { RoleGuard } from "@/components/auth/role-guard"
+
+export default function MyPage() {
+  const { profile, ui, isLoading } = useAuthZustand()
+  
+  if (isLoading) return <div>Loading...</div>
+  
+  return (
+    <div>
+      <h1>Welcome {profile?.nombre}</h1>
+      <RoleGuard module="purchases" requireCreate>
+        <CreateButton />
+      </RoleGuard>
+    </div>
+  )
+}
+```
+
+### Authorization Checks:
+```typescript
+const { hasAuthorizationAccess, canAuthorizeAmount, authorizationLimit } = useAuthZustand()
+
+const canApprove = hasAuthorizationAccess('purchases')
+const canApproveAmount = canAuthorizeAmount(10000)
+```
+
+## 🚨 Build Error Prevention
+
+If you see any of these errors, you're using deprecated patterns:
+- `Module not found: Can't resolve '@/components/auth/auth-provider'`
+- `useAuth is not defined`
+- `AuthProvider is not defined`
+
+**Solution**: Replace with Zustand equivalents as shown above.
+
+## 📝 Additional Notes
+
+- All pages have been migrated to use `useAuthZustand()`
+- The auth system provides the same interface as before
+- Permission checking is more efficient with Zustand
+- Session management is automatic and reliable
+- The system is production-ready and fully tested
+
+Remember: **ALWAYS use Zustand auth patterns** - the old context system is completely removed and will cause build failures.

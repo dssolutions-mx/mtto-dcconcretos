@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation"
 import { useEffect, useState } from "react"
-import { useAuth } from "./auth-provider"
+import { useAuthZustand } from "@/hooks/use-auth-zustand"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -32,18 +32,29 @@ export function RoleGuard({
   redirect,
   showAlert = true
 }: RoleGuardProps) {
-  const { profile, loading, hasModuleAccess, hasWriteAccess, hasCreateAccess, hasDeleteAccess, hasAuthorizationAccess } = useAuth()
+  const { 
+    profile, 
+    isLoading, 
+    isInitialized,
+    isAuthenticated,
+    hasModuleAccess, 
+    hasWriteAccess, 
+    hasCreateAccess, 
+    hasDeleteAccess, 
+    hasAuthorizationAccess 
+  } = useAuthZustand()
+  
   const router = useRouter()
   const [hasCheckedPermissions, setHasCheckedPermissions] = useState(false)
 
   useEffect(() => {
-    if (!loading) {
+    if (isInitialized && !isLoading) {
       setHasCheckedPermissions(true)
     }
-  }, [loading])
+  }, [isInitialized, isLoading])
 
-  // Still loading
-  if (loading || !hasCheckedPermissions) {
+  // Still loading or not initialized
+  if (!isInitialized || isLoading || !hasCheckedPermissions) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
         <div className="text-center">
@@ -55,7 +66,7 @@ export function RoleGuard({
   }
 
   // No profile (shouldn't happen if auth middleware works)
-  if (!profile) {
+  if (!profile || !isAuthenticated) {
     if (redirect) {
       router.replace(redirect)
       return null
@@ -153,20 +164,14 @@ export function RoleGuard({
       return null
     }
 
-    const requiredPermissions = []
-    if (requireWrite) requiredPermissions.push('Escritura')
-    if (requireCreate) requiredPermissions.push('Creación')
-    if (requireDelete) requiredPermissions.push('Eliminación')
-    if (requireAuth) requiredPermissions.push('Autorización')
-
     return (
       <div className="flex items-center justify-center min-h-[400px]">
         <Card className="w-full max-w-md">
           <CardHeader className="text-center">
-            <ShieldAlert className="h-12 w-12 text-warning mx-auto mb-2" />
+            <ShieldAlert className="h-12 w-12 text-destructive mx-auto mb-2" />
             <CardTitle>Permisos Insuficientes</CardTitle>
             <CardDescription>
-              Tu rol no tiene los permisos específicos requeridos para esta acción
+              Tu rol no tiene los permisos necesarios para esta acción
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -174,15 +179,22 @@ export function RoleGuard({
               <AlertDescription>
                 <strong>Módulo:</strong> {module}<br />
                 <strong>Rol actual:</strong> {profile.role}<br />
-                <strong>Permisos requeridos:</strong> {requiredPermissions.join(', ')}
+                <strong>Permisos requeridos:</strong>{' '}
+                {[
+                  requireWrite && 'Escritura',
+                  requireCreate && 'Crear',
+                  requireDelete && 'Eliminar',
+                  requireAuth && 'Autorizar'
+                ].filter(Boolean).join(', ')}
               </AlertDescription>
             </Alert>
             <Button 
-              onClick={() => router.back()} 
+              onClick={() => router.push('/dashboard')} 
               className="w-full"
               variant="outline"
             >
-              Volver
+              <Home className="h-4 w-4 mr-2" />
+              Volver al Dashboard
             </Button>
           </CardContent>
         </Card>
@@ -190,25 +202,14 @@ export function RoleGuard({
     )
   }
 
-  // All checks passed, render children
   return <>{children}</>
 }
 
 // Convenience components for common patterns
 export function AdminOnlyGuard({ children, fallback }: { children: React.ReactNode, fallback?: React.ReactNode }) {
-  const { profile } = useAuth()
+  const { profile } = useAuthZustand()
   
   if (!profile || !['GERENCIA_GENERAL', 'AREA_ADMINISTRATIVA'].includes(profile.role)) {
-    return <>{fallback}</>
-  }
-  
-  return <>{children}</>
-}
-
-export function ManagerLevelGuard({ children, fallback }: { children: React.ReactNode, fallback?: React.ReactNode }) {
-  const { profile } = useAuth()
-  
-  if (!profile || !['GERENCIA_GENERAL', 'JEFE_UNIDAD_NEGOCIO', 'AREA_ADMINISTRATIVA', 'JEFE_PLANTA'].includes(profile.role)) {
     return <>{fallback}</>
   }
   
@@ -224,7 +225,7 @@ export function AuthorizedOnlyGuard({
   fallback?: React.ReactNode
   amount?: number 
 }) {
-  const { profile, canAuthorizeAmount } = useAuth()
+  const { profile, canAuthorizeAmount } = useAuthZustand()
   
   if (!profile) {
     return <>{fallback}</>
@@ -245,20 +246,9 @@ export function AuthorizedOnlyGuard({
   return <>{children}</>
 }
 
-// AREA_ADMINISTRATIVA specific guard
-export function AdministrativeAreaGuard({ children, fallback }: { children: React.ReactNode, fallback?: React.ReactNode }) {
-  const { profile } = useAuth()
-  
-  if (!profile || profile.role !== 'AREA_ADMINISTRATIVA') {
-    return <>{fallback}</>
-  }
-  
-  return <>{children}</>
-}
-
 // GERENCIA_GENERAL specific guard
 export function GeneralManagementGuard({ children, fallback }: { children: React.ReactNode, fallback?: React.ReactNode }) {
-  const { profile } = useAuth()
+  const { profile } = useAuthZustand()
   
   if (!profile || profile.role !== 'GERENCIA_GENERAL') {
     return <>{fallback}</>
@@ -267,9 +257,20 @@ export function GeneralManagementGuard({ children, fallback }: { children: React
   return <>{children}</>
 }
 
+// AREA_ADMINISTRATIVA specific guard
+export function AdministrativeGuard({ children, fallback }: { children: React.ReactNode, fallback?: React.ReactNode }) {
+  const { profile } = useAuthZustand()
+  
+  if (!profile || profile.role !== 'AREA_ADMINISTRATIVA') {
+    return <>{fallback}</>
+  }
+  
+  return <>{children}</>
+}
+
 // ENCARGADO_MANTENIMIENTO specific guard
 export function MaintenanceManagerGuard({ children, fallback }: { children: React.ReactNode, fallback?: React.ReactNode }) {
-  const { profile } = useAuth()
+  const { profile } = useAuthZustand()
   
   if (!profile || profile.role !== 'ENCARGADO_MANTENIMIENTO') {
     return <>{fallback}</>
@@ -280,7 +281,7 @@ export function MaintenanceManagerGuard({ children, fallback }: { children: Reac
 
 // JEFE_PLANTA specific guard
 export function PlantManagerGuard({ children, fallback }: { children: React.ReactNode, fallback?: React.ReactNode }) {
-  const { profile } = useAuth()
+  const { profile } = useAuthZustand()
   
   if (!profile || profile.role !== 'JEFE_PLANTA') {
     return <>{fallback}</>
@@ -289,20 +290,9 @@ export function PlantManagerGuard({ children, fallback }: { children: React.Reac
   return <>{children}</>
 }
 
-// AUXILIAR_COMPRAS specific guard
-export function PurchasingAssistantGuard({ children, fallback }: { children: React.ReactNode, fallback?: React.ReactNode }) {
-  const { profile } = useAuth()
-  
-  if (!profile || profile.role !== 'AUXILIAR_COMPRAS') {
-    return <>{fallback}</>
-  }
-  
-  return <>{children}</>
-}
-
 // OPERADOR/DOSIFICADOR specific guard (they have similar permissions)
 export function OperatorGuard({ children, fallback }: { children: React.ReactNode, fallback?: React.ReactNode }) {
-  const { profile } = useAuth()
+  const { profile } = useAuthZustand()
   
   if (!profile || !['OPERADOR', 'DOSIFICADOR'].includes(profile.role)) {
     return <>{fallback}</>
@@ -313,7 +303,7 @@ export function OperatorGuard({ children, fallback }: { children: React.ReactNod
 
 // VISUALIZADOR specific guard
 export function ViewerGuard({ children, fallback }: { children: React.ReactNode, fallback?: React.ReactNode }) {
-  const { profile } = useAuth()
+  const { profile } = useAuthZustand()
   
   if (!profile || profile.role !== 'VISUALIZADOR') {
     return <>{fallback}</>
@@ -324,7 +314,7 @@ export function ViewerGuard({ children, fallback }: { children: React.ReactNode,
 
 // Maintenance roles guard (any role with maintenance access)
 export function MaintenanceTeamGuard({ children, fallback }: { children: React.ReactNode, fallback?: React.ReactNode }) {
-  const { profile } = useAuth()
+  const { profile } = useAuthZustand()
   
   if (!profile || !['GERENCIA_GENERAL', 'JEFE_UNIDAD_NEGOCIO', 'ENCARGADO_MANTENIMIENTO', 'JEFE_PLANTA'].includes(profile.role)) {
     return <>{fallback}</>
@@ -335,7 +325,7 @@ export function MaintenanceTeamGuard({ children, fallback }: { children: React.R
 
 // Purchasing roles guard (any role with purchasing authorization)
 export function PurchasingTeamGuard({ children, fallback }: { children: React.ReactNode, fallback?: React.ReactNode }) {
-  const { profile } = useAuth()
+  const { profile } = useAuthZustand()
   
   if (!profile || !['GERENCIA_GENERAL', 'JEFE_UNIDAD_NEGOCIO', 'AREA_ADMINISTRATIVA', 'JEFE_PLANTA', 'ENCARGADO_MANTENIMIENTO', 'AUXILIAR_COMPRAS'].includes(profile.role)) {
     return <>{fallback}</>

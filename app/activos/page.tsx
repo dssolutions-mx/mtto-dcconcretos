@@ -7,7 +7,7 @@ import { DashboardShell } from "@/components/dashboard/dashboard-shell"
 import { AssetsList } from "@/components/assets/assets-list"
 import { Plus, Calendar, CheckCircle, AlertTriangle, Package, Wrench, FileText, Settings } from "lucide-react"
 import { useAssets } from "@/hooks/useSupabase"
-import { useAuth } from "@/components/auth/auth-provider"
+import { useAuthZustand } from "@/hooks/use-auth-zustand"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { useState, useEffect } from "react"
@@ -25,7 +25,7 @@ interface AssetStats {
 
 export default function AssetsPage() {
   const { assets, loading: assetsLoading, error: assetsError, refetch } = useAssets()
-  const { ui } = useAuth()
+  const { ui } = useAuthZustand()
   const [stats, setStats] = useState<AssetStats>({
     total: 0,
     operational: 0,

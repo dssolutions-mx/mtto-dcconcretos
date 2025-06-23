@@ -14,13 +14,11 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { useRouter } from "next/navigation"
-import { createClient } from "@/lib/supabase"
-import { useAuth } from "@/components/auth/auth-provider"
+import { useAuthZustand } from "@/hooks/use-auth-zustand"
 
 export function UserNav() {
   const router = useRouter()
-  const { user } = useAuth()
-  const supabase = createClient()
+  const { user, signOut } = useAuthZustand()
   const [userInitials, setUserInitials] = useState("US")
   const [isSigningOut, setIsSigningOut] = useState(false)
 
@@ -46,25 +44,27 @@ export function UserNav() {
     setIsSigningOut(true)
     
     try {
+      console.log('🚪 User nav logout initiated...')
+      
+      // Use Zustand store's signOut method
+      await signOut()
+      
+      console.log('✅ Logout successful, redirecting...')
+      
       // Clear any local storage or session storage
       if (typeof window !== 'undefined') {
         localStorage.clear()
         sessionStorage.clear()
       }
       
-      // Sign out from Supabase
-      const { error } = await supabase.auth.signOut()
-      
-      if (error) {
-        console.error('Error signing out:', error)
-      }
-      
       // Force a hard redirect to clear any stale state
       window.location.href = "/login"
     } catch (error) {
-      console.error('Sign out error:', error)
+      console.error('❌ Sign out error:', error)
       // Even on error, redirect to login
       window.location.href = "/login"
+    } finally {
+      setIsSigningOut(false)
     }
   }
 

@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useEffect, use } from "react";
 import { useAsset, useMaintenanceHistory, useIncidents, useUpcomingMaintenance } from "@/hooks/useSupabase";
-import { useAuth } from "@/components/auth/auth-provider";
+import { useAuthZustand } from "@/hooks/use-auth-zustand";
 import { DashboardHeader } from "@/components/dashboard/dashboard-header";
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -72,7 +72,7 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
   const { asset: rawAsset, loading, error } = useAsset(assetId);
   const { history: maintenanceHistory, loading: maintenanceLoading } = useMaintenanceHistory(assetId);
   const { incidents, loading: incidentsLoading } = useIncidents(assetId);
-  const { ui } = useAuth();
+  const { ui } = useAuthZustand();
   const [activeTab, setActiveTab] = useState("status");
   const [upcomingMaintenances, setUpcomingMaintenances] = useState<any[]>([]);
   const [upcomingLoading, setUpcomingLoading] = useState(true);

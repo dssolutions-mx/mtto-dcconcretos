@@ -13,7 +13,7 @@ import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { createClient } from "@/lib/supabase"
+import { useAuthZustand } from "@/hooks/use-auth-zustand"
 
 const USER_ROLES = [
   { value: "GERENCIA_GENERAL", label: "Gerencia General" },
@@ -56,6 +56,9 @@ export function AuthForm({ mode = "login" }: { mode: "login" | "register" }) {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [showPassword, setShowPassword] = useState(false)
+  
+  // Use Zustand store for authentication
+  const { signIn } = useAuthZustand()
 
   const schema = mode === "login" ? loginSchema : registerSchema
 
@@ -83,16 +86,18 @@ export function AuthForm({ mode = "login" }: { mode: "login" | "register" }) {
 
     try {
       if (mode === "login") {
-        const supabase = createClient()
-        const { error } = await supabase.auth.signInWithPassword({
-          email: values.email,
-          password: values.password,
-        })
-
-        if (error) throw error
-
+        console.log('🔐 Attempting login with Zustand store...')
+        
+        // Use Zustand store's signIn method
+        const result = await signIn(values.email, values.password)
+        
+        if (!result.success) {
+          throw new Error(result.error || 'Login failed')
+        }
+        
+        console.log('✅ Login successful, redirecting...')
         router.refresh()
-        router.push("/")
+        router.push("/dashboard")
       } else {
         // Register mode - call our custom registration API
         const registerValues = values as RegisterFormValues
@@ -125,10 +130,12 @@ export function AuthForm({ mode = "login" }: { mode: "login" | "register" }) {
         }
 
         // Registration successful
+        console.log('✅ Registration successful, redirecting...')
         router.refresh()
-        router.push("/")
+        router.push("/dashboard")
       }
     } catch (error: any) {
+      console.error(`❌ ${mode === 'login' ? 'Login' : 'Registration'} error:`, error)
       setError(error.message || "Ocurrió un error durante la autenticación")
     } finally {
       setIsLoading(false)

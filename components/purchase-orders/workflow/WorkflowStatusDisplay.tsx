@@ -32,7 +32,7 @@ import {
   WorkflowStatusResponse 
 } from "@/types/purchase-orders"
 import { usePurchaseOrders } from "@/hooks/usePurchaseOrders"
-import { useAuth } from "@/components/auth/auth-provider"
+import { useAuthZustand } from "@/hooks/use-auth-zustand"
 import { formatCurrency } from "@/lib/utils"
 
 interface WorkflowStatusDisplayProps {
@@ -51,7 +51,7 @@ export function WorkflowStatusDisplay({
   onStatusChange
 }: WorkflowStatusDisplayProps) {
   const router = useRouter()
-  const { profile, hasAuthorizationAccess, canAuthorizeAmount, authorizationLimit } = useAuth()
+  const { profile, hasAuthorizationAccess, canAuthorizeAmount, authorizationLimit } = useAuthZustand()
   const { 
     workflowStatus, 
     loadWorkflowStatus, 

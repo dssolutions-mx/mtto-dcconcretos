@@ -21,7 +21,7 @@ import { useChecklistSchedules, useChecklistTemplates } from "@/hooks/useCheckli
 import { toast } from "sonner"
 import { Badge } from "@/components/ui/badge"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
-import { useAuth } from "@/components/auth/auth-provider"
+import { useAuthZustand } from "@/hooks/use-auth-zustand"
 import { RoleGuard, OperatorGuard, MaintenanceTeamGuard } from "@/components/auth/role-guard"
 
 // Importación dinámica del servicio offline
@@ -84,7 +84,7 @@ function UnresolvedIssuesCard() {
 function ChecklistsContent() {
   const searchParams = useSearchParams()
   const tabParam = searchParams.get('tab')
-  const { profile, ui } = useAuth()
+  const { profile, ui } = useAuthZustand()
   const { schedules, loading, error, fetchSchedules } = useChecklistSchedules()
   const { templates, fetchTemplates } = useChecklistTemplates()
   const [activeTab, setActiveTab] = useState('overview')

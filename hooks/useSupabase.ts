@@ -424,7 +424,8 @@ export function useUpcomingMaintenance() {
 }
 
 // Hook para autenticación y perfil de usuario
-export function useAuth() {
+// DEPRECATED: This hook is deprecated, use useAuthZustand from '@/hooks/use-auth-zustand' instead
+export function useAuthDeprecated() {
   const [user, setUser] = useState(supabase.auth.getUser);
   const [profile, setProfile] = useState<any | null>(null);
   const [loading, setLoading] = useState<boolean>(true);

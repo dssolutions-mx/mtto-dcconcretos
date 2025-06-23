@@ -25,19 +25,28 @@ interface AssetDB extends DBSchema {
 }
 
 class OfflineAssetService {
-  private db: Promise<IDBPDatabase<AssetDB>>
+  private db: Promise<IDBPDatabase<AssetDB>> | null = null
+  private isClient = typeof window !== 'undefined'
   
   constructor() {
-    this.db = openDB<AssetDB>('assets-offline', 1, {
-      upgrade(db) {
-        db.createObjectStore('offline-assets', { keyPath: 'id' })
-      }
-    })
+    if (this.isClient) {
+      this.db = openDB<AssetDB>('assets-offline', 1, {
+        upgrade(db) {
+          db.createObjectStore('offline-assets', { keyPath: 'id' })
+        }
+      })
+    }
+  }
+
+  private async getDB(): Promise<IDBPDatabase<AssetDB> | null> {
+    if (!this.isClient || !this.db) return null
+    return await this.db
   }
   
-  // Guardar un activo offline
+    // Guardar un activo offline
   async saveOfflineAsset(id: string, data: any, photos: Array<any> = [], documents: Array<any> = []) {
-    const db = await this.db
+    const db = await this.getDB()
+    if (!db) return
     await db.put('offline-assets', {
       id,
       data,
@@ -47,17 +56,19 @@ class OfflineAssetService {
       timestamp: Date.now()
     })
   }
-  
+
   // Obtener todos los activos pendientes de sincronización
   async getPendingSyncs() {
-    const db = await this.db
+    const db = await this.getDB()
+    if (!db) return []
     const all = await db.getAll('offline-assets')
     return all.filter(item => !item.synced)
   }
-  
+
   // Marcar un activo como sincronizado
   async markAsSynced(id: string) {
-    const db = await this.db
+    const db = await this.getDB()
+    if (!db) return
     const item = await db.get('offline-assets', id)
     if (item) {
       item.synced = true
@@ -171,24 +182,26 @@ class OfflineAssetService {
     return results
   }
   
-  // Comprobar si hay elementos pendientes de sincronización
+    // Comprobar si hay elementos pendientes de sincronización
   async hasPendingSyncs() {
     const pending = await this.getPendingSyncs()
     return pending.length > 0
   }
-  
+
   // Obtener todos los activos guardados offline
   async getAllAssets() {
-    const db = await this.db
+    const db = await this.getDB()
+    if (!db) return []
     return await db.getAll('offline-assets')
   }
-  
+
   // Limpiar datos antiguos (más de 30 días)
   async cleanOldData() {
-    const db = await this.db
+    const db = await this.getDB()
+    if (!db) return
     const all = await db.getAll('offline-assets')
     const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000
-    
+
     for (const item of all) {
       if (item.synced && item.timestamp < thirtyDaysAgo) {
         await db.delete('offline-assets', item.id)

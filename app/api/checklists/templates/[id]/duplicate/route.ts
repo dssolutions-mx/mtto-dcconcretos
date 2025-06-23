@@ -26,7 +26,8 @@ export async function POST(
       }
     )
 
-    const templateId = params.id
+    const awaitedParams = await params
+    const templateId = awaitedParams.id
     const { name, description, frequency, model_id, interval_id } = await request.json()
 
     // Validate required fields

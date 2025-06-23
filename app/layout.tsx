@@ -4,7 +4,7 @@ import { Inter } from "next/font/google"
 import "./globals.css"
 import { ThemeProvider } from "@/components/theme-provider"
 import { SidebarWrapper } from "@/components/sidebar"
-import { AuthProvider } from "@/components/auth/auth-provider"
+import { AuthInitializer } from "@/components/auth/auth-initializer"
 import { RoleProvider } from "@/components/auth/role-provider"
 import { SessionMonitor } from "@/components/auth/session-monitor"
 import { Toaster } from "@/components/ui/toaster"
@@ -26,13 +26,12 @@ export default function RootLayout({
     <html lang="es" suppressHydrationWarning>
       <body className={inter.className}>
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
-          <AuthProvider>
-            <SessionMonitor />
-            <RoleProvider>
-              <SidebarWrapper>{children}</SidebarWrapper>
-            </RoleProvider>
-            <Toaster />
-          </AuthProvider>
+          <AuthInitializer />
+          <SessionMonitor />
+          <RoleProvider>
+            <SidebarWrapper>{children}</SidebarWrapper>
+          </RoleProvider>
+          <Toaster />
         </ThemeProvider>
       </body>
     </html>

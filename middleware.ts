@@ -42,8 +42,12 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(url)
   }
 
-  // Define public routes
-  const publicRoutes = ["/login", "/register", "/auth/callback"]
+  // Define public routes (pages that don't require authentication)
+  const publicRoutes = [
+    "/login", 
+    "/register", 
+    "/auth/callback"
+  ]
   const isPublicRoute = publicRoutes.some((route) => 
     request.nextUrl.pathname.startsWith(route)
   )
@@ -56,8 +60,9 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(url)
   }
 
-  // If user is authenticated and trying to access auth pages
-  if (user && (request.nextUrl.pathname === "/login" || request.nextUrl.pathname === "/register")) {
+  // If user is authenticated and trying to access login/register pages
+  if (user && 
+      (request.nextUrl.pathname === "/login" || request.nextUrl.pathname === "/register")) {
     const url = request.nextUrl.clone()
     url.pathname = "/dashboard"
     return NextResponse.redirect(url)

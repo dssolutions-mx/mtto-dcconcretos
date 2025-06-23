@@ -7,7 +7,7 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
-import { useAuth } from "@/components/auth/auth-provider"
+import { useAuthZustand } from "@/hooks/use-auth-zustand"
 import {
   BarChart3,
   Boxes,
@@ -97,7 +97,7 @@ function AppLogo({
 
 export function Sidebar({ className, onLinkClick }: SidebarProps) {
   const pathname = usePathname()
-  const { profile, ui } = useAuth()
+  const { profile, ui } = useAuthZustand()
   const [equipmentOpen, setEquipmentOpen] = useState(false)
   const [operationsOpen, setOperationsOpen] = useState(false)
   const [procurementOpen, setProcurementOpen] = useState(profile?.role === 'AREA_ADMINISTRATIVA')
@@ -678,7 +678,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
 // Enhanced Collapsed Sidebar with better tooltips
 export function CollapsedSidebar({ className, onLinkClick }: SidebarProps) {
   const pathname = usePathname()
-  const { profile } = useAuth()
+  const { profile } = useAuthZustand()
   const [openTooltips, setOpenTooltips] = useState<Record<string, boolean>>({})
 
   const handleLinkClick = () => {

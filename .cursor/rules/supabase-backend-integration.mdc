@@ -1,0 +1,239 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+# Supabase Backend Integration Rules
+
+## 🔧 Backend Operations Protocol
+
+For any backend operation, **ALWAYS use the Supabase MCP** (Model Control Protocol) instead of direct Supabase client calls when possible.
+
+## ✅ REQUIRED Patterns
+
+### 1. Auth-Aware Supabase Client
+**Use the auth-integrated client:**
+```typescript
+import { createClient } from "@/lib/supabase"
+
+// Client automatically includes auth session
+const supabase = createClient()
+```
+
+### 2. Server-Side Auth Integration
+**For server components and API routes:**
+```typescript
+import { createClient } from '@/lib/supabase'
+import { cookies } from 'next/headers'
+
+export async function createServerClient() {
+  const cookieStore = await cookies()
+  
+  return createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() {
+          return cookieStore.getAll()
+        },
+        setAll(cookiesToSet) {
+          try {
+            cookiesToSet.forEach(({ name, value, options }) =>
+              cookieStore.set(name, value, options)
+            )
+          } catch {
+            // Handle server component limitations
+          }
+        },
+      },
+    }
+  )
+}
+```
+
+### 3. RLS-Aware Queries
+**Always respect Row Level Security:**
+```typescript
+// ✅ RLS automatically enforced with authenticated client
+const { data, error } = await supabase
+  .from('profiles')
+  .select('*')
+  .eq('status', 'active')
+```
+
+## 🚨 Supabase SSR Requirements
+
+### CRITICAL: Use Only @supabase/ssr Package
+
+**✅ CORRECT Patterns:**
+```typescript
+import { createBrowserClient, createServerClient } from '@supabase/ssr'
+
+// ALWAYS use getAll/setAll pattern
+{
+  cookies: {
+    getAll() {
+      return cookieStore.getAll()
+    },
+    setAll(cookiesToSet) {
+      const response = NextResponse.next({ request })
+      cookiesToSet.forEach(({ name, value, options }) => {
+        response.cookies.set(name, value, options)
+      })
+      return response
+    }
+  }
+}
+```
+
+**❌ FORBIDDEN Patterns:**
+```typescript
+// ❌ NEVER use these - they BREAK the application
+import { createMiddlewareClient } from '@supabase/auth-helpers-nextjs'
+import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
+
+// ❌ NEVER use individual cookie methods
+{
+  cookies: {
+    get(name: string) { return cookieStore.get(name) },    // BREAKS APP
+    set(name: string, value: string) { /* ... */ },        // BREAKS APP  
+    remove(name: string) { /* ... */ }                     // BREAKS APP
+  }
+}
+```
+
+## 🔐 Authentication Integration
+
+### Middleware Pattern:
+```typescript
+import { createServerClient } from '@supabase/ssr'
+import { NextResponse, type NextRequest } from 'next/server'
+
+export async function middleware(request: NextRequest) {
+  let supabaseResponse = NextResponse.next({ request })
+
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() {
+          return request.cookies.getAll()
+        },
+        setAll(cookiesToSet) {
+          cookiesToSet.forEach(({ name, value, options }) => 
+            request.cookies.set(name, value)
+          )
+          supabaseResponse = NextResponse.next({ request })
+          cookiesToSet.forEach(({ name, value, options }) =>
+            supabaseResponse.cookies.set(name, value, options)
+          )
+        },
+      },
+    }
+  )
+
+  // IMPORTANT: Always call getUser() in middleware
+  const { data: { user } } = await supabase.auth.getUser()
+  
+  return supabaseResponse
+}
+```
+
+## 📊 Database Operations Best Practices
+
+### 1. Type Safety
+**Use generated types:**
+```typescript
+import type { Database } from '@/types/supabase-types'
+
+const supabase: SupabaseClient<Database> = createClient()
+```
+
+### 2. Error Handling
+**Always handle Supabase errors:**
+```typescript
+const { data, error } = await supabase
+  .from('table_name')
+  .select('*')
+
+if (error) {
+  console.error('Database error:', error)
+  // Handle error appropriately
+  return
+}
+```
+
+### 3. Query Optimization
+**Use select to limit data:**
+```typescript
+// ✅ Specific fields only
+const { data } = await supabase
+  .from('profiles')
+  .select('id, nombre, apellido, role')
+  .eq('status', 'active')
+
+// ✅ With relationships
+const { data } = await supabase
+  .from('assets')
+  .select(`
+    id,
+    name,
+    equipment_models(name, category),
+    plants(name)
+  `)
+```
+
+## 🔄 Integration with Zustand Auth
+
+### Access User Context in Queries:
+```typescript
+import { useAuthZustand } from "@/hooks/use-auth-zustand"
+
+function MyComponent() {
+  const { profile, organizationalContext } = useAuthZustand()
+  
+  useEffect(() => {
+    if (profile?.plant_id) {
+      // Filter data by user's plant
+      fetchAssetsByPlant(profile.plant_id)
+    }
+  }, [profile])
+}
+```
+
+## 🚨 Security Considerations
+
+### 1. RLS Policies
+- All tables MUST have appropriate RLS policies
+- Policies should check user roles and organizational scope
+- Never disable RLS in production
+
+### 2. Data Validation
+- Validate all input data before database operations
+- Use database constraints where possible
+- Implement proper authorization checks
+
+### 3. API Routes Security
+```typescript
+// API route example with auth check
+export async function POST(request: Request) {
+  const supabase = createClient()
+  
+  const { data: { user }, error } = await supabase.auth.getUser()
+  if (!user) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+  
+  // Proceed with authenticated operation
+}
+```
+
+## 📝 File References
+
+- **Supabase Client**: [supabase.ts](mdc:lib/supabase.ts) - Client configuration
+- **Middleware**: [middleware.ts](mdc:middleware.ts) - Auth middleware setup
+- **Types**: [database.types](mdc:lib/database.types) - Generated Supabase types
+
+Remember: **Proper Supabase integration ensures data security and optimal performance** with the Zustand auth system.

@@ -2,10 +2,10 @@
 
 import { useEffect } from "react"
 import { createClient } from "@/lib/supabase"
-import { useAuth } from "./auth-provider"
+import { useAuthZustand } from "@/hooks/use-auth-zustand"
 
 export function SessionMonitor() {
-  const { user } = useAuth()
+  const { user } = useAuthZustand()
   const supabase = createClient()
 
   useEffect(() => {

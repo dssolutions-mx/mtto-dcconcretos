@@ -11,7 +11,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge"
 import { Plus, Store, Wrench, Building2, Sparkles, Loader2, Receipt, DollarSign, Shield } from "lucide-react"
 import { RoleGuard } from "@/components/auth/role-guard"
-import { useAuth } from "@/components/auth/auth-provider"
+import { useAuthZustand } from "@/hooks/use-auth-zustand"
 import { formatCurrency } from "@/lib/utils"
 
 // export const metadata: Metadata = {
@@ -31,7 +31,7 @@ function PurchaseOrdersListFallback() {
 }
 
 export default function PurchaseOrdersPage() {
-  const { profile, hasAuthorizationAccess, authorizationLimit } = useAuth()
+  const { profile, hasAuthorizationAccess, authorizationLimit } = useAuthZustand()
   const canAuthorize = hasAuthorizationAccess('purchases')
   return (
     <DashboardShell>
