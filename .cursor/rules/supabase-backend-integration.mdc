@@ -1,6 +1,6 @@
 ---
-description:
-globs:
+description: supabase operations and auth topics
+globs: 
 alwaysApply: false
 ---
 # Supabase Backend Integration Rules

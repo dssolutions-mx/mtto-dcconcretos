@@ -1,6 +1,6 @@
 ---
-description:
-globs:
+description: any auth operation
+globs: 
 alwaysApply: false
 ---
 # Zustand Authentication System Rules

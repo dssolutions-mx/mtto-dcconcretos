@@ -1,6 +1,6 @@
 ---
-description:
-globs:
+description: when creating new pages, components
+globs: 
 alwaysApply: false
 ---
 # Next.js App Router Patterns

@@ -182,6 +182,9 @@ importers:
       zod:
         specifier: latest
         version: 3.25.64
+      zustand:
+        specifier: ^4.5.7
+        version: 4.5.7(@types/react@19.1.8)(react@19.1.0)
     devDependencies:
       '@types/node':
         specifier: ^22
@@ -3474,6 +3477,21 @@ packages:
 
   zod@3.25.64:
     resolution: {integrity: sha512-hbP9FpSZf7pkS7hRVUrOjhwKJNyampPgtXKc3AN6DsWtoHsg2Sb4SQaS4Tcay380zSwd2VPo9G9180emBACp5g==}
+
+  zustand@4.5.7:
+    resolution: {integrity: sha512-CHOUy7mu3lbD6o6LJLfllpjkzhHXSBlX8B9+qPddUsIfeF5S/UZ5q0kmCsnRqT1UHFQZchNFDDzMbQsuesHWlw==}
+    engines: {node: '>=12.7.0'}
+    peerDependencies:
+      '@types/react': '>=16.8'
+      immer: '>=9.0.6'
+      react: '>=16.8'
+    peerDependenciesMeta:
+      '@types/react':
+        optional: true
+      immer:
+        optional: true
+      react:
+        optional: true
 
 snapshots:
 
@@ -7083,3 +7101,10 @@ snapshots:
   yoga-layout@3.2.1: {}
 
   zod@3.25.64: {}
+
+  zustand@4.5.7(@types/react@19.1.8)(react@19.1.0):
+    dependencies:
+      use-sync-external-store: 1.5.0(react@19.1.0)
+    optionalDependencies:
+      '@types/react': 19.1.8
+      react: 19.1.0
