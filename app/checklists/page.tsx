@@ -23,6 +23,7 @@ import { Badge } from "@/components/ui/badge"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { useAuthZustand } from "@/hooks/use-auth-zustand"
 import { RoleGuard, OperatorGuard, MaintenanceTeamGuard } from "@/components/auth/role-guard"
+import { CacheCleanupButton } from "@/components/checklists/cache-cleanup-button"
 
 // Importación dinámica del servicio offline
 let offlineChecklistService: any = null
@@ -528,7 +529,24 @@ function ChecklistsContent() {
                     </Card>
                   )
                 }
-              })()}
+              })(              )}
+
+              {/* Sección de administración para supervisores y gerencia */}
+              <MaintenanceTeamGuard fallback={null}>
+                <Card className="mb-6 border-2 border-purple-200 bg-purple-50/50">
+                  <CardHeader>
+                    <CardTitle className="text-lg flex items-center gap-2">
+                      ⚙️ Administración de Cache
+                    </CardTitle>
+                    <CardDescription>
+                      Herramientas para gestionar el almacenamiento local y resolver problemas de sincronización
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <CacheCleanupButton />
+                  </CardContent>
+                </Card>
+              </MaintenanceTeamGuard>
               
               <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">
                 <Link href="/checklists/diarios" className="block">

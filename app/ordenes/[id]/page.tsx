@@ -10,6 +10,7 @@ import { format } from "date-fns"
 import { es } from "date-fns/locale"
 import { notFound } from "next/navigation"
 import Link from "next/link"
+import { cn } from "@/lib/utils"
 import { 
   ArrowLeft, ShoppingCart, CalendarCheck, CheckCircle, Edit, Clock, 
   User, Wrench, Plus, CalendarDays, ChevronDown, Camera, FileText 

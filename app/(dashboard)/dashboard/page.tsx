@@ -19,13 +19,18 @@ import {
   Wrench,
   ClipboardList,
   BarChart3,
-  Loader2
+  Loader2,
+  ChevronRight,
+  RefreshCw
 } from "lucide-react"
 import { useAuthZustand } from "@/hooks/use-auth-zustand"
+import { useIsMobile } from "@/hooks/use-mobile"
 import { RoleGuard, AdminOnlyGuard, AuthorizedOnlyGuard } from "@/components/auth/role-guard"
 import { useRouter, useSearchParams } from "next/navigation"
 import Link from "next/link"
 import { getRoleDisplayName, type ModulePermissions } from "@/lib/auth/role-permissions"
+import { cn } from "@/lib/utils"
+import { PullToRefresh } from "@/components/ui/pull-to-refresh"
 
 function DashboardContent() {
   const { 
@@ -42,6 +47,7 @@ function DashboardContent() {
   
   const router = useRouter()
   const searchParams = useSearchParams()
+  const isMobile = useIsMobile()
   const [showAccessAlert, setShowAccessAlert] = useState(false)
   const [isRefreshing, setIsRefreshing] = useState(false)
 
@@ -70,12 +76,20 @@ function DashboardContent() {
   // Show loading state while initializing
   if (!isInitialized || isLoading) {
     return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <div className="text-center space-y-4">
+      <div className="flex items-center justify-center min-h-[400px] px-4">
+        <div className="text-center space-y-4 max-w-sm">
           <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" />
-          <div>
-            <p className="text-lg font-medium">Cargando Dashboard</p>
-            <p className="text-sm text-muted-foreground">
+          <div className="space-y-2">
+            <p className={cn(
+              "font-medium",
+              isMobile ? "text-base" : "text-lg"
+            )}>
+              Cargando Dashboard
+            </p>
+            <p className={cn(
+              "text-muted-foreground",
+              isMobile ? "text-sm" : "text-sm"
+            )}>
               {!isInitialized ? 'Inicializando sistema...' : 'Cargando información del usuario...'}
             </p>
           </div>
@@ -87,18 +101,24 @@ function DashboardContent() {
   // Show error state
   if (error) {
     return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <Alert variant="destructive" className="max-w-md">
+      <div className="flex items-center justify-center min-h-[400px] px-4">
+        <Alert variant="destructive" className={cn(
+          "max-w-md w-full",
+          isMobile && "mx-4"
+        )}>
           <AlertCircle className="h-4 w-4" />
           <AlertDescription>
-            <div className="space-y-2">
+            <div className="space-y-3">
               <p><strong>Error de autenticación:</strong></p>
               <p className="text-sm">{typeof error === 'string' ? error : error.message || 'Error desconocido'}</p>
               <Button
                 variant="outline"
-                size="sm"
+                size={isMobile ? "default" : "sm"}
                 onClick={() => router.push('/login')}
-                className="mt-2"
+                className={cn(
+                  "mt-2 w-full",
+                  isMobile && "min-h-[44px]" // Better touch target
+                )}
               >
                 Volver al login
               </Button>
@@ -112,18 +132,24 @@ function DashboardContent() {
   // Show authentication required
   if (!isAuthenticated || !profile) {
     return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <Alert className="max-w-md">
+      <div className="flex items-center justify-center min-h-[400px] px-4">
+        <Alert className={cn(
+          "max-w-md w-full",
+          isMobile && "mx-4"
+        )}>
           <Shield className="h-4 w-4" />
           <AlertDescription>
-            <div className="space-y-2">
+            <div className="space-y-3">
               <p><strong>Autenticación requerida</strong></p>
               <p className="text-sm">Debes iniciar sesión para acceder al dashboard.</p>
               <Button
                 variant="default"
-                size="sm"
+                size={isMobile ? "default" : "sm"}
                 onClick={() => router.push('/login')}
-                className="mt-2"
+                className={cn(
+                  "mt-2 w-full",
+                  isMobile && "min-h-[44px]" // Better touch target
+                )}
               >
                 Iniciar sesión
               </Button>
@@ -141,7 +167,8 @@ function DashboardContent() {
       icon: Package,
       module: "assets" as const,
       href: "/activos",
-      color: "bg-blue-500"
+      color: "bg-blue-500",
+      shortDesc: "Equipos"
     },
     {
       title: "Mantenimiento", 
@@ -149,7 +176,8 @@ function DashboardContent() {
       icon: Wrench,
       module: "maintenance" as const,
       href: "/preventivo",
-      color: "bg-green-500"
+      color: "bg-green-500",
+      shortDesc: "Planes"
     },
     {
       title: "Órdenes de Trabajo",
@@ -157,7 +185,8 @@ function DashboardContent() {
       icon: FileText,
       module: "work_orders" as const,
       href: "/ordenes",
-      color: "bg-purple-500"
+      color: "bg-purple-500",
+      shortDesc: "Órdenes"
     },
     {
       title: "Compras",
@@ -165,7 +194,8 @@ function DashboardContent() {
       icon: ShoppingCart,
       module: "purchases" as const,
       href: "/compras",
-      color: "bg-orange-500"
+      color: "bg-orange-500",
+      shortDesc: "Compras"
     },
     {
       title: "Inventario",
@@ -173,7 +203,8 @@ function DashboardContent() {
       icon: Package,
       module: "inventory" as const,
       href: "/inventario",
-      color: "bg-teal-500"
+      color: "bg-teal-500",
+      shortDesc: "Stock"
     },
     {
       title: "Personal",
@@ -181,7 +212,8 @@ function DashboardContent() {
       icon: Users,
       module: "personnel" as const,
       href: "/gestion/personal",
-      color: "bg-indigo-500"
+      color: "bg-indigo-500",
+      shortDesc: "Personal"
     },
     {
       title: "Checklists",
@@ -189,7 +221,8 @@ function DashboardContent() {
       icon: ClipboardList,
       module: "checklists" as const,
       href: "/checklists",
-      color: "bg-pink-500"
+      color: "bg-pink-500",
+      shortDesc: "Inspecciones"
     },
     {
       title: "Reportes",
@@ -197,14 +230,15 @@ function DashboardContent() {
       icon: BarChart3,
       module: "reports" as const,
       href: "/reportes",
-      color: "bg-yellow-500"
+      color: "bg-yellow-500",
+      shortDesc: "Reportes"
     }
   ]
 
   const getAccessBadge = (module: string) => {
     const moduleKey = module as keyof ModulePermissions
     if (!ui.shouldShowInNavigation(moduleKey)) {
-      return <Badge variant="destructive">Sin Acceso</Badge>
+      return <Badge variant="destructive" className={cn(isMobile && "text-xs")}>Sin Acceso</Badge>
     }
     
     const permissions = []
@@ -214,19 +248,38 @@ function DashboardContent() {
     if (ui.canShowAuthorizeButton(moduleKey)) permissions.push("Autorizar")
    
    if (permissions.length === 0) {
-     return <Badge variant="outline">Solo Lectura</Badge>
+     return <Badge variant="outline" className={cn(isMobile && "text-xs")}>Solo Lectura</Badge>
    }
    
-   return <Badge variant="secondary">{permissions.join(", ")}</Badge>
+   return <Badge variant="secondary" className={cn(isMobile && "text-xs")}>
+     {isMobile ? `${permissions.length} permisos` : permissions.join(", ")}
+   </Badge>
+  }
+
+  // Pull to refresh handler
+  const handlePullToRefresh = async () => {
+    await handleRefreshProfile()
+    // Add a small delay to show the refresh animation
+    await new Promise(resolve => setTimeout(resolve, 1000))
   }
 
   return (
-    <div className="space-y-6">
-      {/* Success indicator for Zustand implementation */}
-      <div className="bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-lg p-3">
+    <PullToRefresh onRefresh={handlePullToRefresh} disabled={isRefreshing}>
+      <div className={cn(
+        "space-y-6",
+        isMobile ? "p-4" : "p-6"
+      )}>
+        {/* Success indicator for Zustand implementation */}
+      <div className={cn(
+        "bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-lg",
+        isMobile ? "p-3" : "p-3"
+      )}>
         <div className="flex items-center gap-2 text-green-800">
-          <CheckCircle className="h-4 w-4" />
-          <span className="text-sm font-medium">
+          <CheckCircle className={cn(isMobile ? "h-4 w-4" : "h-4 w-4")} />
+          <span className={cn(
+            "font-medium",
+            isMobile ? "text-sm" : "text-sm"
+          )}>
             🎉 Dashboard migrado a Zustand - Funcionando correctamente
           </span>
           <Badge variant="secondary" className="ml-2">
@@ -237,66 +290,107 @@ function DashboardContent() {
 
       {/* Access Denied Alert */}
       {showAccessAlert && (
-        <Alert variant="destructive">
+        <Alert variant="destructive" className={cn(isMobile && "mx-0")}>
           <AlertCircle className="h-4 w-4" />
-          <AlertDescription>
+          <AlertDescription className={cn(isMobile && "text-sm")}>
             <strong>Acceso denegado:</strong> Tu rol {profile.role} no tiene permisos para acceder al módulo "{searchParams.get('module')}".
           </AlertDescription>
         </Alert>
       )}
 
-      {/* User Info Header (Zustand-powered) */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle className="flex items-center gap-2">
-                <Shield className="h-5 w-5" />
-                Panel de Control - {getRoleDisplayName(profile.role)}
-                <Badge variant="default" className="ml-2 bg-green-600">
+      {/* User Info Header (Zustand-powered) - Mobile Optimized */}
+      <Card className={cn(isMobile && "shadow-sm")}>
+        <CardHeader className={cn(isMobile && "pb-3")}>
+          <div className={cn(
+            "flex items-center justify-between",
+            isMobile && "flex-col gap-3 items-start"
+          )}>
+            <div className={cn(isMobile && "w-full")}>
+              <CardTitle className={cn(
+                "flex items-center gap-2",
+                isMobile ? "text-lg flex-wrap" : "text-xl"
+              )}>
+                <Shield className={cn(isMobile ? "h-4 w-4" : "h-5 w-5")} />
+                <span className={cn(isMobile && "break-words")}>
+                  Panel de Control - {getRoleDisplayName(profile.role)}
+                </span>
+                <Badge variant="default" className={cn(
+                  "bg-green-600",
+                  isMobile && "text-xs"
+                )}>
                   Zustand
                 </Badge>
               </CardTitle>
-              <CardDescription>
+              <CardDescription className={cn(isMobile && "text-sm mt-1")}>
                 Bienvenido, {profile.nombre} {profile.apellido}
               </CardDescription>
             </div>
-            <div className="text-right space-y-1">
-              <div className="flex items-center gap-2 justify-end">
-                <div className="text-sm text-muted-foreground">Límite de Autorización</div>
+            <div className={cn(
+              "text-right space-y-1",
+              isMobile && "w-full text-center"
+            )}>
+              <div className={cn(
+                "flex items-center gap-2",
+                isMobile ? "justify-center flex-col gap-1" : "justify-end"
+              )}>
+                <div className={cn(
+                  "text-muted-foreground",
+                  isMobile ? "text-sm text-center" : "text-sm"
+                )}>
+                  Límite de Autorización
+                </div>
                 <Button
-                  size="sm"
+                  size={isMobile ? "sm" : "sm"}
                   variant="outline"
                   onClick={handleRefreshProfile}
                   disabled={isRefreshing}
-                  className="h-6 px-2"
+                  className={cn(
+                    isMobile ? "h-8 px-3 text-xs" : "h-6 px-2"
+                  )}
                 >
                   {isRefreshing ? (
-                    <Loader2 className="h-3 w-3 animate-spin" />
+                    <Loader2 className={cn(isMobile ? "h-3 w-3" : "h-3 w-3", "animate-spin")} />
                   ) : (
-                    'Actualizar Perfil'
+                    <>
+                      <RefreshCw className={cn(isMobile ? "h-3 w-3" : "h-3 w-3", "mr-1")} />
+                      <span className={cn(isMobile && "hidden sm:inline")}>
+                        Actualizar Perfil
+                      </span>
+                    </>
                   )}
                 </Button>
               </div>
-              <div className="text-2xl font-bold text-green-600">
+              <div className={cn(
+                "font-bold text-green-600",
+                isMobile ? "text-xl" : "text-2xl"
+              )}>
                 ${authorizationLimit.toLocaleString()}
               </div>
             </div>
           </div>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div>
+          <div className={cn(
+            "grid gap-4",
+            isMobile ? "grid-cols-1" : "grid-cols-1 md:grid-cols-3"
+          )}>
+            <div className={cn(isMobile && "text-center")}>
               <div className="text-sm font-medium text-muted-foreground">Empleado</div>
-              <div className="text-lg">{profile.employee_code || 'No asignado'}</div>
+              <div className={cn(isMobile ? "text-base" : "text-lg")}>
+                {profile.employee_code || 'No asignado'}
+              </div>
             </div>
-            <div>
+            <div className={cn(isMobile && "text-center")}>
               <div className="text-sm font-medium text-muted-foreground">Planta</div>
-              <div className="text-lg">{organizationalContext.plantName || 'Global'}</div>
+              <div className={cn(isMobile ? "text-base" : "text-lg")}>
+                {organizationalContext.plantName || 'Global'}
+              </div>
             </div>
-            <div>
+            <div className={cn(isMobile && "text-center")}>
               <div className="text-sm font-medium text-muted-foreground">Unidad de Negocio</div>
-              <div className="text-lg">{organizationalContext.businessUnitName || 'Global'}</div>
+              <div className={cn(isMobile ? "text-base" : "text-lg")}>
+                {organizationalContext.businessUnitName || 'Global'}
+              </div>
             </div>
           </div>
         </CardContent>
@@ -304,51 +398,113 @@ function DashboardContent() {
 
       {/* Role-Specific Features */}
       
-      {/* GERENCIA GENERAL - Full Access Dashboard */}
+      {/* GERENCIA GENERAL - Full Access Dashboard - Mobile Optimized */}
       {profile?.role === 'GERENCIA_GENERAL' && (
         <Card className="border-purple-200 bg-gradient-to-r from-purple-50 to-pink-50">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-purple-800">
-              <Shield className="h-5 w-5" />
-              Panel de Gerencia General
+          <CardHeader className={cn(isMobile && "pb-3")}>
+            <CardTitle className={cn(
+              "flex items-center gap-2 text-purple-800",
+              isMobile ? "text-lg flex-wrap" : "text-xl"
+            )}>
+              <Shield className={cn(isMobile ? "h-4 w-4" : "h-5 w-5")} />
+              <span className={cn(isMobile && "break-words")}>
+                Panel de Gerencia General
+              </span>
             </CardTitle>
-            <CardDescription className="text-purple-700">
+            <CardDescription className={cn(
+              "text-purple-700",
+              isMobile && "text-sm"
+            )}>
               Acceso completo a todos los módulos del sistema
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <CardContent className={cn(
+            "space-y-4",
+            isMobile && "space-y-3"
+          )}>
+            <div className={cn(
+              "grid gap-4",
+              isMobile ? "grid-cols-1 gap-3" : "grid-cols-1 md:grid-cols-3"
+            )}>
               <Card className="bg-white">
-                <CardContent className="pt-6">
-                  <div className="flex items-center gap-2">
-                    <TrendingUp className="h-5 w-5 text-green-500" />
-                    <span className="font-medium">Sin Límite de Autorización</span>
+                <CardContent className={cn(
+                  isMobile ? "p-4" : "pt-6"
+                )}>
+                  <div className={cn(
+                    "flex items-center gap-2",
+                    isMobile && "flex-col text-center"
+                  )}>
+                    <TrendingUp className={cn(
+                      "text-green-500",
+                      isMobile ? "h-4 w-4" : "h-5 w-5"
+                    )} />
+                    <span className={cn(
+                      "font-medium",
+                      isMobile ? "text-sm" : "text-base"
+                    )}>
+                      Sin Límite de Autorización
+                    </span>
                   </div>
-                  <p className="text-sm text-muted-foreground mt-2">
+                  <p className={cn(
+                    "text-muted-foreground mt-2",
+                    isMobile ? "text-xs text-center" : "text-sm"
+                  )}>
                     Autorización ilimitada para todas las operaciones
                   </p>
                 </CardContent>
               </Card>
               
               <Card className="bg-white">
-                <CardContent className="pt-6">
-                  <div className="flex items-center gap-2">
-                    <BarChart3 className="h-5 w-5 text-blue-500" />
-                    <span className="font-medium">Reportes Ejecutivos</span>
+                <CardContent className={cn(
+                  isMobile ? "p-4" : "pt-6"
+                )}>
+                  <div className={cn(
+                    "flex items-center gap-2",
+                    isMobile && "flex-col text-center"
+                  )}>
+                    <BarChart3 className={cn(
+                      "text-blue-500",
+                      isMobile ? "h-4 w-4" : "h-5 w-5"
+                    )} />
+                    <span className={cn(
+                      "font-medium",
+                      isMobile ? "text-sm" : "text-base"
+                    )}>
+                      Reportes Ejecutivos
+                    </span>
                   </div>
-                  <p className="text-sm text-muted-foreground mt-2">
+                  <p className={cn(
+                    "text-muted-foreground mt-2",
+                    isMobile ? "text-xs text-center" : "text-sm"
+                  )}>
                     Acceso a todos los reportes y análisis
                   </p>
                 </CardContent>
               </Card>
               
               <Card className="bg-white">
-                <CardContent className="pt-6">
-                  <div className="flex items-center gap-2">
-                    <Users className="h-5 w-5 text-purple-500" />
-                    <span className="font-medium">Gestión Global</span>
+                <CardContent className={cn(
+                  isMobile ? "p-4" : "pt-6"
+                )}>
+                  <div className={cn(
+                    "flex items-center gap-2",
+                    isMobile && "flex-col text-center"
+                  )}>
+                    <Users className={cn(
+                      "text-purple-500",
+                      isMobile ? "h-4 w-4" : "h-5 w-5"
+                    )} />
+                    <span className={cn(
+                      "font-medium",
+                      isMobile ? "text-sm" : "text-base"
+                    )}>
+                      Gestión Global
+                    </span>
                   </div>
-                  <p className="text-sm text-muted-foreground mt-2">
+                  <p className={cn(
+                    "text-muted-foreground mt-2",
+                    isMobile ? "text-xs text-center" : "text-sm"
+                  )}>
                     Control total de todas las unidades
                   </p>
                 </CardContent>
@@ -357,20 +513,62 @@ function DashboardContent() {
 
             <Separator />
 
-            <div className="flex gap-2 flex-wrap">
-              <Button asChild size="sm" className="bg-purple-600 hover:bg-purple-700">
+            <div className={cn(
+              "flex gap-2",
+              isMobile ? "flex-col gap-3" : "flex-wrap"
+            )}>
+              <Button 
+                asChild 
+                size={isMobile ? "default" : "sm"}
+                className={cn(
+                  "bg-purple-600 hover:bg-purple-700",
+                  isMobile && "w-full min-h-[44px]"
+                )}
+              >
                 <Link href="/reportes?type=executive">
+                  <BarChart3 className={cn(
+                    isMobile ? "h-4 w-4 mr-2" : "mr-1"
+                  )} />
                   Dashboard Ejecutivo
+                  {isMobile && (
+                    <ChevronRight className="h-4 w-4 ml-auto" />
+                  )}
                 </Link>
               </Button>
-              <Button asChild size="sm" variant="outline">
+              <Button 
+                asChild 
+                size={isMobile ? "default" : "sm"}
+                variant="outline"
+                className={cn(
+                  isMobile && "w-full min-h-[44px]"
+                )}
+              >
                 <Link href="/compras?status=high_value">
+                  <ShoppingCart className={cn(
+                    isMobile ? "h-4 w-4 mr-2" : "mr-1"
+                  )} />
                   Compras Alto Valor
+                  {isMobile && (
+                    <ChevronRight className="h-4 w-4 ml-auto" />
+                  )}
                 </Link>
               </Button>
-              <Button asChild size="sm" variant="outline">
+              <Button 
+                asChild 
+                size={isMobile ? "default" : "sm"}
+                variant="outline"
+                className={cn(
+                  isMobile && "w-full min-h-[44px]"
+                )}
+              >
                 <Link href="/gestion">
+                  <Shield className={cn(
+                    isMobile ? "h-4 w-4 mr-2" : "mr-1"
+                  )} />
                   Configuración Sistema
+                  {isMobile && (
+                    <ChevronRight className="h-4 w-4 ml-auto" />
+                  )}
                 </Link>
               </Button>
             </div>
@@ -588,10 +786,20 @@ function DashboardContent() {
         </Card>
       )}
 
-      {/* Modules Grid */}
+      {/* Modules Grid - Mobile Optimized */}
       <div>
-        <h2 className="text-2xl font-bold mb-4">Módulos del Sistema</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <h2 className={cn(
+          "font-bold mb-4",
+          isMobile ? "text-xl" : "text-2xl"
+        )}>
+          Módulos del Sistema
+        </h2>
+        <div className={cn(
+          "grid gap-4",
+          isMobile 
+            ? "grid-cols-2 gap-3" // 2 columns on mobile for better accessibility
+            : "grid-cols-1 md:grid-cols-2 lg:grid-cols-4"
+        )}>
           {moduleCards.map((card) => {
             const hasAccess = ui.shouldShowInNavigation(card.module)
             const Icon = card.icon
@@ -599,50 +807,87 @@ function DashboardContent() {
             return (
               <Card 
                 key={card.module} 
-                className={`relative overflow-hidden transition-all hover:shadow-md ${
-                  hasAccess ? 'cursor-pointer hover:scale-[1.02]' : 'opacity-50'
-                }`}
+                className={cn(
+                  "relative overflow-hidden transition-all",
+                  hasAccess ? 'cursor-pointer hover:shadow-md' : 'opacity-50',
+                  isMobile 
+                    ? "min-h-[140px] active:scale-95 transition-transform" // Better mobile feedback
+                    : "hover:scale-[1.02]",
+                  !hasAccess && "pointer-events-none"
+                )}
                 onClick={() => hasAccess && router.push(card.href)}
               >
-                <CardHeader className="pb-3">
-                  <div className="flex items-center justify-between">
-                    <div className={`p-2 rounded-md ${card.color} text-white`}>
-                      <Icon className="h-5 w-5" />
+                <CardHeader className={cn(
+                  isMobile ? "pb-2 px-3 pt-3" : "pb-3"
+                )}>
+                  <div className={cn(
+                    "flex items-center justify-between",
+                    isMobile && "flex-col gap-2 items-start"
+                  )}>
+                    <div className={cn(
+                      `p-2 rounded-md ${card.color} text-white`,
+                      isMobile && "self-center"
+                    )}>
+                      <Icon className={cn(isMobile ? "h-4 w-4" : "h-5 w-5")} />
                     </div>
-                    {getAccessBadge(card.module)}
+                    {!isMobile && getAccessBadge(card.module)}
                   </div>
-                  <CardTitle className="text-lg">{card.title}</CardTitle>
-                  <CardDescription className="text-sm">
-                    {card.description}
-                  </CardDescription>
+                  <CardTitle className={cn(
+                    isMobile ? "text-sm text-center leading-tight" : "text-lg"
+                  )}>
+                    {isMobile ? card.title : card.title}
+                  </CardTitle>
+                  {!isMobile && (
+                    <CardDescription className="text-sm">
+                      {card.description}
+                    </CardDescription>
+                  )}
                 </CardHeader>
                 
                 {hasAccess && (
-                  <CardContent className="pt-0">
-                    <div className="space-y-2">
-                      <div className="flex gap-1 flex-wrap">
-                        {ui.canShowCreateButton(card.module) && (
-                          <Badge variant="outline">Crear</Badge>
-                        )}
-                        {ui.canShowEditButton(card.module) && (
-                          <Badge variant="outline">Editar</Badge>
-                        )}
-                        {ui.canShowDeleteButton(card.module) && (
-                          <Badge variant="outline">Eliminar</Badge>
-                        )}
-                        {ui.canShowAuthorizeButton(card.module) && (
-                          <Badge variant="outline">Autorizar</Badge>
-                        )}
+                  <CardContent className={cn(
+                    "pt-0",
+                    isMobile ? "px-3 pb-3" : ""
+                  )}>
+                    {isMobile ? (
+                      // Mobile: Show access badge at bottom
+                      <div className="flex justify-center">
+                        {getAccessBadge(card.module)}
                       </div>
-                    </div>
+                    ) : (
+                      // Desktop: Show permission badges
+                      <div className="space-y-2">
+                        <div className="flex gap-1 flex-wrap">
+                          {ui.canShowCreateButton(card.module) && (
+                            <Badge variant="outline">Crear</Badge>
+                          )}
+                          {ui.canShowEditButton(card.module) && (
+                            <Badge variant="outline">Editar</Badge>
+                          )}
+                          {ui.canShowDeleteButton(card.module) && (
+                            <Badge variant="outline">Eliminar</Badge>
+                          )}
+                          {ui.canShowAuthorizeButton(card.module) && (
+                            <Badge variant="outline">Autorizar</Badge>
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </CardContent>
                 )}
 
                 {!hasAccess && (
                   <div className="absolute inset-0 bg-black bg-opacity-20 flex items-center justify-center">
                     <div className="bg-white rounded-full p-2">
-                      <Shield className="h-6 w-6 text-red-500" />
+                      <Shield className={cn(isMobile ? "h-4 w-4" : "h-6 w-6", "text-red-500")} />
                     </div>
+                  </div>
+                )}
+
+                {/* Mobile: Arrow indicator for navigation */}
+                {isMobile && hasAccess && (
+                  <div className="absolute top-3 right-3">
+                    <ChevronRight className="h-3 w-3 text-muted-foreground" />
                   </div>
                 )}
               </Card>
@@ -651,38 +896,121 @@ function DashboardContent() {
         </div>
       </div>
 
-      {/* Quick Actions for AREA_ADMINISTRATIVA */}
+      {/* Quick Actions for AREA_ADMINISTRATIVA - Mobile Optimized */}
       <RoleGuard module="purchases" requireAuth>
         <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Calendar className="h-5 w-5" />
-              Acciones Rápidas - Área Administrativa
+          <CardHeader className={cn(isMobile && "pb-3")}>
+            <CardTitle className={cn(
+              "flex items-center gap-2",
+              isMobile ? "text-lg" : "text-xl"
+            )}>
+              <Calendar className={cn(isMobile ? "h-4 w-4" : "h-5 w-5")} />
+              <span className={cn(isMobile && "text-base")}>
+                Acciones Rápidas - Área Administrativa
+              </span>
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <Button asChild variant="outline" className="h-auto p-4 flex flex-col">
+            <div className={cn(
+              "grid gap-4",
+              isMobile ? "grid-cols-1 gap-3" : "grid-cols-1 md:grid-cols-3"
+            )}>
+              <Button 
+                asChild 
+                variant="outline" 
+                className={cn(
+                  "h-auto flex flex-col",
+                  isMobile 
+                    ? "p-4 min-h-[80px] active:scale-95 transition-transform"
+                    : "p-4"
+                )}
+              >
                 <Link href="/compras?status=pending">
-                  <ShoppingCart className="h-6 w-6 mb-2" />
-                  <span className="font-medium">Revisar Compras</span>
-                  <span className="text-xs text-muted-foreground">Pendientes de aprobación</span>
+                  <ShoppingCart className={cn(
+                    "mb-2",
+                    isMobile ? "h-5 w-5" : "h-6 w-6"
+                  )} />
+                  <span className={cn(
+                    "font-medium",
+                    isMobile ? "text-sm" : "text-base"
+                  )}>
+                    Revisar Compras
+                  </span>
+                  <span className={cn(
+                    "text-muted-foreground",
+                    isMobile ? "text-xs" : "text-xs"
+                  )}>
+                    Pendientes de aprobación
+                  </span>
+                  {isMobile && (
+                    <ChevronRight className="h-3 w-3 mt-1 text-muted-foreground" />
+                  )}
                 </Link>
               </Button>
               
-              <Button asChild variant="outline" className="h-auto p-4 flex flex-col">
+              <Button 
+                asChild 
+                variant="outline" 
+                className={cn(
+                  "h-auto flex flex-col",
+                  isMobile 
+                    ? "p-4 min-h-[80px] active:scale-95 transition-transform"
+                    : "p-4"
+                )}
+              >
                 <Link href="/gestion/personal?action=new">
-                  <Users className="h-6 w-6 mb-2" />
-                  <span className="font-medium">Nuevo Personal</span>
-                  <span className="text-xs text-muted-foreground">Registrar empleado</span>
+                  <Users className={cn(
+                    "mb-2",
+                    isMobile ? "h-5 w-5" : "h-6 w-6"
+                  )} />
+                  <span className={cn(
+                    "font-medium",
+                    isMobile ? "text-sm" : "text-base"
+                  )}>
+                    Nuevo Personal
+                  </span>
+                  <span className={cn(
+                    "text-muted-foreground",
+                    isMobile ? "text-xs" : "text-xs"
+                  )}>
+                    Registrar empleado
+                  </span>
+                  {isMobile && (
+                    <ChevronRight className="h-3 w-3 mt-1 text-muted-foreground" />
+                  )}
                 </Link>
               </Button>
               
-              <Button asChild variant="outline" className="h-auto p-4 flex flex-col">
+              <Button 
+                asChild 
+                variant="outline" 
+                className={cn(
+                  "h-auto flex flex-col",
+                  isMobile 
+                    ? "p-4 min-h-[80px] active:scale-95 transition-transform"
+                    : "p-4"
+                )}
+              >
                 <Link href="/reportes?type=financial">
-                  <BarChart3 className="h-6 w-6 mb-2" />
-                  <span className="font-medium">Reportes Financieros</span>
-                  <span className="text-xs text-muted-foreground">Análisis de gastos</span>
+                  <BarChart3 className={cn(
+                    "mb-2",
+                    isMobile ? "h-5 w-5" : "h-6 w-6"
+                  )} />
+                  <span className={cn(
+                    "font-medium",
+                    isMobile ? "text-sm" : "text-base"
+                  )}>
+                    Reportes Financieros
+                  </span>
+                  <span className={cn(
+                    "text-muted-foreground",
+                    isMobile ? "text-xs" : "text-xs"
+                  )}>
+                    Análisis de gastos
+                  </span>
+                  {isMobile && (
+                    <ChevronRight className="h-3 w-3 mt-1 text-muted-foreground" />
+                  )}
                 </Link>
               </Button>
             </div>
@@ -700,7 +1028,8 @@ function DashboardContent() {
           </AlertDescription>
         </Alert>
       )}
-    </div>
+      </div>
+    </PullToRefresh>
   )
 }
 

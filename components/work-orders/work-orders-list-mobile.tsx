@@ -149,15 +149,15 @@ function WorkOrderCard({
           </div>
         </div>
         
-                 {/* Type and Priority */}
-         <div className="flex gap-2">
-           <Badge variant={getTypeVariant(order.type)} className="text-xs">
-             {order.type || 'N/A'}
-           </Badge>
-           <Badge variant={getPriorityVariant(order.priority)} className="text-xs">
-             {order.priority || 'Normal'}
-           </Badge>
-         </div>
+        {/* Type and Priority */}
+        <div className="flex gap-2">
+          <Badge variant={getTypeVariant(order.type)} size="sm">
+            {order.type || 'N/A'}
+          </Badge>
+          <Badge variant={getPriorityVariant(order.priority)} size="sm">
+            {order.priority || 'Normal'}
+          </Badge>
+        </div>
         
         {/* Technician */}
         <div className="flex items-center gap-2 text-sm">
@@ -177,62 +177,43 @@ function WorkOrderCard({
         {order.purchase_order_id && (
           <div className="flex items-center gap-2 text-sm">
             <ShoppingCart className="h-4 w-4 text-muted-foreground shrink-0" />
-                         <Badge 
-               variant={getPurchaseOrderStatusVariant(getPurchaseOrderStatus(order.purchase_order_id))} 
-               className={`text-xs ${getPurchaseOrderStatusClass(getPurchaseOrderStatus(order.purchase_order_id))}`}
-             >
-               OC: {getPurchaseOrderStatus(order.purchase_order_id)}
-             </Badge>
+            <Badge 
+              variant={getPurchaseOrderStatusVariant(getPurchaseOrderStatus(order.purchase_order_id))} 
+              className={`text-xs ${getPurchaseOrderStatusClass(getPurchaseOrderStatus(order.purchase_order_id))}`}
+              size="sm"
+            >
+              OC: {getPurchaseOrderStatus(order.purchase_order_id)}
+            </Badge>
           </div>
         )}
       </CardContent>
       
-             <CardFooter className="pt-0">
-         {order.status !== WorkOrderStatus.Completed ? (
-           // Layout con 3 botones: 2 arriba, 1 abajo
-           <div className="grid grid-cols-2 gap-2 w-full">
-             <Button asChild variant="outline" size="sm" className="justify-center">
-               <Link href={`/ordenes/${order.id}`}>
-                 <Eye className="mr-1 h-4 w-4" />
-                 Ver
-               </Link>
-             </Button>
-             
-             <Button asChild variant="outline" size="sm" className="justify-center">
-               <Link href={`/ordenes/${order.id}/editar`}>
-                 <Edit className="mr-1 h-4 w-4" />
-                 Editar
-               </Link>
-             </Button>
-             
-             <div className="col-span-2">
-               <Button asChild size="sm" className="w-full justify-center">
-                 <Link href={`/ordenes/${order.id}/completar`}>
-                   <CheckCircle className="mr-1 h-4 w-4" />
-                   Completar
-                 </Link>
-               </Button>
-             </div>
-           </div>
-         ) : (
-           // Layout con 2 botones: lado a lado
-           <div className="flex gap-2 w-full">
-             <Button asChild variant="outline" size="sm" className="flex-1 justify-center">
-               <Link href={`/ordenes/${order.id}`}>
-                 <Eye className="mr-1 h-4 w-4" />
-                 Ver
-               </Link>
-             </Button>
-             
-             <Button asChild variant="outline" size="sm" className="flex-1 justify-center">
-               <Link href={`/ordenes/${order.id}/editar`}>
-                 <Edit className="mr-1 h-4 w-4" />
-                 Editar
-               </Link>
-             </Button>
-           </div>
-         )}
-       </CardFooter>
+      <CardFooter className="pt-0">
+        <div className="flex gap-2 w-full">
+          <Button asChild variant="outline" size="sm" className="flex-1">
+            <Link href={`/ordenes/${order.id}`}>
+              <Eye className="mr-2 h-4 w-4" />
+              Ver
+            </Link>
+          </Button>
+          
+          <Button asChild variant="outline" size="sm" className="flex-1">
+            <Link href={`/ordenes/${order.id}/editar`}>
+              <Edit className="mr-2 h-4 w-4" />
+              Editar
+            </Link>
+          </Button>
+          
+          {order.status !== WorkOrderStatus.Completed && (
+            <Button asChild size="sm" className="flex-1">
+              <Link href={`/ordenes/${order.id}/completar`}>
+                <CheckCircle className="mr-2 h-4 w-4" />
+                Completar
+              </Link>
+            </Button>
+          )}
+        </div>
+      </CardFooter>
     </Card>
   )
 }

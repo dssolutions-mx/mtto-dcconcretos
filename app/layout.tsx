@@ -8,6 +8,7 @@ import { AuthInitializer } from "@/components/auth/auth-initializer"
 import { RoleProvider } from "@/components/auth/role-provider"
 import { SessionMonitor } from "@/components/auth/session-monitor"
 import { Toaster } from "@/components/ui/toaster"
+import { CacheConsoleLoader } from "@/components/cache-console-loader"
 
 const inter = Inter({ subsets: ["latin"] })
 
@@ -32,6 +33,7 @@ export default function RootLayout({
             <SidebarWrapper>{children}</SidebarWrapper>
           </RoleProvider>
           <Toaster />
+          <CacheConsoleLoader />
         </ThemeProvider>
       </body>
     </html>
