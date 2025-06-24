@@ -109,38 +109,7 @@ export function EnhancedPurchaseOrderCreationForm({
     }
   }
 
-  const needsWorkOrderId = !workOrderIdState && currentStep !== CreationStep.SELECT_TYPE
-
-  if (needsWorkOrderId) {
-    return (
-      <div className="max-w-md mx-auto">
-        <Alert>
-          <AlertCircle className="h-4 w-4" />
-          <AlertDescription>
-            <div className="space-y-3">
-              <p>Se requiere una orden de trabajo para crear la orden de compra.</p>
-              <div className="flex space-x-2">
-                <Button 
-                  variant="outline" 
-                  size="sm"
-                  onClick={() => router.push('/ordenes')}
-                >
-                  Seleccionar Orden de Trabajo
-                </Button>
-                <Button 
-                  variant="outline" 
-                  size="sm"
-                  onClick={() => router.push('/compras')}
-                >
-                  Volver a Compras
-                </Button>
-              </div>
-            </div>
-          </AlertDescription>
-        </Alert>
-      </div>
-    )
-  }
+  // Work order is now optional - allow standalone purchase orders
 
   return (
     <div className="space-y-6">
@@ -181,9 +150,13 @@ export function EnhancedPurchaseOrderCreationForm({
                 )}
               </div>
 
-              {workOrderIdState && (
+              {workOrderIdState ? (
                 <Badge variant="outline">
                   Orden: {workOrderIdState}
+                </Badge>
+              ) : (
+                <Badge variant="secondary">
+                  Orden Independiente
                 </Badge>
               )}
             </div>
@@ -199,11 +172,11 @@ export function EnhancedPurchaseOrderCreationForm({
         />
       )}
 
-      {currentStep === CreationStep.FILL_FORM && selectedType && workOrderIdState && (
+      {currentStep === CreationStep.FILL_FORM && selectedType && (
         <div>
           {selectedType === PurchaseOrderType.DIRECT_PURCHASE && (
             <DirectPurchaseForm
-              workOrderId={workOrderIdState}
+              workOrderId={workOrderIdState || undefined}
               onSuccess={handleFormSuccess}
               onCancel={handleFormCancel}
             />
@@ -211,7 +184,7 @@ export function EnhancedPurchaseOrderCreationForm({
           
           {selectedType === PurchaseOrderType.DIRECT_SERVICE && (
             <DirectServiceForm
-              workOrderId={workOrderIdState}
+              workOrderId={workOrderIdState || undefined}
               onSuccess={handleFormSuccess}
               onCancel={handleFormCancel}
             />
@@ -219,7 +192,7 @@ export function EnhancedPurchaseOrderCreationForm({
 
           {selectedType === PurchaseOrderType.SPECIAL_ORDER && (
             <SpecialOrderForm
-              workOrderId={workOrderIdState}
+              workOrderId={workOrderIdState || undefined}
               onSuccess={handleFormSuccess}
               onCancel={handleFormCancel}
             />
@@ -238,9 +211,15 @@ export function EnhancedPurchaseOrderCreationForm({
             <Button variant="outline" onClick={() => router.push('/compras')}>
               Ver Todas las Compras
             </Button>
-            <Button onClick={() => router.push(`/ordenes/${workOrderIdState}`)}>
-              Volver a Orden de Trabajo
-            </Button>
+            {workOrderIdState ? (
+              <Button onClick={() => router.push(`/ordenes/${workOrderIdState}`)}>
+                Volver a Orden de Trabajo
+              </Button>
+            ) : (
+              <Button onClick={() => router.push('/compras')}>
+                Ver Todas las Compras
+              </Button>
+            )}
           </div>
         </div>
       )}

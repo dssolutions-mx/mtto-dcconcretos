@@ -532,8 +532,8 @@ export class PurchaseOrderValidationService {
   static validateCreateRequest(request: CreatePurchaseOrderRequest): ValidationResult {
     const errors: string[] = []
     
-    // Validaciones generales
-    if (!request.work_order_id) errors.push('work_order_id es requerido')
+    // Validaciones generales - work_order_id is now optional
+    // if (!request.work_order_id) errors.push('work_order_id es requerido')  // REMOVED: Allow standalone POs
     if (!request.po_type) errors.push('po_type es requerido')
     if (!request.supplier) errors.push('supplier es requerido')
     if (!request.total_amount || request.total_amount <= 0) errors.push('total_amount debe ser mayor a 0')

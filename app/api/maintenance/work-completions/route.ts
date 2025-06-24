@@ -503,13 +503,95 @@ export async function POST(request: Request) {
       console.error("Error creating service order:", error);
       // Continue despite service order creation failure
     }
+
+    // ✅ SOLUCIÓN: Actualizar estado del incidente cuando se completa una orden de trabajo correctiva
+    let incidentUpdateResult = null;
+    try {
+      // Obtener la orden de trabajo para verificar si es correctiva y tiene incidente asociado
+      const { data: workOrderDetails, error: workOrderError } = await supabase
+        .from("work_orders")
+        .select("type, incident_id")
+        .eq("id", workOrderId)
+        .single();
+
+      if (!workOrderError && workOrderDetails) {
+        console.log("API: Verificando si necesita actualizar incidente:", {
+          type: workOrderDetails.type,
+          incident_id: workOrderDetails.incident_id
+        });
+
+        // Si es una orden correctiva, buscar incidentes asociados para actualizar
+        if (workOrderDetails.type === 'corrective') {
+          let incidentUpdateQuery;
+          
+          // Buscar por incident_id si existe, sino por work_order_id
+          if (workOrderDetails.incident_id) {
+            incidentUpdateQuery = supabase
+              .from("incident_history")
+              .update({ 
+                status: 'Cerrado',
+                resolution: completionData.resolution_details || 'Trabajo completado exitosamente',
+                updated_at: new Date().toISOString(),
+                updated_by: sessionData.session.user.id
+              })
+              .eq('id', workOrderDetails.incident_id);
+          } else {
+            // Buscar incidentes que tengan esta orden de trabajo asociada
+            incidentUpdateQuery = supabase
+              .from("incident_history")
+              .update({ 
+                status: 'Cerrado',
+                resolution: completionData.resolution_details || 'Trabajo completado exitosamente',
+                updated_at: new Date().toISOString(),
+                updated_by: sessionData.session.user.id
+              })
+              .eq('work_order_id', workOrderId);
+          }
+
+          const { data: updatedIncidents, error: incidentError } = await incidentUpdateQuery
+            .select('id, status');
+
+          if (incidentError) {
+            console.error("Error al actualizar estado del incidente:", incidentError);
+            // No fallar todo el proceso por este error
+          } else if (updatedIncidents && updatedIncidents.length > 0) {
+            console.log("API: ✅ Incidentes actualizados a 'Cerrado':", updatedIncidents.map(i => i.id));
+            incidentUpdateResult = {
+              updated: true,
+              count: updatedIncidents.length,
+              incidents: updatedIncidents
+            };
+          } else {
+            console.log("API: No se encontraron incidentes para actualizar");
+            incidentUpdateResult = {
+              updated: false,
+              reason: "No incidents found"
+            };
+          }
+        } else {
+          console.log("API: Orden no es correctiva, no se actualiza incidente");
+          incidentUpdateResult = {
+            updated: false,
+            reason: "Not corrective work order"
+          };
+        }
+      }
+    } catch (error) {
+      console.error("Error al intentar actualizar incidente:", error);
+      // No fallar todo el proceso por este error
+      incidentUpdateResult = {
+        updated: false,
+        error: error instanceof Error ? error.message : String(error)
+      };
+    }
     
     return NextResponse.json({
       message: "Orden de trabajo completada con éxito",
       serviceOrderId,
       maintenanceHistoryId,
       additionalExpenseIds,
-      requiresAdjustment
+      requiresAdjustment,
+      incidentUpdate: incidentUpdateResult
     })
   } catch (error) {
     console.error("Error al procesar la petición:", error)

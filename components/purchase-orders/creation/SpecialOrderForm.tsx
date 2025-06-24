@@ -31,7 +31,7 @@ import { usePurchaseOrders } from "@/hooks/usePurchaseOrders"
 import { createClient } from "@/lib/supabase"
 
 interface SpecialOrderFormProps {
-  workOrderId: string
+  workOrderId?: string
   onSuccess?: (purchaseOrderId: string) => void
   onCancel?: () => void
 }
@@ -92,7 +92,7 @@ export function SpecialOrderForm({
 
   // Form state
   const [formData, setFormData] = useState<Partial<CreatePurchaseOrderRequest>>({
-    work_order_id: workOrderId,
+    work_order_id: workOrderId || undefined,
     po_type: PurchaseOrderType.SPECIAL_ORDER,
     supplier: "",
     items: [],
@@ -237,6 +237,9 @@ export function SpecialOrderForm({
     
     if (workOrderId) {
       loadWorkOrderData()
+    } else {
+      // No work order - just load suppliers
+      setIsLoadingWorkOrder(false)
     }
   }, [workOrderId])
 
@@ -379,7 +382,7 @@ export function SpecialOrderForm({
 
     try {
       const request: CreatePurchaseOrderRequest = {
-        work_order_id: workOrderId,
+        work_order_id: workOrderId || undefined,
         po_type: PurchaseOrderType.SPECIAL_ORDER,
         supplier: formData.supplier!,
         items: items,
@@ -418,8 +421,8 @@ export function SpecialOrderForm({
     )
   }
 
-  // Work order error state
-  if (workOrderError || !workOrder) {
+  // Work order error state (only show if workOrderId was provided but loading failed)
+  if (workOrderId && (workOrderError || !workOrder)) {
     return (
       <Alert variant="destructive">
         <AlertCircle className="h-4 w-4" />
