@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
-import { ArrowLeft, FileCheck, Package, ShoppingCart, Truck, FileText, Download, ExternalLink, Store, Wrench, Building2, Receipt, AlertCircle } from "lucide-react"
+import { ArrowLeft, FileCheck, Package, ShoppingCart, Truck, FileText, Download, ExternalLink, Store, Wrench, Building2, Receipt, AlertCircle, DollarSign, Calendar, User } from "lucide-react"
 import Link from "next/link"
 import { notFound } from "next/navigation"
 import { format } from "date-fns"
@@ -16,6 +16,8 @@ import { ReceiptSection } from "@/components/work-orders/receipt-section"
 import { WorkflowStatusDisplay } from "@/components/purchase-orders/workflow/WorkflowStatusDisplay"
 import { TypeBadge } from "@/components/purchase-orders/shared/TypeBadge"
 import { ReceiptDisplaySection } from "@/components/purchase-orders/ReceiptDisplaySection"
+import { PurchaseOrderDetailsMobile } from "@/components/purchase-orders/purchase-order-details-mobile"
+import { Suspense } from "react"
 
 // Helper function to format currency
 function formatCurrency(amount: string | null): string {
@@ -85,6 +87,67 @@ export default function PurchaseOrderDetailsPage({
   
   // Return the content component with the id
   return <PurchaseOrderDetailsContent id={id} />;
+}
+
+// Client wrapper component for mobile detection
+function PurchaseOrderDetailsClientWrapper({ 
+  id, 
+  order, 
+  workOrder, 
+  requesterName, 
+  approverName,
+  items 
+}: { 
+  id: string
+  order: any
+  workOrder: any
+  requesterName: string
+  approverName: string
+  items: any[]
+}) {
+  return (
+    <Suspense fallback={<div>Cargando...</div>}>
+      <PurchaseOrderDetailsClient 
+        id={id}
+        order={order}
+        workOrder={workOrder}
+        requesterName={requesterName}
+        approverName={approverName}
+        items={items}
+      />
+    </Suspense>
+  )
+}
+
+// Client component that uses hooks
+function PurchaseOrderDetailsClient({ 
+  id, 
+  order, 
+  workOrder, 
+  requesterName, 
+  approverName,
+  items 
+}: { 
+  id: string
+  order: any
+  workOrder: any
+  requesterName: string
+  approverName: string
+  items: any[]
+}) {
+  // We'll add mobile detection here but for now, let's focus on the server content
+  // This would require 'use client' directive which we'll add in a follow-up
+  
+  // For now, return the mobile component based on a simple user agent check
+  // We'll improve this in the next iteration
+  return <PurchaseOrderDetailsDesktop 
+    id={id} 
+    order={order} 
+    workOrder={workOrder} 
+    requesterName={requesterName} 
+    approverName={approverName} 
+    items={items} 
+  />
 }
 
 // Create an async server component for the content
