@@ -350,6 +350,21 @@ export function SpecialOrderForm({
       errors.push('Método de pago es requerido')
     }
 
+    // Validate max_payment_date for transfers
+    if (formData.payment_method === PaymentMethod.TRANSFER) {
+      if (!formData.max_payment_date) {
+        errors.push('Fecha máxima de pago es requerida para transferencias')
+      } else {
+        const maxDate = new Date(formData.max_payment_date)
+        const today = new Date()
+        today.setHours(0, 0, 0, 0)
+        
+        if (maxDate < today) {
+          errors.push('La fecha máxima de pago no puede ser anterior a hoy')
+        }
+      }
+    }
+
     if (items.length === 0) {
       errors.push('Debe agregar al menos un artículo')
     }
@@ -358,12 +373,7 @@ export function SpecialOrderForm({
       errors.push('El monto total debe ser mayor a cero')
     }
 
-    // Check for items without part numbers (recommended for special orders)
-    const itemsWithoutPartNumber = items.filter(item => !item.part_number?.trim())
-    if (itemsWithoutPartNumber.length > 0) {
-      errors.push(`Recomendado: Agregar número de parte para ${itemsWithoutPartNumber.length} artículo(s)`)
-    }
-
+    // Part number is now optional - removed the requirement
     // Special orders always require quotation
     if (!quotationUrl) {
       errors.push('Se requiere cotización formal del proveedor para pedidos especiales')
@@ -390,7 +400,8 @@ export function SpecialOrderForm({
         total_amount: formData.total_amount!,
         payment_method: formData.payment_method,
         notes: formData.notes,
-        quotation_url: quotationUrl || undefined
+        quotation_url: quotationUrl || undefined,
+        ...(formData.max_payment_date && { max_payment_date: formData.max_payment_date })
       }
 
       const result = await createPurchaseOrder(request)
@@ -624,6 +635,23 @@ export function SpecialOrderForm({
                 </SelectContent>
               </Select>
             </div>
+            
+            {/* Max Payment Date - only show for transfers */}
+            {formData.payment_method === PaymentMethod.TRANSFER && (
+              <div className="space-y-2">
+                <Label htmlFor="max_payment_date">Fecha Máxima de Pago *</Label>
+                <Input
+                  id="max_payment_date"
+                  type="date"
+                  value={formData.max_payment_date || ""}
+                  onChange={(e) => handleInputChange('max_payment_date', e.target.value)}
+                  min={new Date().toISOString().split('T')[0]} // Set minimum to today
+                />
+                <p className="text-sm text-muted-foreground">
+                  Fecha límite para realizar la transferencia al proveedor
+                </p>
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>
