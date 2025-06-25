@@ -61,6 +61,11 @@ export interface EnhancedPurchaseOrder {
   quote_required_reason?: string          // Razón de cotización
   enhanced_status?: string                // Enhanced workflow status
   quotation_url?: string                  // URL del archivo de cotización
+  max_payment_date?: string               // Fecha máxima de pago (solo para transferencias)
+  payment_date?: string                   // Fecha real cuando se realizó el pago
+  payment_reference?: string              // Número de transferencia, cheque o referencia
+  payment_notes?: string                  // Notas adicionales del pago
+  paid_by?: string                        // Usuario que marcó como pagado
 }
 
 // Interfaces específicas por tipo
@@ -91,6 +96,7 @@ export interface CreatePurchaseOrderRequest {
   payment_method?: PaymentMethod
   notes?: string
   quotation_url?: string       // URL del archivo de cotización (requerido si requires_quote = true)
+  max_payment_date?: string    // Fecha máxima de pago (requerido solo para transferencias)
   
   // Campos específicos por tipo
   store_location?: string      // Para direct_purchase (opcional)
@@ -207,4 +213,62 @@ export interface WorkflowAdvanceResponse {
   success: boolean
   message: string
   new_status?: string
+}
+
+// Accounts Payable (Cuentas por Pagar) Types
+export interface AccountsPayableItem {
+  id: string
+  order_id: string
+  supplier: string
+  service_provider?: string
+  store_location?: string
+  total_amount: number
+  actual_amount?: number
+  payment_method: PaymentMethod
+  payment_status: PaymentStatus
+  payment_date?: string
+  payment_reference?: string
+  payment_notes?: string
+  max_payment_date?: string
+  created_at: string
+  purchased_at?: string
+  po_type: PurchaseOrderType
+  status: string
+  days_until_due: number
+  payment_status_display: string
+  requested_by_name?: string
+  paid_by_name?: string
+}
+
+export enum PaymentStatus {
+  PENDING = "pending",        // Pendiente de pago
+  PAID = "paid",             // Pagado
+  OVERDUE = "overdue",       // Vencido
+  IMMEDIATE = "immediate"    // Inmediato (cash/card)
+}
+
+export interface MarkAsPaidRequest {
+  purchase_order_id: string
+  payment_date: string
+  payment_reference?: string
+  payment_notes?: string
+}
+
+export interface AccountsPayableSummary {
+  total_pending: number
+  total_overdue: number
+  total_amount_pending: number
+  total_amount_overdue: number
+  items_due_this_week: number
+  items_due_today: number
+}
+
+export interface AccountsPayableResponse {
+  summary: AccountsPayableSummary
+  items: AccountsPayableItem[]
+  filters_applied: {
+    status?: PaymentStatus
+    payment_method?: PaymentMethod
+    days_filter?: 'overdue' | 'today' | 'week' | 'month'
+  }
 } 

@@ -98,7 +98,8 @@ export function SpecialOrderForm({
     items: [],
     total_amount: 0,
     payment_method: PaymentMethod.TRANSFER,
-    notes: "Este pedido especial requiere cotización formal del proveedor."
+    notes: "Este pedido especial requiere cotización formal del proveedor.",
+    max_payment_date: undefined
   })
 
   // Items management

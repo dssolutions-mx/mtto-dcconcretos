@@ -80,6 +80,7 @@ export class PurchaseOrderService {
           items: request.items,
           notes: request.notes,
           quotation_url: request.quotation_url,
+          max_payment_date: request.max_payment_date,
           requested_by: user_id,
           status: initialStatus, // Auto-advance to pending approval
           created_at: new Date().toISOString(),
@@ -561,6 +562,21 @@ export class PurchaseOrderValidationService {
     // Validar payment_method si se proporciona
     if (request.payment_method && !Object.values(PaymentMethod).includes(request.payment_method)) {
       errors.push('payment_method debe ser cash, transfer, o card')
+    }
+    
+    // Validar max_payment_date para transferencias
+    if (request.payment_method === PaymentMethod.TRANSFER) {
+      if (!request.max_payment_date) {
+        errors.push('max_payment_date es requerido para transferencias')
+      } else {
+        const maxDate = new Date(request.max_payment_date)
+        const today = new Date()
+        today.setHours(0, 0, 0, 0)
+        
+        if (maxDate < today) {
+          errors.push('max_payment_date no puede ser anterior a hoy')
+        }
+      }
     }
     
     return {

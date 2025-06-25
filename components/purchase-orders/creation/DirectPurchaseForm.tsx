@@ -78,7 +78,8 @@ export function DirectPurchaseForm({
     items: [],
     total_amount: 0,
     payment_method: PaymentMethod.CASH,
-    notes: ""
+    notes: "",
+    max_payment_date: undefined
   })
 
   // Items management
@@ -323,6 +324,21 @@ export function DirectPurchaseForm({
       errors.push('Método de pago es requerido')
     }
 
+    // Validate max payment date for transfers
+    if (formData.payment_method === PaymentMethod.TRANSFER) {
+      if (!formData.max_payment_date) {
+        errors.push('Fecha máxima de pago es requerida para transferencias')
+      } else {
+        const maxDate = new Date(formData.max_payment_date)
+        const today = new Date()
+        today.setHours(0, 0, 0, 0)
+        
+        if (maxDate < today) {
+          errors.push('La fecha máxima de pago no puede ser anterior a hoy')
+        }
+      }
+    }
+
     if (items.length === 0) {
       errors.push('Debe agregar al menos un artículo')
     }
@@ -351,7 +367,8 @@ export function DirectPurchaseForm({
         items: items,
         total_amount: formData.total_amount!,
         payment_method: formData.payment_method,
-        notes: formData.notes
+        notes: formData.notes,
+        max_payment_date: formData.payment_method === PaymentMethod.TRANSFER ? formData.max_payment_date : undefined
       }
 
       const result = await createPurchaseOrder(request)
@@ -554,6 +571,26 @@ export function DirectPurchaseForm({
               </Select>
             </div>
           </div>
+
+          {/* Max Payment Date - Only shown for transfers */}
+          {formData.payment_method === PaymentMethod.TRANSFER && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 border-t">
+              <div className="space-y-2">
+                <Label htmlFor="max_payment_date">Fecha Máxima de Pago</Label>
+                <Input
+                  id="max_payment_date"
+                  type="date"
+                  value={formData.max_payment_date || ""}
+                  onChange={(e) => handleInputChange('max_payment_date', e.target.value)}
+                  min={new Date().toISOString().split('T')[0]}
+                  required={formData.payment_method === PaymentMethod.TRANSFER}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Fecha límite para realizar la transferencia
+                </p>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 

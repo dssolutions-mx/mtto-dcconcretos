@@ -12,6 +12,7 @@ import { Badge } from "@/components/ui/badge"
 import { Plus, Store, Wrench, Building2, Sparkles, Loader2, Receipt, DollarSign, Shield, CheckCircle, AlertTriangle } from "lucide-react"
 import { useAuthZustand } from "@/hooks/use-auth-zustand"
 import { formatCurrency } from "@/lib/utils"
+import { AccountsPayableSummaryCard } from "@/components/purchase-orders/AccountsPayableSummaryCard"
 
 // export const metadata: Metadata = {
 //   title: "Órdenes de Compra | Sistema de Gestión de Mantenimiento",
@@ -140,6 +141,16 @@ export default function PurchaseOrdersPage() {
             </Link>
           )}
           
+          {/* ✅ NUEVO: Botón de Cuentas por Pagar para administradores */}
+          {profile && (profile.role === 'GERENCIA_GENERAL' || profile.role === 'AREA_ADMINISTRATIVA') && (
+            <Link href="/compras/cuentas-por-pagar">
+              <Button variant="outline" className="bg-orange-50 border-orange-200 text-orange-700 hover:bg-orange-100">
+                <DollarSign className="mr-2 h-4 w-4" />
+                Cuentas por Pagar
+              </Button>
+            </Link>
+          )}
+          
           {/* ✅ NUEVO SISTEMA: Solo mostrar si puede crear órdenes */}
           {canCreateOrders && (
             <Link href="/compras/crear-tipificada">
@@ -251,6 +262,11 @@ export default function PurchaseOrdersPage() {
             </div>
           </CardContent>
         </Card>
+      )}
+
+      {/* ✅ NUEVO: Cuentas por Pagar Summary para Administradores */}
+      {profile && (profile.role === 'GERENCIA_GENERAL' || profile.role === 'AREA_ADMINISTRATIVA') && (
+        <AccountsPayableSummaryCard />
       )}
 
       {/* Enhanced Purchase Order System Banner */}
