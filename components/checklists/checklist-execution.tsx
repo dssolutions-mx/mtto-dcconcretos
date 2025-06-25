@@ -1815,39 +1815,39 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
                               </CardHeader>
                               <CardContent className="pb-3">
                                 <div className="grid grid-cols-3 gap-2">
-                                  <Button
-                                    variant={itemStatus[item.id] === "pass" ? "default" : "outline"}
-                                    className={`h-12 ${itemStatus[item.id] === "pass" ? "bg-green-500 hover:bg-green-600" : ""}`}
-                                    onClick={() => handleStatusChange(item.id, "pass")}
-                                    disabled={submitting}
-                                  >
-                                    <Check
-                                      className={`mr-2 h-5 w-5 ${itemStatus[item.id] === "pass" ? "text-white" : "text-green-500"}`}
-                                    />
-                                    <span className={itemStatus[item.id] === "pass" ? "text-white" : "text-green-500"}>Pass</span>
-                                  </Button>
-                                  <Button
-                                    variant={itemStatus[item.id] === "flag" ? "default" : "outline"}
-                                    className={`h-12 ${itemStatus[item.id] === "flag" ? "bg-amber-500 hover:bg-amber-600" : ""}`}
-                                    onClick={() => handleStatusChange(item.id, "flag")}
-                                    disabled={submitting}
-                                  >
-                                    <Flag
-                                      className={`mr-2 h-5 w-5 ${itemStatus[item.id] === "flag" ? "text-white" : "text-amber-500"}`}
-                                    />
-                                    <span className={itemStatus[item.id] === "flag" ? "text-white" : "text-amber-500"}>Flag</span>
-                                  </Button>
-                                  <Button
-                                    variant={itemStatus[item.id] === "fail" ? "default" : "outline"}
-                                    className={`h-12 ${itemStatus[item.id] === "fail" ? "bg-red-500 hover:bg-red-600" : ""}`}
-                                    onClick={() => handleStatusChange(item.id, "fail")}
-                                    disabled={submitting}
-                                  >
-                                    <X
-                                      className={`mr-2 h-5 w-5 ${itemStatus[item.id] === "fail" ? "text-white" : "text-red-500"}`}
-                                    />
-                                    <span className={itemStatus[item.id] === "fail" ? "text-white" : "text-red-500"}>Fail</span>
-                                  </Button>
+                                                                  <Button
+                                  variant={itemStatus[item.id] === "pass" ? "default" : "outline"}
+                                  className={`h-12 ${itemStatus[item.id] === "pass" ? "bg-green-500 hover:bg-green-600" : ""}`}
+                                  onClick={() => handleStatusChange(item.id, "pass")}
+                                  disabled={submitting}
+                                >
+                                  <Check
+                                    className={`mr-2 h-5 w-5 ${itemStatus[item.id] === "pass" ? "text-white" : "text-green-500"}`}
+                                  />
+                                  <span className={itemStatus[item.id] === "pass" ? "text-white" : "text-green-500"}>Válido</span>
+                                </Button>
+                                                                  <Button
+                                  variant={itemStatus[item.id] === "flag" ? "default" : "outline"}
+                                  className={`h-12 ${itemStatus[item.id] === "flag" ? "bg-amber-500 hover:bg-amber-600" : ""}`}
+                                  onClick={() => handleStatusChange(item.id, "flag")}
+                                  disabled={submitting}
+                                >
+                                  <Flag
+                                    className={`mr-2 h-5 w-5 ${itemStatus[item.id] === "flag" ? "text-white" : "text-amber-500"}`}
+                                  />
+                                  <span className={itemStatus[item.id] === "flag" ? "text-white" : "text-amber-500"}>Alerta</span>
+                                </Button>
+                                                                  <Button
+                                  variant={itemStatus[item.id] === "fail" ? "default" : "outline"}
+                                  className={`h-12 ${itemStatus[item.id] === "fail" ? "bg-red-500 hover:bg-red-600" : ""}`}
+                                  onClick={() => handleStatusChange(item.id, "fail")}
+                                  disabled={submitting}
+                                >
+                                  <X
+                                    className={`mr-2 h-5 w-5 ${itemStatus[item.id] === "fail" ? "text-white" : "text-red-500"}`}
+                                  />
+                                  <span className={itemStatus[item.id] === "fail" ? "text-white" : "text-red-500"}>Falla</span>
+                                </Button>
                                 </div>
 
                                 {(itemStatus[item.id] === "flag" || itemStatus[item.id] === "fail") && (
@@ -2005,7 +2005,7 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
                                   <Check
                                     className={`mr-2 h-5 w-5 ${itemStatus[item.id] === "pass" ? "text-white" : "text-green-500"}`}
                                   />
-                                  <span className={itemStatus[item.id] === "pass" ? "text-white" : "text-green-500"}>Pass</span>
+                                  <span className={itemStatus[item.id] === "pass" ? "text-white" : "text-green-500"}>Válido</span>
                                 </Button>
                                 <Button
                                   variant={itemStatus[item.id] === "flag" ? "default" : "outline"}
@@ -2016,7 +2016,7 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
                                   <Flag
                                     className={`mr-2 h-5 w-5 ${itemStatus[item.id] === "flag" ? "text-white" : "text-amber-500"}`}
                                   />
-                                  <span className={itemStatus[item.id] === "flag" ? "text-white" : "text-amber-500"}>Flag</span>
+                                  <span className={itemStatus[item.id] === "flag" ? "text-white" : "text-amber-500"}>Alerta</span>
                                 </Button>
                                 <Button
                                   variant={itemStatus[item.id] === "fail" ? "default" : "outline"}
@@ -2027,7 +2027,7 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
                                   <X
                                     className={`mr-2 h-5 w-5 ${itemStatus[item.id] === "fail" ? "text-white" : "text-red-500"}`}
                                   />
-                                  <span className={itemStatus[item.id] === "fail" ? "text-white" : "text-red-500"}>Fail</span>
+                                  <span className={itemStatus[item.id] === "fail" ? "text-white" : "text-red-500"}>Falla</span>
                                 </Button>
                               </div>
 
