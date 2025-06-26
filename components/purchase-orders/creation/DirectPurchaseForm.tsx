@@ -21,7 +21,8 @@ import {
   Calculator,
   AlertCircle,
   CheckCircle2,
-  Package
+  Package,
+  Building2
 } from "lucide-react"
 import { PurchaseOrderType, PaymentMethod, CreatePurchaseOrderRequest, QuoteValidationResponse } from "@/types/purchase-orders"
 import { QuotationValidator } from "./QuotationValidator"
@@ -65,7 +66,10 @@ export function DirectPurchaseForm({
 }: DirectPurchaseFormProps) {
   const router = useRouter()
   const { createPurchaseOrder, isCreating, error, clearError } = usePurchaseOrders()
-  const { userPlant } = useUserPlant()
+  const { userPlants, loading: plantsLoading } = useUserPlant()
+
+  // Plant selection state
+  const [selectedPlantId, setSelectedPlantId] = useState<string>("")
 
   // Work order state
   const [workOrder, setWorkOrder] = useState<WorkOrderData | null>(null)
@@ -318,6 +322,11 @@ export function DirectPurchaseForm({
   const validateForm = (): boolean => {
     const errors: string[] = []
 
+    // Plant validation (only for standalone orders without work order)
+    if (!workOrderId && !selectedPlantId) {
+      errors.push('La planta es obligatoria')
+    }
+
     if (!formData.supplier?.trim()) {
       errors.push('Proveedor es requerido')
     }
@@ -370,7 +379,9 @@ export function DirectPurchaseForm({
         total_amount: formData.total_amount!,
         payment_method: formData.payment_method,
         notes: formData.notes,
-        max_payment_date: formData.payment_method === PaymentMethod.TRANSFER ? formData.max_payment_date : undefined
+        max_payment_date: formData.payment_method === PaymentMethod.TRANSFER ? formData.max_payment_date : undefined,
+        // Include plant_id for standalone orders
+        ...(selectedPlantId && { plant_id: selectedPlantId })
       }
 
       const result = await createPurchaseOrder(request)
@@ -595,6 +606,63 @@ export function DirectPurchaseForm({
           )}
         </CardContent>
       </Card>
+
+      {/* Plant Selection - Only show for standalone orders */}
+      {!workOrderId && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg flex items-center space-x-2">
+              <Building2 className="h-5 w-5" />
+              <span>Selección de Planta</span>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {plantsLoading ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="h-6 w-6 animate-spin mr-2" />
+                <span>Cargando plantas...</span>
+              </div>
+            ) : userPlants.length === 0 ? (
+              <Alert>
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>
+                  No tienes acceso a ninguna planta. Contacta al administrador.
+                </AlertDescription>
+              </Alert>
+            ) : (
+              <div className="space-y-2">
+                <Label htmlFor="plant_selector">Planta *</Label>
+                <Select
+                  value={selectedPlantId}
+                  onValueChange={setSelectedPlantId}
+                  required
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecciona la planta donde se realizará la compra" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {userPlants.map((plant) => (
+                      <SelectItem key={plant.plant_id} value={plant.plant_id}>
+                        <div className="flex flex-col">
+                          <span className="font-medium">{plant.plant_name}</span>
+                          {plant.business_unit_name && (
+                            <span className="text-xs text-muted-foreground">
+                              {plant.business_unit_name}
+                            </span>
+                          )}
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Selecciona la planta donde se realizará esta compra directa
+                </p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Items Section */}
       <Card>

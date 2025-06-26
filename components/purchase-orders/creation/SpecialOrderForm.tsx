@@ -85,7 +85,10 @@ export function SpecialOrderForm({
 }: SpecialOrderFormProps) {
   const router = useRouter()
   const { createPurchaseOrder, isCreating, error, clearError } = usePurchaseOrders()
-  const { userPlant } = useUserPlant()
+  const { userPlants, loading: plantsLoading } = useUserPlant()
+
+  // Plant selection state
+  const [selectedPlantId, setSelectedPlantId] = useState<string | undefined>(undefined)
 
   // Work order state
   const [workOrder, setWorkOrder] = useState<WorkOrderData | null>(null)
@@ -344,6 +347,11 @@ export function SpecialOrderForm({
   const validateForm = (): boolean => {
     const errors: string[] = []
 
+    // Plant validation (only for standalone orders without work order)
+    if (!workOrderId && !selectedPlantId) {
+      errors.push('La planta es obligatoria')
+    }
+
     if (!formData.supplier?.trim()) {
       errors.push('Proveedor/Agencia es requerido')
     }
@@ -394,6 +402,7 @@ export function SpecialOrderForm({
     }
 
     try {
+      // Create the base request object
       const request: CreatePurchaseOrderRequest = {
         work_order_id: workOrderId || undefined,
         po_type: PurchaseOrderType.SPECIAL_ORDER,
@@ -404,6 +413,11 @@ export function SpecialOrderForm({
         notes: formData.notes,
         quotation_url: quotationUrl || undefined,
         ...(formData.max_payment_date && { max_payment_date: formData.max_payment_date })
+      }
+
+      // Include plant_id for standalone orders
+      if (selectedPlantId) {
+        request.plant_id = selectedPlantId as string
       }
 
       const result = await createPurchaseOrder(request)
@@ -657,6 +671,63 @@ export function SpecialOrderForm({
           </div>
         </CardContent>
       </Card>
+
+      {/* Plant Selection - Only show for standalone orders */}
+      {!workOrderId && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg flex items-center space-x-2">
+              <Building2 className="h-5 w-5" />
+              <span>Selección de Planta</span>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {plantsLoading ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="h-6 w-6 animate-spin mr-2" />
+                <span>Cargando plantas...</span>
+              </div>
+            ) : userPlants.length === 0 ? (
+              <Alert>
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>
+                  No tienes acceso a ninguna planta. Contacta al administrador.
+                </AlertDescription>
+              </Alert>
+            ) : (
+              <div className="space-y-2">
+                <Label htmlFor="plant_selector">Planta *</Label>
+                <Select
+                  value={selectedPlantId || ""}
+                  onValueChange={setSelectedPlantId}
+                  required
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecciona la planta donde se realizará el pedido" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {userPlants.map((plant) => (
+                      <SelectItem key={plant.plant_id} value={plant.plant_id}>
+                        <div className="flex flex-col">
+                          <span className="font-medium">{plant.plant_name}</span>
+                          {plant.business_unit_name && (
+                            <span className="text-xs text-muted-foreground">
+                              {plant.business_unit_name}
+                            </span>
+                          )}
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Selecciona la planta para la cual se solicita este pedido especial
+                </p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Items List */}
       <Card>
