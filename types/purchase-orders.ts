@@ -89,6 +89,7 @@ export interface SpecialOrder extends EnhancedPurchaseOrder {
 // Request/Response Types for API
 export interface CreatePurchaseOrderRequest {
   work_order_id?: string       // Optional - allows standalone purchase orders
+  plant_id?: string           // Required for standalone POs (when no work_order_id)
   po_type: PurchaseOrderType
   supplier: string
   items: any[]

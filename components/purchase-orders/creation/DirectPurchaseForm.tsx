@@ -27,6 +27,7 @@ import { PurchaseOrderType, PaymentMethod, CreatePurchaseOrderRequest, QuoteVali
 import { QuotationValidator } from "./QuotationValidator"
 import { usePurchaseOrders } from "@/hooks/usePurchaseOrders"
 import { createClient } from "@/lib/supabase"
+import { useUserPlant } from "@/hooks/use-user-plant"
 
 interface DirectPurchaseFormProps {
   workOrderId?: string
@@ -64,6 +65,7 @@ export function DirectPurchaseForm({
 }: DirectPurchaseFormProps) {
   const router = useRouter()
   const { createPurchaseOrder, isCreating, error, clearError } = usePurchaseOrders()
+  const { userPlant } = useUserPlant()
 
   // Work order state
   const [workOrder, setWorkOrder] = useState<WorkOrderData | null>(null)

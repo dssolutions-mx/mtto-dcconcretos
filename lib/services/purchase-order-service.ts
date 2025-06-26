@@ -71,6 +71,7 @@ export class PurchaseOrderService {
         .insert({
           order_id,
           work_order_id: request.work_order_id,
+          plant_id: request.plant_id,
           po_type: request.po_type,
           supplier: request.supplier,
           total_amount: request.total_amount,
@@ -533,8 +534,11 @@ export class PurchaseOrderValidationService {
   static validateCreateRequest(request: CreatePurchaseOrderRequest): ValidationResult {
     const errors: string[] = []
     
-    // Validaciones generales - work_order_id is now optional
-    // if (!request.work_order_id) errors.push('work_order_id es requerido')  // REMOVED: Allow standalone POs
+    // Validaciones generales - work_order_id is now optional, but either work_order_id or plant_id is required
+    if (!request.work_order_id && !request.plant_id) {
+      errors.push('Se requiere work_order_id o plant_id para crear la orden de compra')
+    }
+    
     if (!request.po_type) errors.push('po_type es requerido')
     if (!request.supplier) errors.push('supplier es requerido')
     if (!request.total_amount || request.total_amount <= 0) errors.push('total_amount debe ser mayor a 0')
@@ -573,7 +577,9 @@ export class PurchaseOrderValidationService {
         const today = new Date()
         today.setHours(0, 0, 0, 0)
         
-        if (maxDate < today) {
+        if (isNaN(maxDate.getTime())) {
+          errors.push('max_payment_date debe ser una fecha válida')
+        } else if (maxDate < today) {
           errors.push('max_payment_date no puede ser anterior a hoy')
         }
       }
