@@ -29,6 +29,7 @@ import { QuotationValidator } from "./QuotationValidator"
 import { QuotationUploader } from "./QuotationUploader"
 import { usePurchaseOrders } from "@/hooks/usePurchaseOrders"
 import { createClient } from "@/lib/supabase"
+import { useUserPlant } from "@/hooks/use-user-plant"
 
 interface DirectServiceFormProps {
   workOrderId?: string
@@ -80,6 +81,7 @@ export function DirectServiceForm({
 }: DirectServiceFormProps) {
   const router = useRouter()
   const { createPurchaseOrder, isCreating, error, clearError } = usePurchaseOrders()
+  const { userPlants, loading: plantLoading, error: plantError, userRole, hasFullAccess } = useUserPlant()
 
   // Work order state
   const [workOrder, setWorkOrder] = useState<WorkOrderData | null>(null)
@@ -121,6 +123,9 @@ export function DirectServiceForm({
   
   // Quotation handling
   const [quotationUrl, setQuotationUrl] = useState<string | null>(null)
+  
+  // Plant selection for standalone orders - simplified since userPlants now contains all available plants
+  const [selectedPlantId, setSelectedPlantId] = useState<string>("")
 
   // Load work order data and recent service providers
   useEffect(() => {
@@ -210,10 +215,20 @@ export function DirectServiceForm({
     if (workOrderId) {
       loadWorkOrderData()
     } else {
-      // No work order - just load providers  
+      // No work order - just load providers, plants are loaded by the hook
       setIsLoadingWorkOrder(false)
     }
   }, [workOrderId])
+
+  // Auto-select plant for standalone orders when userPlants are loaded
+  useEffect(() => {
+    if (!workOrderId && userPlants.length > 0 && !selectedPlantId) {
+      // Auto-select first plant if only one available
+      if (userPlants.length === 1) {
+        setSelectedPlantId(userPlants[0].plant_id)
+      }
+    }
+  }, [userPlants, workOrderId, selectedPlantId])
 
   // Calculate total amount whenever services change
   useEffect(() => {
@@ -309,6 +324,11 @@ export function DirectServiceForm({
   const validateForm = (): boolean => {
     const errors: string[] = []
 
+    // Validate plant selection for standalone orders
+    if (!workOrderId && !selectedPlantId) {
+      errors.push('Se requiere seleccionar una planta para órdenes independientes')
+    }
+
     if (!formData.service_provider?.trim()) {
       errors.push('Proveedor de servicio es requerido')
     }
@@ -358,18 +378,23 @@ export function DirectServiceForm({
     }
 
     try {
-      const request: CreatePurchaseOrderRequest = {
-        work_order_id: workOrderId,
-        po_type: PurchaseOrderType.DIRECT_SERVICE,
-        supplier: formData.service_provider!, // Use service_provider as supplier
-        items: services,
-        total_amount: formData.total_amount!,
-        payment_method: formData.payment_method,
-        service_provider: formData.service_provider,
-        notes: formData.notes,
-        quotation_url: quotationUrl || undefined,
-        max_payment_date: formData.payment_method === PaymentMethod.TRANSFER ? formData.max_payment_date : undefined
-      }
+                      const request: CreatePurchaseOrderRequest = {
+          work_order_id: workOrderId || undefined,
+          po_type: PurchaseOrderType.DIRECT_SERVICE,
+          supplier: formData.service_provider!, // Use service_provider as supplier
+          items: services,
+          total_amount: formData.total_amount!,
+          payment_method: formData.payment_method,
+          service_provider: formData.service_provider,
+          notes: formData.notes,
+          quotation_url: quotationUrl || undefined,
+          max_payment_date: formData.payment_method === PaymentMethod.TRANSFER ? formData.max_payment_date : undefined
+        }
+
+        // Only add plant_id for standalone orders and when a plant is selected
+        if (!workOrderId && selectedPlantId && selectedPlantId.trim() !== '') {
+          request.plant_id = selectedPlantId
+        }
 
       const result = await createPurchaseOrder(request)
       
@@ -542,6 +567,35 @@ export function DirectServiceForm({
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
+          {/* Plant Selector for Standalone Orders */}
+          {!workOrderId && (
+            <div className="space-y-2 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+              <Label htmlFor="plant_selector" className="text-sm font-medium text-blue-900">
+                Planta * (Orden Independiente)
+              </Label>
+              <Select value={selectedPlantId} onValueChange={setSelectedPlantId}>
+                <SelectTrigger className="bg-white">
+                  <SelectValue placeholder="Seleccionar planta donde se ejecutará el servicio" />
+                </SelectTrigger>
+                <SelectContent>
+                  {userPlants.map((plant) => (
+                    <SelectItem key={plant.plant_id} value={plant.plant_id}>
+                      {plant.plant_name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {!selectedPlantId && (
+                <p className="text-sm text-red-600">
+                  Se requiere seleccionar una planta para órdenes independientes
+                </p>
+              )}
+              <p className="text-xs text-blue-700">
+                Esta orden no está vinculada a una orden de trabajo específica
+              </p>
+            </div>
+          )}
+          
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="service_provider">Proveedor de Servicio *</Label>
