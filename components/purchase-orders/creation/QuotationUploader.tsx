@@ -124,11 +124,6 @@ export function QuotationUploader({
       const sanitizedFileName = sanitizeFileName(file.name)
       const fileName = `${folderName}/${Date.now()}_${sanitizedFileName}`
       
-      // Log for debugging
-      console.log('Original filename:', file.name)
-      console.log('Sanitized filename:', sanitizedFileName)
-      console.log('Full storage path:', fileName)
-      
       // ✅ FIXED: Using correct 'quotations' bucket instead of 'documents'
       const { data: uploadData, error: uploadError } = await supabase.storage
         .from('quotations')
