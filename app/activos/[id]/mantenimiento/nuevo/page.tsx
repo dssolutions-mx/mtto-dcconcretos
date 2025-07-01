@@ -13,7 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import { Badge } from "@/components/ui/badge";
-import { CalendarIcon, ArrowLeft, PlusCircle, Minus, Check, Loader2, Wrench, Clock, AlertTriangle, Camera, FileText } from "lucide-react";
+import { CalendarIcon, ArrowLeft, PlusCircle, Minus, Check, Loader2, Wrench, Clock, AlertTriangle, Camera, FileText, ClipboardList, DollarSign, Calendar as CalendarPlanIcon, AlertCircle } from "lucide-react";
 import { format, differenceInDays } from "date-fns";
 import { es } from "date-fns/locale";
 import { cn } from "@/lib/utils";
@@ -23,12 +23,13 @@ import { useAsset } from "@/hooks/useSupabase";
 import { createClient } from "@/lib/supabase";
 import { EvidenceUpload, type EvidencePhoto } from "@/components/ui/evidence-upload";
 import { Separator } from "@/components/ui/separator";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 
 interface MaintenancePart {
   name: string;
   partNumber?: string;
   quantity: number;
-  cost?: string;
+  estimatedCost?: string;
   source?: string;
 }
 
@@ -78,23 +79,23 @@ export default function NewMaintenancePage({ params }: NewMaintenancePageProps) 
   
   const { asset, loading: assetLoading, error: assetError } = useAsset(assetId);
   
-  const [date, setDate] = useState<Date>(new Date());
-  const [type, setType] = useState<string>("Preventivo");
-  const [hours, setHours] = useState<string>("");
-  const [description, setDescription] = useState<string>("");
-  const [findings, setFindings] = useState<string>("");
-  const [actions, setActions] = useState<string>("");
-  const [technician, setTechnician] = useState<string>("");
-  const [laborHours, setLaborHours] = useState<string>("");
-  const [laborCost, setLaborCost] = useState<string>("");
-  const [totalCost, setTotalCost] = useState<string>("");
-  const [workOrder, setWorkOrder] = useState<string>("");
-  const [parts, setParts] = useState<MaintenancePart[]>([]);
+  // Planning-focused state variables
+  const [plannedDate, setPlannedDate] = useState<Date>(new Date());
+  const [maintenanceType, setMaintenanceType] = useState<string>("Preventivo");
+  const [proposedTechnician, setProposedTechnician] = useState<string>("");
+  const [workDescription, setWorkDescription] = useState<string>("");
+  const [workScope, setWorkScope] = useState<string>("");
+  const [estimatedDuration, setEstimatedDuration] = useState<string>("");
+  const [estimatedLaborCost, setEstimatedLaborCost] = useState<string>("");
+  const [estimatedTotalCost, setEstimatedTotalCost] = useState<string>("");
+  const [priority, setPriority] = useState<string>("Media");
+  const [requiredParts, setRequiredParts] = useState<MaintenancePart[]>([]);
   
+  // New part form state
   const [newPartName, setNewPartName] = useState<string>("");
   const [newPartNumber, setNewPartNumber] = useState<string>("");
   const [newPartQuantity, setNewPartQuantity] = useState<string>("1");
-  const [newPartCost, setNewPartCost] = useState<string>("");
+  const [newPartEstimatedCost, setNewPartEstimatedCost] = useState<string>("");
   
   const [maintenancePlan, setMaintenancePlan] = useState<any>(null);
   const [maintenanceStatus, setMaintenanceStatus] = useState<{
@@ -109,9 +110,9 @@ export default function NewMaintenancePage({ params }: NewMaintenancePageProps) 
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<Error | null>(null);
   
-  // Evidence state
-  const [maintenanceEvidence, setMaintenanceEvidence] = useState<EvidencePhoto[]>([]);
-  const [showEvidenceDialog, setShowEvidenceDialog] = useState(false);
+  // Evidence state for planning documentation
+  const [planningDocuments, setPlanningDocuments] = useState<EvidencePhoto[]>([]);
+  const [showDocumentsDialog, setShowDocumentsDialog] = useState(false);
   
   // Cargar el plan de mantenimiento si se proporcionó un ID
   useEffect(() => {
@@ -173,19 +174,6 @@ export default function NewMaintenancePage({ params }: NewMaintenancePageProps) 
           const hoursOverdue = currentHours - nextHours;
           const isHoursOverdue = hoursOverdue >= 0;
           
-          // Calcular días si hay intervalo por días
-          let daysOverdue = 0;
-          let isDaysOverdue = false;
-          // Uncomment this if you have a days_interval field
-          /*if (planData.days_interval && lastMaintenanceDate) {
-            const daysSinceLastMaintenance = differenceInDays(
-              new Date(), 
-              new Date(lastMaintenanceDate)
-            );
-            daysOverdue = daysSinceLastMaintenance - planData.days_interval;
-            isDaysOverdue = daysOverdue >= 0;
-          }*/
-          
           // Calcular el progreso
           let progress = 0;
           if (currentHours && lastMaintenanceHours && interval > 0) {
@@ -194,44 +182,44 @@ export default function NewMaintenancePage({ params }: NewMaintenancePageProps) 
           }
           
           setMaintenanceStatus({
-            isOverdue: isHoursOverdue /* || isDaysOverdue */,
+            isOverdue: isHoursOverdue,
             isPending: progress >= 90,
             hoursOverdue: isHoursOverdue ? hoursOverdue : undefined,
-            // daysOverdue: isDaysOverdue ? daysOverdue : undefined,
             progress,
             lastMaintenanceDate: lastMaintenanceDate || undefined
           });
         }
         
-        // Prellenar campos basados en el plan
+        // Pre-rellenar campos basados en el plan
         if (planData) {
-          setType("Preventivo");
-          setDescription(planData.description || "");
-          // Establecer horas a las horas actuales del activo
-          if (asset?.current_hours) {
-            setHours(asset.current_hours.toString());
+          setMaintenanceType("Preventivo");
+          setWorkDescription(planData.description || "");
+          
+          // Establecer duración estimada si está disponible
+          if (planData.estimated_duration) {
+            setEstimatedDuration(planData.estimated_duration.toString());
           }
           
-          // Cargar los repuestos asociados a las tareas de mantenimiento
+          // Cargar los repuestos requeridos de las tareas de mantenimiento
           if (planData.maintenance_tasks && planData.maintenance_tasks.length > 0) {
             const taskParts: MaintenancePart[] = [];
             
-            planData.maintenance_tasks.forEach(task => {
+            planData.maintenance_tasks.forEach((task: MaintenanceTask) => {
               if (task.task_parts && task.task_parts.length > 0) {
-                task.task_parts.forEach(part => {
+                task.task_parts.forEach((part: TaskPart) => {
                   taskParts.push({
                     name: part.name,
                     partNumber: part.part_number || undefined,
                     quantity: part.quantity,
-                    cost: part.cost || undefined,
-                    source: 'Tarea de Mantenimiento'
+                    estimatedCost: part.cost || undefined,
+                    source: 'Plan de Mantenimiento'
                   });
                 });
               }
             });
             
             if (taskParts.length > 0) {
-              setParts(taskParts);
+              setRequiredParts(taskParts);
             }
           }
         }
@@ -254,13 +242,13 @@ export default function NewMaintenancePage({ params }: NewMaintenancePageProps) 
     const quantity = parseInt(newPartQuantity);
     if (isNaN(quantity) || quantity <= 0) return;
     
-    setParts([
-      ...parts,
+    setRequiredParts([
+      ...requiredParts,
       {
         name: newPartName,
         partNumber: newPartNumber || undefined,
         quantity,
-        cost: newPartCost || undefined
+        estimatedCost: newPartEstimatedCost || undefined
       }
     ]);
     
@@ -268,11 +256,11 @@ export default function NewMaintenancePage({ params }: NewMaintenancePageProps) 
     setNewPartName("");
     setNewPartNumber("");
     setNewPartQuantity("1");
-    setNewPartCost("");
+    setNewPartEstimatedCost("");
   };
   
   const removePart = (index: number) => {
-    setParts(parts.filter((_, i) => i !== index));
+    setRequiredParts(requiredParts.filter((_, i) => i !== index));
   };
   
   const formatDate = (dateString: string | null) => {
@@ -280,10 +268,25 @@ export default function NewMaintenancePage({ params }: NewMaintenancePageProps) 
     return format(new Date(dateString), "dd 'de' MMMM 'de' yyyy", { locale: es });
   };
   
+  const calculateEstimatedTotalCost = () => {
+    const laborCost = Number(estimatedLaborCost) || 0;
+    const partsCost = requiredParts.reduce((total, part) => {
+      const cost = Number(part.estimatedCost) || 0;
+      return total + (cost * part.quantity);
+    }, 0);
+    
+    const total = laborCost + partsCost;
+    setEstimatedTotalCost(total.toFixed(2));
+  };
+  
+  useEffect(() => {
+    calculateEstimatedTotalCost();
+  }, [estimatedLaborCost, requiredParts]);
+  
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!date || !type || !technician || !description) {
+    if (!plannedDate || !maintenanceType || !proposedTechnician || !workDescription) {
       toast({
         title: "Campos incompletos",
         description: "Por favor complete todos los campos obligatorios marcados con *",
@@ -301,10 +304,6 @@ export default function NewMaintenancePage({ params }: NewMaintenancePageProps) 
         throw new Error("Usuario no autenticado");
       }
 
-      // Paso 1: Crear Orden de Trabajo - usar el mismo enfoque para ambos tipos
-      let workOrderId: string;
-      let workOrderNumber: string;
-      
       // Generar número secuencial para la orden de trabajo
       const { count: workOrderCount, error: workOrderCountError } = await supabase
         .from("work_orders")
@@ -312,26 +311,28 @@ export default function NewMaintenancePage({ params }: NewMaintenancePageProps) 
         
       if (workOrderCountError) throw workOrderCountError;
       
-      workOrderNumber = `OT-${((workOrderCount || 0) + 1).toString().padStart(4, '0')}`;
+      const workOrderNumber = `OT-${((workOrderCount || 0) + 1).toString().padStart(4, '0')}`;
       
       const workOrderData = {
         order_id: workOrderNumber,
         asset_id: assetId,
-        description: description,
+        description: workDescription,
+        scope: workScope || null,
         type: planId ? 'preventive' : 'corrective',
         requested_by: user.id,
         assigned_to: user.id,
-        planned_date: date.toISOString(),
-        estimated_duration: laborHours ? Number(laborHours) : 0,
-        priority: 'Media',
+        planned_date: plannedDate.toISOString(),
+        estimated_duration: estimatedDuration ? Number(estimatedDuration) : 0,
+        priority: priority,
         status: 'Pendiente',
         maintenance_plan_id: planId || null,
-        creation_photos: maintenanceEvidence.length > 0 ? maintenanceEvidence.map(evidence => ({
-          url: evidence.url,
-          description: evidence.description,
-          category: evidence.category,
-          uploaded_at: evidence.uploaded_at,
-          bucket_path: evidence.bucket_path
+        estimated_cost: estimatedTotalCost ? Number(estimatedTotalCost) : 0,
+        creation_photos: planningDocuments.length > 0 ? planningDocuments.map(doc => ({
+          url: doc.url,
+          description: doc.description,
+          category: doc.category,
+          uploaded_at: doc.uploaded_at,
+          bucket_path: doc.bucket_path
         })) : []
       };
 
@@ -342,40 +343,38 @@ export default function NewMaintenancePage({ params }: NewMaintenancePageProps) 
         .single();
       
       if (workOrderError) throw workOrderError;
-      workOrderId = workOrderResult.id;
 
-      // Paso 2: Agregar repuestos a la orden de trabajo si hay partes
-      if (parts.length > 0) {
-        const requiredParts = parts.map(part => ({
+      // Agregar repuestos requeridos a la orden de trabajo
+      if (requiredParts.length > 0) {
+        const partsData = requiredParts.map(part => ({
           name: part.name,
           part_number: part.partNumber || '',
           quantity: part.quantity,
-          unit_price: part.cost ? Number(part.cost) : 0,
-          total_price: part.cost ? Number(part.cost) * part.quantity : 0
+          unit_price: part.estimatedCost ? Number(part.estimatedCost) : 0,
+          total_price: part.estimatedCost ? Number(part.estimatedCost) * part.quantity : 0
         }));
 
-        // Actualizar la orden de trabajo con los repuestos requeridos
         const { error: updateError } = await supabase
           .from('work_orders')
-          .update({ required_parts: requiredParts })
-          .eq('id', workOrderId);
+          .update({ required_parts: partsData })
+          .eq('id', workOrderResult.id);
 
         if (updateError) throw updateError;
       }
 
       toast({
-        title: "¡Orden de Trabajo creada exitosamente!",
-        description: `Se ha generado la Orden de Trabajo ${workOrderNumber} para el mantenimiento ${planId ? 'preventivo' : 'correctivo'}. La orden está en estado "Pendiente" y lista para ser ejecutada.`,
+        title: "¡Orden de Trabajo programada exitosamente!",
+        description: `Se ha generado la Orden de Trabajo ${workOrderNumber} para mantenimiento ${planId ? 'preventivo' : 'correctivo'}. La orden está programada para ${format(plannedDate, "dd/MM/yyyy")} y lista para generar órdenes de compra si es necesario.`,
       });
 
       // Redirigir a la vista de órdenes de trabajo
       router.push(`/ordenes`);
       
     } catch (err) {
-      console.error("Error al registrar mantenimiento:", err);
+      console.error("Error al programar mantenimiento:", err);
       toast({
-        title: "Error al registrar mantenimiento",
-        description: err instanceof Error ? err.message : "Ha ocurrido un error inesperado en el proceso administrativo",
+        title: "Error al programar mantenimiento",
+        description: err instanceof Error ? err.message : "Ha ocurrido un error inesperado en el proceso de programación",
         variant: "destructive",
       });
     } finally {
@@ -389,8 +388,8 @@ export default function NewMaintenancePage({ params }: NewMaintenancePageProps) 
   return (
     <DashboardShell>
       <DashboardHeader
-        heading="Crear Orden de Trabajo"
-        text={`Generar una nueva orden de trabajo para ${asset?.name || ""}`}
+        heading="Programar Mantenimiento"
+        text={`Crear orden de trabajo y programar mantenimiento para ${asset?.name || ""}`}
       >
         <Button variant="outline" asChild>
           <Link href={`/activos/${assetId}/mantenimiento`}>
@@ -399,6 +398,15 @@ export default function NewMaintenancePage({ params }: NewMaintenancePageProps) 
           </Link>
         </Button>
       </DashboardHeader>
+      
+      {/* Planning Stage Indicator */}
+      <Alert className="mb-6 border-blue-200 bg-blue-50">
+        <CalendarPlanIcon className="h-4 w-4" />
+        <AlertDescription className="text-blue-800">
+          <strong>Etapa de Planificación:</strong> Está programando una orden de trabajo. 
+          Esta información se utilizará para coordinar disponibilidad del equipo, generar órdenes de compra y calcular costos antes de la ejecución.
+        </AlertDescription>
+      </Alert>
       
       {anyError && (
         <Card className="mb-4">
@@ -417,7 +425,7 @@ export default function NewMaintenancePage({ params }: NewMaintenancePageProps) 
               <div>
                 <CardTitle className="flex items-center gap-2">
                   <Wrench className="h-5 w-5" />
-                  Checkpoint de Mantenimiento
+                  Plan de Mantenimiento Programado
                   <Badge 
                     variant="outline" 
                     className="ml-2 whitespace-nowrap"
@@ -427,7 +435,7 @@ export default function NewMaintenancePage({ params }: NewMaintenancePageProps) 
                   </Badge>
                 </CardTitle>
                 <CardDescription>
-                  Estás registrando el siguiente checkpoint de mantenimiento:
+                  Está programando el siguiente mantenimiento preventivo:
                 </CardDescription>
               </div>
               
@@ -448,7 +456,7 @@ export default function NewMaintenancePage({ params }: NewMaintenancePageProps) 
             <div className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="bg-white rounded-md border p-3 space-y-1">
-                  <div className="text-sm font-medium text-muted-foreground">Nombre del Checkpoint</div>
+                  <div className="text-sm font-medium text-muted-foreground">Descripción del Plan</div>
                   <div className="font-medium">{maintenancePlan.description}</div>
                 </div>
                 
@@ -460,9 +468,9 @@ export default function NewMaintenancePage({ params }: NewMaintenancePageProps) 
                 </div>
                 
                 <div className="bg-white rounded-md border p-3 space-y-1">
-                  <div className="text-sm font-medium text-muted-foreground">Tareas Incluidas</div>
+                  <div className="text-sm font-medium text-muted-foreground">Recursos Requeridos</div>
                   <div className="font-medium">
-                    {maintenancePlan.maintenance_tasks?.length || 0} tareas / {parts.length} repuestos
+                    {maintenancePlan.maintenance_tasks?.length || 0} tareas / {requiredParts.length} repuestos
                   </div>
                 </div>
               </div>
@@ -472,7 +480,7 @@ export default function NewMaintenancePage({ params }: NewMaintenancePageProps) 
                   <div className="flex items-center justify-between mb-2">
                     <div className="text-sm font-medium">Estado del Mantenimiento</div>
                     <div className="text-sm">
-                      {maintenanceStatus.progress}% completado
+                      {maintenanceStatus.progress}% del intervalo completado
                     </div>
                   </div>
                   
@@ -487,7 +495,7 @@ export default function NewMaintenancePage({ params }: NewMaintenancePageProps) 
                   </div>
                   
                   <div className="text-xs text-muted-foreground mb-2">
-                    Horas actuales: {asset?.current_hours || 0}h
+                    Horas actuales del equipo: {asset?.current_hours || 0}h
                   </div>
                   
                   {maintenanceStatus.lastMaintenanceDate && (
@@ -515,26 +523,29 @@ export default function NewMaintenancePage({ params }: NewMaintenancePageProps) 
       <form onSubmit={handleSubmit}>
         <Card>
           <CardHeader>
-            <CardTitle>Información de la Orden de Trabajo</CardTitle>
+            <CardTitle className="flex items-center gap-2">
+              <ClipboardList className="h-5 w-5" />
+              Información de Programación
+            </CardTitle>
             <CardDescription>
-              Defina los detalles para la orden de trabajo a generar
+              Configure la programación y recursos necesarios para la orden de trabajo
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <div className="space-y-2">
-                <Label htmlFor="date">Fecha de Realización *</Label>
+                <Label htmlFor="plannedDate">Fecha Programada *</Label>
                 <Popover>
                   <PopoverTrigger asChild>
                     <Button
                       variant={"outline"}
                       className={cn(
                         "w-full pl-3 text-left font-normal",
-                        !date && "text-muted-foreground"
+                        !plannedDate && "text-muted-foreground"
                       )}
                     >
-                      {date ? (
-                        format(date, "PPP", { locale: es })
+                      {plannedDate ? (
+                        format(plannedDate, "PPP", { locale: es })
                       ) : (
                         <span>Seleccionar fecha</span>
                       )}
@@ -544,17 +555,20 @@ export default function NewMaintenancePage({ params }: NewMaintenancePageProps) 
                   <PopoverContent className="w-auto p-0" align="start">
                     <Calendar
                       mode="single"
-                      selected={date}
-                      onSelect={(date) => date && setDate(date)}
+                      selected={plannedDate}
+                      onSelect={(date) => date && setPlannedDate(date)}
                       initialFocus
                     />
                   </PopoverContent>
                 </Popover>
+                <p className="text-xs text-muted-foreground">
+                  Fecha tentativa cuando se realizará el mantenimiento
+                </p>
               </div>
               
               <div className="space-y-2">
-                <Label htmlFor="type">Tipo de Mantenimiento *</Label>
-                <Select value={type} onValueChange={setType}>
+                <Label htmlFor="maintenanceType">Tipo de Mantenimiento *</Label>
+                <Select value={maintenanceType} onValueChange={setMaintenanceType}>
                   <SelectTrigger>
                     <SelectValue placeholder="Seleccione un tipo" />
                   </SelectTrigger>
@@ -568,130 +582,133 @@ export default function NewMaintenancePage({ params }: NewMaintenancePageProps) 
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="technician">Técnico Responsable *</Label>
-                <Input
-                  id="technician"
-                  value={technician}
-                  onChange={(e) => setTechnician(e.target.value)}
-                  placeholder="Nombre del técnico"
-                  required
-                />
+                <Label htmlFor="priority">Prioridad</Label>
+                <Select value={priority} onValueChange={setPriority}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Seleccione prioridad" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Baja">Baja</SelectItem>
+                    <SelectItem value="Media">Media</SelectItem>
+                    <SelectItem value="Alta">Alta</SelectItem>
+                    <SelectItem value="Crítica">Crítica</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             </div>
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="space-y-2">
-                <Label htmlFor="hours">Horómetro al Momento del Mantenimiento</Label>
+                <Label htmlFor="proposedTechnician">Técnico Propuesto *</Label>
                 <Input
-                  id="hours"
-                  type="number"
-                  value={hours}
-                  onChange={(e) => setHours(e.target.value)}
-                  placeholder={`Horas actuales: ${asset?.current_hours || 0}`}
+                  id="proposedTechnician"
+                  value={proposedTechnician}
+                  onChange={(e) => setProposedTechnician(e.target.value)}
+                  placeholder="Nombre del técnico asignado"
+                  required
                 />
                 <p className="text-xs text-muted-foreground">
-                  Registre las horas del equipo al momento de realizar el mantenimiento
+                  Técnico responsable propuesto para ejecutar el trabajo
                 </p>
               </div>
               
               <div className="space-y-2">
-                <Label htmlFor="workOrder">Orden de Trabajo</Label>
+                <Label htmlFor="estimatedDuration">Duración Estimada (horas)</Label>
                 <Input
-                  id="workOrder"
-                  value={workOrder}
-                  onChange={(e) => setWorkOrder(e.target.value)}
-                  placeholder="Número de orden de trabajo"
+                  id="estimatedDuration"
+                  type="number"
+                  step="0.5"
+                  value={estimatedDuration}
+                  onChange={(e) => setEstimatedDuration(e.target.value)}
+                  placeholder="ej: 4.5"
                 />
                 <p className="text-xs text-muted-foreground">
-                  Número de referencia interno (opcional)
+                  Tiempo estimado para completar el mantenimiento
                 </p>
               </div>
             </div>
             
             <div className="space-y-2">
-              <Label htmlFor="description">Descripción del Trabajo Realizado *</Label>
+              <Label htmlFor="workDescription">Descripción del Trabajo Planificado *</Label>
               <Textarea
-                id="description"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="Describa detalladamente el mantenimiento realizado..."
+                id="workDescription"
+                value={workDescription}
+                onChange={(e) => setWorkDescription(e.target.value)}
+                placeholder="Describa el trabajo de mantenimiento a realizar..."
                 rows={3}
                 required
               />
+              <p className="text-xs text-muted-foreground">
+                Detalle las actividades y procedimientos planificados
+              </p>
             </div>
             
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="space-y-2">
-                <Label htmlFor="findings">Hallazgos y Observaciones</Label>
-                <Textarea
-                  id="findings"
-                  value={findings}
-                  onChange={(e) => setFindings(e.target.value)}
-                  placeholder="Condiciones encontradas, desgastes, problemas identificados..."
-                  rows={2}
-                />
-              </div>
-              
-              <div className="space-y-2">
-                <Label htmlFor="actions">Acciones Correctivas Realizadas</Label>
-                <Textarea
-                  id="actions"
-                  value={actions}
-                  onChange={(e) => setActions(e.target.value)}
-                  placeholder="Reparaciones, ajustes, calibraciones realizadas..."
-                  rows={2}
-                />
-              </div>
+            <div className="space-y-2">
+              <Label htmlFor="workScope">Alcance y Consideraciones Especiales</Label>
+              <Textarea
+                id="workScope"
+                value={workScope}
+                onChange={(e) => setWorkScope(e.target.value)}
+                placeholder="Incluya requisitos especiales, condiciones de trabajo, coordinaciones necesarias..."
+                rows={2}
+              />
+              <p className="text-xs text-muted-foreground">
+                Información adicional para la planificación y coordinación
+              </p>
             </div>
           </CardContent>
         </Card>
 
         <Card className="mt-6">
           <CardHeader>
-            <CardTitle>Información de Costos y Tiempos</CardTitle>
+            <CardTitle className="flex items-center gap-2">
+              <DollarSign className="h-5 w-5" />
+              Estimación de Costos
+            </CardTitle>
             <CardDescription>
-              Registre los recursos utilizados (opcional pero recomendado)
+              Calcule los costos estimados para generar órdenes de compra y presupuestos
             </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <div className="space-y-2">
-                <Label htmlFor="laborHours">Horas de Mano de Obra</Label>
+                <Label htmlFor="estimatedLaborCost">Costo Estimado de Mano de Obra ($)</Label>
                 <Input
-                  id="laborHours"
-                  type="number"
-                  step="0.5"
-                  value={laborHours}
-                  onChange={(e) => setLaborHours(e.target.value)}
-                  placeholder="ej: 2.5"
-                />
-              </div>
-              
-              <div className="space-y-2">
-                <Label htmlFor="laborCost">Costo de Mano de Obra ($)</Label>
-                <Input
-                  id="laborCost"
+                  id="estimatedLaborCost"
                   type="number"
                   step="0.01"
-                  value={laborCost}
-                  onChange={(e) => setLaborCost(e.target.value)}
-                  placeholder="0.00"
-                />
-              </div>
-              
-              <div className="space-y-2">
-                <Label htmlFor="totalCost">Costo Total ($)</Label>
-                <Input
-                  id="totalCost"
-                  type="number"
-                  step="0.01"
-                  value={totalCost}
-                  onChange={(e) => setTotalCost(e.target.value)}
+                  value={estimatedLaborCost}
+                  onChange={(e) => setEstimatedLaborCost(e.target.value)}
                   placeholder="0.00"
                 />
                 <p className="text-xs text-muted-foreground">
-                  Incluye mano de obra + repuestos
+                  Incluye técnicos, horas extras, especialistas
                 </p>
+              </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="estimatedTotalCost">Costo Total Estimado ($)</Label>
+                <Input
+                  id="estimatedTotalCost"
+                  type="number"
+                  step="0.01"
+                  value={estimatedTotalCost}
+                  onChange={(e) => setEstimatedTotalCost(e.target.value)}
+                  placeholder="0.00"
+                  readOnly
+                />
+                <p className="text-xs text-muted-foreground">
+                  Calculado automáticamente: mano de obra + repuestos
+                </p>
+              </div>
+              
+              <div className="space-y-2 flex flex-col justify-end">
+                <Alert className="bg-green-50 border-green-200">
+                  <AlertCircle className="h-4 w-4 text-green-600" />
+                  <AlertDescription className="text-green-800 text-sm">
+                    Esta estimación se usará para crear órdenes de compra y solicitar fondos
+                  </AlertDescription>
+                </Alert>
               </div>
             </div>
           </CardContent>
@@ -701,11 +718,11 @@ export default function NewMaintenancePage({ params }: NewMaintenancePageProps) 
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <PlusCircle className="h-5 w-5" />
-              Repuestos y Materiales Utilizados
+              Repuestos y Materiales Requeridos
             </CardTitle>
             <CardDescription>
-              Registre los repuestos y materiales utilizados durante el mantenimiento
-              {maintenancePlan && parts.length > 0 && (
+              Especifique los repuestos y materiales necesarios para este mantenimiento
+              {maintenancePlan && requiredParts.length > 0 && (
                 <span className="block mt-1 text-sm text-blue-600">
                   ✓ Se han cargado automáticamente los repuestos del plan de mantenimiento
                 </span>
@@ -713,7 +730,7 @@ export default function NewMaintenancePage({ params }: NewMaintenancePageProps) 
             </CardDescription>
           </CardHeader>
           <CardContent>
-            {parts.length > 0 ? (
+            {requiredParts.length > 0 ? (
               <div className="space-y-4">
                 <div className="border rounded-lg overflow-hidden">
                   <table className="w-full">
@@ -722,18 +739,18 @@ export default function NewMaintenancePage({ params }: NewMaintenancePageProps) 
                         <th className="text-left py-3 px-4 font-medium">Repuesto/Material</th>
                         <th className="text-left py-3 px-4 font-medium">Número de Parte</th>
                         <th className="text-left py-3 px-4 font-medium">Cantidad</th>
-                        <th className="text-left py-3 px-4 font-medium">Costo Unitario</th>
+                        <th className="text-left py-3 px-4 font-medium">Costo Estimado</th>
                         <th className="text-left py-3 px-4 font-medium">Origen</th>
                         <th className="text-left py-3 px-4 font-medium">Acciones</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {parts.map((part, index) => (
+                      {requiredParts.map((part, index) => (
                         <tr key={index} className="border-t hover:bg-gray-50">
                           <td className="py-3 px-4 font-medium">{part.name}</td>
                           <td className="py-3 px-4 text-muted-foreground">{part.partNumber || "-"}</td>
                           <td className="py-3 px-4">{part.quantity}</td>
-                          <td className="py-3 px-4">{part.cost ? `$${part.cost}` : "-"}</td>
+                          <td className="py-3 px-4">{part.estimatedCost ? `$${part.estimatedCost}` : "-"}</td>
                           <td className="py-3 px-4">
                             {part.source ? (
                               <Badge variant="outline" className="text-xs">
@@ -763,8 +780,8 @@ export default function NewMaintenancePage({ params }: NewMaintenancePageProps) 
             ) : (
               <div className="text-center py-8 border rounded-lg bg-gray-50">
                 <PlusCircle className="mx-auto h-12 w-12 text-gray-400 mb-2" />
-                <p className="text-lg font-medium text-gray-600">No se han registrado repuestos</p>
-                <p className="text-muted-foreground">Agregue los repuestos utilizados en este mantenimiento</p>
+                <p className="text-lg font-medium text-gray-600">No se han especificado repuestos</p>
+                <p className="text-muted-foreground">Agregue los repuestos y materiales necesarios</p>
               </div>
             )}
             
@@ -800,13 +817,13 @@ export default function NewMaintenancePage({ params }: NewMaintenancePageProps) 
                   />
                 </div>
                 <div>
-                  <Label htmlFor="newPartCost">Costo ($)</Label>
+                  <Label htmlFor="newPartEstimatedCost">Costo Estimado ($)</Label>
                   <Input
-                    id="newPartCost"
+                    id="newPartEstimatedCost"
                     type="number"
                     step="0.01"
-                    value={newPartCost}
-                    onChange={(e) => setNewPartCost(e.target.value)}
+                    value={newPartEstimatedCost}
+                    onChange={(e) => setNewPartEstimatedCost(e.target.value)}
                     placeholder="0.00"
                   />
                 </div>
@@ -826,44 +843,44 @@ export default function NewMaintenancePage({ params }: NewMaintenancePageProps) 
           </CardContent>
         </Card>
 
-        {/* Evidence Section */}
+        {/* Planning Documentation Section */}
         <Card className="mt-6">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <Camera className="h-5 w-5" />
-              Evidencia del Mantenimiento
+              <FileText className="h-5 w-5" />
+              Documentación de Planificación
             </CardTitle>
             <CardDescription>
-              Suba fotografías que documenten el proceso de mantenimiento y el estado del equipo
+              Adjunte documentos de referencia, manuales, diagramas o fotos del estado actual del equipo
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">
-                  Incluya fotos del estado inicial, proceso de trabajo, partes reemplazadas y estado final
+                  Incluya manuales de mantenimiento, diagramas, fotos del estado actual, especificaciones técnicas
                 </p>
               </div>
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => setShowEvidenceDialog(true)}
+                onClick={() => setShowDocumentsDialog(true)}
                 className="flex items-center gap-2"
               >
-                <Camera className="h-4 w-4" />
-                Agregar Evidencia
+                <FileText className="h-4 w-4" />
+                Agregar Documentos
               </Button>
             </div>
 
-            {maintenanceEvidence.length > 0 && (
+            {planningDocuments.length > 0 && (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {maintenanceEvidence.map((evidence) => (
-                  <Card key={evidence.id} className="overflow-hidden">
+                {planningDocuments.map((doc) => (
+                  <Card key={doc.id} className="overflow-hidden">
                     <div className="aspect-video relative bg-muted">
-                      {evidence.url.includes('image') || evidence.url.match(/\.(jpeg|jpg|gif|png|webp)$/i) ? (
+                      {doc.url.includes('image') || doc.url.match(/\.(jpeg|jpg|gif|png|webp)$/i) ? (
                         <img
-                          src={evidence.url}
-                          alt={evidence.description}
+                          src={doc.url}
+                          alt={doc.description}
                           className="w-full h-full object-cover"
                         />
                       ) : (
@@ -875,15 +892,15 @@ export default function NewMaintenancePage({ params }: NewMaintenancePageProps) 
                         variant="secondary" 
                         className="absolute top-2 left-2 text-xs"
                       >
-                        {evidence.category}
+                        {doc.category}
                       </Badge>
                     </div>
                     <CardContent className="p-3">
                       <p className="text-sm font-medium truncate">
-                        {evidence.description}
+                        {doc.description}
                       </p>
                       <p className="text-xs text-muted-foreground mt-1">
-                        {new Date(evidence.uploaded_at).toLocaleDateString()}
+                        {new Date(doc.uploaded_at).toLocaleDateString()}
                       </p>
                     </CardContent>
                   </Card>
@@ -891,14 +908,14 @@ export default function NewMaintenancePage({ params }: NewMaintenancePageProps) 
               </div>
             )}
 
-            {maintenanceEvidence.length === 0 && (
+            {planningDocuments.length === 0 && (
               <div className="border-2 border-dashed border-muted-foreground/25 rounded-lg p-8 text-center">
-                <Camera className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
+                <FileText className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
                 <p className="text-sm text-muted-foreground">
-                  No se ha agregado evidencia de mantenimiento
+                  No se han agregado documentos de planificación
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  Opcional: Agregue fotos para documentar el proceso
+                  Opcional: Agregue documentos de referencia para la ejecución
                 </p>
               </div>
             )}
@@ -916,13 +933,13 @@ export default function NewMaintenancePage({ params }: NewMaintenancePageProps) 
             <Button 
               type="submit" 
               disabled={isSubmitting || isLoading}
-              className="min-w-[160px]"
+              className="min-w-[200px]"
               size="lg"
             >
               {isSubmitting ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Guardando...
+                  Programando...
                 </>
               ) : (
                 <>
@@ -936,14 +953,14 @@ export default function NewMaintenancePage({ params }: NewMaintenancePageProps) 
       </form>
 
       <EvidenceUpload
-        open={showEvidenceDialog}
-        onOpenChange={setShowEvidenceDialog}
-        evidence={maintenanceEvidence}
-        setEvidence={setMaintenanceEvidence}
+        open={showDocumentsDialog}
+        onOpenChange={setShowDocumentsDialog}
+        evidence={planningDocuments}
+        setEvidence={setPlanningDocuments}
         context="maintenance"
         assetId={assetId}
-        title="Evidencia de Mantenimiento"
-        description="Suba fotografías del proceso de mantenimiento, estado del equipo antes/después, partes reemplazadas y cualquier documentación relevante"
+        title="Documentación de Planificación"
+        description="Suba documentos de referencia, manuales, diagramas, fotos del estado actual del equipo y cualquier documentación relevante para la planificación del mantenimiento"
       />
     </DashboardShell>
   );
