@@ -10,7 +10,7 @@ import { FileText, X, Upload, AlertCircle, CheckCircle2 } from "lucide-react"
 import { createClient } from "@/lib/supabase"
 
 interface QuotationUploaderProps {
-  workOrderId: string
+  workOrderId?: string
   isRequired?: boolean
   onFileUploaded?: (url: string) => void
   onFileRemoved?: () => void
@@ -26,6 +26,7 @@ export function QuotationUploader({
 }: QuotationUploaderProps) {
   const [quotationFile, setQuotationFile] = useState<File | null>(null)
   const [uploadedUrl, setUploadedUrl] = useState<string | null>(null)
+  const [uploadedFilePath, setUploadedFilePath] = useState<string | null>(null)
   const [isUploading, setIsUploading] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
 
@@ -60,6 +61,49 @@ export function QuotationUploader({
     await uploadFile(file)
   }
 
+  // Function to sanitize filename for storage
+  const sanitizeFileName = (fileName: string): string => {
+    // Split filename and extension
+    const lastDotIndex = fileName.lastIndexOf('.')
+    let baseName = lastDotIndex > 0 ? fileName.substring(0, lastDotIndex) : fileName
+    let extension = lastDotIndex > 0 ? fileName.substring(lastDotIndex + 1) : ''
+    
+    // Sanitize the base name
+    let sanitizedBaseName = baseName
+      // Replace accented characters with their base equivalents
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      // Replace spaces with underscores
+      .replace(/\s+/g, '_')
+      // Remove any characters that aren't letters, numbers, hyphens, or underscores
+      .replace(/[^a-zA-Z0-9\-_]/g, '')
+      // Remove multiple consecutive hyphens or underscores
+      .replace(/[\-_]{2,}/g, '_')
+      // Ensure it doesn't start or end with special characters
+      .replace(/^[\-_]+|[\-_]+$/g, '')
+    
+    // Sanitize the extension (keep only alphanumeric characters)
+    let sanitizedExtension = extension.replace(/[^a-zA-Z0-9]/g, '').toLowerCase()
+    
+    // Fallback if sanitization results in empty base name
+    if (!sanitizedBaseName || sanitizedBaseName.length === 0) {
+      sanitizedBaseName = `document_${Date.now()}`
+    }
+    
+    // Fallback if no extension or invalid extension
+    if (!sanitizedExtension || sanitizedExtension.length === 0) {
+      // Try to determine extension from original filename or default to 'pdf'
+      const originalExt = fileName.split('.').pop()?.toLowerCase()
+      if (originalExt && ['pdf', 'jpg', 'jpeg', 'png', 'webp'].includes(originalExt)) {
+        sanitizedExtension = originalExt
+      } else {
+        sanitizedExtension = 'pdf'
+      }
+    }
+    
+    return `${sanitizedBaseName}.${sanitizedExtension}`
+  }
+
   const uploadFile = async (file: File) => {
     setIsUploading(true)
     setUploadError(null)
@@ -73,7 +117,17 @@ export function QuotationUploader({
         throw new Error('Usuario no autenticado. Por favor, inicie sesión.')
       }
       
-      const fileName = `${workOrderId}/${Date.now()}_${file.name}`
+      // Create appropriate folder structure based on whether it's tied to a work order or standalone
+      const folderName = workOrderId || `standalone-po-${Date.now()}`
+      
+      // Sanitize the filename to avoid special characters that could cause storage issues
+      const sanitizedFileName = sanitizeFileName(file.name)
+      const fileName = `${folderName}/${Date.now()}_${sanitizedFileName}`
+      
+      // Log for debugging
+      console.log('Original filename:', file.name)
+      console.log('Sanitized filename:', sanitizedFileName)
+      console.log('Full storage path:', fileName)
       
       // ✅ FIXED: Using correct 'quotations' bucket instead of 'documents'
       const { data: uploadData, error: uploadError } = await supabase.storage
@@ -106,6 +160,7 @@ export function QuotationUploader({
       
       if (signedUrl) {
         setUploadedUrl(signedUrl)
+        setUploadedFilePath(uploadData.path)
         onFileUploaded?.(signedUrl)
       }
       
@@ -131,15 +186,14 @@ export function QuotationUploader({
   }
 
   const removeFile = async () => {
-    if (uploadedUrl && quotationFile) {
+    if (uploadedUrl && uploadedFilePath) {
       try {
         const supabase = createClient()
-        const fileName = `${workOrderId}/${quotationFile.name}`
         
-        // Try to remove the file from storage
+        // Try to remove the file from storage using the stored file path
         await supabase.storage
           .from('quotations')
-          .remove([fileName])
+          .remove([uploadedFilePath])
       } catch (error) {
         console.error('Error removing file from storage:', error)
       }
@@ -147,6 +201,7 @@ export function QuotationUploader({
     
     setQuotationFile(null)
     setUploadedUrl(null)
+    setUploadedFilePath(null)
     setUploadError(null)
     onFileRemoved?.()
     

@@ -18,7 +18,7 @@ import { PurchaseOrderType } from "@/types/purchase-orders"
 interface PurchaseOrderTypeSelectorProps {
   onTypeSelected: (type: PurchaseOrderType) => void
   selectedType?: PurchaseOrderType
-  workOrderId: string
+  workOrderId?: string
 }
 
 export function PurchaseOrderTypeSelector({ 
