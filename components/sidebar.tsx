@@ -619,6 +619,19 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                     </Link>
                   </Button>
                 )}
+                {['GERENCIA_GENERAL', 'JEFE_UNIDAD_NEGOCIO', 'JEFE_PLANTA', 'ENCARGADO_MANTENIMIENTO', 'AREA_ADMINISTRATIVA'].includes(profile.role) && (
+                  <Button
+                    variant={isPathActive("/gestion/activos/asignacion-plantas") ? "secondary" : "ghost"}
+                    className="w-full justify-start pl-8"
+                    asChild
+                    onClick={handleLinkClick}
+                  >
+                    <Link href="/gestion/activos/asignacion-plantas">
+                      <Settings className="mr-2 h-4 w-4" />
+                      Activos a Plantas
+                    </Link>
+                  </Button>
+                )}
                 {['GERENCIA_GENERAL', 'AREA_ADMINISTRATIVA'].includes(profile.role) && (
                   <Button
                     variant={isPathActive("/plantas") ? "secondary" : "ghost"}
@@ -781,10 +794,11 @@ export function CollapsedSidebar({ className, onLinkClick }: SidebarProps) {
       id: "organization",
       icon: Building2,
       label: "Organización",
-      active: isSectionActive(["/personal", "/activos/asignacion", "/plantas", "/gestion/autorizaciones"]),
+      active: isSectionActive(["/personal", "/activos/asignacion", "/gestion/activos/asignacion-plantas", "/plantas", "/gestion/autorizaciones"]),
       items: [
         { href: "/personal", icon: Users, label: "Gestión de Personal", active: isPathActive("/personal") },
         { href: "/activos/asignacion", icon: UserCheck, label: "Asignación de Activos", active: isPathActive("/activos/asignacion") },
+        { href: "/gestion/activos/asignacion-plantas", icon: Settings, label: "Activos a Plantas", active: isPathActive("/gestion/activos/asignacion-plantas") },
         { href: "/plantas", icon: Building2, label: "Configuración de Plantas", active: isPathActive("/plantas") },
         { href: "/gestion/autorizaciones", icon: Shield, label: "Gestión de Autorizaciones", active: isPathActive("/gestion/autorizaciones") }
       ]

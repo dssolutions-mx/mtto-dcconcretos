@@ -51,6 +51,19 @@ const managementModules = [
     ]
   },
   {
+    title: 'Activos a Plantas',
+    description: 'Asigna activos a plantas con jerarquía por unidades de negocio',
+    href: '/gestion/activos/asignacion-plantas',
+    icon: Package,
+    color: 'bg-teal-500',
+    features: [
+      'Drag & drop de activos',
+      'Vista jerárquica organizacional',
+      'Control por unidades de negocio',
+      'Auditoría de movimientos'
+    ]
+  },
+  {
     title: 'Reportes y Análisis',
     description: 'Visualiza métricas organizacionales y de rendimiento',
     href: '/gestion/reportes',
