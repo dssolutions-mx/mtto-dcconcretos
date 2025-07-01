@@ -64,6 +64,7 @@ const workOrderCompletionSchema = z.object({
     required_error: "La fecha de finalización es requerida",
   }),
   completion_time: z.string().min(1, "La hora de finalización es requerida"),
+  equipment_hours: z.coerce.number().min(0, "Las horas del equipo no pueden ser negativas").optional(),
   downtime_hours: z.coerce.number().min(0, "Las horas de inactividad no pueden ser negativas"),
   technician_notes: z.string().optional(),
   resolution_details: z.string().min(1, "Los detalles de resolución son requeridos"),
@@ -117,6 +118,7 @@ export function WorkOrderCompletionForm({ workOrderId, initialData }: WorkOrderC
   const defaultValues: Partial<WorkOrderCompletionFormValues> = {
     completion_date: initialData?.completion_date ? new Date(initialData.completion_date) : new Date(),
     completion_time: initialData?.completion_time || "",
+    equipment_hours: 0, // Will be populated from asset data
     downtime_hours: initialData?.downtime_hours || 0,
     technician_notes: initialData?.technician_notes || "",
     resolution_details: initialData?.resolution_details || "",
@@ -159,12 +161,18 @@ export function WorkOrderCompletionForm({ workOrderId, initialData }: WorkOrderC
         if (orderError) throw orderError
         setWorkOrder(orderData)
         
+        // Set equipment hours from asset current_hours
+        if (orderData.asset?.current_hours) {
+          form.setValue('equipment_hours', orderData.asset.current_hours)
+        }
+        
         // Log maintenance_plan_id for debugging
         console.log('Work order data loaded:', {
           id: orderData.id,
           type: orderData.type,
           status: orderData.status,
-          maintenance_plan_id: orderData.maintenance_plan_id || null
+          maintenance_plan_id: orderData.maintenance_plan_id || null,
+          asset_current_hours: orderData.asset?.current_hours || 0
         });
         
         // Check if this is a preventive order that requires checklist
@@ -442,6 +450,7 @@ export function WorkOrderCompletionForm({ workOrderId, initialData }: WorkOrderC
           asset_id: workOrder.asset.id,
           date: updatedData.completion_date.toISOString(),
           type: workOrder.type,
+          hours: updatedData.equipment_hours || workOrder.asset.current_hours || null, // Include equipment hours
           description: workOrder.description,
           technician_id: workOrder.assigned_to,
           labor_hours: updatedData.labor_hours,
@@ -807,7 +816,30 @@ export function WorkOrderCompletionForm({ workOrderId, initialData }: WorkOrderC
               )}
             />
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              <FormField
+                control={form.control}
+                name="equipment_hours"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Horas del equipo</FormLabel>
+                    <FormControl>
+                      <Input 
+                        type="number" 
+                        min="0" 
+                        step="1" 
+                        placeholder="Ej: 1500"
+                        {...field} 
+                      />
+                    </FormControl>
+                    <FormDescription className="text-xs">
+                      Horas registradas en el horómetro
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
               <FormField
                 control={form.control}
                 name="downtime_hours"
