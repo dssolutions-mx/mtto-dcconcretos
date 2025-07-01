@@ -744,14 +744,39 @@ export default async function WorkOrderDetailsPage({
                 </Link>
               </Button>
               
-              {!extendedWorkOrder.purchase_order_id && requiredParts.length > 0 && (
-                <Button variant="outline" asChild className="w-full">
-                  <Link href={`/ordenes/${id}/generar-oc`}>
-                    <ShoppingCart className="mr-2 h-4 w-4" />
-                    Generar OC
-                  </Link>
-                </Button>
-              )}
+              {/* Purchase Order Action Logic */}
+              {(() => {
+                const hasPOId = !!extendedWorkOrder.purchase_order_id;
+                const hasRelatedPOs = allPurchaseOrders && allPurchaseOrders.length > 0;
+                const hasRequiredParts = requiredParts.length > 0;
+                
+                // Show "Ver OC Existente" if there are any purchase orders
+                if (hasPOId || hasRelatedPOs) {
+                  const targetPOId = extendedWorkOrder.purchase_order_id || allPurchaseOrders?.[0]?.id;
+                  return (
+                    <Button variant="outline" asChild className="w-full">
+                      <Link href={`/compras/${targetPOId}`}>
+                        <ShoppingCart className="mr-2 h-4 w-4" />
+                        Ver OC Existente
+                      </Link>
+                    </Button>
+                  );
+                }
+                
+                // Show "Generar OC" only if no POs exist and has required parts
+                if (!hasPOId && !hasRelatedPOs && hasRequiredParts) {
+                  return (
+                    <Button variant="outline" asChild className="w-full">
+                      <Link href={`/ordenes/${id}/generar-oc`}>
+                        <ShoppingCart className="mr-2 h-4 w-4" />
+                        Generar OC
+                      </Link>
+                    </Button>
+                  );
+                }
+                
+                return null;
+              })()}
             </CardContent>
           </Card>
           
@@ -830,52 +855,112 @@ export default async function WorkOrderDetailsPage({
               <div className="space-y-4">
                 {additionalExpenses && additionalExpenses.length > 0 ? (
                   <>
-                    <div className="grid grid-cols-12 gap-2 bg-muted/30 p-2 rounded font-medium text-sm">
-                      <div className="col-span-4">Descripción</div>
-                      <div className="col-span-3">Monto</div>
-                      <div className="col-span-3">Estado</div>
-                      <div className="col-span-2">Acciones</div>
-                    </div>
-                    
-                    {additionalExpenses.map((expense) => (
-                      <div key={expense.id} className="grid grid-cols-12 gap-2 p-2 border-b">
-                        <div className="col-span-4">
-                          <div>{expense.description}</div>
-                          <div className="text-xs text-muted-foreground">{expense.justification}</div>
-                        </div>
-                        <div className="col-span-3">${parseFloat(expense.amount).toFixed(2)}</div>
-                        <div className="col-span-3">
-                          <Badge variant={
-                            expense.status === "aprobado" ? "default" : 
-                            expense.status === "rechazado" ? "destructive" : 
-                            "outline"
-                          }>
-                            {expense.status === "pendiente_aprobacion" ? "Pendiente" : 
-                             expense.status === "aprobado" ? "Aprobado" : 
-                             expense.status === "rechazado" ? "Rechazado" : 
-                             expense.status}
-                          </Badge>
-                          
-                          {expense.adjustment_po_id && (
-                            <div className="mt-1">
-                              <Link href={`/compras/${expense.adjustment_po_id}`} className="text-xs hover:underline">
-                                OC de Ajuste
-                              </Link>
+                    {/* Mobile/Compact View */}
+                    <div className="space-y-3 md:hidden">
+                      {additionalExpenses.map((expense) => (
+                        <div key={expense.id} className="border rounded-lg p-3 bg-gray-50/50">
+                          <div className="flex justify-between items-start mb-2">
+                            <div className="flex-1 pr-3">
+                              <h4 className="font-medium text-sm leading-tight">{expense.description}</h4>
+                              <p className="text-xs text-muted-foreground mt-1">{expense.justification}</p>
                             </div>
-                          )}
+                            <div className="text-right">
+                              <p className="font-semibold text-sm">${parseFloat(expense.amount).toFixed(2)}</p>
+                            </div>
+                          </div>
+                          
+                          <div className="flex justify-between items-center">
+                            <Badge variant={
+                              expense.status === "aprobado" ? "default" : 
+                              expense.status === "rechazado" ? "destructive" : 
+                              "outline"
+                            } className="text-xs">
+                              {expense.status === "pendiente_aprobacion" ? "Pendiente" : 
+                               expense.status === "aprobado" ? "Aprobado" : 
+                               expense.status === "rechazado" ? "Rechazado" : 
+                               expense.status}
+                            </Badge>
+                            
+                            <div className="flex gap-2">
+                              {expense.adjustment_po_id && (
+                                <Button variant="outline" size="sm" asChild>
+                                  <Link href={`/compras/${expense.adjustment_po_id}`} className="text-xs">
+                                    Ver OC
+                                  </Link>
+                                </Button>
+                              )}
+                              
+                              {!expense.adjustment_po_id && expense.status === "aprobado" && (
+                                <Button variant="outline" size="sm" asChild>
+                                  <Link href={`/ordenes/${id}/generar-oc-ajuste`} className="text-xs">
+                                    Generar OC
+                                  </Link>
+                                </Button>
+                              )}
+                            </div>
+                          </div>
                         </div>
-                        <div className="col-span-2">
-                          {!expense.adjustment_po_id && expense.status === "aprobado" && (
-                            <Button variant="outline" size="sm" asChild>
-                              <Link href={`/ordenes/${id}/generar-oc-ajuste`}>
-                                <ShoppingCart className="h-3.5 w-3.5 mr-1" />
-                                <span className="text-xs">Generar OC</span>
-                              </Link>
-                            </Button>
-                          )}
-                        </div>
+                      ))}
+                    </div>
+
+                    {/* Desktop/Table View */}
+                    <div className="hidden md:block">
+                      <div className="overflow-x-auto">
+                        <table className="w-full">
+                          <thead>
+                            <tr className="border-b border-gray-200">
+                              <th className="text-left py-2 px-1 text-xs font-medium text-muted-foreground uppercase">Descripción</th>
+                              <th className="text-right py-2 px-1 text-xs font-medium text-muted-foreground uppercase">Monto</th>
+                              <th className="text-center py-2 px-1 text-xs font-medium text-muted-foreground uppercase">Estado</th>
+                              <th className="text-center py-2 px-1 text-xs font-medium text-muted-foreground uppercase">Acciones</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-100">
+                            {additionalExpenses.map((expense) => (
+                              <tr key={expense.id} className="hover:bg-gray-50/50">
+                                <td className="py-2 px-1">
+                                  <div className="text-sm font-medium leading-tight">{expense.description}</div>
+                                  <div className="text-xs text-muted-foreground mt-1">{expense.justification}</div>
+                                </td>
+                                <td className="py-2 px-1 text-right">
+                                  <span className="text-sm font-semibold">${parseFloat(expense.amount).toFixed(2)}</span>
+                                </td>
+                                <td className="py-2 px-1 text-center">
+                                  <Badge variant={
+                                    expense.status === "aprobado" ? "default" : 
+                                    expense.status === "rechazado" ? "destructive" : 
+                                    "outline"
+                                  } className="text-xs">
+                                    {expense.status === "pendiente_aprobacion" ? "Pendiente" : 
+                                     expense.status === "aprobado" ? "Aprobado" : 
+                                     expense.status === "rechazado" ? "Rechazado" : 
+                                     expense.status}
+                                  </Badge>
+                                  
+                                  {expense.adjustment_po_id && (
+                                    <div className="mt-1">
+                                      <Link href={`/compras/${expense.adjustment_po_id}`} className="text-xs hover:underline text-blue-600">
+                                        OC de Ajuste
+                                      </Link>
+                                    </div>
+                                  )}
+                                </td>
+                                <td className="py-2 px-1 text-center">
+                                  {!expense.adjustment_po_id && expense.status === "aprobado" && (
+                                    <Button variant="outline" size="sm" asChild>
+                                      <Link href={`/ordenes/${id}/generar-oc-ajuste`}>
+                                        <ShoppingCart className="h-3 w-3 mr-1" />
+                                        <span className="text-xs">Generar OC</span>
+                                      </Link>
+                                    </Button>
+                                  )}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
                       </div>
-                    ))}
+                    </div>
                     
                     {!hasAdjustmentPO && additionalExpenses.some(e => e.status === "aprobado" && !e.adjustment_po_id) && (
                       <div className="mt-4">
