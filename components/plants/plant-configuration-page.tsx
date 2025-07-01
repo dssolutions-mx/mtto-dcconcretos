@@ -50,7 +50,8 @@ export function PlantConfigurationPage() {
       const response = await fetch('/api/plants')
       if (response.ok) {
         const data = await response.json()
-        setPlants(data)
+        const plants = data.plants || []
+        setPlants(plants)
       } else {
         throw new Error('Error fetching plants')
       }

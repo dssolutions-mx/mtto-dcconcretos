@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { ArrowLeft, CalendarCheck, CheckCircle, Clock, CalendarIcon, Plus, Trash2, ShoppingCart, Camera, FileText, ClipboardCheck, AlertTriangle } from "lucide-react"
+import { ArrowLeft, CalendarCheck, CheckCircle, Clock, CalendarIcon, Plus, Trash2, ShoppingCart, Camera, FileText, ClipboardCheck, AlertTriangle, ExternalLinkIcon } from "lucide-react"
 import { createClient } from "@/lib/supabase"
 import { Separator } from "@/components/ui/separator"
 import { toast } from "@/components/ui/use-toast"
@@ -108,6 +108,8 @@ export function WorkOrderCompletionForm({ workOrderId, initialData }: WorkOrderC
   const [requiredParts, setRequiredParts] = useState<any[]>([])
   const [completionEvidence, setCompletionEvidence] = useState<EvidencePhoto[]>([])
   const [showEvidenceDialog, setShowEvidenceDialog] = useState(false)
+  const [costSource, setCostSource] = useState<'estimated' | 'quoted' | 'confirmed'>('estimated')
+  const [purchaseOrderId, setPurchaseOrderId] = useState<string | null>(null)
   const [checklistStatus, setChecklistStatus] = useState<{
     required: boolean
     completed: boolean
@@ -157,6 +159,13 @@ export function WorkOrderCompletionForm({ workOrderId, initialData }: WorkOrderC
           `)
           .eq("id", workOrderId)
           .single()
+          
+        // Get ALL purchase orders related to this work order
+        const { data: allPurchaseOrders } = await supabase
+          .from("purchase_orders")
+          .select("*")
+          .eq("work_order_id", workOrderId)
+          .order("created_at", { ascending: true })
 
         if (orderError) throw orderError
         setWorkOrder(orderData)
@@ -207,9 +216,51 @@ export function WorkOrderCompletionForm({ workOrderId, initialData }: WorkOrderC
           }
         }
         
-        // Parse required parts if they exist
-        if (orderData.required_parts) {
-          let parts = [];
+        // Determine which parts and costs to use - Priority: PO Items > Required Parts
+        let parts = [];
+        let costSource = 'estimated';
+        let totalCost = 0;
+        
+        // Try to use purchase order items first
+        if (allPurchaseOrders && allPurchaseOrders.length > 0) {
+          const mainPO = allPurchaseOrders.find(po => !po.is_adjustment);
+          if (mainPO && mainPO.items) {
+            try {
+              const poItems = typeof mainPO.items === 'string' ? JSON.parse(mainPO.items) : mainPO.items;
+              if (poItems && Array.isArray(poItems) && poItems.length > 0) {
+                // Transform PO items to match our parts format
+                parts = poItems.map((item: any) => ({
+                  part_id: item.part_id || item.id || `po-item-${Math.random()}`,
+                  name: item.name || item.description || item.item || "Repuesto cotizado",
+                  part_name: item.name || item.description || item.item || "Repuesto cotizado",
+                  description: item.description || item.name || item.item,
+                  quantity: Number(item.quantity) || 1,
+                  unit_price: Number(item.unit_price || item.price) || 0,
+                  total_price: Number(item.total_price) || (Number(item.quantity || 1) * Number(item.unit_price || item.price || 0))
+                }));
+                
+                                 // Use actual amount if available, otherwise total amount
+                 totalCost = mainPO.actual_amount ? Number(mainPO.actual_amount) : Number(mainPO.total_amount || 0);
+                 const currentCostSource = mainPO.actual_amount ? 'confirmed' : 'quoted';
+                 
+                 setCostSource(currentCostSource);
+                 setPurchaseOrderId(mainPO.id);
+                 
+                 console.log('Using PO items for completion:', {
+                   source: currentCostSource,
+                   totalCost,
+                   itemsCount: parts.length,
+                   poId: mainPO.id
+                 });
+              }
+            } catch (e) {
+              console.error('Error parsing PO items:', e);
+            }
+          }
+        }
+        
+        // Fallback to required parts if no PO items available
+        if (parts.length === 0 && orderData.required_parts) {
           try {
             parts = typeof orderData.required_parts === "string" 
               ? JSON.parse(orderData.required_parts) 
@@ -218,45 +269,35 @@ export function WorkOrderCompletionForm({ workOrderId, initialData }: WorkOrderC
             // Ensure parts is always an array
             parts = Array.isArray(parts) ? parts : [];
             
-            console.log('Raw required_parts data:', JSON.stringify(parts));
+            console.log('Using estimated required_parts data:', JSON.stringify(parts));
             
             // Ensure all numeric properties are properly parsed as numbers
-            parts = parts.map((part: any) => {
-              console.log('Processing part raw data:', part);
-              return {
-                ...part,
-                // Asegurar que se capture el nombre correctamente de donde venga
-                name: part.name, // Mantener el nombre original si existe
-                part_name: part.part_name || part.description || "Repuesto sin nombre",
-                quantity: Number(part.quantity) || 0,
-                unit_price: Number(part.unit_price) || 0,
-                total_price: Number(part.total_price) || 0,
-              };
-            });
+            parts = parts.map((part: any) => ({
+              ...part,
+              name: part.name,
+              part_name: part.part_name || part.description || "Repuesto sin nombre",
+              quantity: Number(part.quantity) || 0,
+              unit_price: Number(part.unit_price) || 0,
+              total_price: Number(part.total_price) || 0,
+            }));
             
-            console.log('Parsed parts details:', JSON.stringify(parts));
-            
-            // Inspeccionar la estructura y contenido de cada parte
-            parts.forEach((part, index) => {
-              console.log(`Part ${index}:`, {
-                part_id: part.part_id,
-                name: part.name,
-                part_name: part.part_name,
-                description: part.description,
-                quantity: Number(part.quantity),
-                unit_price: Number(part.unit_price),
-                total_price: Number(part.total_price),
-                original: part
-              });
-            });
+                         // Calculate total cost from parts
+             totalCost = parts.reduce((sum: number, part: any) => {
+               return sum + (Number(part.total_price) || 0);
+             }, 0);
+             
+             setCostSource('estimated');
           } catch (e) {
-            console.error('Error parsing parts:', e);
+            console.error('Error parsing required parts:', e);
             parts = [];
           }
-          
+        }
+        
+        // Set the parts and costs in the form
+        if (parts.length > 0) {
           setRequiredParts(parts);
           
-          // Set parts_used with the required parts
+          // Set parts_used with the processed parts
           form.setValue("parts_used", parts.map((part: any) => ({
             part_id: part.part_id,
             name: part.name,
@@ -267,13 +308,8 @@ export function WorkOrderCompletionForm({ workOrderId, initialData }: WorkOrderC
             total_price: Number(part.total_price) || 0
           })));
           
-          // Calculate total cost including parts
-          const partsCost = parts.reduce((sum: number, part: any) => {
-            return sum + (Number(part.total_price) || 0);
-          }, 0);
-          
-          console.log('Parts cost calculated:', partsCost);
-          form.setValue("total_cost", partsCost);
+                     console.log(`Parts cost calculated from estimated/PO source:`, totalCost);
+           form.setValue("total_cost", totalCost);
         }
       } catch (error) {
         console.error("Error loading work order:", error)
@@ -888,9 +924,31 @@ export function WorkOrderCompletionForm({ workOrderId, initialData }: WorkOrderC
 
             <div className="space-y-4">
               <div className="flex justify-between items-center">
-                <h3 className="text-md font-medium">Repuestos utilizados</h3>
+                <div className="flex items-center gap-3">
+                  <h3 className="text-md font-medium">Repuestos utilizados</h3>
+                  <Badge variant={
+                    costSource === 'confirmed' ? 'default' : 
+                    costSource === 'quoted' ? 'secondary' : 'outline'
+                  }>
+                    {costSource === 'confirmed' ? 'Costos Confirmados' : 
+                     costSource === 'quoted' ? 'Costos Cotizados' : 'Costos Estimados'}
+                  </Badge>
+                  {purchaseOrderId && (
+                    <Button variant="outline" size="sm" asChild>
+                      <Link href={`/compras/${purchaseOrderId}`} target="_blank">
+                        <ExternalLinkIcon className="h-3 w-3 mr-1" />
+                        Ver OC
+                      </Link>
+                    </Button>
+                  )}
+                </div>
                 <div className="text-right">
                   <p className="text-md font-medium">Costo total: ${(Number(form.watch("total_cost")) || 0).toFixed(2)}</p>
+                  {costSource !== 'estimated' && (
+                    <p className="text-xs text-muted-foreground">
+                      {costSource === 'confirmed' ? 'Con comprobantes' : 'Según cotización'}
+                    </p>
+                  )}
                 </div>
               </div>
 

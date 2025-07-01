@@ -25,10 +25,11 @@ import {
   MaintenanceHistory  
 } from "@/types"
 import { EvidenceViewer, type EvidenceItem } from "@/components/ui/evidence-viewer"
+import { WorkOrderCostDisplay } from "@/components/work-orders/work-order-cost-display"
 
 // Extended type for work order with completed_at field
 interface ExtendedWorkOrder extends WorkOrderComplete {
-  completed_at?: string;
+  completed_at: string | null;
   creation_photos?: string | EvidenceItem[];
   completion_photos?: string | EvidenceItem[];
   progress_photos?: string | EvidenceItem[];
@@ -126,6 +127,15 @@ export default async function WorkOrderDetailsPage({
     .eq("id", id)
     .single();
     
+  // Fetch ALL purchase orders related to this work order (including adjustments)
+  const { data: allPurchaseOrders } = await supabase
+    .from("purchase_orders") 
+    .select("*")
+    .eq("work_order_id", id)
+    .order("created_at", { ascending: true });
+    
+
+    
   if (error || !workOrder) {
     notFound();
   }
@@ -207,11 +217,37 @@ export default async function WorkOrderDetailsPage({
   }
   
   // Parse required parts if exists
-  const requiredParts = extendedWorkOrder.required_parts 
+  const originalRequiredParts = extendedWorkOrder.required_parts 
     ? typeof extendedWorkOrder.required_parts === 'string'
       ? JSON.parse(extendedWorkOrder.required_parts)
       : extendedWorkOrder.required_parts
     : []
+  
+  // Use purchase order items if available, otherwise use original required parts
+  let displayParts = originalRequiredParts;
+  let partsSource = 'estimated';
+  
+  if (allPurchaseOrders && allPurchaseOrders.length > 0) {
+    // Find the main purchase order (not adjustment)
+    const mainPO = allPurchaseOrders.find(po => !po.is_adjustment);
+    if (mainPO && mainPO.items) {
+      const poItems = typeof mainPO.items === 'string' ? JSON.parse(mainPO.items) : mainPO.items;
+      if (poItems && Array.isArray(poItems) && poItems.length > 0) {
+        // Transform PO items to match our parts format
+        displayParts = poItems.map((item: any) => ({
+          name: item.name || item.description || item.item,
+          partNumber: item.part_number || item.code || 'N/A',
+          quantity: item.quantity || 1,
+          unit_price: item.unit_price || item.price || 0,
+          total_price: item.total_price || (item.quantity * (item.unit_price || item.price || 0))
+        }));
+        partsSource = mainPO.actual_amount ? 'confirmed' : 'quoted';
+      }
+    }
+  }
+  
+  // Use the display parts for calculations
+  const requiredParts = displayParts;
   
   // Calculate total parts cost
   const totalPartsCost = requiredParts.length > 0
@@ -269,7 +305,7 @@ export default async function WorkOrderDetailsPage({
   }
   
   return (
-    <div className="container py-4 md:py-8">
+    <div className="container mx-auto px-4 md:px-6 lg:px-8 py-4 md:py-8">
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-2">
           <Button variant="outline" size="icon" asChild>
@@ -283,7 +319,7 @@ export default async function WorkOrderDetailsPage({
           </Badge>
         </div>
         
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button variant="outline" asChild>
             <Link href={`/ordenes/${id}/editar`}>
               <Edit className="mr-2 h-4 w-4" />
@@ -291,14 +327,39 @@ export default async function WorkOrderDetailsPage({
             </Link>
           </Button>
           
-          {!extendedWorkOrder.purchase_order_id && shouldShowGenerateOrderButton(extendedWorkOrder) && (
-            <Button asChild>
-              <Link href={`/ordenes/${id}/generar-oc`}>
-                <ShoppingCart className="mr-2 h-4 w-4" />
-                Generar OC
-              </Link>
-            </Button>
-          )}
+          {/* Purchase Order Logic */}
+          {(() => {
+            const hasPOId = !!extendedWorkOrder.purchase_order_id;
+            const hasRelatedPOs = allPurchaseOrders && allPurchaseOrders.length > 0;
+            const shouldShowGenerate = shouldShowGenerateOrderButton(extendedWorkOrder);
+            
+            // Show "Ver OC Existente" if there are any purchase orders
+            if (hasPOId || hasRelatedPOs) {
+              const targetPOId = extendedWorkOrder.purchase_order_id || allPurchaseOrders?.[0]?.id;
+              return (
+                <Button variant="outline" asChild>
+                  <Link href={`/compras/${targetPOId}`}>
+                    <ShoppingCart className="mr-2 h-4 w-4" />
+                    Ver OC Existente
+                  </Link>
+                </Button>
+              );
+            }
+            
+            // Show "Generar OC" only if no POs exist and conditions are met
+            if (!hasPOId && !hasRelatedPOs && shouldShowGenerate) {
+              return (
+                <Button asChild>
+                  <Link href={`/ordenes/${id}/generar-oc`}>
+                    <ShoppingCart className="mr-2 h-4 w-4" />
+                    Generar OC
+                  </Link>
+                </Button>
+              );
+            }
+            
+            return null;
+          })()}
           
           {extendedWorkOrder.status !== WorkOrderStatus.Completed && (
             <Button asChild>
@@ -310,6 +371,7 @@ export default async function WorkOrderDetailsPage({
           )}
         </div>
       </div>
+      
       
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="md:col-span-2 space-y-6">
@@ -392,12 +454,12 @@ export default async function WorkOrderDetailsPage({
                 </div>
                 
                 <div className="space-y-1">
-                  <p className="text-sm font-medium text-muted-foreground">Costo estimado</p>
-                  <p className="flex items-center">
-                    <span className="font-medium">
-                      ${extendedWorkOrder.estimated_cost || totalPartsCost.toFixed(2) || "0.00"}
-                    </span>
-                  </p>
+                  <WorkOrderCostDisplay
+                    estimatedCost={extendedWorkOrder.estimated_cost}
+                    requiredPartsCost={totalPartsCost}
+                    purchaseOrders={allPurchaseOrders || []}
+                    workOrderId={id}
+                  />
                 </div>
               </div>
             </CardContent>
@@ -406,47 +468,117 @@ export default async function WorkOrderDetailsPage({
           {requiredParts.length > 0 && (
             <Card>
               <CardHeader>
-                <CardTitle>Repuestos requeridos</CardTitle>
-                <CardDescription>Materiales y repuestos necesarios para esta orden</CardDescription>
+                <CardTitle className="flex items-center justify-between">
+                  Repuestos requeridos
+                  <Badge variant={
+                    partsSource === 'confirmed' ? 'default' : 
+                    partsSource === 'quoted' ? 'secondary' : 'outline'
+                  }>
+                    {partsSource === 'confirmed' ? 'Confirmados' : 
+                     partsSource === 'quoted' ? 'Cotizados' : 'Estimados'}
+                  </Badge>
+                </CardTitle>
+                <CardDescription>
+                  {partsSource === 'confirmed' ? 'Repuestos confirmados con comprobantes de compra' :
+                   partsSource === 'quoted' ? 'Repuestos cotizados por proveedor' :
+                   'Materiales y repuestos estimados para esta orden'}
+                </CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="rounded-md border">
-                  <table className="min-w-full divide-y divide-gray-200">
-                    <thead className="bg-muted/50">
-                      <tr>
-                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Nombre</th>
-                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Número de parte</th>
-                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Cantidad</th>
-                        <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">Precio unitario</th>
-                        <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">Total</th>
-                      </tr>
-                    </thead>
-                    <tbody className="bg-white divide-y divide-gray-200">
-                      {requiredParts.map((part: any, index: number) => (
-                        <tr key={part.id || index}>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm">{part.name}</td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm">{part.partNumber || 'N/A'}</td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm">{part.quantity}</td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-right">${part.unit_price?.toFixed(2) || '0.00'}</td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-right">${part.total_price?.toFixed(2) || '0.00'}</td>
+                {/* Mobile/Compact View */}
+                <div className="space-y-3 md:hidden">
+                  {requiredParts.map((part: any, index: number) => (
+                    <div key={part.id || index} className="border rounded-lg p-3 bg-gray-50/50">
+                      <div className="flex justify-between items-start mb-2">
+                        <div className="flex-1 pr-3">
+                          <h4 className="font-medium text-sm leading-tight">{part.name}</h4>
+                          {part.partNumber && part.partNumber !== 'N/A' && (
+                            <p className="text-xs text-muted-foreground mt-1">#{part.partNumber}</p>
+                          )}
+                        </div>
+                        <div className="text-right">
+                          <p className="font-semibold text-sm">${part.total_price?.toFixed(2) || '0.00'}</p>
+                        </div>
+                      </div>
+                      <div className="flex justify-between text-xs text-muted-foreground">
+                        <span>Cantidad: {part.quantity}</span>
+                        <span>Unitario: ${part.unit_price?.toFixed(2) || '0.00'}</span>
+                      </div>
+                    </div>
+                  ))}
+                  
+                  {/* Total row for mobile */}
+                  <div className="border-t-2 pt-3 mt-4">
+                    <div className="flex justify-between items-center">
+                      <span className="font-semibold text-base">Total:</span>
+                      <span className="font-bold text-lg">${totalPartsCost.toFixed(2)}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Desktop/Table View */}
+                <div className="hidden md:block">
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead>
+                        <tr className="border-b border-gray-200">
+                          <th className="text-left py-2 px-1 text-xs font-medium text-muted-foreground uppercase">Repuesto</th>
+                          <th className="text-left py-2 px-1 text-xs font-medium text-muted-foreground uppercase">Parte #</th>
+                          <th className="text-center py-2 px-1 text-xs font-medium text-muted-foreground uppercase">Cant.</th>
+                          <th className="text-right py-2 px-1 text-xs font-medium text-muted-foreground uppercase">Unitario</th>
+                          <th className="text-right py-2 px-1 text-xs font-medium text-muted-foreground uppercase">Total</th>
                         </tr>
-                      ))}
-                      <tr className="bg-muted/20">
-                        <td colSpan={4} className="px-6 py-4 whitespace-nowrap text-sm text-right font-medium">Total:</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-bold">
-                          ${totalPartsCost.toFixed(2)}
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {requiredParts.map((part: any, index: number) => (
+                          <tr key={part.id || index} className="hover:bg-gray-50/50">
+                            <td className="py-2 px-1">
+                              <div className="text-sm font-medium leading-tight">{part.name}</div>
+                            </td>
+                            <td className="py-2 px-1">
+                              <span className="text-xs text-muted-foreground font-mono">
+                                {part.partNumber && part.partNumber !== 'N/A' ? part.partNumber : '—'}
+                              </span>
+                            </td>
+                            <td className="py-2 px-1 text-center">
+                              <span className="text-sm font-medium">{part.quantity}</span>
+                            </td>
+                            <td className="py-2 px-1 text-right">
+                              <span className="text-sm">${part.unit_price?.toFixed(2) || '0.00'}</span>
+                            </td>
+                            <td className="py-2 px-1 text-right">
+                              <span className="text-sm font-semibold">${part.total_price?.toFixed(2) || '0.00'}</span>
+                            </td>
+                          </tr>
+                        ))}
+                        <tr className="border-t-2 border-gray-200 bg-muted/20">
+                          <td colSpan={4} className="py-3 px-1 text-right font-semibold">Total:</td>
+                          <td className="py-3 px-1 text-right font-bold text-lg">
+                            ${totalPartsCost.toFixed(2)}
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
                 
-                {!extendedWorkOrder.purchase_order_id && extendedWorkOrder.type === MaintenanceType.Preventive && (
+                {(!extendedWorkOrder.purchase_order_id && (!allPurchaseOrders || allPurchaseOrders.length === 0)) && extendedWorkOrder.type === MaintenanceType.Preventive && (
                   <div className="mt-4">
                     <Button asChild>
                       <Link href={`/ordenes/${id}/generar-oc`}>
                         <ShoppingCart className="mr-2 h-4 w-4" />
                         Generar orden de compra
+                      </Link>
+                    </Button>
+                  </div>
+                )}
+                
+                {(extendedWorkOrder.purchase_order_id || (allPurchaseOrders && allPurchaseOrders.length > 0)) && (
+                  <div className="mt-4">
+                    <Button variant="outline" asChild>
+                      <Link href={`/compras/${extendedWorkOrder.purchase_order_id || allPurchaseOrders?.[0]?.id}`}>
+                        <ShoppingCart className="mr-2 h-4 w-4" />
+                        Ver orden de compra relacionada
                       </Link>
                     </Button>
                   </div>

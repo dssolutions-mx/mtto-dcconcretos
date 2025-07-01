@@ -17,6 +17,7 @@ import { WorkflowStatusDisplay } from "@/components/purchase-orders/workflow/Wor
 import { TypeBadge } from "@/components/purchase-orders/shared/TypeBadge"
 import { ReceiptDisplaySection } from "@/components/purchase-orders/ReceiptDisplaySection"
 import { PurchaseOrderDetailsMobile } from "@/components/purchase-orders/purchase-order-details-mobile"
+import { PurchaseOrderWorkOrderLink } from "@/components/purchase-orders/purchase-order-work-order-link"
 import { Suspense } from "react"
 
 // Helper function to format currency
@@ -140,14 +141,9 @@ function PurchaseOrderDetailsClient({
   
   // For now, return the mobile component based on a simple user agent check
   // We'll improve this in the next iteration
-  return <PurchaseOrderDetailsDesktop 
-    id={id} 
-    order={order} 
-    workOrder={workOrder} 
-    requesterName={requesterName} 
-    approverName={approverName} 
-    items={items} 
-  />
+  // This would require client-side logic for mobile detection
+  // For now, returning null since the main content is handled server-side
+  return null;
 }
 
 // Create an async server component for the content
@@ -170,7 +166,14 @@ async function PurchaseOrderDetailsContent({ id }: { id: string }) {
   if (order.work_order_id) {
     const { data: workOrderData, error: workOrderError } = await supabase
       .from("work_orders")
-      .select("*")
+      .select(`
+        *,
+        asset:assets (
+          id,
+          name,
+          asset_id
+        )
+      `)
       .eq("id", order.work_order_id)
       .single();
       
@@ -574,40 +577,17 @@ async function PurchaseOrderDetailsContent({ id }: { id: string }) {
         )}
 
         {/* Work Order Information */}
-        {workOrder && (
-          <Card>
-            <CardHeader>
-              <CardTitle>Orden de Trabajo Relacionada</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div>
-                <dt className="font-medium text-sm text-muted-foreground">ID de Orden</dt>
-                <dd className="mt-1">{workOrder.order_id}</dd>
-              </div>
-              
-              <div>
-                <dt className="font-medium text-sm text-muted-foreground">Descripción</dt>
-                <dd className="mt-1">{workOrder.description}</dd>
-              </div>
-              
-              <div>
-                <dt className="font-medium text-sm text-muted-foreground">Estado</dt>
-                <dd className="mt-1">
-                  <Badge variant="outline">{workOrder.status}</Badge>
-                </dd>
-              </div>
-              
-              <div className="pt-4">
-                <Button asChild variant="outline" size="sm">
-                  <Link href={`/ordenes/${workOrder.id}`}>
-                    <ExternalLink className="mr-2 h-4 w-4" />
-                    Ver Orden de Trabajo
-                  </Link>
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        )}
+        <Card>
+          <CardHeader>
+            <CardTitle>Relación con Orden de Trabajo</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <PurchaseOrderWorkOrderLink 
+              workOrder={workOrder}
+              isAdjustment={order.is_adjustment || false}
+            />
+          </CardContent>
+        </Card>
       </div>
 
       {/* Items/Services */}

@@ -380,9 +380,10 @@ export function AssetAssignmentDragDrop() {
       const response = await fetch('/api/plants')
       if (response.ok) {
         const data = await response.json()
-        setPlants(data)
-        if (data.length > 0 && !selectedPlant) {
-          setSelectedPlant(data[0])
+        const plants = data.plants || []
+        setPlants(plants)
+        if (plants.length > 0 && !selectedPlant) {
+          setSelectedPlant(plants[0])
         }
       }
     } catch (error) {

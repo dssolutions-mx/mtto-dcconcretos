@@ -112,7 +112,8 @@ export function PersonnelManagementPage() {
       const response = await fetch('/api/plants')
       if (response.ok) {
         const data = await response.json()
-        setPlants(data)
+        const plants = data.plants || []
+        setPlants(plants)
       }
     } catch (error) {
       console.error('Error fetching plants:', error)
