@@ -432,6 +432,7 @@ export function WorkOrderCompletionForm({ workOrderId, initialData }: WorkOrderC
           completionData: {
             resolution_details: updatedData.resolution_details,
             technician_notes: updatedData.technician_notes || '',
+            equipment_hours: updatedData.equipment_hours || workOrder?.asset?.current_hours || null, // Include equipment hours
             downtime_hours: updatedData.downtime_hours || 0,
             labor_hours: updatedData.labor_hours || 0,
             labor_cost: updatedData.labor_cost || 0,

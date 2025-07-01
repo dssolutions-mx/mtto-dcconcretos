@@ -233,12 +233,15 @@ export async function POST(request: Request) {
         downtime_hours: completionData.downtime_hours || 0,
         technician_notes: completionData.technician_notes || '',
         resolution_details: completionData.resolution_details,
+        // Override hours with equipment_hours from completionData if available
+        hours: completionData.equipment_hours || maintenanceHistoryData.hours || null,
       };
       
       console.log("API: Guardando datos en maintenance_history:", JSON.stringify({
         asset_id: enhancedHistoryData.asset_id,
         date: enhancedHistoryData.date,
         type: enhancedHistoryData.type,
+        hours: enhancedHistoryData.hours || 'no_hours_provided', // Equipment hours - THE KEY FIELD WE FIXED
         labor_hours: enhancedHistoryData.labor_hours,
         maintenance_plan_id: enhancedHistoryData.maintenance_plan_id || null
       }));
@@ -332,18 +335,64 @@ export async function POST(request: Request) {
         throw new Error("Error fetching work order details");
       }
       
-      // Count existing service orders to create new ID
-      const { count: orderCount, error: countError } = await supabase
-        .from("service_orders")
-        .select("*", { count: "exact", head: true });
+      // Generate unique service order ID using a robust method
+      let orderId = '';
+      let attempts = 0;
+      const maxAttempts = 50;
+      
+      while (attempts < maxAttempts) {
+        // Get the highest existing numeric ID
+        const { data: existingOrders, error: queryError } = await supabase
+          .from("service_orders")
+          .select("order_id")
+          .like("order_id", "OS-%")
+          .order("order_id", { ascending: false })
+          .limit(100);
+          
+        if (queryError) {
+          throw new Error("Error querying existing service orders");
+        }
         
-      if (countError) {
-        throw new Error("Error counting service orders");
+        // Extract numeric part and find the highest
+        let highestNumber = 0;
+        if (existingOrders && existingOrders.length > 0) {
+          for (const order of existingOrders) {
+            const match = order.order_id.match(/^OS-(\d+)$/);
+            if (match) {
+              const num = parseInt(match[1], 10);
+              if (num > highestNumber) {
+                highestNumber = num;
+              }
+            }
+          }
+        }
+        
+        // Generate next ID
+        const orderNumber = highestNumber + 1 + attempts;
+        orderId = `OS-${orderNumber.toString().padStart(4, '0')}`;
+        
+        // Check if this ID already exists
+        const { data: existingOrder, error: checkError } = await supabase
+          .from("service_orders")
+          .select("id")
+          .eq("order_id", orderId)
+          .single();
+          
+        if (checkError && checkError.code === 'PGRST116') {
+          // No record found, ID is unique
+          break;
+        } else if (!checkError && existingOrder) {
+          // ID exists, try again
+          attempts++;
+          continue;
+        } else if (checkError) {
+          throw new Error("Error checking service order ID uniqueness");
+        }
       }
       
-      // Generate sequential order ID
-      const orderNumber = (orderCount || 0) + 1;
-      const orderId = `OS-${orderNumber.toString().padStart(4, '0')}`;
+      if (attempts >= maxAttempts) {
+        throw new Error("Could not generate unique service order ID after multiple attempts");
+      }
       
       // Calculate parts cost
       let partsCost = 0;
