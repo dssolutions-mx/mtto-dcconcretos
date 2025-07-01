@@ -90,10 +90,8 @@ interface BusinessUnit {
 // Asset Draggable Item Component
 function AssetDraggableItem({ 
   asset, 
-  compact = false 
 }: { 
   asset: Asset
-  compact?: boolean
 }) {
   const {
     attributes,
@@ -121,99 +119,48 @@ function AssetDraggableItem({
     )
   }
 
-  if (compact) {
-    return (
-      <div
-        ref={setNodeRef}
-        style={style}
-        {...attributes}
-        {...listeners}
-        className="bg-white border border-gray-200 rounded p-1.5 cursor-grab active:cursor-grabbing hover:shadow-sm transition-all duration-200 hover:border-blue-300"
-      >
-        <div className="space-y-0.5">
-          {/* Asset ID - Most prominent */}
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-1.5">
-              <div className="p-0.5 bg-blue-50 rounded">
-                <Package className="h-2.5 w-2.5 text-blue-600" />
-              </div>
-              <span className="font-bold text-sm text-gray-900">
-                {asset.asset_id}
-              </span>
-            </div>
-            <Badge variant={asset.status === 'active' ? 'default' : 'secondary'} className="text-[9px] h-3 px-1">
-              {asset.status}
-            </Badge>
-          </div>
-          
-          {/* Asset Name - Secondary */}
-          <p className="text-[11px] text-gray-600 leading-tight pl-4">
-            {asset.name}
-          </p>
-          
-          {/* Hours if available */}
-          {asset.current_hours && (
-            <div className="flex justify-end">
-              <span className="text-[9px] text-gray-500">
-                {asset.current_hours.toLocaleString()}h
-              </span>
-            </div>
-          )}
-        </div>
-      </div>
-    )
-  }
-
+  // Ultra-compact version for better density
   return (
     <div
       ref={setNodeRef}
       style={style}
       {...attributes}
       {...listeners}
-      className="bg-white border border-gray-200 rounded-lg p-2 cursor-grab active:cursor-grabbing hover:shadow-md transition-all duration-200 hover:border-blue-300"
+      className="bg-white border border-gray-200 rounded p-1.5 cursor-grab active:cursor-grabbing hover:shadow-sm transition-all duration-200 hover:border-blue-300"
     >
-      <div className="space-y-1">
-        {/* Asset ID - Most prominent with badge */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-1.5">
-            <div className="p-1 bg-blue-50 rounded">
-              <Package className="h-3.5 w-3.5 text-blue-600" />
-            </div>
-            <span className="font-bold text-lg text-gray-900">
-              {asset.asset_id}
-            </span>
+      {/* Single line with Asset ID and Badge */}
+      <div className="flex items-center justify-between mb-1">
+        <div className="flex items-center gap-1">
+          <div className="p-0.5 bg-blue-50 rounded">
+            <Package className="h-2 w-2 text-blue-600" />
           </div>
-          <Badge variant={asset.status === 'active' ? 'default' : 'secondary'} className="text-[9px] h-3.5 px-1.5">
-            {asset.status}
-          </Badge>
+          <span className="font-bold text-sm text-gray-900">
+            {asset.asset_id}
+          </span>
         </div>
-        
-        {/* Asset Name - Secondary but visible */}
-        <div className="pl-5">
-          <h4 className="text-xs text-gray-700 leading-tight">
-            {asset.name}
-          </h4>
-        </div>
-        
-        {/* Tertiary info - Small and discrete */}
-        <div className="space-y-0.5 pl-5">
-          {asset.equipment_models && (
-            <p className="text-[10px] text-gray-500">
-              {asset.equipment_models.manufacturer} - {asset.equipment_models.name}
-            </p>
-          )}
-          {asset.location && (
-            <p className="text-[10px] text-gray-500 flex items-center gap-1">
-              <MapPin className="h-2 w-2" />
-              {asset.location}
-            </p>
-          )}
-          {asset.current_hours && (
-            <p className="text-[10px] text-gray-500">
-              {asset.current_hours.toLocaleString()}h
-            </p>
-          )}
-        </div>
+        <Badge variant={asset.status === 'active' ? 'default' : 'secondary'} className="text-[8px] h-2.5 px-1">
+          {asset.status}
+        </Badge>
+      </div>
+      
+      {/* Asset Name - Only one line, no model duplication */}
+      <p className="text-[10px] text-gray-600 leading-tight truncate">
+        {asset.name}
+      </p>
+      
+      {/* Bottom line with location and hours */}
+      <div className="flex items-center justify-between mt-1">
+        {asset.location && (
+          <p className="text-[8px] text-gray-500 flex items-center gap-0.5">
+            <MapPin className="h-1.5 w-1.5" />
+            {asset.location}
+          </p>
+        )}
+        {asset.current_hours && (
+          <span className="text-[8px] text-gray-500">
+            {asset.current_hours.toLocaleString()}h
+          </span>
+        )}
       </div>
     </div>
   )
@@ -290,9 +237,9 @@ function PlantContainer({
       </div>
 
       {/* Assets in this plant */}
-      <div className="p-3">
+      <div className="p-2">
         <div className="max-h-72 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100">
-          <div className="space-y-1.5 pr-2">
+          <div className="space-y-1 pr-2">
             <SortableContext 
               items={plantAssets.map(a => a.id)} 
               strategy={verticalListSortingStrategy}
@@ -301,16 +248,15 @@ function PlantContainer({
                 <AssetDraggableItem
                   key={asset.id}
                   asset={asset}
-                  compact={false}
                 />
               ))}
             </SortableContext>
             
             {plantAssets.length === 0 && !isOver && (
-              <div className="text-center py-6 text-gray-400">
-                <Package className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                <p className="text-xs font-medium">Sin activos asignados</p>
-                <p className="text-[10px]">Arrastra activos aquí para asignarlos</p>
+              <div className="text-center py-4 text-gray-400">
+                <Package className="h-6 w-6 mx-auto mb-1 opacity-50" />
+                <p className="text-[10px] font-medium">Sin activos asignados</p>
+                <p className="text-[8px]">Arrastra activos aquí para asignarlos</p>
               </div>
             )}
           </div>
@@ -335,7 +281,7 @@ function BusinessUnitContainer({
   draggedAsset: Asset | null
 }) {
   
-  const businessUnitPlants = plants.filter(p => p.business_unit_id === businessUnit.id)
+  const businessUnitPlants = plants.filter(plant => plant.business_unit_id === businessUnit.id)
   const businessUnitAssets = assets.filter(asset => {
     const assetPlant = businessUnitPlants.find(p => p.id === asset.plant_id)
     return assetPlant !== undefined
@@ -427,9 +373,9 @@ function UnassignedAssetsContainer({
       </div>
 
       {/* Assets list */}
-      <div className="p-3">
+      <div className="p-2">
         <div className="h-[450px] overflow-y-auto scrollbar-thin scrollbar-thumb-orange-300 scrollbar-track-orange-100">
-          <div className="space-y-1.5 pr-2">
+          <div className="space-y-1 pr-2">
             <SortableContext 
               items={filteredAssets.map(a => a.id)} 
               strategy={verticalListSortingStrategy}
@@ -438,18 +384,17 @@ function UnassignedAssetsContainer({
                 <AssetDraggableItem
                   key={asset.id}
                   asset={asset}
-                  compact={false}
                 />
               ))}
             </SortableContext>
             
             {filteredAssets.length === 0 && (
-              <div className="text-center py-8 text-gray-400">
-                <Package className="h-12 w-12 mx-auto mb-3 opacity-50" />
-                <p className="text-sm font-medium mb-1">
+              <div className="text-center py-6 text-gray-400">
+                <Package className="h-10 w-10 mx-auto mb-2 opacity-50" />
+                <p className="text-xs font-medium mb-1">
                   {searchTerm ? 'No se encontraron activos' : 'Todos los activos están asignados'}
                 </p>
-                <p className="text-xs">
+                <p className="text-[10px]">
                   {searchTerm ? 'Intenta con otros términos de búsqueda' : 'Excelente organización'}
                 </p>
               </div>
