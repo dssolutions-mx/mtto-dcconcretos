@@ -9,7 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { 
   Check, CheckCircle, Edit, Eye, FileCheck, Search, 
   AlertTriangle, Wrench, ShoppingCart, Package, 
-  Clock, DollarSign, TrendingUp, Store, Building2, Receipt, ExternalLink
+  Clock, DollarSign, TrendingUp, Store, Building2, Receipt, ExternalLink, Trash2, MoreVertical
 } from "lucide-react"
 import { createClient } from "@/lib/supabase"
 import Link from "next/link"
@@ -23,8 +23,25 @@ import { TypeBadge } from "@/components/purchase-orders/shared/TypeBadge"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { PullToRefresh } from "@/components/ui/pull-to-refresh"
 import { cn } from "@/lib/utils"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
+import { useToast } from "@/hooks/use-toast"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 
-interface PurchaseOrderWithWorkOrder extends Omit<PurchaseOrder, 'is_adjustment'> {
+interface PurchaseOrderWithWorkOrder extends Omit<PurchaseOrder, 'is_adjustment' | 'original_purchase_order_id'> {
   work_orders?: {
     id: string;
     order_id: string;
@@ -124,15 +141,17 @@ function getWorkOrder(order: PurchaseOrderWithWorkOrder) {
 function PurchaseOrderCard({ 
   order, 
   getTechnicianName, 
-  formatCurrency 
+  formatCurrency,
+  onDeleteOrder 
 }: { 
   order: PurchaseOrderWithWorkOrder
   getTechnicianName: (techId: string | null) => string
-  formatCurrency: (amount: string | null) => string
+  formatCurrency: (amount: string | number | null) => string
+  onDeleteOrder: (order: PurchaseOrderWithWorkOrder) => void
 }) {
   const workOrder = getWorkOrder(order);
   const isEnhanced = isEnhancedPurchaseOrder(order)
-  const TypeIcon = getPurchaseOrderTypeIcon(order.po_type)
+  const TypeIcon = getPurchaseOrderTypeIcon(order.po_type || null)
 
   return (
     <Card className="w-full h-fit hover:shadow-md transition-shadow">
@@ -165,12 +184,66 @@ function PurchaseOrderCard({
             </div>
           </div>
           
-          <Badge 
-            variant={getEnhancedStatusConfig(order.status || "Pendiente", order.po_type)}
-            className="ml-2 shrink-0"
-          >
-            {order.status || "Pendiente"}
-          </Badge>
+          <div className="flex items-center space-x-2">
+            <Badge 
+              variant={getEnhancedStatusConfig(order.status || "Pendiente", order.po_type)}
+              className="shrink-0"
+            >
+              {order.status || "Pendiente"}
+            </Badge>
+            
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" className="h-8 w-8 p-0">
+                  <span className="sr-only">Abrir menú</span>
+                  <MoreVertical className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem asChild>
+                  <Link href={`/compras/${order.id}`}>
+                    <Eye className="mr-2 h-4 w-4" />
+                    Ver detalles
+                  </Link>
+                </DropdownMenuItem>
+                
+                {order.status === PurchaseOrderStatus.Pending && !order.is_adjustment && (
+                  <DropdownMenuItem asChild>
+                    <Link href={`/compras/${order.id}/aprobar`}>
+                      <Check className="mr-2 h-4 w-4" />
+                      Aprobar orden
+                    </Link>
+                  </DropdownMenuItem>
+                )}
+                
+                {order.status === PurchaseOrderStatus.Approved && !order.is_adjustment && (
+                  <DropdownMenuItem asChild>
+                    <Link href={`/compras/${order.id}/pedido`}>
+                      <ShoppingCart className="mr-2 h-4 w-4" />
+                      Realizar pedido
+                    </Link>
+                  </DropdownMenuItem>
+                )}
+                
+                {order.status === PurchaseOrderStatus.Ordered && !order.is_adjustment && (
+                  <DropdownMenuItem asChild>
+                    <Link href={`/compras/${order.id}/recibido`}>
+                      <Package className="mr-2 h-4 w-4" />
+                      Marcar como recibido
+                    </Link>
+                  </DropdownMenuItem>
+                )}
+                
+                <DropdownMenuItem 
+                  onClick={() => onDeleteOrder(order)}
+                  className="text-red-600 focus:text-red-600"
+                >
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  Eliminar OC
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </div>
       </CardHeader>
       
@@ -262,45 +335,6 @@ function PurchaseOrderCard({
           </div>
         )}
       </CardContent>
-      
-      <CardFooter className="pt-3">
-        <div className="flex gap-2 w-full">
-          <Button variant="outline" size="sm" asChild className="flex-1">
-            <Link href={`/compras/${order.id}`}>
-              <Eye className="h-4 w-4 mr-1" />
-              Ver
-            </Link>
-          </Button>
-          
-          {/* Contextual action button based on status */}
-          {order.status === PurchaseOrderStatus.Pending && !order.is_adjustment && (
-            <Button variant="default" size="sm" asChild className="flex-1">
-              <Link href={`/compras/${order.id}/aprobar`}>
-                <Check className="h-4 w-4 mr-1" />
-                Aprobar
-              </Link>
-            </Button>
-          )}
-          
-          {order.status === PurchaseOrderStatus.Approved && !order.is_adjustment && (
-            <Button variant="default" size="sm" asChild className="flex-1">
-              <Link href={`/compras/${order.id}/pedido`}>
-                <ShoppingCart className="h-4 w-4 mr-1" />
-                Pedir
-              </Link>
-            </Button>
-          )}
-          
-          {order.status === PurchaseOrderStatus.Ordered && !order.is_adjustment && (
-            <Button variant="default" size="sm" asChild className="flex-1">
-              <Link href={`/compras/${order.id}/recibido`}>
-                <Package className="h-4 w-4 mr-1" />
-                Recibir
-              </Link>
-            </Button>
-          )}
-        </div>
-      </CardFooter>
     </Card>
   )
 }
@@ -310,12 +344,14 @@ function MobileView({
   orders, 
   isLoading, 
   getTechnicianName, 
-  formatCurrency 
+  formatCurrency,
+  onDeleteOrder 
 }: { 
   orders: PurchaseOrderWithWorkOrder[]
   isLoading: boolean
   getTechnicianName: (techId: string | null) => string
-  formatCurrency: (amount: string | null) => string
+  formatCurrency: (amount: string | number | null) => string
+  onDeleteOrder: (order: PurchaseOrderWithWorkOrder) => void
 }) {
   if (isLoading) {
     return (
@@ -357,6 +393,7 @@ function MobileView({
           order={order}
           getTechnicianName={getTechnicianName}
           formatCurrency={formatCurrency}
+          onDeleteOrder={onDeleteOrder}
         />
       ))}
     </div>
@@ -365,15 +402,61 @@ function MobileView({
 
 // Main Component
 export function PurchaseOrdersListMobile() {
+  const { toast } = useToast()
   const [searchTerm, setSearchTerm] = useState("")
   const [orders, setOrders] = useState<PurchaseOrderWithWorkOrder[]>([]) 
   const [isLoading, setIsLoading] = useState(true)
   const [activeTab, setActiveTab] = useState<string>("all")
   const [technicians, setTechnicians] = useState<Record<string, Profile>>({})
   const isMobile = useIsMobile()
+  
+  // Delete functionality state
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false)
+  const [orderToDelete, setOrderToDelete] = useState<PurchaseOrderWithWorkOrder | null>(null)
+  const [isDeleting, setIsDeleting] = useState(false)
 
   const handleRefresh = async () => {
     await loadOrders()
+  }
+
+  const handleDeleteOrder = (order: PurchaseOrderWithWorkOrder) => {
+    setOrderToDelete(order)
+    setShowDeleteDialog(true)
+  }
+
+  const confirmDelete = async () => {
+    if (!orderToDelete) return
+
+    setIsDeleting(true)
+    const supabase = createClient()
+
+    try {
+      const { error } = await supabase
+        .from("purchase_orders")
+        .delete()
+        .eq("id", orderToDelete.id)
+
+      if (error) throw error
+
+      // Update local state to remove the deleted order
+      setOrders(prevOrders => prevOrders.filter(o => o.id !== orderToDelete.id))
+      
+      toast({
+        title: "Orden de compra eliminada",
+        description: `La orden ${orderToDelete.order_id} ha sido eliminada exitosamente.`,
+      })
+    } catch (error) {
+      console.error("Error al eliminar orden de compra:", error)
+      toast({
+        title: "Error al eliminar",
+        description: "No se pudo eliminar la orden de compra. Por favor, intente nuevamente.",
+        variant: "destructive",
+      })
+    } finally {
+      setIsDeleting(false)
+      setShowDeleteDialog(false)
+      setOrderToDelete(null)
+    }
   }
 
   async function loadOrders() {
@@ -457,7 +540,10 @@ export function PurchaseOrdersListMobile() {
     adjustments: orders.filter(o => o.is_adjustment).length,
     totalPendingValue: orders
       .filter(o => o.status === PurchaseOrderStatus.Pending && !o.is_adjustment)
-      .reduce((sum, o) => sum + (parseFloat(o.total_amount || '0')), 0),
+      .reduce((sum, o) => {
+        const amount = typeof o.total_amount === 'string' ? parseFloat(o.total_amount) : (o.total_amount || 0);
+        return sum + amount;
+      }, 0),
     totalMonthValue: orders
       .filter(o => {
         if (!o.created_at) return false;
@@ -465,7 +551,10 @@ export function PurchaseOrdersListMobile() {
         const now = new Date();
         return orderDate.getMonth() === now.getMonth() && orderDate.getFullYear() === now.getFullYear();
       })
-      .reduce((sum, o) => sum + (parseFloat(o.total_amount || '0')), 0)
+      .reduce((sum, o) => {
+        const amount = typeof o.total_amount === 'string' ? parseFloat(o.total_amount) : (o.total_amount || 0);
+        return sum + amount;
+      }, 0)
   }
 
   // Filter orders by status tab
@@ -503,9 +592,15 @@ export function PurchaseOrdersListMobile() {
   };
 
   // Format currency
-  const formatCurrency = (amount: string | null) => {
+  const formatCurrency = (amount: string | number | null) => {
     if (!amount) return '$0.00';
-    return `$${parseFloat(amount).toFixed(2)}`;
+    const numAmount = typeof amount === 'string' ? parseFloat(amount) : amount;
+    return `$${numAmount.toFixed(2)}`;
+  };
+
+  // Format number to currency string (for backwards compatibility)
+  const formatNumberToCurrency = (amount: number) => {
+    return `$${amount.toFixed(2)}`;
   };
 
   return (
@@ -692,6 +787,7 @@ export function PurchaseOrdersListMobile() {
                 isLoading={isLoading} 
                 getTechnicianName={getTechnicianName}
                 formatCurrency={formatCurrency}
+                onDeleteOrder={handleDeleteOrder}
               />
             </TabsContent>
             
@@ -701,6 +797,7 @@ export function PurchaseOrdersListMobile() {
                 isLoading={isLoading} 
                 getTechnicianName={getTechnicianName}
                 formatCurrency={formatCurrency}
+                onDeleteOrder={handleDeleteOrder}
               />
             </TabsContent>
             
@@ -710,6 +807,7 @@ export function PurchaseOrdersListMobile() {
                 isLoading={isLoading} 
                 getTechnicianName={getTechnicianName}
                 formatCurrency={formatCurrency}
+                onDeleteOrder={handleDeleteOrder}
               />
             </TabsContent>
             
@@ -719,6 +817,7 @@ export function PurchaseOrdersListMobile() {
                 isLoading={isLoading} 
                 getTechnicianName={getTechnicianName}
                 formatCurrency={formatCurrency}
+                onDeleteOrder={handleDeleteOrder}
               />
             </TabsContent>
             
@@ -728,6 +827,7 @@ export function PurchaseOrdersListMobile() {
                 isLoading={isLoading} 
                 getTechnicianName={getTechnicianName}
                 formatCurrency={formatCurrency}
+                onDeleteOrder={handleDeleteOrder}
               />
             </TabsContent>
             
@@ -737,6 +837,7 @@ export function PurchaseOrdersListMobile() {
                 isLoading={isLoading} 
                 getTechnicianName={getTechnicianName}
                 formatCurrency={formatCurrency}
+                onDeleteOrder={handleDeleteOrder}
               />
             </TabsContent>
           </Tabs>
@@ -748,6 +849,44 @@ export function PurchaseOrdersListMobile() {
           </div>
         </CardFooter>
       </Card>
+      
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Está seguro que desea eliminar esta orden de compra?</AlertDialogTitle>
+            <AlertDialogDescription className="space-y-3">
+              <div>
+                Esta acción eliminará permanentemente la orden de compra{' '}
+                <span className="font-semibold">{orderToDelete?.order_id}</span>
+              </div>
+              <div className="bg-red-50 border border-red-200 rounded-md p-3">
+                <div className="text-sm text-red-800 font-medium mb-2">
+                  ⚠️ ADVERTENCIA: Esta acción también eliminará:
+                </div>
+                <ul className="text-sm text-red-700 space-y-1 ml-4 list-disc">
+                  <li>Gastos adicionales asociados a órdenes de ajuste</li>
+                  <li>Comprobantes de compra cargados</li>
+                  <li>Órdenes de ajuste que referencien a esta orden</li>
+                </ul>
+              </div>
+              <div className="text-sm text-muted-foreground">
+                Esta acción no se puede deshacer.
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeleting}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDelete}
+              disabled={isDeleting}
+              className="bg-red-600 hover:bg-red-700"
+            >
+              {isDeleting ? "Eliminando..." : "Eliminar OC"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </PullToRefresh>
   )
 } 
