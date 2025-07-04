@@ -66,7 +66,13 @@ export async function GET(
           completion_date,
           created_at,
           status,
-          notes
+          notes,
+          checklists(
+            id,
+            name,
+            frequency,
+            description
+          )
         `)
         .eq('asset_id', assetId)
         .order('completion_date', { ascending: false })

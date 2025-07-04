@@ -153,6 +153,12 @@ export async function GET(request: NextRequest) {
           assets (
             name,
             asset_id
+          ),
+          checklists(
+            id,
+            name,
+            frequency,
+            description
           )
         `)
         .eq('checklist_id', templateId)

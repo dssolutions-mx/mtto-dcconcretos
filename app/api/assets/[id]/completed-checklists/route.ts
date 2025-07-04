@@ -21,7 +21,13 @@ export async function GET(
         created_at,
         status,
         notes,
-        signature_data
+        signature_data,
+        checklists(
+          id,
+          name,
+          frequency,
+          description
+        )
       `)
       .eq('asset_id', assetId)
       .order('completion_date', { ascending: false })
