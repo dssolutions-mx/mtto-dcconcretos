@@ -122,7 +122,11 @@ export async function GET(request: Request) {
         continue
       }
 
-      // Aplicar la MISMA lógica que la página de mantenimiento individual
+      // APPLY THE SAME CYCLIC LOGIC as the individual asset page and AssetsList component
+      
+      // Find the highest maintenance interval to determine cycle length
+      const intervals = equipmentModel.maintenance_intervals || []
+      const cycleLength = Math.max(...intervals.map((i: any) => i.interval_value || 0))
       
       // Encontrar la hora/km del último mantenimiento realizado (cualquier tipo)
       let lastMaintenanceValue = 0
@@ -143,11 +147,6 @@ export async function GET(request: Request) {
       }
 
       for (const interval of equipmentModel.maintenance_intervals) {
-        // Encontrar si este mantenimiento específico ya se realizó
-        const lastMaintenanceOfType = allMaintenances?.find(m => 
-          m.maintenance_plan_id === interval.id
-        )
-
         let status: string
         let urgency: 'low' | 'medium' | 'high'
         let estimatedDate: Date
@@ -161,44 +160,91 @@ export async function GET(request: Request) {
         if (maintenanceUnit === 'hours') {
           currentValue = currentHours
           
-          if (lastMaintenanceOfType) {
-            // Este mantenimiento YA se realizó - ya no aplica, no es cíclico
-            // Por lo tanto, no lo incluimos en los próximos mantenimientos
-            continue
+          // CYCLIC LOGIC: Calculate current cycle and next due hour
+          if (cycleLength > 0) {
+            const currentCycle = Math.floor(currentValue / cycleLength)
+            const currentCycleStartHour = currentCycle * cycleLength
+            const nextDueHour = currentCycleStartHour + intervalValue
+            
+            // Get maintenances in current cycle
+            const currentCycleMaintenances = (allMaintenances || []).filter(m => {
+              const maintenanceHours = Number(m.hours) || 0
+              return maintenanceHours >= currentCycleStartHour && maintenanceHours < (currentCycleStartHour + cycleLength)
+            })
+            
+            // Find highest maintenance in current cycle
+            const highestMaintenanceInCycle = currentCycleMaintenances.reduce((max, m) => {
+              const hours = Number(m.hours) || 0
+              return hours > max ? hours : max
+            }, 0)
+            
+            // Current cycle logic - check if this specific interval was performed
+            const wasPerformedInCurrentCycle = currentCycleMaintenances.some(m => {
+              const maintenanceHours = Number(m.hours) || 0
+              const tolerance = 200 // Allow some tolerance for when maintenance is done early/late
+              
+              return m.maintenance_plan_id === interval.id && 
+                     Math.abs(maintenanceHours - nextDueHour) <= tolerance
+            })
+            
+            if (wasPerformedInCurrentCycle) {
+              // Skip completed maintenances (don't show them in calendar)
+              continue
+            } else {
+              // Check if it's covered by a higher maintenance in current cycle
+              const cycleIntervalHour = nextDueHour - currentCycleStartHour
+              const highestRelativeHour = highestMaintenanceInCycle - currentCycleStartHour
+              
+              if (highestRelativeHour >= cycleIntervalHour) {
+                status = 'covered'
+                urgency = 'low'
+              } else if (currentValue >= nextDueHour) {
+                // Overdue
+                status = 'overdue'
+                const hoursOverdue = currentValue - nextDueHour
+                urgency = hoursOverdue > (intervalValue * 0.5) ? 'high' : 'medium'
+              } else {
+                // Upcoming or scheduled
+                const hoursRemaining = nextDueHour - currentValue
+                if (hoursRemaining <= 100) {
+                  status = 'upcoming'
+                  urgency = 'high'
+                } else if (hoursRemaining <= 200) {
+                  status = 'upcoming'
+                  urgency = 'medium'
+                } else {
+                  status = 'scheduled'
+                  urgency = 'low'
+                }
+              }
+            }
+            
+            targetValue = nextDueHour
+            valueRemaining = targetValue - currentValue
+            estimatedDate = status === 'covered' ? new Date() : calculateEstimatedDate(currentValue, targetValue)
           } else {
-            // Este mantenimiento NUNCA se realizó - aplicar lógica de "cubierto"
+            // Fallback to non-cyclic logic if no cycle length
             targetValue = intervalValue
             valueRemaining = targetValue - currentValue
             
-            // Verificar si fue "cubierto" por un mantenimiento posterior
             if (intervalValue <= lastMaintenanceValue) {
-              // Fue cubierto por mantenimientos posteriores
               status = 'covered'
               urgency = 'low'
-              estimatedDate = new Date() // Ya está cubierto
+              estimatedDate = new Date()
             } else if (currentValue >= intervalValue) {
-              // Las horas actuales ya pasaron este intervalo - VENCIDO
               const hoursOverdue = currentValue - intervalValue
               status = 'overdue'
-              
-              if (hoursOverdue > intervalValue * 0.5) {
-                urgency = 'high'
-              } else {
-                urgency = 'medium'
-              }
-              estimatedDate = new Date() // Ya debería haberse hecho
+              urgency = hoursOverdue > intervalValue * 0.5 ? 'high' : 'medium'
+              estimatedDate = new Date()
             } else {
-              // Las horas actuales aún no llegan a este intervalo
               estimatedDate = calculateEstimatedDate(currentValue, targetValue)
-              
-              // NUEVA LÓGICA: usar 100 horas como criterio de urgencia (igual que página individual)
               const hoursRemaining = intervalValue - currentValue
               
               if (hoursRemaining <= 100) {
                 status = 'upcoming'
                 urgency = 'high'
               } else if (hoursRemaining <= 200) {
-                status = 'upcoming' 
+                status = 'upcoming'
                 urgency = 'medium'
               } else {
                 status = 'scheduled'
@@ -207,13 +253,66 @@ export async function GET(request: Request) {
             }
           }
         } else {
-          // Lógica similar para kilómetros
+          // Similar cyclic logic for kilometers
           currentValue = currentKm
           
-          if (lastMaintenanceOfType) {
-            // Este mantenimiento YA se realizó - ya no aplica, no es cíclico
-            continue
+          if (cycleLength > 0) {
+            const currentCycle = Math.floor(currentValue / cycleLength)
+            const currentCycleStartKm = currentCycle * cycleLength
+            const nextDueKm = currentCycleStartKm + intervalValue
+            
+            const currentCycleMaintenances = (allMaintenances || []).filter(m => {
+              const maintenanceKm = Number(m.kilometers) || 0
+              return maintenanceKm >= currentCycleStartKm && maintenanceKm < (currentCycleStartKm + cycleLength)
+            })
+            
+            const highestMaintenanceInCycle = currentCycleMaintenances.reduce((max, m) => {
+              const km = Number(m.kilometers) || 0
+              return km > max ? km : max
+            }, 0)
+            
+            const wasPerformedInCurrentCycle = currentCycleMaintenances.some(m => {
+              const maintenanceKm = Number(m.kilometers) || 0
+              const tolerance = 200
+              
+              return m.maintenance_plan_id === interval.id && 
+                     Math.abs(maintenanceKm - nextDueKm) <= tolerance
+            })
+            
+            if (wasPerformedInCurrentCycle) {
+              // Skip completed maintenances
+              continue
+            } else {
+              const cycleIntervalKm = nextDueKm - currentCycleStartKm
+              const highestRelativeKm = highestMaintenanceInCycle - currentCycleStartKm
+              
+              if (highestRelativeKm >= cycleIntervalKm) {
+                status = 'covered'
+                urgency = 'low'
+              } else if (currentValue >= nextDueKm) {
+                status = 'overdue'
+                const kmOverdue = currentValue - nextDueKm
+                urgency = kmOverdue > (intervalValue * 0.5) ? 'high' : 'medium'
+              } else {
+                const kmRemaining = nextDueKm - currentValue
+                if (kmRemaining <= 100) {
+                  status = 'upcoming'
+                  urgency = 'high'
+                } else if (kmRemaining <= 200) {
+                  status = 'upcoming'
+                  urgency = 'medium'
+                } else {
+                  status = 'scheduled'
+                  urgency = 'low'
+                }
+              }
+            }
+            
+            targetValue = nextDueKm
+            valueRemaining = targetValue - currentValue
+            estimatedDate = status === 'covered' ? new Date() : calculateEstimatedDateByKm(currentValue, targetValue)
           } else {
+            // Fallback to non-cyclic logic
             targetValue = intervalValue
             valueRemaining = targetValue - currentValue
             
@@ -228,8 +327,6 @@ export async function GET(request: Request) {
               estimatedDate = new Date()
             } else {
               estimatedDate = calculateEstimatedDateByKm(currentValue, targetValue)
-              
-              // NUEVA LÓGICA: usar 100 km como criterio de urgencia (igual que para horas)
               const kmRemaining = intervalValue - currentValue
               
               if (kmRemaining <= 100) {
