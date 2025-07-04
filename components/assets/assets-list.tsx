@@ -72,7 +72,7 @@ export function AssetsList({ assets, loading = false, error }: AssetsListProps) 
         
         if (historyError) throw historyError
         
-        // Process data for each asset
+        // Process data for each asset using CYCLIC maintenance logic
         const data: MaintenanceData = {}
         
         for (const asset of assets) {
@@ -82,70 +82,157 @@ export function AssetsList({ assets, loading = false, error }: AssetsListProps) 
           
           const assetHistory = history?.filter(h => h.asset_id === asset.id) || []
           
-          // Find the last maintenance hours for this asset
-          const allMaintenanceHours = assetHistory
-            .map(m => Number(m.hours) || 0)
-            .filter(h => h > 0)
-            .sort((a, b) => b - a)
-          
-          const lastMaintenanceHours = allMaintenanceHours.length > 0 ? allMaintenanceHours[0] : 0
-          
           const currentHours = asset.current_hours || 0
           const maintenanceUnit = (asset as any).equipment_models?.maintenance_unit || 'hours'
           
           const nextMaintenances = []
           let hasOverdue = false
           let hasUpcoming = false
+          let lastMaintenanceHours = 0
           
-          for (const interval of assetIntervals) {
-            // Check if this specific maintenance type was already performed
-            const lastMaintenanceOfType = assetHistory.find(m => 
-              m.maintenance_plan_id === interval.id
-            )
+          if (assetIntervals.length > 0 && maintenanceUnit === 'hours') {
+            // Calculate cycle length (highest interval - same as maintenance page and individual asset page)
+            const maxInterval = Math.max(...assetIntervals.map(i => i.interval_value))
+            const currentCycle = Math.floor(currentHours / maxInterval) + 1
             
-            if (lastMaintenanceOfType) {
-              // This maintenance was already performed, skip it
-              continue
-            }
+            // Find the hour of the last maintenance performed (any type)
+            const allMaintenanceHours = assetHistory
+              .map(m => Number(m.hours) || 0)
+              .filter(h => h > 0)
+              .sort((a, b) => b - a) // Sort from highest to lowest
             
-            const intervalValue = interval.interval_value || 0
+            lastMaintenanceHours = allMaintenanceHours.length > 0 ? allMaintenanceHours[0] : 0
             
-            let status = 'scheduled'
-            let urgency = 'low'
+            // Find the highest maintenance performed in current cycle (for "covered" logic)
+            const currentCycleStartHour = (currentCycle - 1) * maxInterval
+            const currentCycleEndHour = currentCycle * maxInterval
             
-            if (maintenanceUnit === 'hours') {
-              // Check if covered by later maintenance
-              if (intervalValue <= lastMaintenanceHours) {
-                status = 'covered'
-              } else if (currentHours >= intervalValue) {
-                // Overdue
-                status = 'overdue'
-                hasOverdue = true
-                const hoursOverdue = currentHours - intervalValue
-                urgency = hoursOverdue > intervalValue * 0.3 ? 'high' : 'medium'
-              } else {
-                // Check proximity
-                const hoursRemaining = intervalValue - currentHours
-                if (hoursRemaining <= 50) {
-                  status = 'upcoming'
-                  hasUpcoming = true
-                  urgency = hoursRemaining <= 25 ? 'high' : 'medium'
+            const currentCycleMaintenances = assetHistory.filter(m => {
+              const mHours = Number(m.hours) || 0
+              return mHours > currentCycleStartHour && mHours < currentCycleEndHour
+            })
+            
+            const highestMaintenanceInCycle = currentCycleMaintenances.length > 0 
+              ? Math.max(...currentCycleMaintenances.map(m => Number(m.hours) || 0))
+              : 0
+            
+            for (const interval of assetIntervals) {
+              const intervalHours = interval.interval_value || 0
+              
+              // Handle new fields with fallbacks for backward compatibility
+              const isRecurring = (interval as any).is_recurring !== false // Default to true
+              const isFirstCycleOnly = (interval as any).is_first_cycle_only === true // Default to false
+              
+              // Calculate next due hour for current cycle (same logic as maintenance page)
+              let nextDueHour: number | null = null
+              let status = 'not_applicable'
+              
+              if (!isFirstCycleOnly || currentCycle === 1) {
+                // Calculate the due hour for current cycle
+                nextDueHour = ((currentCycle - 1) * maxInterval) + intervalHours
+                
+                // Special case: if nextDueHour exceeds the current cycle end, calculate for next cycle
+                if (nextDueHour > currentCycleEndHour) {
+                  nextDueHour = (currentCycle * maxInterval) + intervalHours
+                  
+                  // Only show next cycle services if they're within reasonable range
+                  if (nextDueHour - currentHours <= 1000) {
+                    status = 'scheduled'
+                  } else {
+                    status = 'not_applicable'
+                  }
                 } else {
-                  status = 'scheduled'
-                  urgency = 'low'
+                                     // Current cycle logic - check if this specific interval was performed
+                   if (nextDueHour !== null) {
+                     const dueHour = nextDueHour // Create non-null variable for use in closures
+                     
+                     const wasPerformedInCurrentCycle = currentCycleMaintenances.some(m => {
+                       const maintenanceHours = Number(m.hours) || 0
+                       const tolerance = 200 // Allow some tolerance for when maintenance is done early/late
+                       
+                       return m.maintenance_plan_id === interval.id && 
+                              Math.abs(maintenanceHours - dueHour) <= tolerance
+                     })
+                     
+                     if (wasPerformedInCurrentCycle) {
+                       status = 'completed'
+                     } else {
+                       // Check if it's covered by a higher maintenance in current cycle
+                       const cycleIntervalHour = dueHour - currentCycleStartHour
+                       const highestRelativeHour = highestMaintenanceInCycle - currentCycleStartHour
+                       
+                       if (highestRelativeHour >= cycleIntervalHour && highestMaintenanceInCycle > 0) {
+                         status = 'covered'
+                       } else if (currentHours >= dueHour) {
+                         status = 'overdue'
+                         hasOverdue = true
+                       } else if (currentHours >= dueHour - 100) {
+                         status = 'upcoming'
+                         hasUpcoming = true
+                       } else {
+                         status = 'scheduled'
+                       }
+                     }
+                   }
+                }
+              }
+              
+              // Calculate additional properties
+              let urgency = 'low'
+              let valueRemaining = 0
+              
+                             if (nextDueHour !== null && status !== 'not_applicable' && status !== 'completed') {
+                 const dueHour = nextDueHour // Create non-null variable for calculations
+                 
+                 if (status === 'overdue') {
+                   const hoursOverdue = currentHours - dueHour
+                   valueRemaining = -hoursOverdue
+                   
+                   if (hoursOverdue > intervalHours * 0.5) {
+                     urgency = 'high'
+                   } else {
+                     urgency = 'medium'
+                   }
+                 } else if (status === 'upcoming') {
+                   const hoursRemaining = dueHour - currentHours
+                   valueRemaining = hoursRemaining
+                   
+                   if (hoursRemaining <= 50) {
+                     urgency = 'high'
+                   } else {
+                     urgency = 'medium'
+                   }
+                 } else if (status === 'scheduled') {
+                   const hoursRemaining = dueHour - currentHours
+                   valueRemaining = hoursRemaining
+                   urgency = 'low'
+                 }
+                
+                // Only add to nextMaintenances if it's relevant (same filtering as individual asset page)
+                if (['overdue', 'upcoming', 'covered', 'scheduled'].includes(status)) {
+                  nextMaintenances.push({
+                    id: interval.id,
+                    name: interval.name || interval.description,
+                    intervalValue: intervalHours,
+                    currentValue: currentHours,
+                    valueRemaining,
+                    status,
+                    urgency,
+                    unit: maintenanceUnit,
+                    wasPerformed: status === 'completed',
+                    nextDueHour
+                  })
                 }
               }
             }
+          } else {
+            // Fallback for non-hours maintenance or no intervals
+            const allMaintenanceHours = assetHistory
+              .map(m => Number(m.hours) || 0)
+              .filter(h => h > 0)
+              .sort((a, b) => b - a)
             
-            nextMaintenances.push({
-              id: interval.id,
-              name: interval.name || interval.description,
-              intervalValue,
-              currentValue: currentHours,
-              status,
-              urgency,
-              unit: maintenanceUnit
-            })
+            lastMaintenanceHours = allMaintenanceHours.length > 0 ? allMaintenanceHours[0] : 0
           }
           
           data[asset.id] = {

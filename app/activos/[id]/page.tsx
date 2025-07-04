@@ -120,7 +120,7 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
     }
   }, [asset?.model_id]);
   
-  // Process and calculate upcoming maintenances with proper logic
+  // Process and calculate upcoming maintenances with proper CYCLIC logic
   useEffect(() => {
     if (!maintenanceIntervals.length || !asset) {
       setUpcomingMaintenances([]);
@@ -133,6 +133,10 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
       
       const currentHours = asset.current_hours || 0;
       
+      // Calculate cycle length (highest interval - same as maintenance page)
+      const maxInterval = Math.max(...maintenanceIntervals.map(i => i.interval_value));
+      const currentCycle = Math.floor(currentHours / maxInterval) + 1;
+      
       // Find the hour of the last maintenance performed (any type)
       const allMaintenanceHours = maintenanceHistory
         .map(m => Number(m.hours) || 0)
@@ -141,73 +145,129 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
       
       const lastMaintenanceHours = allMaintenanceHours.length > 0 ? allMaintenanceHours[0] : 0;
       
+      // Find the highest maintenance performed in current cycle (for "covered" logic)
+      const currentCycleStartHour = (currentCycle - 1) * maxInterval;
+      const currentCycleEndHour = currentCycle * maxInterval;
+      
+      const currentCycleMaintenances = maintenanceHistory.filter(m => {
+        const mHours = Number(m.hours) || 0;
+        return mHours > currentCycleStartHour && mHours < currentCycleEndHour;
+      });
+      
+      const highestMaintenanceInCycle = currentCycleMaintenances.length > 0 
+        ? Math.max(...currentCycleMaintenances.map(m => Number(m.hours) || 0))
+        : 0;
+      
       const upcomingList = maintenanceIntervals.map(interval => {
         const intervalHours = interval.interval_value || 0;
         
-        // Find if this specific maintenance was already performed
-        const lastMaintenanceOfType = maintenanceHistory.find(m => 
-          m.maintenance_plan_id === interval.id
-        );
+        // Handle new fields with fallbacks for backward compatibility
+        const isRecurring = (interval as any).is_recurring !== false; // Default to true
+        const isFirstCycleOnly = (interval as any).is_first_cycle_only === true; // Default to false
         
-        let lastMaintenanceDate = null;
-        let lastMaintenanceHoursOfType = 0;
-        let wasPerformed = false;
-        let status = 'pending';
+        // Calculate next due hour for current cycle (same logic as maintenance page)
+        let nextDueHour: number | null = null;
+        let status = 'not_applicable';
+        let cycleForService = currentCycle;
+        
+        if (!isFirstCycleOnly || currentCycle === 1) {
+          // Calculate the due hour for current cycle
+          nextDueHour = ((currentCycle - 1) * maxInterval) + intervalHours;
+          
+          // Special case: if nextDueHour exceeds the current cycle end, calculate for next cycle
+          if (nextDueHour > currentCycleEndHour) {
+            cycleForService = currentCycle + 1;
+            nextDueHour = (currentCycle * maxInterval) + intervalHours;
+            
+            // Only show next cycle services if they're within reasonable range
+            if (nextDueHour - currentHours <= 1000) {
+              status = 'scheduled';
+            } else {
+              status = 'not_applicable';
+            }
+          } else {
+                         // Current cycle logic - check if this specific interval was performed
+             if (nextDueHour !== null) {
+               const dueHour = nextDueHour; // Create non-null variable for use in closures
+               
+               const wasPerformedInCurrentCycle = currentCycleMaintenances.some(m => {
+                 const maintenanceHours = Number(m.hours) || 0;
+                 const tolerance = 200; // Allow some tolerance for when maintenance is done early/late
+                 
+                 return m.maintenance_plan_id === interval.id && 
+                        Math.abs(maintenanceHours - dueHour) <= tolerance;
+               });
+               
+               if (wasPerformedInCurrentCycle) {
+                 status = 'completed';
+               } else {
+                 // Check if it's covered by a higher maintenance in current cycle
+                 const cycleIntervalHour = dueHour - currentCycleStartHour;
+                 const highestRelativeHour = highestMaintenanceInCycle - currentCycleStartHour;
+                 
+                 if (highestRelativeHour >= cycleIntervalHour && highestMaintenanceInCycle > 0) {
+                   status = 'covered';
+                 } else if (currentHours >= dueHour) {
+                   status = 'overdue';
+                 } else if (currentHours >= dueHour - 100) {
+                   status = 'upcoming';
+                 } else {
+                   status = 'scheduled';
+                 }
+               }
+             }
+          }
+        }
+        
+        // Calculate additional properties
         let progress = 0;
-        let nextHours = intervalHours;
         let urgency = 'low';
         let valueRemaining = 0;
-        let estimatedDate = new Date().toISOString();
+        let wasPerformed = false;
+        let lastMaintenanceDate = null;
         
-        if (lastMaintenanceOfType) {
-          // This maintenance WAS performed - mark as completed, don't show
-          lastMaintenanceHoursOfType = Number(lastMaintenanceOfType.hours) || 0;
-          lastMaintenanceDate = lastMaintenanceOfType.date;
-          wasPerformed = true;
-          status = 'completed';
-          progress = 100;
-          urgency = 'low';
-          valueRemaining = 0;
-        } else {
-          // This maintenance was NEVER performed
-          wasPerformed = false;
-          
-          // Check if it was "covered" by later maintenances
-          if (intervalHours <= lastMaintenanceHours) {
-            // Was covered by later maintenances
-            status = 'covered';
+        if (nextDueHour !== null) {
+          if (status === 'completed') {
             progress = 100;
             urgency = 'low';
             valueRemaining = 0;
-          } else if (currentHours >= intervalHours) {
-            // Current hours already passed this interval - OVERDUE
-            const hoursOverdue = currentHours - intervalHours;
-            status = 'overdue';
+            wasPerformed = true;
+            
+            // Find the last maintenance of this type
+            const lastMaintenanceOfType = currentCycleMaintenances.find(m => 
+              m.maintenance_plan_id === interval.id
+            );
+            lastMaintenanceDate = lastMaintenanceOfType?.date || null;
+          } else if (status === 'covered') {
             progress = 100;
-            valueRemaining = -hoursOverdue;
-            
-            if (hoursOverdue > intervalHours * 0.5) {
-              urgency = 'high';
-            } else {
-              urgency = 'medium';
-            }
-          } else {
-            // Current hours haven't reached this interval yet - UPCOMING/SCHEDULED
-            progress = Math.round((currentHours / intervalHours) * 100);
-            const hoursRemaining = intervalHours - currentHours;
-            valueRemaining = hoursRemaining;
-            
-            if (hoursRemaining <= 100) {
-              status = 'upcoming';
-              urgency = 'high';
-            } else if (hoursRemaining <= 200) {
-              status = 'upcoming';
-              urgency = 'medium';
-            } else {
-              status = 'scheduled';
-              urgency = 'low';
-            }
-          }
+            urgency = 'low';
+            valueRemaining = 0;
+                     } else if (status === 'overdue' && nextDueHour !== null) {
+             progress = 100;
+             const hoursOverdue = currentHours - nextDueHour;
+             valueRemaining = -hoursOverdue;
+             
+             if (hoursOverdue > intervalHours * 0.5) {
+               urgency = 'high';
+             } else {
+               urgency = 'medium';
+             }
+           } else if (status === 'upcoming' && nextDueHour !== null) {
+             progress = Math.round((currentHours / nextDueHour) * 100);
+             const hoursRemaining = nextDueHour - currentHours;
+             valueRemaining = hoursRemaining;
+             
+             if (hoursRemaining <= 50) {
+               urgency = 'high';
+             } else {
+               urgency = 'medium';
+             }
+           } else if (status === 'scheduled' && nextDueHour !== null) {
+             progress = Math.round((currentHours / nextDueHour) * 100);
+             const hoursRemaining = nextDueHour - currentHours;
+             valueRemaining = hoursRemaining;
+             urgency = 'low';
+           }
         }
         
         return {
@@ -216,32 +276,30 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
           type: interval.type,
           intervalValue: interval.interval_value,
           currentValue: currentHours,
-          targetValue: intervalHours,
+          targetValue: nextDueHour || intervalHours,
           valueRemaining,
           status,
           urgency,
           progress,
           unit: 'hours',
-          estimatedDate,
+          estimatedDate: new Date().toISOString(),
           lastMaintenanceDate,
-          wasPerformed
+          wasPerformed,
+          cycleForService,
+          cycleLength: maxInterval
         };
       });
       
-      // Filter to show only relevant maintenances (exclude completed ones)
+      // Filter to show only relevant maintenances (same logic as maintenance page)
       const filteredUpcoming = upcomingList.filter(maintenance => {
-        // Show:
-        // 1. Overdue - never performed and hours already passed
-        // 2. Upcoming - never performed and close to hours
-        // 3. Covered - never performed but covered by later maintenances
-        // 4. Scheduled - future ones for complete view
-        // DON'T show: completed (already performed)
+        // Show: overdue, upcoming, covered, scheduled
+        // Don't show: not_applicable, completed (already done)
         return ['overdue', 'upcoming', 'covered', 'scheduled'].includes(maintenance.status);
       });
       
       // Sort by priority: overdue first, then upcoming, then by urgency
       const sorted = filteredUpcoming.sort((a, b) => {
-        const statusPriority = { 'overdue': 3, 'upcoming': 2, 'scheduled': 1, 'covered': 0 };
+        const statusPriority = { 'overdue': 4, 'upcoming': 3, 'scheduled': 2, 'covered': 1 };
         const urgencyPriority = { 'high': 3, 'medium': 2, 'low': 1 };
         
         const priorityA = statusPriority[a.status as keyof typeof statusPriority] || 0;

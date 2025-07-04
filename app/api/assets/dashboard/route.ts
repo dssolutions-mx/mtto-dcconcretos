@@ -62,6 +62,43 @@ export async function GET() {
     const pendingIncidents = incidentsResult.data || []
     const pendingSchedules = schedulesResult.data || []
 
+    // Get maintenance intervals and history for proper maintenance status calculation
+    const assetsWithModels = assets.filter(asset => asset.model_id)
+    const modelIds = [...new Set(assetsWithModels.map(asset => asset.model_id!))]
+    const assetIds = assets.map(asset => asset.id)
+    
+    let maintenanceIntervals: any[] = []
+    let maintenanceHistory: any[] = []
+    
+    if (modelIds.length > 0) {
+      // Fetch maintenance intervals for all models
+      const { data: intervals, error: intervalsError } = await supabase
+        .from('maintenance_intervals')
+        .select('*')
+        .in('model_id', modelIds)
+        
+      if (intervalsError) {
+        console.error('Error fetching maintenance intervals:', intervalsError)
+      } else {
+        maintenanceIntervals = intervals || []
+      }
+    }
+    
+    if (assetIds.length > 0) {
+      // Fetch maintenance history for all assets
+      const { data: history, error: historyError } = await supabase
+        .from('maintenance_history')
+        .select('asset_id, maintenance_plan_id, hours, kilometers, date')
+        .in('asset_id', assetIds)
+        .order('date', { ascending: false })
+        
+      if (historyError) {
+        console.error('Error fetching maintenance history:', historyError)
+      } else {
+        maintenanceHistory = history || []
+      }
+    }
+
     // Calculate stats
     const stats = {
       total: assets.length,
@@ -72,7 +109,7 @@ export async function GET() {
       criticalAlerts: pendingIncidents.length
     }
 
-    // Enhance assets with basic priority information
+    // Enhance assets with proper maintenance status calculation
     const today = new Date()
     today.setHours(0, 0, 0, 0)
 
@@ -81,26 +118,74 @@ export async function GET() {
       const assetSchedules = pendingSchedules.filter(s => s.asset_id === asset.id)
       const overdueSchedules = assetSchedules.filter(s => new Date(s.scheduled_date) < today)
 
+      // Get maintenance intervals for this asset
+      const assetIntervals = maintenanceIntervals.filter(interval => 
+        interval.model_id === asset.model_id
+      )
+      
+      // Get maintenance history for this asset
+      const assetHistory = maintenanceHistory.filter(h => h.asset_id === asset.id)
+      
+      // Calculate proper maintenance status using same logic as individual asset page
+      let hasMaintenanceOverdue = false
+      let hasMaintenanceUpcoming = false
+      
+      if (assetIntervals.length > 0) {
+        // Find the last maintenance hours for this asset
+        const allMaintenanceHours = assetHistory
+          .map(m => Number(m.hours) || 0)
+          .filter(h => h > 0)
+          .sort((a, b) => b - a) // Sort from highest to lowest
+        
+        const lastMaintenanceHours = allMaintenanceHours.length > 0 ? allMaintenanceHours[0] : 0
+        const currentHours = asset.current_hours || 0
+        
+        for (const interval of assetIntervals) {
+          const intervalHours = interval.interval_value || 0
+          
+          // Find if this specific maintenance was already performed
+          const lastMaintenanceOfType = assetHistory.find(m => 
+            m.maintenance_plan_id === interval.id
+          )
+          
+          if (lastMaintenanceOfType) {
+            // This maintenance was already performed, skip it
+            continue
+          }
+          
+          // Check if it was "covered" by later maintenances
+          if (intervalHours <= lastMaintenanceHours) {
+            // Was covered by later maintenances, skip it
+            continue
+          } else if (currentHours >= intervalHours) {
+            // Current hours already passed this interval - OVERDUE
+            hasMaintenanceOverdue = true
+            break // No need to check further if we found an overdue maintenance
+          } else {
+            // Current hours haven't reached this interval yet - check proximity
+            const hoursRemaining = intervalHours - currentHours
+            if (hoursRemaining <= 100) {
+              hasMaintenanceUpcoming = true
+            }
+          }
+        }
+      }
+
       // Determine priority status for sorting
       let priorityScore = 0
       let maintenanceStatus = 'ok'
       
-      if (overdueSchedules.length > 0) {
-        priorityScore = 3 // Highest priority - overdue checklists
+      if (hasMaintenanceOverdue) {
+        priorityScore = 4 // Highest priority - overdue maintenance
+        maintenanceStatus = 'overdue'
+      } else if (overdueSchedules.length > 0) {
+        priorityScore = 3 // High priority - overdue checklists
         maintenanceStatus = 'overdue'
       } else if (assetIncidents.length > 0) {
         priorityScore = 2 // High priority - pending incidents
         maintenanceStatus = 'upcoming'
-      } else if (assetSchedules.length > 0) {
-        priorityScore = 1 // Medium priority - upcoming checklists
-        maintenanceStatus = 'upcoming'
-      }
-
-      // Simple maintenance check based on current hours
-      const currentHours = asset.current_hours || 0
-      const hasHighHours = currentHours > 1000 // Simple threshold
-      if (hasHighHours && priorityScore === 0) {
-        priorityScore = 1
+      } else if (hasMaintenanceUpcoming || assetSchedules.length > 0) {
+        priorityScore = 1 // Medium priority - upcoming maintenance or checklists
         maintenanceStatus = 'upcoming'
       }
 
@@ -111,27 +196,22 @@ export async function GET() {
         pending_schedules: assetSchedules.length,
         priority_score: priorityScore,
         alerts: [
+          ...(hasMaintenanceOverdue ? ['Mantenimiento vencido'] : []),
           ...(overdueSchedules.length > 0 ? [`${overdueSchedules.length} checklist(s) atrasado(s)`] : []),
           ...(assetIncidents.length > 0 ? [`${assetIncidents.length} incidente(s) pendiente(s)`] : []),
-          ...(hasHighHours ? ['Horas altas - revisar mantenimiento'] : []),
+          ...(hasMaintenanceUpcoming ? ['Mantenimiento próximo'] : []),
           ...(asset.status === 'repair' ? ['En reparación'] : []),
           ...(asset.status === 'maintenance' ? ['En mantenimiento'] : [])
         ]
       }
     })
 
-    // Sort assets properly with numeric sorting for asset_id and priority
+    // Sort assets by asset_id as it was before (CR-01, CR-02, etc.)
     const sortedAssets = enhancedAssets.sort((a, b) => {
-      // First sort by priority (critical alerts first)
-      if (a.priority_score !== b.priority_score) {
-        return b.priority_score - a.priority_score
-      }
-
-      // Then sort by asset_id numerically (CR-09 < CR-16 < CR-21 < CR-26)
       const idA = a.asset_id
       const idB = b.asset_id
       
-      // Extract prefix and number for IDs like CR-26, CR-09, etc.
+      // Extract prefix and number for IDs like CR-01, CR-02, etc.
       const matchA = idA.match(/^([A-Z]+)-(\d+)$/)
       const matchB = idB.match(/^([A-Z]+)-(\d+)$/)
       
@@ -147,7 +227,7 @@ export async function GET() {
           return prefixA.localeCompare(prefixB)
         }
         
-        // Then compare numbers numerically
+        // Then compare numbers numerically (CR-01 < CR-02 < CR-10 < CR-21)
         return numberA - numberB
       }
       
