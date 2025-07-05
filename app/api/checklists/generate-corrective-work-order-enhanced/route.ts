@@ -261,10 +261,8 @@ ORIGEN:
 • Activo: ${(checklistData.assets as any)?.name || 'N/A'} (${(checklistData.assets as any)?.asset_id || 'N/A'})
 • Ubicación: ${(checklistData.assets as any)?.location || 'N/A'}`
 
-          // Add user notes as additional context if provided
-          if (description && description.trim()) {
-            workOrderDescription += `\n\nCONTEXTO ADICIONAL:\n${description.trim()}`
-          }
+          // Note: User notes are no longer added as additional context to keep descriptions concise
+          // The description will only contain the individual item information and origin data
 
           // Determine priority based on individual item priority or fallback
           let workOrderPriority = issue.priority || priority || 'Media'
