@@ -403,7 +403,7 @@ export default async function WorkOrderDetailsPage({
               
               <div>
                 <p className="text-sm font-medium text-muted-foreground mb-1">Descripción</p>
-                <p className="text-base">{extendedWorkOrder.description}</p>
+                <p className="text-base whitespace-pre-wrap">{extendedWorkOrder.description}</p>
               </div>
               
               <Separator />

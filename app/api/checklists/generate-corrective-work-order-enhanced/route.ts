@@ -252,7 +252,7 @@ ${issue.photo_url ? '• Evidencia fotográfica disponible' : ''}`
           // Create individual work order description using new clean format
           let workOrderDescription = `${issue.description}
 
-PROBLEMA: ${issue.status === 'fail' ? 'FALLA DETECTADA' : 'REQUIERE REVISIÓN'}
+ ${issue.status === 'fail' ? 'FALLA DETECTADA' : 'REQUIERE REVISIÓN'}
 ${issue.notes ? `Observaciones: ${issue.notes}` : ''}${issue.photo_url ? '\nEvidencia fotográfica disponible' : ''}
 
 ORIGEN:
