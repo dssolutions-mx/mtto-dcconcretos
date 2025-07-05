@@ -155,6 +155,20 @@ export function PurchaseOrdersList() {
         title: "Orden de compra eliminada",
         description: `La orden ${orderToDelete.order_id} ha sido eliminada exitosamente.`,
       })
+      
+      // Close dialog with proper cleanup
+      setIsDeleting(false)
+      setShowDeleteDialog(false)
+      
+      // Reset order state after a brief delay to ensure dialog closes properly
+      setTimeout(() => {
+        setOrderToDelete(null)
+        // Ensure focus returns to document body
+        if (document.activeElement && document.activeElement !== document.body) {
+          (document.activeElement as HTMLElement).blur()
+        }
+        document.body.focus()
+      }, 100)
     } catch (error) {
       console.error("Error al eliminar orden de compra:", error)
       toast({
@@ -162,10 +176,7 @@ export function PurchaseOrdersList() {
         description: "No se pudo eliminar la orden de compra. Por favor, intente nuevamente.",
         variant: "destructive",
       })
-    } finally {
       setIsDeleting(false)
-      setShowDeleteDialog(false)
-      setOrderToDelete(null)
     }
   }
 
@@ -608,11 +619,11 @@ export function PurchaseOrdersList() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>¿Está seguro que desea eliminar esta orden de compra?</AlertDialogTitle>
-            <AlertDialogDescription className="space-y-3">
-              <div>
-                Esta acción eliminará permanentemente la orden de compra{' '}
-                <span className="font-semibold">{orderToDelete?.order_id}</span>
-              </div>
+            <AlertDialogDescription>
+              Esta acción eliminará permanentemente la orden de compra{' '}
+              <strong>{orderToDelete?.order_id}</strong>.
+            </AlertDialogDescription>
+            <div className="space-y-3 pt-2">
               <div className="bg-red-50 border border-red-200 rounded-md p-3">
                 <div className="text-sm text-red-800 font-medium mb-2">
                   ⚠️ ADVERTENCIA: Esta acción también eliminará:
@@ -626,7 +637,7 @@ export function PurchaseOrdersList() {
               <div className="text-sm text-muted-foreground">
                 Esta acción no se puede deshacer.
               </div>
-            </AlertDialogDescription>
+            </div>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={isDeleting}>Cancelar</AlertDialogCancel>

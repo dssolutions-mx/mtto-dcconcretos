@@ -252,6 +252,28 @@ function WorkOrderCard({
   )
 }
 
+// Utility function to properly cleanup modal state and focus
+const cleanupModalState = (callback: () => void, delay: number = 100) => {
+  setTimeout(() => {
+    callback()
+    // Force any modal overlays to be removed
+    const modalOverlays = document.querySelectorAll('[data-radix-focus-guard], [data-radix-scroll-lock-wrapper]')
+    modalOverlays.forEach(overlay => {
+      if (overlay.parentNode) {
+        overlay.parentNode.removeChild(overlay)
+      }
+    })
+    // Clear any stuck focus states
+    if (document.activeElement && document.activeElement !== document.body) {
+      (document.activeElement as HTMLElement).blur()
+    }
+    document.body.focus()
+    // Remove any aria-hidden attributes from the body that might be stuck
+    document.body.removeAttribute('aria-hidden')
+    document.body.style.removeProperty('pointer-events')
+  }, delay)
+}
+
 export function WorkOrdersList() {
   const isMobile = useIsMobile()
   const [searchTerm, setSearchTerm] = useState("")
@@ -410,6 +432,7 @@ export function WorkOrdersList() {
           description: "No se pudo eliminar la orden de trabajo. Por favor, intente nuevamente.",
           variant: "destructive",
         })
+        setIsDeleting(false)
       } else {
         toast({
           title: "Orden eliminada",
@@ -418,6 +441,15 @@ export function WorkOrdersList() {
         
         // Remove the deleted order from the list
         setWorkOrders(prev => prev.filter(wo => wo.id !== orderToDelete.id))
+        
+        // Close dialog with proper cleanup
+        setIsDeleting(false)
+        setDeleteDialogOpen(false)
+        
+        // Reset order state after a brief delay to ensure dialog closes properly
+        cleanupModalState(() => {
+          setOrderToDelete(null)
+        }, 100)
       }
     } catch (error) {
       console.error("Error al eliminar orden de trabajo:", error)
@@ -426,10 +458,7 @@ export function WorkOrdersList() {
         description: "Ocurrió un error inesperado. Por favor, intente nuevamente.",
         variant: "destructive",
       })
-    } finally {
       setIsDeleting(false)
-      setDeleteDialogOpen(false)
-      setOrderToDelete(null)
     }
   }
 
@@ -654,16 +683,18 @@ export function WorkOrdersList() {
           <AlertDialogHeader>
             <AlertDialogTitle>¿Está seguro de eliminar esta orden de trabajo?</AlertDialogTitle>
             <AlertDialogDescription>
-              Esta acción eliminará permanentemente la orden de trabajo <strong>{orderToDelete?.order_id}</strong> y todos sus registros relacionados, incluyendo:
-              <ul className="list-disc list-inside mt-2">
+              Esta acción eliminará permanentemente la orden de trabajo <strong>{orderToDelete?.order_id}</strong> y todos sus registros relacionados.
+            </AlertDialogDescription>
+            <div className="space-y-3 pt-2">
+              <ul className="list-disc list-inside text-sm text-muted-foreground">
                 <li>Historial de mantenimiento</li>
                 <li>Problemas de checklist asociados</li>
                 <li>Órdenes de servicio relacionadas</li>
                 <li>Gastos adicionales</li>
                 <li>Órdenes de compra vinculadas</li>
               </ul>
-              <div className="mt-2 font-semibold text-destructive">Esta acción no se puede deshacer.</div>
-            </AlertDialogDescription>
+              <div className="font-semibold text-destructive text-sm">Esta acción no se puede deshacer.</div>
+            </div>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={isDeleting}>Cancelar</AlertDialogCancel>
