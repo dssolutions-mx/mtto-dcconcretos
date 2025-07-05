@@ -28,7 +28,7 @@ import { EvidenceViewer, type EvidenceItem } from "@/components/ui/evidence-view
 import { WorkOrderCostDisplay } from "@/components/work-orders/work-order-cost-display"
 
 // Extended type for work order with completed_at field
-interface ExtendedWorkOrder extends WorkOrderComplete {
+type ExtendedWorkOrder = WorkOrderComplete & {
   completed_at: string | null;
   creation_photos?: string | EvidenceItem[];
   completion_photos?: string | EvidenceItem[];
