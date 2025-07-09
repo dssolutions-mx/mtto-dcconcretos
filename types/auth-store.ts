@@ -13,6 +13,11 @@ export interface UserProfile {
   can_authorize_up_to: number
   status: string
   employee_code: string | null
+  telefono: string | null
+  emergency_contact: {
+    name?: string | null
+    phone?: string | null
+  } | null
   plants?: {
     id: string
     name: string
@@ -141,6 +146,10 @@ export interface AuthStore extends
   updateLastAuthCheck: (source: string) => void
   loadProfile: (userId: string) => Promise<void>
   refreshProfile: () => Promise<void>
+  
+  // Password management actions
+  resetPasswordForEmail: (email: string) => Promise<{ success: boolean; error?: string }>
+  updatePassword: (newPassword: string) => Promise<{ success: boolean; error?: string }>
   
   // Session actions
   scheduleTokenRefresh: (session: Session) => void

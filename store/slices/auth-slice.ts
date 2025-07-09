@@ -22,6 +22,9 @@ export interface AuthSlice extends AuthState {
   updateLastAuthCheck: (source: string) => void
   loadProfile: (userId: string) => Promise<void>
   refreshProfile: () => Promise<void>
+  // Password management actions
+  resetPasswordForEmail: (email: string) => Promise<{ success: boolean; error?: string }>
+  updatePassword: (newPassword: string) => Promise<{ success: boolean; error?: string }>
 }
 
 export const createAuthSlice: StateCreator<
@@ -484,28 +487,95 @@ export const createAuthSlice: StateCreator<
   },
 
   refreshProfile: async () => {
-    const { user } = get()
+    console.log('🔄 Refreshing profile...')
+    const user = get().user
     if (!user) {
-      console.log('❌ No user found for profile refresh')
+      console.log('⚠️ No user to refresh profile for')
       return
-    }
-
-    console.log('🔄 Force refreshing profile...')
-    
-    // Clear the cached profile to force a fresh fetch
-    const userId = user.id
-    const cache = get()
-    if (cache.profileCache && cache.profileCache.has(userId)) {
-      cache.profileCache.delete(userId)
     }
     
     try {
-      // Force reload profile from database
-      await get().loadProfile(userId)
-      console.log('✅ Profile refreshed successfully')
+      await get().loadProfile(user.id)
     } catch (error) {
-      console.error('❌ Failed to refresh profile:', error)
-      throw error
+      console.error('❌ Profile refresh error:', error)
+    }
+  },
+
+  // Password reset request
+  resetPasswordForEmail: async (email) => {
+    console.log('📧 Requesting password reset for:', email)
+    const startTime = Date.now()
+    
+    const supabase = createClient()
+    
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/auth/reset-password`,
+      })
+      
+      if (error) throw error
+      
+      console.log('✅ Password reset email sent successfully')
+      
+      const latency = Date.now() - startTime
+      get().recordAuthLatency(latency)
+      
+      return { success: true }
+    } catch (error: any) {
+      console.error('❌ Password reset request error:', error)
+      
+      get().incrementFailedOperationsCount()
+      
+      set({
+        error: {
+          code: 'PASSWORD_RESET_ERROR',
+          message: error.message || 'Failed to send password reset email',
+          source: 'resetPasswordForEmail',
+          timestamp: Date.now()
+        }
+      } as Partial<AuthStore>)
+      
+      return { success: false, error: error.message || 'Failed to send password reset email' }
+    }
+  },
+
+  // Update password for authenticated user
+  updatePassword: async (newPassword) => {
+    console.log('🔐 Updating password...')
+    const startTime = Date.now()
+    
+    const supabase = createClient()
+    
+    try {
+      const { error } = await supabase.auth.updateUser({
+        password: newPassword
+      })
+      
+      if (error) throw error
+      
+      console.log('✅ Password updated successfully')
+      
+      const latency = Date.now() - startTime
+      get().recordAuthLatency(latency)
+      get().updateSessionStability(true)
+      
+      return { success: true }
+    } catch (error: any) {
+      console.error('❌ Password update error:', error)
+      
+      get().incrementFailedOperationsCount()
+      get().updateSessionStability(false)
+      
+      set({
+        error: {
+          code: 'PASSWORD_UPDATE_ERROR',
+          message: error.message || 'Failed to update password',
+          source: 'updatePassword',
+          timestamp: Date.now()
+        }
+      } as Partial<AuthStore>)
+      
+      return { success: false, error: error.message || 'Failed to update password' }
     }
   }
 }) 

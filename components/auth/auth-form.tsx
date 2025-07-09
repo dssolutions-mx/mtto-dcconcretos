@@ -6,6 +6,7 @@ import { zodResolver } from "@hookform/resolvers/zod"
 import { useForm } from "react-hook-form"
 import { z } from "zod"
 import { Eye, EyeOff, Loader2 } from "lucide-react"
+import Link from "next/link"
 
 import { Button } from "@/components/ui/button"
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
@@ -299,6 +300,17 @@ export function AuthForm({ mode = "login" }: { mode: "login" | "register" }) {
                 </FormItem>
               )}
             />
+
+            {mode === "login" && (
+              <div className="text-right">
+                <Link
+                  href="/forgot-password"
+                  className="text-sm text-primary hover:underline"
+                >
+                  ¿Olvidó su contraseña?
+                </Link>
+              </div>
+            )}
 
             {mode === "register" && (
               <FormField

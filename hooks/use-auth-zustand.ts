@@ -31,12 +31,14 @@ export function useAuthZustand() {
   )
 
   // Get auth actions
-  const { signIn, signOut, refreshSession, refreshProfile } = useAuthStore(
+  const { signIn, signOut, refreshSession, refreshProfile, resetPasswordForEmail, updatePassword } = useAuthStore(
     useShallow((state) => ({
       signIn: state.signIn,
       signOut: state.signOut,
       refreshSession: state.refreshSession,
       refreshProfile: state.refreshProfile,
+      resetPasswordForEmail: state.resetPasswordForEmail,
+      updatePassword: state.updatePassword,
     }))
   )
 
@@ -126,6 +128,8 @@ export function useAuthZustand() {
     signOut,
     refreshSession,
     refreshProfile,
+    resetPasswordForEmail,
+    updatePassword,
 
     // Permission checkers
     ...permissionCheckers,
