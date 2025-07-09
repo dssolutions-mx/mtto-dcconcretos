@@ -91,45 +91,54 @@ export default function ForgotPasswordPage() {
               </AlertDescription>
             </Alert>
           ) : (
-            <Form {...form}>
-              <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-                <FormField
-                  control={form.control}
-                  name="email"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Email</FormLabel>
-                      <FormControl>
-                        <Input
-                          placeholder="nombre@ejemplo.com"
-                          type="email"
-                          autoCapitalize="none"
-                          autoComplete="email"
-                          autoCorrect="off"
-                          disabled={isLoading}
-                          {...field}
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
+            <>
+              <Alert className="mb-4">
+                <AlertDescription>
+                  <strong>Nota:</strong> Si el enlace en el email no funciona correctamente, 
+                  contacte al administrador para configurar las plantillas de email en Supabase.
+                </AlertDescription>
+              </Alert>
+              
+              <Form {...form}>
+                <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+                  <FormField
+                    control={form.control}
+                    name="email"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Email</FormLabel>
+                        <FormControl>
+                          <Input
+                            placeholder="nombre@ejemplo.com"
+                            type="email"
+                            autoCapitalize="none"
+                            autoComplete="email"
+                            autoCorrect="off"
+                            disabled={isLoading}
+                            {...field}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  {error && (
+                    <Alert variant="destructive">
+                      <AlertDescription>{error}</AlertDescription>
+                    </Alert>
                   )}
-                />
 
-                {error && (
-                  <Alert variant="destructive">
-                    <AlertDescription>{error}</AlertDescription>
-                  </Alert>
-                )}
-
-                <Button
-                  type="submit"
-                  className="w-full"
-                  disabled={isLoading}
-                >
-                  {isLoading ? "Enviando..." : "Enviar enlace de recuperación"}
-                </Button>
-              </form>
-            </Form>
+                  <Button
+                    type="submit"
+                    className="w-full"
+                    disabled={isLoading}
+                  >
+                    {isLoading ? "Enviando..." : "Enviar enlace de recuperación"}
+                  </Button>
+                </form>
+              </Form>
+            </>
           )}
 
           <div className="mt-4 text-center text-sm">

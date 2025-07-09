@@ -510,7 +510,7 @@ export const createAuthSlice: StateCreator<
     
     try {
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `${window.location.origin}/auth/reset-password`,
+        redirectTo: `${window.location.origin}/auth/confirm?type=recovery`,
       })
       
       if (error) throw error
