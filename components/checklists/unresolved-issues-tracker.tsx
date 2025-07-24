@@ -335,7 +335,7 @@ export function UnresolvedIssuesTracker() {
       <ScrollArea className="h-[70vh]">
         <div className="space-y-4">
           {unresolvedIssues.map((issue) => (
-            <Card key={issue.checklistId} className="hover:shadow-md transition-shadow">
+            <Card key={issue.id} className="hover:shadow-md transition-shadow">
               <CardHeader className="pb-3">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">

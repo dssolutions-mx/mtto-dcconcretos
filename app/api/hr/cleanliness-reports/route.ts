@@ -358,6 +358,26 @@ function calculateCleanlinessEvaluation(checklist: any, itemIds: string[]) {
     return null
   }
 
+  // Function to calculate score based on status
+  const getItemScore = (status: string): number => {
+    switch (status) {
+      case 'pass': return 1.0  // 100%
+      case 'flag': return 0.5  // 50% - observación
+      case 'fail': return 0.0  // 0% - falla
+      default: return 1.0
+    }
+  }
+
+  // Function to determine if a section passes (threshold: 75%)
+  const getSectionStatus = (items: any[]): 'pass' | 'fail' => {
+    if (items.length === 0) return 'pass'
+    
+    const totalScore = items.reduce((sum: number, item: any) => sum + getItemScore(item.status), 0)
+    const averageScore = totalScore / items.length
+    
+    return averageScore >= 0.75 ? 'pass' : 'fail'
+  }
+
   // Categorize items (assuming interior/exterior based on description)
   const interiorItems = cleanlinessItems.filter((item: any) => 
     item.description?.toLowerCase().includes('interior') ||
@@ -380,34 +400,40 @@ function calculateCleanlinessEvaluation(checklist: any, itemIds: string[]) {
   let exteriorNotes = ''
 
   if (hasCategories) {
-    // Check interior items
+    // Check interior items using weighted scoring
     if (interiorItems.length > 0) {
-      const failedInterior = interiorItems.filter((item: any) => item.status === 'fail')
-      interiorStatus = failedInterior.length > 0 ? 'fail' : 'pass'
-      interiorNotes = failedInterior.map((item: any) => item.notes).filter(Boolean).join('; ')
+      interiorStatus = getSectionStatus(interiorItems)
+      const issueItems = interiorItems.filter((item: any) => 
+        item.status === 'fail' || item.status === 'flag'
+      )
+      interiorNotes = issueItems.map((item: any) => item.notes).filter(Boolean).join('; ')
     }
 
-    // Check exterior items
+    // Check exterior items using weighted scoring
     if (exteriorItems.length > 0) {
-      const failedExterior = exteriorItems.filter((item: any) => item.status === 'fail')
-      exteriorStatus = failedExterior.length > 0 ? 'fail' : 'pass'
-      exteriorNotes = failedExterior.map((item: any) => item.notes).filter(Boolean).join('; ')
+      exteriorStatus = getSectionStatus(exteriorItems)
+      const issueItems = exteriorItems.filter((item: any) => 
+        item.status === 'fail' || item.status === 'flag'
+      )
+      exteriorNotes = issueItems.map((item: any) => item.notes).filter(Boolean).join('; ')
     }
   } else {
-    // General cleanliness evaluation
-    const failedItems = cleanlinessItems.filter((item: any) => item.status === 'fail')
-    const generalStatus = failedItems.length > 0 ? 'fail' : 'pass'
+    // General cleanliness evaluation using weighted scoring
+    const generalStatus = getSectionStatus(cleanlinessItems)
+    const issueItems = cleanlinessItems.filter((item: any) => 
+      item.status === 'fail' || item.status === 'flag'
+    )
     
     interiorStatus = generalStatus
     exteriorStatus = generalStatus
-    interiorNotes = failedItems.map((item: any) => item.notes).filter(Boolean).join('; ')
+    interiorNotes = issueItems.map((item: any) => item.notes).filter(Boolean).join('; ')
     exteriorNotes = interiorNotes
   }
 
-  // Calculate overall score
+  // Calculate overall score using weighted scoring (pass=100%, flag=50%, fail=0%)
   const totalItems = cleanlinessItems.length
-  const passedItems = cleanlinessItems.filter((item: any) => item.status === 'pass').length
-  const overallScore = Math.round((passedItems / totalItems) * 100)
+  const totalScore = cleanlinessItems.reduce((sum: number, item: any) => sum + getItemScore(item.status), 0)
+  const overallScore = Math.round((totalScore / totalItems) * 100)
 
   return {
     interior_status: interiorStatus,

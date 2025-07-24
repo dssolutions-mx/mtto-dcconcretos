@@ -95,7 +95,6 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
   const [notes, setNotes] = useState('')
   const [technician, setTechnician] = useState('')
   const [signature, setSignature] = useState<string | null>(null)
-  const [showCorrective, setShowCorrective] = useState(false)
   const [correctiveDialogOpen, setCorrectiveDialogOpen] = useState(false)
   const [selectedItem, setSelectedItem] = useState<string | null>(null)
   const [completedChecklistId, setCompletedChecklistId] = useState<string | null>(null)
@@ -129,6 +128,9 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
     if (typeof window !== 'undefined' && !offlineChecklistService) {
       import('@/lib/services/offline-checklist-service').then(module => {
         offlineChecklistService = module.offlineChecklistService
+        console.log('✅ Offline checklist service initialized')
+      }).catch(error => {
+        console.error('❌ Failed to load offline checklist service:', error)
       })
     }
   }, [])
@@ -339,7 +341,6 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
       notes,
       technician,
       signature,
-      showCorrective,
       selectedItem,
       equipmentReadings,
       evidenceData,
@@ -352,44 +353,90 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
     hasUnsavedChangesRef.current = false
     setLastSaved(new Date())
     toast.success("Borrador guardado localmente", { duration: 2000 })
-  }, [checklist, itemStatus, itemNotes, itemPhotos, notes, technician, signature, showCorrective, selectedItem, equipmentReadings, evidenceData, sectionCollapsed, id])
+  }, [checklist, itemStatus, itemNotes, itemPhotos, notes, technician, signature, selectedItem, equipmentReadings, evidenceData, sectionCollapsed, id])
 
-  // Recuperar datos guardados localmente
-  const loadFromLocalStorage = () => {
+  // Enhanced localStorage recovery with better error handling and progress preservation
+  const loadFromLocalStorage = useCallback(() => {
+    if (typeof window === 'undefined') return false
+    
     const saved = localStorage.getItem(`checklist-draft-${id}`)
-    if (saved) {
-      try {
-        const data = JSON.parse(saved)
-        // Solo cargar si los datos tienen menos de 24 horas
-        if (Date.now() - data.timestamp < 24 * 60 * 60 * 1000) {
-          setIsLoadingFromStorage(true)
-          // Batch all state updates to prevent multiple re-renders
-          setTimeout(() => {
-            setItemStatus(data.itemStatus || {})
-            setItemNotes(data.itemNotes || {})
-            setItemPhotos(data.itemPhotos || {})
-            setNotes(data.notes || "")
-            setTechnician(data.technician || "")
-            setSignature(data.signature || null)
-            setShowCorrective(data.showCorrective || false)
-            setSelectedItem(data.selectedItem || null)
-            setEquipmentReadings(data.equipmentReadings || {})
-            setEvidenceData(data.evidenceData || {})
-            setSectionCollapsed(data.sectionCollapsed || {}) // Restore section collapse state
-            // Reset unsaved changes flag after loading
-            setHasUnsavedChanges(false)
-            hasUnsavedChangesRef.current = false
-            setIsLoadingFromStorage(false)
-          }, 0)
-          toast.info("Borrador restaurado desde almacenamiento local")
-          return true
-        }
-      } catch (error) {
-        console.error("Error loading saved data:", error)
+    if (!saved) return false
+    
+    try {
+      const data = JSON.parse(saved)
+      
+      // Enhanced validation - check if data is valid and recent (48 hours instead of 24)
+      const isRecent = Date.now() - data.timestamp < 48 * 60 * 60 * 1000
+      const hasValidData = data.itemStatus || data.notes || data.technician || data.signature
+      
+      if (!isRecent) {
+        console.log('📅 Local draft expired, cleaning up')
+        localStorage.removeItem(`checklist-draft-${id}`)
+        return false
       }
+      
+      if (!hasValidData) {
+        console.log('🔍 No significant data in local draft')
+        return false
+      }
+      
+      console.log('📂 Restoring checklist progress from localStorage:', {
+        itemsCompleted: Object.keys(data.itemStatus || {}).length,
+        hasNotes: !!data.notes,
+        hasTechnician: !!data.technician,
+        hasSignature: !!data.signature,
+        hasEquipmentReadings: !!(data.equipmentReadings?.hours_reading || data.equipmentReadings?.kilometers_reading),
+        evidenceSections: Object.keys(data.evidenceData || {}).length
+      })
+      
+      setIsLoadingFromStorage(true)
+      
+      // Batch all state updates in a single microtask to prevent conflicts
+      Promise.resolve().then(() => {
+        // Restore all checklist progress
+        setItemStatus(data.itemStatus || {})
+        setItemNotes(data.itemNotes || {})
+        setItemPhotos(data.itemPhotos || {})
+        setNotes(data.notes || "")
+        setTechnician(data.technician || "")
+        setSignature(data.signature || null)
+        setSelectedItem(data.selectedItem || null)
+        setEquipmentReadings(data.equipmentReadings || {})
+        setEvidenceData(data.evidenceData || {})
+        setSectionCollapsed(data.sectionCollapsed || {})
+        
+        // Reset loading and unsaved flags
+        setHasUnsavedChanges(false)
+        hasUnsavedChangesRef.current = false
+        setIsLoadingFromStorage(false)
+        
+        // Show restoration success
+        const completedItems = Object.keys(data.itemStatus || {}).length
+        toast.success("📋 Progreso restaurado", {
+          description: `${completedItems} items completados, notas y firma preservados`,
+          duration: 4000
+        })
+      })
+      
+      return true
+    } catch (error) {
+      console.error("❌ Error loading saved checklist data:", error)
+      
+      // Clean up corrupted data
+      try {
+        localStorage.removeItem(`checklist-draft-${id}`)
+      } catch (cleanupError) {
+        console.error("Failed to cleanup corrupted localStorage data:", cleanupError)
+      }
+      
+      toast.error("Error al restaurar el borrador guardado", {
+        description: "Los datos locales estaban corruptos",
+        duration: 3000
+      })
+      
+      return false
     }
-    return false
-  }
+  }, [id])
 
   // Moved after markAsUnsaved declaration
 
@@ -442,13 +489,17 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
     return result
   }
 
+  // Separate useEffect for initial data fetching (only on mount)
   useEffect(() => {
     const fetchChecklistData = async () => {
       try {
         setLoading(true)
         
+        // Determine initial connectivity state
+        const currentlyOnline = navigator.onLine
+        
         // Cache proactivo inmediato si hay conexión
-        if (isOnline && offlineChecklistService) {
+        if (currentlyOnline && offlineChecklistService) {
           const cacheAttempt = await offlineChecklistService.proactivelyCacheChecklist(id)
           if (cacheAttempt) {
             console.log('✅ Cache proactivo exitoso')
@@ -456,7 +507,7 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
         }
         
         // Intentar cargar desde cache si estamos offline
-        if (isOnline === false && offlineChecklistService) {
+        if (!currentlyOnline && offlineChecklistService) {
           const cached = await offlineChecklistService.getCachedChecklistTemplate(id)
           if (cached) {
             // Ordenar secciones e items del cache también
@@ -502,7 +553,7 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
         }
         
         // Si hay conexión, cargar desde servidor
-        if (isOnline) {
+        if (currentlyOnline) {
           const supabase = createBrowserClient(
             process.env.NEXT_PUBLIC_SUPABASE_URL!,
             process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
@@ -584,7 +635,104 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
     }
 
     fetchChecklistData()
-  }, [id, isOnline, router])
+  }, [id, router]) // Removed isOnline to prevent refetching on connectivity changes
+
+  // Separate useEffect to handle connectivity changes without refetching data
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+
+    const handleConnectivityChange = () => {
+      // Only handle connectivity changes, don't refetch data
+      console.log(`🌐 Connectivity changed to: ${navigator.onLine ? 'online' : 'offline'}`)
+      
+      if (navigator.onLine) {
+        console.log('🌐 Connectivity restored - checking for saved progress')
+        
+        // When coming back online, ensure any local changes are preserved
+        if (hasUnsavedChanges && checklist) {
+          console.log('📤 Coming back online with unsaved changes - preserving data')
+          saveToLocalStorage()
+        }
+        
+        // Also try to reload any saved progress that might have been lost
+        setTimeout(() => {
+          const hasProgress = loadFromLocalStorage()
+          if (hasProgress) {
+            console.log('📂 Restored progress after reconnection')
+          }
+        }, 500) // Small delay to ensure state is stable
+        
+        // Show online status
+        toast.success("🌐 Conexión restaurada", {
+          description: "Los datos se sincronizarán automáticamente",
+          duration: 3000
+        })
+      } else {
+        // When going offline, ensure all data is saved locally immediately
+        if (checklist) {
+          console.log('📱 Going offline - saving all current progress')
+          saveToLocalStorage()
+          
+          // Also trigger a second save after a short delay to catch any pending changes
+          setTimeout(() => {
+            saveToLocalStorage()
+            console.log('📱 Second offline save completed')
+          }, 1000)
+        }
+        
+        // Show offline status  
+        toast.warning("📶 Sin conexión", {
+          description: "Los datos se guardarán localmente",
+          duration: 4000
+        })
+      }
+    }
+
+    // Listen for online/offline events
+    window.addEventListener('online', handleConnectivityChange)
+    window.addEventListener('offline', handleConnectivityChange)
+
+    return () => {
+      window.removeEventListener('online', handleConnectivityChange)
+      window.removeEventListener('offline', handleConnectivityChange)
+    }
+  }, [hasUnsavedChanges, checklist, saveToLocalStorage])
+
+  // Enhanced protection against data loss - save before page unload
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      // Save data immediately before page unload
+      if (checklist && (hasUnsavedChanges || Object.keys(itemStatus).length > 0)) {
+        console.log('🚨 Page unloading - emergency save of checklist progress')
+        saveToLocalStorage()
+        
+        // Show warning if there are unsaved changes
+        if (hasUnsavedChanges) {
+          const message = 'Tienes cambios sin guardar en el checklist. ¿Estás seguro de que quieres salir?'
+          event.preventDefault()
+          return message
+        }
+      }
+    }
+
+    const handlePageHide = () => {
+      // Additional save when page becomes hidden (mobile background, etc.)
+      if (checklist && (hasUnsavedChanges || Object.keys(itemStatus).length > 0)) {
+        console.log('📱 Page hidden - saving checklist progress')
+        saveToLocalStorage()
+      }
+    }
+
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    window.addEventListener('pagehide', handlePageHide)
+
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload)
+      window.removeEventListener('pagehide', handlePageHide)
+    }
+  }, [checklist, hasUnsavedChanges, itemStatus, saveToLocalStorage])
 
   // Simple approach: mark as unsaved on any user interaction
   const markAsUnsaved = useCallback(() => {
@@ -934,11 +1082,12 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
       console.log('📨 submitChecklist result:', completedId)
     }
     
-    // Check if submission failed - allow for UUID format completed IDs
+    // Check if submission failed - allow for UUID format completed IDs and offline IDs
     const isSubmissionFailed = !completedId || 
       (completedId !== "success" && 
        completedId !== "offline-success" && 
        !completedId.startsWith('sched_') && 
+       !completedId.startsWith('checklist-offline-') &&
        !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(completedId))
     
     if (isSubmissionFailed) {
@@ -974,54 +1123,19 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
         setCompletedChecklistId(completedId)
       }
       
-      // Show issues and offer to create work orders
-      const handleCreateWorkOrders = () => {
-        if (process.env.NODE_ENV === 'development') {
-          console.log('🔧 User chose to create work orders')
-        }
-        setShowCorrective(false) // Close the alert dialog
-        setTimeout(() => {
-          handleCorrectiveDialogOpen() // Open the corrective work order dialog
-        }, 100) // Small delay to ensure proper state transition
-      }
-
-      const handleSkipWorkOrders = async () => {
-        if (process.env.NODE_ENV === 'development') {
-          console.log('⏭️ User chose to skip work orders, storing unresolved issues...')
-        }
-        
-        try {
-          // Store unresolved issues for later action
-          await storeUnresolvedIssues(completedId, maintenanceItemsWithIssues)
-          
-          if (process.env.NODE_ENV === 'development') {
-            console.log('💾 Unresolved issues stored successfully')
-          }
-        } catch (error) {
-          console.error('❌ Error storing unresolved issues:', error)
-        }
-        
-        setShowCorrective(false)
-        setCompleted(true)
-        
-        toast.info("⏳ Problemas guardados para acción posterior", {
-          description: "Puede crear órdenes de trabajo más tarde desde el historial",
-          duration: 5000
-        })
-        
-        setTimeout(() => {
-          handleNavigateToAssetsPage()
-        }, 2000)
-      }
-
-      // Show the corrective action dialog
-      setShowCorrective(true)
+      // Directly open the corrective work order dialog - no more "save for later" option
+      setCompleted(true)
       
-      // Set up the dialog handlers
-      setCorrectiveDialogHandlers({
-        onCreate: handleCreateWorkOrders,
-        onSkip: handleSkipWorkOrders
+      // Show a brief success message
+      toast.success("✅ Checklist completado exitosamente", {
+        description: "Configurando órdenes de trabajo correctivas...",
+        duration: 3000
       })
+      
+      // Small delay to show the completion state, then open the dialog
+      setTimeout(() => {
+        handleCorrectiveDialogOpen()
+      }, 1000)
       
       return
     }
@@ -1032,9 +1146,10 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
     }
     setCompleted(true)
     
+    // Always redirect after a brief delay to show completion state
     setTimeout(() => {
       handleNavigateToAssetsPage()
-    }, 2000)
+    }, 2500) // Slightly longer delay to read the completion message
     
     } catch (error) {
       console.error('❌ Error in handleSubmit:', error)
@@ -1045,74 +1160,9 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
     }
   }
 
-  // Store unresolved issues for later action using offline service
-  const storeUnresolvedIssues = async (completedChecklistId: string, issues: any[]) => {
-    try {
-      const issuesData = issues.map(([itemId]) => {
-        const sectionAndItem = findSectionAndItemById(itemId)
-        return {
-          id: itemId,
-          description: sectionAndItem?.item?.description || '',
-          notes: itemNotes[itemId] || '',
-          photo: itemPhotos[itemId] || null,
-          status: itemStatus[itemId],
-          sectionTitle: sectionAndItem?.section?.title,
-          sectionType: sectionAndItem?.section?.section_type
-        }
-      })
 
-      // Use offline service for persistent storage
-      if (offlineChecklistService) {
-        const tempChecklistId = completedChecklistId.startsWith('checklist-') ? completedChecklistId : undefined
-        await offlineChecklistService.saveUnresolvedIssues(
-          completedChecklistId,
-          issuesData,
-          {
-            id: checklist.assetId,
-            name: checklist.asset
-          },
-          tempChecklistId
-        )
-        
-        console.log('💾 Unresolved issues stored using offline service:', {
-          checklistId: completedChecklistId,
-          tempChecklistId,
-          issueCount: issuesData.length
-        })
-      } else {
-        // Fallback to localStorage if offline service not available
-        const unresolvedKey = `unresolved-issues-${completedChecklistId}`
-        localStorage.setItem(unresolvedKey, JSON.stringify({
-          checklistId: completedChecklistId,
-          assetId: checklist.assetId,
-          assetName: checklist.asset,
-          issues: issuesData,
-          timestamp: Date.now()
-        }))
 
-        // Also add to a general index for tracking
-        const allUnresolvedKey = 'all-unresolved-issues'
-        const existing = JSON.parse(localStorage.getItem(allUnresolvedKey) || '[]')
-        existing.push({
-          checklistId: completedChecklistId,
-          assetId: checklist.assetId,
-          assetName: checklist.asset,
-          issueCount: issuesData.length,
-          timestamp: Date.now()
-        })
-        localStorage.setItem(allUnresolvedKey, JSON.stringify(existing))
-      }
 
-    } catch (error) {
-      console.error('Error storing unresolved issues:', error)
-    }
-  }
-
-  // State for corrective dialog handlers
-  const [correctiveDialogHandlers, setCorrectiveDialogHandlers] = useState<{
-    onCreate?: () => void
-    onSkip?: () => void
-  }>({})
 
   const submitChecklist = async (): Promise<string | null> => {
     setSubmitting(true)
@@ -1210,22 +1260,85 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
         }
       } else {
         // Guardar offline si no hay conexión
-        if (offlineChecklistService) {
-          const offlineId = `checklist-${id}-${Date.now()}`
-          await offlineChecklistService.saveOfflineChecklist(offlineId, submissionData)
+        try {
+          // Ensure offline service is loaded
+          if (!offlineChecklistService) {
+            console.log('🔄 Loading offline service dynamically...')
+            const module = await import('@/lib/services/offline-checklist-service')
+            offlineChecklistService = module.offlineChecklistService
+            console.log('✅ Offline service loaded successfully')
+          }
           
-          // Limpiar datos locales
-          localStorage.removeItem(`checklist-draft-${id}`)
+          if (offlineChecklistService) {
+            const offlineId = `checklist-${id}-${Date.now()}`
+            
+            // Generate a proper completed checklist ID for offline use
+            const completedChecklistId = `checklist-offline-${id}-${Date.now()}`
+            
+            // Ensure we include the schedule_id in the submission data for offline storage
+            const offlineSubmissionData = {
+              ...submissionData,
+              schedule_id: id, // Add the schedule ID explicitly
+              scheduleId: id,   // Also add as alias for compatibility
+              completed_checklist_id: completedChecklistId // Store the generated ID
+            }
+            
+            console.log('💾 Saving offline checklist with data:', {
+              offlineId,
+              scheduleId: id,
+              completedChecklistId,
+              technicianName: offlineSubmissionData.technician,
+              itemsCount: offlineSubmissionData.completed_items?.length || 0
+            })
+            
+            await offlineChecklistService.saveOfflineChecklist(offlineId, offlineSubmissionData)
+            
+            // Limpiar datos locales
+            localStorage.removeItem(`checklist-draft-${id}`)
+            
+            toast.success("📱 Checklist guardado sin conexión", {
+              description: "Se sincronizará automáticamente cuando vuelva la conexión",
+              duration: 4000
+            })
+            
+            // Return the generated completed checklist ID
+            return completedChecklistId
+          } else {
+            throw new Error('No se pudo cargar el servicio offline')
+          }
+        } catch (offlineError) {
+          console.error('❌ Error saving offline checklist:', offlineError)
           
-          toast.success("📱 Checklist guardado sin conexión", {
-            description: "Se sincronizará automáticamente cuando vuelva la conexión",
-            duration: 4000
-          })
+          // Fallback: save to localStorage directly
+          console.log('🔄 Fallback: saving to localStorage directly')
+          const fallbackId = `checklist-offline-fallback-${id}-${Date.now()}`
+          const fallbackData = {
+            ...submissionData,
+            schedule_id: id,
+            scheduleId: id,
+            completed_checklist_id: fallbackId,
+            timestamp: Date.now(),
+            fallback: true
+          }
           
-          // Return success indicator for offline mode
-          return "offline-success"
-        } else {
-          throw new Error('Servicio offline no disponible')
+          try {
+            localStorage.setItem(`offline-checklist-${fallbackId}`, JSON.stringify(fallbackData))
+            localStorage.removeItem(`checklist-draft-${id}`)
+            
+            toast.success("📱 Checklist guardado localmente", {
+              description: "Se enviará cuando vuelva la conexión",
+              duration: 4000
+            })
+            
+            return fallbackId
+          } catch (storageError) {
+            console.error('❌ Failed to save to localStorage:', storageError)
+            toast.error("Error al guardar offline", {
+              description: "No se pudo guardar el checklist",
+              duration: 5000
+            })
+            throw new Error('No se pudo guardar offline')
+          }
         }
       }
     } catch (error) {
@@ -1241,30 +1354,80 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
       })
       
       // Si falla, guardar offline como respaldo
-      if (isOnline && offlineChecklistService) {
+      if (isOnline) {
         try {
-          const offlineId = `checklist-${id}-${Date.now()}`
-          const submissionData = {
-            scheduleId: id,
-            technician: technician || 'Técnico',
-            notes,
-            signature,
-            completed_items: Object.keys(itemStatus).map(itemId => ({
-              item_id: itemId,
-              status: itemStatus[itemId],
-              notes: itemNotes[itemId] || null,
-              photo_url: itemPhotos[itemId] || null
-            })),
-            hours_reading: equipmentReadings.hours_reading || null,
-            kilometers_reading: equipmentReadings.kilometers_reading || null,
-            evidence_data: evidenceData
+          // Ensure offline service is loaded for fallback
+          if (!offlineChecklistService) {
+            const module = await import('@/lib/services/offline-checklist-service')
+            offlineChecklistService = module.offlineChecklistService
           }
           
-          await offlineChecklistService.saveOfflineChecklist(offlineId, submissionData)
-          toast.success("Checklist guardado localmente como respaldo", {
-            description: "Se sincronizará cuando vuelva la conexión",
-            duration: 5000
-          })
+          if (offlineChecklistService) {
+            const offlineId = `checklist-${id}-${Date.now()}`
+            
+            // Generate a proper completed checklist ID for fallback offline save
+            const completedChecklistId = `checklist-offline-fallback-${id}-${Date.now()}`
+            
+            const fallbackSubmissionData = {
+              schedule_id: id,     // Use schedule_id for validation
+              scheduleId: id,      // Keep alias for compatibility
+              completed_checklist_id: completedChecklistId, // Store the generated ID
+              technician: technician || 'Técnico',
+              notes,
+              signature,
+              completed_items: Object.keys(itemStatus).map(itemId => ({
+                item_id: itemId,
+                status: itemStatus[itemId],
+                notes: itemNotes[itemId] || null,
+                photo_url: itemPhotos[itemId] || null
+              })),
+              hours_reading: equipmentReadings.hours_reading || null,
+              kilometers_reading: equipmentReadings.kilometers_reading || null,
+              evidence_data: evidenceData
+            }
+            
+            console.log('💾 Saving backup offline checklist with data:', {
+              offlineId,
+              scheduleId: id,
+              completedChecklistId,
+              technicianName: fallbackSubmissionData.technician,
+              itemsCount: fallbackSubmissionData.completed_items?.length || 0
+            })
+            
+            await offlineChecklistService.saveOfflineChecklist(offlineId, fallbackSubmissionData)
+            toast.success("Checklist guardado localmente como respaldo", {
+              description: "Se sincronizará cuando vuelva la conexión",
+              duration: 5000
+            })
+          } else {
+            // Direct localStorage fallback
+            const fallbackId = `checklist-offline-fallback-${id}-${Date.now()}`
+            const fallbackData = {
+              schedule_id: id,
+              scheduleId: id,
+              completed_checklist_id: fallbackId,
+              technician: technician || 'Técnico',
+              notes,
+              signature,
+              completed_items: Object.keys(itemStatus).map(itemId => ({
+                item_id: itemId,
+                status: itemStatus[itemId],
+                notes: itemNotes[itemId] || null,
+                photo_url: itemPhotos[itemId] || null
+              })),
+              hours_reading: equipmentReadings.hours_reading || null,
+              kilometers_reading: equipmentReadings.kilometers_reading || null,
+              evidence_data: evidenceData,
+              timestamp: Date.now(),
+              fallback: true
+            }
+            
+            localStorage.setItem(`offline-checklist-${fallbackId}`, JSON.stringify(fallbackData))
+            toast.success("Checklist guardado localmente como respaldo", {
+              description: "Se sincronizará cuando vuelva la conexión",
+              duration: 5000
+            })
+          }
         } catch (offlineError) {
           console.error('Error saving offline backup:', offlineError)
           toast.error("No se pudo guardar respaldo local")
@@ -1319,8 +1482,7 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
     if (process.env.NODE_ENV === 'development') {
       setTimeout(() => {
         console.log('🔧 Dialog state after opening attempt:', {
-          correctiveDialogOpen: true,
-          showCorrective: false
+          correctiveDialogOpen: true
         })
       }, 100)
     }
@@ -1348,14 +1510,51 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
       }
     }
     
-    // Navigate to the specific work order that was created
-    router.push(`/ordenes/${workOrderId}`)
+    // Enhanced navigation with offline support
+    const connectivityState = navigator.onLine ? 'online' : 'offline'
+    console.log(`🚀 Navigating to work order (${connectivityState})`)
+    
+    try {
+      // Try to navigate to work order - work order pages should handle offline scenarios
+      router.push(`/ordenes/${workOrderId}`)
+    } catch (error) {
+      console.error('Navigation error:', error)
+      
+      // Fallback: Navigate to assets page where user can continue workflow
+      console.log('📱 Fallback: redirecting to assets page')
+      try {
+        router.push('/checklists/assets')
+        toast.success("✅ Checklist y orden de trabajo guardados", {
+          description: "Redirigiendo a la página de activos para continuar",
+          duration: 4000
+        })
+      } catch (fallbackError) {
+        console.error('Fallback navigation failed:', fallbackError)
+        toast.error("Error al navegar, pero la orden de trabajo fue creada exitosamente")
+      }
+    }
   }
 
-  // New function to handle when user cancels or closes dialogs without creating work orders
+  // Enhanced function to handle navigation with offline support
   const handleNavigateToAssetsPage = () => {
-    // Navigate to assets page which works offline and shows asset status
-    router.push('/checklists/assets')
+    // Always navigate to assets page - it handles offline scenarios properly
+    try {
+      const connectivityState = navigator.onLine ? 'online' : 'offline'
+      console.log(`🚀 Navigating to assets page (${connectivityState})`)
+      
+      // The assets page has offline functionality built-in with cached data
+      router.push('/checklists/assets')
+    } catch (error) {
+      console.error('Navigation error:', error)
+      
+      // Fallback: use window.location if router fails
+      try {
+        window.location.href = '/checklists/assets'
+      } catch (locationError) {
+        console.error('Window location fallback failed:', locationError)
+        toast.error("Error al navegar, pero el checklist fue guardado exitosamente")
+      }
+    }
   }
   
   const findSectionAndItemById = (itemId: string) => {
@@ -2065,7 +2264,6 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
             })}
           </div>
         </CardContent>
-
       </Card>
 
       {/* Componente de lecturas de equipo */}
@@ -2169,35 +2367,7 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
         </div>
       </div>
 
-      <AlertDialog open={showCorrective} onOpenChange={setShowCorrective}>
-        <AlertDialogContent className="w-[95vw] sm:w-[80vw] max-w-md">
-          <AlertDialogHeader>
-            <AlertDialogTitle className="flex items-center gap-2">
-              <AlertTriangle className="h-5 w-5 text-amber-500" />
-              Problemas Detectados
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              Se han detectado {Object.entries(itemStatus).filter(([_, status]) => status === "flag" || status === "fail").length} problema(s) en este checklist.
-              <br /><br />
-              ¿Desea crear órdenes de trabajo correctivas ahora o guardar los problemas para acción posterior?
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter className="flex-col gap-2 sm:flex-row">
-            <AlertDialogCancel 
-              onClick={correctiveDialogHandlers.onSkip}
-              className="w-full sm:w-auto"
-            >
-              Guardar para después
-            </AlertDialogCancel>
-            <AlertDialogAction 
-              onClick={correctiveDialogHandlers.onCreate}
-              className="w-full sm:w-auto bg-blue-600 hover:bg-blue-700"
-            >
-              Crear órdenes ahora
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+
 
       {/* Corrective Work Order Dialog */}
       <CorrectiveWorkOrderDialog
@@ -2255,14 +2425,37 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
         </Alert>
       )}
 
-      {/* Mobile-friendly completion overlay */}
+      {/* Enhanced completion overlay with offline support */}
       {completed && (
         <Alert className="border-green-200 bg-green-50">
-          <Check className="h-4 w-4 text-green-600" />
-          <AlertTitle className="text-green-800">¡Checklist Completado!</AlertTitle>
-          <AlertDescription className="text-green-700">
-            El checklist se ha guardado exitosamente. Redirigiendo a la lista de activos...
-          </AlertDescription>
+          <div className="flex items-start gap-3">
+            <Check className="h-4 w-4 text-green-600 mt-0.5" />
+            <div className="flex-1">
+              <AlertTitle className="text-green-800">¡Checklist Completado!</AlertTitle>
+              <AlertDescription className="text-green-700 space-y-2">
+                {isOnline ? (
+                  <>
+                    <p>El checklist se ha guardado exitosamente en el servidor.</p>
+                    <p className="text-sm text-green-600 flex items-center gap-2">
+                      <Clock className="h-3 w-3 animate-pulse" />
+                      Redirigiendo a la página de activos para continuar con otros checklists...
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p>El checklist se ha guardado localmente y está listo para sincronización.</p>
+                    <p className="text-sm text-green-600">
+                      Los datos se enviarán automáticamente cuando vuelva la conexión.
+                    </p>
+                    <p className="text-sm text-green-600 flex items-center gap-2">
+                      <Clock className="h-3 w-3 animate-pulse" />
+                      Redirigiendo a la página de activos para continuar offline...
+                    </p>
+                  </>
+                )}
+              </AlertDescription>
+            </div>
+          </div>
         </Alert>
       )}
 

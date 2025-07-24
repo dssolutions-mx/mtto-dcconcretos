@@ -170,54 +170,162 @@ export async function POST(request: NextRequest) {
               
               console.log(`🔧 Priority comparison: Current=${currentPriority}, New=${newIssuePriority}, ShouldUpdate=${shouldUpdatePriority}`)
 
-              // Prepare updated history
-              const updatedHistory = [
-                ...(currentWorkOrder.issue_history || []),
-                {
-                  date: new Date().toISOString(),
-                  checklist: (checklistData.checklists as any)?.name || 'N/A',
-                  description: issue.description,
-                  notes: issue.notes || '',
-                  status: issue.status,
-                  priority: newIssuePriority
+              // Prepare updated history with SMART deduplication check
+              const currentHistory = currentWorkOrder.issue_history || []
+              const currentTime = new Date()
+              const checklistName = (checklistData.checklists as any)?.name || 'N/A'
+              
+              // SMART duplicate detection: only prevent if EXACT same entry within last 30 minutes
+              const historyEntryExists = currentHistory.some((entry: any) => {
+                if (!entry.date) return false
+                
+                const entryTime = new Date(entry.date)
+                const timeDiffMinutes = Math.abs(currentTime.getTime() - entryTime.getTime()) / (1000 * 60)
+                
+                // Only consider duplicate if within 30 minutes AND exact same content
+                return timeDiffMinutes < 30 &&
+                       entry.checklist === checklistName &&
+                       entry.notes === (issue.notes || '') &&
+                       entry.description === issue.description &&
+                       entry.status === issue.status
+              })
+              
+              let updatedHistory = currentHistory
+              
+              if (!historyEntryExists) {
+                updatedHistory = [
+                  ...currentHistory,
+                  {
+                    date: currentTime.toISOString(),
+                    checklist: checklistName,
+                    description: issue.description,
+                    notes: issue.notes || '',
+                    status: issue.status,
+                    priority: newIssuePriority
+                  }
+                ]
+                console.log('✅ Adding new entry to issue history')
+              } else {
+                console.log('⚠️ Duplicate history entry detected - skipping history update')
+              }
+
+              // Prepare updated description with SMART deduplication check
+              const todayString = new Date().toLocaleDateString()
+              const now = new Date()
+              const timeSignature = `${now.getHours()}:${now.getMinutes().toString().padStart(2, '0')}`
+              const occurrenceSignature = `NUEVA OCURRENCIA - ${todayString}`
+              const checklistSignature = `Checklist: ${(checklistData.checklists as any)?.name || 'N/A'}`
+              
+              // SMART duplicate detection: only prevent if EXACT same checklist, notes, and within 30 minutes
+              const recentOccurrences = currentWorkOrder.description.split('NUEVA OCURRENCIA').slice(1)
+              let isDuplicateWithinWindow = false
+              
+              if (recentOccurrences.length > 0) {
+                for (const occurrence of recentOccurrences) {
+                  // Check if this occurrence has the same checklist and notes
+                  const hasSameChecklist = occurrence.includes(checklistSignature)
+                  const hasSameNotes = issue.notes ? occurrence.includes(issue.notes) : true
+                  
+                  // Extract time from occurrence (if available)
+                  const timeMatch = occurrence.match(/(\d{1,2}):(\d{2})/)
+                  if (timeMatch && hasSameChecklist && hasSameNotes) {
+                    const occurrenceHour = parseInt(timeMatch[1])
+                    const occurrenceMinute = parseInt(timeMatch[2])
+                    const occurrenceTime = new Date()
+                    occurrenceTime.setHours(occurrenceHour, occurrenceMinute, 0, 0)
+                    
+                    const timeDiffMinutes = Math.abs(now.getTime() - occurrenceTime.getTime()) / (1000 * 60)
+                    
+                    // Only consider duplicate if within 30 minutes
+                    if (timeDiffMinutes < 30) {
+                      isDuplicateWithinWindow = true
+                      console.log(`⚠️ Duplicate occurrence detected within 30-minute window (${Math.round(timeDiffMinutes)} min ago)`)
+                      break
+                    }
+                  }
                 }
-              ]
+              }
+              
+              let updatedDescription = currentWorkOrder.description
+              
+              if (!isDuplicateWithinWindow) {
+                const newOccurrence = `
 
-              // Prepare updated description
-              const newOccurrence = `
-
-NUEVA OCURRENCIA - ${new Date().toLocaleDateString()}:
+NUEVA OCURRENCIA - ${todayString} ${timeSignature}:
 • Checklist: ${(checklistData.checklists as any)?.name || 'N/A'}
 • Estado: ${issue.status === 'fail' ? 'FALLA DETECTADA' : 'REQUIERE REVISIÓN'}
 • Prioridad: ${newIssuePriority}
 ${issue.notes ? `• Observaciones: ${issue.notes}` : ''}
 ${issue.photo_url ? '• Evidencia fotográfica disponible' : ''}`
 
-              const updatedDescription = currentWorkOrder.description + newOccurrence
-
-              // Update work order with consolidation info and potentially new priority
-              const updateData: any = {
-                description: updatedDescription,
-                issue_history: updatedHistory,
-                escalation_count: (currentWorkOrder.escalation_count || 0) + 1,
-                related_issues_count: (currentWorkOrder.related_issues_count || 1) + 1,
-                updated_at: new Date().toISOString()
+                updatedDescription = currentWorkOrder.description + newOccurrence
+                console.log(`✅ Adding new occurrence to work order description (${timeSignature})`)
+              } else {
+                console.log('⚠️ Recent duplicate occurrence detected - skipping description update')
               }
 
-              // Update priority if new issue has higher priority
-              if (shouldUpdatePriority) {
-                updateData.priority = newIssuePriority
-                console.log(`🔥 Escalating work order priority from ${currentPriority} to ${newIssuePriority}`)
-              }
+              // Only update work order if there are actual changes
+              const hasDescriptionChange = !isDuplicateWithinWindow
+              const hasHistoryChange = !historyEntryExists
+              const needsUpdate = hasDescriptionChange || hasHistoryChange || shouldUpdatePriority
+              
+              if (needsUpdate) {
+                // Update work order with consolidation info and potentially new priority
+                const updateData: any = {
+                  description: updatedDescription,
+                  issue_history: updatedHistory,
+                  escalation_count: (currentWorkOrder.escalation_count || 0) + (hasDescriptionChange ? 1 : 0),
+                  related_issues_count: (currentWorkOrder.related_issues_count || 1) + (hasDescriptionChange ? 1 : 0),
+                  updated_at: new Date().toISOString()
+                }
 
-              // Update the work order
-              const { error: updateError } = await supabase
-                .from('work_orders')
-                .update(updateData)
-                .eq('id', existingIssue.work_order_id)
+                // Update priority if new issue has higher priority
+                if (shouldUpdatePriority) {
+                  updateData.priority = newIssuePriority
+                  console.log(`🔥 Escalating work order priority from ${currentPriority} to ${newIssuePriority}`)
+                }
 
-              if (!updateError) {
-                // Link the new issue to the existing work order
+                console.log(`🔄 Updating work order with changes: description=${hasDescriptionChange}, history=${hasHistoryChange}, priority=${shouldUpdatePriority}`)
+
+                // Update the work order
+                const { error: updateError } = await supabase
+                  .from('work_orders')
+                  .update(updateData)
+                  .eq('id', existingIssue.work_order_id)
+              
+                if (!updateError) {
+                  // Link the new issue to the existing work order
+                  await supabase
+                    .from('checklist_issues')
+                    .update({ 
+                      work_order_id: existingIssue.work_order_id,
+                      parent_issue_id: existingIssue.issue_id
+                    })
+                    .eq('id', savedIssue.id)
+
+                  console.log('🎉 Successfully consolidated issue with updates')
+                  consolidatedIssues.push({
+                    new_issue_id: savedIssue.id,
+                    consolidated_into: existingIssue.work_order_id,
+                    recurrence_count: existingIssue.recurrence_count + 1,
+                    escalated: (existingIssue.recurrence_count + 1) >= 2,
+                    priority_updated: shouldUpdatePriority,
+                    old_priority: currentPriority,
+                    new_priority: shouldUpdatePriority ? newIssuePriority : currentPriority,
+                    changes_made: {
+                      description_updated: hasDescriptionChange,
+                      history_updated: hasHistoryChange,
+                      priority_updated: shouldUpdatePriority
+                    }
+                  })
+                  workOrderCreated = true
+                  consolidatedInto = existingIssue.work_order_id
+                } else {
+                  console.error('❌ Error updating work order during consolidation:', updateError)
+                }
+              } else {
+                // No changes needed, just link the issue
+                console.log('ℹ️ No changes needed - issue already consolidated (duplicate)')
                 await supabase
                   .from('checklist_issues')
                   .update({ 
@@ -226,20 +334,23 @@ ${issue.photo_url ? '• Evidencia fotográfica disponible' : ''}`
                   })
                   .eq('id', savedIssue.id)
 
-                console.log('🎉 Successfully consolidated issue')
                 consolidatedIssues.push({
                   new_issue_id: savedIssue.id,
                   consolidated_into: existingIssue.work_order_id,
-                  recurrence_count: existingIssue.recurrence_count + 1,
-                  escalated: (existingIssue.recurrence_count + 1) >= 2,
-                  priority_updated: shouldUpdatePriority,
+                  recurrence_count: existingIssue.recurrence_count,
+                  escalated: false,
+                  priority_updated: false,
                   old_priority: currentPriority,
-                  new_priority: shouldUpdatePriority ? newIssuePriority : currentPriority
+                  new_priority: currentPriority,
+                  changes_made: {
+                    description_updated: false,
+                    history_updated: false,
+                    priority_updated: false
+                  },
+                  duplicate_detected: true
                 })
                 workOrderCreated = true
                 consolidatedInto = existingIssue.work_order_id
-              } else {
-                console.error('❌ Error updating work order during consolidation:', updateError)
               }
             } else {
               console.log('⚠️ User chose not to consolidate, will create new work order')

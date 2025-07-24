@@ -14,9 +14,12 @@ import {
   CheckCircle2, 
   AlertCircle,
   Upload,
-  Clock
+  Clock,
+  Terminal
 } from "lucide-react"
 import { toast } from "sonner"
+import Link from "next/link"
+import { CorruptedDataCleanup } from "./corrupted-data-cleanup"
 
 interface PhotoStats {
   total: number
@@ -248,18 +251,39 @@ export function EnhancedOfflineStatus({
             )}
 
             {/* Actions */}
-            {photoStats.failed > 0 && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleRetryUploads}
-                className="w-full"
-                disabled={!isOnline}
-              >
-                <RefreshCw className="h-3 w-3 mr-1" />
-                Reintentar subidas fallidas
-              </Button>
-            )}
+            <div className="space-y-2">
+              {photoStats.failed > 0 && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleRetryUploads}
+                  className="w-full"
+                  disabled={!isOnline}
+                >
+                  <RefreshCw className="h-3 w-3 mr-1" />
+                  Reintentar subidas fallidas
+                </Button>
+              )}
+              
+              {/* Corrupted data cleanup button - show when there are sync issues */}
+              {(photoStats.failed > 0 || photoStats.pending > 5) && (
+                <CorruptedDataCleanup 
+                  variant="outline" 
+                  size="sm" 
+                  showText={true}
+                />
+              )}
+              
+              {/* Debug Console Link - only in development */}
+              {process.env.NODE_ENV === 'development' && (
+                <Link href="/debug/offline">
+                  <Button variant="ghost" size="sm" className="w-full justify-start">
+                    <Terminal className="h-3 w-3 mr-1" />
+                    Consola de Debug
+                  </Button>
+                </Link>
+              )}
+            </div>
           </CardContent>
         </Card>
       )}

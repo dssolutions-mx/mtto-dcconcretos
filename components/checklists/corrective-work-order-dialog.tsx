@@ -200,6 +200,13 @@ export function CorrectiveWorkOrderDialog({
     setLoading(true)
     
     try {
+      // Validate that we have a proper completed checklist ID
+      if (!checklist.id || checklist.id === 'undefined' || checklist.id.length < 10) {
+        toast.error("Error: ID de checklist inválido. No se puede crear la orden de trabajo.")
+        setLoading(false)
+        return
+      }
+
       // Prepare items with their priorities
       const itemsWithPriorities = itemsWithIssues.map(item => ({
         ...item,
@@ -225,13 +232,35 @@ export function CorrectiveWorkOrderDialog({
       }
 
       if (!isOnline) {
-        // Save offline
+        // Save offline using both localStorage and IndexedDB for redundancy
         const offlineId = `work-orders-${checklist.id}-${Date.now()}`
+        
+        // Save to localStorage (existing method)
         localStorage.setItem(`offline-work-orders-${checklist.id}`, JSON.stringify(submissionData))
+        
+        // Also save to IndexedDB using offline service
+        try {
+          // Import offline service dynamically
+          const { offlineChecklistService } = await import('@/lib/services/offline-checklist-service')
+          
+          // Save using offline service with proper structure
+          await offlineChecklistService.saveOfflineWorkOrder({
+            checklistId: checklist.id,
+            issues: itemsWithPriorities,
+            priority: globalPriority,
+            description: description || generateDefaultDescription(),
+            asset_id: checklist.assetId
+          })
+          
+          console.log('✅ Offline work order saved to both localStorage and IndexedDB')
+        } catch (error) {
+          console.error('❌ Error saving to IndexedDB, using localStorage only:', error)
+        }
+        
         setOfflineWorkOrderData(submissionData)
         
         toast.success("Órdenes de trabajo guardadas offline", {
-          description: "Se procesarán automáticamente cuando vuelva la conexión"
+          description: "Se procesarán con deduplicación inteligente cuando vuelva la conexión"
         })
         
         onOpenChange(false)
@@ -605,6 +634,12 @@ export function CorrectiveWorkOrderDialog({
           <DialogDescription className="text-sm">
             Configure las órdenes de trabajo correctivas para los problemas detectados
           </DialogDescription>
+          {!isOnline && (
+            <div className="mt-2 p-2 bg-orange-50 border border-orange-200 rounded text-orange-800 text-xs">
+              <WifiOff className="h-3 w-3 inline mr-1" />
+              Sin conexión: Las órdenes se guardarán localmente y se procesarán con deduplicación inteligente cuando se restaure la conexión
+            </div>
+          )}
         </DialogHeader>
         
         {showResults && processingResults ? (

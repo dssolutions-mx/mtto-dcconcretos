@@ -75,6 +75,28 @@ interface EvaluationDetails {
   }>
 }
 
+// Helper function to get status badge
+function getStatusBadge(status: 'pass' | 'fail', notes?: string) {
+  const hasObservations = notes && notes.trim().length > 0
+  
+  if (status === 'pass') {
+    return (
+      <Badge variant="default" className="bg-green-100 text-green-800">
+        <CheckCircle className="h-3 w-3 mr-1" />
+        Aprobado
+      </Badge>
+    )
+  } else {
+    // For failed status, show as observation with yellow color
+    return (
+      <Badge variant="secondary" className="bg-yellow-100 text-yellow-800 border-yellow-200">
+        <AlertTriangle className="h-3 w-3 mr-1" />
+        Observación
+      </Badge>
+    )
+  }
+}
+
 function EvaluationViewDialog({ reportId }: { reportId: string }) {
   const [evaluation, setEvaluation] = useState<EvaluationDetails | null>(null)
   const [loading, setLoading] = useState(false)
@@ -157,7 +179,31 @@ function EvaluationViewDialog({ reportId }: { reportId: string }) {
 
             {/* Secciones de Limpieza */}
             <div className="space-y-4">
-              <h3 className="text-lg font-semibold">Evaluación de Limpieza</h3>
+              <div className="flex justify-between items-center">
+                <h3 className="text-lg font-semibold">Evaluación de Limpieza</h3>
+                <div className="flex space-x-3 text-xs">
+                  <div className="flex items-center">
+                    <CheckCircle className="h-3 w-3 mr-1 text-green-600" />
+                    <span>Aprobado (100%)</span>
+                  </div>
+                  <div className="flex items-center">
+                    <AlertTriangle className="h-3 w-3 mr-1 text-yellow-600" />
+                    <span>Observación (50%)</span>
+                  </div>
+                  <div className="flex items-center">
+                    <XCircle className="h-3 w-3 mr-1 text-red-600" />
+                    <span>Falló (0%)</span>
+                  </div>
+                </div>
+              </div>
+              
+              <Alert className="bg-blue-50 border-blue-200">
+                <AlertTriangle className="h-4 w-4" />
+                <AlertDescription className="text-sm">
+                  <strong>Sistema de Puntuación:</strong> Aprobado = 100%, Observación = 50%, Falló = 0%. 
+                  Una sección se aprueba si el promedio es ≥75%. La puntuación general refleja el promedio ponderado de todos los elementos.
+                </AlertDescription>
+              </Alert>
               {evaluation.cleanliness_sections.map((section, sectionIndex) => (
                 <Card key={sectionIndex}>
                   <CardHeader className="pb-3">
@@ -470,50 +516,27 @@ export default function CleanlinessReportsView() {
                             </p>
                           </div>
                           <div>
-                            <p className="font-semibold">Puntuación</p>
+                            <p className="font-semibold">Puntuación General</p>
                             <p className="text-sm text-gray-600">{report.overall_score}%</p>
+                            <p className="text-xs text-gray-500">
+                              {report.overall_score >= 75 ? 'Calificación aprobatoria' : 'Calificación reprobatoria'}
+                            </p>
                           </div>
                         </div>
                         
                         <div className="flex items-center space-x-4">
                           <div>
                             <span className="text-sm font-medium">Interior:</span>
-                            <Badge 
-                              variant={report.interior_status === 'pass' ? 'default' : 'destructive'}
-                              className={report.interior_status === 'pass' ? 'bg-green-100 text-green-800 ml-2' : 'ml-2'}
-                            >
-                              {report.interior_status === 'pass' ? (
-                                <>
-                                  <CheckCircle className="h-3 w-3 mr-1" />
-                                  Aprobado
-                                </>
-                              ) : (
-                                <>
-                                  <XCircle className="h-3 w-3 mr-1" />
-                                  Falló
-                                </>
-                              )}
-                            </Badge>
+                            <span className="ml-2">
+                              {getStatusBadge(report.interior_status, report.interior_notes)}
+                            </span>
                           </div>
                           
                           <div>
                             <span className="text-sm font-medium">Exterior:</span>
-                            <Badge 
-                              variant={report.exterior_status === 'pass' ? 'default' : 'destructive'}
-                              className={report.exterior_status === 'pass' ? 'bg-green-100 text-green-800 ml-2' : 'ml-2'}
-                            >
-                              {report.exterior_status === 'pass' ? (
-                                <>
-                                  <CheckCircle className="h-3 w-3 mr-1" />
-                                  Aprobado
-                                </>
-                              ) : (
-                                <>
-                                  <XCircle className="h-3 w-3 mr-1" />
-                                  Falló
-                                </>
-                              )}
-                            </Badge>
+                            <span className="ml-2">
+                              {getStatusBadge(report.exterior_status, report.exterior_notes)}
+                            </span>
                           </div>
                         </div>
                       </div>

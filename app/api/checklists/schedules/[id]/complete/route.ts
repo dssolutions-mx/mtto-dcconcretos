@@ -1,13 +1,40 @@
 import { createClient } from '@/lib/supabase-server'
-import { NextResponse } from 'next/server'
+import { createServerClient } from '@supabase/ssr'
+import { NextRequest, NextResponse } from 'next/server'
 
 export async function POST(
-  request: Request,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const { id } = await params
-    const supabase = await createClient()
+    
+    // Check for Authorization header first (for offline service requests)
+    const authHeader = request.headers.get('authorization')
+    let supabase
+    
+    if (authHeader?.startsWith('Bearer ')) {
+      // Create client with the provided token for Zustand auth
+      const token = authHeader.replace('Bearer ', '')
+      supabase = createServerClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+        {
+          global: {
+            headers: {
+              Authorization: `Bearer ${token}`
+            }
+          },
+          cookies: {
+            getAll: () => [],
+            setAll: () => {}
+          }
+        }
+      )
+    } else {
+      // Use normal cookie-based auth
+      supabase = await createClient()
+    }
     
     const {
       completed_items,
@@ -101,6 +128,52 @@ export async function POST(
     }
 
     const asset = scheduleData.assets as any
+
+    // 🛡️ PROTECCIÓN ANTI-DUPLICADOS: Verificar si este checklist ya fue completado recientemente
+    console.log('🔍 Checking for recent completions to prevent duplicates...')
+    const { data: recentCompletions, error: recentError } = await supabase
+      .from('completed_checklists')
+      .select('id, completion_date, technician, notes')
+      .eq('checklist_id', scheduleData.template_id)
+      .eq('asset_id', scheduleData.asset_id)
+      .gte('completion_date', new Date(Date.now() - 60 * 60 * 1000).toISOString()) // Within last hour
+      .order('completion_date', { ascending: false })
+
+    if (!recentError && recentCompletions && recentCompletions.length > 0) {
+      for (const completion of recentCompletions) {
+        const completionTime = new Date(completion.completion_date).getTime()
+        const now = Date.now()
+        const timeDiffMinutes = (now - completionTime) / (1000 * 60)
+        
+        // If completed within last 10 minutes by same technician, likely duplicate from offline sync
+        if (timeDiffMinutes < 10 && completion.technician === technician) {
+          console.log(`⚠️ DUPLICATE PREVENTION: Found recent completion by same technician`, {
+            existingId: completion.id,
+            existingTime: completion.completion_date,
+            technician: completion.technician,
+            timeDiffMinutes: Math.round(timeDiffMinutes * 100) / 100
+          })
+          
+          return NextResponse.json({
+            success: true,
+            message: 'Checklist ya fue completado recientemente - evitando duplicado',
+            data: {
+              completed_id: completion.id,
+              is_duplicate_prevented: true,
+              original_completion_date: completion.completion_date,
+              time_difference_minutes: Math.round(timeDiffMinutes * 100) / 100
+            }
+          })
+        }
+      }
+      
+      // Log all recent completions for debugging
+      console.log(`📊 Found ${recentCompletions.length} recent completions for this asset/template:`)
+      recentCompletions.forEach((comp, index) => {
+        const timeDiff = (Date.now() - new Date(comp.completion_date).getTime()) / (1000 * 60)
+        console.log(`  ${index + 1}. ID: ${comp.id}, Technician: ${comp.technician}, ${Math.round(timeDiff)} min ago`)
+      })
+    }
 
     // Validar lecturas si se proporcionaron
     if (hours_reading !== null || kilometers_reading !== null) {
