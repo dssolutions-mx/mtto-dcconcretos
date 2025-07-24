@@ -694,6 +694,17 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                   Reportes de Limpieza
                 </Link>
               </Button>
+              <Button
+                variant={isPathActive("/rh/cumplimiento-checklists") ? "secondary" : "ghost"}
+                className="w-full justify-start pl-8"
+                asChild
+                onClick={handleLinkClick}
+              >
+                <Link href="/rh/cumplimiento-checklists">
+                  <ClipboardCheck className="mr-2 h-4 w-4" />
+                  Cumplimiento de Checklists
+                </Link>
+              </Button>
             </CollapsibleContent>
           </Collapsible>
         </div>
@@ -807,9 +818,10 @@ export function CollapsedSidebar({ className, onLinkClick }: SidebarProps) {
       id: "hr",
       icon: Users,
       label: "Recursos Humanos",
-      active: isSectionActive(["/rh/limpieza"]),
+      active: isSectionActive(["/rh/limpieza", "/rh/cumplimiento-checklists"]),
       items: [
-        { href: "/rh/limpieza", icon: Sparkles, label: "Reportes de Limpieza", active: isPathActive("/rh/limpieza") }
+        { href: "/rh/limpieza", icon: Sparkles, label: "Reportes de Limpieza", active: isPathActive("/rh/limpieza") },
+        { href: "/rh/cumplimiento-checklists", icon: ClipboardCheck, label: "Cumplimiento de Checklists", active: isPathActive("/rh/cumplimiento-checklists") }
       ]
     }
   ]
