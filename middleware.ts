@@ -27,85 +27,77 @@ export async function middleware(request: NextRequest) {
     }
   )
 
-  // IMPORTANT: Do not run code between createServerClient and
-  // supabase.auth.getUser(). A simple mistake could make it very hard to debug
-  // issues with users being randomly logged out.
-
   let user = null
   let isOfflineMode = false
   
-  // FIRST: Check Zustand auth store (most reliable for offline)
-  const zustandAuthCookie = request.cookies.get('auth-store')
-  if (zustandAuthCookie?.value) {
-    try {
-      const authStore = JSON.parse(decodeURIComponent(zustandAuthCookie.value))
-      if (authStore.state?.user && authStore.state.user.id) {
-        console.log('✅ Middleware: Found valid Zustand auth state, user:', authStore.state.user.email || authStore.state.user.id)
-        user = authStore.state.user
-        
-        // If we have Zustand auth, skip Supabase network call for better offline experience
-        if (authStore.state.profile) {
-          console.log('📱 Middleware: Using cached Zustand auth (offline-ready)')
-          return supabaseResponse
-        }
-      }
-    } catch (error) {
-      console.warn('⚠️ Middleware: Failed to parse Zustand auth store:', error)
+  try {
+    // Try Supabase auth (when online)
+    const { data: { user: authUser }, error } = await supabase.auth.getUser()
+    
+    if (error) {
+      console.log('🔍 Middleware: Supabase auth failed:', error.message)
+      throw error // Fall through to offline handling
+    } else {
+      user = authUser
+      console.log('✅ Middleware: User authenticated via Supabase:', user?.email || user?.id || 'unknown')
     }
-  }
-  
-  // SECOND: If no Zustand auth, try Supabase (only if likely online)
-  if (!user) {
-    // Check if we have any Supabase session cookies
-    const allCookies = request.cookies.getAll()
-    const supabaseCookies = allCookies.filter(cookie => 
-      cookie.name.startsWith('sb-') && cookie.value && cookie.value.length > 10
+  } catch (error: any) {
+    console.log('🌐 Middleware: Auth failed, checking if route allows offline access')
+    
+    // Define work routes that should be accessible offline
+    const offlineWorkRoutes = [
+      '/checklists',
+      '/ordenes', 
+      '/activos',
+      '/dashboard',
+      '/preventivo',
+      '/reportes',
+      '/incidentes',
+      '/modelos',
+      '/inventario',
+      '/plantas',
+      '/personal',
+      '/compras'
+    ]
+    
+    const isWorkRoute = offlineWorkRoutes.some(route => 
+      request.nextUrl.pathname.startsWith(route)
     )
     
-    console.log('🍪 Available Supabase cookies:', supabaseCookies.map(c => c.name))
-    
-    try {
-      // Only attempt network call if we have session cookies (indicates previous auth)
-      if (supabaseCookies.length > 0) {
-        // Set a shorter timeout for faster offline detection
-        const authPromise = supabase.auth.getUser()
-        const timeoutPromise = new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Auth timeout - likely offline')), 2000)
-        )
-        
-        const { data, error } = await Promise.race([authPromise, timeoutPromise]) as any
-        
-        if (error) {
-          throw error
-        }
-        
-        user = data.user
-        console.log('✅ Middleware: Successfully authenticated via Supabase:', user?.id || 'no-id')
-      } else {
-        console.log('🔍 Middleware: No session cookies, skipping network auth call')
-        throw new Error('No session cookies found')
-      }
+    if (isWorkRoute) {
+      console.log('📱 Middleware: Allowing offline access to work route, client will validate auth')
       
-    } catch (error: any) {
-      isOfflineMode = true
-      const errorMessage = error.message || 'Unknown error'
-      console.warn('🌐 Middleware: Supabase auth failed, checking offline fallbacks:', errorMessage)
+      // Check for session cookies to differentiate access levels
+      const allCookies = request.cookies.getAll()
+      const supabaseCookies = allCookies.filter(cookie => 
+        cookie.name.startsWith('sb-') && cookie.value && cookie.value.length > 10
+      )
       
-      // THIRD: Fallback to Supabase session cookies for offline access
       if (supabaseCookies.length > 0) {
-        console.log('📱 Middleware: Using Supabase session cookies for offline access')
-        console.log('🔑 Session cookies found:', supabaseCookies.map(c => `${c.name}=${c.value.substring(0, 10)}...`))
-        
-        // Create a minimal user object to prevent login redirect
+        console.log('🔑 Middleware: Session cookies found - likely authenticated offline user')
         user = { 
-          id: 'offline-user-' + Date.now(),
-          email: 'offline@local.app',
+          id: 'offline-session',
+          email: 'offline@session.local',
           aud: 'authenticated',
           role: 'authenticated'
         }
       } else {
-        console.log('❌ Middleware: No authentication state found, will redirect to login')
+        console.log('📝 Middleware: No session cookies - allowing access for client validation')
+        user = { 
+          id: 'offline-work-mode',
+          email: 'offline@work.local',
+          aud: 'authenticated',
+          role: 'authenticated'
+        }
       }
+      
+      isOfflineMode = true
+      
+      // Add headers to signal offline mode to client
+      supabaseResponse.headers.set('X-Offline-Mode', 'true')
+      supabaseResponse.headers.set('X-Auth-Required', 'true')
+    } else {
+      console.log('🔒 Middleware: Non-work route, requiring proper authentication')
     }
   }
 
@@ -113,6 +105,7 @@ export async function middleware(request: NextRequest) {
   if (request.nextUrl.pathname === "/") {
     const url = request.nextUrl.clone()
     url.pathname = user ? "/dashboard" : "/login"
+    console.log(`🔄 Middleware: Root redirect to ${url.pathname} ${isOfflineMode ? '(offline)' : '(online)'}`)
     return NextResponse.redirect(url)
   }
 
@@ -137,6 +130,7 @@ export async function middleware(request: NextRequest) {
     const url = request.nextUrl.clone()
     url.pathname = "/login"
     url.searchParams.set("redirectedFrom", request.nextUrl.pathname)
+    console.log(`🔒 Middleware: Redirecting unauthenticated user from ${request.nextUrl.pathname} to login`)
     return NextResponse.redirect(url)
   }
 
@@ -145,17 +139,20 @@ export async function middleware(request: NextRequest) {
       (request.nextUrl.pathname === "/login" || request.nextUrl.pathname === "/register")) {
     const url = request.nextUrl.clone()
     url.pathname = "/dashboard"
+    console.log(`🏠 Middleware: Redirecting authenticated user from ${request.nextUrl.pathname} to dashboard ${isOfflineMode ? '(offline)' : '(online)'}`)
     return NextResponse.redirect(url)
   }
 
+  // Log successful middleware pass-through
+  if (user) {
+    console.log(`✅ Middleware: Allowing authenticated access to ${request.nextUrl.pathname} ${isOfflineMode ? '(offline)' : '(online)'}`)
+  } else if (isPublicRoute) {
+    console.log(`🌐 Middleware: Allowing public access to ${request.nextUrl.pathname}`)
+  } else if (isApiRoute) {
+    console.log(`🔌 Middleware: Skipping auth for API route ${request.nextUrl.pathname}`)
+  }
+
   // IMPORTANT: You must return the supabaseResponse object as it is.
-  // If you're creating a new response object with NextResponse.next() make sure to:
-  // 1. Pass the request in it
-  // 2. Copy over the cookies
-  // 3. Change the response object to fit your needs, but avoid changing the cookies!
-  // If this is not done, you may be causing the browser and server to go out
-  // of sync and terminate the user's session prematurely!
-  
   return supabaseResponse
 }
 

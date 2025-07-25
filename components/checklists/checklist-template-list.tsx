@@ -13,6 +13,16 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -21,12 +31,17 @@ import Link from "next/link"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { DuplicateTemplateDialog } from "./duplicate-template-dialog"
+import { useToast } from "@/components/ui/use-toast"
 
 export function ChecklistTemplateList() {
   const { templates, loading, error, fetchTemplates, getTemplatesWithIntervals } = useChecklistTemplates()
   const [searchTerm, setSearchTerm] = useState("")
   const [duplicateDialogOpen, setDuplicateDialogOpen] = useState(false)
   const [selectedTemplate, setSelectedTemplate] = useState<Checklist | null>(null)
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [templateToDelete, setTemplateToDelete] = useState<Checklist | null>(null)
+  const [isDeleting, setIsDeleting] = useState(false)
+  const { toast } = useToast()
 
   useEffect(() => {
     fetchTemplates()
@@ -55,6 +70,57 @@ export function ChecklistTemplateList() {
 
   const handleDuplicateSuccess = () => {
     fetchTemplates() // Refresh the templates list
+  }
+
+  const handleDelete = (template: Checklist) => {
+    setTemplateToDelete(template)
+    setDeleteDialogOpen(true)
+  }
+
+  const confirmDelete = async () => {
+    if (!templateToDelete) return
+
+    setIsDeleting(true)
+    try {
+      const response = await fetch(`/api/checklists/templates/${templateToDelete.id}`, {
+        method: 'DELETE',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      })
+
+      const result = await response.json()
+
+      if (!response.ok) {
+        throw new Error(result.error || 'Error al eliminar la plantilla')
+      }
+
+      toast({
+        title: "Plantilla eliminada",
+        description: result.message || `La plantilla "${templateToDelete.name}" ha sido eliminada exitosamente`,
+        variant: "default"
+      })
+
+      fetchTemplates() // Refresh the templates list
+      setDeleteDialogOpen(false)
+      setTemplateToDelete(null)
+
+    } catch (error) {
+      console.error('Error deleting template:', error)
+      toast({
+        title: "Error al eliminar",
+        description: error instanceof Error ? error.message : "No se pudo eliminar la plantilla",
+        variant: "destructive"
+      })
+    } finally {
+      setIsDeleting(false)
+    }
+  }
+
+  const cancelDelete = () => {
+    setDeleteDialogOpen(false)
+    setTemplateToDelete(null)
   }
 
   if (loading) {
@@ -220,7 +286,10 @@ export function ChecklistTemplateList() {
                         <Copy className="mr-2 h-4 w-4" />
                         Duplicar plantilla
                       </DropdownMenuItem>
-                      <DropdownMenuItem className="text-red-600">
+                      <DropdownMenuItem 
+                        className="text-red-600"
+                        onClick={() => handleDelete(template)}
+                      >
                         <Trash className="mr-2 h-4 w-4" />
                         Eliminar
                       </DropdownMenuItem>
@@ -350,6 +419,51 @@ export function ChecklistTemplateList() {
         template={selectedTemplate}
         onSuccess={handleDuplicateSuccess}
       />
+
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Eliminar plantilla de checklist?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Esta acción eliminará permanentemente la plantilla "{templateToDelete?.name}".
+              {"\n\n"}
+              <strong>⚠️ Importante:</strong> Esta operación también eliminará:
+              <ul className="list-disc pl-5 mt-2">
+                <li>Todos los checklists programados pendientes de esta plantilla</li>
+                <li>Todas las secciones e ítems de la plantilla</li>
+                <li>Las versiones guardadas de la plantilla</li>
+                <li>Los problemas/issues pendientes asociados con la plantilla</li>
+              </ul>
+              {"\n"}
+              <strong>Nota:</strong> Las plantillas con historial de checklists completados no se pueden eliminar para preservar el registro de auditoría.
+              {"\n\n"}
+              Esta acción no se puede deshacer.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={cancelDelete} disabled={isDeleting}>
+              Cancelar
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDelete}
+              disabled={isDeleting}
+              className="bg-red-600 hover:bg-red-700"
+            >
+              {isDeleting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Eliminando...
+                </>
+              ) : (
+                <>
+                  <Trash className="mr-2 h-4 w-4" />
+                  Eliminar plantilla
+                </>
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   )
 }

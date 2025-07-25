@@ -83,26 +83,50 @@ export const createOfflineSlice: StateCreator<OfflineSlice> = (set, get) => ({
         switch (operation.type) {
           case 'auth':
             // Handle auth operations (sign in/out)
-            console.log('🔐 Processing auth operation')
-            await new Promise(resolve => setTimeout(resolve, 500)) // Simulate API call
+            console.log('🔐 Processing queued auth operation')
+            
+            if (operation.payload.action === 'signIn') {
+              // Import auth store functions dynamically to avoid circular dependency
+              const { useAuthStore } = await import('../index')
+              const authStore = useAuthStore.getState()
+              
+              const result = await authStore.signIn(
+                operation.payload.email, 
+                operation.payload.password
+              )
+              
+              if (!result.success) {
+                throw new Error(result.error || 'Sign in failed')
+              }
+            } else if (operation.payload.action === 'signOut') {
+              const { useAuthStore } = await import('../index')
+              const authStore = useAuthStore.getState()
+              
+              await authStore.signOut()
+            }
             break
             
           case 'profile_update':
             // Handle profile updates
             console.log('👤 Processing profile update')
+            // This would integrate with actual profile update logic
             await new Promise(resolve => setTimeout(resolve, 300))
             break
             
           case 'session_refresh':
             // Handle session refresh
             console.log('🔄 Processing session refresh')
-            await new Promise(resolve => setTimeout(resolve, 200))
+            const { useAuthStore } = await import('../index')
+            const authStore = useAuthStore.getState()
+            await authStore.refreshSession()
             break
             
           case 'sign_out':
-            // Handle sign out
+            // Handle sign out (legacy - same as auth with signOut action)
             console.log('🚪 Processing sign out')
-            await new Promise(resolve => setTimeout(resolve, 100))
+            const { useAuthStore: authStoreSignOut } = await import('../index')
+            const authStoreInstance = authStoreSignOut.getState()
+            await authStoreInstance.signOut()
             break
         }
         

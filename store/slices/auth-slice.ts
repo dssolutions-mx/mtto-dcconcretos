@@ -272,6 +272,32 @@ export const createAuthSlice: StateCreator<
     } catch (error: any) {
       console.error('❌ Sign in error:', error)
       
+      // Check if we're offline and should queue the operation
+      const isOffline = !get().isOnline
+      if (isOffline) {
+        console.log('📱 Device is offline, queueing sign in operation')
+        get().addToQueue({
+          type: 'auth',
+          payload: { action: 'signIn', email, password },
+          maxRetries: 3
+        })
+        
+        set({
+          error: {
+            code: 'OFFLINE_SIGNIN',
+            message: 'Sin conexión. El inicio de sesión se procesará cuando vuelva la conectividad.',
+            source: 'signIn',
+            timestamp: Date.now()
+          },
+          isLoading: false
+        } as Partial<AuthStore>)
+        
+        return { 
+          success: false, 
+          error: 'Sin conexión. El inicio de sesión se procesará automáticamente cuando vuelva la conectividad.' 
+        }
+      }
+      
       get().incrementFailedOperationsCount()
       get().updateSessionStability(false)
       
@@ -290,12 +316,45 @@ export const createAuthSlice: StateCreator<
   },
 
   signOut: async () => {
-    console.log('🚪 Starting sign out process...')
+    console.log('🚪 Starting comprehensive sign out process...')
     set({ isLoading: true } as Partial<AuthStore>)
     
     const supabase = createClient()
     
     try {
+      // Clear auth state immediately to prevent UI inconsistencies
+      console.log('🧹 Clearing local auth state first')
+      get().clearAuth()
+      
+      // Clear browser storage
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.clear()
+          sessionStorage.clear()
+          console.log('🗑️ Cleared browser storage')
+        } catch (storageError) {
+          console.warn('⚠️ Failed to clear browser storage:', storageError)
+        }
+      }
+      
+      // Check if offline and queue the operation
+      const isOffline = !get().isOnline
+      if (isOffline) {
+        console.log('📱 Device is offline, queueing sign out operation')
+        get().addToQueue({
+          type: 'sign_out',
+          payload: { action: 'signOut' },
+          maxRetries: 2
+        })
+        
+        // Force hard redirect even in offline mode
+        if (typeof window !== 'undefined') {
+          console.log('🔄 Forcing hard redirect to login (offline)')
+          window.location.href = '/login'
+        }
+        return
+      }
+      
       // Add timeout to prevent hanging
       const signOutPromise = supabase.auth.signOut()
       const timeoutPromise = new Promise((_, reject) => 
@@ -303,15 +362,35 @@ export const createAuthSlice: StateCreator<
       )
       
       const { error } = await Promise.race([signOutPromise, timeoutPromise]) as any
-      if (error) throw error
       
-      console.log('✅ Sign out successful')
-      get().clearAuth()
+      if (error) {
+        console.warn('⚠️ Supabase sign out error (local state already cleared):', error.message)
+        // Don't throw - local state is already cleared
+      } else {
+        console.log('✅ Supabase sign out successful')
+      }
+      
+      // Force a hard navigation to login page to clear any stale state
+      if (typeof window !== 'undefined') {
+        console.log('🔄 Forcing hard redirect to login')
+        window.location.href = '/login'
+      }
+      
     } catch (error: any) {
       console.error('❌ Sign out error:', error)
       
-      // Even if there's an error, clear the auth state locally
+      // Even on error, ensure local state is cleared
       get().clearAuth()
+      
+      // Clear browser storage on error too
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.clear()
+          sessionStorage.clear()
+        } catch (storageError) {
+          console.warn('⚠️ Failed to clear storage during error handling:', storageError)
+        }
+      }
       
       set({
         error: {
@@ -319,8 +398,15 @@ export const createAuthSlice: StateCreator<
           message: error.message || 'Failed to sign out',
           source: 'signOut',
           timestamp: Date.now()
-        }
+        },
+        isLoading: false
       } as Partial<AuthStore>)
+      
+      // Force hard redirect even on error
+      if (typeof window !== 'undefined') {
+        console.log('🔄 Forcing hard redirect to login (error recovery)')
+        window.location.href = '/login'
+      }
     }
   },
 
@@ -392,19 +478,30 @@ export const createAuthSlice: StateCreator<
   },
 
   clearAuth: () => {
-    console.log('🧹 Clearing auth state...')
+    console.log('🧹 Clearing comprehensive auth state...')
     
+    // Clear all caches
     get().clearCache()
     
+    // Reset all auth-related state to initial values
     set({
       user: null,
       session: null,
       profile: null,
       isLoading: false,
+      isInitialized: true, // Keep as initialized to prevent re-initialization loops
       error: null,
       lastAuthCheck: Date.now(),
-      authCheckSource: 'clearAuth'
+      authCheckSource: 'clearAuth',
+      // Reset metrics but keep them for debugging
+      cacheHits: 0,
+      cacheMisses: 0,
+      authLatencies: [],
+      sessionStabilityEvents: []
+      // Don't reset failedOperations - it's an OfflineOperation[] managed by offline slice
     } as Partial<AuthStore>)
+    
+    console.log('✅ Auth state cleared completely')
   },
 
   updateLastAuthCheck: (source) => {

@@ -3,9 +3,34 @@ import { NextResponse } from 'next/server'
 
 export async function GET() {
   try {
+    console.log('📊 Fetching asset checklist dashboard data...')
+    
     const supabase = await createClient()
     
-    // Get all active assets, pending schedules, and completed schedules in parallel
+    // Test connection with a simple query first
+    const connectionTest = await supabase.from('assets').select('count').limit(1).single()
+    
+    if (connectionTest.error) {
+      // Check if this is a network/connectivity error
+      const isNetworkError = 
+        connectionTest.error.message?.includes('fetch') ||
+        connectionTest.error.message?.includes('network') ||
+        connectionTest.error.message?.includes('timeout') ||
+        connectionTest.error.code === 'ENOTFOUND' ||
+        connectionTest.error.code === 'ECONNREFUSED'
+      
+      if (isNetworkError) {
+        console.log('🌐 Network connectivity issue detected in API')
+        return NextResponse.json({ 
+          error: 'NETWORK_ERROR',
+          message: 'No network connectivity',
+          offline: true,
+          hint: 'Switch to offline mode'
+        }, { status: 503 }) // Service Unavailable
+      }
+    }
+
+    // Proceed with normal queries if connection is good
     const [assetsResult, pendingResult, completedResult] = await Promise.all([
       // Get all assets with organizational structure
       supabase

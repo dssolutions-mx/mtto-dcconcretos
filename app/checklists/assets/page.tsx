@@ -115,7 +115,16 @@ export default function AssetChecklistDashboard() {
         }
         
       } catch (fetchError) {
-        if (!navigator.onLine) {
+        console.error('Error fetching assets dashboard:', fetchError)
+        
+        // Check if this is a network/offline error
+        const isOfflineError = 
+          !navigator.onLine ||
+          (fetchError instanceof Error && fetchError.message?.includes('fetch failed')) ||
+          (typeof fetchError === 'object' && fetchError !== null && 
+           'offline' in fetchError && fetchError.offline === true)
+        
+        if (isOfflineError) {
           console.log('📱 Switching to offline mode for assets dashboard')
           setIsOfflineMode(true)
           
