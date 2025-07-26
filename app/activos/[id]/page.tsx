@@ -334,14 +334,48 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
       const fetchCompletedChecklists = async () => {
         try {
           setChecklistsLoading(true)
+          const supabase = createClient()
           
-          const response = await fetch(`/api/checklists/schedules?status=completado&assetId=${assetId}`)
-          if (response.ok) {
-            const result = await response.json()
-            setCompletedChecklists(result.data || [])
-          } else {
-            console.error('Error fetching completed checklists:', response.statusText)
+          // Query completed_checklists directly like the history page does
+          const { data, error } = await supabase
+            .from('completed_checklists')
+            .select(`
+              id,
+              checklist_id,
+              asset_id,
+              technician,
+              completion_date,
+              notes,
+              status,
+              equipment_hours_reading,
+              equipment_kilometers_reading,
+              created_by,
+              checklists (
+                id,
+                name,
+                frequency
+              ),
+              created_by_profile:profiles!created_by (
+                id,
+                nombre,
+                apellido
+              )
+            `)
+            .eq('asset_id', assetId)
+            .order('completion_date', { ascending: false })
+            .limit(10) // Limit to recent ones for the asset page
+          
+          if (error) {
+            console.error('Error fetching completed checklists:', error)
             setCompletedChecklists([])
+          } else {
+            // Transform the data to match the expected structure
+            const transformedData = (data || []).map((item: any) => ({
+              ...item,
+              checklists: Array.isArray(item.checklists) ? item.checklists[0] : item.checklists,
+              profiles: Array.isArray(item.created_by_profile) ? item.created_by_profile[0] : item.created_by_profile
+            }))
+            setCompletedChecklists(transformedData)
           }
         } catch (err) {
           console.error("Error fetching completed checklists:", err)
@@ -1015,7 +1049,7 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
                                 >
                                   Completado
                                 </Badge>
-                                <h4 className="font-medium text-sm">{formatDate(checklist.updated_at)}</h4>
+                                <h4 className="font-medium text-sm">{formatDate(checklist.completion_date || checklist.updated_at)}</h4>
                               </div>
                               <div className="flex items-center gap-2">
                                 <Badge 
@@ -1030,7 +1064,7 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
                                   checklistName={checklist.checklists?.name || 'Sin nombre'}
                                   completionDate={checklist.completion_date || checklist.updated_at}
                                   technician={checklist.profiles ? 
-                                    `${checklist.profiles.nombre} ${checklist.profiles.apellido}` : 
+                                    [checklist.profiles.nombre, checklist.profiles.apellido].filter(Boolean).join(' ') || 'No especificado' : 
                                     checklist.technician || 'No especificado'}
                                   assetName={asset?.name || 'Activo desconocido'}
                                   trigger={
@@ -1045,7 +1079,7 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
                             <p className="text-sm font-medium">{checklist.checklists?.name || 'Sin nombre'}</p>
                             <p className="text-sm text-muted-foreground">
                               {checklist.profiles ? 
-                                `${checklist.profiles.nombre} ${checklist.profiles.apellido}` : 
+                                [checklist.profiles.nombre, checklist.profiles.apellido].filter(Boolean).join(' ') || 'No especificado' : 
                                 checklist.technician || 'No especificado'}
                             </p>
                             
