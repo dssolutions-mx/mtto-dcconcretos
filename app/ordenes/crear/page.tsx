@@ -1,8 +1,10 @@
 import type { Metadata } from "next"
+import { Suspense } from "react"
 import { Button } from "@/components/ui/button"
 import { DashboardHeader } from "@/components/dashboard/dashboard-header"
 import { DashboardShell } from "@/components/dashboard/dashboard-shell"
 import { WorkOrderForm } from "@/components/work-orders/work-order-form"
+import { Skeleton } from "@/components/ui/skeleton"
 import { ArrowLeft } from "lucide-react"
 import Link from "next/link"
 
@@ -25,7 +27,15 @@ export default function CreateWorkOrderPage() {
           </Link>
         </Button>
       </DashboardHeader>
-      <WorkOrderForm />
+      <Suspense fallback={
+        <div className="space-y-6">
+          <Skeleton className="h-48 w-full" />
+          <Skeleton className="h-32 w-full" />
+          <Skeleton className="h-24 w-full" />
+        </div>
+      }>
+        <WorkOrderForm />
+      </Suspense>
     </DashboardShell>
   )
 }

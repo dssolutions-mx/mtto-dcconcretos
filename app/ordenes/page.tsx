@@ -1,8 +1,10 @@
 import type { Metadata } from "next"
+import { Suspense } from "react"
 import { Button } from "@/components/ui/button"
 import { DashboardHeader } from "@/components/dashboard/dashboard-header"
 import { DashboardShell } from "@/components/dashboard/dashboard-shell"
 import { WorkOrdersList } from "@/components/work-orders/work-orders-list"
+import { Skeleton } from "@/components/ui/skeleton"
 import { Plus } from "lucide-react"
 import Link from "next/link"
 
@@ -25,7 +27,15 @@ export default function WorkOrdersPage() {
           </Link>
         </Button>
       </DashboardHeader>
-      <WorkOrdersList />
+      <Suspense fallback={
+        <div className="space-y-4">
+          <Skeleton className="h-12 w-full" />
+          <Skeleton className="h-32 w-full" />
+          <Skeleton className="h-32 w-full" />
+        </div>
+      }>
+        <WorkOrdersList />
+      </Suspense>
     </DashboardShell>
   )
 }
