@@ -105,10 +105,10 @@ export async function POST(request: NextRequest) {
       }, { status: 400 })
     }
 
-    // Check if assignment already exists
+    // Check if active assignment already exists
     const { data: existingAssignment } = await supabase
       .from('asset_operators')
-      .select('id')
+      .select('id, assignment_type')
       .eq('asset_id', asset_id)
       .eq('operator_id', operator_id)
       .eq('status', 'active')
@@ -116,7 +116,7 @@ export async function POST(request: NextRequest) {
 
     if (existingAssignment) {
       return NextResponse.json({ 
-        error: 'Operator is already assigned to this asset' 
+        error: `Operator is already assigned to this asset as ${existingAssignment.assignment_type} operator. Use transfer API to move between assets.` 
       }, { status: 400 })
     }
 
@@ -124,16 +124,27 @@ export async function POST(request: NextRequest) {
     if (assignment_type === 'primary') {
       const { data: existingPrimary } = await supabase
         .from('asset_operators')
-        .select('id')
+        .select('id, operator_id')
         .eq('asset_id', asset_id)
         .eq('assignment_type', 'primary')
         .eq('status', 'active')
         .single()
 
       if (existingPrimary) {
+        // Get operator details for better error message
+        const { data: operatorInfo } = await supabase
+          .from('profiles')
+          .select('nombre, apellido')
+          .eq('id', existingPrimary.operator_id)
+          .single()
+        
+        const operatorName = operatorInfo ? `${operatorInfo.nombre} ${operatorInfo.apellido}` : 'Unknown operator'
+        
         return NextResponse.json({ 
-          error: 'Asset already has a primary operator assigned' 
-        }, { status: 400 })
+          error: `Asset already has a primary operator assigned (${operatorName}). Use transfer API with force_transfer to replace.`,
+          existing_operator: existingPrimary.operator_id,
+          suggestion: 'Use /api/asset-operators/transfer with force_transfer=true to replace the existing primary operator'
+        }, { status: 409 })
       }
     }
 

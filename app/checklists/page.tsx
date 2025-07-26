@@ -14,7 +14,7 @@ import { DailyChecklistList } from "@/components/checklists/daily-checklist-list
 import { WeeklyChecklistList } from "@/components/checklists/weekly-checklist-list"
 import { MonthlyChecklistList } from "@/components/checklists/monthly-checklist-list"
 import { PreventiveChecklistList } from "@/components/checklists/preventive-checklist-list"
-import { ChecklistTemplateList } from "@/components/checklists/checklist-template-list"
+import { ModelTemplatesNavigator } from "@/components/checklists/model-templates-navigator"
 import { OfflineStatus } from "@/components/checklists/offline-status"
 import { OfflineChecklistList } from "@/components/checklists/offline-checklist-list"
 import { useChecklistSchedules, useChecklistTemplates } from "@/hooks/useChecklists"
@@ -822,7 +822,7 @@ function ChecklistsContent() {
         </TabsContent>
 
         <TabsContent value="templates">
-          <ChecklistTemplateList />
+          <ModelTemplatesNavigator />
         </TabsContent>
       </Tabs>
     </DashboardShell>

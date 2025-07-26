@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { useSearchParams } from 'next/navigation'
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -276,6 +277,7 @@ const cleanupModalState = (callback: () => void, delay: number = 100) => {
 
 export function WorkOrdersList() {
   const isMobile = useIsMobile()
+  const searchParams = useSearchParams()
   const [searchTerm, setSearchTerm] = useState("")
   const [workOrders, setWorkOrders] = useState<WorkOrderWithAsset[]>([]) 
   const [isLoading, setIsLoading] = useState(true)
@@ -287,6 +289,18 @@ export function WorkOrdersList() {
   const [orderToDelete, setOrderToDelete] = useState<WorkOrderWithAsset | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
   const { toast } = useToast()
+
+  // Initialize search term from URL parameters
+  useEffect(() => {
+    const assetName = searchParams.get('asset')
+    const assetId = searchParams.get('assetId')
+    if (assetName) {
+      setSearchTerm(assetName)
+    } else if (assetId) {
+      // If we have assetId but no asset name, we'll use it to filter
+      setSearchTerm(assetId)
+    }
+  }, [searchParams])
 
   // Load work orders function
   const loadWorkOrders = async () => {
@@ -379,11 +393,22 @@ export function WorkOrdersList() {
   })
 
   const filteredOrders = filteredOrdersByTab.filter(
-    (order) =>
-      (order.asset?.name?.toLowerCase() || "").includes(searchTerm.toLowerCase()) ||
-      (order.order_id?.toLowerCase() || "").includes(searchTerm.toLowerCase()) || 
-      (order.assigned_to && technicians[order.assigned_to]?.nombre?.toLowerCase().includes(searchTerm.toLowerCase())) ||
-      (order.description?.toLowerCase() || "").includes(searchTerm.toLowerCase())
+    (order) => {
+      // If we have a specific assetId in URL params, filter by that first
+      const assetIdParam = searchParams.get('assetId')
+      if (assetIdParam && order.asset_id !== assetIdParam) {
+        return false
+      }
+      
+      // Then apply search term filter
+      return (
+        (order.asset?.name?.toLowerCase() || "").includes(searchTerm.toLowerCase()) ||
+        (order.asset?.asset_id?.toLowerCase() || "").includes(searchTerm.toLowerCase()) ||
+        (order.order_id?.toLowerCase() || "").includes(searchTerm.toLowerCase()) || 
+        (order.assigned_to && technicians[order.assigned_to]?.nombre?.toLowerCase().includes(searchTerm.toLowerCase())) ||
+        (order.description?.toLowerCase() || "").includes(searchTerm.toLowerCase())
+      )
+    }
   )
 
   // Helper functions

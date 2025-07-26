@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -37,6 +37,7 @@ interface ChecklistForSelect {
 
 export function WorkOrderForm() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const supabase = createClient()
 
   const [formData, setFormData] = useState<Partial<InsertWorkOrder>>({
@@ -125,6 +126,18 @@ export function WorkOrderForm() {
     }
     fetchData()
   }, [supabase])
+
+  // Pre-select asset from URL parameters
+  useEffect(() => {
+    const assetIdParam = searchParams.get('assetId')
+    if (assetIdParam && assets.length > 0) {
+      // Check if the asset exists in our assets list
+      const assetExists = assets.find(asset => asset.id === assetIdParam)
+      if (assetExists) {
+        setFormData(prev => ({ ...prev, asset_id: assetIdParam }))
+      }
+    }
+  }, [searchParams, assets])
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { id, value } = e.target

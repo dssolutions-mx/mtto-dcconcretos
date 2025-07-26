@@ -24,6 +24,7 @@ import {
   Clock,
   Edit,
   ExternalLink,
+  Eye,
   FileText,
   History,
   MapPin,
@@ -81,6 +82,8 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
   const [checklistsLoading, setChecklistsLoading] = useState(true);
   const [pendingChecklists, setPendingChecklists] = useState<any[]>([]);
   const [pendingChecklistsLoading, setPendingChecklistsLoading] = useState(true);
+  const [workOrders, setWorkOrders] = useState<any[]>([]);
+  const [workOrdersLoading, setWorkOrdersLoading] = useState(true);
   
   // Map the asset with equipment_models to use model property
   const asset = useMemo(() => {
@@ -416,6 +419,73 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
     }
   }, [assetId])
   
+  // Add a new effect to fetch work orders
+  useEffect(() => {
+    if (assetId) {
+      const fetchWorkOrders = async () => {
+        try {
+          setWorkOrdersLoading(true)
+          const supabase = createClient()
+          
+          const { data, error } = await supabase
+            .from('work_orders')
+            .select(`
+              id,
+              order_id,
+              type,
+              status,
+              priority,
+              description,
+              planned_date,
+              assigned_to,
+              created_at,
+              asset_id
+            `)
+            .eq('asset_id', assetId)
+            .order('created_at', { ascending: false })
+            .limit(5) // Show only the 5 most recent work orders
+          
+          if (error) {
+            console.error('Error fetching work orders:', error)
+            setWorkOrders([])
+          } else {
+            // If we have work orders, also fetch technician names
+            const workOrdersData = data || []
+            if (workOrdersData.length > 0) {
+              const technicianIds = [...new Set(workOrdersData.filter(wo => wo.assigned_to).map(wo => wo.assigned_to))]
+              
+              if (technicianIds.length > 0) {
+                const { data: techData } = await supabase
+                  .from('profiles')
+                  .select('id, nombre, apellido')
+                  .in('id', technicianIds)
+                
+                // Map technician data to work orders
+                const workOrdersWithTechnicians = workOrdersData.map(wo => ({
+                  ...wo,
+                  technician_profile: techData?.find(tech => tech.id === wo.assigned_to)
+                }))
+                
+                setWorkOrders(workOrdersWithTechnicians)
+              } else {
+                setWorkOrders(workOrdersData)
+              }
+            } else {
+              setWorkOrders(workOrdersData)
+            }
+          }
+        } catch (err) {
+          console.error("Error fetching work orders:", err)
+          setWorkOrders([])
+        } finally {
+          setWorkOrdersLoading(false)
+        }
+      }
+      
+      fetchWorkOrders()
+    }
+  }, [assetId])
+  
   // Helper function to check if incident is pending (case-insensitive)
   const isPendingIncident = (incident: any) => {
     const status = incident.status?.toLowerCase();
@@ -655,7 +725,7 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
                 </Alert>
               )}
 
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 {/* Upcoming Maintenance */}
                 <Card>
                   <CardHeader>
@@ -866,6 +936,131 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
                                 Ver historial completo
                               </Link>
                             </Button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+
+                {/* Work Orders */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <Wrench className="h-5 w-5" />
+                      Órdenes de Trabajo
+                    </CardTitle>
+                    <CardDescription>
+                      Órdenes de trabajo relacionadas con este activo
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    {workOrdersLoading ? (
+                      <div className="space-y-2">
+                        <Skeleton className="h-8 w-full" />
+                        <Skeleton className="h-8 w-full" />
+                      </div>
+                    ) : workOrders.length === 0 ? (
+                      <div className="space-y-3">
+                        <div className="flex flex-col sm:flex-row gap-2">
+                          <Button variant="outline" size="sm" asChild className="flex-1">
+                            <Link href={`/ordenes?assetId=${assetId}&asset=${encodeURIComponent(asset?.name || '')}`}>
+                              <FileText className="h-4 w-4 mr-2" />
+                              Ver todas las OT
+                            </Link>
+                          </Button>
+                          {ui.shouldShowInNavigation('work_orders') && (
+                            <Button size="sm" asChild className="flex-1">
+                              <Link href={`/ordenes/crear?assetId=${assetId}`}>
+                                <Plus className="h-4 w-4 mr-2" />
+                                Nueva OT
+                              </Link>
+                            </Button>
+                          )}
+                        </div>
+                        
+                        <div className="text-center py-4 border rounded-lg bg-muted/50">
+                          <div className="flex flex-col items-center gap-2">
+                            <Wrench className="h-8 w-8 text-muted-foreground" />
+                            <div>
+                              <p className="text-sm font-medium">Sin órdenes de trabajo</p>
+                              <p className="text-xs text-muted-foreground mt-1">
+                                No hay órdenes de trabajo registradas para este activo
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        <div className="flex flex-col sm:flex-row gap-2">
+                          <Button variant="outline" size="sm" asChild className="flex-1">
+                            <Link href={`/ordenes?assetId=${assetId}&asset=${encodeURIComponent(asset?.name || '')}`}>
+                              <FileText className="h-4 w-4 mr-2" />
+                              Ver todas ({workOrders.length}+)
+                            </Link>
+                          </Button>
+                          {ui.shouldShowInNavigation('work_orders') && (
+                            <Button size="sm" asChild className="flex-1">
+                              <Link href={`/ordenes/crear?assetId=${assetId}`}>
+                                <Plus className="h-4 w-4 mr-2" />
+                                Nueva OT
+                              </Link>
+                            </Button>
+                          )}
+                        </div>
+                        
+                        {workOrders.slice(0, 3).map((workOrder) => (
+                          <div key={workOrder.id} className="border rounded-md p-3">
+                            <div className="flex justify-between items-start mb-2">
+                              <div>
+                                <Badge 
+                                  variant={workOrder.type === 'Preventivo' ? 'default' : 
+                                          workOrder.type === 'Correctivo' ? 'destructive' : 'outline'}
+                                  className="mb-1"
+                                >
+                                  {workOrder.type}
+                                </Badge>
+                                <h4 className="font-medium text-sm">{workOrder.order_id}</h4>
+                              </div>
+                              <Badge 
+                                variant={
+                                  workOrder.status === 'Completada' ? 'outline' : 
+                                  workOrder.status === 'En Proceso' ? 'secondary' : 
+                                  workOrder.status === 'Pendiente' ? 'default' : 'outline'
+                                }
+                                className="text-xs"
+                              >
+                                {workOrder.status}
+                              </Badge>
+                            </div>
+                            <p className="text-sm text-muted-foreground mb-2 line-clamp-2">
+                              {workOrder.description || 'Sin descripción'}
+                            </p>
+                            <div className="flex items-center justify-between text-xs text-muted-foreground">
+                              <span>
+                                {workOrder.technician_profile ? 
+                                  [workOrder.technician_profile.nombre, workOrder.technician_profile.apellido].filter(Boolean).join(' ') || 'No asignado' : 
+                                  'No asignado'}
+                              </span>
+                              <span>{formatDate(workOrder.planned_date || workOrder.created_at)}</span>
+                            </div>
+                            <div className="mt-2">
+                              <Button size="sm" variant="outline" asChild className="w-full">
+                                <Link href={`/ordenes/${workOrder.id}`}>
+                                  <Eye className="h-4 w-4 mr-2" />
+                                  Ver Detalles
+                                </Link>
+                              </Button>
+                            </div>
+                          </div>
+                        ))}
+                        
+                        {workOrders.length > 3 && (
+                          <div className="mt-2 text-center">
+                            <p className="text-sm text-muted-foreground">
+                              {workOrders.length - 3} órdenes más...
+                            </p>
                           </div>
                         )}
                       </div>

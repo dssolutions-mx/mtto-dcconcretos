@@ -42,6 +42,7 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 
 import { CreateOperatorDialog } from '@/components/personnel/create-operator-dialog'
+import { OperatorTransferDialog, TransferData } from './dialogs/operator-transfer-dialog'
 
 interface Plant {
   id: string
@@ -335,6 +336,8 @@ export function AssetAssignmentDragDrop() {
   const [activeId, setActiveId] = useState<string | null>(null)
   const [overId, setOverId] = useState<string | null>(null)
   const [showCreateOperator, setShowCreateOperator] = useState(false)
+  const [showTransferDialog, setShowTransferDialog] = useState(false)
+  const [pendingTransfer, setPendingTransfer] = useState<TransferData | null>(null)
   const { toast } = useToast()
 
   const sensors = useSensors(
@@ -455,41 +458,138 @@ export function AssetAssignmentDragDrop() {
 
   const handleCreateAssignment = async (assetId: string, operatorId: string) => {
     try {
-      // Check if asset already has a primary operator
-      const assetAssignments = getAssetAssignments(assetId)
-      const hasPrimaryOperator = assetAssignments.some(a => a.assignment_type === 'primary')
+      // Fetch fresh assignments data
+      const response = await fetch('/api/asset-operators')
+      if (!response.ok) {
+        throw new Error('Failed to fetch current assignments')
+      }
+      const freshAssignments = await response.json()
+      
+      // Check if operator is already assigned to any asset using fresh data
+      const operatorAssignments = freshAssignments.filter((a: AssetOperator) => 
+        a.operator_id === operatorId && a.status === 'active'
+      )
+      
+      // Check if asset already has a primary operator using fresh data
+      const assetAssignments = freshAssignments.filter((a: AssetOperator) => 
+        a.asset_id === assetId && a.status === 'active'
+      )
+      const hasPrimaryOperator = assetAssignments.some((a: AssetOperator) => a.assignment_type === 'primary')
       
       const assignmentType = hasPrimaryOperator ? 'secondary' : 'primary'
 
-      const response = await fetch('/api/asset-operators', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          asset_id: assetId,
-          operator_id: operatorId,
-          assignment_type: assignmentType,
-          start_date: new Date().toISOString().split('T')[0]
-        })
-      })
+      // If operator has existing assignments, use transfer logic
+      if (operatorAssignments.length > 0) {
+        const currentAssignment = operatorAssignments[0] // Get the first active assignment
+        const fromAssetId = currentAssignment.asset_id
+        
+        // Get operator and asset details for the dialog
+        const operator = operators.find(op => op.id === operatorId)
+        const fromAsset = assets.find(a => a.id === fromAssetId)
+        const toAsset = assets.find(a => a.id === assetId)
+        
+        if (!operator || !toAsset) {
+          toast({
+            title: "Error",
+            description: "No se pudo encontrar información del operador o activo",
+            variant: "destructive"
+          })
+          return
+        }
 
-      if (response.ok) {
-        toast({
-          title: "Éxito",
-          description: `Operador asignado como ${assignmentType === 'primary' ? 'principal' : 'secundario'}`,
+        // Check if there's a conflict (existing primary operator)
+        let conflictType: 'existing_primary' | 'none' = 'none'
+        let existingOperator = null
+        
+        if (assignmentType === 'primary' && hasPrimaryOperator) {
+          const primaryAssignment = assetAssignments.find((a: AssetOperator) => a.assignment_type === 'primary')
+          if (primaryAssignment) {
+            existingOperator = operators.find(op => op.id === primaryAssignment.operator_id)
+            conflictType = 'existing_primary'
+          }
+        }
+
+        // Show transfer dialog
+        setPendingTransfer({
+          operator: {
+            id: operator.id,
+            name: `${operator.nombre} ${operator.apellido}`,
+            employee_code: operator.employee_code
+          },
+          fromAsset: {
+            id: fromAsset?.id || fromAssetId,
+            name: fromAsset?.name || 'Activo desconocido',
+            asset_id: fromAsset?.asset_id || 'N/A'
+          },
+          toAsset: {
+            id: toAsset.id,
+            name: toAsset.name,
+            asset_id: toAsset.asset_id
+          },
+          assignmentType,
+          conflictType,
+          existingOperator: existingOperator ? {
+            id: existingOperator.id,
+            name: `${existingOperator.nombre} ${existingOperator.apellido}`
+          } : undefined
         })
-        // Refresh both assignments and assets to show updated status
-        await Promise.all([
-          fetchAssignments(),
-          selectedPlant ? fetchAssetsByPlant(selectedPlant.id) : Promise.resolve()
-        ])
+        
+        setShowTransferDialog(true)
+        return // Exit here, transfer will be handled by dialog confirmation
       } else {
-        const error = await response.json()
-        throw new Error(error.error || 'Error al asignar operador')
+        // No existing assignments, use regular assignment logic
+        const response = await fetch('/api/asset-operators', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            asset_id: assetId,
+            operator_id: operatorId,
+            assignment_type: assignmentType,
+            start_date: new Date().toISOString().split('T')[0]
+          })
+        })
+
+        if (response.ok) {
+          toast({
+            title: "Éxito",
+            description: `Operador asignado como ${assignmentType === 'primary' ? 'principal' : 'secundario'}`,
+          })
+        } else {
+          const error = await response.json()
+          
+          // Handle specific API errors with helpful messages
+          if (response.status === 409) {
+            // Primary operator conflict - suggest using transfer
+            toast({
+              title: "Conflicto de Asignación",
+              description: error.error + "\n\nUse arrastar y soltar para transferir automáticamente.",
+              variant: "destructive"
+            })
+          } else if (response.status === 400 && error.error.includes('already assigned')) {
+            // Operator already assigned - suggest transfer
+            toast({
+              title: "Operador Ya Asignado",
+              description: error.error,
+              variant: "destructive"
+            })
+          } else {
+            // Generic error
+            throw new Error(error.error || 'Error al asignar operador')
+          }
+          return // Exit early for handled errors
+        }
       }
+
+      // Refresh both assignments and assets to show updated status
+      await Promise.all([
+        fetchAssignments(),
+        selectedPlant ? fetchAssetsByPlant(selectedPlant.id) : Promise.resolve()
+      ])
+      
     } catch (error) {
-      console.error('Error assigning operator:', error)
+      console.error('Error assigning/transferring operator:', error)
       toast({
         title: "Error",
         description: error instanceof Error ? error.message : "Error al asignar operador",
@@ -534,6 +634,60 @@ export function AssetAssignmentDragDrop() {
       title: "Éxito",
       description: "Operador creado exitosamente",
     })
+  }
+
+  const handleTransferConfirm = async (forceTransfer = false) => {
+    if (!pendingTransfer) return
+
+    try {
+      const response = await fetch('/api/asset-operators/transfer', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          operator_id: pendingTransfer.operator.id,
+          from_asset_id: pendingTransfer.fromAsset.id,
+          to_asset_id: pendingTransfer.toAsset.id,
+          assignment_type: pendingTransfer.assignmentType,
+          transfer_reason: 'Transferred via drag and drop interface',
+          force_transfer: forceTransfer
+        })
+      })
+
+      if (response.ok) {
+        const result = await response.json()
+        toast({
+          title: "Éxito",
+          description: `Operador transferido exitosamente como ${pendingTransfer.assignmentType === 'primary' ? 'principal' : 'secundario'}`,
+        })
+        console.log('Transfer result:', result)
+        
+        // Refresh data
+        await Promise.all([
+          fetchAssignments(),
+          selectedPlant ? fetchAssetsByPlant(selectedPlant.id) : Promise.resolve()
+        ])
+      } else {
+        const error = await response.json()
+        throw new Error(error.error || 'Error al transferir operador')
+      }
+    } catch (error) {
+      console.error('Error in transfer:', error)
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Error al transferir operador",
+        variant: "destructive"
+      })
+    } finally {
+      setPendingTransfer(null)
+      setShowTransferDialog(false)
+    }
+  }
+
+  const handleTransferCancel = () => {
+    setPendingTransfer(null)
+    setShowTransferDialog(false)
   }
 
   const getAssetAssignments = (assetId: string) => {
@@ -741,6 +895,15 @@ export function AssetAssignmentDragDrop() {
           onOpenChange={setShowCreateOperator}
           onOperatorCreated={handleOperatorCreated}
           plants={plants}
+        />
+
+        {/* Transfer Confirmation Dialog */}
+        <OperatorTransferDialog
+          open={showTransferDialog}
+          onOpenChange={setShowTransferDialog}
+          transferData={pendingTransfer}
+          onConfirm={handleTransferConfirm}
+          onCancel={handleTransferCancel}
         />
       </div>
     </DndContext>

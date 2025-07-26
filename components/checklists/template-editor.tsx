@@ -122,17 +122,18 @@ interface TemplateVersion {
 
 interface TemplateEditorProps {
   templateId?: string
+  preSelectedModelId?: string
   onSave?: (template: ChecklistTemplate) => void
   onCancel?: () => void
 }
 
-export function TemplateEditor({ templateId, onSave, onCancel }: TemplateEditorProps) {
+export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCancel }: TemplateEditorProps) {
   const router = useRouter()
   const { toast } = useToast()
   const [template, setTemplate] = useState<ChecklistTemplate>({
     name: '',
     description: '',
-    model_id: '',
+    model_id: preSelectedModelId || '',
     frequency: 'mensual',
     sections: []
   })
