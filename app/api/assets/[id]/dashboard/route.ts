@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase-server'
 import { NextResponse } from 'next/server'
+import { categorizeSchedulesByDate } from '@/lib/utils/date-utils'
 
 export async function GET(
   request: Request,
@@ -132,42 +133,17 @@ export async function GET(
       }
     })
 
-    // Categorize pending schedules
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
-    
-    const overdue = pendingSchedules.filter(schedule => 
-      new Date(schedule.scheduled_date) < today
-    )
-    
-    const dueToday = pendingSchedules.filter(schedule => {
-      const scheduleDate = new Date(schedule.scheduled_date)
-      scheduleDate.setHours(0, 0, 0, 0)
-      return scheduleDate.getTime() === today.getTime()
-    })
-    
-    const upcoming = pendingSchedules.filter(schedule => {
-      const scheduleDate = new Date(schedule.scheduled_date)
-      const oneWeekFromNow = new Date(today)
-      oneWeekFromNow.setDate(oneWeekFromNow.getDate() + 7)
-      return scheduleDate > today && scheduleDate <= oneWeekFromNow
-    })
-    
-    const future = pendingSchedules.filter(schedule => {
-      const scheduleDate = new Date(schedule.scheduled_date)
-      const oneWeekFromNow = new Date(today)
-      oneWeekFromNow.setDate(oneWeekFromNow.getDate() + 7)
-      return scheduleDate > oneWeekFromNow
-    })
+    // Categorize pending schedules using UTC-based date comparison
+    const categorizedSchedules = categorizeSchedulesByDate(pendingSchedules)
 
     return NextResponse.json({ 
       data: {
         asset,
         pending_schedules: {
-          overdue,
-          due_today: dueToday,
-          upcoming,
-          future,
+          overdue: categorizedSchedules.overdue,
+          due_today: categorizedSchedules.today,
+          upcoming: categorizedSchedules.upcoming,
+          future: categorizedSchedules.future,
           all: pendingSchedules
         },
         completed_checklists: enhancedCompletedChecklists

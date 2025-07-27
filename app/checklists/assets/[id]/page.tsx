@@ -31,6 +31,12 @@ import { OfflineStatus } from '@/components/checklists/offline-status'
 import { useOfflineSync } from '@/hooks/useOfflineSync'
 import { WifiOff } from 'lucide-react'
 import { offlineChecklistService } from '@/lib/services/offline-checklist-service'
+import { 
+  categorizeSchedulesByDate, 
+  getRelativeDateDescription, 
+  formatDisplayDate, 
+  getScheduleStatus 
+} from '@/lib/utils/date-utils'
 
 interface Asset {
   id: string
@@ -185,88 +191,38 @@ export default function AssetChecklistDetailPage({ params }: { params: Promise<{
   }
 
   const categorizeSchedules = () => {
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
-    
-    const tomorrow = new Date(today)
-    tomorrow.setDate(tomorrow.getDate() + 1)
-    
-    const weekFromNow = new Date(today)
-    weekFromNow.setDate(weekFromNow.getDate() + 7)
-
-    return {
-      overdue: pendingSchedules.filter(schedule => 
-        new Date(schedule.scheduled_date) < today
-      ).sort((a, b) => new Date(a.scheduled_date).getTime() - new Date(b.scheduled_date).getTime()),
-      
-      today: pendingSchedules.filter(schedule => {
-        const scheduleDate = new Date(schedule.scheduled_date)
-        scheduleDate.setHours(0, 0, 0, 0)
-        return scheduleDate.getTime() === today.getTime()
-      }),
-      
-      upcoming: pendingSchedules.filter(schedule => {
-        const scheduleDate = new Date(schedule.scheduled_date)
-        return scheduleDate > today && scheduleDate <= weekFromNow
-      }).sort((a, b) => new Date(a.scheduled_date).getTime() - new Date(b.scheduled_date).getTime()),
-      
-      future: pendingSchedules.filter(schedule => {
-        const scheduleDate = new Date(schedule.scheduled_date)
-        return scheduleDate > weekFromNow
-      }).sort((a, b) => new Date(a.scheduled_date).getTime() - new Date(b.scheduled_date).getTime())
-    }
+    return categorizeSchedulesByDate(pendingSchedules)
   }
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('es', {
-      weekday: 'short',
-      day: 'numeric',
-      month: 'short',
-      year: 'numeric'
-    })
-  }
-
-  const formatRelativeDate = (dateString: string) => {
-    const date = new Date(dateString)
-    const today = new Date()
-    const diffTime = date.getTime() - today.getTime()
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
-    
-    if (diffDays === 0) return 'Hoy'
-    if (diffDays === 1) return 'Mañana'
-    if (diffDays === -1) return 'Ayer'
-    if (diffDays < 0) return `Hace ${Math.abs(diffDays)} días`
-    if (diffDays <= 7) return `En ${diffDays} días`
-    return formatDate(dateString)
-  }
+  // Use the new utility functions for consistent date handling
+  const formatDate = formatDisplayDate
+  const formatRelativeDate = getRelativeDateDescription
 
   const getStatusBadge = (status: string, scheduleDate: string) => {
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
-    const date = new Date(scheduleDate)
-    date.setHours(0, 0, 0, 0)
+    const scheduleStatus = getScheduleStatus(scheduleDate)
     
-    if (date < today) {
-      return (
-        <Badge variant="destructive" className="flex items-center gap-1">
-          <AlertTriangle className="h-3 w-3" />
-          Atrasado
-        </Badge>
-      )
-    } else if (date.getTime() === today.getTime()) {
-      return (
-        <Badge className="bg-yellow-500 hover:bg-yellow-600 flex items-center gap-1">
-          <Clock className="h-3 w-3" />
-          Hoy
-        </Badge>
-      )
-    } else {
-      return (
-        <Badge variant="outline" className="flex items-center gap-1">
-          <Calendar className="h-3 w-3" />
-          Programado
-        </Badge>
-      )
+    switch (scheduleStatus) {
+      case 'overdue':
+        return (
+          <Badge variant="destructive" className="flex items-center gap-1">
+            <AlertTriangle className="h-3 w-3" />
+            Atrasado
+          </Badge>
+        )
+      case 'today':
+        return (
+          <Badge className="bg-yellow-500 hover:bg-yellow-600 flex items-center gap-1">
+            <Clock className="h-3 w-3" />
+            Hoy
+          </Badge>
+        )
+      default:
+        return (
+          <Badge variant="outline" className="flex items-center gap-1">
+            <Calendar className="h-3 w-3" />
+            Programado
+          </Badge>
+        )
     }
   }
 
