@@ -10,7 +10,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { 
   Check, CheckCircle, Edit, Eye, FileText, Search, 
   AlertTriangle, Clock, DollarSign, TrendingUp, Package, ShoppingCart,
-  Wrench, Building2, Store, Receipt, ExternalLink, Trash2
+  Wrench, Building2, Store, Receipt, ExternalLink, Trash2, X, Info, 
+  Shield, AlertCircle, Zap, FileCheck, MessageSquare
 } from "lucide-react"
 import { createClient } from "@/lib/supabase"
 import Link from "next/link"
@@ -41,13 +42,32 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { MoreHorizontal } from "lucide-react"
+import { useAuthZustand } from "@/hooks/use-auth-zustand"
+import { formatCurrency } from "@/lib/utils"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
+import { Separator } from "@/components/ui/separator"
 
+// Enhanced interface with additional data for authorization decisions
 interface PurchaseOrderWithWorkOrder extends Omit<PurchaseOrder, 'is_adjustment' | 'original_purchase_order_id'> {
   work_orders?: {
     id: string;
     order_id: string;
     description: string;
     asset_id: string | null;
+    priority: string;
+    assets?: {
+      id: string;
+      name: string;
+      asset_id: string;
+      plants?: {
+        name: string;
+      };
+    } | null;
   } | null;
   is_adjustment?: boolean | null;
   original_purchase_order_id?: string;
@@ -58,15 +78,24 @@ interface PurchaseOrderWithWorkOrder extends Omit<PurchaseOrder, 'is_adjustment'
   service_provider?: string;
   actual_amount?: number | null;
   purchased_at?: string;
+  requester?: {
+    id: string;
+    nombre?: string;
+    apellido?: string;
+    business_units?: { name: string };
+    plants?: { name: string };
+  };
+  items_preview?: string; // Preview of first few items
+  urgency_level?: 'low' | 'medium' | 'high' | 'critical';
 }
 
 function getStatusVariant(status: string | null) {
   switch (status) {
-    case PurchaseOrderStatus.Pending:
+    case PurchaseOrderStatus.PendingApproval:
       return "outline"
     case PurchaseOrderStatus.Approved:
       return "secondary"
-    case PurchaseOrderStatus.Ordered:
+    case PurchaseOrderStatus.Validated:
       return "default"
     case PurchaseOrderStatus.Received:
       return "default"
@@ -110,20 +139,236 @@ function getPurchaseOrderTypeIcon(poType: string | null) {
   }
 }
 
+function getUrgencyConfig(urgency?: string, priority?: string) {
+  // Determine urgency from work order priority or explicit urgency
+  const urgencyLevel = urgency || priority || 'medium'
+  
+  switch (urgencyLevel.toLowerCase()) {
+    case 'critical':
+    case 'alta':
+    case 'high':
+      return { 
+        variant: "destructive" as const, 
+        icon: AlertCircle, 
+        label: "Crítica",
+        color: "text-red-600",
+        bgColor: "bg-red-50"
+      }
+    case 'medium':
+    case 'media':
+      return { 
+        variant: "default" as const, 
+        icon: Clock, 
+        label: "Media",
+        color: "text-yellow-600",
+        bgColor: "bg-yellow-50"
+      }
+    case 'low':
+    case 'baja':
+      return { 
+        variant: "secondary" as const, 
+        icon: Info, 
+        label: "Baja",
+        color: "text-green-600",
+        bgColor: "bg-green-50"
+      }
+    default:
+      return { 
+        variant: "outline" as const, 
+        icon: Clock, 
+        label: "Normal",
+        color: "text-gray-600",
+        bgColor: "bg-gray-50"
+      }
+  }
+}
+
+function getItemsPreview(items: any): string {
+  if (!items) return "Sin items especificados"
+  
+  try {
+    const itemsArray = typeof items === 'string' ? JSON.parse(items) : items
+    if (!Array.isArray(itemsArray) || itemsArray.length === 0) {
+      return "Sin items especificados"
+    }
+    
+    const preview = itemsArray.slice(0, 2).map((item: any) => {
+      if (typeof item === 'string') return item
+      return item.description || item.name || item.item || 'Item'
+    }).join(', ')
+    
+    const moreCount = itemsArray.length - 2
+    return moreCount > 0 ? `${preview} y ${moreCount} más` : preview
+  } catch {
+    return "Items no válidos"
+  }
+}
+
 export function PurchaseOrdersList() {
   // All hooks must be called before any conditional returns
   const isMobile = useIsMobile()
   const { toast } = useToast()
+  const { profile, hasCreateAccess } = useAuthZustand()
   const [searchTerm, setSearchTerm] = useState("")
   const [orders, setOrders] = useState<PurchaseOrderWithWorkOrder[]>([]) 
   const [isLoading, setIsLoading] = useState(true)
   const [activeTab, setActiveTab] = useState<string>("all")
   const [technicians, setTechnicians] = useState<Record<string, Profile>>({})
+  const [userAuthLimit, setUserAuthLimit] = useState<number>(0)
+  const [isLoadingAuth, setIsLoadingAuth] = useState(true)
+  
+  // Enhanced approval functionality state
+  const [showApprovalDialog, setShowApprovalDialog] = useState(false)
+  const [orderToApprove, setOrderToApprove] = useState<PurchaseOrderWithWorkOrder | null>(null)
+  const [isApproving, setIsApproving] = useState(false)
+  const [approvalAction, setApprovalAction] = useState<'approve' | 'reject'>('approve')
   
   // Delete functionality state
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
   const [orderToDelete, setOrderToDelete] = useState<PurchaseOrderWithWorkOrder | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
+
+  // Load user authorization limit
+  useEffect(() => {
+    const loadUserAuthLimit = async () => {
+      if (!profile?.id) return
+      
+      try {
+        const response = await fetch('/api/authorization/summary')
+        const data = await response.json()
+        
+        // Find user in organization summary
+        let userFound = false
+        if (data.organization_summary) {
+          for (const businessUnit of data.organization_summary) {
+            for (const plant of businessUnit.plants) {
+              const user = plant.users.find((u: any) => u.user_id === profile.id)
+              if (user) {
+                const limit = parseFloat(user.effective_global_authorization || 0)
+                setUserAuthLimit(limit)
+                userFound = true
+                break
+              }
+            }
+            if (userFound) break
+          }
+        }
+        
+        if (!userFound) {
+          setUserAuthLimit(profile.can_authorize_up_to || 0)
+        }
+      } catch (error) {
+        console.error('Error loading user authorization limit:', error)
+        setUserAuthLimit(profile.can_authorize_up_to || 0)
+      } finally {
+        setIsLoadingAuth(false)
+      }
+    }
+
+    loadUserAuthLimit()
+  }, [profile])
+
+  // Check if user can approve a specific order
+  const canApproveOrder = (order: PurchaseOrderWithWorkOrder): boolean => {
+    if (!profile || order.status !== PurchaseOrderStatus.PendingApproval || order.is_adjustment) {
+      return false
+    }
+    
+    const orderAmount = parseFloat(order.total_amount?.toString() || '0')
+    return userAuthLimit > 0 && orderAmount <= userAuthLimit
+  }
+
+  // Get authorization status for display
+  const getAuthorizationStatus = (order: PurchaseOrderWithWorkOrder) => {
+    if (!profile) return { canApprove: false, reason: "No autenticado" }
+    
+    if (order.status !== PurchaseOrderStatus.PendingApproval) {
+      return { canApprove: false, reason: "Ya procesada" }
+    }
+    
+    if (order.is_adjustment) {
+      return { canApprove: false, reason: "Es ajuste" }
+    }
+    
+    if (isLoadingAuth) {
+      return { canApprove: false, reason: "Cargando..." }
+    }
+    
+    const orderAmount = parseFloat(order.total_amount?.toString() || '0')
+    
+    if (userAuthLimit === 0) {
+      return { canApprove: false, reason: "Sin autorización" }
+    }
+    
+    if (orderAmount > userAuthLimit) {
+      return { 
+        canApprove: false, 
+        reason: `Excede límite (${formatCurrency(userAuthLimit)})` 
+      }
+    }
+    
+    return { canApprove: true, reason: "Puede aprobar" }
+  }
+
+  // Handle quick approval
+  const handleQuickApproval = (order: PurchaseOrderWithWorkOrder, action: 'approve' | 'reject') => {
+    setOrderToApprove(order)
+    setApprovalAction(action)
+    setShowApprovalDialog(true)
+  }
+
+  // Confirm approval/rejection
+  const confirmApproval = async () => {
+    if (!orderToApprove) return
+
+    setIsApproving(true)
+    const supabase = createClient()
+
+    try {
+      const newStatus = approvalAction === 'approve' ? 'approved' : 'rejected'
+      
+      const response = await fetch(`/api/purchase-orders/advance-workflow/${orderToApprove.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          new_status: newStatus
+        })
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Error en la aprobación')
+      }
+
+      // Update local state
+      setOrders(prevOrders => 
+        prevOrders.map(o => 
+          o.id === orderToApprove.id 
+            ? { ...o, status: newStatus === 'approved' ? PurchaseOrderStatus.Approved : PurchaseOrderStatus.Rejected }
+            : o
+        )
+      )
+      
+      toast({
+        title: approvalAction === 'approve' ? "Orden aprobada" : "Orden rechazada",
+        description: `La orden ${orderToApprove.order_id} ha sido ${approvalAction === 'approve' ? 'aprobada' : 'rechazada'} exitosamente.`,
+      })
+      
+      setShowApprovalDialog(false)
+      setOrderToApprove(null)
+    } catch (error) {
+      console.error("Error en aprobación:", error)
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "No se pudo procesar la orden",
+        variant: "destructive",
+      })
+    } finally {
+      setIsApproving(false)
+    }
+  }
 
   const handleRefresh = async () => {
     await loadOrders()
@@ -200,7 +445,7 @@ export function PurchaseOrdersList() {
         setTechnicians(techMap)
       }
       
-      // Load purchase orders first
+      // Load purchase orders with basic data first
       const { data: purchaseOrdersData, error } = await supabase
         .from("purchase_orders")
         .select("*")
@@ -217,7 +462,7 @@ export function PurchaseOrdersList() {
         .map(po => po.work_order_id)
         .filter((id): id is string => id !== null) || []
         
-      // Load work orders if there are any to load
+      // Load work orders with asset information if there are any to load
       let workOrdersMap: Record<string, any> = {}
       if (workOrderIds.length > 0) {
         const { data: workOrdersData, error: workOrdersError } = await supabase
@@ -226,7 +471,14 @@ export function PurchaseOrdersList() {
             id,
             order_id,
             description,
-            asset_id
+            asset_id,
+            priority,
+            assets (
+              id,
+              name,
+              asset_id,
+              plants (name)
+            )
           `)
           .in("id", workOrderIds)
           
@@ -239,10 +491,11 @@ export function PurchaseOrdersList() {
         }
       }
       
-      // Merge the data
+      // Merge the data and add preview information
       const ordersWithWorkOrders = purchaseOrdersData.map(po => ({
         ...po,
-        work_orders: po.work_order_id ? workOrdersMap[po.work_order_id] : null
+        work_orders: po.work_order_id ? workOrdersMap[po.work_order_id] : null,
+        items_preview: getItemsPreview(po.items)
       }))
       
       setOrders(ordersWithWorkOrders as PurchaseOrderWithWorkOrder[])
@@ -266,12 +519,12 @@ export function PurchaseOrdersList() {
 
   // Calculate summary metrics
   const summaryMetrics = {
-    pending: orders.filter(o => o.status === PurchaseOrderStatus.Pending && !o.is_adjustment).length,
+    pending: orders.filter(o => o.status === PurchaseOrderStatus.PendingApproval && !o.is_adjustment).length,
     approved: orders.filter(o => o.status === PurchaseOrderStatus.Approved && !o.is_adjustment).length,
-    ordered: orders.filter(o => o.status === PurchaseOrderStatus.Ordered && !o.is_adjustment).length,
+    validated: orders.filter(o => o.status === PurchaseOrderStatus.Validated && !o.is_adjustment).length,
     adjustments: orders.filter(o => o.is_adjustment).length,
     totalPendingValue: orders
-      .filter(o => o.status === PurchaseOrderStatus.Pending && !o.is_adjustment)
+      .filter(o => o.status === PurchaseOrderStatus.PendingApproval && !o.is_adjustment)
       .reduce((sum, o) => {
         const amount = typeof o.total_amount === 'string' ? parseFloat(o.total_amount) : (o.total_amount || 0);
         return sum + amount;
@@ -292,9 +545,9 @@ export function PurchaseOrdersList() {
   // Filter orders by status tab
   const filteredOrdersByTab = orders.filter(order => {
     if (activeTab === "all") return true;
-    if (activeTab === "pending") return order.status === PurchaseOrderStatus.Pending && !order.is_adjustment;
+    if (activeTab === "pending") return order.status === PurchaseOrderStatus.PendingApproval && !order.is_adjustment;
     if (activeTab === "approved") return order.status === PurchaseOrderStatus.Approved && !order.is_adjustment;
-    if (activeTab === "ordered") return order.status === PurchaseOrderStatus.Ordered && !order.is_adjustment;
+    if (activeTab === "validated") return order.status === PurchaseOrderStatus.Validated && !order.is_adjustment;
     if (activeTab === "received") return order.status === PurchaseOrderStatus.Received && !order.is_adjustment;
     if (activeTab === "adjustments") return order.is_adjustment === true;
     return true;
@@ -408,10 +661,10 @@ export function PurchaseOrdersList() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {summaryMetrics.ordered}
+              {summaryMetrics.validated}
             </div>
             <p className="text-xs text-muted-foreground">
-              Pedidas, esperando recepción
+              Validadas
             </p>
           </CardContent>
         </Card>
@@ -483,136 +736,420 @@ export function PurchaseOrdersList() {
               <TabsTrigger value="all">Todas ({orders.length})</TabsTrigger>
               <TabsTrigger value="pending">Pendientes ({summaryMetrics.pending})</TabsTrigger>
               <TabsTrigger value="approved">Aprobadas ({summaryMetrics.approved})</TabsTrigger>
-              <TabsTrigger value="ordered">Pedidas ({summaryMetrics.ordered})</TabsTrigger>
+              <TabsTrigger value="validated">Validadas ({summaryMetrics.validated})</TabsTrigger>
               <TabsTrigger value="received">Recibidas</TabsTrigger>
               <TabsTrigger value="adjustments">Ajustes ({summaryMetrics.adjustments})</TabsTrigger>
             </TabsList>
             
             <TabsContent value={activeTab} className="mt-4">
               <div className="rounded-md border">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-[100px]">OC ID</TableHead>
-                      <TableHead>Proveedor</TableHead>
-                      <TableHead>Solicitado por</TableHead>
-                      <TableHead className="text-right">Monto</TableHead>
-                      <TableHead>Estado</TableHead>
-                      <TableHead className="text-right">Acciones</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {isLoading ? (
+                <TooltipProvider>
+                  <Table>
+                    <TableHeader>
                       <TableRow>
-                        <TableCell colSpan={6} className="text-center py-8">
-                          Cargando órdenes de compra...
-                        </TableCell>
+                        <TableHead className="w-[120px]">Orden</TableHead>
+                        <TableHead className="min-w-[250px]">Descripción y Activo</TableHead>
+                        <TableHead className="w-[180px]">Proveedor/Solicitante</TableHead>
+                        <TableHead className="w-[120px] text-right">Monto</TableHead>
+                        <TableHead className="w-[100px]">Urgencia</TableHead>
+                        <TableHead className="w-[120px]">Estado</TableHead>
+                        <TableHead className="w-[200px] text-center">Autorización</TableHead>
+                        <TableHead className="w-[140px] text-right">Acciones</TableHead>
                       </TableRow>
-                    ) : filteredOrders.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={6} className="text-center py-8">
-                          No se encontraron órdenes de compra
-                        </TableCell>
-                      </TableRow>
-                    ) : (
-                      filteredOrders.map((order) => (
-                        <TableRow key={order.id}>
-                          <TableCell className="font-medium">
-                            <div className="flex items-center space-x-2">
-                              <span>{order.order_id}</span>
-                              {order.is_adjustment && (
-                                <Badge variant="outline" className="bg-yellow-100 text-yellow-800 text-xs">
-                                  Ajuste
-                                </Badge>
-                              )}
-                            </div>
-                            {isEnhancedPurchaseOrder(order) && order.po_type && (
-                              <div className="mt-1">
-                                <TypeBadge type={order.po_type as PurchaseOrderType} size="sm" />
-                              </div>
-                            )}
-                          </TableCell>
-                          <TableCell>
-                            {isEnhancedPurchaseOrder(order) && order.service_provider 
-                              ? order.service_provider 
-                              : order.supplier || "No especificado"}
-                          </TableCell>
-                          <TableCell>{getTechnicianName(order.requested_by)}</TableCell> 
-                          <TableCell className="text-right">
-                            {formatCurrency(order.total_amount || "0")}
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant={getEnhancedStatusConfig(order.status || "Pendiente", order.po_type)}>
-                              {order.status || "Pendiente"}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button
-                                  variant="ghost"
-                                  className="h-8 w-8 p-0"
-                                >
-                                  <span className="sr-only">Abrir menú</span>
-                                  <MoreHorizontal className="h-4 w-4" />
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end">
-                                <DropdownMenuItem asChild>
-                                  <Link href={`/compras/${order.id}`}>
-                                    <Eye className="mr-2 h-4 w-4" />
-                                    Ver detalles
-                                  </Link>
-                                </DropdownMenuItem>
-                                
-                                {/* Action items based on status */}
-                                {order.status === PurchaseOrderStatus.Pending && !order.is_adjustment && (
-                                  <DropdownMenuItem asChild>
-                                    <Link href={`/compras/${order.id}/aprobar`}>
-                                      <Check className="mr-2 h-4 w-4" />
-                                      Aprobar orden
-                                    </Link>
-                                  </DropdownMenuItem>
-                                )}
-                                
-                                {order.status === PurchaseOrderStatus.Approved && !order.is_adjustment && (
-                                  <DropdownMenuItem asChild>
-                                    <Link href={`/compras/${order.id}/pedido`}>
-                                      <ShoppingCart className="mr-2 h-4 w-4" />
-                                      Realizar pedido
-                                    </Link>
-                                  </DropdownMenuItem>
-                                )}
-                                
-                                {order.status === PurchaseOrderStatus.Ordered && !order.is_adjustment && (
-                                  <DropdownMenuItem asChild>
-                                    <Link href={`/compras/${order.id}/recibido`}>
-                                      <Package className="mr-2 h-4 w-4" />
-                                      Marcar como recibido
-                                    </Link>
-                                  </DropdownMenuItem>
-                                )}
-                                
-                                <DropdownMenuItem 
-                                  onClick={() => handleDeleteOrder(order)}
-                                  className="text-red-600 focus:text-red-600"
-                                >
-                                  <Trash2 className="mr-2 h-4 w-4" />
-                                  Eliminar OC
-                                </DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
+                    </TableHeader>
+                    <TableBody>
+                      {isLoading ? (
+                        <TableRow>
+                          <TableCell colSpan={8} className="text-center py-8">
+                            Cargando órdenes de compra...
                           </TableCell>
                         </TableRow>
-                      ))
-                    )}
-                  </TableBody>
-                </Table>
+                      ) : filteredOrders.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={8} className="text-center py-8">
+                            No se encontraron órdenes de compra
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        filteredOrders.map((order) => {
+                          const authStatus = getAuthorizationStatus(order)
+                          const workOrder = getWorkOrder(order)
+                          const urgencyConfig = getUrgencyConfig(
+                            workOrder?.priority, 
+                            workOrder?.priority
+                          )
+                          const UrgencyIcon = urgencyConfig.icon
+                          
+                          return (
+                            <TableRow key={order.id} className="group hover:bg-muted/50">
+                              {/* Order ID and Type */}
+                              <TableCell className="font-medium">
+                                <div className="space-y-1">
+                                  <div className="flex items-center space-x-2">
+                                    <span className="font-mono text-sm">{order.order_id}</span>
+                                    {order.is_adjustment && (
+                                      <Badge variant="outline" className="bg-yellow-100 text-yellow-800 text-xs">
+                                        Ajuste
+                                      </Badge>
+                                    )}
+                                  </div>
+                                  {isEnhancedPurchaseOrder(order) && order.po_type && (
+                                    <TypeBadge type={order.po_type as PurchaseOrderType} size="sm" />
+                                  )}
+                                  {workOrder && (
+                                    <div className="text-xs text-muted-foreground">
+                                      OT: {workOrder.order_id}
+                                    </div>
+                                  )}
+                                </div>
+                              </TableCell>
+
+                              {/* Description and Asset */}
+                              <TableCell>
+                                <div className="space-y-1">
+                                  <div className="font-medium text-sm">
+                                    {workOrder ? (
+                                      <Tooltip>
+                                        <TooltipTrigger asChild>
+                                          <span className="cursor-help">
+                                            {workOrder.description?.length > 50 
+                                              ? `${workOrder.description.substring(0, 50)}...` 
+                                              : workOrder.description || 'Sin descripción'}
+                                          </span>
+                                        </TooltipTrigger>
+                                        <TooltipContent>
+                                          <p className="max-w-xs">{workOrder.description}</p>
+                                        </TooltipContent>
+                                      </Tooltip>
+                                    ) : (
+                                      "Orden directa"
+                                    )}
+                                  </div>
+                                  
+                                  {workOrder?.assets && (
+                                    <div className="flex items-center space-x-1 text-xs text-muted-foreground">
+                                      <Building2 className="h-3 w-3" />
+                                      <span>{workOrder.assets.asset_id || workOrder.assets.name}</span>
+                                      {workOrder.assets.plants && (
+                                        <span className="text-xs">• {workOrder.assets.plants.name}</span>
+                                      )}
+                                    </div>
+                                  )}
+                                  
+                                  <div className="text-xs text-muted-foreground">
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <span className="cursor-help">
+                                          📦 {order.items_preview}
+                                        </span>
+                                      </TooltipTrigger>
+                                      <TooltipContent>
+                                        <p>Click "Ver detalles" para ver todos los items</p>
+                                      </TooltipContent>
+                                    </Tooltip>
+                                  </div>
+                                </div>
+                              </TableCell>
+
+                              {/* Provider/Requester */}
+                              <TableCell>
+                                <div className="space-y-1">
+                                  <div className="font-medium text-sm">
+                                    {isEnhancedPurchaseOrder(order) && order.service_provider 
+                                      ? order.service_provider 
+                                      : order.supplier || "No especificado"}
+                                  </div>
+                                  <div className="text-xs text-muted-foreground">
+                                    Solicitado por: {getTechnicianName(order.requested_by)}
+                                  </div>
+                                </div>
+                              </TableCell>
+
+                              {/* Amount */}
+                              <TableCell className="text-right">
+                                <div className="space-y-1">
+                                  <div className="font-semibold">
+                                    {formatCurrency(order.total_amount || "0")}
+                                  </div>
+                                  {order.requires_quote && (
+                                    <Badge variant="outline" className="text-xs">
+                                      Cotización
+                                    </Badge>
+                                  )}
+                                </div>
+                              </TableCell>
+
+                              {/* Urgency */}
+                              <TableCell>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <div className={`flex items-center space-x-1 p-2 rounded-md ${urgencyConfig.bgColor}`}>
+                                      <UrgencyIcon className={`h-3 w-3 ${urgencyConfig.color}`} />
+                                      <span className={`text-xs font-medium ${urgencyConfig.color}`}>
+                                        {urgencyConfig.label}
+                                      </span>
+                                    </div>
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    <p>Prioridad: {workOrder?.priority || 'Normal'}</p>
+                                  </TooltipContent>
+                                </Tooltip>
+                              </TableCell>
+
+                              {/* Status */}
+                              <TableCell>
+                                <Badge variant={getEnhancedStatusConfig(order.status || "Pendiente", order.po_type)}>
+                                  {order.status || "Pendiente"}
+                                </Badge>
+                              </TableCell>
+
+                              {/* Authorization Column */}
+                              <TableCell className="text-center">
+                                <div className="space-y-2">
+                                  {order.status === PurchaseOrderStatus.PendingApproval && !order.is_adjustment ? (
+                                    authStatus.canApprove ? (
+                                      <div className="flex space-x-1">
+                                        <Tooltip>
+                                          <TooltipTrigger asChild>
+                                            <Button
+                                              size="sm"
+                                              variant="default"
+                                              className="h-7 px-2 bg-green-600 hover:bg-green-700"
+                                              onClick={() => handleQuickApproval(order, 'approve')}
+                                            >
+                                              <Check className="h-3 w-3" />
+                                            </Button>
+                                          </TooltipTrigger>
+                                          <TooltipContent>
+                                            <p>Aprobar orden rápidamente</p>
+                                          </TooltipContent>
+                                        </Tooltip>
+                                        
+                                        <Tooltip>
+                                          <TooltipTrigger asChild>
+                                            <Button
+                                              size="sm"
+                                              variant="destructive"
+                                              className="h-7 px-2"
+                                              onClick={() => handleQuickApproval(order, 'reject')}
+                                            >
+                                              <X className="h-3 w-3" />
+                                            </Button>
+                                          </TooltipTrigger>
+                                          <TooltipContent>
+                                            <p>Rechazar orden</p>
+                                          </TooltipContent>
+                                        </Tooltip>
+                                      </div>
+                                    ) : (
+                                      <Tooltip>
+                                        <TooltipTrigger asChild>
+                                          <div className="flex items-center justify-center space-x-1 text-xs text-muted-foreground">
+                                            <Shield className="h-3 w-3" />
+                                            <span>No autorizado</span>
+                                          </div>
+                                        </TooltipTrigger>
+                                        <TooltipContent>
+                                          <p>{authStatus.reason}</p>
+                                        </TooltipContent>
+                                      </Tooltip>
+                                    )
+                                  ) : (
+                                    <div className="text-xs text-muted-foreground">
+                                      {order.status === PurchaseOrderStatus.Approved && "✓ Aprobada"}
+                                      {order.status === PurchaseOrderStatus.Rejected && "✗ Rechazada"}
+                                      {order.status === PurchaseOrderStatus.Validated && "📦 Validada"}
+                                      {order.status === PurchaseOrderStatus.Received && "✅ Recibida"}
+                                      {order.is_adjustment && "🔧 Ajuste"}
+                                    </div>
+                                  )}
+                                  
+                                  {/* Authorization limit indicator */}
+                                  {!isLoadingAuth && userAuthLimit > 0 && (
+                                    <div className="text-xs text-muted-foreground">
+                                      Límite: {formatCurrency(userAuthLimit)}
+                                    </div>
+                                  )}
+                                </div>
+                              </TableCell>
+
+                              {/* Actions */}
+                              <TableCell className="text-right">
+                                <div className="flex items-center justify-end space-x-1">
+                                  <Button asChild size="sm" variant="outline">
+                                    <Link href={`/compras/${order.id}`}>
+                                      <Eye className="mr-1 h-3 w-3" />
+                                      Detalles
+                                    </Link>
+                                  </Button>
+                                  
+                                  <DropdownMenu>
+                                    <DropdownMenuTrigger asChild>
+                                      <Button
+                                        variant="ghost"
+                                        className="h-8 w-8 p-0"
+                                      >
+                                        <span className="sr-only">Abrir menú</span>
+                                        <MoreHorizontal className="h-4 w-4" />
+                                      </Button>
+                                    </DropdownMenuTrigger>
+                                    <DropdownMenuContent align="end">
+                                      <DropdownMenuItem asChild>
+                                        <Link href={`/compras/${order.id}`}>
+                                          <Eye className="mr-2 h-4 w-4" />
+                                          Ver detalles completos
+                                        </Link>
+                                      </DropdownMenuItem>
+                                      
+                                      {order.status === PurchaseOrderStatus.Approved && !order.is_adjustment && (
+                                        <DropdownMenuItem asChild>
+                                          <Link href={`/compras/${order.id}/pedido`}>
+                                            <ShoppingCart className="mr-2 h-4 w-4" />
+                                            Realizar pedido
+                                          </Link>
+                                        </DropdownMenuItem>
+                                      )}
+                                      
+                                      {order.status === PurchaseOrderStatus.Validated && !order.is_adjustment && (
+                                        <DropdownMenuItem asChild>
+                                          <Link href={`/compras/${order.id}/recibido`}>
+                                            <Package className="mr-2 h-4 w-4" />
+                                            Marcar como recibido
+                                          </Link>
+                                        </DropdownMenuItem>
+                                      )}
+                                      
+                                      <DropdownMenuItem 
+                                        onClick={() => handleDeleteOrder(order)}
+                                        className="text-red-600 focus:text-red-600"
+                                      >
+                                        <Trash2 className="mr-2 h-4 w-4" />
+                                        Eliminar OC
+                                      </DropdownMenuItem>
+                                    </DropdownMenuContent>
+                                  </DropdownMenu>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          )
+                        })
+                      )}
+                    </TableBody>
+                  </Table>
+                </TooltipProvider>
               </div>
             </TabsContent>
           </Tabs>
         </CardContent>
       </Card>
+
+      {/* Quick Approval Confirmation Dialog */}
+      <AlertDialog open={showApprovalDialog} onOpenChange={setShowApprovalDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {approvalAction === 'approve' ? 'Confirmar Aprobación' : 'Confirmar Rechazo'}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {orderToApprove && (
+                <div className="space-y-3 mt-4">
+                  <div className="p-4 bg-muted rounded-lg space-y-2">
+                    <div className="grid grid-cols-2 gap-4 text-sm">
+                      <div>
+                        <span className="font-medium">Orden:</span> {orderToApprove.order_id}
+                      </div>
+                      <div>
+                        <span className="font-medium">Monto:</span> {formatCurrency(orderToApprove.total_amount || "0")}
+                      </div>
+                      <div>
+                        <span className="font-medium">Proveedor:</span> {orderToApprove.supplier || "No especificado"}
+                      </div>
+                      <div>
+                        <span className="font-medium">Solicitado por:</span> {getTechnicianName(orderToApprove.requested_by)}
+                      </div>
+                    </div>
+                    
+                    {orderToApprove.work_orders && (
+                      <Separator />
+                    )}
+                    
+                    {orderToApprove.work_orders && (
+                      <div className="space-y-1">
+                        <div className="font-medium text-sm">Orden de Trabajo: {orderToApprove.work_orders.order_id}</div>
+                        <div className="text-sm text-muted-foreground">{orderToApprove.work_orders.description}</div>
+                        {orderToApprove.work_orders.assets && (
+                          <div className="flex items-center space-x-1 text-sm text-muted-foreground">
+                            <Building2 className="h-3 w-3" />
+                            <span>{orderToApprove.work_orders.assets.asset_id || orderToApprove.work_orders.assets.name}</span>
+                            {orderToApprove.work_orders.assets.plants && (
+                              <span className="text-xs">• {orderToApprove.work_orders.assets.plants.name}</span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    
+                    <Separator />
+                    
+                    <div className="text-sm">
+                      <span className="font-medium">Items:</span> {orderToApprove.items_preview}
+                    </div>
+                  </div>
+                  
+                  {approvalAction === 'approve' ? (
+                    <div className="flex items-center space-x-2 text-green-700 bg-green-50 p-3 rounded-lg">
+                      <Check className="h-4 w-4" />
+                      <span className="font-medium">
+                        ¿Confirmas que quieres aprobar esta orden de compra?
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="flex items-center space-x-2 text-red-700 bg-red-50 p-3 rounded-lg">
+                      <X className="h-4 w-4" />
+                      <span className="font-medium">
+                        ¿Confirmas que quieres rechazar esta orden de compra?
+                      </span>
+                    </div>
+                  )}
+                  
+                  <div className="text-xs text-muted-foreground">
+                    Tu límite de autorización: {formatCurrency(userAuthLimit)}
+                  </div>
+                </div>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isApproving}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmApproval}
+              disabled={isApproving}
+              className={approvalAction === 'approve' ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'}
+            >
+              {isApproving ? (
+                <>
+                  <Clock className="mr-2 h-4 w-4 animate-spin" />
+                  Procesando...
+                </>
+              ) : (
+                <>
+                  {approvalAction === 'approve' ? (
+                    <>
+                      <Check className="mr-2 h-4 w-4" />
+                      Aprobar
+                    </>
+                  ) : (
+                    <>
+                      <X className="mr-2 h-4 w-4" />
+                      Rechazar
+                    </>
+                  )}
+                </>
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Delete Confirmation Dialog */}
       <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>

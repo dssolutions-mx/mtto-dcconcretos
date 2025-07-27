@@ -9,7 +9,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { 
   Check, CheckCircle, Edit, Eye, FileCheck, Search, 
   AlertTriangle, Wrench, ShoppingCart, Package, 
-  Clock, DollarSign, TrendingUp, Store, Building2, Receipt, ExternalLink, Trash2, MoreVertical
+  Clock, DollarSign, TrendingUp, Store, Building2, Receipt, ExternalLink, Trash2, MoreVertical,
+  X, Info, Shield, AlertCircle, Zap, MessageSquare
 } from "lucide-react"
 import { createClient } from "@/lib/supabase"
 import Link from "next/link"
@@ -40,6 +41,15 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
+import { Separator } from "@/components/ui/separator"
+import { useAuthZustand } from "@/hooks/use-auth-zustand"
+import { formatCurrency } from "@/lib/utils"
 
 interface PurchaseOrderWithWorkOrder extends Omit<PurchaseOrder, 'is_adjustment' | 'original_purchase_order_id'> {
   work_orders?: {
@@ -47,6 +57,14 @@ interface PurchaseOrderWithWorkOrder extends Omit<PurchaseOrder, 'is_adjustment'
     order_id: string;
     description: string;
     asset_id: string | null;
+    assets?: {
+      id: string;
+      name: string;
+      asset_id: string;
+      plants?: {
+        name: string;
+      };
+    } | null;
   } | null;
   is_adjustment?: boolean | null;
   original_purchase_order_id?: string;
@@ -142,12 +160,16 @@ function PurchaseOrderCard({
   order, 
   getTechnicianName, 
   formatCurrency,
-  onDeleteOrder 
+  onDeleteOrder,
+  userAuthLimit,
+  onQuickApproval 
 }: { 
   order: PurchaseOrderWithWorkOrder
   getTechnicianName: (techId: string | null) => string
   formatCurrency: (amount: string | number | null) => string
   onDeleteOrder: (order: PurchaseOrderWithWorkOrder) => void
+  userAuthLimit: number
+  onQuickApproval: (order: PurchaseOrderWithWorkOrder, action: 'approve' | 'reject') => void
 }) {
   const workOrder = getWorkOrder(order);
   const isEnhanced = isEnhancedPurchaseOrder(order)
@@ -308,6 +330,17 @@ function PurchaseOrderCard({
               <span>{workOrder.order_id}</span>
               <ExternalLink className="h-3 w-3" />
             </Link>
+            {workOrder.assets && (
+              <div className="flex items-center space-x-1 mt-1">
+                <Building2 className="h-3 w-3 text-muted-foreground" />
+                <span className="text-xs text-muted-foreground">
+                  {workOrder.assets.asset_id || workOrder.assets.name}
+                  {workOrder.assets.plants && (
+                    <span> • {workOrder.assets.plants.name}</span>
+                  )}
+                </span>
+              </div>
+            )}
           </div>
         )}
 
@@ -345,13 +378,17 @@ function MobileView({
   isLoading, 
   getTechnicianName, 
   formatCurrency,
-  onDeleteOrder 
+  onDeleteOrder,
+  userAuthLimit,
+  onQuickApproval 
 }: { 
   orders: PurchaseOrderWithWorkOrder[]
   isLoading: boolean
   getTechnicianName: (techId: string | null) => string
   formatCurrency: (amount: string | number | null) => string
   onDeleteOrder: (order: PurchaseOrderWithWorkOrder) => void
+  userAuthLimit: number
+  onQuickApproval: (order: PurchaseOrderWithWorkOrder, action: 'approve' | 'reject') => void
 }) {
   if (isLoading) {
     return (
@@ -394,6 +431,8 @@ function MobileView({
           getTechnicianName={getTechnicianName}
           formatCurrency={formatCurrency}
           onDeleteOrder={onDeleteOrder}
+          userAuthLimit={userAuthLimit}
+          onQuickApproval={onQuickApproval}
         />
       ))}
     </div>
@@ -403,12 +442,21 @@ function MobileView({
 // Main Component
 export function PurchaseOrdersListMobile() {
   const { toast } = useToast()
+  const { profile } = useAuthZustand()
   const [searchTerm, setSearchTerm] = useState("")
   const [orders, setOrders] = useState<PurchaseOrderWithWorkOrder[]>([]) 
   const [isLoading, setIsLoading] = useState(true)
   const [activeTab, setActiveTab] = useState<string>("all")
   const [technicians, setTechnicians] = useState<Record<string, Profile>>({})
+  const [userAuthLimit, setUserAuthLimit] = useState<number>(0)
+  const [isLoadingAuth, setIsLoadingAuth] = useState(true)
   const isMobile = useIsMobile()
+  
+  // Enhanced approval functionality state
+  const [showApprovalDialog, setShowApprovalDialog] = useState(false)
+  const [orderToApprove, setOrderToApprove] = useState<PurchaseOrderWithWorkOrder | null>(null)
+  const [isApproving, setIsApproving] = useState(false)
+  const [approvalAction, setApprovalAction] = useState<'approve' | 'reject'>('approve')
   
   // Delete functionality state
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
@@ -470,6 +518,53 @@ export function PurchaseOrdersListMobile() {
     }
   }
 
+  // Handle quick approval
+  const handleQuickApproval = (order: PurchaseOrderWithWorkOrder, action: 'approve' | 'reject') => {
+    setOrderToApprove(order)
+    setApprovalAction(action)
+    setShowApprovalDialog(true)
+  }
+
+  // Load user authorization limit
+  useEffect(() => {
+    const loadUserAuthLimit = async () => {
+      if (!profile?.id) return
+      
+      try {
+        const response = await fetch('/api/authorization/summary')
+        const data = await response.json()
+        
+        // Find user in organization summary
+        let userFound = false
+        if (data.organization_summary) {
+          for (const businessUnit of data.organization_summary) {
+            for (const plant of businessUnit.plants) {
+              const user = plant.users.find((u: any) => u.user_id === profile.id)
+              if (user) {
+                const limit = parseFloat(user.effective_global_authorization || 0)
+                setUserAuthLimit(limit)
+                userFound = true
+                break
+              }
+            }
+            if (userFound) break
+          }
+        }
+        
+        if (!userFound) {
+          setUserAuthLimit(profile.can_authorize_up_to || 0)
+        }
+      } catch (error) {
+        console.error('Error loading user authorization limit:', error)
+        setUserAuthLimit(profile.can_authorize_up_to || 0)
+      } finally {
+        setIsLoadingAuth(false)
+      }
+    }
+
+    loadUserAuthLimit()
+  }, [profile])
+
   async function loadOrders() {
     try {
       setIsLoading(true)
@@ -511,7 +606,18 @@ export function PurchaseOrdersListMobile() {
       if (workOrderIds && workOrderIds.length > 0) {
         const { data: workOrdersData, error: workOrderError } = await supabase
           .from("work_orders")
-          .select("id, order_id, description, asset_id")
+          .select(`
+            id, 
+            order_id, 
+            description, 
+            asset_id,
+            assets (
+              id,
+              name,
+              asset_id,
+              plants (name)
+            )
+          `)
           .in("id", workOrderIds)
         
         if (workOrderError) {
@@ -799,6 +905,8 @@ export function PurchaseOrdersListMobile() {
                 getTechnicianName={getTechnicianName}
                 formatCurrency={formatCurrency}
                 onDeleteOrder={handleDeleteOrder}
+                userAuthLimit={userAuthLimit}
+                onQuickApproval={handleQuickApproval}
               />
             </TabsContent>
             
@@ -809,6 +917,8 @@ export function PurchaseOrdersListMobile() {
                 getTechnicianName={getTechnicianName}
                 formatCurrency={formatCurrency}
                 onDeleteOrder={handleDeleteOrder}
+                userAuthLimit={userAuthLimit}
+                onQuickApproval={handleQuickApproval}
               />
             </TabsContent>
             
@@ -819,6 +929,8 @@ export function PurchaseOrdersListMobile() {
                 getTechnicianName={getTechnicianName}
                 formatCurrency={formatCurrency}
                 onDeleteOrder={handleDeleteOrder}
+                userAuthLimit={userAuthLimit}
+                onQuickApproval={handleQuickApproval}
               />
             </TabsContent>
             
@@ -829,6 +941,8 @@ export function PurchaseOrdersListMobile() {
                 getTechnicianName={getTechnicianName}
                 formatCurrency={formatCurrency}
                 onDeleteOrder={handleDeleteOrder}
+                userAuthLimit={userAuthLimit}
+                onQuickApproval={handleQuickApproval}
               />
             </TabsContent>
             
@@ -839,6 +953,8 @@ export function PurchaseOrdersListMobile() {
                 getTechnicianName={getTechnicianName}
                 formatCurrency={formatCurrency}
                 onDeleteOrder={handleDeleteOrder}
+                userAuthLimit={userAuthLimit}
+                onQuickApproval={handleQuickApproval}
               />
             </TabsContent>
             
@@ -849,6 +965,8 @@ export function PurchaseOrdersListMobile() {
                 getTechnicianName={getTechnicianName}
                 formatCurrency={formatCurrency}
                 onDeleteOrder={handleDeleteOrder}
+                userAuthLimit={userAuthLimit}
+                onQuickApproval={handleQuickApproval}
               />
             </TabsContent>
           </Tabs>

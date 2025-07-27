@@ -199,11 +199,11 @@ export enum WorkOrderStatus {
 }
 
 export enum PurchaseOrderStatus {
-  Pending = 'Pendiente',
-  Approved = 'Aprobada',
-  Rejected = 'Rechazada',
-  Ordered = 'Pedida',
-  Received = 'Recibida'
+  PendingApproval = 'pending_approval',
+  Approved = 'approved',
+  Rejected = 'rejected',
+  Received = 'received',
+  Validated = 'validated'
 }
 
 export enum ChecklistIssueStatus {
