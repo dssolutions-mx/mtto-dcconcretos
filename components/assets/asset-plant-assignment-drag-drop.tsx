@@ -20,6 +20,7 @@ import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
 import { useToast } from '@/components/ui/use-toast'
+import { getAssetStatusConfig } from '@/lib/utils/asset-status'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
 import { Alert, AlertDescription } from '@/components/ui/alert'
@@ -138,8 +139,8 @@ function AssetDraggableItem({
             {asset.asset_id}
           </span>
         </div>
-        <Badge variant={asset.status === 'active' ? 'default' : 'secondary'} className="text-[8px] h-2.5 px-1">
-          {asset.status}
+                              <Badge variant={getAssetStatusConfig(asset.status).variant} className="text-[8px] h-2.5 px-1">
+          {getAssetStatusConfig(asset.status).label}
         </Badge>
       </div>
       

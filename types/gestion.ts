@@ -48,7 +48,7 @@ export interface Asset {
   name: string
   model: string
   plant_id: string
-  status: 'active' | 'inactive' | 'maintenance'
+  status: 'operational' | 'maintenance' | 'repair' | string // Allow other status values
   created_at?: string
   updated_at?: string
   plants?: Plant

@@ -20,6 +20,7 @@ import { useToast } from '@/components/ui/use-toast'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import { getAssetStatusConfig } from '@/lib/utils/asset-status'
 
 interface Plant {
   id: string
@@ -377,8 +378,8 @@ export function AssetAssignmentPage() {
                         <p className="text-sm text-gray-600">{asset.model}</p>
                       </div>
                       <div className="flex items-center gap-2">
-                        <Badge variant={asset.status === 'active' ? 'default' : 'secondary'}>
-                          {asset.status === 'active' ? 'Activo' : 'Inactivo'}
+                                                 <Badge variant={getAssetStatusConfig(asset.status).variant}>
+                           {getAssetStatusConfig(asset.status).label}
                         </Badge>
                         <Button
                           size="sm"

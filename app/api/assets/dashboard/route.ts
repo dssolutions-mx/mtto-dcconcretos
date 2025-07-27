@@ -105,7 +105,7 @@ export async function GET() {
       operational: assets.filter(a => a.status === 'operational').length,
       maintenance: assets.filter(a => a.status === 'maintenance').length,
       repair: assets.filter(a => a.status === 'repair').length,
-      inactive: assets.filter(a => a.status === 'inactive').length,
+      inactive: assets.filter(a => a.status !== 'operational').length,
       criticalAlerts: pendingIncidents.length
     }
 

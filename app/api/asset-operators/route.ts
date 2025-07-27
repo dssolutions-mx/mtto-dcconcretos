@@ -170,22 +170,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Error creating assignment' }, { status: 500 })
     }
 
-    // If this is a primary operator assignment, update the asset status to 'active'
-    if (assignment_type === 'primary') {
-      const { error: assetUpdateError } = await supabase
-        .from('assets')
-        .update({ 
-          status: 'active',
-          updated_by: user.id,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', asset_id)
-
-      if (assetUpdateError) {
-        console.error('Error updating asset status:', assetUpdateError)
-        // Don't fail the assignment creation, just log the error
-      }
-    }
+    // Note: Asset status updates are now handled by database triggers/functions
 
     // Fetch the complete assignment with related data
     const { data: completeAssignment, error: fetchError } = await supabase
@@ -325,33 +310,7 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: 'Assignment not found' }, { status: 404 })
     }
 
-    // If we deleted a primary operator, check if there are any remaining primary operators
-    if (assignmentToDelete.assignment_type === 'primary') {
-      const { data: remainingPrimary } = await supabase
-        .from('asset_operators')
-        .select('id')
-        .eq('asset_id', assignmentToDelete.asset_id)
-        .eq('assignment_type', 'primary')
-        .eq('status', 'active')
-        .single()
-
-      // If no primary operators remain, set asset status to 'inactive'
-      if (!remainingPrimary) {
-        const { error: assetUpdateError } = await supabase
-          .from('assets')
-          .update({ 
-            status: 'inactive',
-            updated_by: user.id,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', assignmentToDelete.asset_id)
-
-        if (assetUpdateError) {
-          console.error('Error updating asset status:', assetUpdateError)
-          // Don't fail the deletion, just log the error
-        }
-      }
-    }
+    // Note: Asset status updates are now handled by database triggers/functions
 
     return NextResponse.json({ message: 'Assignment deleted successfully' })
   } catch (error) {

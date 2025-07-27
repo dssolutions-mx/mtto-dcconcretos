@@ -43,6 +43,7 @@ import { CSS } from '@dnd-kit/utilities'
 
 import { CreateOperatorDialog } from '@/components/personnel/create-operator-dialog'
 import { OperatorTransferDialog, TransferData } from './dialogs/operator-transfer-dialog'
+import { getAssetStatusConfig } from '@/lib/utils/asset-status'
 
 interface Plant {
   id: string
@@ -189,8 +190,8 @@ function DroppableAssetCard({
             <p className="text-sm font-medium text-gray-700">{asset.name}</p>
             <p className="text-xs text-gray-500">{asset.equipment_models?.name || 'Sin modelo'}</p>
           </div>
-          <Badge variant={asset.status === 'active' ? 'default' : 'secondary'}>
-            {asset.status === 'active' ? 'Activo' : 'Inactivo'}
+                                                                 <Badge variant={getAssetStatusConfig(asset.status).variant}>
+                         {getAssetStatusConfig(asset.status).label}
           </Badge>
         </div>
       </div>

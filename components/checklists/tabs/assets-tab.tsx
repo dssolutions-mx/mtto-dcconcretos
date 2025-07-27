@@ -68,7 +68,7 @@ export function AssetsTab({ model }: AssetsTabProps) {
   const operationalAssets = filteredAssets.filter(a => a.status === 'operational')
   const maintenanceAssets = filteredAssets.filter(a => a.status === 'maintenance')
   const repairAssets = filteredAssets.filter(a => a.status === 'repair')
-  const inactiveAssets = filteredAssets.filter(a => a.status === 'inactive')
+  const inactiveAssets = filteredAssets.filter(a => a.status !== 'operational')
 
   const getStatusBadge = (status: string) => {
     switch (status) {

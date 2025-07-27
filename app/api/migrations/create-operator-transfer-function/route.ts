@@ -167,33 +167,7 @@ export async function POST(request: NextRequest) {
 
           v_created_assignments := 1;
 
-          -- Update asset status to active if assigning primary operator
-          IF p_assignment_type = 'primary' THEN
-            UPDATE assets
-            SET 
-              status = 'active',
-              updated_by = p_user_id,
-              updated_at = NOW()
-            WHERE id = p_to_asset_id;
-          END IF;
-
-          -- If we removed assignments from source asset and it was a primary operator,
-          -- check if the source asset should be marked as inactive
-          IF p_from_asset_id IS NOT NULL THEN
-            IF NOT EXISTS (
-              SELECT 1 FROM asset_operators
-              WHERE asset_id = p_from_asset_id 
-              AND assignment_type = 'primary' 
-              AND status = 'active'
-            ) THEN
-              UPDATE assets
-              SET 
-                status = 'inactive',
-                updated_by = p_user_id,
-                updated_at = NOW()
-              WHERE id = p_from_asset_id;
-            END IF;
-          END IF;
+          -- Note: Asset status updates are now handled by database triggers/functions
 
           -- Log the transfer operation in assignment history (if table exists)
           BEGIN
@@ -306,7 +280,7 @@ export async function POST(request: NextRequest) {
         'Atomic operator transfers between assets',
         'Automatic cleanup of previous assignments', 
         'Force transfer option for replacing primary operators',
-        'Asset status management (active/inactive)',
+        'Asset status management (operational/maintenance/repair)',
         'Assignment history tracking',
         'Comprehensive error handling'
       ]
