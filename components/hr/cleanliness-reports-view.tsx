@@ -34,6 +34,10 @@ interface CleanlinessReport {
   exterior_notes: string
   overall_score: number
   passed_both: boolean
+  // Operator information
+  primary_operator_name?: string
+  primary_operator_code?: string
+  secondary_operator_name?: string
 }
 
 interface CleanlinessStats {
@@ -73,6 +77,10 @@ interface EvaluationDetails {
     sequence_order: number
     created_at: string
   }>
+  // Operator information
+  primary_operator_name?: string
+  primary_operator_code?: string
+  secondary_operator_name?: string
 }
 
 // Helper function to get status badge
@@ -142,7 +150,7 @@ function EvaluationViewDialog({ reportId }: { reportId: string }) {
         ) : evaluation ? (
           <div className="space-y-6">
             {/* Información General */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 bg-gray-50 rounded-lg">
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-4 p-4 bg-gray-50 rounded-lg">
               <div className="flex items-center space-x-2">
                 <Truck className="h-4 w-4 text-gray-600" />
                 <div>
@@ -155,6 +163,22 @@ function EvaluationViewDialog({ reportId }: { reportId: string }) {
                 <div>
                   <p className="text-sm font-medium">{evaluation.technician_name}</p>
                   <p className="text-xs text-gray-600">Técnico</p>
+                </div>
+              </div>
+              <div className="flex items-center space-x-2">
+                <Users className="h-4 w-4 text-gray-600" />
+                <div>
+                  <p className="text-sm font-medium">
+                    {evaluation.primary_operator_name || 'Sin asignar'}
+                  </p>
+                  <p className="text-xs text-gray-600">
+                    Operador {evaluation.primary_operator_code && `(${evaluation.primary_operator_code})`}
+                  </p>
+                  {evaluation.secondary_operator_name && (
+                    <p className="text-xs text-gray-500">
+                      Sec: {evaluation.secondary_operator_name}
+                    </p>
+                  )}
                 </div>
               </div>
               <div className="flex items-center space-x-2">
@@ -502,6 +526,26 @@ export default function CleanlinessReportsView() {
                           <div>
                             <p className="font-semibold">Técnico</p>
                             <p className="text-sm text-gray-600">{report.technician_name}</p>
+                          </div>
+                          <div>
+                            <p className="font-semibold">Operador Asignado</p>
+                            <p className="text-sm text-gray-600">
+                              {report.primary_operator_name ? (
+                                <>
+                                  {report.primary_operator_name}
+                                  {report.primary_operator_code && (
+                                    <span className="text-xs text-gray-500 ml-1">({report.primary_operator_code})</span>
+                                  )}
+                                </>
+                              ) : (
+                                <span className="text-gray-400 italic">Sin operador asignado</span>
+                              )}
+                            </p>
+                            {report.secondary_operator_name && (
+                              <p className="text-xs text-gray-500">
+                                Secundario: {report.secondary_operator_name}
+                              </p>
+                            )}
                           </div>
                           <div>
                             <p className="font-semibold">Activo</p>

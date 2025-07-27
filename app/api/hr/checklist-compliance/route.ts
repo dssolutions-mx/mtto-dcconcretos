@@ -74,7 +74,7 @@ export async function GET(request: NextRequest) {
     
     const today = new Date()
     
-    // Step 1: Get ALL assets first to ensure complete compliance coverage
+    // Step 1: Get ALL operational assets first to ensure complete compliance coverage
     let assetsQuery = supabase
       .from('assets')
       .select(`
@@ -92,6 +92,7 @@ export async function GET(request: NextRequest) {
           )
         )
       `)
+      .eq('status', 'operational') // Only include operational assets
     
     // Apply filters to assets
     if (businessUnit && businessUnit !== 'all') {

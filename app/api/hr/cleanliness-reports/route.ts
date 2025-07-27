@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase-server'
 
 interface CleanlinessReport {
   id: string
+  asset_id?: string // For operator lookup
   asset_name: string
   asset_code: string
   technician_name: string
@@ -13,6 +14,10 @@ interface CleanlinessReport {
   exterior_notes: string
   overall_score: number
   passed_both: boolean
+  // Operator information
+  primary_operator_name?: string
+  primary_operator_code?: string
+  secondary_operator_name?: string
 }
 
 interface CleanlinessStats {
@@ -52,6 +57,10 @@ interface EvaluationDetails {
     sequence_order: number
     created_at: string
   }>
+  // Operator information
+  primary_operator_name?: string
+  primary_operator_code?: string
+  secondary_operator_name?: string
 }
 
 export async function GET(request: NextRequest) {
@@ -140,7 +149,7 @@ export async function GET(request: NextRequest) {
 
       if (itemIds.length === 0) continue
 
-      // Get completed checklists for this template
+      // Get completed checklists for this template with operator information
       let query = supabase
         .from('completed_checklists')
         .select(`
@@ -151,6 +160,7 @@ export async function GET(request: NextRequest) {
           completed_items,
           notes,
           assets (
+            id,
             name,
             asset_id
           ),
@@ -197,12 +207,13 @@ export async function GET(request: NextRequest) {
         // Calculate cleanliness evaluation
         const evaluation = calculateCleanlinessEvaluation(checklist, itemIds)
         
-                 if (evaluation) {
-           const asset = Array.isArray(checklist.assets) ? checklist.assets[0] : checklist.assets
-           reports.push({
-             id: checklist.id,
-             asset_name: asset?.name || 'N/A',
-             asset_code: asset?.asset_id || 'N/A',
+                         if (evaluation) {
+          const asset = Array.isArray(checklist.assets) ? checklist.assets[0] : checklist.assets
+          reports.push({
+            id: checklist.id,
+            asset_id: asset?.id, // Store asset ID for operator lookup
+            asset_name: asset?.name || 'N/A',
+            asset_code: asset?.asset_id || 'N/A',
             technician_name: checklist.technician || 'N/A',
             completed_date: checklist.completion_date,
             interior_status: evaluation.interior_status,
@@ -211,6 +222,72 @@ export async function GET(request: NextRequest) {
             exterior_notes: evaluation.exterior_notes,
             overall_score: evaluation.overall_score,
             passed_both: evaluation.passed_both
+          })
+        }
+      }
+    }
+
+    // Fetch operator information for all assets in the reports
+    if (reports.length > 0) {
+      const assetIds = reports.map(r => r.asset_id).filter(Boolean)
+      
+      if (assetIds.length > 0) {
+        const { data: operatorAssignments, error: operatorError } = await supabase
+          .from('asset_operators_full')
+          .select(`
+            asset_id,
+            assignment_type,
+            operator_nombre,
+            operator_apellido,
+            employee_code,
+            status
+          `)
+          .in('asset_id', assetIds)
+          .eq('status', 'active')
+
+        if (!operatorError && operatorAssignments) {
+          // Create a map of asset_id to operators
+          const operatorMap = operatorAssignments.reduce((acc, op) => {
+            if (!acc[op.asset_id]) {
+              acc[op.asset_id] = { primary: null, secondary: [] }
+            }
+            
+            const operatorName = `${op.operator_nombre || ''} ${op.operator_apellido || ''}`.trim()
+            const operatorInfo = {
+              name: operatorName,
+              code: op.employee_code
+            }
+
+            if (op.assignment_type === 'primary') {
+              acc[op.asset_id].primary = operatorInfo
+            } else if (op.assignment_type === 'secondary') {
+              acc[op.asset_id].secondary.push(operatorInfo)
+            }
+            
+            return acc
+          }, {} as Record<string, { primary: any, secondary: any[] }>)
+
+          // Update reports with operator information
+          reports.forEach(report => {
+            if (report.asset_id && operatorMap[report.asset_id]) {
+              const operators = operatorMap[report.asset_id]
+              
+              if (operators.primary) {
+                report.primary_operator_name = operators.primary.name
+                report.primary_operator_code = operators.primary.code
+              }
+              
+              if (operators.secondary && operators.secondary.length > 0) {
+                // Join multiple secondary operators
+                report.secondary_operator_name = operators.secondary
+                  .map(op => op.name)
+                  .filter(Boolean)
+                  .join(', ')
+              }
+            }
+            
+            // Remove asset_id from final response as it's only needed for lookup
+            delete report.asset_id
           })
         }
       }
@@ -251,6 +328,7 @@ async function getEvaluationDetails(supabase: any, evaluationId: string): Promis
         notes,
         signature_data,
         assets (
+          id,
           name,
           asset_id
         ),
@@ -331,6 +409,38 @@ async function getEvaluationDetails(supabase: any, evaluationId: string): Promis
       notes: checklist.notes || '',
       signature_data: checklist.signature_data || undefined,
       evidence: evidence || []
+    }
+
+    // Fetch operator information for this specific asset
+    if (checklist.assets?.id) {
+      const { data: operatorAssignments, error: operatorError } = await supabase
+        .from('asset_operators_full')
+        .select(`
+          assignment_type,
+          operator_nombre,
+          operator_apellido,
+          employee_code,
+          status
+        `)
+        .eq('asset_id', checklist.assets.id)
+        .eq('status', 'active')
+
+      if (!operatorError && operatorAssignments) {
+        const primaryOperator = operatorAssignments.find((op: any) => op.assignment_type === 'primary')
+        const secondaryOperators = operatorAssignments.filter((op: any) => op.assignment_type === 'secondary')
+        
+        if (primaryOperator) {
+          evaluation.primary_operator_name = `${primaryOperator.operator_nombre || ''} ${primaryOperator.operator_apellido || ''}`.trim()
+          evaluation.primary_operator_code = primaryOperator.employee_code || undefined
+        }
+        
+        if (secondaryOperators.length > 0) {
+          evaluation.secondary_operator_name = secondaryOperators
+            .map((op: any) => `${op.operator_nombre || ''} ${op.operator_apellido || ''}`.trim())
+            .filter(Boolean)
+            .join(', ')
+        }
+      }
     }
 
     return NextResponse.json({ evaluation })
