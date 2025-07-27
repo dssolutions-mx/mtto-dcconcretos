@@ -346,15 +346,88 @@ export default function CleanlinessReportsView() {
   const [reports, setReports] = useState<CleanlinessReport[]>([])
   const [stats, setStats] = useState<CleanlinessStats | null>(null)
   const [loading, setLoading] = useState(true)
-  const [dateFilter, setDateFilter] = useState('week')
+  const [dateFilter, setDateFilter] = useState('current_week')
+  const [selectedWeek, setSelectedWeek] = useState('')
+  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear().toString())
   const [technicianFilter, setTechnicianFilter] = useState('all')
   const [searchTerm, setSearchTerm] = useState('')
+
+  // Helper function to get current week number (UTC-based to match backend)
+  const getCurrentWeek = () => {
+    const now = new Date()
+    const target = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()))
+    const dayNum = (target.getUTCDay() + 6) % 7
+    target.setUTCDate(target.getUTCDate() - dayNum + 3)
+    const firstThursday = target.valueOf()
+    target.setUTCMonth(0, 1)
+    if (target.getUTCDay() !== 4) {
+      target.setUTCMonth(0, 1 + ((4 - target.getUTCDay()) + 7) % 7)
+    }
+    return 1 + Math.ceil((firstThursday - target.valueOf()) / 604800000)
+  }
+
+  // Helper function to get week date range for display (must match backend exactly)
+  const getWeekDateRange = (year: number, week: number): { start: Date, end: Date } => {
+    // Start with January 1st of the given year in UTC
+    const firstDay = new Date(Date.UTC(year, 0, 1))
+    
+    // Find the first Monday of the year (or the Monday of week 1)
+    const firstMonday = new Date(firstDay)
+    const dayOfWeek = firstDay.getUTCDay()
+    const daysToMonday = dayOfWeek === 0 ? 1 : 8 - dayOfWeek // Sunday = 0, so we need 1 day to Monday
+    firstMonday.setUTCDate(firstDay.getUTCDate() + daysToMonday - 7) // Go to previous Monday for week 1
+    
+    // Calculate the target week start (Monday)
+    const targetWeekStart = new Date(firstMonday)
+    targetWeekStart.setUTCDate(firstMonday.getUTCDate() + (week - 1) * 7)
+    
+    // Calculate the target week end (Sunday)
+    const targetWeekEnd = new Date(targetWeekStart)
+    targetWeekEnd.setUTCDate(targetWeekStart.getUTCDate() + 6)
+    
+    return { start: targetWeekStart, end: targetWeekEnd }
+  }
+
+  // Generate relevant weeks (current week ± 8 weeks = ~4 months context)
+  const getRelevantWeeks = () => {
+    const currentYear = parseInt(selectedYear)
+    const currentWeek = getCurrentWeek()
+    const weeks = []
+    
+    const startWeek = Math.max(1, currentWeek - 8)
+    const endWeek = Math.min(53, currentWeek + 8)
+    
+    for (let week = startWeek; week <= endWeek; week++) {
+      const { start, end } = getWeekDateRange(currentYear, week)
+      // Format UTC dates without timezone conversion to match backend exactly
+      const startDate = start.toLocaleDateString('es-MX', { 
+        day: 'numeric', 
+        month: 'short',
+        timeZone: 'UTC'
+      })
+      const endDate = end.toLocaleDateString('es-MX', { 
+        day: 'numeric', 
+        month: 'short',
+        timeZone: 'UTC'
+      })
+      
+      weeks.push({
+        value: week.toString(),
+        label: `Semana ${week} (${startDate} - ${endDate})`,
+        isCurrent: week === currentWeek
+      })
+    }
+    
+    return weeks
+  }
 
   const fetchReports = async () => {
     setLoading(true)
     try {
       const params = new URLSearchParams({
         period: dateFilter,
+        year: selectedYear,
+        ...(dateFilter === 'specific_week' && selectedWeek && { week_number: selectedWeek }),
         ...(technicianFilter !== 'all' && { technician: technicianFilter }),
         ...(searchTerm && { search: searchTerm })
       })
@@ -374,7 +447,7 @@ export default function CleanlinessReportsView() {
 
   useEffect(() => {
     fetchReports()
-  }, [dateFilter, technicianFilter])
+  }, [dateFilter, technicianFilter, selectedWeek, selectedYear])
 
   const handleSearch = () => {
     fetchReports()
@@ -390,20 +463,108 @@ export default function CleanlinessReportsView() {
           <CardTitle>Filtros</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
             <div>
               <Label htmlFor="period">Período</Label>
-              <Select value={dateFilter} onValueChange={setDateFilter}>
+              <Select value={dateFilter} onValueChange={(value) => {
+                setDateFilter(value)
+                // Auto-select current week when switching to specific_week mode
+                if (value === 'specific_week' && !selectedWeek) {
+                  setSelectedWeek(getCurrentWeek().toString())
+                }
+              }}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="week">Última semana</SelectItem>
-                  <SelectItem value="month">Último mes</SelectItem>
-                  <SelectItem value="quarter">Último trimestre</SelectItem>
+                  <SelectItem value="current_week">Semana actual</SelectItem>
+                  <SelectItem value="specific_week">Semana específica</SelectItem>
+                  <SelectItem value="last_4_weeks">Últimas 4 semanas</SelectItem>
                 </SelectContent>
               </Select>
             </div>
+            
+            {dateFilter === 'specific_week' && (
+              <>
+                <div>
+                  <Label htmlFor="week">Semana</Label>
+                  <div className="flex gap-2">
+                    <Select value={selectedWeek} onValueChange={setSelectedWeek}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Selecciona semana" />
+                      </SelectTrigger>
+                      <SelectContent className="max-h-[300px]">
+                        {getRelevantWeeks().map(week => (
+                          <SelectItem key={week.value} value={week.value}>
+                            <div className="flex items-center justify-between w-full">
+                              <span className={week.isCurrent ? "font-semibold text-blue-600" : ""}>
+                                {week.label}
+                              </span>
+                              {week.isCurrent && (
+                                <span className="ml-2 text-xs bg-blue-100 text-blue-600 px-1 py-0.5 rounded">
+                                  Actual
+                                </span>
+                              )}
+                            </div>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Button 
+                      type="button" 
+                      variant="outline" 
+                      size="sm"
+                      onClick={() => setSelectedWeek(getCurrentWeek().toString())}
+                      className="px-3 whitespace-nowrap"
+                    >
+                      Actual
+                    </Button>
+                  </div>
+                </div>
+                
+                <div>
+                  <Label htmlFor="year">Año</Label>
+                  <Select value={selectedYear} onValueChange={setSelectedYear}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {Array.from({ length: 3 }, (_, i) => new Date().getFullYear() - i).map(year => (
+                        <SelectItem key={year} value={year.toString()}>
+                          {year}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </>
+            )}
+            
+                         {dateFilter !== 'specific_week' && (
+               <div className="flex items-end">
+                 <div className="text-sm text-gray-600 p-2 bg-blue-50 rounded border">
+                   <p className="font-medium">Semana actual: #{getCurrentWeek()}</p>
+                   <p className="text-xs">
+                     {(() => {
+                       const currentWeek = getCurrentWeek()
+                       const currentYear = new Date().getFullYear()
+                       const { start, end } = getWeekDateRange(currentYear, currentWeek)
+                       const startDate = start.toLocaleDateString('es-MX', { 
+                         day: 'numeric', 
+                         month: 'short',
+                         timeZone: 'UTC'
+                       })
+                       const endDate = end.toLocaleDateString('es-MX', { 
+                         day: 'numeric', 
+                         month: 'short',
+                         timeZone: 'UTC'
+                       })
+                       return `${startDate} - ${endDate}, ${currentYear}`
+                     })()}
+                   </p>
+                 </div>
+               </div>
+             )}
             
             <div>
               <Label htmlFor="technician">Técnico</Label>
@@ -471,7 +632,7 @@ export default function CleanlinessReportsView() {
           
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Mejor Técnico</CardTitle>
+              <CardTitle className="text-sm font-medium">Mejor Operador</CardTitle>
               <Users className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
@@ -480,6 +641,9 @@ export default function CleanlinessReportsView() {
               </div>
               <p className="text-xs text-muted-foreground">
                 {stats.top_performers[0]?.score.toFixed(1)}% de aprobación
+              </p>
+              <p className="text-xs text-gray-400">
+                {stats.top_performers[0]?.evaluations || 0} evaluaciones
               </p>
             </CardContent>
           </Card>

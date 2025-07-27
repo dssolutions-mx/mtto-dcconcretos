@@ -75,7 +75,9 @@ export async function GET(request: NextRequest) {
     }
     
     // Handle cleanliness reports request
-    const period = searchParams.get('period') || 'week'
+    const period = searchParams.get('period') || 'current_week'
+    const weekNumber = searchParams.get('week_number') // Specific week number (1-53)
+    const year = searchParams.get('year') || new Date().getFullYear().toString()
     const technician = searchParams.get('technician')
     const search = searchParams.get('search')
 
@@ -119,25 +121,72 @@ export async function GET(request: NextRequest) {
       return acc
     }, {} as Record<string, any>)
 
-    // Calculate date range
-    let dateCondition = ''
+    // Calculate date range based on week number and year (UTC-based for consistency with database)
+    let startDate = ''
+    let endDate = ''
     const now = new Date()
     
-    switch (period) {
-      case 'week':
-        const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
-        dateCondition = `completion_date >= '${weekAgo.toISOString()}'`
-        break
-      case 'month':
-        const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
-        dateCondition = `completion_date >= '${monthAgo.toISOString()}'`
-        break
-      case 'quarter':
-        const quarterAgo = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000)
-        dateCondition = `completion_date >= '${quarterAgo.toISOString()}'`
-        break
-      default:
-        dateCondition = `completion_date >= '${new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString()}'`
+    // Helper function to get ISO week number (UTC-based)
+    function getISOWeek(date: Date): number {
+      const target = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()))
+      const dayNum = (target.getUTCDay() + 6) % 7
+      target.setUTCDate(target.getUTCDate() - dayNum + 3)
+      const firstThursday = target.valueOf()
+      target.setUTCMonth(0, 1)
+      if (target.getUTCDay() !== 4) {
+        target.setUTCMonth(0, 1 + ((4 - target.getUTCDay()) + 7) % 7)
+      }
+      return 1 + Math.ceil((firstThursday - target.valueOf()) / 604800000)
+    }
+
+    // Helper function to get UTC start and end dates of a specific week
+    function getWeekDatesUTC(year: number, week: number): { start: Date, end: Date } {
+      // Start with January 1st of the given year in UTC
+      const firstDay = new Date(Date.UTC(year, 0, 1))
+      
+      // Find the first Monday of the year (or the Monday of week 1)
+      const firstMonday = new Date(firstDay)
+      const dayOfWeek = firstDay.getUTCDay()
+      const daysToMonday = dayOfWeek === 0 ? 1 : 8 - dayOfWeek // Sunday = 0, so we need 1 day to Monday
+      firstMonday.setUTCDate(firstDay.getUTCDate() + daysToMonday - 7) // Go to previous Monday for week 1
+      
+      // Calculate the target week start (Monday)
+      const targetWeekStart = new Date(firstMonday)
+      targetWeekStart.setUTCDate(firstMonday.getUTCDate() + (week - 1) * 7)
+      
+      // Calculate the target week end (Sunday 23:59:59.999)
+      const targetWeekEnd = new Date(targetWeekStart)
+      targetWeekEnd.setUTCDate(targetWeekStart.getUTCDate() + 6)
+      targetWeekEnd.setUTCHours(23, 59, 59, 999)
+      
+      return { start: targetWeekStart, end: targetWeekEnd }
+    }
+
+    const currentYear = parseInt(year)
+    const currentWeekNumber = getISOWeek(now)
+    
+    if (period === 'specific_week' && weekNumber) {
+      // Filter by specific week number
+      const targetWeek = parseInt(weekNumber)
+      const { start, end } = getWeekDatesUTC(currentYear, targetWeek)
+      startDate = start.toISOString()
+      endDate = end.toISOString()
+    } else if (period === 'current_week') {
+      // Filter by current week
+      const { start, end } = getWeekDatesUTC(currentYear, currentWeekNumber)
+      startDate = start.toISOString()
+      endDate = end.toISOString()
+    } else if (period === 'last_4_weeks') {
+      // Last 4 weeks for broader comparison
+      const { start } = getWeekDatesUTC(currentYear, Math.max(1, currentWeekNumber - 3))
+      const { end } = getWeekDatesUTC(currentYear, currentWeekNumber)
+      startDate = start.toISOString()
+      endDate = end.toISOString()
+    } else {
+      // Default to current week
+      const { start, end } = getWeekDatesUTC(currentYear, currentWeekNumber)
+      startDate = start.toISOString()
+      endDate = end.toISOString()
     }
 
     const reports: CleanlinessReport[] = []
@@ -172,7 +221,8 @@ export async function GET(request: NextRequest) {
           )
         `)
         .eq('checklist_id', templateId)
-        .gte('completion_date', dateCondition.split(' >= ')[1].replace(/'/g, ''))
+        .gte('completion_date', startDate)
+        .lte('completion_date', endDate)
 
       if (technician && technician !== 'all') {
         query = query.ilike('technician', `%${technician}%`)
@@ -560,26 +610,29 @@ function calculateStats(reports: CleanlinessReport[]): CleanlinessStats {
   const passedCount = reports.filter(r => r.passed_both).length
   const passRate = totalEvaluations > 0 ? (passedCount / totalEvaluations) * 100 : 0
 
-  // Calculate top performers
-  const technicianStats = reports.reduce((acc, report) => {
-    const tech = report.technician_name
-    if (!acc[tech]) {
-      acc[tech] = { total: 0, passed: 0 }
-    }
-    acc[tech].total++
-    if (report.passed_both) {
-      acc[tech].passed++
+  // Calculate top performing operators (those assigned to assets, not technicians who evaluated)
+  const operatorStats = reports.reduce((acc, report) => {
+    // Only consider reports where there's an assigned operator
+    if (report.primary_operator_name) {
+      const operator = report.primary_operator_name
+      if (!acc[operator]) {
+        acc[operator] = { total: 0, passed: 0 }
+      }
+      acc[operator].total++
+      if (report.passed_both) {
+        acc[operator].passed++
+      }
     }
     return acc
   }, {} as Record<string, { total: number, passed: number }>)
 
-  const topPerformers = Object.entries(technicianStats)
-    .map(([technician, stats]) => ({
-      technician,
+  const topPerformers = Object.entries(operatorStats)
+    .map(([operator, stats]) => ({
+      technician: operator, // Keep field name for compatibility with frontend
       score: (stats.passed / stats.total) * 100,
       evaluations: stats.total
     }))
-    .filter(p => p.evaluations >= 1) // Only include technicians with at least 1 evaluation
+    .filter(p => p.evaluations >= 1) // Only include operators with at least 1 evaluation
     .sort((a, b) => b.score - a.score)
     .slice(0, 5)
 
