@@ -384,15 +384,6 @@ export default function CleanlinessReportsView() {
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-bold">Reportes de Limpieza</h1>
-          <p className="text-gray-600">
-            Control de evaluaciones de limpieza de unidades
-          </p>
-        </div>
-      </div>
-
       {/* Filtros */}
       <Card>
         <CardHeader>
