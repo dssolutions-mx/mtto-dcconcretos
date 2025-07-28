@@ -104,6 +104,31 @@ function ChecklistsContent() {
   const isOperator = profile?.role && ['OPERADOR', 'DOSIFICADOR'].includes(profile.role)
   const canCreateChecklists = ui?.canShowCreateButton('checklists') || false
   const canScheduleChecklists = ui?.canShowEditButton('checklists') || false
+
+  // For operators, use the operator-specific API
+  const [operatorChecklists, setOperatorChecklists] = useState<any[]>([])
+  const [operatorLoading, setOperatorLoading] = useState(false)
+
+  // Fetch operator-specific checklists
+  useEffect(() => {
+    if (isOperator) {
+      const fetchOperatorChecklists = async () => {
+        setOperatorLoading(true)
+        try {
+          const response = await fetch('/api/checklists/operator-assigned?status=pendiente')
+          if (response.ok) {
+            const result = await response.json()
+            setOperatorChecklists(result.data || [])
+          }
+        } catch (error) {
+          console.error('Error fetching operator checklists:', error)
+        } finally {
+          setOperatorLoading(false)
+        }
+      }
+      fetchOperatorChecklists()
+    }
+  }, [isOperator])
   
   // Inicializar servicio offline
   useEffect(() => {
@@ -267,6 +292,16 @@ function ChecklistsContent() {
         heading={isOperator ? "Mis Checklists" : "Checklists de Mantenimiento"}
         text={isOperator ? "Ejecuta los checklists asignados a tus activos." : "Gestiona los checklists para diferentes frecuencias de mantenimiento."}
       >
+        {isOperator && (
+          <div className="flex items-center gap-2 mb-4">
+            <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
+              Operador
+            </Badge>
+            <span className="text-sm text-muted-foreground">
+              Solo puedes ver checklists de tus activos asignados
+            </span>
+          </div>
+        )}
         <div className="flex flex-col sm:flex-row gap-2">
           {/* Estado offline compacto en header para móviles */}
           <div className="sm:hidden">

@@ -73,6 +73,13 @@ function DashboardContent() {
     }
   }, [searchParams])
 
+  // Check if user is an operator and redirect to operator dashboard
+  useEffect(() => {
+    if (isInitialized && !isLoading && profile?.role && ['OPERADOR', 'DOSIFICADOR'].includes(profile.role)) {
+      router.push('/dashboard/operator')
+    }
+  }, [isInitialized, isLoading, profile?.role, router])
+
   // Show loading state while initializing
   if (!isInitialized || isLoading) {
     return (

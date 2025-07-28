@@ -123,6 +123,9 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
     return pathname === path || pathname.startsWith(path + "/")
   }
 
+  // Check if user is an operator
+  const isOperator = profile?.role && ['OPERADOR', 'DOSIFICADOR'].includes(profile.role)
+
   // Return loading state if no profile yet
   if (!profile) {
     return (
@@ -157,13 +160,75 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
               asChild
               onClick={handleLinkClick}
             >
-              <Link href="/dashboard">
+              <Link href={isOperator ? "/dashboard/operator" : "/dashboard"}>
                 <Home className="mr-2 h-4 w-4" />
                 Dashboard
               </Link>
             </Button>
           </div>
         </div>
+
+        {/* Simplified Navigation for Operators */}
+        {isOperator && (
+          <>
+            {/* Checklists Section - Only section for operators */}
+            <div className="px-4">
+              <Collapsible open={operationsOpen} onOpenChange={setOperationsOpen}>
+                <CollapsibleTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    className="w-full justify-between p-2 h-auto font-medium"
+                  >
+                    <div className="flex items-center">
+                      <ClipboardCheck className="mr-2 h-4 w-4" />
+                      Mis Checklists
+                    </div>
+                    {operationsOpen ? (
+                      <ChevronDown className="h-4 w-4" />
+                    ) : (
+                      <ChevronRight className="h-4 w-4" />
+                    )}
+                  </Button>
+                </CollapsibleTrigger>
+                <CollapsibleContent className="space-y-1 mt-2">
+                  <Button
+                    variant={isPathActive("/checklists") ? "secondary" : "ghost"}
+                    className="w-full justify-start pl-8"
+                    asChild
+                    onClick={handleLinkClick}
+                  >
+                    <Link href="/checklists">
+                      <ClipboardCheck className="mr-2 h-4 w-4" />
+                      Todos mis Checklists
+                    </Link>
+                  </Button>
+                  <Button
+                    variant={isPathActive("/checklists/assets") ? "secondary" : "ghost"}
+                    className="w-full justify-start pl-8"
+                    asChild
+                    onClick={handleLinkClick}
+                  >
+                    <Link href="/checklists/assets">
+                      <Truck className="mr-2 h-4 w-4" />
+                      Vista por Activos
+                    </Link>
+                  </Button>
+                  <Button
+                    variant={isPathActive("/checklists/problemas-pendientes") ? "secondary" : "ghost"}
+                    className="w-full justify-start pl-8"
+                    asChild
+                    onClick={handleLinkClick}
+                  >
+                    <Link href="/checklists/problemas-pendientes">
+                      <AlertTriangle className="mr-2 h-4 w-4" />
+                      Problemas Pendientes
+                    </Link>
+                  </Button>
+                </CollapsibleContent>
+              </Collapsible>
+            </div>
+          </>
+        )}
 
         {/* For AREA_ADMINISTRATIVA: Show Procurement first, then Organization, then others */}
         {profile.role === 'AREA_ADMINISTRATIVA' ? (
@@ -826,10 +891,24 @@ export function CollapsedSidebar({ className, onLinkClick }: SidebarProps) {
     }
   ]
 
-  // Filter and reorder sections for AREA_ADMINISTRATIVA
+  // Filter and reorder sections based on user role
   let navigationSections = baseNavigationSections
   
-  if (profile.role === 'AREA_ADMINISTRATIVA') {
+  // Check if user is an operator
+  const isOperator = profile.role && ['OPERADOR', 'DOSIFICADOR'].includes(profile.role)
+  
+  if (isOperator) {
+    // For operators, only show checklists section
+    navigationSections = [
+      {
+        id: "checklists",
+        icon: ClipboardCheck,
+        label: "Mis Checklists",
+        href: "/checklists",
+        active: isPathActive("/checklists")
+      }
+    ]
+  } else if (profile.role === 'AREA_ADMINISTRATIVA') {
     // Remove operations section and reorder to prioritize procurement
     navigationSections = baseNavigationSections
       .filter(section => section.id !== 'operations')

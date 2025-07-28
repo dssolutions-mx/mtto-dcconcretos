@@ -130,7 +130,7 @@ export const ROLE_PERMISSIONS: Record<string, RoleConfig> = {
       assets: 'none',
       maintenance: 'none',
       work_orders: 'none',
-      purchases: 'read_write',
+      purchases: 'none',
       inventory: 'none',
       personnel: 'none',
       checklists: 'read',
@@ -139,7 +139,7 @@ export const ROLE_PERMISSIONS: Record<string, RoleConfig> = {
     },
     authorizationLimit: 0,
     scope: 'plant',
-    description: 'Ejecución de checklists y creación de órdenes de compra'
+    description: 'Ejecución de checklists asignados a sus activos'
   },
   OPERADOR: {
     name: 'Operador',
@@ -147,7 +147,7 @@ export const ROLE_PERMISSIONS: Record<string, RoleConfig> = {
       assets: 'none',
       maintenance: 'none',
       work_orders: 'none',
-      purchases: 'read_write',
+      purchases: 'none',
       inventory: 'none',
       personnel: 'none',
       checklists: 'read',
@@ -156,7 +156,7 @@ export const ROLE_PERMISSIONS: Record<string, RoleConfig> = {
     },
     authorizationLimit: 0,
     scope: 'plant',
-    description: 'Ejecución de checklists y creación de órdenes de compra'
+    description: 'Ejecución de checklists asignados a sus activos'
   },
   VISUALIZADOR: {
     name: 'Visualizador',
