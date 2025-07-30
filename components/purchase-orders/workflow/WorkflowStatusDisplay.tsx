@@ -36,6 +36,7 @@ import {
 import { usePurchaseOrders } from "@/hooks/usePurchaseOrders"
 import { useAuthZustand } from "@/hooks/use-auth-zustand"
 import { formatCurrency } from "@/lib/utils"
+import { useMobileSessionRecovery } from "@/hooks/use-mobile-session-recovery"
 
 interface WorkflowStatusDisplayProps {
   purchaseOrderId: string
@@ -177,13 +178,24 @@ export function WorkflowStatusDisplay({
       formData.append('file', file)
       formData.append('purchaseOrderId', purchaseOrderId)
       
-      const response = await fetch('/api/storage/upload', {
+      // Use mobile session recovery for better mobile handling
+      const { fetchWithSessionRecovery } = useMobileSessionRecovery()
+      
+      const response = await fetchWithSessionRecovery('/api/storage/upload', {
         method: 'POST',
         body: formData,
       })
       
       if (!response.ok) {
-        throw new Error('Failed to upload file')
+        const errorData = await response.json()
+        
+        // Handle mobile session issues specifically
+        if (errorData.mobileSessionIssue) {
+          console.error('Mobile session issue detected:', errorData)
+          throw new Error('Session expired. Please try logging in again.')
+        }
+        
+        throw new Error(errorData.error || 'Failed to upload file')
       }
       
       const result = await response.json()

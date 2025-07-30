@@ -147,6 +147,10 @@ export interface AuthStore extends
   loadProfile: (userId: string) => Promise<void>
   refreshProfile: () => Promise<void>
   
+  // Mobile session recovery
+  recoverMobileSession: () => Promise<{ success: boolean; user?: User; error?: string }>
+  isMobileDevice: () => boolean
+  
   // Password management actions
   resetPasswordForEmail: (email: string) => Promise<{ success: boolean; error?: string }>
   updatePassword: (newPassword: string) => Promise<{ success: boolean; error?: string }>

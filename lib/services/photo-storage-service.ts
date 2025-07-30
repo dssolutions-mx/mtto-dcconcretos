@@ -341,10 +341,35 @@ class PhotoStorageService {
       formData.append('file', photo.compressedFile, photo.fileName)
       formData.append('bucket', 'checklist-photos')
       
-      const response = await fetch('/api/storage/upload', {
-        method: 'POST',
-        body: formData
-      })
+      // Use mobile session recovery for better mobile handling
+      let response: Response
+      
+      // Check if we're in a browser environment and can use the mobile session recovery
+      if (typeof window !== 'undefined') {
+        try {
+          // Dynamic import to avoid SSR issues
+          const { useMobileSessionRecovery } = await import('@/hooks/use-mobile-session-recovery')
+          const { fetchWithSessionRecovery } = useMobileSessionRecovery()
+          
+          response = await fetchWithSessionRecovery('/api/storage/upload', {
+            method: 'POST',
+            body: formData
+          })
+        } catch (error) {
+          // Fallback to regular fetch if mobile session recovery is not available
+          console.log('Mobile session recovery not available, using regular fetch')
+          response = await fetch('/api/storage/upload', {
+            method: 'POST',
+            body: formData
+          })
+        }
+      } else {
+        // Server-side fallback
+        response = await fetch('/api/storage/upload', {
+          method: 'POST',
+          body: formData
+        })
+      }
       
       if (!response.ok) {
         const errorData = await response.text()

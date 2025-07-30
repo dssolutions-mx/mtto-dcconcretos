@@ -22,6 +22,9 @@ export interface AuthSlice extends AuthState {
   updateLastAuthCheck: (source: string) => void
   loadProfile: (userId: string) => Promise<void>
   refreshProfile: () => Promise<void>
+  // Mobile session recovery
+  recoverMobileSession: () => Promise<{ success: boolean; user?: User; error?: string }>
+  isMobileDevice: () => boolean
   // Password management actions
   resetPasswordForEmail: (email: string) => Promise<{ success: boolean; error?: string }>
   updatePassword: (newPassword: string) => Promise<{ success: boolean; error?: string }>
@@ -42,6 +45,83 @@ export const createAuthSlice: StateCreator<
   error: null,
   lastAuthCheck: 0,
   authCheckSource: 'initial',
+
+  // Mobile session recovery
+  recoverMobileSession: async () => {
+    console.log('🔄 Mobile session recovery initiated...')
+    const startTime = Date.now()
+    
+    const supabase = createClient()
+    
+    try {
+      // First attempt: try to get user
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
+      
+      if (user && !userError) {
+        console.log('✅ Mobile session recovery: User found on first attempt')
+        set({
+          user,
+          lastAuthCheck: Date.now(),
+          authCheckSource: 'mobile-recovery-first'
+        } as Partial<AuthStore>)
+        return { success: true, user }
+      }
+
+      // Second attempt: try to get session
+      if (userError?.message?.includes('Auth session missing')) {
+        console.log('🔄 Mobile session recovery: Attempting session refresh')
+        
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+        
+        if (session?.user && !sessionError) {
+          console.log('✅ Mobile session recovery: Session refresh successful')
+          set({
+            user: session.user,
+            session,
+            lastAuthCheck: Date.now(),
+            authCheckSource: 'mobile-recovery-session'
+          } as Partial<AuthStore>)
+          return { success: true, user: session.user }
+        }
+      }
+
+      // Third attempt: try to refresh session
+      console.log('🔄 Mobile session recovery: Attempting session refresh')
+      const { data: { session }, error: refreshError } = await supabase.auth.refreshSession()
+      
+      if (session?.user && !refreshError) {
+        console.log('✅ Mobile session recovery: Session refresh successful')
+        set({
+          user: session.user,
+          session,
+          lastAuthCheck: Date.now(),
+          authCheckSource: 'mobile-recovery-refresh'
+        } as Partial<AuthStore>)
+        return { success: true, user: session.user }
+      }
+
+      console.log('❌ Mobile session recovery: All attempts failed')
+      return { 
+        success: false, 
+        error: 'Session recovery failed after all attempts'
+      }
+
+    } catch (error) {
+      console.error('❌ Mobile session recovery error:', error)
+      return { 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Unknown error'
+      }
+    }
+  },
+
+  isMobileDevice: () => {
+    if (typeof window === 'undefined') return false
+    
+    return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
+      navigator.userAgent
+    )
+  },
 
   // Actions
   initialize: async () => {
@@ -199,14 +279,11 @@ export const createAuthSlice: StateCreator<
       set({
         error: {
           code: 'INIT_ERROR',
-          message: error.message || 'Failed to initialize auth',
+          message: error.message || 'Initialization failed',
           source: 'initialize',
           timestamp: Date.now()
         },
-        isInitialized: true,
-        isLoading: false,
-        lastAuthCheck: Date.now(),
-        authCheckSource: 'error'
+        isLoading: false
       } as Partial<AuthStore>)
     }
   },

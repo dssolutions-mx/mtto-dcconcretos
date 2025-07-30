@@ -4,7 +4,7 @@ import { cookies } from "next/headers"
 export async function createClient() {
   const cookieStore = await cookies()
 
-  return createServerClient(
+  const client = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
@@ -26,4 +26,32 @@ export async function createClient() {
       },
     }
   )
+
+  // Add mobile session recovery logic
+  const originalGetUser = client.auth.getUser.bind(client.auth)
+  client.auth.getUser = async () => {
+    try {
+      const result = await originalGetUser()
+      
+      // If session is missing but we have cookies, try to refresh
+      if (!result.data.user && result.error?.message?.includes('Auth session missing')) {
+        console.log('🔄 Mobile session recovery: Attempting to refresh session')
+        
+        // Try to get session instead
+        const { data: { session }, error: sessionError } = await client.auth.getSession()
+        
+        if (session?.user && !sessionError) {
+          console.log('✅ Mobile session recovery: Session refreshed successfully')
+          return { data: { user: session.user }, error: null }
+        }
+      }
+      
+      return result
+    } catch (error) {
+      console.error('❌ Mobile session recovery failed:', error)
+      return { data: { user: null }, error: error as any }
+    }
+  }
+
+  return client
 }

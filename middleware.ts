@@ -31,15 +31,27 @@ export async function middleware(request: NextRequest) {
   let isOfflineMode = false
   
   try {
-    // Try Supabase auth (when online)
-    const { data: { user: authUser }, error } = await supabase.auth.getUser()
+    // Enhanced mobile session handling with retry logic
+    const firstAttempt = await supabase.auth.getUser()
     
-    if (error) {
-      console.log('🔍 Middleware: Supabase auth failed:', error.message)
-      throw error // Fall through to offline handling
-    } else {
-      user = authUser
+    if (firstAttempt.data.user) {
+      user = firstAttempt.data.user
       console.log('✅ Middleware: User authenticated via Supabase:', user?.email || user?.id || 'unknown')
+    } else if (firstAttempt.error?.message?.includes('Auth session missing')) {
+      console.log('🔄 Middleware: Mobile session recovery - attempting session refresh')
+      
+      // Try to refresh session for mobile devices
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+      if (session?.user && !sessionError) {
+        console.log('✅ Middleware: Mobile session recovery successful')
+        user = session.user
+      } else {
+        console.log('❌ Middleware: Mobile session recovery failed, checking offline mode')
+        throw new Error('Session refresh failed')
+      }
+    } else {
+      console.log('🔍 Middleware: Supabase auth failed:', firstAttempt.error?.message)
+      throw firstAttempt.error || new Error('Authentication failed')
     }
   } catch (error: any) {
     console.log('🌐 Middleware: Auth failed, checking if route allows offline access')

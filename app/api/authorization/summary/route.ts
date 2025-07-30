@@ -12,11 +12,37 @@ export async function GET(request: NextRequest) {
     const plantId = searchParams.get('plant_id')
     const includeSubordinates = searchParams.get('include_subordinates') === 'true'
 
-    // Get current user's profile to apply scope-based filtering
-    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    // Enhanced mobile session handling with retry logic
+    let user = null
+    let userError = null
+    
+    // First attempt to get user
+    const firstAttempt = await supabase.auth.getUser()
+    if (firstAttempt.data.user) {
+      user = firstAttempt.data.user
+    } else if (firstAttempt.error?.message?.includes('Auth session missing')) {
+      console.log('🔄 Mobile session recovery: First attempt failed, trying session refresh')
+      
+      // Try to refresh session
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+      if (session?.user && !sessionError) {
+        console.log('✅ Mobile session recovery: Session refresh successful')
+        user = session.user
+      } else {
+        console.log('❌ Mobile session recovery: Session refresh failed')
+        userError = sessionError || firstAttempt.error
+      }
+    } else {
+      userError = firstAttempt.error
+    }
+
     if (userError || !user) {
       console.error('Auth error:', userError)
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      return NextResponse.json({ 
+        error: 'Unauthorized',
+        details: 'Session not found or invalid. Please try logging in again.',
+        mobileSessionIssue: true
+      }, { status: 401 })
     }
 
     console.log('Current authenticated user ID:', user.id)
@@ -176,7 +202,10 @@ export async function GET(request: NextRequest) {
 
   } catch (error) {
     console.error('Unexpected error in GET /api/authorization/summary:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return NextResponse.json({ 
+      error: 'Internal server error',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    }, { status: 500 })
   }
 }
 

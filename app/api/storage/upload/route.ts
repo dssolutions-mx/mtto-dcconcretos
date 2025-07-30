@@ -14,11 +14,38 @@ export async function POST(request: NextRequest) {
   try {
     const supabase = await createClient()
     
-    // Check if user is authenticated
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    // Enhanced mobile session handling with retry logic
+    let user = null
+    let authError = null
+    
+    // First attempt to get user
+    const firstAttempt = await supabase.auth.getUser()
+    if (firstAttempt.data.user) {
+      user = firstAttempt.data.user
+    } else if (firstAttempt.error?.message?.includes('Auth session missing')) {
+      console.log('🔄 Mobile session recovery: First attempt failed, trying session refresh')
+      
+      // Try to refresh session
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+      if (session?.user && !sessionError) {
+        console.log('✅ Mobile session recovery: Session refresh successful')
+        user = session.user
+      } else {
+        console.log('❌ Mobile session recovery: Session refresh failed')
+        authError = sessionError || firstAttempt.error
+      }
+    } else {
+      authError = firstAttempt.error
+    }
+
     if (authError || !user) {
+      console.error('Upload API auth error:', authError)
       return NextResponse.json(
-        { error: 'No autorizado' },
+        { 
+          error: 'No autorizado',
+          details: 'Session not found or invalid. Please try logging in again.',
+          mobileSessionIssue: true
+        },
         { status: 401 }
       )
     }
@@ -165,7 +192,10 @@ export async function POST(request: NextRequest) {
   } catch (error: any) {
     console.error('Upload API error:', error)
     return NextResponse.json(
-      { error: `Error interno del servidor: ${error.message}` },
+      { 
+        error: `Error interno del servidor: ${error.message}`,
+        details: error instanceof Error ? error.message : 'Unknown error'
+      },
       { status: 500 }
     )
   }
