@@ -787,12 +787,16 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
   }, [markAsUnsaved])
 
   const prepareCompletedItems = useCallback(() => {
-    return Object.keys(itemStatus).map(itemId => ({
-      item_id: itemId,
-      status: itemStatus[itemId],
-      notes: itemNotes[itemId] || null,
-      photo_url: itemPhotos[itemId] || null
-    }))
+    return Object.keys(itemStatus).map(itemId => {
+      const sectionAndItem = findSectionAndItemById(itemId)
+      return {
+        item_id: itemId,
+        status: itemStatus[itemId],
+        notes: itemNotes[itemId] || null,
+        photo_url: itemPhotos[itemId] || null,
+        description: sectionAndItem?.item?.description || null
+      }
+    })
   }, [itemStatus, itemNotes, itemPhotos])
 
   // Essential helper functions - MOVED UP to fix hoisting issue

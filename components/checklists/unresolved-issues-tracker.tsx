@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
-import { AlertTriangle, Clock, Wrench, Trash2, CheckCircle2, Package, Calendar, MapPin, WifiOff, Wifi } from "lucide-react"
+import { AlertTriangle, Clock, Wrench, Trash2, CheckCircle2, Package, Calendar, MapPin, WifiOff, Wifi, Users } from "lucide-react"
 import { toast } from "sonner"
 import { CorrectiveWorkOrderDialog } from "./corrective-work-order-dialog"
 import { useOfflineSync } from "@/hooks/useOfflineSync"
@@ -20,9 +20,13 @@ interface UnresolvedIssue {
   checklistId: string
   assetId: string
   assetName: string
+  assetCode?: string
+  technician?: string
+  completionDate?: string
   issueCount: number
   timestamp: number
   synced?: boolean
+  source?: 'local' | 'database'
 }
 
 interface UnresolvedIssueDetails {
@@ -62,22 +66,76 @@ export function UnresolvedIssuesTracker() {
 
   const loadUnresolvedIssues = async () => {
     try {
+      let localIssues: UnresolvedIssue[] = []
+      let databaseIssues: UnresolvedIssue[] = []
+
+      // Get local issues (existing functionality)
       if (offlineChecklistService) {
-        // Use offline service for primary data source
-        const issues = await offlineChecklistService.getUnresolvedIssues()
-        setUnresolvedIssues(issues)
+        localIssues = await offlineChecklistService.getUnresolvedIssues()
       } else {
         // Fallback to localStorage for backward compatibility
         const allUnresolvedKey = 'all-unresolved-issues'
         const stored = localStorage.getItem(allUnresolvedKey)
         
         if (stored) {
-          const issues: UnresolvedIssue[] = JSON.parse(stored)
-          // Sort by timestamp, newest first
-          const sortedIssues = issues.sort((a, b) => b.timestamp - a.timestamp)
-          setUnresolvedIssues(sortedIssues)
+          localIssues = JSON.parse(stored)
         }
       }
+
+      // Get database issues (new functionality)
+      try {
+        const response = await fetch('/api/checklists/unresolved-issues')
+        if (response.ok) {
+          const dbData = await response.json()
+          databaseIssues = dbData.issues || []
+        } else if (response.status === 401) {
+          // User not authenticated - this is expected in some cases, continue with local issues only
+          console.log('Database issues unavailable (authentication required)')
+        } else {
+          console.warn('Error fetching database issues:', response.status, response.statusText)
+        }
+      } catch (error) {
+        console.error('Error fetching database issues:', error)
+        // Continue with local issues only
+      }
+
+      // Combine and deduplicate issues using a Map for better deduplication
+      const issuesMap = new Map<string, UnresolvedIssue>()
+      
+      // Add local issues first (they take precedence as they might have user interaction)
+      localIssues.forEach(issue => {
+        issuesMap.set(issue.checklistId, {
+          ...issue,
+          source: 'local'
+        })
+      })
+      
+      // Add database issues only if they don't exist locally
+      databaseIssues.forEach(dbIssue => {
+        if (!issuesMap.has(dbIssue.checklistId)) {
+          issuesMap.set(dbIssue.checklistId, {
+            ...dbIssue,
+            source: 'database'
+          })
+        }
+      })
+
+      // Convert map to array and sort by timestamp, newest first
+      const uniqueIssues = Array.from(issuesMap.values())
+        .sort((a, b) => b.timestamp - a.timestamp)
+      
+      // Debug logging
+      if (process.env.NODE_ENV === 'development') {
+        console.log('UnresolvedIssuesTracker:', {
+          localIssuesCount: localIssues.length,
+          databaseIssuesCount: databaseIssues.length,
+          uniqueIssuesCount: uniqueIssues.length,
+          duplicatesRemoved: (localIssues.length + databaseIssues.length) - uniqueIssues.length
+        })
+      }
+      
+      setUnresolvedIssues(uniqueIssues)
+      
     } catch (error) {
       console.error('Error loading unresolved issues:', error)
       toast.error("Error al cargar problemas no resueltos")
@@ -88,24 +146,48 @@ export function UnresolvedIssuesTracker() {
 
   const loadIssueDetails = async (unresolvedId: string): Promise<UnresolvedIssueDetails | null> => {
     try {
-      if (offlineChecklistService) {
-        const details = await offlineChecklistService.getUnresolvedIssueDetails(unresolvedId)
-        if (details) {
-          return {
-            checklistId: details.checklistId,
-            assetId: details.assetId,
-            assetName: details.assetName,
-            issues: details.issues,
-            timestamp: details.timestamp
+      // Check if this is a database issue
+      if (unresolvedId.startsWith('db-')) {
+        // For database issues, find in current unresolvedIssues array
+        const dbIssue = unresolvedIssues.find(issue => issue.id === unresolvedId)
+        if (dbIssue && dbIssue.source === 'database') {
+          // Database issues already have their details loaded
+          const issueData = await fetch(`/api/checklists/unresolved-issues`)
+          if (issueData.ok) {
+            const response = await issueData.json()
+            const fullIssue = response.issues.find((issue: any) => issue.id === unresolvedId)
+            if (fullIssue) {
+              return {
+                checklistId: fullIssue.checklistId,
+                assetId: fullIssue.assetId,
+                assetName: fullIssue.assetName,
+                issues: fullIssue.issues,
+                timestamp: fullIssue.timestamp
+              }
+            }
           }
         }
       } else {
-        // Fallback to localStorage
-        const unresolvedKey = `unresolved-issues-${unresolvedId}`
-        const stored = localStorage.getItem(unresolvedKey)
-        
-        if (stored) {
-          return JSON.parse(stored)
+        // Local storage/offline service issues
+        if (offlineChecklistService) {
+          const details = await offlineChecklistService.getUnresolvedIssueDetails(unresolvedId)
+          if (details) {
+            return {
+              checklistId: details.checklistId,
+              assetId: details.assetId,
+              assetName: details.assetName,
+              issues: details.issues,
+              timestamp: details.timestamp
+            }
+          }
+        } else {
+          // Fallback to localStorage
+          const unresolvedKey = `unresolved-issues-${unresolvedId}`
+          const stored = localStorage.getItem(unresolvedKey)
+          
+          if (stored) {
+            return JSON.parse(stored)
+          }
         }
       }
     } catch (error) {
@@ -307,7 +389,7 @@ export function UnresolvedIssuesTracker() {
             )}
           </div>
           <p className="text-muted-foreground">
-            {unresolvedIssues.length} checklist{unresolvedIssues.length > 1 ? 's' : ''} con problemas pendientes
+            {unresolvedIssues.length} checklist{unresolvedIssues.length > 1 ? 's' : ''} con problemas sin órdenes de trabajo
             {!isOnline && ' (modo offline)'}
           </p>
         </div>
@@ -327,15 +409,16 @@ export function UnresolvedIssuesTracker() {
       <Alert>
         <AlertTriangle className="h-4 w-4" />
         <AlertDescription>
-          Estos son problemas detectados en checklists completados que requieren atención.
-          Cree órdenes de trabajo correctivas para resolver los problemas identificados.
+          <strong>Checklists con problemas sin órdenes de trabajo.</strong>
+          Cuando esté offline, las órdenes se generan automáticamente. Estos casos requieren atención manual.
+          Use "Crear Órdenes" para generar órdenes de trabajo correctivas.
         </AlertDescription>
       </Alert>
 
       <ScrollArea className="h-[70vh]">
         <div className="space-y-4">
           {unresolvedIssues.map((issue) => (
-            <Card key={issue.id} className="hover:shadow-md transition-shadow">
+            <Card key={issue.checklistId} className="hover:shadow-md transition-shadow">
               <CardHeader className="pb-3">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
@@ -347,12 +430,18 @@ export function UnresolvedIssuesTracker() {
                       <CardDescription className="flex items-center gap-4 mt-1">
                         <span className="flex items-center gap-1">
                           <Package className="h-3 w-3" />
-                          ID: {issue.assetId}
+                          {issue.assetCode || issue.assetId}
                         </span>
                         <span className="flex items-center gap-1">
                           <Calendar className="h-3 w-3" />
                           {formatTimestamp(issue.timestamp)}
                         </span>
+                        {issue.technician && (
+                          <span className="flex items-center gap-1">
+                            <Users className="h-3 w-3" />
+                            {issue.technician}
+                          </span>
+                        )}
                       </CardDescription>
                     </div>
                   </div>
@@ -361,6 +450,11 @@ export function UnresolvedIssuesTracker() {
                     <Badge variant="secondary">
                       {issue.issueCount} problema{issue.issueCount > 1 ? 's' : ''}
                     </Badge>
+                    {issue.source === 'database' && (
+                      <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
+                        DB
+                      </Badge>
+                    )}
                   </div>
                 </div>
               </CardHeader>

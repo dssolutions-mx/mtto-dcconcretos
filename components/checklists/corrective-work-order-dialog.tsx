@@ -217,7 +217,7 @@ export function CorrectiveWorkOrderDialog({
 
       const submissionData = {
         checklist_id: checklist.id,
-        asset_id: checklist.assetId,
+        asset_id: checklist.assetId || checklist.assets?.id,
         asset_name: checklist.assets?.name || checklist.asset || 'Sin nombre',
         items_with_issues: itemsWithPriorities,
         priority: globalPriority,
@@ -672,11 +672,11 @@ export function CorrectiveWorkOrderDialog({
                       </div>
                       <div className="flex items-center gap-2">
                         <span className="text-blue-600">🏷️</span>
-                        <span>{checklist.assets?.asset_id || checklist.assetCode || checklist.assetId || 'Sin código'}</span>
+                        <span>{checklist.assetCode || checklist.assets?.asset_id || 'Sin código'}</span>
                       </div>
                       <div className="flex items-center gap-2">
                         <span className="text-blue-600">📍</span>
-                        <span>{(checklist.assets as any)?.plants?.name || checklist.assets?.location || checklist.assetLocation || 'Sin planta'}</span>
+                        <span>{checklist.assetLocation || (checklist.assets as any)?.plants?.name || checklist.assets?.location || 'Sin planta'}</span>
                       </div>
                     </div>
                   </div>

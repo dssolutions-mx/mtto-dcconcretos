@@ -271,6 +271,28 @@ export function usePurchaseOrders(): UsePurchaseOrdersReturn {
       return true
 
     } catch (error) {
+      // Handle specific payment date error
+      if (error instanceof Error && error.message.includes('max_payment_date cannot be in the past')) {
+        toast({
+          title: "Error de fecha de pago",
+          description: "La fecha de pago está en el pasado. Por favor, actualiza la fecha de pago o cambia el método de pago antes de continuar.",
+          variant: "destructive"
+        })
+        setState(prev => ({ ...prev, isUpdating: false }))
+        return false
+      }
+      
+      // Handle specific quotation error
+      if (error instanceof Error && error.message.includes('Quotation required for this purchase order before approval')) {
+        toast({
+          title: "Error de cotización",
+          description: "Esta orden requiere cotización antes de ser aprobada. Se ha actualizado automáticamente. Intenta aprobar nuevamente.",
+          variant: "destructive"
+        })
+        setState(prev => ({ ...prev, isUpdating: false }))
+        return false
+      }
+      
       const errorMessage = handleApiError(error, 'avanzar workflow')
       setState(prev => ({ ...prev, error: errorMessage, isUpdating: false }))
       return false

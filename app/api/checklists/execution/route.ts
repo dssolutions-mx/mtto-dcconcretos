@@ -291,7 +291,7 @@ async function processChecklistCompletion(
             checklist_id: completedData.id,
             item_id: String(item.item_id), // Convert to string to match column type
             status: item.status,
-            description: 'Problema detectado durante el checklist',
+            description: item.description || 'Problema detectado durante el checklist',
             notes: item.notes || '',
             photo_url: item.photo_url || null,
             resolved: false

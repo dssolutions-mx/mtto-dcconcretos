@@ -70,23 +70,53 @@ export async function POST(request: NextRequest) {
     // Process each issue with smart deduplication
     for (const issue of items_with_issues) {
       try {
-        // First save the issue
-        const { data: savedIssue, error: issueError } = await supabase
+        // Check if issue already exists for this checklist and item
+        const { data: existingIssue, error: checkError } = await supabase
           .from('checklist_issues')
-          .insert({
-            checklist_id,
-            item_id: issue.id,
-            status: issue.status,
-            description: issue.description,
-            notes: issue.notes,
-            photo_url: issue.photo_url
-          })
           .select('id')
+          .eq('checklist_id', checklist_id)
+          .eq('item_id', issue.id)
           .single()
 
-        if (issueError) {
-          console.error(`Error saving issue ${issue.id}:`, issueError)
-          continue
+        let savedIssue
+        if (existingIssue) {
+          // Update existing issue with better description
+          const { data: updatedIssue, error: updateError } = await supabase
+            .from('checklist_issues')
+            .update({
+              description: issue.description,
+              notes: issue.notes,
+              photo_url: issue.photo_url
+            })
+            .eq('id', existingIssue.id)
+            .select('id')
+            .single()
+
+          if (updateError) {
+            console.error(`Error updating existing issue ${issue.id}:`, updateError)
+            continue
+          }
+          savedIssue = updatedIssue
+        } else {
+          // Create new issue only if it doesn't exist
+          const { data: newIssue, error: issueError } = await supabase
+            .from('checklist_issues')
+            .insert({
+              checklist_id,
+              item_id: issue.id,
+              status: issue.status,
+              description: issue.description,
+              notes: issue.notes,
+              photo_url: issue.photo_url
+            })
+            .select('id')
+            .single()
+
+          if (issueError) {
+            console.error(`Error saving new issue ${issue.id}:`, issueError)
+            continue
+          }
+          savedIssue = newIssue
         }
 
         // Generate fingerprint for this issue
@@ -421,7 +451,12 @@ ORIGEN:
             .update({ work_order_id: workOrder.id })
             .eq('id', savedIssue.id)
 
-          // Create individual incident
+          // Create individual incident with preserved evidence
+          const incidentDocuments = []
+          if (issue.photo_url) {
+            incidentDocuments.push(issue.photo_url)
+          }
+
           const { data: incident, error: incidentError } = await supabase
             .from('incident_history')
             .insert({
@@ -434,6 +469,7 @@ ORIGEN:
               reported_by: user.id,
               created_by: user.id,
               work_order_id: workOrder.id,
+              documents: incidentDocuments,
               created_at: new Date().toISOString()
             })
             .select('id')

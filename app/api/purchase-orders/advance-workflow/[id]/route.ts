@@ -103,6 +103,29 @@ export async function PUT(
     
   } catch (error) {
     console.error('Error advancing workflow:', error)
+    
+    // Handle specific max_payment_date validation error
+    if (error instanceof Error && error.message.includes('max_payment_date cannot be in the past')) {
+      return NextResponse.json({ 
+        success: false,
+        error: 'Error de validación de fecha de pago',
+        details: 'La fecha máxima de pago no puede estar en el pasado cuando el método de pago es transferencia. Por favor, actualiza la fecha de pago o cambia el método de pago antes de continuar.',
+        requires_fix: true,
+        fix_type: 'payment_date'
+      }, { status: 400 })
+    }
+    
+    // Handle specific quotation validation error
+    if (error instanceof Error && error.message.includes('Quotation required for this purchase order before approval')) {
+      return NextResponse.json({ 
+        success: false,
+        error: 'Error de validación de cotización',
+        details: 'Esta orden requiere cotización antes de ser aprobada. Por favor, sube la cotización antes de continuar.',
+        requires_fix: true,
+        fix_type: 'quotation'
+      }, { status: 400 })
+    }
+    
     return NextResponse.json({ 
       success: false,
       error: 'Failed to advance workflow',

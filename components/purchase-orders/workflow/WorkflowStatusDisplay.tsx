@@ -9,6 +9,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
+import { useToast } from "@/hooks/use-toast"
 import { 
   CheckCircle, 
   Clock, 
@@ -52,6 +53,7 @@ export function WorkflowStatusDisplay({
   onStatusChange
 }: WorkflowStatusDisplayProps) {
   const router = useRouter()
+  const { toast } = useToast()
   const { profile, hasAuthorizationAccess, canAuthorizeAmount, refreshProfile } = useAuthZustand()
   const { 
     workflowStatus, 
@@ -502,6 +504,47 @@ export function WorkflowStatusDisplay({
         onStatusChange()
       }
       router.refresh()
+    }
+  }
+
+  // Handle payment date error specifically
+  const handlePaymentDateError = async () => {
+    try {
+      // Try to fix the payment date automatically by setting it to 30 days from now
+      const response = await fetch(`/api/purchase-orders/${purchaseOrderId}/fix-payment-date`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action: 'update_payment_date',
+          new_max_payment_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
+        })
+      })
+      
+      if (response.ok) {
+        toast({
+          title: "Fecha de pago actualizada",
+          description: "La fecha de pago ha sido actualizada automáticamente. Puedes continuar con la aprobación.",
+        })
+        // Reload workflow status
+        await loadWorkflowStatus(purchaseOrderId)
+        router.refresh()
+      } else {
+        const errorData = await response.json()
+        toast({
+          title: "Error al actualizar fecha de pago",
+          description: errorData.details || "No se pudo actualizar la fecha de pago automáticamente.",
+          variant: "destructive"
+        })
+      }
+    } catch (error) {
+      console.error('Error fixing payment date:', error)
+      toast({
+        title: "Error",
+        description: "No se pudo actualizar la fecha de pago automáticamente.",
+        variant: "destructive"
+      })
     }
   }
 
