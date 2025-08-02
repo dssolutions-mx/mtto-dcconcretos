@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Progress } from '@/components/ui/progress'
-import { AlertTriangle, CheckCircle, Clock, TrendingDown } from 'lucide-react'
+import { AlertTriangle, CheckCircle, Clock, TrendingDown, Calendar, CalendarDays } from 'lucide-react'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
 
@@ -23,6 +23,7 @@ interface ComplianceReport {
   asset_code: string
   checklist_name: string
   frequency: string
+  frequency_type: 'daily' | 'weekly' | 'monthly' | 'other'
   days_overdue: number
   weeks_overdue: number
   last_completed: string | null
@@ -39,6 +40,32 @@ interface ComplianceStats {
   critical_assets: number
   compliance_rate: number
   average_days_overdue: number
+  frequency_breakdown: {
+    daily: {
+      total: number
+      overdue: number
+      critical: number
+      compliance_rate: number
+    }
+    weekly: {
+      total: number
+      overdue: number
+      critical: number
+      compliance_rate: number
+    }
+    monthly: {
+      total: number
+      overdue: number
+      critical: number
+      compliance_rate: number
+    }
+    other: {
+      total: number
+      overdue: number
+      critical: number
+      compliance_rate: number
+    }
+  }
   business_unit_breakdown: Array<{
     business_unit: string
     total: number
@@ -65,6 +92,7 @@ interface ComplianceData {
     business_unit?: string
     plant?: string
     severity?: string
+    frequency_type?: string
   }
 }
 
@@ -77,6 +105,7 @@ export default function ChecklistComplianceView() {
   const [businessUnit, setBusinessUnit] = useState('all')
   const [plant, setPlant] = useState('all')
   const [severity, setSeverity] = useState('all')
+  const [frequencyType, setFrequencyType] = useState('all')
   const [period, setPeriod] = useState('30')
   const [search, setSearch] = useState('')
   
@@ -93,7 +122,8 @@ export default function ChecklistComplianceView() {
         period,
         severity,
         ...(businessUnit !== 'all' && { business_unit: businessUnit }),
-        ...(plant !== 'all' && { plant })
+        ...(plant !== 'all' && { plant }),
+        ...(frequencyType !== 'all' && { frequency_type: frequencyType })
       })
       
       const response = await fetch(`/api/hr/checklist-compliance?${params}`)
@@ -139,7 +169,7 @@ export default function ChecklistComplianceView() {
 
   useEffect(() => {
     fetchData()
-  }, [businessUnit, plant, severity, period])
+  }, [businessUnit, plant, severity, frequencyType, period])
 
   const getStatusIcon = (status: string) => {
     switch (status) {
@@ -167,6 +197,21 @@ export default function ChecklistComplianceView() {
     }
   }
 
+  const getFrequencyTypeBadge = (frequencyType: string) => {
+    switch (frequencyType) {
+      case 'daily':
+        return <Badge className="bg-blue-100 text-blue-800">Diario</Badge>
+      case 'weekly':
+        return <Badge className="bg-purple-100 text-purple-800">Semanal</Badge>
+      case 'monthly':
+        return <Badge className="bg-indigo-100 text-indigo-800">Mensual</Badge>
+      case 'other':
+        return <Badge variant="outline">Otro</Badge>
+      default:
+        return <Badge variant="outline">Desconocido</Badge>
+    }
+  }
+
   const filteredReports = data?.reports.filter(report => {
     if (!search) return true
     
@@ -184,6 +229,49 @@ export default function ChecklistComplianceView() {
   const availablePlants = plants.filter(p => 
     businessUnit === 'all' || p.business_unit_id === businessUnit
   )
+
+  // Group reports by frequency type for better organization
+  const reportsByFrequency = {
+    daily: filteredReports.filter(r => r.frequency_type === 'daily'),
+    weekly: filteredReports.filter(r => r.frequency_type === 'weekly'),
+    monthly: filteredReports.filter(r => r.frequency_type === 'monthly'),
+    other: filteredReports.filter(r => r.frequency_type === 'other')
+  }
+
+  // Get assets with multiple frequency types overdue
+  const assetsWithMultipleTypes = new Map()
+  filteredReports.forEach(report => {
+    const assetId = report.asset_id
+    if (!assetsWithMultipleTypes.has(assetId)) {
+      assetsWithMultipleTypes.set(assetId, new Set())
+    }
+    assetsWithMultipleTypes.get(assetId).add(report.frequency_type)
+  })
+
+  const getAssetFrequencyTypes = (assetId: string) => {
+    const types = assetsWithMultipleTypes.get(assetId)
+    if (!types || types.size <= 1) return null
+    
+    const typeLabels = {
+      daily: 'Diario',
+      weekly: 'Semanal', 
+      monthly: 'Mensual',
+      other: 'Otro'
+    }
+    
+    return Array.from(types).map(type => typeLabels[type as keyof typeof typeLabels]).join(', ')
+  }
+
+  const getAssetMultiTypeBadge = (assetId: string) => {
+    const types = assetsWithMultipleTypes.get(assetId)
+    if (!types || types.size <= 1) return null
+    
+    return (
+      <Badge variant="secondary" className="bg-yellow-100 text-yellow-800 text-xs">
+        {types.size} tipos atrasados
+      </Badge>
+    )
+  }
 
   if (loading) {
     return (
@@ -305,16 +393,154 @@ export default function ChecklistComplianceView() {
         </Card>
       </div>
 
+      {/* Assets with Multiple Frequency Types */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Activos con Múltiples Tipos de Checklists Atrasados</CardTitle>
+          <CardDescription>
+            Activos que tienen checklists de diferentes frecuencias atrasados simultáneamente
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            {Array.from(assetsWithMultipleTypes.entries())
+              .filter(([_, types]) => types.size > 1)
+              .map(([assetId, types]) => {
+                const assetReports = filteredReports.filter(r => r.asset_id === assetId)
+                const firstReport = assetReports[0]
+                const typeLabels = {
+                  daily: 'Diario',
+                  weekly: 'Semanal', 
+                  monthly: 'Mensual',
+                  other: 'Otro'
+                }
+                const typesList = Array.from(types).map(type => typeLabels[type as keyof typeof typeLabels]).join(', ')
+                
+                return (
+                  <div key={assetId} className="flex items-center justify-between p-3 border rounded-lg">
+                    <div>
+                      <div className="flex items-center space-x-2">
+                        <p className="font-medium">{firstReport.asset_name}</p>
+                        <Badge variant="secondary" className="bg-yellow-100 text-yellow-800">
+                          {types.size} tipos
+                        </Badge>
+                      </div>
+                      <p className="text-sm text-muted-foreground">{firstReport.asset_code}</p>
+                      <p className="text-sm text-orange-600">{firstReport.plant_name} - {firstReport.business_unit_name}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm font-medium">Tipos atrasados:</p>
+                      <p className="text-sm text-muted-foreground">{typesList}</p>
+                    </div>
+                  </div>
+                )
+              })}
+            {Array.from(assetsWithMultipleTypes.entries()).filter(([_, types]) => types.size > 1).length === 0 && (
+              <p className="text-center text-muted-foreground py-4">
+                No hay activos con múltiples tipos de checklists atrasados
+              </p>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Frequency Breakdown Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <Card>
+          <CardContent className="p-6">
+            <div className="flex items-center space-x-2">
+              <CalendarDays className="h-5 w-5 text-blue-500" />
+              <div>
+                <p className="text-sm text-muted-foreground">Checklists Diarios</p>
+                <p className="text-2xl font-bold text-blue-600">
+                  {data.stats.frequency_breakdown.daily.total}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {data.stats.frequency_breakdown.daily.critical} críticos
+                </p>
+              </div>
+            </div>
+            <Progress 
+              value={data.stats.frequency_breakdown.daily.compliance_rate} 
+              className="mt-2"
+            />
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="p-6">
+            <div className="flex items-center space-x-2">
+              <Calendar className="h-5 w-5 text-purple-500" />
+              <div>
+                <p className="text-sm text-muted-foreground">Checklists Semanales</p>
+                <p className="text-2xl font-bold text-purple-600">
+                  {data.stats.frequency_breakdown.weekly.total}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {data.stats.frequency_breakdown.weekly.critical} críticos
+                </p>
+              </div>
+            </div>
+            <Progress 
+              value={data.stats.frequency_breakdown.weekly.compliance_rate} 
+              className="mt-2"
+            />
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="p-6">
+            <div className="flex items-center space-x-2">
+              <Calendar className="h-5 w-5 text-indigo-500" />
+              <div>
+                <p className="text-sm text-muted-foreground">Checklists Mensuales</p>
+                <p className="text-2xl font-bold text-indigo-600">
+                  {data.stats.frequency_breakdown.monthly.total}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {data.stats.frequency_breakdown.monthly.critical} críticos
+                </p>
+              </div>
+            </div>
+            <Progress 
+              value={data.stats.frequency_breakdown.monthly.compliance_rate} 
+              className="mt-2"
+            />
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="p-6">
+            <div className="flex items-center space-x-2">
+              <AlertTriangle className="h-5 w-5 text-gray-500" />
+              <div>
+                <p className="text-sm text-muted-foreground">Otros Checklists</p>
+                <p className="text-2xl font-bold text-gray-600">
+                  {data.stats.frequency_breakdown.other.total}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {data.stats.frequency_breakdown.other.critical} críticos
+                </p>
+              </div>
+            </div>
+            <Progress 
+              value={data.stats.frequency_breakdown.other.compliance_rate} 
+              className="mt-2"
+            />
+          </CardContent>
+        </Card>
+      </div>
+
       {/* Filters */}
       <Card>
         <CardHeader>
           <CardTitle>Filtros de Búsqueda</CardTitle>
           <CardDescription>
-            Filtra los datos por unidad de negocio, planta, severidad y período
+            Filtra los datos por unidad de negocio, planta, severidad, frecuencia y período
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-7 gap-4">
             <Select value={businessUnit} onValueChange={setBusinessUnit}>
               <SelectTrigger>
                 <SelectValue placeholder="Unidad de Negocio" />
@@ -354,6 +580,19 @@ export default function ChecklistComplianceView() {
               </SelectContent>
             </Select>
 
+            <Select value={frequencyType} onValueChange={setFrequencyType}>
+              <SelectTrigger>
+                <SelectValue placeholder="Frecuencia" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todas las Frecuencias</SelectItem>
+                <SelectItem value="daily">Solo Diarios</SelectItem>
+                <SelectItem value="weekly">Solo Semanales</SelectItem>
+                <SelectItem value="monthly">Solo Mensuales</SelectItem>
+                <SelectItem value="other">Otros</SelectItem>
+              </SelectContent>
+            </Select>
+
             <Select value={period} onValueChange={setPeriod}>
               <SelectTrigger>
                 <SelectValue placeholder="Período" />
@@ -380,6 +619,9 @@ export default function ChecklistComplianceView() {
       <Tabs defaultValue="detailed" className="space-y-4">
         <TabsList>
           <TabsTrigger value="detailed">Vista Detallada</TabsTrigger>
+          <TabsTrigger value="daily">Checklists Diarios</TabsTrigger>
+          <TabsTrigger value="weekly">Checklists Semanales</TabsTrigger>
+          <TabsTrigger value="monthly">Checklists Mensuales</TabsTrigger>
           <TabsTrigger value="summary">Resumen por Unidad</TabsTrigger>
           <TabsTrigger value="plants">Resumen por Planta</TabsTrigger>
         </TabsList>
@@ -396,22 +638,110 @@ export default function ChecklistComplianceView() {
               <div className="overflow-x-auto">
                 <Table>
                   <TableHeader>
+                                          <TableRow>
+                        <TableHead>Estado</TableHead>
+                        <TableHead>Frecuencia</TableHead>
+                        <TableHead>Unidad de Negocio</TableHead>
+                        <TableHead>Planta</TableHead>
+                        <TableHead>Activo</TableHead>
+                        <TableHead>Checklist</TableHead>
+                        <TableHead>Días Atraso</TableHead>
+                        <TableHead>Patrón de Recurrencia</TableHead>
+                        <TableHead>Técnico Asignado</TableHead>
+                        <TableHead>Última Fecha</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredReports.map((report, index) => (
+                        <TableRow key={`${report.asset_id}-${report.checklist_name}-${report.scheduled_date}-${index}`}>
+                          <TableCell>
+                            <div className="flex items-center space-x-2">
+                              {getStatusIcon(report.status)}
+                              {getStatusBadge(report.status)}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            {getFrequencyTypeBadge(report.frequency_type)}
+                          </TableCell>
+                          <TableCell className="font-medium">
+                            {report.business_unit_name}
+                          </TableCell>
+                          <TableCell>{report.plant_name}</TableCell>
+                          <TableCell>
+                            <div>
+                              <div className="flex items-center space-x-2">
+                                <p className="font-medium">{report.asset_name}</p>
+                                {getAssetMultiTypeBadge(report.asset_id)}
+                              </div>
+                              <p className="text-sm text-muted-foreground">{report.asset_code}</p>
+                              {getAssetFrequencyTypes(report.asset_id) && (
+                                <p className="text-xs text-orange-600 mt-1">
+                                  También atrasado: {getAssetFrequencyTypes(report.asset_id)}
+                                </p>
+                              )}
+                            </div>
+                          </TableCell>
+                        <TableCell>{report.checklist_name}</TableCell>
+                        <TableCell>
+                          <div className="text-center">
+                            <p className="font-bold text-lg">{report.days_overdue}</p>
+                            <p className="text-sm text-muted-foreground">
+                              ({report.weeks_overdue} semanas)
+                            </p>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="text-sm">
+                            {report.recurrence_pattern}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          {report.assigned_technician || (
+                            <span className="text-muted-foreground italic">Sin asignar</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {report.last_completed ? (
+                            format(new Date(report.last_completed), 'dd/MM/yyyy', { locale: es })
+                          ) : (
+                            <span className="text-muted-foreground italic">Nunca</span>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="daily">
+          <Card>
+            <CardHeader>
+              <CardTitle>Checklists Diarios con Incumplimientos</CardTitle>
+              <CardDescription>
+                Mostrando {reportsByFrequency.daily.length} checklists diarios con incumplimientos
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
                     <TableRow>
                       <TableHead>Estado</TableHead>
                       <TableHead>Unidad de Negocio</TableHead>
                       <TableHead>Planta</TableHead>
                       <TableHead>Activo</TableHead>
                       <TableHead>Checklist</TableHead>
-                      <TableHead>Frecuencia</TableHead>
                       <TableHead>Días Atraso</TableHead>
-                      <TableHead>Patrón de Recurrencia</TableHead>
                       <TableHead>Técnico Asignado</TableHead>
                       <TableHead>Última Fecha</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filteredReports.map((report, index) => (
-                      <TableRow key={`${report.asset_id}-${report.checklist_name}-${report.scheduled_date}-${index}`}>
+                    {reportsByFrequency.daily.map((report, index) => (
+                      <TableRow key={`daily-${report.asset_id}-${report.checklist_name}-${index}`}>
                         <TableCell>
                           <div className="flex items-center space-x-2">
                             {getStatusIcon(report.status)}
@@ -424,14 +754,19 @@ export default function ChecklistComplianceView() {
                         <TableCell>{report.plant_name}</TableCell>
                         <TableCell>
                           <div>
-                            <p className="font-medium">{report.asset_name}</p>
+                            <div className="flex items-center space-x-2">
+                              <p className="font-medium">{report.asset_name}</p>
+                              {getAssetMultiTypeBadge(report.asset_id)}
+                            </div>
                             <p className="text-sm text-muted-foreground">{report.asset_code}</p>
+                            {getAssetFrequencyTypes(report.asset_id) && (
+                              <p className="text-xs text-orange-600 mt-1">
+                                También atrasado: {getAssetFrequencyTypes(report.asset_id)}
+                              </p>
+                            )}
                           </div>
                         </TableCell>
                         <TableCell>{report.checklist_name}</TableCell>
-                        <TableCell>
-                          <Badge variant="outline">{report.frequency}</Badge>
-                        </TableCell>
                         <TableCell>
                           <div className="text-center">
                             <p className="font-bold text-lg">{report.days_overdue}</p>
@@ -441,8 +776,163 @@ export default function ChecklistComplianceView() {
                           </div>
                         </TableCell>
                         <TableCell>
-                          <div className="text-sm">
-                            {report.recurrence_pattern}
+                          {report.assigned_technician || (
+                            <span className="text-muted-foreground italic">Sin asignar</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {report.last_completed ? (
+                            format(new Date(report.last_completed), 'dd/MM/yyyy', { locale: es })
+                          ) : (
+                            <span className="text-muted-foreground italic">Nunca</span>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="weekly">
+          <Card>
+            <CardHeader>
+              <CardTitle>Checklists Semanales con Incumplimientos</CardTitle>
+              <CardDescription>
+                Mostrando {reportsByFrequency.weekly.length} checklists semanales con incumplimientos
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Estado</TableHead>
+                      <TableHead>Unidad de Negocio</TableHead>
+                      <TableHead>Planta</TableHead>
+                      <TableHead>Activo</TableHead>
+                      <TableHead>Checklist</TableHead>
+                      <TableHead>Días Atraso</TableHead>
+                      <TableHead>Técnico Asignado</TableHead>
+                      <TableHead>Última Fecha</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {reportsByFrequency.weekly.map((report, index) => (
+                      <TableRow key={`weekly-${report.asset_id}-${report.checklist_name}-${index}`}>
+                        <TableCell>
+                          <div className="flex items-center space-x-2">
+                            {getStatusIcon(report.status)}
+                            {getStatusBadge(report.status)}
+                          </div>
+                        </TableCell>
+                        <TableCell className="font-medium">
+                          {report.business_unit_name}
+                        </TableCell>
+                        <TableCell>{report.plant_name}</TableCell>
+                        <TableCell>
+                          <div>
+                            <div className="flex items-center space-x-2">
+                              <p className="font-medium">{report.asset_name}</p>
+                              {getAssetMultiTypeBadge(report.asset_id)}
+                            </div>
+                            <p className="text-sm text-muted-foreground">{report.asset_code}</p>
+                            {getAssetFrequencyTypes(report.asset_id) && (
+                              <p className="text-xs text-orange-600 mt-1">
+                                También atrasado: {getAssetFrequencyTypes(report.asset_id)}
+                              </p>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell>{report.checklist_name}</TableCell>
+                        <TableCell>
+                          <div className="text-center">
+                            <p className="font-bold text-lg">{report.days_overdue}</p>
+                            <p className="text-sm text-muted-foreground">
+                              ({report.weeks_overdue} semanas)
+                            </p>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          {report.assigned_technician || (
+                            <span className="text-muted-foreground italic">Sin asignar</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {report.last_completed ? (
+                            format(new Date(report.last_completed), 'dd/MM/yyyy', { locale: es })
+                          ) : (
+                            <span className="text-muted-foreground italic">Nunca</span>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="monthly">
+          <Card>
+            <CardHeader>
+              <CardTitle>Checklists Mensuales con Incumplimientos</CardTitle>
+              <CardDescription>
+                Mostrando {reportsByFrequency.monthly.length} checklists mensuales con incumplimientos
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Estado</TableHead>
+                      <TableHead>Unidad de Negocio</TableHead>
+                      <TableHead>Planta</TableHead>
+                      <TableHead>Activo</TableHead>
+                      <TableHead>Checklist</TableHead>
+                      <TableHead>Días Atraso</TableHead>
+                      <TableHead>Técnico Asignado</TableHead>
+                      <TableHead>Última Fecha</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {reportsByFrequency.monthly.map((report, index) => (
+                      <TableRow key={`monthly-${report.asset_id}-${report.checklist_name}-${index}`}>
+                        <TableCell>
+                          <div className="flex items-center space-x-2">
+                            {getStatusIcon(report.status)}
+                            {getStatusBadge(report.status)}
+                          </div>
+                        </TableCell>
+                        <TableCell className="font-medium">
+                          {report.business_unit_name}
+                        </TableCell>
+                        <TableCell>{report.plant_name}</TableCell>
+                        <TableCell>
+                          <div>
+                            <div className="flex items-center space-x-2">
+                              <p className="font-medium">{report.asset_name}</p>
+                              {getAssetMultiTypeBadge(report.asset_id)}
+                            </div>
+                            <p className="text-sm text-muted-foreground">{report.asset_code}</p>
+                            {getAssetFrequencyTypes(report.asset_id) && (
+                              <p className="text-xs text-orange-600 mt-1">
+                                También atrasado: {getAssetFrequencyTypes(report.asset_id)}
+                              </p>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell>{report.checklist_name}</TableCell>
+                        <TableCell>
+                          <div className="text-center">
+                            <p className="font-bold text-lg">{report.days_overdue}</p>
+                            <p className="text-sm text-muted-foreground">
+                              ({report.weeks_overdue} semanas)
+                            </p>
                           </div>
                         </TableCell>
                         <TableCell>

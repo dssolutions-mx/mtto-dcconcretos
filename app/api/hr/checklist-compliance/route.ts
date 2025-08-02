@@ -11,6 +11,7 @@ interface ComplianceReport {
   asset_code: string
   checklist_name: string
   frequency: string
+  frequency_type: 'daily' | 'weekly' | 'monthly' | 'other'
   days_overdue: number
   weeks_overdue: number
   last_completed: string | null
@@ -27,6 +28,32 @@ interface ComplianceStats {
   critical_assets: number
   compliance_rate: number
   average_days_overdue: number
+  frequency_breakdown: {
+    daily: {
+      total: number
+      overdue: number
+      critical: number
+      compliance_rate: number
+    }
+    weekly: {
+      total: number
+      overdue: number
+      critical: number
+      compliance_rate: number
+    }
+    monthly: {
+      total: number
+      overdue: number
+      critical: number
+      compliance_rate: number
+    }
+    other: {
+      total: number
+      overdue: number
+      critical: number
+      compliance_rate: number
+    }
+  }
   business_unit_breakdown: Array<{
     business_unit: string
     total: number
@@ -42,6 +69,20 @@ interface ComplianceStats {
     overdue: number
     compliance_rate: number
   }>
+}
+
+function getFrequencyType(frequency: string): 'daily' | 'weekly' | 'monthly' | 'other' {
+  const freq = frequency.toLowerCase()
+  if (freq.includes('diario') || freq.includes('daily') || freq.includes('dia')) {
+    return 'daily'
+  }
+  if (freq.includes('semanal') || freq.includes('weekly') || freq.includes('semana')) {
+    return 'weekly'
+  }
+  if (freq.includes('mensual') || freq.includes('monthly') || freq.includes('mes')) {
+    return 'monthly'
+  }
+  return 'other'
 }
 
 function calculateRecurrencePattern(
@@ -71,6 +112,7 @@ export async function GET(request: NextRequest) {
     const plant = searchParams.get('plant')
     const severity = searchParams.get('severity') // 'all', 'overdue', 'critical'
     const period = searchParams.get('period') || '30' // days to look back
+    const frequencyType = searchParams.get('frequency_type') // 'all', 'daily', 'weekly', 'monthly', 'other'
     
     const today = new Date()
     
@@ -120,6 +162,12 @@ export async function GET(request: NextRequest) {
           critical_assets: 0,
           compliance_rate: 0,
           average_days_overdue: 0,
+          frequency_breakdown: {
+            daily: { total: 0, overdue: 0, critical: 0, compliance_rate: 0 },
+            weekly: { total: 0, overdue: 0, critical: 0, compliance_rate: 0 },
+            monthly: { total: 0, overdue: 0, critical: 0, compliance_rate: 0 },
+            other: { total: 0, overdue: 0, critical: 0, compliance_rate: 0 }
+          },
           business_unit_breakdown: [],
           plant_breakdown: []
         }
@@ -212,7 +260,9 @@ export async function GET(request: NextRequest) {
         continue
       }
       
-      // Process each schedule for this asset
+      // Process each schedule for this asset INDEPENDENTLY
+      // This ensures that if an asset has both daily and weekly overdue checklists,
+      // both will be shown separately in the reports
       for (const schedule of assetSchedules) {
         const checklist = Array.isArray(schedule.checklists) ? 
           schedule.checklists[0] : schedule.checklists
@@ -254,12 +304,22 @@ export async function GET(request: NextRequest) {
           if (severity === 'critical' && status !== 'critical') continue
         }
         
+        // Get frequency type
+        const reportFrequencyType = getFrequencyType(checklist.frequency || '')
+        
+        // Apply frequency type filter
+        if (frequencyType && frequencyType !== 'all') {
+          if (reportFrequencyType !== frequencyType) continue
+        }
+        
         // Get technician name from profiles
         const technician = technicianProfiles.find(p => p.id === schedule.assigned_to)
         const technicianName = technician 
           ? `${technician.nombre || ''} ${technician.apellido || ''}`.trim()
           : null
         
+        // Add this specific checklist as a separate report entry
+        // This ensures that each overdue checklist is shown independently
         reports.push({
           business_unit_id: businessUnit.id,
           business_unit_name: businessUnit.name,
@@ -270,6 +330,7 @@ export async function GET(request: NextRequest) {
           asset_code: asset.asset_id,
           checklist_name: checklist.name,
           frequency: checklist.frequency || 'No especificada',
+          frequency_type: reportFrequencyType,
           days_overdue: Math.max(0, daysOverdue),
           weeks_overdue: Math.max(0, weeksOverdue),
           last_completed: lastCompletion?.completion_date || null,
@@ -298,11 +359,13 @@ export async function GET(request: NextRequest) {
           plant_id: report.plant_id,
           plant_name: report.plant_name,
           statuses: [],
-          days_overdue: []
+          days_overdue: [],
+          frequency_types: new Set()
         })
       }
       assetComplianceMap.get(assetId).statuses.push(report.status)
       assetComplianceMap.get(assetId).days_overdue.push(report.days_overdue)
+      assetComplianceMap.get(assetId).frequency_types.add(report.frequency_type)
     })
     
     // Determine overall status for each asset with overdue items
@@ -322,6 +385,41 @@ export async function GET(request: NextRequest) {
       }
     })
     
+    // Calculate frequency breakdown
+    const frequencyStats = {
+      daily: { total: 0, overdue: 0, critical: 0, compliance_rate: 0 },
+      weekly: { total: 0, overdue: 0, critical: 0, compliance_rate: 0 },
+      monthly: { total: 0, overdue: 0, critical: 0, compliance_rate: 0 },
+      other: { total: 0, overdue: 0, critical: 0, compliance_rate: 0 }
+    }
+    
+    // Count reports by frequency type
+    reports.forEach(report => {
+      const freqType = report.frequency_type
+      if (frequencyStats[freqType]) {
+        frequencyStats[freqType].total++
+        if (report.status === 'critical') {
+          frequencyStats[freqType].critical++
+        } else {
+          frequencyStats[freqType].overdue++
+        }
+      }
+    })
+    
+    // Calculate compliance rates for each frequency type
+    Object.keys(frequencyStats).forEach(freqType => {
+      const stats = frequencyStats[freqType as keyof typeof frequencyStats]
+      const totalAssetsWithThisFrequency = reports
+        .filter(r => r.frequency_type === freqType)
+        .map(r => r.asset_id)
+        .filter((value, index, self) => self.indexOf(value) === index).length
+      
+      if (totalAssetsWithThisFrequency > 0) {
+        const compliantAssetsWithThisFrequency = totalAssetsWithThisFrequency - stats.overdue - stats.critical
+        stats.compliance_rate = (compliantAssetsWithThisFrequency / totalAssetsWithThisFrequency) * 100
+      }
+    })
+    
     const stats: ComplianceStats = {
       total_assets: allAssets.length,
       compliant_assets: compliantAssets.length, // Assets without overdue checklists
@@ -329,6 +427,7 @@ export async function GET(request: NextRequest) {
       critical_assets: overdueAssetStatuses.filter(a => a.overall_status === 'critical').length,
       compliance_rate: 0,
       average_days_overdue: 0,
+      frequency_breakdown: frequencyStats,
       business_unit_breakdown: [],
       plant_breakdown: []
     }

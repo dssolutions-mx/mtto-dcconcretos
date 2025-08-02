@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -17,9 +17,18 @@ export function ReceiptSection({ purchaseOrderId, isAdjustment }: ReceiptSection
   const [receipts, setReceipts] = useState<any[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [activeTab, setActiveTab] = useState<string>(isAdjustment ? "upload" : "view")
+  const isMounted = useRef(true)
   
+  // Set up cleanup for component unmount
+  useEffect(() => {
+    return () => {
+      isMounted.current = false
+    }
+  }, [])
+
   // Load existing receipts
   useEffect(() => {
+    let isCancelled = false;
     async function loadReceipts() {
       try {
         setIsLoading(true)
@@ -33,19 +42,33 @@ export function ReceiptSection({ purchaseOrderId, isAdjustment }: ReceiptSection
         
         if (error) throw error
         
-        setReceipts(data || [])
+        // Only update state if not cancelled and component is mounted
+        if (!isCancelled && isMounted.current) {
+          setReceipts(data || [])
+        }
       } catch (error) {
         console.error("Error loading receipts:", error)
       } finally {
-        setIsLoading(false)
+        // Only update state if not cancelled and component is mounted
+        if (!isCancelled && isMounted.current) {
+          setIsLoading(false)
+        }
       }
     }
     
     loadReceipts()
+    
+    // Cleanup function
+    return () => {
+      isCancelled = true;
+    }
   }, [purchaseOrderId])
   
   // Handle successful upload
   const handleUploadSuccess = () => {
+    // Only proceed if component is still mounted
+    if (!isMounted.current) return;
+    
     // Refresh the receipts list
     const supabaseClient = createClient()
     ;(supabaseClient as any)
@@ -54,11 +77,15 @@ export function ReceiptSection({ purchaseOrderId, isAdjustment }: ReceiptSection
       .eq('purchase_order_id', purchaseOrderId)
       .order('created_at', { ascending: false })
       .then(({ data, error }: { data: any, error: any }) => {
-        if (!error && data) {
+        // Only update state if component is still mounted
+        if (!error && data && isMounted.current) {
           setReceipts(data)
           // Switch to view tab after successful upload
           setActiveTab('view')
         }
+      })
+      .catch((error: any) => {
+        console.error("Error refreshing receipts:", error)
       })
   }
   

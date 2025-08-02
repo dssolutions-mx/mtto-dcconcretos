@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useRef, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -23,6 +23,13 @@ export function ReceiptUploader({ purchaseOrderId, isAdjustment, onSuccess }: Re
   const [file, setFile] = useState<File | null>(null)
   const [expenseType, setExpenseType] = useState("materials") // "materials" or "labor"
   const [description, setDescription] = useState("")
+  const isMounted = useRef(true)
+
+  useEffect(() => {
+    return () => {
+      isMounted.current = false
+    }
+  }, [])
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -62,6 +69,9 @@ export function ReceiptUploader({ purchaseOrderId, isAdjustment, onSuccess }: Re
         .from('receipts')
         .getPublicUrl(filePath)
       
+      // Get current user ID before continuing
+      const { data: userData } = await supabase.auth.getUser()
+      
       // Add receipt record to database
       const { error: insertError } = await (supabase as any)
         .from('purchase_order_receipts')
@@ -71,7 +81,7 @@ export function ReceiptUploader({ purchaseOrderId, isAdjustment, onSuccess }: Re
           expense_type: expenseType,
           description: description,
           is_adjustment_receipt: isAdjustment,
-          uploaded_by: (await supabase.auth.getUser()).data.user?.id,
+          uploaded_by: userData?.user?.id,
           created_at: new Date().toISOString()
         })
       
@@ -91,27 +101,37 @@ export function ReceiptUploader({ purchaseOrderId, isAdjustment, onSuccess }: Re
         if (updateError) throw updateError
       }
       
-      toast({
-        title: "Éxito",
-        description: `El comprobante ha sido cargado exitosamente`,
-      })
-      
-      // Reset form
-      setFile(null)
-      setDescription("")
-      
-      // Call success callback if provided
-      if (onSuccess) onSuccess()
+      // Only update state and call callbacks if component is still mounted
+      if (isMounted.current) {
+        toast({
+          title: "Éxito",
+          description: `El comprobante ha sido cargado exitosamente`,
+        })
+        
+        // Reset form
+        setFile(null)
+        setDescription("")
+        
+        // Call success callback if provided
+        if (onSuccess) onSuccess()
+      }
       
     } catch (error) {
       console.error("Error uploading receipt:", error)
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: "No se pudo cargar el comprobante. Por favor intenta nuevamente.",
-      })
+      
+      // Only show error toast if component is still mounted
+      if (isMounted.current) {
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: "No se pudo cargar el comprobante. Por favor intenta nuevamente.",
+        })
+      }
     } finally {
-      setIsUploading(false)
+      // Only update state if component is still mounted
+      if (isMounted.current) {
+        setIsUploading(false)
+      }
     }
   }
 
