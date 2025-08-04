@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
+import { categorizeSchedulesByDate } from '@/lib/utils/date-utils'
 
 export async function GET(request: NextRequest) {
   try {
@@ -105,28 +106,13 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Error fetching schedules' }, { status: 500 })
     }
 
-    // Process schedules by date categories
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
-    const tomorrow = new Date(today)
-    tomorrow.setDate(tomorrow.getDate() + 1)
-
-    const todayChecklists = allSchedules?.filter(schedule => {
-      const scheduleDate = new Date(schedule.scheduled_date)
-      scheduleDate.setHours(0, 0, 0, 0)
-      return scheduleDate.getTime() === today.getTime()
-    }) || []
-
-    const overdueChecklists = allSchedules?.filter(schedule => {
-      const scheduleDate = new Date(schedule.scheduled_date)
-      return scheduleDate < today
-    }) || []
-
-    const upcomingChecklists = allSchedules?.filter(schedule => {
-      const scheduleDate = new Date(schedule.scheduled_date)
-      scheduleDate.setHours(0, 0, 0, 0)
-      return scheduleDate > today
-    }) || []
+    // Process schedules by date categories using UTC-based date comparison
+    // This ensures consistency with the asset detail pages
+    const categorizedSchedules = categorizeSchedulesByDate(allSchedules || [])
+    
+    const todayChecklists = categorizedSchedules.today
+    const overdueChecklists = categorizedSchedules.overdue  
+    const upcomingChecklists = [...categorizedSchedules.upcoming, ...categorizedSchedules.future]
 
     // Add assignment information to each schedule
     const addAssignmentInfo = (schedules: any[]) => {

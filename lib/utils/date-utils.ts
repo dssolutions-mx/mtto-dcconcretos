@@ -78,17 +78,14 @@ export function categorizeSchedulesByDate<T extends { scheduled_date: string }>(
 }
 
 /**
- * Get relative date description (in user's local timezone for display)
+ * Get relative date description (using UTC-based comparison for consistency)
  */
 export function getRelativeDateDescription(dateString: string): string {
-  const date = new Date(dateString)
-  const today = new Date()
+  // Use UTC-based comparison for consistency with categorization logic
+  const utcToday = getUTCToday()
+  const utcDate = getUTCDateStart(dateString)
   
-  // Convert both to local date for relative comparison
-  const localDate = new Date(date.getFullYear(), date.getMonth(), date.getDate())
-  const localToday = new Date(today.getFullYear(), today.getMonth(), today.getDate())
-  
-  const diffTime = localDate.getTime() - localToday.getTime()
+  const diffTime = utcDate.getTime() - utcToday.getTime()
   const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24))
   
   if (diffDays === 0) return 'Hoy'
@@ -97,7 +94,9 @@ export function getRelativeDateDescription(dateString: string): string {
   if (diffDays < 0) return `Hace ${Math.abs(diffDays)} días`
   if (diffDays <= 7) return `En ${diffDays} días`
   
-  return date.toLocaleDateString('es', {
+  // Use UTC date for consistency - no timezone conversion
+  const utcDateForDisplay = new Date(Date.UTC(utcDate.getUTCFullYear(), utcDate.getUTCMonth(), utcDate.getUTCDate()))
+  return utcDateForDisplay.toLocaleDateString('es', {
     weekday: 'short',
     day: 'numeric',
     month: 'short',
@@ -106,10 +105,14 @@ export function getRelativeDateDescription(dateString: string): string {
 }
 
 /**
- * Format date for display (in user's local timezone)
+ * Format date for display (using UTC for consistency)
  */
 export function formatDisplayDate(dateString: string): string {
-  return new Date(dateString).toLocaleDateString('es', {
+  // Use UTC date for consistency - no timezone conversion
+  const utcDate = getUTCDateStart(dateString)
+  const utcDateForDisplay = new Date(Date.UTC(utcDate.getUTCFullYear(), utcDate.getUTCMonth(), utcDate.getUTCDate()))
+  
+  return utcDateForDisplay.toLocaleDateString('es', {
     weekday: 'short',
     day: 'numeric',
     month: 'short',

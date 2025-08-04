@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button"
 import { DashboardHeader } from "@/components/dashboard/dashboard-header"
 import { DashboardShell } from "@/components/dashboard/dashboard-shell"
 import { AssetsList } from "@/components/assets/assets-list"
-import { Plus, Calendar, CheckCircle, AlertTriangle, Package, Wrench, FileText, Settings } from "lucide-react"
+import { Plus, Calendar, CheckCircle, AlertTriangle, Package, Wrench, FileText, Settings, BarChart3 } from "lucide-react"
 import { useAuthZustand } from "@/hooks/use-auth-zustand"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -72,14 +72,22 @@ export default function AssetsPage() {
         heading="Gestión de Activos"
         text="Administra y supervisa todos los equipos de la empresa"
       >
-        {ui.canShowCreateButton('assets') && (
-          <Button asChild size="default">
-            <Link href="/activos/crear">
-              <Plus className="mr-2 h-4 w-4" />
-              Nuevo Activo
+        <div className="flex gap-2">
+          <Button variant="outline" asChild size="default">
+            <Link href="/activos/reportes">
+              <BarChart3 className="mr-2 h-4 w-4" />
+              Reportes
             </Link>
           </Button>
-        )}
+          {ui.canShowCreateButton('assets') && (
+            <Button asChild size="default">
+              <Link href="/activos/crear">
+                <Plus className="mr-2 h-4 w-4" />
+                Nuevo Activo
+              </Link>
+            </Button>
+          )}
+        </div>
       </DashboardHeader>
       
       {/* Summary Cards */}

@@ -24,6 +24,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { useAuthZustand } from "@/hooks/use-auth-zustand"
 import { RoleGuard, OperatorGuard, MaintenanceTeamGuard } from "@/components/auth/role-guard"
 import { CacheCleanupButton } from "@/components/checklists/cache-cleanup-button"
+import { isDateToday, isDateOverdue } from "@/lib/utils/date-utils"
 
 // Importación dinámica del servicio offline
 let offlineChecklistService: any = null
@@ -685,15 +686,9 @@ function ChecklistsContent() {
                     ) : (
                       <div className="space-y-4">
                         {(() => {
-                          const today = new Date()
-                          today.setHours(0, 0, 0, 0)
-                          const tomorrow = new Date(today)
-                          tomorrow.setDate(tomorrow.getDate() + 1)
-                          
+                          // Use UTC-based date comparison for consistency
                           const todaysChecklists = schedules.filter(checklist => {
-                            const scheduledDate = new Date(checklist.scheduled_date)
-                            scheduledDate.setHours(0, 0, 0, 0)
-                            return scheduledDate >= today && scheduledDate < tomorrow
+                            return isDateToday(checklist.scheduled_date)
                           })
                           
                           if (todaysChecklists.length === 0) {
@@ -752,12 +747,9 @@ function ChecklistsContent() {
                 
                 {/* Sección de checklists atrasados */}
                 {(() => {
-                  const today = new Date()
-                  today.setHours(0, 0, 0, 0)
-                  
+                  // Use UTC-based date comparison for consistency
                   const overdueChecklists = schedules.filter(checklist => {
-                    const scheduledDate = new Date(checklist.scheduled_date)
-                    return scheduledDate < today
+                    return isDateOverdue(checklist.scheduled_date)
                   })
                   
                   if (overdueChecklists.length > 0) {

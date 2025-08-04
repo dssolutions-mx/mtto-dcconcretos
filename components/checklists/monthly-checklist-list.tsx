@@ -19,6 +19,7 @@ import Link from "next/link"
 import { useChecklistSchedules } from "@/hooks/useChecklists"
 import { format, parseISO } from "date-fns"
 import { es } from "date-fns/locale"
+import { isDateToday } from "@/lib/utils/date-utils"
 
 export function MonthlyChecklistList() {
   const [searchTerm, setSearchTerm] = useState("")
@@ -29,16 +30,9 @@ export function MonthlyChecklistList() {
     fetchSchedules('pendiente', 'mensual')
   }, [fetchSchedules])
 
-  // Filter only TODAY's checklists like in the main page
+  // Filter only TODAY's checklists using UTC-based date comparison
   const todaysChecklists = schedules.filter(checklist => {
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
-    const tomorrow = new Date(today)
-    tomorrow.setDate(tomorrow.getDate() + 1)
-    
-    const scheduledDate = new Date(checklist.scheduled_date)
-    scheduledDate.setHours(0, 0, 0, 0)
-    return scheduledDate >= today && scheduledDate < tomorrow
+    return isDateToday(checklist.scheduled_date)
   })
 
   const filteredChecklists = todaysChecklists.filter(

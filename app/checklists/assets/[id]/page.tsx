@@ -35,7 +35,7 @@ import {
   categorizeSchedulesByDate, 
   getRelativeDateDescription, 
   formatDisplayDate, 
-  getScheduleStatus 
+  getScheduleStatus
 } from '@/lib/utils/date-utils'
 
 interface Asset {
@@ -195,7 +195,22 @@ export default function AssetChecklistDetailPage({ params }: { params: Promise<{
   }
 
   // Use the new utility functions for consistent date handling
-  const formatDate = formatDisplayDate
+  const formatDate = (dateString: string) => {
+    // Extract date directly from string without timezone conversion
+    // dateString format: "2025-08-05T00:00:00+00:00"
+    const datePart = dateString.split('T')[0] // Get "2025-08-05"
+    const [year, month, day] = datePart.split('-').map(Number)
+    
+    // Create date object using the exact date values (month is 0-indexed)
+    const dateOnly = new Date(year, month - 1, day)
+    
+    return dateOnly.toLocaleDateString('es', {
+      weekday: 'short',
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric'
+    })
+  }
   const formatRelativeDate = getRelativeDateDescription
 
   const getStatusBadge = (status: string, scheduleDate: string) => {
