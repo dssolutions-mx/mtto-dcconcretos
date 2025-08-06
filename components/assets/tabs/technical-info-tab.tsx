@@ -24,6 +24,8 @@ interface FormValues {
   installationDate?: Date
   initialHours: string
   currentHours: string
+  initialKilometers?: string
+  currentKilometers?: string
   status: string
   notes?: string
   warrantyExpiration?: Date
@@ -98,6 +100,38 @@ export function TechnicalInfoTab({
                   <Input type="number" min="0" {...field} />
                 </FormControl>
                 <FormDescription>Horas actuales de operación del equipo</FormDescription>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <FormField
+            control={control}
+            name="initialKilometers"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Kilómetros Iniciales de Operación</FormLabel>
+                <FormControl>
+                  <Input type="number" min="0" {...field} />
+                </FormControl>
+                <FormDescription>Kilómetros de operación al momento de la adquisición</FormDescription>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          <FormField
+            control={control}
+            name="currentKilometers"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Kilómetros Actuales de Operación</FormLabel>
+                <FormControl>
+                  <Input type="number" min="0" {...field} />
+                </FormControl>
+                <FormDescription>Kilómetros actuales de operación del equipo</FormDescription>
                 <FormMessage />
               </FormItem>
             )}
