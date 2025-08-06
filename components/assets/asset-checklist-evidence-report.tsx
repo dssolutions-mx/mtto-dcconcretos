@@ -271,7 +271,7 @@ export function AssetChecklistEvidenceReport({
         <div className="max-w-4xl mx-auto flex items-center justify-between">
           <div>
             <h1 className="text-xl font-semibold">Reporte de Evidencias de Checklist</h1>
-            <p className="text-sm text-gray-600">{data.asset.name} ({data.asset.asset_id})</p>
+            <p className="text-sm text-gray-600">{data.asset?.name || 'Activo'} ({data.asset?.asset_id || 'Sin ID'})</p>
           </div>
           <div className="flex gap-2">
             <Button onClick={handlePrint}>
@@ -318,17 +318,17 @@ export function AssetChecklistEvidenceReport({
               <div className="space-y-3">
                 <div>
                   <dt className="text-sm font-medium text-gray-500">Nombre del Activo</dt>
-                  <dd className="text-lg font-medium">{data.asset.name}</dd>
+                  <dd className="text-lg font-medium">{data.asset?.name || 'Sin nombre'}</dd>
                 </div>
                 <div>
                   <dt className="text-sm font-medium text-gray-500">ID del Activo</dt>
-                  <dd className="text-lg">{data.asset.asset_id}</dd>
+                  <dd className="text-lg">{data.asset?.asset_id || 'Sin ID'}</dd>
                 </div>
                 <div>
                   <dt className="text-sm font-medium text-gray-500">Estado</dt>
                   <dd className="text-lg">
-                    <Badge variant={data.asset.status === 'Activo' ? 'default' : 'secondary'}>
-                      {data.asset.status}
+                    <Badge variant={data.asset?.status === 'Activo' ? 'default' : 'secondary'}>
+                      {data.asset?.status || 'Sin estado'}
                     </Badge>
                   </dd>
                 </div>
@@ -336,15 +336,15 @@ export function AssetChecklistEvidenceReport({
               <div className="space-y-3">
                 <div>
                   <dt className="text-sm font-medium text-gray-500">Planta</dt>
-                  <dd className="text-lg">{data.asset.plants?.name || data.asset.location || 'No especificada'}</dd>
+                  <dd className="text-lg">{data.asset?.plants?.name || data.asset?.location || 'No especificada'}</dd>
                 </div>
                 <div>
                   <dt className="text-sm font-medium text-gray-500">Departamento</dt>
-                  <dd className="text-lg">{data.asset.departments?.name || data.asset.department || 'No especificado'}</dd>
+                  <dd className="text-lg">{data.asset?.departments?.name || data.asset?.department || 'No especificado'}</dd>
                 </div>
                 <div>
                   <dt className="text-sm font-medium text-gray-500">Ubicación</dt>
-                  <dd className="text-lg">{data.asset.plants?.location || 'No especificada'}</dd>
+                  <dd className="text-lg">{data.asset?.plants?.location || 'No especificada'}</dd>
                 </div>
               </div>
             </div>
@@ -382,14 +382,10 @@ export function AssetChecklistEvidenceReport({
               </div>
             </div>
             
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4">
               <div className="text-center">
                 <div className="text-xl font-bold text-gray-800">{data.summary.total_items}</div>
                 <div className="text-sm text-gray-600">Total de Ítems Evaluados</div>
-              </div>
-              <div className="text-center">
-                <div className="text-xl font-bold text-orange-600">{data.summary.total_issues}</div>
-                <div className="text-sm text-gray-600">Problemas Detectados</div>
               </div>
             </div>
           </CardContent>
@@ -404,7 +400,7 @@ export function AssetChecklistEvidenceReport({
               <CardHeader>
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-lg">
-                    {index + 1}. {checklist.checklists.name}
+                    {index + 1}. {checklist.checklists?.name || 'Checklist sin nombre'}
                   </CardTitle>
                   <Badge className="bg-green-500 text-white">Completado</Badge>
                 </div>
@@ -420,13 +416,13 @@ export function AssetChecklistEvidenceReport({
                       : checklist.technician}
                   </div>
                   <Badge variant="outline">
-                    {checklist.checklists.frequency}
+                    {checklist.checklists?.frequency || 'Sin frecuencia'}
                   </Badge>
                 </div>
               </CardHeader>
               <CardContent>
                 {/* Checklist Description */}
-                {checklist.checklists.description && (
+                {checklist.checklists?.description && (
                   <div className="mb-4">
                     <p className="text-sm text-gray-600">{checklist.checklists.description}</p>
                   </div>
@@ -478,18 +474,32 @@ export function AssetChecklistEvidenceReport({
 
                 {/* Checklist Sections and Items */}
                 <div className="space-y-4">
-                  {checklist.checklists.checklist_sections
-                    .sort((a, b) => a.order_index - b.order_index)
-                    .map((section) => (
+                  {(() => {
+                    const hasMatchingItems = checklist.checklists?.checklist_sections?.some(section =>
+                      section.checklist_items?.some(item => getItemCompletionData(checklist, item.id))
+                    );
+                    
+                    // Si tenemos plantilla Y hay matching, mostrar por secciones
+                    if (checklist.checklists?.checklist_sections?.length > 0 && hasMatchingItems) {
+                      return (
+                    checklist.checklists.checklist_sections
+                      .sort((a, b) => a.order_index - b.order_index)
+                      .map((section) => {
+                        // Solo mostrar secciones que tengan items completados
+                        const completedSectionItems = section.checklist_items
+                          ?.filter((item) => getItemCompletionData(checklist, item.id))
+                          ?.sort((a, b) => a.order_index - b.order_index);
+                        
+                        if (!completedSectionItems?.length) return null;
+                        
+                        return (
                       <div key={section.id} className="border rounded-lg p-4">
                         <h4 className="font-medium text-lg mb-3 text-gray-900">
                           {section.title}
                         </h4>
                         
                         <div className="space-y-3">
-                          {section.checklist_items
-                            .sort((a, b) => a.order_index - b.order_index)
-                            .map((item) => {
+                          {completedSectionItems.map((item) => {
                               const completionData = getItemCompletionData(checklist, item.id)
                               return (
                                 <div key={item.id} className="border-l-4 border-gray-200 pl-4 py-2">
@@ -535,56 +545,74 @@ export function AssetChecklistEvidenceReport({
                                       )}
                                     </div>
                                   )}
-                                  
-                                  {!completionData && (
-                                    <Badge variant="outline" className="text-xs ml-6">
-                                      No evaluado
-                                    </Badge>
-                                  )}
                                 </div>
                               )
                             })}
                         </div>
                       </div>
-                    ))}
-                  
-
+                        );
+                      })
+                        .filter(Boolean)
+                      );
+                    } else {
+                      // Si no hay matching o no hay plantilla, mostrar directamente los completed_items
+                      return checklist.completed_items?.filter(item => item.description)?.length > 0 && (
+                      <div className="border rounded-lg p-4">
+                        <h4 className="font-medium text-lg mb-3 text-gray-900">
+                          Elementos Evaluados
+                        </h4>
+                        
+                        <div className="space-y-3">
+                          {checklist.completed_items
+                            .filter(item => item.description) // Solo items con descripción
+                            .map((item, index) => (
+                              <div key={item.item_id || index} className="border-l-4 border-gray-200 pl-4 py-2">
+                                <div className="flex items-start justify-between gap-4 mb-2">
+                                  <div className="flex-1">
+                                    <div className="flex items-center gap-2 mb-1">
+                                      {getStatusIcon(item.status)}
+                                      <span className="font-medium">{item.description}</span>
+                                    </div>
+                                  </div>
+                                  {getStatusBadge(item.status)}
+                                </div>
+                                
+                                <div className="space-y-2 ml-6">
+                                  {item.notes && (
+                                    <div>
+                                      <span className="text-sm font-medium text-gray-500">Observaciones:</span>
+                                      <p className="text-sm mt-1 bg-gray-50 p-2 rounded">
+                                        {item.notes}
+                                      </p>
+                                    </div>
+                                  )}
+                                  
+                                  {item.photo_url && (
+                                    <div>
+                                      <span className="text-sm font-medium text-gray-500 block mb-2">
+                                        Evidencia Fotográfica:
+                                      </span>
+                                      <div className="relative inline-block">
+                                        <img 
+                                          src={item.photo_url} 
+                                          alt={`Evidencia: ${item.description}`}
+                                          className="w-48 h-36 object-cover rounded border print:max-w-32 print:max-h-24"
+                                        />
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            ))
+                          }
+                        </div>
+                      </div>
+                      );
+                    }
+                  })()}
                 </div>
 
-                {/* Issues/Problems detected */}
-                {checklist.issues && checklist.issues.length > 0 && (
-                  <div className="mt-6 p-4 border border-red-200 rounded-lg bg-red-50">
-                    <h4 className="font-medium text-red-800 mb-3 flex items-center gap-2">
-                      <AlertTriangle className="h-4 w-4" />
-                      Problemas Detectados ({checklist.issues.length})
-                    </h4>
-                    <div className="space-y-2">
-                      {checklist.issues.map((issue) => (
-                        <div key={issue.id} className="bg-white p-3 rounded border">
-                          <div className="flex items-center gap-2 mb-1">
-                            <Badge variant="destructive" className="text-xs">
-                              {issue.status === 'flag' ? 'Atención' : 'Falla'}
-                            </Badge>
-                            {issue.resolved && (
-                              <Badge variant="outline" className="text-xs">
-                                Resuelto
-                              </Badge>
-                            )}
-                          </div>
-                          <p className="font-medium text-sm">{issue.description}</p>
-                          {issue.notes && (
-                            <p className="text-sm text-gray-600 mt-1">{issue.notes}</p>
-                          )}
-                          {issue.work_order_id && (
-                            <p className="text-sm text-blue-600 mt-1">
-                              Orden de trabajo: {issue.work_order_id}
-                            </p>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
+
 
                 {/* General Notes */}
                 {checklist.notes && (

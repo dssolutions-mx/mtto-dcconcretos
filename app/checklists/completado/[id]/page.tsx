@@ -20,6 +20,7 @@ type CompletedItem = {
   status: 'pass' | 'flag' | 'fail';
   notes?: string;
   photo_url?: string;
+  description?: string; // Added description field
 };
 
 type ChecklistIssue = {
@@ -193,19 +194,19 @@ export default function CompletedChecklistDetailsPage({ params }: { params: Prom
     );
   }
 
-  const totalItems = data.checklists.checklist_sections.reduce(
-    (total, section) => total + section.checklist_items.length, 0
-  );
+  const totalItems = data.checklists?.checklist_sections?.reduce(
+    (total, section) => total + (section.checklist_items?.length || 0), 0
+  ) || 0;
   
-  const completedItems = data.completed_items.length;
-  const passedItems = data.completed_items.filter(item => item.status === 'pass').length;
-  const flaggedItems = data.completed_items.filter(item => item.status === 'flag').length;
-  const failedItems = data.completed_items.filter(item => item.status === 'fail').length;
+  const completedItems = data.completed_items?.length || 0;
+  const passedItems = data.completed_items?.filter(item => item.status === 'pass').length || 0;
+  const flaggedItems = data.completed_items?.filter(item => item.status === 'flag').length || 0;
+  const failedItems = data.completed_items?.filter(item => item.status === 'fail').length || 0;
 
   return (
     <DashboardShell>
       <DashboardHeader
-        heading={`Checklist: ${data.checklists.name}`}
+        heading={`Checklist: ${data.checklists?.name || 'Checklist'}`}
         text={`Detalles del checklist completado el ${formatDate(data.completion_date)}`}
       >
         <Button variant="outline" onClick={() => router.back()}>
@@ -325,90 +326,179 @@ export default function CompletedChecklistDetailsPage({ params }: { params: Prom
           </CardContent>
         </Card>
 
-        {/* Detalles por Sección */}
+        {/* Detalles por Sección o Items Completados */}
         <div className="space-y-4">
-          {data.checklists.checklist_sections
-            .sort((a, b) => a.order_index - b.order_index)
-            .map((section) => (
-              <Card key={section.id}>
+          {/* Verificar si hay matching entre completed_items y plantilla actual */}
+          {(() => {
+            const hasMatchingItems = data.checklists?.checklist_sections?.some(section =>
+              section.checklist_items?.some(item => getItemCompletionData(item.id))
+            );
+            
+            // Si tenemos plantilla Y hay matching, mostrar por secciones
+            if (data.checklists?.checklist_sections?.length > 0 && hasMatchingItems) {
+              return (
+            data.checklists.checklist_sections
+              .sort((a, b) => a.order_index - b.order_index)
+              .map((section) => {
+                // Solo mostrar secciones que tengan items completados
+                const completedSectionItems = section.checklist_items
+                  ?.filter((item) => getItemCompletionData(item.id))
+                  ?.sort((a, b) => a.order_index - b.order_index);
+                
+                if (!completedSectionItems?.length) return null;
+                
+                return (
+                  <Card key={section.id}>
+                    <CardHeader>
+                      <CardTitle className="text-lg">{section.title}</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="space-y-3">
+                        {completedSectionItems.map((item) => {
+                          const completionData = getItemCompletionData(item.id);
+                          return (
+                            <div key={item.id} className="border rounded-lg p-4">
+                              <div className="flex items-start justify-between gap-4">
+                                <div className="flex-1">
+                                  <div className="flex items-center gap-2 mb-2">
+                                    {completionData && getStatusIcon(completionData.status)}
+                                    <span className="font-medium">{item.description}</span>
+                                    {item.required && (
+                                      <Badge variant="outline" className="text-xs">
+                                        Obligatorio
+                                      </Badge>
+                                    )}
+                                  </div>
+                                  
+                                  {completionData && (
+                                    <div className="space-y-2">
+                                      <div className="flex items-center gap-2">
+                                        <span className="text-sm text-muted-foreground">Estado:</span>
+                                        {getStatusBadge(completionData.status)}
+                                      </div>
+                                      
+                                      {completionData.notes && (
+                                        <div>
+                                          <span className="text-sm text-muted-foreground">Notas:</span>
+                                          <p className="text-sm mt-1 bg-muted p-2 rounded">
+                                            {completionData.notes}
+                                          </p>
+                                        </div>
+                                      )}
+                                      
+                                      {completionData.photo_url && (
+                                        <div>
+                                          <span className="text-sm text-muted-foreground mb-2 block">
+                                            Fotografía:
+                                          </span>
+                                          <div className="relative inline-block">
+                                            <img 
+                                              src={completionData.photo_url} 
+                                              alt={`Evidencia: ${item.description}`}
+                                              className="w-32 h-32 object-cover rounded border"
+                                            />
+                                            <a 
+                                              href={completionData.photo_url} 
+                                              target="_blank" 
+                                              rel="noopener noreferrer"
+                                              className="absolute top-1 right-1 bg-black/70 text-white p-1 rounded"
+                                            >
+                                              <ExternalLink className="h-3 w-3" />
+                                            </a>
+                                          </div>
+                                        </div>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })
+                .filter(Boolean)
+              );
+            } else {
+              // Si no hay matching o no hay plantilla, mostrar directamente los completed_items
+              return data.completed_items?.filter(item => item.description)?.length > 0 ? (
+              <Card>
                 <CardHeader>
-                  <CardTitle className="text-lg">{section.title}</CardTitle>
+                  <CardTitle className="text-lg">Elementos Evaluados</CardTitle>
+                  <CardDescription>
+                    Items completados en este checklist
+                  </CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-3">
-                    {section.checklist_items
-                      .sort((a, b) => a.order_index - b.order_index)
-                      .map((item) => {
-                        const completionData = getItemCompletionData(item.id);
-                        return (
-                          <div key={item.id} className="border rounded-lg p-4">
-                            <div className="flex items-start justify-between gap-4">
-                              <div className="flex-1">
-                                <div className="flex items-center gap-2 mb-2">
-                                  {completionData && getStatusIcon(completionData.status)}
-                                  <span className="font-medium">{item.description}</span>
-                                  {item.required && (
-                                    <Badge variant="outline" className="text-xs">
-                                      Obligatorio
-                                    </Badge>
-                                  )}
+                    {data.completed_items
+                      .filter(item => item.description) // Solo items con descripción
+                      .map((item, index) => (
+                        <div key={item.item_id || index} className="border rounded-lg p-4">
+                          <div className="flex items-start justify-between gap-4">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2 mb-2">
+                                {getStatusIcon(item.status)}
+                                <span className="font-medium">{item.description}</span>
+                              </div>
+                              
+                              <div className="space-y-2">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-sm text-muted-foreground">Estado:</span>
+                                  {getStatusBadge(item.status)}
                                 </div>
                                 
-                                {completionData && (
-                                  <div className="space-y-2">
-                                    <div className="flex items-center gap-2">
-                                      <span className="text-sm text-muted-foreground">Estado:</span>
-                                      {getStatusBadge(completionData.status)}
-                                    </div>
-                                    
-                                    {completionData.notes && (
-                                      <div>
-                                        <span className="text-sm text-muted-foreground">Notas:</span>
-                                        <p className="text-sm mt-1 bg-muted p-2 rounded">
-                                          {completionData.notes}
-                                        </p>
-                                      </div>
-                                    )}
-                                    
-                                    {completionData.photo_url && (
-                                      <div>
-                                        <span className="text-sm text-muted-foreground mb-2 block">
-                                          Fotografía:
-                                        </span>
-                                        <div className="relative inline-block">
-                                          <img 
-                                            src={completionData.photo_url} 
-                                            alt={`Evidencia: ${item.description}`}
-                                            className="w-32 h-32 object-cover rounded border"
-                                          />
-                                          <a 
-                                            href={completionData.photo_url} 
-                                            target="_blank" 
-                                            rel="noopener noreferrer"
-                                            className="absolute top-1 right-1 bg-black/70 text-white p-1 rounded"
-                                          >
-                                            <ExternalLink className="h-3 w-3" />
-                                          </a>
-                                        </div>
-                                      </div>
-                                    )}
+                                {item.notes && (
+                                  <div>
+                                    <span className="text-sm text-muted-foreground">Notas:</span>
+                                    <p className="text-sm mt-1 bg-muted p-2 rounded">
+                                      {item.notes}
+                                    </p>
                                   </div>
                                 )}
                                 
-                                {!completionData && (
-                                  <Badge variant="outline" className="text-xs">
-                                    No completado
-                                  </Badge>
+                                {item.photo_url && (
+                                  <div>
+                                    <span className="text-sm text-muted-foreground mb-2 block">
+                                      Fotografía:
+                                    </span>
+                                    <div className="relative inline-block">
+                                      <img 
+                                        src={item.photo_url} 
+                                        alt={`Evidencia: ${item.description}`}
+                                        className="w-32 h-32 object-cover rounded border"
+                                      />
+                                      <a 
+                                        href={item.photo_url} 
+                                        target="_blank" 
+                                        rel="noopener noreferrer"
+                                        className="absolute top-1 right-1 bg-black/70 text-white p-1 rounded"
+                                      >
+                                        <ExternalLink className="h-3 w-3" />
+                                      </a>
+                                    </div>
+                                  </div>
                                 )}
                               </div>
                             </div>
                           </div>
-                        );
-                      })}
+                        </div>
+                      ))
+                    }
                   </div>
                 </CardContent>
               </Card>
-            ))}
+              ) : (
+                <div className="text-center text-gray-500 p-8">
+                  <p>No se encontraron elementos completados.</p>
+                  <p className="text-sm mt-2">Este checklist no contiene datos de evaluación.</p>
+                </div>
+              );
+            }
+          })()}
         </div>
 
         {/* Issues/Problemas detectados */}

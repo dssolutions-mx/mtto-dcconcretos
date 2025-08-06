@@ -52,11 +52,13 @@ export async function GET(
     }
 
     // Get completed checklists for the asset in the date range
+    // Primero obtener los checklists completados con template_version_id
     const { data: completedChecklists, error: checklistsError } = await supabase
       .from('completed_checklists')
       .select(`
         id,
         checklist_id,
+        template_version_id,
         asset_id,
         technician,
         completion_date,
@@ -65,23 +67,6 @@ export async function GET(
         signature_data,
         created_by,
         completed_items,
-        checklists:checklist_id (
-          id,
-          name,
-          frequency,
-          description,
-          checklist_sections (
-            id,
-            title,
-            order_index,
-            checklist_items (
-              id,
-              description,
-              required,
-              order_index
-            )
-          )
-        ),
         profiles:created_by (
           id,
           nombre,
@@ -141,6 +126,30 @@ export async function GET(
       return acc
     }, {})
 
+    // Get unique template_version_ids to fetch template versions
+    const templateVersionIds = [...new Set(
+      (completedChecklists || [])
+        .map((checklist: any) => checklist.template_version_id)
+        .filter(Boolean)
+    )]
+
+    // Fetch template versions
+    let templateVersionsMap = new Map()
+    if (templateVersionIds.length > 0) {
+      const { data: templateVersions, error: versionsError } = await supabase
+        .from('checklist_template_versions')
+        .select('*')
+        .in('id', templateVersionIds)
+
+      if (versionsError) {
+        console.error('Error fetching template versions:', versionsError)
+      } else {
+        templateVersions?.forEach((version: any) => {
+          templateVersionsMap.set(version.id, version)
+        })
+      }
+    }
+
     // Combine data - completed_items are already in the completed_checklists records as JSON field
     const enrichedChecklists = (completedChecklists || []).map((checklist: any) => {
       // Parse completed_items if it's a JSON string
@@ -160,6 +169,26 @@ export async function GET(
         completedItems = []
       }
       
+      // Get template version data for this checklist
+      const templateVersion = templateVersionsMap.get(checklist.template_version_id)
+      let checklistTemplateData = null
+      
+      if (templateVersion) {
+        // Transform template version structure to match expected format
+        const transformedSections = (templateVersion.sections || []).map((section: any) => ({
+          ...section,
+          checklist_items: section.items || [] // Convert 'items' to 'checklist_items'
+        }))
+        
+        checklistTemplateData = {
+          id: templateVersion.template_id,
+          name: templateVersion.name,
+          frequency: templateVersion.frequency,
+          description: templateVersion.description,
+          checklist_sections: transformedSections
+        }
+      }
+      
       // Log the structure for debugging
       console.log(`Checklist ${checklist.id} has ${completedItems.length} completed items`)
       if (completedItems.length > 0) {
@@ -169,6 +198,7 @@ export async function GET(
       return {
         ...checklist,
         completed_items: completedItems,
+        checklists: checklistTemplateData, // Add the template version data
         issues: issuesByChecklist[checklist.id] || [],
         profile: checklist.profiles // Make sure profile is included
       }

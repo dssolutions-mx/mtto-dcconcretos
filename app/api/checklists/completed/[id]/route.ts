@@ -92,10 +92,37 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
 
     console.log('Found completed checklist:', completedChecklist)
 
-    // Obtener información del checklist original con sus secciones e ítems
+    // Obtener información del checklist usando la versión específica del template
     let checklistData = null
-    if (completedChecklist.checklist_id) {
-      console.log('Fetching checklist data for ID:', completedChecklist.checklist_id)
+    if (completedChecklist.template_version_id) {
+      console.log('Fetching template version data for ID:', completedChecklist.template_version_id)
+      const { data, error: versionError } = await supabase
+        .from('checklist_template_versions')
+        .select('*')
+        .eq('id', completedChecklist.template_version_id)
+        .maybeSingle()
+
+      if (versionError) {
+        console.error('Error fetching template version data:', versionError)
+      } else if (data) {
+        console.log('Found template version data:', data)
+        // Transformar la estructura de template version a formato compatible
+        const transformedSections = (data.sections || []).map((section: any) => ({
+          ...section,
+          checklist_items: section.items || [] // Convert 'items' to 'checklist_items'
+        }))
+        
+        checklistData = {
+          id: data.template_id,
+          name: data.name,
+          description: data.description,
+          frequency: data.frequency,
+          checklist_sections: transformedSections
+        }
+      }
+    } else if (completedChecklist.checklist_id) {
+      // Fallback a la versión actual si no hay template_version_id
+      console.log('No template_version_id found, falling back to current template for ID:', completedChecklist.checklist_id)
       const { data, error: checklistError } = await supabase
         .from('checklists')
         .select(`
