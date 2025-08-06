@@ -136,6 +136,16 @@ const formSchema = z.object({
     .refine((val) => !isNaN(Number(val)) && Number(val) >= 0, { 
       message: "Las horas actuales deben ser un número válido mayor o igual a 0" 
     }),
+  initialKilometers: z.string()
+    .optional()
+    .refine((val) => !val || (!isNaN(Number(val)) && Number(val) >= 0), { 
+      message: "Los kilómetros iniciales deben ser un número válido mayor o igual a 0" 
+    }),
+  currentKilometers: z.string()
+    .optional()
+    .refine((val) => !val || (!isNaN(Number(val)) && Number(val) >= 0), { 
+      message: "Los kilómetros actuales deben ser un número válido mayor o igual a 0" 
+    }),
   status: z.string().min(1, "El estado es requerido"),
   notes: z.string().optional(),
   warrantyExpiration: z.date({
@@ -229,6 +239,8 @@ export function AssetEditForm({ assetId }: AssetEditFormProps) {
       installationDate: undefined,
       initialHours: "0",
       currentHours: "0",
+      initialKilometers: "",
+      currentKilometers: "",
       status: "operational",
       notes: "",
       warrantyExpiration: undefined,
@@ -252,6 +264,8 @@ export function AssetEditForm({ assetId }: AssetEditFormProps) {
       installationDate: "Fecha de Instalación",
       initialHours: "Horas Iniciales",
       currentHours: "Horas Actuales",
+      initialKilometers: "Kilómetros Iniciales",
+      currentKilometers: "Kilómetros Actuales",
       status: "Estado",
       notes: "Notas",
       warrantyExpiration: "Vencimiento de Garantía",
@@ -306,7 +320,7 @@ export function AssetEditForm({ assetId }: AssetEditFormProps) {
       tabErrors.general = true
     }
 
-    if (errors.initialHours || errors.currentHours || errors.registrationInfo) {
+    if (errors.initialHours || errors.currentHours || errors.initialKilometers || errors.currentKilometers || errors.registrationInfo) {
       tabErrors.technical = true
     }
 
@@ -350,6 +364,8 @@ export function AssetEditForm({ assetId }: AssetEditFormProps) {
             installationDate: asset.installation_date ? new Date(asset.installation_date) : undefined,
             initialHours: (asset.initial_hours || 0).toString(),
             currentHours: (asset.current_hours || 0).toString(),
+            initialKilometers: asset.initial_kilometers ? asset.initial_kilometers.toString() : "",
+            currentKilometers: asset.current_kilometers ? asset.current_kilometers.toString() : "",
             status: asset.status || "operational",
             notes: asset.notes || "",
             warrantyExpiration: asset.warranty_expiration ? new Date(asset.warranty_expiration) : undefined,
@@ -934,6 +950,8 @@ export function AssetEditForm({ assetId }: AssetEditFormProps) {
         warranty_expiration: data.warrantyExpiration?.toISOString(),
         initial_hours: Number(data.initialHours),
         current_hours: Number(data.currentHours),
+        initial_kilometers: data.initialKilometers ? Number(data.initialKilometers) : null,
+        current_kilometers: data.currentKilometers ? Number(data.currentKilometers) : null,
         is_new: data.isNew,
         notes: data.notes,
         purchase_cost: data.purchaseCost || null,
