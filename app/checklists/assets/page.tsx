@@ -32,6 +32,7 @@ import { OfflineStatus } from '@/components/checklists/offline-status'
 import { useOfflineSync } from '@/hooks/useOfflineSync'
 import { WifiOff } from 'lucide-react'
 import { offlineChecklistService } from '@/lib/services/offline-checklist-service'
+import { BatchReportGenerator } from '@/components/checklists/batch-report-generator'
 
 interface Asset {
   id: string
@@ -63,6 +64,9 @@ export default function AssetChecklistDashboard() {
   const [departmentFilter, setDepartmentFilter] = useState<string>('all')
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid')
   const [departments, setDepartments] = useState<string[]>([])
+  const [plants, setPlants] = useState<string[]>([])
+  const [plantFilter, setPlantFilter] = useState<string>('all')
+  const [stats, setStats] = useState<any>(null)
   
   // Offline functionality
   const { syncStats, isOnline } = useOfflineSync()
@@ -82,11 +86,13 @@ export default function AssetChecklistDashboard() {
         const response = await fetch('/api/checklists/assets-dashboard')
         if (response.ok) {
           const result = await response.json()
-          const { assets: assetSummaries, departments } = result.data
+          const { assets: assetSummaries, departments, plants, stats } = result.data
           
           // Set data immediately for fast UI update
           setAssets(assetSummaries)
           setDepartments(departments)
+          setPlants(plants || [])
+          setStats(stats)
           
           // Cache data asynchronously for offline use (non-blocking)
           Promise.all([
@@ -166,6 +172,8 @@ export default function AssetChecklistDashboard() {
           
           setAssets(offlineAssetSummaries)
           setDepartments([]) // Limited offline functionality
+          setPlants([]) // Limited offline functionality
+          setStats(null) // No stats in offline mode
           toast.success('Modo offline activado - datos limitados disponibles')
           
         } else {
@@ -181,18 +189,18 @@ export default function AssetChecklistDashboard() {
     }
   }
 
-  const filteredAssets = useMemo(() => {
+    const filteredAssets = useMemo(() => {
     return assets.filter(({ asset }) => {
-             // Search filter
-       if (searchQuery) {
-         const searchLower = searchQuery.toLowerCase()
-         const plantName = (asset as any).plants?.name || asset.location || ''
-         if (!asset.name.toLowerCase().includes(searchLower) && 
-             !asset.asset_id.toLowerCase().includes(searchLower) &&
-             !plantName.toLowerCase().includes(searchLower)) {
-           return false
-         }
-       }
+      // Search filter
+      if (searchQuery) {
+        const searchLower = searchQuery.toLowerCase()
+        const plantName = (asset as any).plants?.name || asset.location || ''
+        if (!asset.name.toLowerCase().includes(searchLower) && 
+            !asset.asset_id.toLowerCase().includes(searchLower) &&
+            !plantName.toLowerCase().includes(searchLower)) {
+          return false
+        }
+      }
 
       // Status filter
       if (statusFilter !== 'all') {
@@ -210,9 +218,17 @@ export default function AssetChecklistDashboard() {
         }
       }
 
+      // Plant filter
+      if (plantFilter !== 'all') {
+        const assetPlant = (asset as any).plants?.name || asset.location || 'Sin planta'
+        if (assetPlant !== plantFilter) {
+          return false
+        }
+      }
+
       return true
     })
-  }, [assets, searchQuery, statusFilter, departmentFilter])
+  }, [assets, searchQuery, statusFilter, departmentFilter, plantFilter])
 
   const getStatusBadge = (status: Asset['checklist_status']) => {
     switch (status) {
@@ -328,6 +344,7 @@ export default function AssetChecklistDashboard() {
               Programar
             </Link>
           </Button>
+          <BatchReportGenerator plants={plants} />
         </div>
       </DashboardHeader>
 
@@ -347,14 +364,14 @@ export default function AssetChecklistDashboard() {
 
 
 
-      {/* Status Overview */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+      {/* Enhanced Statistics Overview */}
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
         <Card className="border-red-200">
           <CardContent className="p-4 text-center">
             <div className="text-2xl font-bold text-red-600">
               {statusCounts.overdue || 0}
             </div>
-            <div className="text-sm text-muted-foreground">Atrasados</div>
+            <div className="text-sm text-muted-foreground">Activos Atrasados</div>
           </CardContent>
         </Card>
         <Card className="border-yellow-200">
@@ -373,6 +390,22 @@ export default function AssetChecklistDashboard() {
             <div className="text-sm text-muted-foreground">Al día</div>
           </CardContent>
         </Card>
+        <Card className="border-blue-200">
+          <CardContent className="p-4 text-center">
+            <div className="text-2xl font-bold text-blue-600">
+              {stats?.total_pending || 0}
+            </div>
+            <div className="text-sm text-muted-foreground">Checklists Pendientes</div>
+          </CardContent>
+        </Card>
+        <Card className="border-purple-200">
+          <CardContent className="p-4 text-center">
+            <div className="text-2xl font-bold text-purple-600">
+              {stats?.total_completed_recent || 0}
+            </div>
+            <div className="text-sm text-muted-foreground">Completados (30d)</div>
+          </CardContent>
+        </Card>
         <Card className="border-gray-200">
           <CardContent className="p-4 text-center">
             <div className="text-2xl font-bold text-gray-600">
@@ -382,6 +415,8 @@ export default function AssetChecklistDashboard() {
           </CardContent>
         </Card>
       </div>
+
+
 
       {/* Filters and View Controls */}
       <Card className="mb-6">
@@ -400,7 +435,7 @@ export default function AssetChecklistDashboard() {
             </div>
             <div className="flex gap-2">
               <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="w-40">
+                <SelectTrigger className="w-36">
                   <SelectValue placeholder="Estado" />
                 </SelectTrigger>
                 <SelectContent>
@@ -412,8 +447,20 @@ export default function AssetChecklistDashboard() {
                 </SelectContent>
               </Select>
               
+              <Select value={plantFilter} onValueChange={setPlantFilter}>
+                <SelectTrigger className="w-36">
+                  <SelectValue placeholder="Planta" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todas las plantas</SelectItem>
+                  {plants.map(plant => (
+                    <SelectItem key={plant} value={plant}>{plant}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              
               <Select value={departmentFilter} onValueChange={setDepartmentFilter}>
-                <SelectTrigger className="w-40">
+                <SelectTrigger className="w-36">
                   <SelectValue placeholder="Departamento" />
                 </SelectTrigger>
                 <SelectContent>

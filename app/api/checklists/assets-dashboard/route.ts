@@ -184,21 +184,58 @@ export async function GET() {
       return idA.localeCompare(idB)
     })
 
-    // Get unique departments for filtering from organizational structure
+    // Get unique departments and plants for filtering from organizational structure
     const departments = [...new Set(
       assets
         .map(asset => (asset as any).departments?.name || asset.department)
         .filter(Boolean)
     )]
 
+    const plants = [...new Set(
+      assets
+        .map(asset => (asset as any).plants?.name || asset.location)
+        .filter(Boolean)
+    )]
+
+    // Calculate comprehensive statistics
+    const totalOverdue = assetSummaries.reduce((sum, { asset }) => sum + asset.overdue_checklists, 0)
+    const totalPending = assetSummaries.reduce((sum, { asset }) => sum + asset.pending_checklists, 0)
+    const assetsWithOverdue = assetSummaries.filter(({ asset }) => asset.overdue_checklists > 0).length
+    const assetsUpToDate = assetSummaries.filter(({ asset }) => asset.checklist_status === 'ok').length
+
+    // Calculate completion statistics by plant
+    const plantStats = plants.map(plantName => {
+      const plantAssets = assetSummaries.filter(({ asset }) => 
+        ((asset as any).plants?.name || asset.location) === plantName
+      )
+      const plantCompleted = completedSchedules.filter(schedule => {
+        const scheduleAsset = assets.find(a => a.id === schedule.asset_id)
+        return ((scheduleAsset as any)?.plants?.name || scheduleAsset?.location) === plantName
+      })
+      
+      return {
+        plant: plantName,
+        total_assets: plantAssets.length,
+        completed_checklists: plantCompleted.length,
+        pending_checklists: plantAssets.reduce((sum, { asset }) => sum + asset.pending_checklists, 0),
+        overdue_checklists: plantAssets.reduce((sum, { asset }) => sum + asset.overdue_checklists, 0),
+        assets_up_to_date: plantAssets.filter(({ asset }) => asset.checklist_status === 'ok').length
+      }
+    })
+
     return NextResponse.json({ 
       data: {
         assets: sortedAssetSummaries,
         departments,
+        plants,
         stats: {
           total_assets: assets.length,
-          total_pending: pendingSchedules.length,
-          total_completed_recent: completedSchedules.length
+          total_pending: totalPending,
+          total_overdue: totalOverdue,
+          total_completed_recent: completedSchedules.length,
+          assets_with_overdue: assetsWithOverdue,
+          assets_up_to_date: assetsUpToDate,
+          plant_stats: plantStats
         }
       }
     })

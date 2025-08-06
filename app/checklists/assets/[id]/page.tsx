@@ -23,7 +23,8 @@ import {
   ClipboardCheck,
   Eye,
   Plus,
-  XCircle
+  XCircle,
+  FileText
 } from 'lucide-react'
 import Link from 'next/link'
 import { toast } from 'sonner'
@@ -352,6 +353,12 @@ export default function AssetChecklistDetailPage({ params }: { params: Promise<{
           <Button variant="outline" onClick={() => router.back()}>
             <ArrowLeft className="mr-2 h-4 w-4" />
             Volver
+          </Button>
+          <Button variant="outline" asChild>
+            <Link href={`/activos/${assetId}/reporte-checklists`}>
+              <FileText className="mr-2 h-4 w-4" />
+              Reporte de Evidencias
+            </Link>
           </Button>
           <Button asChild>
             <Link href={`/checklists/programar?asset=${assetId}`}>
