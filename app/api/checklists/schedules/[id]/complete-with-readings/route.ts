@@ -148,7 +148,52 @@ export async function POST(
       }
     }
 
+    // 🔄 VERSIONING: Asegurar que el template tiene versión antes de completar
+    let templateVersionId = null
+    try {
+      console.log('🔍 Ensuring template versioning before completion...')
+      
+      // Obtener versión activa existente
+      const { data: activeVersion, error: versionError } = await supabase
+        .from('checklist_template_versions')
+        .select('id')
+        .eq('template_id', scheduleData.template_id)
+        .eq('is_active', true)
+        .single()
+
+      if (activeVersion && !versionError) {
+        templateVersionId = activeVersion.id
+        console.log('✅ Template tiene versión activa:', templateVersionId)
+      } else {
+        console.log('⚠️ Template sin versión, creando automáticamente...')
+        
+        // Crear versión inicial automáticamente
+        const { data: newVersionId, error: createVersionError } = await supabase.rpc(
+          'create_template_version',
+          {
+            p_template_id: scheduleData.template_id,
+            p_change_summary: 'Versión inicial - creada automáticamente al completar checklist',
+            p_migration_notes: 'Auto-creada por sistema de versionado (complete-with-readings-v2)'
+          }
+        )
+
+        if (createVersionError) {
+          console.error('❌ Error creando versión automática:', createVersionError)
+          // Continuar sin versioning como fallback
+        } else {
+          templateVersionId = newVersionId
+          console.log('✅ Versión automática creada:', templateVersionId)
+        }
+      }
+    } catch (versioningError) {
+      console.error('⚠️ Error en versioning (no crítico):', versioningError)
+      // Continuar sin template_version_id
+    }
+
     // Usar la función mejorada para completar el checklist
+    console.log('=== CALLING complete_checklist_with_readings RPC ===')
+    console.log('Template version ensured:', templateVersionId ? 'YES' : 'NO')
+    
     const { data: completionResult, error: completionError } = await supabase
       .rpc('complete_checklist_with_readings', {
         p_schedule_id: id,

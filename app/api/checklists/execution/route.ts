@@ -172,6 +172,28 @@ async function processChecklistCompletionEnhanced(
   equipment_hours_reading?: number,
   equipment_kilometers_reading?: number
 ) {
+  // 🔄 VERSIONING FIX: Usar siempre la función con versioning hasta que actualicemos la función de BD
+  console.log('🔄 Usando función con versioning mejorado (enhanced -> versioned)')
+  
+  try {
+    // TEMPORAL: Usar la función normal que ya tiene versioning en lugar de la enhanced de BD
+    // TODO: Actualizar process_checklist_completion_enhanced en BD para incluir versioning
+    return await processChecklistCompletion(
+      supabase, 
+      schedule_id, 
+      completed_items, 
+      technician, 
+      notes, 
+      signature
+    )
+  } catch (error: any) {
+    console.error('Error in versioned checklist completion:', error)
+    throw error
+  }
+  
+  /* 
+  TODO: Restaurar cuando process_checklist_completion_enhanced tenga versioning:
+  
   try {
     // Use the enhanced database function
     const { data, error } = await supabase.rpc('process_checklist_completion_enhanced', {
@@ -204,6 +226,7 @@ async function processChecklistCompletionEnhanced(
       signature
     )
   }
+  */
 }
 
 async function processChecklistCompletion(
@@ -252,19 +275,71 @@ async function processChecklistCompletion(
     technicianName = technician
   }
 
-  // 5. Crear el registro de checklist completado
+  // 4.5. 🔄 VERSIONING: Obtener versión activa de la plantilla
+  let templateVersionId = null
+  try {
+    console.log('🔍 Buscando versión activa para template:', scheduleData.template_id)
+    
+    // Intentar obtener versión activa existente
+    const { data: activeVersion, error: versionError } = await supabase
+      .from('checklist_template_versions')
+      .select('id')
+      .eq('template_id', scheduleData.template_id)
+      .eq('is_active', true)
+      .single()
+
+    if (activeVersion && !versionError) {
+      templateVersionId = activeVersion.id
+      console.log('✅ Versión activa encontrada:', templateVersionId)
+    } else {
+      console.log('⚠️ No hay versión activa, creando automáticamente...')
+      
+      // Usar función de BD para crear versión inicial
+      const { data: newVersionId, error: createVersionError } = await supabase.rpc(
+        'create_template_version',
+        {
+          p_template_id: scheduleData.template_id,
+          p_change_summary: 'Versión inicial - creada automáticamente al completar checklist',
+          p_migration_notes: 'Auto-creada por sistema de versionado'
+        }
+      )
+
+      if (createVersionError) {
+        console.error('❌ Error creando versión automática:', createVersionError)
+        // NO fallar - continuar sin template_version_id para compatibilidad
+      } else {
+        templateVersionId = newVersionId
+        console.log('✅ Nueva versión creada automáticamente:', templateVersionId)
+      }
+    }
+  } catch (versioningError) {
+    console.error('⚠️ Error en sistema de versioning (no crítico):', versioningError)
+    // Continuar sin template_version_id - el sistema seguirá funcionando
+  }
+
+  // 5. Crear el registro de checklist completado (CON VERSIONING)
+  const insertData = {
+    checklist_id: scheduleData.template_id,
+    asset_id: assetUuid,
+    completed_items: completed_items,
+    technician: technicianName,
+    completion_date: new Date().toISOString(),
+    notes: notes,
+    signature_data: signature,
+    status: hasIssues ? 'Con Problemas' : 'Completado'
+  }
+
+  // Solo agregar template_version_id si se obtuvo exitosamente
+  if (templateVersionId) {
+    insertData.template_version_id = templateVersionId
+    console.log('🏷️ Checklist completado con versioning:', templateVersionId)
+  } else {
+    console.log('⚠️ Checklist completado SIN versioning (modo compatibilidad)')
+  }
+
   const { data: completedData, error: completedError } = await supabase
     .from('completed_checklists')
-    .insert({
-      checklist_id: scheduleData.template_id,
-      asset_id: assetUuid,
-      completed_items: completed_items,
-      technician: technicianName,
-      completion_date: new Date().toISOString(),
-      notes: notes,
-      signature_data: signature,
-      status: hasIssues ? 'Con Problemas' : 'Completado'
-    })
+    .insert(insertData)
     .select('id')
     .single()
   
