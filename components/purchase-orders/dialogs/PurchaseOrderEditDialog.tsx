@@ -17,7 +17,6 @@ type PurchaseOrderEditable = {
   notes?: string | null
   store_location?: string | null
   service_provider?: string | null
-  quotation_url?: string | null
   max_payment_date?: string | null
   items?: any[] | null
 }
@@ -44,7 +43,6 @@ export function PurchaseOrderEditDialog({ open, onOpenChange, purchaseOrderId, i
         notes: initialData.notes ?? "",
         store_location: initialData.store_location ?? "",
         service_provider: initialData.service_provider ?? "",
-        quotation_url: initialData.quotation_url ?? "",
         max_payment_date: initialData.max_payment_date ?? "",
       })
       setItems(Array.isArray(initialData.items) ? initialData.items : [])
@@ -151,10 +149,7 @@ export function PurchaseOrderEditDialog({ open, onOpenChange, purchaseOrderId, i
             <Input value={form.service_provider as string} onChange={e => handleChange('service_provider', e.target.value)} />
           </div>
 
-          <div className="space-y-2 md:col-span-2">
-            <Label>URL de Cotización</Label>
-            <Input value={form.quotation_url as string} onChange={e => handleChange('quotation_url', e.target.value)} placeholder="https://..." />
-          </div>
+          {/* Quotation URL removed; quotations managed in separate manager */}
         </div>
 
         <div className="mt-4">

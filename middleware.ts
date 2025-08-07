@@ -54,12 +54,12 @@ export async function middleware(request: NextRequest) {
       throw firstAttempt.error || new Error('Authentication failed')
     }
   } catch (error: any) {
-    console.log('🌐 Middleware: Auth failed, checking if route allows offline access')
-    
-    // Define work routes that should be accessible offline
+    console.log('🌐 Middleware: Auth failed, evaluating controlled offline access')
+
+    // Define work routes that can operate in offline mode
     const offlineWorkRoutes = [
       '/checklists',
-      '/ordenes', 
+      '/ordenes',
       '/activos',
       '/dashboard',
       '/preventivo',
@@ -69,45 +69,36 @@ export async function middleware(request: NextRequest) {
       '/inventario',
       '/plantas',
       '/personal',
-      '/compras'
+      '/compras',
     ]
-    
-    const isWorkRoute = offlineWorkRoutes.some(route => 
+
+    const isWorkRoute = offlineWorkRoutes.some((route) =>
       request.nextUrl.pathname.startsWith(route)
     )
-    
+
     if (isWorkRoute) {
-      console.log('📱 Middleware: Allowing offline access to work route, client will validate auth')
-      
-      // Check for session cookies to differentiate access levels
+      // Only allow offline access if we at least have Supabase cookies present.
+      // This avoids letting completely unauthenticated users through, which
+      // caused 401s in API route handlers on first load.
       const allCookies = request.cookies.getAll()
-      const supabaseCookies = allCookies.filter(cookie => 
-        cookie.name.startsWith('sb-') && cookie.value && cookie.value.length > 10
+      const supabaseCookies = allCookies.filter(
+        (cookie) => cookie.name.startsWith('sb-') && cookie.value && cookie.value.length > 10
       )
-      
+
       if (supabaseCookies.length > 0) {
-        console.log('🔑 Middleware: Session cookies found - likely authenticated offline user')
-        user = { 
+        console.log('🔑 Middleware: Session cookies present — enabling offline work mode')
+        user = {
           id: 'offline-session',
           email: 'offline@session.local',
           aud: 'authenticated',
-          role: 'authenticated'
+          role: 'authenticated',
         }
+        isOfflineMode = true
+        supabaseResponse.headers.set('X-Offline-Mode', 'true')
+        supabaseResponse.headers.set('X-Auth-Required', 'true')
       } else {
-        console.log('📝 Middleware: No session cookies - allowing access for client validation')
-        user = { 
-          id: 'offline-work-mode',
-          email: 'offline@work.local',
-          aud: 'authenticated',
-          role: 'authenticated'
-        }
+        console.log('🛑 Middleware: No Supabase cookies — not enabling offline bypass')
       }
-      
-      isOfflineMode = true
-      
-      // Add headers to signal offline mode to client
-      supabaseResponse.headers.set('X-Offline-Mode', 'true')
-      supabaseResponse.headers.set('X-Auth-Required', 'true')
     } else {
       console.log('🔒 Middleware: Non-work route, requiring proper authentication')
     }

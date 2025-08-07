@@ -19,6 +19,7 @@ import { PurchaseOrderDetailsMobile } from "@/components/purchase-orders/purchas
 import { PurchaseOrderWorkOrderLink } from "@/components/purchase-orders/purchase-order-work-order-link"
 import { Suspense } from "react"
 import { EditPOButton } from "@/components/purchase-orders/EditPOButton"
+import { QuotationManager } from "@/components/purchase-orders/QuotationManager"
 
 // Helper function to format currency
 function formatCurrency(amount: string | null): string {
@@ -495,8 +496,8 @@ async function PurchaseOrderDetailsContent({ id }: { id: string }) {
         {/* Receipt/Comprobante Section - Always show if exists */}
         <ReceiptDisplaySection purchaseOrderId={order.id} poType={order.po_type} />
 
-        {/* Quotation Section - Show for enhanced orders with quotation */}
-        {order.po_type && (order.quotation_url || order.requires_quote) && (
+        {/* Quotation Section - Always show for enhanced orders */}
+        {order.po_type && (
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center space-x-2">
@@ -508,91 +509,21 @@ async function PurchaseOrderDetailsContent({ id }: { id: string }) {
                   </Badge>
                 )}
               </CardTitle>
-              {order.requires_quote && (
-                <CardDescription>
-                  {order.po_type === PurchaseOrderType.DIRECT_SERVICE
-                    ? `Esta orden de servicio por ${formatCurrency(order.total_amount)} requiere cotización por ser mayor a $10,000 MXN`
-                    : "Esta orden requiere cotización antes de ser aprobada"
-                  }
-                </CardDescription>
-              )}
+            {order.requires_quote && (
+              <CardDescription>
+                {order.po_type === PurchaseOrderType.DIRECT_SERVICE
+                  ? `Esta orden de servicio por ${formatCurrency(order.total_amount)} requiere cotización por ser mayor a $10,000 MXN`
+                  : "Esta orden requiere cotización antes de ser aprobada"
+                }
+              </CardDescription>
+            )}
             </CardHeader>
             <CardContent className="space-y-4">
-              {order.quotation_url ? (
-                <div className="space-y-3">
-                  <div className="flex items-center space-x-2">
-                    <Badge variant="secondary" className="text-green-600 bg-green-50">
-                      <FileCheck className="h-3 w-3 mr-1" />
-                      Cotización Disponible
-                    </Badge>
-                    <span className="text-sm text-muted-foreground">
-                      Los aprobadores pueden revisar la cotización antes de aprobar
-                    </span>
-                  </div>
-                  
-                  <div className="flex flex-col sm:flex-row gap-3">
-                    <Button asChild variant="outline" size="sm" className="flex-1">
-                      <a 
-                        href={order.quotation_url} 
-                        target="_blank" 
-                        rel="noopener noreferrer"
-                        className="flex items-center justify-center space-x-2"
-                      >
-                        <Download className="h-4 w-4" />
-                        <span>Descargar</span>
-                      </a>
-                    </Button>
-                    
-                    <Button asChild variant="secondary" size="sm" className="flex-1">
-                      <a 
-                        href={order.quotation_url} 
-                        target="_blank" 
-                        rel="noopener noreferrer"
-                        className="flex items-center justify-center space-x-2"
-                      >
-                        <ExternalLink className="h-4 w-4" />
-                        <span>Ver en Pestaña</span>
-                      </a>
-                    </Button>
-                  </div>
-                  
-                  {/* Preview for PDF files */}
-                  {isPdfFile(order.quotation_url) && (
-                    <div className="border rounded-lg p-4 bg-gray-50">
-                      <p className="text-sm text-muted-foreground mb-2">Vista previa de la cotización:</p>
-                      <iframe
-                        src={`${order.quotation_url}#toolbar=0`}
-                        className="w-full h-96 border rounded"
-                        title="Vista previa de cotización"
-                      />
-                    </div>
-                  )}
-                  
-                  {/* Preview for images */}
-                  {isImageFile(order.quotation_url) && (
-                    <div className="border rounded-lg p-4 bg-gray-50">
-                      <p className="text-sm text-muted-foreground mb-2">Vista previa de la cotización:</p>
-                      <img
-                        src={order.quotation_url}
-                        alt="Cotización"
-                        className="max-w-full h-auto rounded border"
-                        style={{ maxHeight: '400px' }}
-                      />
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div className="text-center py-8">
-                  <div className="rounded-full bg-yellow-100 p-3 mx-auto w-12 h-12 flex items-center justify-center mb-4">
-                    <AlertCircle className="h-6 w-6 text-yellow-600" />
-                  </div>
-                  <h3 className="text-lg font-medium mb-2">Cotización Pendiente</h3>
-                  <p className="text-muted-foreground mb-4">
-                    Esta orden requiere cotización antes de poder ser aprobada.
-                  </p>
-                  <Badge variant="destructive">Pendiente de Cotización</Badge>
-                </div>
-              )}
+              <QuotationManager 
+                purchaseOrderId={order.id}
+                workOrderId={order.work_order_id}
+                legacyUrl={order.quotation_url}
+              />
             </CardContent>
           </Card>
         )}
