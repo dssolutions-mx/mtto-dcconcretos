@@ -58,6 +58,26 @@ export async function PATCH(
       updateData.purchased_at = new Date().toISOString()
     }
 
+    // Editable fields
+    const editableFields = [
+      'supplier',
+      'total_amount',
+      'payment_method',
+      'notes',
+      'store_location',
+      'service_provider',
+      'quotation_url',
+      'max_payment_date',
+      'items'
+    ] as const
+
+    editableFields.forEach((field) => {
+      if (Object.prototype.hasOwnProperty.call(body, field)) {
+        // Basic sanitization: avoid null vs undefined confusion; allow explicit nulls to clear optional fields
+        updateData[field] = body[field]
+      }
+    })
+
     // Handle receipt upload separately - prevent duplicates
     if (body.receipt_url) {
       // Check if a receipt with this URL already exists

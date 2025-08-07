@@ -1,5 +1,4 @@
 import { createClient } from "@/lib/supabase-server"
-import { PurchaseOrderStatus } from "@/types"
 import { PurchaseOrderType, EnhancedPOStatus } from "@/types/purchase-orders"
 import { cn } from "@/lib/utils"
 import { Badge } from "@/components/ui/badge"
@@ -19,6 +18,7 @@ import { ReceiptDisplaySection } from "@/components/purchase-orders/ReceiptDispl
 import { PurchaseOrderDetailsMobile } from "@/components/purchase-orders/purchase-order-details-mobile"
 import { PurchaseOrderWorkOrderLink } from "@/components/purchase-orders/purchase-order-work-order-link"
 import { Suspense } from "react"
+import { EditPOButton } from "@/components/purchase-orders/EditPOButton"
 
 // Helper function to format currency
 function formatCurrency(amount: string | null): string {
@@ -44,15 +44,17 @@ function formatDate(dateString: string | null, formatStr: string = 'PP'): string
 // Helper function to get badge variant based on status
 function getStatusVariant(status: string | null): "outline" | "secondary" | "default" | "destructive" | undefined {
   switch (status) {
-    case PurchaseOrderStatus.Pending:
+    case EnhancedPOStatus.PENDING_APPROVAL:
       return "outline"
-    case PurchaseOrderStatus.Approved:
+    case EnhancedPOStatus.APPROVED:
       return "secondary"
-    case PurchaseOrderStatus.Ordered:
+    case EnhancedPOStatus.ORDERED:
+    case EnhancedPOStatus.PURCHASED:
+    case EnhancedPOStatus.RECEIVED:
+    case EnhancedPOStatus.RECEIPT_UPLOADED:
+    case EnhancedPOStatus.VALIDATED:
       return "default"
-    case PurchaseOrderStatus.Received:
-      return "default"
-    case PurchaseOrderStatus.Rejected:
+    case EnhancedPOStatus.REJECTED:
       return "destructive"
     default:
       return "outline"
@@ -225,9 +227,9 @@ async function PurchaseOrderDetailsContent({ id }: { id: string }) {
       return null
     }
     
-    // Legacy purchase order status handling
+    // Legacy purchase order status handling (fallback for very old orders)
     switch (order.status) {
-      case PurchaseOrderStatus.Pending:
+      case 'pending_approval':
         return (
           <>
             <Button asChild variant="secondary">
@@ -243,7 +245,7 @@ async function PurchaseOrderDetailsContent({ id }: { id: string }) {
             </Button>
           </>
         )
-      case PurchaseOrderStatus.Approved:
+      case 'approved':
         return (
           <Button asChild>
             <Link href={`/compras/${order.id}/pedido`}>
@@ -252,7 +254,7 @@ async function PurchaseOrderDetailsContent({ id }: { id: string }) {
             </Link>
           </Button>
         )
-      case PurchaseOrderStatus.Ordered:
+      case 'ordered':
         return (
           <Button asChild>
             <Link href={`/compras/${order.id}/recibido`}>
@@ -306,11 +308,30 @@ async function PurchaseOrderDetailsContent({ id }: { id: string }) {
              </div>
            )}
         </div>
-        <Button variant="outline" size="icon" asChild>
-          <Link href="/compras">
-            <ArrowLeft className="h-4 w-4" />
-          </Link>
-        </Button>
+        <div className="flex items-center gap-2">
+          {/* Edit button only when order is not validated */}
+          {order.status !== 'validated' && (
+            <EditPOButton
+              id={order.id}
+              initialData={{
+                supplier: order.supplier,
+                total_amount: order.total_amount ? Number(order.total_amount) : 0,
+                payment_method: order.payment_method,
+                notes: order.notes,
+                store_location: order.store_location,
+                service_provider: order.service_provider,
+                quotation_url: order.quotation_url,
+                max_payment_date: order.max_payment_date,
+                items: items
+              }}
+            />
+          )}
+          <Button variant="outline" size="icon" asChild>
+            <Link href="/compras">
+              <ArrowLeft className="h-4 w-4" />
+            </Link>
+          </Button>
+        </div>
       </div>
       
       <div className="grid gap-8 md:grid-cols-2">
@@ -708,3 +729,5 @@ async function PurchaseOrderDetailsContent({ id }: { id: string }) {
     </div>
   )
 } 
+
+// removed inline client bridge; using dedicated client component instead

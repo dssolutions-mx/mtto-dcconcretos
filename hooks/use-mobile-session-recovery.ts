@@ -1,4 +1,5 @@
 import { useAuthZustand } from '@/hooks/use-auth-zustand'
+import { useAuthStore } from '@/store'
 
 /**
  * Hook for mobile session recovery using Zustand
@@ -6,12 +7,16 @@ import { useAuthZustand } from '@/hooks/use-auth-zustand'
  */
 export function useMobileSessionRecovery() {
   const { 
-    recoverMobileSession, 
-    isMobileDevice, 
     user, 
     session,
     isLoading 
   } = useAuthZustand()
+  
+  // Get mobile-specific functions directly from store
+  const { recoverMobileSession, isMobileDevice } = useAuthStore((state) => ({
+    recoverMobileSession: state.recoverMobileSession,
+    isMobileDevice: state.isMobileDevice
+  }))
   
   /**
    * Enhanced fetch with session recovery for mobile
