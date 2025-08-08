@@ -225,6 +225,26 @@ Guidelines:
 
 ---
 
+## Middleware integration and controlled offline mode
+
+The middleware integrates with Supabase SSR and controls access, aligning with the store’s offline capabilities:
+
+- Uses `@supabase/ssr` with the required cookie pattern: only `cookies.getAll()` and `cookies.setAll(...)` with an updated `NextResponse`.
+- Implements root redirect: `/` → `/dashboard` if authenticated, else `/login`.
+- Defines public routes (e.g., `/login`, `/register`, `/auth/*`) and allows them without auth.
+- Skips authentication for API routes (`/api/*`) since they validate independently.
+- Enables an offline work mode for selected routes (`/checklists`, `/ordenes`, `/activos`, `/dashboard`, `/preventivo`, `/reportes`, `/incidentes`, `/modelos`, `/inventario`, `/plantas`, `/personal`, `/compras`) only if Supabase cookies (`sb-*`) are present to avoid unauthenticated bypasses that cause API 401s.
+- When offline work mode is enabled, it sets response headers `X-Offline-Mode: true` and `X-Auth-Required: true`.
+- The initializer checks these headers and allows offline access if persisted `user` and `profile` exist; otherwise it redirects to login.
+- Always return the original `supabaseResponse` from middleware to keep cookies consistent.
+
+Practical implications for the Zustand setup:
+- Ensure `persist` includes only safe fields (`user`, `profile`, basic metadata) so offline validation can succeed without persisting sessions.
+- The store should not perform redirects. Middleware controls navigation; the initializer only syncs state.
+- API routes must continue to perform their own Supabase validation; do not rely on middleware for API auth.
+
+---
+
 ## Mobile session recovery
 
 `hooks/use-mobile-session-recovery.ts` provides helpers:

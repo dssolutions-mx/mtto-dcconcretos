@@ -69,7 +69,6 @@ export async function middleware(request: NextRequest) {
       '/inventario',
       '/plantas',
       '/personal',
-      '/compras',
     ]
 
     const isWorkRoute = offlineWorkRoutes.some((route) =>
@@ -119,7 +118,8 @@ export async function middleware(request: NextRequest) {
     "/auth/callback",
     "/forgot-password",
     "/auth/reset-password",
-    "/auth/confirm"
+    "/auth/confirm",
+    "/compras/accion-po"
   ]
   const isPublicRoute = publicRoutes.some((route) => 
     request.nextUrl.pathname.startsWith(route)
