@@ -51,7 +51,10 @@ function buildEmailHtml(po: any, recipientName: string, approveUrl: string, reje
       <div class="row"><div>Proveedor</div><div><strong>${po.supplier || 'N/A'}</strong></div></div>
       <div class="row"><div>Monto</div><div><strong>$${Number(po.total_amount || 0).toLocaleString('es-MX',{minimumFractionDigits:2})}</strong></div></div>
       <div class="row"><div>Tipo</div><div><strong>${po.po_type || 'N/A'}</strong></div></div>
+      ${po.work_order_id_html || ''}
+      ${po.quotation_html || ''}
     </div>
+    ${po.notes_html || ''}
     <p>Hola ${recipientName || ''}, por favor autoriza esta orden:</p>
     <p>
       <a class="btn approve" href="${approveUrl}">Aprobar</a>
@@ -68,13 +71,13 @@ function buildEmailHtml(po: any, recipientName: string, approveUrl: string, reje
 serve(async (req) => {
   try {
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
-    const { record, po_id, test_email } = await req.json()
+    const { record, po_id } = await req.json()
     const id = po_id || record?.id
     if (!id) return new Response(JSON.stringify({ error: 'Missing po_id' }), { status: 400 })
 
     const { data: po, error: poErr } = await supabase
       .from('purchase_orders')
-      .select('id, order_id, total_amount, supplier, po_type, plant_id, requested_by, work_order_id')
+      .select('id, order_id, total_amount, supplier, po_type, plant_id, requested_by, work_order_id, notes, quotation_url')
       .eq('id', id)
       .single()
     if (poErr || !po) return new Response(JSON.stringify({ error: poErr?.message || 'PO not found' }), { status: 404 })
@@ -139,9 +142,7 @@ serve(async (req) => {
 
     // Threshold rule: <= 5000 -> BU Manager only; > 5000 -> Gerencia General only
     let recipients: Array<{ email: string; name: string }> = []
-    if (test_email) {
-      recipients = [{ email: String(test_email), name: '' }]
-    } else if (amount > 5000) {
+    if (amount > 5000) {
       recipients = gmRecipients
     } else {
       if (businessUnitManagerEmail) {
@@ -180,7 +181,26 @@ serve(async (req) => {
       const rejectUrl = `${baseUrl}/api/purchase-order-actions/direct-action?po=${po.id}&action=reject&email=${encodeURIComponent(r.email)}`
       const viewUrl = `${baseUrl}/compras?po=${po.id}`
 
-      const html = buildEmailHtml(po, r.name, approveUrl, rejectUrl, viewUrl)
+      // Optional enrichments for email body
+      let workOrderHtml = ''
+      if (po.work_order_id) {
+        const woLink = `${baseUrl}/ordenes/${po.work_order_id}`
+        workOrderHtml = `<div class="row"><div>Orden de trabajo</div><div><a href="${woLink}"><strong>${woLink}</strong></a></div></div>`
+      }
+      let quotationHtml = ''
+      if (po.quotation_url) {
+        const q = String(po.quotation_url)
+        quotationHtml = `<div class="row"><div>Cotización</div><div><a href="${q}"><strong>Ver documento</strong></a></div></div>`
+      }
+      let notesHtml = ''
+      if (po.notes) {
+        const safeNotes = String(po.notes).slice(0, 800)
+        notesHtml = `<div class="meta" style="margin-top:10px"><div class="row" style="justify-content:flex-start"><div><strong>Notas</strong></div></div><div style="margin-top:6px">${safeNotes.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div></div>`
+      }
+
+      const htmlReadyPo = { ...po, work_order_id_html: workOrderHtml, quotation_html: quotationHtml, notes_html: notesHtml }
+
+      const html = buildEmailHtml(htmlReadyPo, r.name, approveUrl, rejectUrl, viewUrl)
 
       // SendGrid: disable click tracking to avoid URL rewriting
       const response = await fetch('https://api.sendgrid.com/v3/mail/send', {

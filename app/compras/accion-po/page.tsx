@@ -1,10 +1,10 @@
 "use client"
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { CheckCircle, XCircle, AlertTriangle } from 'lucide-react'
 import Link from 'next/link'
 
-export default function PurchaseOrderActionResultPage() {
+function ResultContent() {
   const params = useSearchParams()
   const action = params.get('action')
   const po = params.get('po')
@@ -56,6 +56,14 @@ export default function PurchaseOrderActionResultPage() {
         </div>
       </div>
     </div>
+  )
+}
+
+export default function PurchaseOrderActionResultPage() {
+  return (
+    <Suspense fallback={<div className="min-h-[60vh] w-full flex items-center justify-center px-4"><div className="text-slate-500">Cargando...</div></div>}>
+      <ResultContent />
+    </Suspense>
   )
 }
 
