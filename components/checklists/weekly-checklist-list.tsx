@@ -150,7 +150,7 @@ export function WeeklyChecklistList() {
                         </Badge>
                       )}
                     </TableCell>
-                    <TableCell>{formatDate(checklist.scheduled_date)}</TableCell>
+                    <TableCell>{formatDate((checklist as any).scheduled_day || checklist.scheduled_date)}</TableCell>
                     <TableCell>{getStatusBadge(checklist.status)}</TableCell>
                     <TableCell>
                       {checklist.profiles ? 

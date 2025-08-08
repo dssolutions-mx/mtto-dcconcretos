@@ -175,7 +175,7 @@ export function OfflineChecklistList({ className = "" }: OfflineChecklistListPro
                           {checklist.scheduled_date && (
                             <p className="text-xs text-muted-foreground flex items-center gap-1">
                               <Clock className="h-3 w-3" />
-                              Programado: {new Date(checklist.scheduled_date).toLocaleDateString('es')}
+                              Programado: {new Date((checklist as any).scheduled_day || checklist.scheduled_date).toLocaleDateString('es')}
                             </p>
                           )}
                         </div>

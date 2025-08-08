@@ -91,7 +91,7 @@ export function MobileExecutionHeader({ schedule }: { schedule: ChecklistSchedul
               <div>
                 <div className="font-medium">Fecha Programada</div>
                 <div className="text-sm">
-                  {format(new Date(schedule.scheduled_date), "PPP", { locale: es })}
+                  {format(new Date((schedule as any).scheduled_day || schedule.scheduled_date), "PPP", { locale: es })}
                 </div>
               </div>
             </div>

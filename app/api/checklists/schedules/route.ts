@@ -122,6 +122,12 @@ export async function GET(request: Request) {
       )
     }
 
+    // Ensure scheduled_day is present for clients relying on date-only logic
+    filteredData = filteredData.map((s: any) => ({
+      ...s,
+      scheduled_day: s.scheduled_day || (s.scheduled_date ? s.scheduled_date.split('T')[0] : null),
+    }))
+
     // Fetch profile information for assigned users
     if (filteredData.length > 0) {
       const userIds = [...new Set(filteredData.map(schedule => schedule.assigned_to).filter(Boolean))]

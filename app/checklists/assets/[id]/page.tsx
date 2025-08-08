@@ -475,10 +475,10 @@ export default function AssetChecklistDetailPage({ params }: { params: Promise<{
                           {schedule.checklists?.name || 'Sin nombre'}
                         </h4>
                         <p className="text-sm text-red-600 font-medium">
-                          {formatRelativeDate(schedule.scheduled_date)}
+                          {formatRelativeDate((schedule as any).scheduled_day || schedule.scheduled_date)}
                         </p>
                         <p className="text-xs text-muted-foreground">
-                          {schedule.checklists?.frequency} • {formatDate(schedule.scheduled_date)}
+                          {schedule.checklists?.frequency} • {formatDate((schedule as any).scheduled_day || schedule.scheduled_date)}
                         </p>
                       </div>
                           {getStatusBadge(schedule.status, schedule.scheduled_date, (schedule as any).scheduled_day)}
@@ -585,10 +585,10 @@ export default function AssetChecklistDetailPage({ params }: { params: Promise<{
                           {schedule.checklists?.name || 'Sin nombre'}
                         </h4>
                         <p className="text-sm text-blue-600 font-medium">
-                          {formatRelativeDate(schedule.scheduled_date)}
+                          {formatRelativeDate((schedule as any).scheduled_day || schedule.scheduled_date)}
                         </p>
                         <p className="text-xs text-muted-foreground">
-                          {schedule.checklists?.frequency} • {formatDate(schedule.scheduled_date)}
+                          {schedule.checklists?.frequency} • {formatDate((schedule as any).scheduled_day || schedule.scheduled_date)}
                         </p>
                       </div>
                           {getStatusBadge(schedule.status, schedule.scheduled_date, (schedule as any).scheduled_day)}
@@ -712,7 +712,7 @@ export default function AssetChecklistDetailPage({ params }: { params: Promise<{
                     <div className="flex-1">
                       <h5 className="font-medium text-sm">{schedule.checklists?.name || 'Sin nombre'}</h5>
                       <p className="text-xs text-muted-foreground">
-                        {formatDate(schedule.scheduled_date)}
+                        {formatDate((schedule as any).scheduled_day || schedule.scheduled_date)}
                       </p>
                     </div>
                     <Badge variant="outline" className="text-xs">

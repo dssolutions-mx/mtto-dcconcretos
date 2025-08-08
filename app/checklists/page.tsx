@@ -211,28 +211,28 @@ function ChecklistsContent() {
       
       // Checklists para HOY
       const todaysDaily = dailyItems.filter(s => {
-        const date = new Date(s.scheduled_date)
+        const date = new Date((s as any).scheduled_day || s.scheduled_date)
         date.setHours(0, 0, 0, 0)
         return date >= today && date < tomorrow
       }).length
       
       const todaysWeekly = weeklyItems.filter(s => {
-        const date = new Date(s.scheduled_date)
+        const date = new Date((s as any).scheduled_day || s.scheduled_date)
         date.setHours(0, 0, 0, 0)
         return date >= today && date < tomorrow
       }).length
       
       const todaysMonthly = monthlyItems.filter(s => {
-        const date = new Date(s.scheduled_date)
+        const date = new Date((s as any).scheduled_day || s.scheduled_date)
         date.setHours(0, 0, 0, 0)
         return date >= today && date < tomorrow
       }).length
       
       // Calculate overdue items (scheduled_date is in the past)
-      const overdueDaily = dailyItems.filter(s => new Date(s.scheduled_date) < today).length
-      const overdueWeekly = weeklyItems.filter(s => new Date(s.scheduled_date) < today).length
-      const overdueMonthly = monthlyItems.filter(s => new Date(s.scheduled_date) < today).length
-      const overduePreventive = preventiveItems.filter(s => new Date(s.scheduled_date) < today).length
+      const overdueDaily = dailyItems.filter(s => new Date((s as any).scheduled_day || s.scheduled_date) < today).length
+      const overdueWeekly = weeklyItems.filter(s => new Date((s as any).scheduled_day || s.scheduled_date) < today).length
+      const overdueMonthly = monthlyItems.filter(s => new Date((s as any).scheduled_day || s.scheduled_date) < today).length
+      const overduePreventive = preventiveItems.filter(s => new Date((s as any).scheduled_day || s.scheduled_date) < today).length
       
       const pendingPreventive = preventiveItems.filter(s => s.status === 'pendiente').length
       
