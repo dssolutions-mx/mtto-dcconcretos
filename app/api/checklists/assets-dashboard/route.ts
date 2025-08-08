@@ -107,16 +107,17 @@ export async function GET() {
       const assetCompletedSchedules = completedSchedules.filter(schedule => schedule.asset_id === asset.id)
 
       // Calculate overdue and due soon tasks
-      const overdueTasks = assetPendingSchedules.filter(schedule => 
-        new Date(schedule.scheduled_date) < today
-      )
+      const overdueTasks = assetPendingSchedules.filter(schedule => {
+        const dateStr = schedule.scheduled_day || schedule.scheduled_date
+        return new Date(dateStr) < today
+      })
       const dueTodayTasks = assetPendingSchedules.filter(schedule => {
-        const scheduleDate = new Date(schedule.scheduled_date)
+        const scheduleDate = new Date(schedule.scheduled_day || schedule.scheduled_date)
         scheduleDate.setHours(0, 0, 0, 0)
         return scheduleDate.getTime() === today.getTime()
       })
       const dueSoonTasks = assetPendingSchedules.filter(schedule => {
-        const scheduleDate = new Date(schedule.scheduled_date)
+        const scheduleDate = new Date(schedule.scheduled_day || schedule.scheduled_date)
         const weekFromNow = new Date(today)
         weekFromNow.setDate(weekFromNow.getDate() + 7)
         return scheduleDate > today && scheduleDate <= weekFromNow
@@ -136,9 +137,11 @@ export async function GET() {
       const lastCompleted = assetCompletedSchedules.sort((a, b) => 
         new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
       )[0]
-      const nextPending = assetPendingSchedules.sort((a, b) => 
-        new Date(a.scheduled_date).getTime() - new Date(b.scheduled_date).getTime()
-      )[0]
+      const nextPending = assetPendingSchedules.sort((a, b) => {
+        const aDate = new Date(a.scheduled_day || a.scheduled_date).getTime()
+        const bDate = new Date(b.scheduled_day || b.scheduled_date).getTime()
+        return aDate - bDate
+      })[0]
 
       return {
         asset: {
@@ -147,7 +150,7 @@ export async function GET() {
           overdue_checklists: overdueTasks.length,
           last_checklist_date: lastCompleted?.updated_at || null,
           last_checklist_status: lastCompleted ? 'completed' : null,
-          next_checklist_date: nextPending?.scheduled_date || null,
+          next_checklist_date: (nextPending?.scheduled_day || nextPending?.scheduled_date) || null,
           checklist_status: checklistStatus
         },
         pending_schedules: assetPendingSchedules,

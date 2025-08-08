@@ -294,7 +294,7 @@ export async function POST(request: Request) {
     }
     
     // 3. Fetch additional details for the created schedules
-    const { data: schedulesWithDetails, error: detailsError } = await supabase
+      const { data: schedulesWithDetails, error: detailsError } = await supabase
       .from('checklist_schedules')
       .select(`
         *,
@@ -305,6 +305,7 @@ export async function POST(request: Request) {
         assets (name, asset_id, location)
       `)
       .in('id', createdSchedules.map(s => s.id))
+        .order('scheduled_day', { ascending: true })
     
     if (detailsError) {
       console.error('Error fetching schedule details:', detailsError)

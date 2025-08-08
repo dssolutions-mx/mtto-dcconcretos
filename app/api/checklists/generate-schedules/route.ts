@@ -126,9 +126,9 @@ export async function POST(request: Request) {
         if (!template) continue
         
         // Check for existing pending schedules to avoid duplicates
-        const { data: existingSchedules } = await supabase
+          const { data: existingSchedules } = await supabase
           .from('checklist_schedules')
-          .select('id, scheduled_date')
+            .select('id, scheduled_date, scheduled_day')
           .eq('template_id', templateId)
           .eq('asset_id', assetId)
           .eq('status', 'pendiente')
@@ -158,7 +158,7 @@ export async function POST(request: Request) {
             while (currentDate <= endDateTime && scheduleCount < maxSchedulesPerTemplate) {
               // Check if this date already has a schedule
               const hasExisting = existingSchedules?.some(s => 
-                new Date(s.scheduled_date).toDateString() === currentDate.toDateString()
+                new Date((s as any).scheduled_day || s.scheduled_date).toDateString() === currentDate.toDateString()
               )
               
               if (!hasExisting) {
@@ -173,7 +173,7 @@ export async function POST(request: Request) {
             // Weekly (same day of the week)
             while (currentDate <= endDateTime && scheduleCount < maxSchedulesPerTemplate) {
               const hasExisting = existingSchedules?.some(s => 
-                new Date(s.scheduled_date).toDateString() === currentDate.toDateString()
+                new Date((s as any).scheduled_day || s.scheduled_date).toDateString() === currentDate.toDateString()
               )
               
               if (!hasExisting) {
@@ -188,7 +188,7 @@ export async function POST(request: Request) {
             // Biweekly
             while (currentDate <= endDateTime && scheduleCount < maxSchedulesPerTemplate) {
               const hasExisting = existingSchedules?.some(s => 
-                new Date(s.scheduled_date).toDateString() === currentDate.toDateString()
+                new Date((s as any).scheduled_day || s.scheduled_date).toDateString() === currentDate.toDateString()
               )
               
               if (!hasExisting) {
@@ -203,7 +203,7 @@ export async function POST(request: Request) {
             // Monthly (same day of the month)
             while (currentDate <= endDateTime && scheduleCount < maxSchedulesPerTemplate) {
               const hasExisting = existingSchedules?.some(s => 
-                new Date(s.scheduled_date).toDateString() === currentDate.toDateString()
+                new Date((s as any).scheduled_day || s.scheduled_date).toDateString() === currentDate.toDateString()
               )
               
               if (!hasExisting) {

@@ -101,11 +101,11 @@ export async function GET(request: Request) {
       query = query.eq('asset_id', assetId)
     }
 
-    // Order by scheduled_date for pending, by updated_at for completed
+    // Order by scheduled_day for pending, by updated_at for completed
     if (status === 'completado') {
       query = query.order('updated_at', { ascending: false })
     } else {
-      query = query.order('scheduled_date', { ascending: true })
+      query = query.order('scheduled_day', { ascending: true })
     }
 
     const { data, error } = await query

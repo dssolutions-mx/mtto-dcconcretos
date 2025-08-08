@@ -52,7 +52,7 @@ export function isDateWithinDays(date: Date | string, days: number): boolean {
 /**
  * Categorize checklist schedules by their due dates (UTC-based)
  */
-export function categorizeSchedulesByDate<T extends { scheduled_date: string }>(
+export function categorizeSchedulesByDate<T extends { scheduled_date?: string; scheduled_day?: string }>(
   schedules: T[]
 ): {
   overdue: T[]
@@ -60,20 +60,22 @@ export function categorizeSchedulesByDate<T extends { scheduled_date: string }>(
   upcoming: T[]
   future: T[]
 } {
-  const overdue = schedules.filter(schedule => isDateOverdue(schedule.scheduled_date))
-  const today = schedules.filter(schedule => isDateToday(schedule.scheduled_date))
-  const upcoming = schedules.filter(schedule => isDateWithinDays(schedule.scheduled_date, 7))
+  const getDateString = (schedule: T) => (schedule.scheduled_day || schedule.scheduled_date || '')
+  
+  const overdue = schedules.filter(schedule => isDateOverdue(getDateString(schedule)))
+  const today = schedules.filter(schedule => isDateToday(getDateString(schedule)))
+  const upcoming = schedules.filter(schedule => isDateWithinDays(getDateString(schedule), 7))
   const future = schedules.filter(schedule => 
-    !isDateOverdue(schedule.scheduled_date) && 
-    !isDateToday(schedule.scheduled_date) && 
-    !isDateWithinDays(schedule.scheduled_date, 7)
+    !isDateOverdue(getDateString(schedule)) && 
+    !isDateToday(getDateString(schedule)) && 
+    !isDateWithinDays(getDateString(schedule), 7)
   )
 
   return {
-    overdue: overdue.sort((a, b) => new Date(a.scheduled_date).getTime() - new Date(b.scheduled_date).getTime()),
+    overdue: overdue.sort((a, b) => new Date(getDateString(a)).getTime() - new Date(getDateString(b)).getTime()),
     today,
-    upcoming: upcoming.sort((a, b) => new Date(a.scheduled_date).getTime() - new Date(b.scheduled_date).getTime()),
-    future: future.sort((a, b) => new Date(a.scheduled_date).getTime() - new Date(b.scheduled_date).getTime())
+    upcoming: upcoming.sort((a, b) => new Date(getDateString(a)).getTime() - new Date(getDateString(b)).getTime()),
+    future: future.sort((a, b) => new Date(getDateString(a)).getTime() - new Date(getDateString(b)).getTime())
   }
 }
 
@@ -123,8 +125,19 @@ export function formatDisplayDate(dateString: string): string {
 /**
  * Get schedule status based on due date (UTC comparison)
  */
-export function getScheduleStatus(scheduledDate: string): 'overdue' | 'today' | 'upcoming' {
-  if (isDateOverdue(scheduledDate)) return 'overdue'
-  if (isDateToday(scheduledDate)) return 'today'
+export function getScheduleStatus(
+  input: string | { scheduled_date?: string; scheduled_day?: string }
+): 'overdue' | 'today' | 'upcoming' {
+  const dateString = typeof input === 'string' ? input : (input.scheduled_day || input.scheduled_date || '')
+  if (isDateOverdue(dateString)) return 'overdue'
+  if (isDateToday(dateString)) return 'today'
   return 'upcoming'
-} 
+}
+
+/**
+ * Format schedule date (prefers scheduled_day when provided)
+ */
+export function formatScheduleDisplayDate(input: string | { scheduled_date?: string; scheduled_day?: string }): string {
+  const dateString = typeof input === 'string' ? input : (input.scheduled_day || input.scheduled_date || '')
+  return formatDisplayDate(dateString)
+}

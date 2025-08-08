@@ -186,6 +186,7 @@ export async function GET(request: NextRequest) {
       .select(`
         id,
         scheduled_date,
+        scheduled_day,
         status,
         assigned_to,
         template_id,
@@ -269,7 +270,7 @@ export async function GET(request: NextRequest) {
         
         if (!checklist) continue
         
-        const scheduledDate = new Date(schedule.scheduled_date)
+        const scheduledDate = new Date((schedule as any).scheduled_day || schedule.scheduled_date)
         const daysOverdue = Math.floor((today.getTime() - scheduledDate.getTime()) / (1000 * 60 * 60 * 24))
         const weeksOverdue = Math.floor(daysOverdue / 7)
         

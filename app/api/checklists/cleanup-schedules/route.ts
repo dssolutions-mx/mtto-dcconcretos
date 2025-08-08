@@ -27,7 +27,7 @@ export async function POST(request: Request) {
     // Get current schedule stats
     const { data: beforeStats, error: beforeError } = await supabase
       .from('checklist_schedules')
-      .select('id, scheduled_date, status, created_at, maintenance_plan_id, template_id, asset_id')
+      .select('id, scheduled_date, scheduled_day, status, created_at, maintenance_plan_id, template_id, asset_id')
       .eq('status', 'pendiente')
     
     if (beforeError) {
@@ -43,10 +43,10 @@ export async function POST(request: Request) {
     // Count schedules by category
     const totalBefore = beforeStats?.length || 0
     const todayAndNext3Days = beforeStats?.filter(s => 
-      new Date(s.scheduled_date) <= threeDaysFromNow
+      new Date((s as any).scheduled_day || s.scheduled_date) <= threeDaysFromNow
     ).length || 0
     const futureSchedules = beforeStats?.filter(s => 
-      new Date(s.scheduled_date) > threeDaysFromNow
+      new Date((s as any).scheduled_day || s.scheduled_date) > threeDaysFromNow
     ).length || 0
     const withMaintenancePlan = beforeStats?.filter(s => 
       s.maintenance_plan_id !== null
@@ -67,12 +67,12 @@ export async function POST(request: Request) {
       if (schedules.length > 5) {
         // Keep only the first 5 schedules (closest dates), mark others for deletion
         const sortedSchedules = schedules.sort((a: any, b: any) => 
-          new Date(a.scheduled_date).getTime() - new Date(b.scheduled_date).getTime()
+          new Date((a as any).scheduled_day || a.scheduled_date).getTime() - new Date((b as any).scheduled_day || b.scheduled_date).getTime()
         )
         
         // Keep first 3 schedules, delete the rest if they're more than 7 days away
         const toDelete = sortedSchedules.slice(3).filter((s: any) => 
-          new Date(s.scheduled_date) > sevenDaysFromNow && 
+          new Date((s as any).scheduled_day || s.scheduled_date) > sevenDaysFromNow && 
           !s.maintenance_plan_id // Don't delete maintenance plan schedules
         )
         
@@ -118,7 +118,7 @@ export async function POST(request: Request) {
     // Get updated stats
     const { data: afterStats, error: afterError } = await supabase
       .from('checklist_schedules')
-      .select('id, scheduled_date, status')
+      .select('id, scheduled_date, scheduled_day, status')
       .eq('status', 'pendiente')
     
     if (afterError) {
@@ -143,7 +143,7 @@ export async function POST(request: Request) {
     // Find duplicate checklist schedules (same template_id, asset_id, and scheduled_date)
     const { data: duplicateSchedules, error: findError } = await supabase
       .from('checklist_schedules')
-      .select('id, template_id, asset_id, scheduled_date, status, created_at')
+      .select('id, template_id, asset_id, scheduled_date, scheduled_day, status, created_at')
       .order('created_at', { ascending: true })
 
     if (findError) {
@@ -156,14 +156,14 @@ export async function POST(request: Request) {
     const schedulesByDay: { [key: string]: typeof duplicateSchedules } = {}
 
     duplicateSchedules?.forEach(schedule => {
-      const key = `${schedule.template_id}-${schedule.asset_id}-${schedule.scheduled_date?.split('T')[0]}`
+      const key = `${schedule.template_id}-${schedule.asset_id}-${(schedule as any).scheduled_day || schedule.scheduled_date?.split('T')[0]}`
       if (!groupedSchedules[key]) {
         groupedSchedules[key] = []
       }
       groupedSchedules[key].push(schedule)
 
       // Also group by day to check for same-day schedules
-      const dayKey = `${schedule.asset_id}-${schedule.scheduled_date?.split('T')[0]}`
+      const dayKey = `${schedule.asset_id}-${(schedule as any).scheduled_day || schedule.scheduled_date?.split('T')[0]}`
       if (!schedulesByDay[dayKey]) {
         schedulesByDay[dayKey] = []
       }

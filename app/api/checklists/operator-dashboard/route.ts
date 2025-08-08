@@ -99,7 +99,7 @@ export async function GET(request: NextRequest) {
       `)
       .in('asset_id', assignedAssetIds)
       .eq('status', 'pendiente')
-      .order('scheduled_date', { ascending: true })
+      .order('scheduled_day', { ascending: true })
 
     if (schedulesError) {
       console.error('Error fetching operator schedules:', schedulesError)

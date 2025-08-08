@@ -53,7 +53,7 @@ export async function GET(
         `)
         .eq('asset_id', assetId)
         .eq('status', 'pendiente')
-        .order('scheduled_date', { ascending: true }),
+        .order('scheduled_day', { ascending: true }),
       
       // Get completed checklists directly from completed_checklists table
       supabase
@@ -134,7 +134,7 @@ export async function GET(
     })
 
     // Categorize pending schedules using UTC-based date comparison
-    const categorizedSchedules = categorizeSchedulesByDate(pendingSchedules)
+    const categorizedSchedules = categorizeSchedulesByDate(pendingSchedules as any)
 
     return NextResponse.json({ 
       data: {

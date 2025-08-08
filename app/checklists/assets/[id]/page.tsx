@@ -214,8 +214,8 @@ export default function AssetChecklistDetailPage({ params }: { params: Promise<{
   }
   const formatRelativeDate = getRelativeDateDescription
 
-  const getStatusBadge = (status: string, scheduleDate: string) => {
-    const scheduleStatus = getScheduleStatus(scheduleDate)
+  const getStatusBadge = (status: string, scheduleDate: string, scheduledDay?: string) => {
+    const scheduleStatus = getScheduleStatus(scheduledDay || scheduleDate)
     
     switch (scheduleStatus) {
       case 'overdue':
@@ -481,7 +481,7 @@ export default function AssetChecklistDetailPage({ params }: { params: Promise<{
                           {schedule.checklists?.frequency} • {formatDate(schedule.scheduled_date)}
                         </p>
                       </div>
-                      {getStatusBadge(schedule.status, schedule.scheduled_date)}
+                          {getStatusBadge(schedule.status, schedule.scheduled_date, (schedule as any).scheduled_day)}
                     </div>
                     
                     {schedule.profiles && (
@@ -535,7 +535,7 @@ export default function AssetChecklistDetailPage({ params }: { params: Promise<{
                           {schedule.checklists?.frequency}
                         </p>
                       </div>
-                      {getStatusBadge(schedule.status, schedule.scheduled_date)}
+                          {getStatusBadge(schedule.status, schedule.scheduled_date, (schedule as any).scheduled_day)}
                     </div>
                     
                     {schedule.profiles && (
@@ -591,7 +591,7 @@ export default function AssetChecklistDetailPage({ params }: { params: Promise<{
                           {schedule.checklists?.frequency} • {formatDate(schedule.scheduled_date)}
                         </p>
                       </div>
-                      {getStatusBadge(schedule.status, schedule.scheduled_date)}
+                          {getStatusBadge(schedule.status, schedule.scheduled_date, (schedule as any).scheduled_day)}
                     </div>
                     
                     {schedule.profiles && (

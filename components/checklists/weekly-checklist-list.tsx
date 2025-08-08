@@ -32,7 +32,7 @@ export function WeeklyChecklistList() {
 
   // Filter only TODAY's checklists using UTC-based date comparison
   const todaysChecklists = schedules.filter(checklist => {
-    return isDateToday(checklist.scheduled_date)
+    return isDateToday((checklist as any).scheduled_day || checklist.scheduled_date)
   })
 
   const filteredChecklists = todaysChecklists.filter(

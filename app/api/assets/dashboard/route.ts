@@ -116,7 +116,7 @@ export async function GET() {
     const enhancedAssets = assets.map(asset => {
       const assetIncidents = pendingIncidents.filter(i => i.asset_id === asset.id)
       const assetSchedules = pendingSchedules.filter(s => s.asset_id === asset.id)
-      const overdueSchedules = assetSchedules.filter(s => new Date(s.scheduled_date) < today)
+      const overdueSchedules = assetSchedules.filter(s => new Date((s as any).scheduled_day || s.scheduled_date) < today)
 
       // Get maintenance intervals for this asset
       const assetIntervals = maintenanceIntervals.filter(interval => 
