@@ -98,8 +98,10 @@ export async function GET() {
     const completedSchedules = completedResult.data || []
 
     // Process data to create asset summaries
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
+    // Use date-only strings to avoid timezone skew when comparing dates
+    const todayStr = new Date().toISOString().slice(0, 10)
+    const weekStr = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+    const getScheduleDay = (s: any) => s.scheduled_day || (s.scheduled_date ? String(s.scheduled_date).split('T')[0] : null)
 
     const assetSummaries = assets.map(asset => {
       // Get schedules for this asset
@@ -108,19 +110,16 @@ export async function GET() {
 
       // Calculate overdue and due soon tasks
       const overdueTasks = assetPendingSchedules.filter(schedule => {
-        const dateStr = schedule.scheduled_day || schedule.scheduled_date
-        return new Date(dateStr) < today
+        const d = getScheduleDay(schedule)
+        return d && d < todayStr
       })
       const dueTodayTasks = assetPendingSchedules.filter(schedule => {
-        const scheduleDate = new Date(schedule.scheduled_day || schedule.scheduled_date)
-        scheduleDate.setHours(0, 0, 0, 0)
-        return scheduleDate.getTime() === today.getTime()
+        const d = getScheduleDay(schedule)
+        return d === todayStr
       })
       const dueSoonTasks = assetPendingSchedules.filter(schedule => {
-        const scheduleDate = new Date(schedule.scheduled_day || schedule.scheduled_date)
-        const weekFromNow = new Date(today)
-        weekFromNow.setDate(weekFromNow.getDate() + 7)
-        return scheduleDate > today && scheduleDate <= weekFromNow
+        const d = getScheduleDay(schedule)
+        return d && d > todayStr && d <= weekStr
       })
 
       // Determine status
@@ -138,9 +137,9 @@ export async function GET() {
         new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
       )[0]
       const nextPending = assetPendingSchedules.sort((a, b) => {
-        const aDate = new Date(a.scheduled_day || a.scheduled_date).getTime()
-        const bDate = new Date(b.scheduled_day || b.scheduled_date).getTime()
-        return aDate - bDate
+        const aDay = getScheduleDay(a) || '9999-12-31'
+        const bDay = getScheduleDay(b) || '9999-12-31'
+        return aDay.localeCompare(bDay)
       })[0]
 
       return {
