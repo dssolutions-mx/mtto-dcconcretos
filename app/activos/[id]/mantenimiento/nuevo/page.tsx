@@ -304,17 +304,7 @@ export default function NewMaintenancePage({ params }: NewMaintenancePageProps) 
         throw new Error("Usuario no autenticado");
       }
 
-      // Generar número secuencial para la orden de trabajo
-      const { count: workOrderCount, error: workOrderCountError } = await supabase
-        .from("work_orders")
-        .select("*", { count: "exact", head: true });
-        
-      if (workOrderCountError) throw workOrderCountError;
-      
-      const workOrderNumber = `OT-${((workOrderCount || 0) + 1).toString().padStart(4, '0')}`;
-      
       const workOrderData = {
-        order_id: workOrderNumber,
         asset_id: assetId,
         description: workDescription,
         scope: workScope || null,
@@ -339,7 +329,7 @@ export default function NewMaintenancePage({ params }: NewMaintenancePageProps) 
       const { data: workOrderResult, error: workOrderError } = await supabase
         .from('work_orders')
         .insert(workOrderData)
-        .select('id')
+        .select('id, order_id')
         .single();
       
       if (workOrderError) throw workOrderError;
@@ -364,7 +354,7 @@ export default function NewMaintenancePage({ params }: NewMaintenancePageProps) 
 
       toast({
         title: "¡Orden de Trabajo programada exitosamente!",
-        description: `Se ha generado la Orden de Trabajo ${workOrderNumber} para mantenimiento ${planId ? 'preventivo' : 'correctivo'}. La orden está programada para ${format(plannedDate, "dd/MM/yyyy")} y lista para generar órdenes de compra si es necesario.`,
+        description: `Se ha generado la Orden de Trabajo ${workOrderResult.order_id} para mantenimiento ${planId ? 'preventivo' : 'correctivo'}. La orden está programada para ${format(plannedDate, "dd/MM/yyyy")} y lista para generar órdenes de compra si es necesario.`,
       });
 
       // Redirigir a la vista de órdenes de trabajo
