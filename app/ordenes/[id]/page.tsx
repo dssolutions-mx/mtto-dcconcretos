@@ -223,8 +223,16 @@ export default async function WorkOrderDetailsPage({
       : extendedWorkOrder.required_parts
     : []
   
+  // Ensure all numeric fields are properly converted to numbers
+  const sanitizedRequiredParts = originalRequiredParts.map((part: any) => ({
+    ...part,
+    quantity: Number(part.quantity) || 1,
+    unit_price: Number(part.unit_price) || 0,
+    total_price: Number(part.total_price) || (Number(part.quantity) || 1) * (Number(part.unit_price) || 0)
+  }));
+  
   // Use purchase order items if available, otherwise use original required parts
-  let displayParts = originalRequiredParts;
+  let displayParts = sanitizedRequiredParts;
   let partsSource = 'estimated';
   
   if (allPurchaseOrders && allPurchaseOrders.length > 0) {
@@ -234,13 +242,19 @@ export default async function WorkOrderDetailsPage({
       const poItems = typeof mainPO.items === 'string' ? JSON.parse(mainPO.items) : mainPO.items;
       if (poItems && Array.isArray(poItems) && poItems.length > 0) {
         // Transform PO items to match our parts format
-        displayParts = poItems.map((item: any) => ({
-          name: item.name || item.description || item.item,
-          partNumber: item.part_number || item.code || 'N/A',
-          quantity: item.quantity || 1,
-          unit_price: item.unit_price || item.price || 0,
-          total_price: item.total_price || (item.quantity * (item.unit_price || item.price || 0))
-        }));
+        displayParts = poItems.map((item: any) => {
+          const quantity = Number(item.quantity) || 1;
+          const unitPrice = Number(item.unit_price || item.price || 0);
+          const totalPrice = Number(item.total_price) || (quantity * unitPrice);
+          
+          return {
+            name: item.name || item.description || item.item,
+            partNumber: item.part_number || item.code || 'N/A',
+            quantity: quantity,
+            unit_price: unitPrice,
+            total_price: totalPrice
+          };
+        });
         partsSource = mainPO.actual_amount ? 'confirmed' : 'quoted';
       }
     }
@@ -251,7 +265,7 @@ export default async function WorkOrderDetailsPage({
   
   // Calculate total parts cost
   const totalPartsCost = requiredParts.length > 0
-    ? requiredParts.reduce((total: number, part: any) => total + (part.total_price || 0), 0)
+    ? requiredParts.reduce((total: number, part: any) => total + (Number(part.total_price) || 0), 0)
     : 0
     
   // Parse evidence photos
@@ -449,13 +463,13 @@ export default async function WorkOrderDetailsPage({
                   <p className="text-sm font-medium text-muted-foreground">Duración estimada</p>
                   <p className="flex items-center">
                     <Clock className="h-4 w-4 mr-2 text-muted-foreground" />
-                    {extendedWorkOrder.estimated_duration ? `${extendedWorkOrder.estimated_duration} horas` : "No especificada"}
+                    {extendedWorkOrder.estimated_duration ? `${Number(extendedWorkOrder.estimated_duration)} horas` : "No especificada"}
                   </p>
                 </div>
                 
                 <div className="space-y-1">
                   <WorkOrderCostDisplay
-                    estimatedCost={extendedWorkOrder.estimated_cost}
+                    estimatedCost={Number(extendedWorkOrder.estimated_cost) || 0}
                     requiredPartsCost={totalPartsCost}
                     purchaseOrders={allPurchaseOrders || []}
                     workOrderId={id}
@@ -671,7 +685,7 @@ export default async function WorkOrderDetailsPage({
                   
                   <div className="space-y-1">
                     <p className="text-sm font-medium text-muted-foreground">Horas Actuales</p>
-                    <p>{extendedWorkOrder.asset.current_hours || "0"} hrs</p>
+                    <p>{Number(extendedWorkOrder.asset.current_hours) || 0} hrs</p>
                   </div>
                   
                   <Button variant="outline" asChild className="w-full mt-2">
@@ -710,7 +724,7 @@ export default async function WorkOrderDetailsPage({
                 
                 <div className="space-y-1">
                   <p className="text-sm font-medium text-muted-foreground">Monto</p>
-                  <p className="font-medium">${purchaseOrder.total_amount}</p>
+                  <p className="font-medium">${Number(purchaseOrder.total_amount).toFixed(2)}</p>
                 </div>
                 
                 <Button variant="outline" asChild className="w-full mt-2">
@@ -824,14 +838,14 @@ export default async function WorkOrderDetailsPage({
                     {maintenanceHistory.labor_hours && (
                       <div className="space-y-1">
                         <p className="text-sm font-medium text-muted-foreground">Horas de trabajo</p>
-                        <p>{maintenanceHistory.labor_hours} hrs</p>
+                        <p>{Number(maintenanceHistory.labor_hours)} hrs</p>
                       </div>
                     )}
                     
                     {maintenanceHistory.total_cost && (
                       <div className="space-y-1">
                         <p className="text-sm font-medium text-muted-foreground">Costo total</p>
-                        <p className="font-medium">${maintenanceHistory.total_cost}</p>
+                        <p className="font-medium">${Number(maintenanceHistory.total_cost).toFixed(2)}</p>
                       </div>
                     )}
                     
