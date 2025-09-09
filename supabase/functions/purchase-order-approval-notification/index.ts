@@ -5,6 +5,7 @@ const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 const SENDGRID_API_KEY = Deno.env.get('SENDGRID_API_KEY')!
 const FRONTEND_URL = Deno.env.get('FRONTEND_URL')!
+const SENDGRID_FROM = Deno.env.get('SENDGRID_FROM') || 'juan.aguirre@dssolutions-mx.com'
 const JWT_SECRET = Deno.env.get('SUPABASE_JWT_SECRET') || SUPABASE_SERVICE_ROLE_KEY
 
 // Generate compact JWT (HS256) with exp
@@ -133,20 +134,41 @@ serve(async (req) => {
     // Get Gerencia General (unlimited authorization)
     const { data: gms } = await supabase
       .from('profiles')
-      .select('email, nombre, apellido')
+      .select('id, nombre, apellido')
       .eq('role', 'GERENCIA_GENERAL')
+      .eq('status', 'active')
 
-    const gmRecipients = (gms || [])
-      .filter((p) => !!p.email)
-      .map((p) => ({ email: p.email as string, name: `${(p as any).nombre || ''} ${(p as any).apellido || ''}`.trim() }))
+    let gmRecipients: Array<{ userId: string; email: string; name: string }> = []
+    if (gms && gms.length) {
+      const ids = gms.map((p: any) => p.id).filter(Boolean)
+      if (ids.length) {
+        const { data: users } = await supabase.auth.admin.listUsers()
+        const usersById = new Map<string, any>()
+        ;(users?.users || []).forEach((u: any) => usersById.set(u.id, u))
+        gmRecipients = gms
+          .map((p: any) => {
+            const u = usersById.get(p.id)
+            return u?.email ? { userId: p.id as string, email: u.email as string, name: `${p.nombre || ''} ${p.apellido || ''}`.trim() } : null
+          })
+          .filter(Boolean) as any
+      }
+    }
 
     // Threshold rule: <= 5000 -> BU Manager only; > 5000 -> Gerencia General only
-    let recipients: Array<{ email: string; name: string }> = []
+    let recipients: Array<{ userId?: string; email: string; name: string }> = []
     if (amount > 5000) {
       recipients = gmRecipients
     } else {
       if (businessUnitManagerEmail) {
-        recipients = [{ email: businessUnitManagerEmail, name: businessUnitManagerName || '' }]
+        // Resolve BU manager real auth email
+        let buManagerAuthEmail = businessUnitManagerEmail
+        const { data: buMgrProfile } = await supabase.from('profiles').select('id').eq('email', businessUnitManagerEmail).maybeSingle()
+        if (buMgrProfile?.id) {
+          const { data: users } = await supabase.auth.admin.listUsers()
+          const found = (users?.users || []).find((u: any) => u.id === buMgrProfile.id)
+          if (found?.email) buManagerAuthEmail = found.email
+        }
+        recipients = [{ email: buManagerAuthEmail, name: businessUnitManagerName || '' }]
       } else {
         // Fallback to GM if BU manager not found
         recipients = gmRecipients
@@ -158,6 +180,17 @@ serve(async (req) => {
     }
 
     for (const r of recipients) {
+      // Skip if a valid token already exists for this recipient (avoid duplicates)
+      const { data: existing } = await supabase
+        .from('po_action_tokens')
+        .select('id')
+        .eq('purchase_order_id', po.id)
+        .eq('recipient_email', r.email)
+        .gt('expires_at', new Date().toISOString())
+        .limit(1)
+      if (existing && existing.length) {
+        continue
+      }
       const approveToken = await generateActionToken(po.id, 'approve', r.email)
       const rejectToken = await generateActionToken(po.id, 'reject', r.email)
 
@@ -219,7 +252,7 @@ serve(async (req) => {
               },
             },
           ],
-          from: { email: 'no-reply@dssolutions-mx.com' },
+          from: { email: SENDGRID_FROM },
           subject: `Aprobación de Orden de Compra ${po.order_id || ''}`,
           content: [{ type: 'text/html', value: html }],
           tracking_settings: {
@@ -230,13 +263,22 @@ serve(async (req) => {
       })
 
       if (!response.ok) {
-        console.error('SendGrid error', await response.text())
+        const errText = await response.text()
+        console.error('SendGrid error', errText)
+        await supabase.from('notifications').insert({
+          user_id: null,
+          title: 'Aprobación de Orden de Compra (falló envío de email)',
+          message: `PO ${po.order_id || ''} → ${r.email} | error: ${errText.slice(0, 500)}`,
+          type: 'PURCHASE_ORDER_APPROVAL_EMAIL',
+          related_entity: 'purchase_order',
+          entity_id: po.id,
+        })
       } else {
         await supabase.from('notifications').insert({
           user_id: null,
-          title: 'Aprobación de Orden de Compra',
-          message: `Se solicitó aprobación de la OC ${po.order_id || ''}`,
-          type: 'PURCHASE_ORDER_APPROVAL_REQUEST',
+          title: 'Aprobación de Orden de Compra (email enviado)',
+          message: `PO ${po.order_id || ''} → ${r.email}`,
+          type: 'PURCHASE_ORDER_APPROVAL_EMAIL',
           related_entity: 'purchase_order',
           entity_id: po.id,
         })

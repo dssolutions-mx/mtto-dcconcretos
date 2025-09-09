@@ -1,7 +1,5 @@
 ---
-description: 
-globs: 
-alwaysApply: true
+alwaysApply: false
 ---
 ---
 description: Guidelines for writing Next.js apps with Supabase Auth
