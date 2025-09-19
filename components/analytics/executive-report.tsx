@@ -1,0 +1,697 @@
+"use client"
+
+import { useEffect, useState } from "react"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Button } from "@/components/ui/button"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Badge } from "@/components/ui/badge"
+import { 
+  Download, 
+  RefreshCw, 
+  TrendingUp, 
+  TrendingDown,
+  DollarSign,
+  Clock,
+  Settings,
+  AlertTriangle,
+  CheckCircle2,
+  Building2,
+  Factory
+} from "lucide-react"
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  PieChart,
+  Pie,
+  Cell,
+  LineChart,
+  Line,
+  Legend
+} from "recharts"
+
+type BusinessUnit = {
+  id: string
+  name: string
+  code: string
+}
+
+type Plant = {
+  id: string
+  name: string
+  code: string
+  business_unit_id: string
+  business_unit_name?: string
+}
+
+type AssetMetric = {
+  id: string
+  asset_code: string
+  asset_name: string
+  model_name: string
+  model_manufacturer: string
+  model_category: string
+  plant_name: string
+  business_unit_name: string
+  total_cost: number
+  purchase_orders_cost: number
+  service_orders_cost: number
+  labor_cost: number
+  parts_cost: number
+  additional_expenses: number
+  hours_worked: number
+  preventive_cost: number
+  corrective_cost: number
+}
+
+type ExecutiveData = {
+  summary: {
+    totalCost: number
+    purchaseOrdersCost: number
+    serviceOrdersCost: number
+    laborCost: number
+    partsCost: number
+    additionalExpenses: number
+    totalHours: number
+    assetCount: number
+    preventiveCost: number
+    correctiveCost: number
+  }
+  businessUnits: Array<{
+    id: string
+    name: string
+    total_cost: number
+    purchase_orders_cost: number
+    service_orders_cost: number
+    labor_cost: number
+    parts_cost: number
+    additional_expenses: number
+    hours_worked: number
+    preventive_cost: number
+    corrective_cost: number
+    asset_count: number
+  }>
+  plants: Array<{
+    id: string
+    name: string
+    business_unit_name: string
+    total_cost: number
+    purchase_orders_cost: number
+    service_orders_cost: number
+    labor_cost: number
+    parts_cost: number
+    additional_expenses: number
+    hours_worked: number
+    preventive_cost: number
+    corrective_cost: number
+    asset_count: number
+  }>
+  assets: {
+    data: AssetMetric[]
+    total: number
+    page: number
+    pageSize: number
+  }
+  filters: {
+    businessUnits: BusinessUnit[]
+    plants: Plant[]
+  }
+  error?: string
+}
+
+const formatCurrency = (amount: number) => {
+  return new Intl.NumberFormat('es-MX', {
+    style: 'currency',
+    currency: 'MXN',
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0
+  }).format(amount)
+}
+
+const formatNumber = (num: number) => {
+  return new Intl.NumberFormat('es-MX').format(num)
+}
+
+export function ExecutiveReport() {
+  const [startDate, setStartDate] = useState(() => {
+    const date = new Date()
+    date.setMonth(date.getMonth() - 3)
+    return date.toISOString().split('T')[0]
+  })
+  
+  const [endDate, setEndDate] = useState(() => {
+    return new Date().toISOString().split('T')[0]
+  })
+
+  const [businessUnitId, setBusinessUnitId] = useState<string>("")
+  const [plantId, setPlantId] = useState<string>("")
+  const [page, setPage] = useState(1)
+  const [loading, setLoading] = useState(false)
+  const [data, setData] = useState<ExecutiveData | null>(null)
+
+  const load = async () => {
+    if (!startDate || !endDate) return
+    
+    setLoading(true)
+    try {
+      const response = await fetch("/api/reports/executive", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          startDate: new Date(startDate).toISOString(),
+          endDate: new Date(endDate + 'T23:59:59').toISOString(),
+          businessUnitId: businessUnitId || null,
+          plantId: plantId || null,
+          page,
+          pageSize: 20
+        })
+      })
+
+      const result = await response.json()
+      if (result.error) throw new Error(result.error)
+      
+      setData(result)
+    } catch (error: any) {
+      console.error("Error loading executive report:", error)
+      setData({ 
+        summary: {
+          totalCost: 0, purchaseOrdersCost: 0, serviceOrdersCost: 0, laborCost: 0, 
+          partsCost: 0, additionalExpenses: 0, totalHours: 0, assetCount: 0,
+          preventiveCost: 0, correctiveCost: 0
+        },
+        businessUnits: [], plants: [], 
+        assets: { data: [], total: 0, page: 1, pageSize: 20 },
+        filters: { businessUnits: [], plants: [] },
+        error: error.message 
+      })
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    load()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [startDate, endDate, businessUnitId, plantId, page])
+
+  const handleBusinessUnitChange = (value: string) => {
+    setBusinessUnitId(value === "all" ? "" : value)
+    setPlantId("")
+    setPage(1)
+  }
+
+  const handlePlantChange = (value: string) => {
+    setPlantId(value === "all" ? "" : value)
+    setPage(1)
+  }
+
+  const exportToCSV = () => {
+    if (!data) return
+
+    const headers = [
+      "Código Activo",
+      "Modelo/Equipo",
+      "Fabricante", 
+      "Planta",
+      "Unidad de Negocio",
+      "Costo Total",
+      "Costo Preventivo",
+      "Costo Correctivo",
+      "% Preventivo",
+      "Órdenes de Compra",
+      "Órdenes de Servicio",
+      "Mano de Obra",
+      "Refacciones",
+      "Gastos Adicionales",
+      "Horas Trabajadas",
+      "Costo por Hora",
+      "Eficiencia"
+    ]
+
+    const rows = data.assets.data.map(asset => {
+      const preventiveRatio = asset.total_cost > 0 ? (asset.preventive_cost / asset.total_cost) * 100 : 0
+      const costPerHour = asset.hours_worked > 0 ? asset.total_cost / asset.hours_worked : 0
+      const efficiency = preventiveRatio >= 60 ? "Óptima" : preventiveRatio >= 30 ? "Buena" : "Reactiva"
+      
+      return [
+        asset.asset_code,
+        asset.model_name,
+        asset.model_manufacturer,
+        asset.plant_name,
+        asset.business_unit_name,
+        asset.total_cost,
+        asset.preventive_cost,
+        asset.corrective_cost,
+        preventiveRatio.toFixed(1),
+        asset.purchase_orders_cost,
+        asset.service_orders_cost,
+        asset.labor_cost,
+        asset.parts_cost,
+        asset.additional_expenses,
+        asset.hours_worked,
+        costPerHour.toFixed(2),
+        efficiency
+      ]
+    })
+
+    const csvContent = [
+      headers.join(","),
+      ...rows.map(row => row.map(cell => 
+        typeof cell === 'string' ? `"${cell.replace(/"/g, '""')}"` : cell
+      ).join(","))
+    ].join("\n")
+
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement("a")
+    link.href = url
+    link.download = `reporte-ejecutivo-${startDate}-${endDate}.csv`
+    link.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const availablePlants = data?.filters.plants.filter(p => 
+    !businessUnitId || p.business_unit_id === businessUnitId
+  ) || []
+
+  const costBreakdownData = data ? [
+    { name: "Órdenes de Compra", value: data.summary.purchaseOrdersCost, color: "#8884d8" },
+    { name: "Órdenes de Servicio", value: data.summary.serviceOrdersCost, color: "#82ca9d" },
+    { name: "Gastos Adicionales", value: data.summary.additionalExpenses, color: "#ffc658" }
+  ] : []
+
+  const maintenanceTypeData = data ? [
+    { name: "Preventivo", value: data.summary.preventiveCost, color: "#10b981" },
+    { name: "Correctivo", value: data.summary.correctiveCost, color: "#f97316" }
+  ] : []
+
+  return (
+    <div className="space-y-6">
+      {/* Filters */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Settings className="h-5 w-5" />
+            Filtros del Reporte
+          </CardTitle>
+          <CardDescription>
+            Configure el período y alcance organizacional del análisis
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-4 items-end">
+            <div>
+              <Label htmlFor="start-date">Fecha Inicio</Label>
+              <Input
+                id="start-date"
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+              />
+            </div>
+            
+            <div>
+              <Label htmlFor="end-date">Fecha Fin</Label>
+              <Input
+                id="end-date"
+                type="date"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+              />
+            </div>
+
+            <div>
+              <Label>Unidad de Negocio</Label>
+              <Select value={businessUnitId || "all"} onValueChange={handleBusinessUnitChange}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Todas las unidades" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todas las unidades</SelectItem>
+                  {data?.filters.businessUnits.map(bu => (
+                    <SelectItem key={bu.id} value={bu.id}>{bu.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <Label>Planta</Label>
+              <Select value={plantId || "all"} onValueChange={handlePlantChange}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Todas las plantas" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todas las plantas</SelectItem>
+                  {availablePlants.map(plant => (
+                    <SelectItem key={plant.id} value={plant.id}>{plant.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex gap-2">
+              <Button onClick={load} disabled={loading}>
+                <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+                {loading ? 'Cargando...' : 'Actualizar'}
+              </Button>
+              <Button variant="outline" onClick={exportToCSV} disabled={!data || loading}>
+                <Download className="h-4 w-4 mr-2" />
+                Exportar
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {data?.error && (
+        <Card className="border-destructive">
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-2 text-destructive">
+              <AlertTriangle className="h-4 w-4" />
+              <span>Error: {data.error}</span>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Executive Summary */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Costo Total</CardTitle>
+            <DollarSign className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{formatCurrency(data?.summary.totalCost || 0)}</div>
+            <p className="text-xs text-muted-foreground">
+              {data?.summary.assetCount || 0} activos monitoreados
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Órdenes de Compra</CardTitle>
+            <TrendingUp className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{formatCurrency(data?.summary.purchaseOrdersCost || 0)}</div>
+            <p className="text-xs text-muted-foreground">
+              {((data?.summary.purchaseOrdersCost || 0) / (data?.summary.totalCost || 1) * 100).toFixed(1)}% del total
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Horas Operación</CardTitle>
+            <Clock className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{formatNumber(data?.summary.totalHours || 0)}</div>
+            <p className="text-xs text-muted-foreground">
+              Promedio: {((data?.summary.totalHours || 0) / (data?.summary.assetCount || 1)).toFixed(0)} hrs/activo
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Eficiencia Preventiva</CardTitle>
+            <CheckCircle2 className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">
+              {((data?.summary.preventiveCost || 0) / (data?.summary.totalCost || 1) * 100).toFixed(1)}%
+            </div>
+            <p className="text-xs text-muted-foreground">
+              vs {((data?.summary.correctiveCost || 0) / (data?.summary.totalCost || 1) * 100).toFixed(1)}% correctivo
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Detailed Analysis */}
+      <Tabs defaultValue="overview" className="space-y-4">
+        <TabsList>
+          <TabsTrigger value="overview">Resumen Ejecutivo</TabsTrigger>
+          <TabsTrigger value="business-units">Unidades de Negocio</TabsTrigger>
+          <TabsTrigger value="plants">Plantas</TabsTrigger>
+          <TabsTrigger value="assets">Activos</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="overview" className="space-y-4">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>Distribución de Costos</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ResponsiveContainer width="100%" height={300}>
+                  <PieChart>
+                    <Pie
+                      data={costBreakdownData}
+                      cx="50%"
+                      cy="50%"
+                      labelLine={false}
+                      label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                      outerRadius={80}
+                      fill="#8884d8"
+                      dataKey="value"
+                    >
+                      {costBreakdownData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.color} />
+                      ))}
+                    </Pie>
+                    <Tooltip formatter={(value) => formatCurrency(Number(value))} />
+                  </PieChart>
+                </ResponsiveContainer>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Preventivo vs Correctivo</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ResponsiveContainer width="100%" height={300}>
+                  <BarChart data={maintenanceTypeData}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="name" />
+                    <YAxis tickFormatter={(value) => formatCurrency(value)} />
+                    <Tooltip formatter={(value) => formatCurrency(Number(value))} />
+                    <Bar dataKey="value" fill="#8884d8">
+                      {maintenanceTypeData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.color} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="business-units">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Building2 className="h-5 w-5" />
+                Análisis por Unidad de Negocio
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b">
+                      <th className="text-left p-3">Unidad de Negocio</th>
+                      <th className="text-right p-3">Activos</th>
+                      <th className="text-right p-3">Costo Total</th>
+                      <th className="text-right p-3">Órd. Compra</th>
+                      <th className="text-right p-3">Órd. Servicio</th>
+                      <th className="text-right p-3">Horas</th>
+                      <th className="text-right p-3">Eficiencia</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data?.businessUnits.map(bu => (
+                      <tr key={bu.id} className="border-b hover:bg-muted/50">
+                        <td className="p-3 font-medium">{bu.name}</td>
+                        <td className="p-3 text-right">{bu.asset_count}</td>
+                        <td className="p-3 text-right font-semibold">{formatCurrency(bu.total_cost)}</td>
+                        <td className="p-3 text-right">{formatCurrency(bu.purchase_orders_cost)}</td>
+                        <td className="p-3 text-right">{formatCurrency(bu.service_orders_cost)}</td>
+                        <td className="p-3 text-right">{formatNumber(bu.hours_worked)}</td>
+                        <td className="p-3 text-right">
+                          <Badge variant={bu.preventive_cost > bu.corrective_cost ? "default" : "secondary"}>
+                            {((bu.preventive_cost / (bu.total_cost || 1)) * 100).toFixed(0)}% Prev
+                          </Badge>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="plants">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Factory className="h-5 w-5" />
+                Análisis por Planta
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b">
+                      <th className="text-left p-3">Planta</th>
+                      <th className="text-left p-3">Unidad de Negocio</th>
+                      <th className="text-right p-3">Activos</th>
+                      <th className="text-right p-3">Costo Total</th>
+                      <th className="text-right p-3">Costo/Activo</th>
+                      <th className="text-right p-3">Horas</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data?.plants.map(plant => (
+                      <tr key={plant.id} className="border-b hover:bg-muted/50">
+                        <td className="p-3 font-medium">{plant.name}</td>
+                        <td className="p-3 text-muted-foreground">{plant.business_unit_name}</td>
+                        <td className="p-3 text-right">{plant.asset_count}</td>
+                        <td className="p-3 text-right font-semibold">{formatCurrency(plant.total_cost)}</td>
+                        <td className="p-3 text-right">{formatCurrency(plant.total_cost / (plant.asset_count || 1))}</td>
+                        <td className="p-3 text-right">{formatNumber(plant.hours_worked)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="assets">
+          <Card>
+            <CardHeader>
+              <CardTitle>Análisis Detallado por Activo</CardTitle>
+              <CardDescription>
+                Costos operativos y eficiencia por equipo - {data?.assets.data.length || 0} de {data?.assets.total || 0} activos
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                <div className="flex justify-between items-center">
+                  <div className="text-sm text-muted-foreground">
+                    Página {data?.assets.page || 1} - Total: {data?.assets.total || 0} activos
+                  </div>
+                  <div className="flex gap-2">
+                    <Button 
+                      variant="outline" 
+                      size="sm"
+                      disabled={page <= 1 || loading}
+                      onClick={() => setPage(p => p - 1)}
+                    >
+                      Anterior
+                    </Button>
+                    <Button 
+                      variant="outline" 
+                      size="sm"
+                      disabled={loading || (data && page * 20 >= data.assets.total)}
+                      onClick={() => setPage(p => p + 1)}
+                    >
+                      Siguiente
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b bg-muted/50">
+                        <th className="text-left p-3 font-medium">Código Activo</th>
+                        <th className="text-left p-3 font-medium">Modelo/Equipo</th>
+                        <th className="text-left p-3 font-medium">Planta</th>
+                        <th className="text-right p-3 font-medium">Costo Total</th>
+                        <th className="text-right p-3 font-medium">Preventivo</th>
+                        <th className="text-right p-3 font-medium">Correctivo</th>
+                        <th className="text-right p-3 font-medium">Horas Operación</th>
+                        <th className="text-right p-3 font-medium">Eficiencia</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {data?.assets.data.map(asset => {
+                        const preventiveRatio = asset.total_cost > 0 ? (asset.preventive_cost / asset.total_cost) * 100 : 0
+                        const costPerHour = asset.hours_worked > 0 ? asset.total_cost / asset.hours_worked : 0
+                        
+                        return (
+                          <tr key={asset.id} className="border-b hover:bg-muted/50">
+                            <td className="p-3">
+                              <div className="font-mono text-sm font-medium">{asset.asset_code}</div>
+                            </td>
+                            <td className="p-3">
+                              <div className="font-medium text-sm">{asset.model_name}</div>
+                              <div className="text-xs text-muted-foreground">{asset.model_manufacturer}</div>
+                            </td>
+                            <td className="p-3 text-muted-foreground text-sm">{asset.plant_name}</td>
+                            <td className="p-3 text-right">
+                              <div className="font-semibold">{formatCurrency(asset.total_cost)}</div>
+                              <div className="text-xs text-muted-foreground">
+                                {asset.hours_worked > 0 ? `${formatCurrency(costPerHour)}/hr` : 'Sin horas'}
+                              </div>
+                            </td>
+                            <td className="p-3 text-right">
+                              <div className="text-green-600 font-medium">{formatCurrency(asset.preventive_cost)}</div>
+                              <div className="text-xs text-muted-foreground">
+                                {asset.total_cost > 0 ? `${preventiveRatio.toFixed(0)}%` : '0%'}
+                              </div>
+                            </td>
+                            <td className="p-3 text-right">
+                              <div className="text-orange-600 font-medium">{formatCurrency(asset.corrective_cost)}</div>
+                              <div className="text-xs text-muted-foreground">
+                                {asset.total_cost > 0 ? `${(100 - preventiveRatio).toFixed(0)}%` : '0%'}
+                              </div>
+                            </td>
+                            <td className="p-3 text-right font-medium">{formatNumber(asset.hours_worked)}</td>
+                            <td className="p-3 text-right">
+                              <Badge 
+                                variant={preventiveRatio >= 60 ? "default" : preventiveRatio >= 30 ? "secondary" : "destructive"}
+                                className="text-xs"
+                              >
+                                {preventiveRatio >= 60 ? "Óptima" : preventiveRatio >= 30 ? "Buena" : "Reactiva"}
+                              </Badge>
+                              <div className="text-xs text-muted-foreground mt-1">
+                                {preventiveRatio.toFixed(0)}% Prev
+                              </div>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                
+                <div className="text-xs text-muted-foreground mt-4 p-3 bg-muted/30 rounded">
+                  <strong>Interpretación de Eficiencia:</strong> Óptima (≥60% preventivo), Buena (30-59% preventivo), Reactiva (&lt;30% preventivo)
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
+    </div>
+  )
+}

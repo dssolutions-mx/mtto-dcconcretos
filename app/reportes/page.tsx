@@ -2,7 +2,7 @@ import type { Metadata } from "next"
 import { Button } from "@/components/ui/button"
 import { DashboardHeader } from "@/components/dashboard/dashboard-header"
 import { DashboardShell } from "@/components/dashboard/dashboard-shell"
-import { AnalyticsDashboard } from "@/components/analytics/analytics-dashboard"
+import { ExecutiveReport } from "@/components/analytics/executive-report"
 import { FileDown, Share } from "lucide-react"
 
 export const metadata: Metadata = {
@@ -28,7 +28,7 @@ export default function ReportsPage() {
           </Button>
         </div>
       </DashboardHeader>
-      <AnalyticsDashboard />
+      <ExecutiveReport />
     </DashboardShell>
   )
 }
