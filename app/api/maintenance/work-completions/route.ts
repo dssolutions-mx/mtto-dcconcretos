@@ -97,7 +97,7 @@ export async function POST(request: Request) {
     // Verificar que la orden existe y no está ya completada
     const { data: existingOrder, error: checkError } = await supabase
       .from("work_orders")
-      .select("id, status, asset_id, purchase_order_id")
+      .select("id, status, asset_id, purchase_order_id, description, assigned_to")
       .eq("id", workOrderId)
       .single()
       
@@ -227,7 +227,7 @@ export async function POST(request: Request) {
     let maintenanceHistoryId = null;
     if (maintenanceHistoryData) {
       // Ensure all completion data is stored in the maintenance history
-      const enhancedHistoryData = {
+      const enhancedHistoryData: any = {
         ...maintenanceHistoryData,
         // Add these fields from completionData that aren't stored in work_orders
         downtime_hours: completionData.downtime_hours || 0,
@@ -236,6 +236,42 @@ export async function POST(request: Request) {
         // Override hours with equipment_hours from completionData if available
         hours: completionData.equipment_hours || maintenanceHistoryData.hours || null,
       };
+
+      // Derive required NOT NULL fields for maintenance_history
+      // Description: prefer work order description, fallback to resolution details, then a generic text
+      enhancedHistoryData.description = existingOrder.description
+        || completionData.resolution_details
+        || 'Trabajo completado';
+
+      // Technician (NOT NULL): prefer explicit technician from payload; then assigned_to name; then session email
+      let technicianName = (completionData.technician && String(completionData.technician).trim()) || '';
+      if (!technicianName) {
+        if (existingOrder.assigned_to) {
+          try {
+            const { data: techProfile } = await supabase
+              .from("profiles")
+              .select("nombre, apellido, full_name")
+              .eq("id", existingOrder.assigned_to)
+              .single();
+            if (techProfile) {
+              technicianName = (techProfile.full_name
+                || `${techProfile.nombre || ''} ${techProfile.apellido || ''}`.trim()
+              ) || '';
+            }
+          } catch (_) {
+            // ignore and fallback
+          }
+        }
+      }
+      if (!technicianName) {
+        technicianName = sessionData.session.user.email || 'Técnico';
+      }
+      enhancedHistoryData.technician = technicianName;
+      // Optional: link technician_id and work_order_id when available
+      if (existingOrder.assigned_to) {
+        enhancedHistoryData.technician_id = existingOrder.assigned_to;
+      }
+      enhancedHistoryData.work_order_id = workOrderId;
       
       console.log("API: Guardando datos en maintenance_history:", JSON.stringify({
         asset_id: enhancedHistoryData.asset_id,

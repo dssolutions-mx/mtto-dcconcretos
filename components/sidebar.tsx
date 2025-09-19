@@ -35,6 +35,7 @@ import {
   UserCheck,
   Sparkles,
   Shield,
+  Fuel,
 } from "lucide-react"
 import { UserNav } from "@/components/user-nav"
 import { ModeToggle } from "@/components/mode-toggle"
@@ -280,6 +281,19 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                         </Link>
                       </Button>
                     )}
+                  {ui.shouldShowInNavigation('inventory') && (
+                    <Button
+                      variant={isPathActive("/diesel") ? "secondary" : "ghost"}
+                      className="w-full justify-start pl-8"
+                      asChild
+                      onClick={handleLinkClick}
+                    >
+                      <Link href="/diesel">
+                        <Fuel className="mr-2 h-4 w-4" />
+                        Inventario Diesel
+                      </Link>
+                    </Button>
+                  )}
                   </CollapsibleContent>
                 </Collapsible>
               </div>
@@ -580,6 +594,19 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                         </Link>
                       </Button>
                     )}
+                  {ui.shouldShowInNavigation('inventory') && (
+                    <Button
+                      variant={isPathActive("/diesel") ? "secondary" : "ghost"}
+                      className="w-full justify-start pl-8"
+                      asChild
+                      onClick={handleLinkClick}
+                    >
+                      <Link href="/diesel">
+                        <Fuel className="mr-2 h-4 w-4" />
+                        Inventario Diesel
+                      </Link>
+                    </Button>
+                  )}
                   </CollapsibleContent>
                 </Collapsible>
               </div>
@@ -853,7 +880,8 @@ export function CollapsedSidebar({ className, onLinkClick }: SidebarProps) {
       active: isSectionActive(["/compras", "/inventario"]),
       items: [
         { href: "/compras", icon: CreditCard, label: "Órdenes de Compra", active: isPathActive("/compras") },
-        { href: "/inventario", icon: Boxes, label: "Inventario", active: isPathActive("/inventario") }
+        { href: "/inventario", icon: Boxes, label: "Inventario", active: isPathActive("/inventario") },
+        { href: "/diesel", icon: Fuel, label: "Inventario Diesel", active: isPathActive("/diesel") }
       ]
     },
     {
