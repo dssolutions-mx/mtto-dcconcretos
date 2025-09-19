@@ -24,7 +24,8 @@ import {
   Eye,
   Plus,
   XCircle,
-  FileText
+  FileText,
+  CalendarClock
 } from 'lucide-react'
 import Link from 'next/link'
 import { toast } from 'sonner'
@@ -38,6 +39,7 @@ import {
   formatDisplayDate, 
   getScheduleStatus
 } from '@/lib/utils/date-utils'
+import { RescheduleChecklistModal } from '@/components/checklists/reschedule-checklist-modal'
 
 interface Asset {
   id: string
@@ -108,6 +110,7 @@ export default function AssetChecklistDetailPage({ params }: { params: Promise<{
   const [completedChecklists, setCompletedChecklists] = useState<CompletedChecklist[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [rescheduleId, setRescheduleId] = useState<string | null>(null)
   
   // Offline functionality
   const { isOnline, sync } = useOfflineSync()
@@ -497,6 +500,10 @@ export default function AssetChecklistDetailPage({ params }: { params: Promise<{
                           Ejecutar Ahora
                         </Link>
                       </Button>
+                      <Button size="sm" variant="outline" onClick={() => setRescheduleId(schedule.id)}>
+                        <CalendarClock className="h-3 w-3 mr-1" />
+                        Reprogramar
+                      </Button>
                       <Button size="sm" variant="outline" asChild>
                         <Link href={`/checklists/${schedule.template_id}`}>
                           <Eye className="h-3 w-3 mr-1" />
@@ -550,6 +557,10 @@ export default function AssetChecklistDetailPage({ params }: { params: Promise<{
                           <Play className="h-3 w-3 mr-1" />
                           Ejecutar
                         </Link>
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={() => setRescheduleId(schedule.id)}>
+                        <CalendarClock className="h-3 w-3 mr-1" />
+                        Reprogramar
                       </Button>
                       <Button size="sm" variant="outline" asChild>
                         <Link href={`/checklists/${schedule.template_id}`}>
@@ -606,6 +617,10 @@ export default function AssetChecklistDetailPage({ params }: { params: Promise<{
                           <Play className="h-3 w-3 mr-1" />
                           Ejecutar
                         </Link>
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={() => setRescheduleId(schedule.id)}>
+                        <CalendarClock className="h-3 w-3 mr-1" />
+                        Reprogramar
                       </Button>
                       <Button size="sm" variant="outline" asChild>
                         <Link href={`/checklists/${schedule.template_id}`}>
@@ -756,6 +771,17 @@ export default function AssetChecklistDetailPage({ params }: { params: Promise<{
       <div className="mt-6">
         <OfflineStatus showDetails={true} onSyncComplete={handleSyncComplete} />
       </div>
+
+      {rescheduleId && (
+        <RescheduleChecklistModal
+          scheduleId={rescheduleId}
+          open={!!rescheduleId}
+          onOpenChange={(o) => setRescheduleId(o ? rescheduleId : null)}
+          onRescheduled={async () => {
+            await fetchAssetData()
+          }}
+        />
+      )}
     </DashboardShell>
   )
 } 
