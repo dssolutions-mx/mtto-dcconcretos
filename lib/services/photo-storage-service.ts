@@ -37,19 +37,12 @@ interface PhotoDB extends DBSchema {
   photos: {
     key: string
     value: PhotoData
-    indexes: {
-      checklistId: string
-      uploaded: boolean
-      timestamp: number
-    }
+    indexes: { [key: string]: any }
   }
   'upload-queue': {
     key: string
     value: QueueData
-    indexes: {
-      priority: number
-      nextRetry: number
-    }
+    indexes: { [key: string]: any }
   }
 }
 
@@ -347,17 +340,15 @@ class PhotoStorageService {
       // Check if we're in a browser environment and can use the mobile session recovery
       if (typeof window !== 'undefined') {
         try {
-          // Dynamic import to avoid SSR issues
-          const { useMobileSessionRecovery } = await import('@/hooks/use-mobile-session-recovery')
-          const { fetchWithSessionRecovery } = useMobileSessionRecovery()
-          
-          response = await fetchWithSessionRecovery('/api/storage/upload', {
+          // Dynamic import of standalone helper to avoid hooks outside components
+          const { fetchWithSessionRecoveryStandalone } = await import('@/hooks/use-mobile-session-recovery')
+          response = await fetchWithSessionRecoveryStandalone('/api/storage/upload', {
             method: 'POST',
             body: formData
           })
         } catch (error) {
-          // Fallback to regular fetch if mobile session recovery is not available
-          console.log('Mobile session recovery not available, using regular fetch')
+          // Fallback to regular fetch if helper is not available
+          console.log('Mobile session recovery helper not available, using regular fetch')
           response = await fetch('/api/storage/upload', {
             method: 'POST',
             body: formData

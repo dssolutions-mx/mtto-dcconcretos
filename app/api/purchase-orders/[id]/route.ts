@@ -120,7 +120,20 @@ export async function PATCH(
 
       if (error) {
         console.error('Error updating purchase order:', error)
-        return NextResponse.json({ error: 'Failed to update purchase order' }, { status: 500 })
+        // Map specific validation related to payment date when method is transfer
+        if (
+          typeof error.message === 'string' &&
+          error.message.includes('max_payment_date cannot be in the past')
+        ) {
+          return NextResponse.json({
+            success: false,
+            error: 'Error de validación de fecha de pago',
+            details: 'La fecha máxima de pago no puede estar en el pasado cuando el método de pago es transferencia.',
+            requires_fix: true,
+            fix_type: 'payment_date'
+          }, { status: 400 })
+        }
+        return NextResponse.json({ error: 'Failed to update purchase order', details: error.message }, { status: 500 })
       }
       
       updatedOrder = data

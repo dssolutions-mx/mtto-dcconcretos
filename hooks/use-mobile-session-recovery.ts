@@ -86,3 +86,37 @@ export function useMobileSessionRecovery() {
     isLoading
   }
 } 
+
+/**
+ * Standalone fetch helper usable outside React components (no hooks).
+ * For services, workers, or utility modules.
+ */
+export async function fetchWithSessionRecoveryStandalone(
+  url: string,
+  options: RequestInit = {}
+): Promise<Response> {
+  try {
+    const state = useAuthStore.getState()
+    const isMobile = typeof state.isMobileDevice === 'function' ? state.isMobileDevice() : false
+
+    if (!isMobile) {
+      return fetch(url, options)
+    }
+
+    let response = await fetch(url, options)
+    if (response.status !== 401) return response
+
+    const recovery = await state.recoverMobileSession()
+    if (recovery?.success) {
+      return fetch(url, options)
+    }
+
+    if (typeof window !== 'undefined') {
+      window.location.href = '/login?redirectedFrom=' + encodeURIComponent(window.location?.pathname || '/')
+    }
+    throw new Error('Session recovery failed')
+  } catch (error) {
+    // Re-throw to let callers handle
+    throw error
+  }
+}

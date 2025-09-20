@@ -124,11 +124,15 @@ export class PurchaseOrderService {
           p_notes: notes
         })
       
-      if (error) throw error
+      if (error) {
+        // Surface original error for API route to map properly (e.g., payment date validation)
+        throw error
+      }
       return data || { success: false, message: 'Unknown error occurred' }
     } catch (error) {
       console.error('Error advancing workflow:', error)
-      throw new Error('Failed to advance workflow')
+      // Re-throw the original Supabase/Postgres error so the route can translate it
+      throw error
     }
   }
   

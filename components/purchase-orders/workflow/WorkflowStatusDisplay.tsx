@@ -56,6 +56,8 @@ export function WorkflowStatusDisplay({
   const router = useRouter()
   const { toast } = useToast()
   const { profile, hasAuthorizationAccess, canAuthorizeAmount, refreshProfile } = useAuthZustand()
+  // Hooks must be called at the top level
+  const { fetchWithSessionRecovery } = useMobileSessionRecovery()
   const { 
     workflowStatus, 
     loadWorkflowStatus, 
@@ -177,9 +179,6 @@ export function WorkflowStatusDisplay({
       const formData = new FormData()
       formData.append('file', file)
       formData.append('purchaseOrderId', purchaseOrderId)
-      
-      // Use mobile session recovery for better mobile handling
-      const { fetchWithSessionRecovery } = useMobileSessionRecovery()
       
       const response = await fetchWithSessionRecovery('/api/storage/upload', {
         method: 'POST',
@@ -473,7 +472,7 @@ export function WorkflowStatusDisplay({
     // Update purchase order with actual amount and receipt URL if provided
     if (fileUrl || actualAmount) {
       try {
-        const updateResponse = await fetch(`/api/purchase-orders/${purchaseOrderId}`, {
+        let updateResponse = await fetch(`/api/purchase-orders/${purchaseOrderId}`, {
           method: 'PATCH',
           headers: {
             'Content-Type': 'application/json',
@@ -485,7 +484,31 @@ export function WorkflowStatusDisplay({
         })
         
         if (!updateResponse.ok) {
-          console.error('Failed to update purchase order data')
+          // Try to handle known validation (payment date in past for transfer)
+          try {
+            const errorData = await updateResponse.json()
+            if (errorData?.requires_fix && errorData?.fix_type === 'payment_date') {
+              const fixed = await handlePaymentDateError()
+              if (fixed) {
+                // Retry update once after auto-fix
+                updateResponse = await fetch(`/api/purchase-orders/${purchaseOrderId}`, {
+                  method: 'PATCH',
+                  headers: {
+                    'Content-Type': 'application/json',
+                  },
+                  body: JSON.stringify({
+                    receipt_url: fileUrl,
+                    actual_amount: actualAmount ? parseFloat(actualAmount) : undefined
+                  })
+                })
+              }
+            }
+          } catch (_) {
+            // ignore JSON parse errors
+          }
+          if (!updateResponse.ok) {
+            console.error('Failed to update purchase order data')
+          }
         }
       } catch (error) {
         console.error('Error updating purchase order:', error)
@@ -520,7 +543,7 @@ export function WorkflowStatusDisplay({
   }
 
   // Handle payment date error specifically
-  const handlePaymentDateError = async () => {
+  const handlePaymentDateError = async (): Promise<boolean> => {
     try {
       // Try to fix the payment date automatically by setting it to 30 days from now
       const response = await fetch(`/api/purchase-orders/${purchaseOrderId}/fix-payment-date`, {
@@ -542,6 +565,7 @@ export function WorkflowStatusDisplay({
         // Reload workflow status
         await loadWorkflowStatus(purchaseOrderId)
         router.refresh()
+        return true
       } else {
         const errorData = await response.json()
         toast({
@@ -549,6 +573,7 @@ export function WorkflowStatusDisplay({
           description: errorData.details || "No se pudo actualizar la fecha de pago automáticamente.",
           variant: "destructive"
         })
+        return false
       }
     } catch (error) {
       console.error('Error fixing payment date:', error)
@@ -557,6 +582,7 @@ export function WorkflowStatusDisplay({
         description: "No se pudo actualizar la fecha de pago automáticamente.",
         variant: "destructive"
       })
+      return false
     }
   }
 
