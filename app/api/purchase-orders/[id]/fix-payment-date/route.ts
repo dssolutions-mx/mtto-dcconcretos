@@ -33,7 +33,7 @@ export async function PATCH(
     // Get current purchase order
     const { data: purchaseOrder, error: poError } = await supabase
       .from('purchase_orders')
-      .select('payment_method, max_payment_date, status')
+      .select('payment_method, max_payment_date, status, total_amount, supplier')
       .eq('id', id)
       .single()
     
@@ -43,24 +43,28 @@ export async function PATCH(
       }, { status: 404 })
     }
     
-    // Only allow fixes for pending_approval status
-    if (purchaseOrder.status !== 'pending_approval') {
+    // Allow fixes for most statuses except completed ones (validated, rejected)
+    const blockedStatuses = ['validated', 'rejected']
+    if (blockedStatuses.includes(purchaseOrder.status)) {
       return NextResponse.json({ 
-        error: 'Only pending approval orders can be modified' 
+        error: `Orders with status '${purchaseOrder.status}' cannot be modified as they are finalized.` 
       }, { status: 400 })
     }
     
     let updateData: any = {}
     
     if (action === 'update_payment_date') {
-      if (!new_max_payment_date) {
-        return NextResponse.json({ 
-          error: 'new_max_payment_date is required for this action' 
-        }, { status: 400 })
+      let targetDate = new_max_payment_date
+      
+      // If no date provided, auto-generate one 30 days from now
+      if (!targetDate) {
+        const futureDate = new Date()
+        futureDate.setDate(futureDate.getDate() + 30)
+        targetDate = futureDate.toISOString()
       }
       
-      // Validate that the new date is in the future
-      const newDate = new Date(new_max_payment_date)
+      // Validate that the date is in the future
+      const newDate = new Date(targetDate)
       const today = new Date()
       today.setHours(0, 0, 0, 0)
       
@@ -70,7 +74,7 @@ export async function PATCH(
         }, { status: 400 })
       }
       
-      updateData.max_payment_date = new_max_payment_date
+      updateData.max_payment_date = targetDate
       
     } else if (action === 'change_payment_method') {
       if (!new_payment_method) {

@@ -75,6 +75,7 @@ export function WorkflowStatusDisplay({
   const [purchaseOrderAmount, setPurchaseOrderAmount] = useState<number>(0)
   const [effectiveAuthLimit, setEffectiveAuthLimit] = useState<number>(0)
   const [isLoadingAuth, setIsLoadingAuth] = useState(true)
+  const [showPaymentDateFix, setShowPaymentDateFix] = useState(false)
 
 
   // Load workflow status on mount and fetch existing receipt if any
@@ -488,8 +489,10 @@ export function WorkflowStatusDisplay({
           try {
             const errorData = await updateResponse.json()
             if (errorData?.requires_fix && errorData?.fix_type === 'payment_date') {
+              console.log('Payment date validation error detected, attempting auto-fix...')
               const fixed = await handlePaymentDateError()
               if (fixed) {
+                console.log('Payment date fixed, retrying update...')
                 // Retry update once after auto-fix
                 updateResponse = await fetch(`/api/purchase-orders/${purchaseOrderId}`, {
                   method: 'PATCH',
@@ -501,10 +504,19 @@ export function WorkflowStatusDisplay({
                     actual_amount: actualAmount ? parseFloat(actualAmount) : undefined
                   })
                 })
+                if (updateResponse.ok) {
+                  console.log('Update successful after payment date fix')
+                } else {
+                  console.error('Update still failed after payment date fix')
+                }
+              } else {
+                console.error('Payment date fix failed')
               }
+            } else {
+              console.error('Update failed with error:', errorData)
             }
-          } catch (_) {
-            // ignore JSON parse errors
+          } catch (e) {
+            console.error('Error parsing update response:', e)
           }
           if (!updateResponse.ok) {
             console.error('Failed to update purchase order data')
@@ -523,7 +535,65 @@ export function WorkflowStatusDisplay({
         : `Monto real: $${actualAmount}`
     }
     
-    const success = await advanceWorkflow(purchaseOrderId, newStatus, workflowNotes || undefined)
+    // Try workflow advance with error handling for payment date issues
+    let success = false
+    try {
+      success = await advanceWorkflow(purchaseOrderId, newStatus, workflowNotes || undefined)
+    } catch (error) {
+      console.log('Workflow advance failed, checking if it\'s a payment date issue...')
+      
+      // If workflow advance failed, check if it's a payment date issue and try to fix it
+      try {
+        const response = await fetch(`/api/purchase-orders/advance-workflow/${purchaseOrderId}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ new_status: newStatus, notes: workflowNotes })
+        })
+        
+        if (!response.ok && response.status === 400) {
+          const errorData = await response.json()
+          console.log('Workflow advance error details:', errorData)
+          
+          if (errorData?.requires_fix && errorData?.fix_type === 'payment_date') {
+            console.log('Workflow advance failed due to payment date, attempting fix...')
+            
+            toast({
+              title: "Corrigiendo fecha de pago",
+              description: "Se detectó un problema con la fecha de pago. Corrigiendo automáticamente...",
+            })
+            
+            const fixed = await handlePaymentDateError()
+            if (fixed) {
+              console.log('Payment date fixed, retrying workflow advance...')
+              toast({
+                title: "Fecha corregida",
+                description: "Reintentando operación...",
+              })
+              success = await advanceWorkflow(purchaseOrderId, newStatus, workflowNotes || undefined)
+            } else {
+              setShowPaymentDateFix(true)
+              toast({
+                title: "Error",
+                description: "No se pudo corregir automáticamente la fecha de pago. Usa el botón de corrección manual.",
+                variant: "destructive"
+              })
+            }
+          } else {
+            // Re-throw the original error if it's not a payment date issue
+            throw error
+          }
+        } else {
+          // Re-throw the original error if we can't get details
+          throw error
+        }
+      } catch (checkError) {
+        console.error('Error checking workflow advance error:', checkError)
+        // Re-throw the original error
+        throw error
+      }
+    }
     
     if (success) {
       setNotes("")
@@ -552,8 +622,8 @@ export function WorkflowStatusDisplay({
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          action: 'update_payment_date',
-          new_max_payment_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
+          action: 'update_payment_date'
+          // Let the endpoint auto-generate a future date
         })
       })
       
@@ -568,9 +638,10 @@ export function WorkflowStatusDisplay({
         return true
       } else {
         const errorData = await response.json()
+        console.error('Fix payment date failed:', errorData)
         toast({
           title: "Error al actualizar fecha de pago",
-          description: errorData.details || "No se pudo actualizar la fecha de pago automáticamente.",
+          description: errorData.error || errorData.details || "No se pudo actualizar la fecha de pago automáticamente.",
           variant: "destructive"
         })
         return false
@@ -1125,6 +1196,28 @@ export function WorkflowStatusDisplay({
                       </>
                     )}
                   </Button>
+
+                  {/* Manual payment date fix button */}
+                  {showPaymentDateFix && (
+                    <Button 
+                      onClick={async () => {
+                        setShowPaymentDateFix(false)
+                        const fixed = await handlePaymentDateError()
+                        if (fixed) {
+                          toast({
+                            title: "Fecha corregida",
+                            description: "Ahora puedes intentar la operación nuevamente.",
+                          })
+                        }
+                      }}
+                      variant="outline"
+                      className="w-full"
+                      size="lg"
+                    >
+                      <Clock className="mr-2 h-4 w-4" />
+                      Corregir Fecha de Pago Manualmente
+                    </Button>
+                  )}
 
                   {/* Secondary actions if any */}
                   {workflowStatus.allowed_next_statuses.length > 1 && (

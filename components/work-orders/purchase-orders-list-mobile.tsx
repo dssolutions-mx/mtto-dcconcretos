@@ -35,7 +35,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { useToast } from "@/hooks/use-toast"
-import {
+import { 
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -51,6 +51,8 @@ import { Separator } from "@/components/ui/separator"
 import { useAuthZustand } from "@/hooks/use-auth-zustand"
 import { formatCurrency } from "@/lib/utils"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Calendar as CalendarPicker } from "@/components/ui/calendar"
 
 interface PurchaseOrderWithWorkOrder extends Omit<PurchaseOrder, 'is_adjustment' | 'original_purchase_order_id'> {
   work_orders?: {
@@ -453,6 +455,8 @@ export function PurchaseOrdersListMobile() {
   const [isLoadingAuth, setIsLoadingAuth] = useState(true)
   const isMobile = useIsMobile()
   const [selectedAssetId, setSelectedAssetId] = useState<string>("")
+  const [fromDate, setFromDate] = useState<Date | undefined>(undefined)
+  const [toDate, setToDate] = useState<Date | undefined>(undefined)
   
   // Enhanced approval functionality state
   const [showApprovalDialog, setShowApprovalDialog] = useState(false)
@@ -708,8 +712,27 @@ export function PurchaseOrdersListMobile() {
     return order.work_orders?.asset_id === selectedAssetId
   })
 
+  // Filter by creation date
+  const filteredByDate = filteredByAsset.filter(order => {
+    if (!fromDate && !toDate) return true
+    if (!order.created_at) return false
+    const created = new Date(order.created_at)
+    if (Number.isNaN(created.getTime())) return false
+    if (fromDate) {
+      const start = new Date(fromDate)
+      start.setHours(0, 0, 0, 0)
+      if (created < start) return false
+    }
+    if (toDate) {
+      const end = new Date(toDate)
+      end.setHours(23, 59, 59, 999)
+      if (created > end) return false
+    }
+    return true
+  })
+
   // Filter orders by search term
-  const filteredOrders = filteredByAsset.filter(
+  const filteredOrders = filteredByDate.filter(
     (order) => {
       const workOrder = getWorkOrder(order);
       return (
@@ -813,6 +836,49 @@ export function PurchaseOrdersListMobile() {
                 </SelectContent>
               </Select>
             </div>
+
+            {/* Date Range Filter */}
+            <div className="grid grid-cols-2 gap-2">
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" className="w-full justify-start">
+                    <Clock className="mr-2 h-4 w-4" />
+                    {fromDate ? fromDate.toLocaleDateString() : "Desde"}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <CalendarPicker
+                    mode="single"
+                    selected={fromDate}
+                    onSelect={setFromDate}
+                    initialFocus
+                  />
+                </PopoverContent>
+              </Popover>
+
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" className="w-full justify-start">
+                    <Clock className="mr-2 h-4 w-4" />
+                    {toDate ? toDate.toLocaleDateString() : "Hasta"}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <CalendarPicker
+                    mode="single"
+                    selected={toDate}
+                    onSelect={setToDate}
+                    initialFocus
+                  />
+                </PopoverContent>
+              </Popover>
+            </div>
+
+            {(fromDate || toDate) && (
+              <Button variant="outline" onClick={() => { setFromDate(undefined); setToDate(undefined); }}>
+                Limpiar
+              </Button>
+            )}
           </div>
         </CardHeader>
 

@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import React, { useEffect, useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
@@ -19,7 +19,13 @@ import {
   AlertTriangle,
   CheckCircle2,
   Building2,
-  Factory
+  Factory,
+  ExternalLink,
+  Package,
+  ChevronLeft,
+  ChevronRight,
+  ChevronDown,
+  ChevronUp
 } from "lucide-react"
 import {
   BarChart,
@@ -155,6 +161,48 @@ export function ExecutiveReport() {
   const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(false)
   const [data, setData] = useState<ExecutiveData | null>(null)
+  const [purchaseOrdersData, setPurchaseOrdersData] = useState<any>(null)
+  const [loadingPOs, setLoadingPOs] = useState(false)
+  const [expandedAssets, setExpandedAssets] = useState<Set<string>>(new Set())
+
+  const toggleAssetExpansion = (assetId: string) => {
+    setExpandedAssets(prev => {
+      const newSet = new Set(prev)
+      if (newSet.has(assetId)) {
+        newSet.delete(assetId)
+      } else {
+        newSet.add(assetId)
+      }
+      return newSet
+    })
+  }
+
+  const loadPurchaseOrders = async (assetId?: string) => {
+    setLoadingPOs(true)
+    try {
+      const params = new URLSearchParams({
+        startDate,
+        endDate
+      })
+      
+      if (assetId) {
+        params.append('assetId', assetId)
+      }
+      
+      const response = await fetch(`/api/reports/executive/purchase-orders?${params}`)
+      const result = await response.json()
+      
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to load purchase orders')
+      }
+      
+      setPurchaseOrdersData(result)
+    } catch (err) {
+      console.error('Failed to load purchase orders:', err)
+    } finally {
+      setLoadingPOs(false)
+    }
+  }
 
   const load = async () => {
     if (!startDate || !endDate) return
@@ -446,6 +494,7 @@ export function ExecutiveReport() {
           <TabsTrigger value="business-units">Unidades de Negocio</TabsTrigger>
           <TabsTrigger value="plants">Plantas</TabsTrigger>
           <TabsTrigger value="assets">Activos</TabsTrigger>
+          <TabsTrigger value="purchase-orders">Órdenes de Compra</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview" className="space-y-4">
@@ -620,64 +669,212 @@ export function ExecutiveReport() {
 
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b bg-muted/50">
-                        <th className="text-left p-3 font-medium">Código Activo</th>
-                        <th className="text-left p-3 font-medium">Modelo/Equipo</th>
-                        <th className="text-left p-3 font-medium">Planta</th>
-                        <th className="text-right p-3 font-medium">Costo Total</th>
-                        <th className="text-right p-3 font-medium">Preventivo</th>
-                        <th className="text-right p-3 font-medium">Correctivo</th>
-                        <th className="text-right p-3 font-medium">Horas Operación</th>
-                        <th className="text-right p-3 font-medium">Eficiencia</th>
-                      </tr>
-                    </thead>
+                      <thead>
+                        <tr className="border-b bg-muted/50">
+                          <th className="text-center p-3 font-medium w-12"></th>
+                          <th className="text-left p-3 font-medium">Código Activo</th>
+                          <th className="text-left p-3 font-medium">Modelo/Equipo</th>
+                          <th className="text-left p-3 font-medium">Planta</th>
+                          <th className="text-right p-3 font-medium">Costo Total</th>
+                          <th className="text-right p-3 font-medium">Preventivo</th>
+                          <th className="text-right p-3 font-medium">Correctivo</th>
+                          <th className="text-right p-3 font-medium">Horas Operación</th>
+                          <th className="text-right p-3 font-medium">Eficiencia</th>
+                        </tr>
+                      </thead>
                     <tbody>
                       {data?.assets.data.map(asset => {
                         const preventiveRatio = asset.total_cost > 0 ? (asset.preventive_cost / asset.total_cost) * 100 : 0
                         const costPerHour = asset.hours_worked > 0 ? asset.total_cost / asset.hours_worked : 0
+                        const isExpanded = expandedAssets.has(asset.id)
+                        const hasPurchaseOrders = (asset as any).purchase_orders && (asset as any).purchase_orders.length > 0
+                        const hasAdditionalExpenses = (asset as any).additional_expenses_list && (asset as any).additional_expenses_list.length > 0
+                        const hasAnyExpenses = hasPurchaseOrders || hasAdditionalExpenses
                         
                         return (
-                          <tr key={asset.id} className="border-b hover:bg-muted/50">
-                            <td className="p-3">
-                              <div className="font-mono text-sm font-medium">{asset.asset_code}</div>
-                            </td>
-                            <td className="p-3">
-                              <div className="font-medium text-sm">{asset.model_name}</div>
-                              <div className="text-xs text-muted-foreground">{asset.model_manufacturer}</div>
-                            </td>
-                            <td className="p-3 text-muted-foreground text-sm">{asset.plant_name}</td>
-                            <td className="p-3 text-right">
-                              <div className="font-semibold">{formatCurrency(asset.total_cost)}</div>
-                              <div className="text-xs text-muted-foreground">
-                                {asset.hours_worked > 0 ? `${formatCurrency(costPerHour)}/hr` : 'Sin horas'}
-                              </div>
-                            </td>
-                            <td className="p-3 text-right">
-                              <div className="text-green-600 font-medium">{formatCurrency(asset.preventive_cost)}</div>
-                              <div className="text-xs text-muted-foreground">
-                                {asset.total_cost > 0 ? `${preventiveRatio.toFixed(0)}%` : '0%'}
-                              </div>
-                            </td>
-                            <td className="p-3 text-right">
-                              <div className="text-orange-600 font-medium">{formatCurrency(asset.corrective_cost)}</div>
-                              <div className="text-xs text-muted-foreground">
-                                {asset.total_cost > 0 ? `${(100 - preventiveRatio).toFixed(0)}%` : '0%'}
-                              </div>
-                            </td>
-                            <td className="p-3 text-right font-medium">{formatNumber(asset.hours_worked)}</td>
-                            <td className="p-3 text-right">
-                              <Badge 
-                                variant={preventiveRatio >= 60 ? "default" : preventiveRatio >= 30 ? "secondary" : "destructive"}
-                                className="text-xs"
-                              >
-                                {preventiveRatio >= 60 ? "Óptima" : preventiveRatio >= 30 ? "Buena" : "Reactiva"}
-                              </Badge>
-                              <div className="text-xs text-muted-foreground mt-1">
-                                {preventiveRatio.toFixed(0)}% Prev
-                              </div>
-                            </td>
-                          </tr>
+                          <React.Fragment key={asset.id}>
+                            <tr className="border-b hover:bg-muted/50">
+                              <td className="p-3 text-center">
+                                {hasAnyExpenses && (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => toggleAssetExpansion(asset.id)}
+                                    className="h-6 w-6 p-0"
+                                  >
+                                    {isExpanded ? (
+                                      <ChevronUp className="h-4 w-4" />
+                                    ) : (
+                                      <ChevronDown className="h-4 w-4" />
+                                    )}
+                                  </Button>
+                                )}
+                              </td>
+                              <td className="p-3">
+                                <div className="font-mono text-sm font-medium">{asset.asset_code}</div>
+                              </td>
+                              <td className="p-3">
+                                <div className="font-medium text-sm">{asset.model_name}</div>
+                                <div className="text-xs text-muted-foreground">{asset.model_manufacturer}</div>
+                              </td>
+                              <td className="p-3 text-muted-foreground text-sm">{asset.plant_name}</td>
+                              <td className="p-3 text-right">
+                                <div className="font-semibold">{formatCurrency(asset.total_cost)}</div>
+                                <div className="text-xs text-muted-foreground">
+                                  {asset.hours_worked > 0 ? `${formatCurrency(costPerHour)}/hr` : 'Sin horas'}
+                                </div>
+                              </td>
+                              <td className="p-3 text-right">
+                                <div className="text-green-600 font-medium">{formatCurrency(asset.preventive_cost)}</div>
+                                <div className="text-xs text-muted-foreground">
+                                  {asset.total_cost > 0 ? `${preventiveRatio.toFixed(0)}%` : '0%'}
+                                </div>
+                              </td>
+                              <td className="p-3 text-right">
+                                <div className="text-orange-600 font-medium">{formatCurrency(asset.corrective_cost)}</div>
+                                <div className="text-xs text-muted-foreground">
+                                  {asset.total_cost > 0 ? `${(100 - preventiveRatio).toFixed(0)}%` : '0%'}
+                                </div>
+                              </td>
+                              <td className="p-3 text-right font-medium">{formatNumber(asset.hours_worked)}</td>
+                              <td className="p-3 text-right">
+                                <Badge 
+                                  variant={preventiveRatio >= 60 ? "default" : preventiveRatio >= 30 ? "secondary" : "destructive"}
+                                  className="text-xs"
+                                >
+                                  {preventiveRatio >= 60 ? "Óptima" : preventiveRatio >= 30 ? "Buena" : "Reactiva"}
+                                </Badge>
+                                <div className="text-xs text-muted-foreground mt-1">
+                                  {preventiveRatio.toFixed(0)}% Prev
+                                </div>
+                              </td>
+                            </tr>
+                            {isExpanded && hasAnyExpenses && (
+                              <tr key={`${asset.id}-details`} className="bg-muted/20">
+                                <td colSpan={9} className="p-0">
+                                  <div className="p-4 border-t bg-muted/10">
+                                    <div className="text-sm font-medium text-muted-foreground mb-3">
+                                      Desglose de Gastos - {asset.asset_code}
+                                    </div>
+                                    <div className="grid gap-3">
+                                      {/* Purchase Orders */}
+                                      {hasPurchaseOrders && (
+                                        <div>
+                                          <div className="text-xs font-medium text-muted-foreground mb-2 flex items-center gap-2">
+                                            <Package className="h-3 w-3" />
+                                            Órdenes de Compra ({(asset as any).purchase_orders.length})
+                                          </div>
+                                          <div className="grid gap-2 ml-4">
+                                            {(asset as any).purchase_orders.map((po: any, idx: number) => (
+                                        <div key={po.id || idx} className="flex items-center justify-between p-3 bg-background rounded border">
+                                          <div className="flex-1">
+                                            <div className="flex items-center gap-3">
+                                              <div>
+                                                <div className="font-mono text-xs text-muted-foreground">{po.id}</div>
+                                                <div className="font-medium text-sm">{po.order_id}</div>
+                                              </div>
+                                              <div>
+                                                <div className="text-sm">{po.supplier}</div>
+                                                <div className="text-xs text-muted-foreground">
+                                                  {new Date(po.created_at).toLocaleDateString()}
+                                                </div>
+                                              </div>
+                                              <Badge variant={po.work_order_type === 'preventive' ? 'default' : 'destructive'} className="text-xs">
+                                                {po.work_order_type === 'preventive' ? 'Preventivo' : 'Correctivo'}
+                                              </Badge>
+                                              <Badge variant={po.status === 'validated' ? 'default' : 'secondary'} className="text-xs">
+                                                {po.status}
+                                              </Badge>
+                                            </div>
+                                            <div className="text-xs text-muted-foreground mt-1">
+                                              {po.items.length > 0 && po.items[0].description}
+                                              {po.items.length > 1 && ` +${po.items.length - 1} más`}
+                                            </div>
+                                          </div>
+                                          <div className="text-right">
+                                            <div className="font-semibold text-lg">${po.amount.toLocaleString()}</div>
+                                            <Button
+                                              variant="ghost"
+                                              size="sm"
+                                              asChild
+                                              className="h-6 w-6 p-0 mt-1"
+                                            >
+                                              <a href={`/compras/${po.id}`} target="_blank" rel="noopener noreferrer">
+                                                <ExternalLink className="h-3 w-3" />
+                                              </a>
+                                            </Button>
+                                          </div>
+                                        </div>
+                                            ))}
+                                          </div>
+                                        </div>
+                                      )}
+
+
+                                      {/* Additional Expenses */}
+                                      {hasAdditionalExpenses && (
+                                        <div>
+                                          <div className="text-xs font-medium text-muted-foreground mb-2 flex items-center gap-2">
+                                            <DollarSign className="h-3 w-3" />
+                                            Gastos Adicionales ({(asset as any).additional_expenses_list.length})
+                                          </div>
+                                          <div className="grid gap-2 ml-4">
+                                            {(asset as any).additional_expenses_list.map((ae: any, idx: number) => (
+                                              <div key={ae.id || idx} className="flex items-center justify-between p-3 bg-background rounded border">
+                                                <div className="flex-1">
+                                                  <div className="flex items-center gap-3">
+                                                    <div>
+                                                      <div className="font-mono text-xs text-muted-foreground">{ae.id}</div>
+                                                      <div className="font-medium text-sm">Gasto Adicional</div>
+                                                    </div>
+                                                    <div>
+                                                      <div className="text-xs text-muted-foreground">
+                                                        {new Date(ae.created_at).toLocaleDateString()}
+                                                      </div>
+                                                    </div>
+                                                    <Badge variant="destructive" className="text-xs">
+                                                      Correctivo
+                                                    </Badge>
+                                                  </div>
+                                                </div>
+                                                <div className="text-right">
+                                                  <div className="font-semibold text-lg">${ae.amount.toLocaleString()}</div>
+                                                </div>
+                                              </div>
+                                            ))}
+                                          </div>
+                                        </div>
+                                      )}
+                                    </div>
+                                    <div className="mt-3 pt-3 border-t text-sm space-y-2">
+                                      {hasPurchaseOrders && (
+                                        <div className="flex justify-between items-center">
+                                          <span className="text-muted-foreground">Total Órdenes de Compra:</span>
+                                          <span className="font-semibold">
+                                            ${(asset as any).purchase_orders.reduce((sum: number, po: any) => sum + po.amount, 0).toLocaleString()}
+                                          </span>
+                                        </div>
+                                      )}
+                                      {hasAdditionalExpenses && (
+                                        <div className="flex justify-between items-center">
+                                          <span className="text-muted-foreground">Total Gastos Adicionales:</span>
+                                          <span className="font-semibold">
+                                            ${(asset as any).additional_expenses_list.reduce((sum: number, ae: any) => sum + ae.amount, 0).toLocaleString()}
+                                          </span>
+                                        </div>
+                                      )}
+                                      <div className="flex justify-between items-center pt-2 border-t font-semibold">
+                                        <span>Total General:</span>
+                                        <span className="text-lg">
+                                          ${asset.total_cost.toLocaleString()}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </td>
+                              </tr>
+                            )}
+                          </React.Fragment>
                         )
                       })}
                     </tbody>
@@ -687,6 +884,144 @@ export function ExecutiveReport() {
                 <div className="text-xs text-muted-foreground mt-4 p-3 bg-muted/30 rounded">
                   <strong>Interpretación de Eficiencia:</strong> Óptima (≥60% preventivo), Buena (30-59% preventivo), Reactiva (&lt;30% preventivo)
                 </div>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="purchase-orders">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Package className="h-5 w-5" />
+                Desglose de Órdenes de Compra
+              </CardTitle>
+              <CardDescription>
+                Detalle completo de órdenes de compra para análisis y debugging
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                <div className="flex justify-between items-center">
+                  <Button 
+                    onClick={() => loadPurchaseOrders()}
+                    disabled={loadingPOs}
+                    className="flex items-center gap-2"
+                  >
+                    <RefreshCw className={`h-4 w-4 ${loadingPOs ? 'animate-spin' : ''}`} />
+                    {loadingPOs ? 'Cargando...' : 'Cargar Órdenes de Compra'}
+                  </Button>
+                  
+                  {purchaseOrdersData && (
+                    <div className="text-sm text-muted-foreground">
+                      Total: {purchaseOrdersData.total} órdenes - ${purchaseOrdersData.total_amount?.toLocaleString()}
+                    </div>
+                  )}
+                </div>
+
+                {purchaseOrdersData && (
+                  <div className="border rounded-lg overflow-hidden">
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b bg-muted/50">
+                            <th className="text-left p-3 font-medium">Orden ID</th>
+                            <th className="text-left p-3 font-medium">Proveedor</th>
+                            <th className="text-right p-3 font-medium">Monto</th>
+                            <th className="text-left p-3 font-medium">Estado</th>
+                            <th className="text-left p-3 font-medium">Fecha</th>
+                            <th className="text-left p-3 font-medium">Activo</th>
+                            <th className="text-left p-3 font-medium">Tipo Mant.</th>
+                            <th className="text-left p-3 font-medium">Items</th>
+                            <th className="text-center p-3 font-medium">Acciones</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {purchaseOrdersData.purchase_orders.map((po: any) => (
+                            <tr key={po.id} className="border-b hover:bg-muted/50">
+                              <td className="p-3">
+                                <div className="font-mono text-xs">{po.id}</div>
+                                <div className="font-medium">{po.order_id}</div>
+                              </td>
+                              <td className="p-3">{po.supplier}</td>
+                              <td className="p-3 text-right">
+                                <div className="font-semibold">${po.amount.toLocaleString()}</div>
+                              </td>
+                              <td className="p-3">
+                                <Badge variant={
+                                  po.status === 'validated' ? 'default' : 
+                                  po.status === 'approved' ? 'secondary' : 'outline'
+                                }>
+                                  {po.status}
+                                </Badge>
+                              </td>
+                              <td className="p-3">
+                                <div className="text-sm">
+                                  {new Date(po.created_at).toLocaleDateString()}
+                                </div>
+                              </td>
+                              <td className="p-3">
+                                {po.work_order?.asset ? (
+                                  <div>
+                                    <div className="font-mono text-xs">{po.work_order.asset.code}</div>
+                                    <div className="text-xs text-muted-foreground">
+                                      {po.work_order.asset.model} - {po.work_order.asset.manufacturer}
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <span className="text-muted-foreground text-sm">Sin activo</span>
+                                )}
+                              </td>
+                              <td className="p-3">
+                                {po.work_order ? (
+                                  <Badge variant={po.work_order.type === 'preventive' ? 'default' : 'destructive'}>
+                                    {po.work_order.type === 'preventive' ? 'Preventivo' : 'Correctivo'}
+                                  </Badge>
+                                ) : (
+                                  <span className="text-muted-foreground text-sm">N/A</span>
+                                )}
+                              </td>
+                              <td className="p-3">
+                                <div className="text-xs text-muted-foreground">
+                                  {po.items.length} item(s)
+                                </div>
+                                {po.items.slice(0, 2).map((item: any, idx: number) => (
+                                  <div key={idx} className="text-xs truncate max-w-32">
+                                    {item.description}
+                                  </div>
+                                ))}
+                                {po.items.length > 2 && (
+                                  <div className="text-xs text-muted-foreground">
+                                    +{po.items.length - 2} más
+                                  </div>
+                                )}
+                              </td>
+                              <td className="p-3 text-center">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  asChild
+                                  className="h-8 w-8 p-0"
+                                >
+                                  <a href={`/compras/${po.id}`} target="_blank" rel="noopener noreferrer">
+                                    <ExternalLink className="h-4 w-4" />
+                                  </a>
+                                </Button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {!purchaseOrdersData && !loadingPOs && (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <Package className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                    <p>Haz clic en "Cargar Órdenes de Compra" para ver el desglose detallado</p>
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>

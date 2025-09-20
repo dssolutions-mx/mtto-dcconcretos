@@ -115,6 +115,19 @@ export async function PUT(
       }, { status: 400 })
     }
     
+    // Also handle the error when it comes from Supabase with code P0001
+    if (error && typeof error === 'object' && 'code' in error && error.code === 'P0001' && 
+        'message' in error && typeof error.message === 'string' && 
+        error.message.includes('max_payment_date cannot be in the past')) {
+      return NextResponse.json({ 
+        success: false,
+        error: 'Error de validación de fecha de pago',
+        details: 'La fecha máxima de pago no puede estar en el pasado cuando el método de pago es transferencia. Por favor, actualiza la fecha de pago o cambia el método de pago antes de continuar.',
+        requires_fix: true,
+        fix_type: 'payment_date'
+      }, { status: 400 })
+    }
+    
     // Handle specific quotation validation error
     if (error instanceof Error && error.message.includes('Quotation required for this purchase order before approval')) {
       return NextResponse.json({ 

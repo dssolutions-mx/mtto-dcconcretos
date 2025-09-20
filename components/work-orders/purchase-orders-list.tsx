@@ -11,7 +11,7 @@ import {
   Check, CheckCircle, Edit, Eye, FileText, Search, 
   AlertTriangle, Clock, DollarSign, TrendingUp, Package, ShoppingCart,
   Wrench, Building2, Store, Receipt, ExternalLink, Trash2, X, Info, 
-  Shield, AlertCircle, Zap, FileCheck, MessageSquare
+  Shield, AlertCircle, Zap, FileCheck, MessageSquare, Calendar as CalendarIcon
 } from "lucide-react"
 import { createClient } from "@/lib/supabase"
 import Link from "next/link"
@@ -52,6 +52,8 @@ import {
 } from "@/components/ui/tooltip"
 import { Separator } from "@/components/ui/separator"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Calendar as CalendarPicker } from "@/components/ui/calendar"
 
 // Enhanced interface with additional data for authorization decisions
 interface PurchaseOrderWithWorkOrder extends Omit<PurchaseOrder, 'is_adjustment' | 'original_purchase_order_id'> {
@@ -218,6 +220,8 @@ export function PurchaseOrdersList() {
   const [userAuthLimit, setUserAuthLimit] = useState<number>(0)
   const [isLoadingAuth, setIsLoadingAuth] = useState(true)
   const [selectedAssetId, setSelectedAssetId] = useState<string>("")
+  const [fromDate, setFromDate] = useState<Date | undefined>(undefined)
+  const [toDate, setToDate] = useState<Date | undefined>(undefined)
   
   // Enhanced approval functionality state
   const [showApprovalDialog, setShowApprovalDialog] = useState(false)
@@ -576,8 +580,27 @@ export function PurchaseOrdersList() {
     return order.work_orders?.asset_id === selectedAssetId
   })
 
+  // Filter orders by creation date range
+  const filteredByDate = filteredByAsset.filter(order => {
+    if (!fromDate && !toDate) return true
+    if (!order.created_at) return false
+    const created = new Date(order.created_at)
+    if (Number.isNaN(created.getTime())) return false
+    if (fromDate) {
+      const start = new Date(fromDate)
+      start.setHours(0, 0, 0, 0)
+      if (created < start) return false
+    }
+    if (toDate) {
+      const end = new Date(toDate)
+      end.setHours(23, 59, 59, 999)
+      if (created > end) return false
+    }
+    return true
+  })
+
   // Filter orders by search term
-  const filteredOrders = filteredByAsset.filter(
+  const filteredOrders = filteredByDate.filter(
     (order) => {
       const workOrder = getWorkOrder(order);
       return (
@@ -764,6 +787,49 @@ export function PurchaseOrdersList() {
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+            <div className="w-full md:w-[30rem] flex flex-col md:flex-row gap-2 md:items-center">
+              <div className="flex-1">
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" className="w-full justify-start">
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      {fromDate ? fromDate.toLocaleDateString() : "Desde"}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <CalendarPicker
+                      mode="single"
+                      selected={fromDate}
+                      onSelect={setFromDate}
+                      initialFocus
+                    />
+                  </PopoverContent>
+                </Popover>
+              </div>
+              <div className="flex-1">
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" className="w-full justify-start">
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      {toDate ? toDate.toLocaleDateString() : "Hasta"}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <CalendarPicker
+                      mode="single"
+                      selected={toDate}
+                      onSelect={setToDate}
+                      initialFocus
+                    />
+                  </PopoverContent>
+                </Popover>
+              </div>
+              {(fromDate || toDate) && (
+                <Button variant="outline" onClick={() => { setFromDate(undefined); setToDate(undefined); }}>
+                  Limpiar
+                </Button>
+              )}
             </div>
           </div>
           
