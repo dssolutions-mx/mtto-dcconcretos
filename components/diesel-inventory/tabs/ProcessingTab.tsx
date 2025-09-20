@@ -410,7 +410,7 @@ export function ProcessingTab({ onBackToMapping, onComplete }: ProcessingTabProp
                 {currentBatch.status}
               </Badge>
             </div>
-          </div>
+          </CardContent>
         </Card>
       )}
 

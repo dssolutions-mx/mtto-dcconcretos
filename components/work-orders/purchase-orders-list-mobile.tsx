@@ -760,7 +760,7 @@ export function PurchaseOrdersListMobile() {
                   <p className="text-xs text-green-600">Aprobadas</p>
                 </div>
                 <div className="text-center p-3 bg-blue-50 rounded-lg border border-blue-200">
-                  <p className="text-2xl font-bold text-blue-700">{summaryMetrics.ordered}</p>
+                  <p className="text-2xl font-bold text-blue-700">{summaryMetrics.validated}</p>
                   <p className="text-xs text-blue-600">En Proceso</p>
                 </div>
                 <div className="text-center p-3 bg-purple-50 rounded-lg border border-purple-200">
@@ -867,14 +867,14 @@ export function PurchaseOrdersListMobile() {
                     )}
                   </Button>
                   <Button
-                    variant={activeTab === "ordered" ? "default" : "outline"}
+                    variant={activeTab === "validated" ? "default" : "outline"}
                     size="sm"
-                    onClick={() => setActiveTab("ordered")}
+                    onClick={() => setActiveTab("validated")}
                     className="relative h-12"
                   >
                     <div className="text-center">
                       <div className="font-medium">En Proceso</div>
-                      <div className="text-xs opacity-75">{summaryMetrics.ordered}</div>
+                      <div className="text-xs opacity-75">{summaryMetrics.validated}</div>
                     </div>
                   </Button>
                 </div>
