@@ -83,31 +83,60 @@ export async function POST(req: Request) {
       })
     }
 
-    // Get purchase orders in date range - APPROVED ONLY (using correct English status names)
-    const { data: purchaseOrders, error: poError } = await supabase
+    // Get approved purchase orders (we'll filter by date manually using work order planned_date or PO created_at)
+    let poQuery = supabase
       .from("purchase_orders")
       .select(`
         id, order_id, total_amount, actual_amount, created_at, plant_id, work_order_id, status, supplier, items
       `)
-      .gte("created_at", startDate)
-      .lte("created_at", endDate)
       .in("status", ["approved", "validated", "received", "purchased"]) // Include validated status
+    
+    // Add plant filtering if specified
+    if (plantId) {
+      poQuery = poQuery.eq("plant_id", plantId)
+    } else if (businessUnitId && filteredPlants.length > 0) {
+      const plantIds = filteredPlants.map(p => p.id)
+      poQuery = poQuery.in("plant_id", plantIds)
+    }
+    
+    const { data: purchaseOrders, error: poError } = await poQuery
 
     if (poError) throw poError
 
-    // Get work orders for the purchase orders (to get asset_id and type)
+    // Get work orders for the purchase orders (to get asset_id, type, and planned_date)
     const poWorkOrderIds = purchaseOrders?.map(po => po.work_order_id).filter(Boolean) || []
     let workOrdersMap = new Map()
     
     if (poWorkOrderIds.length > 0) {
       const { data: workOrders, error: woError } = await supabase
         .from("work_orders")
-        .select("id, type, asset_id")
+        .select("id, type, asset_id, planned_date")
         .in("id", poWorkOrderIds)
       
       if (woError) throw woError
       workOrdersMap = new Map(workOrders?.map(wo => [wo.id, wo]) || [])
     }
+
+    // Filter purchase orders by the correct date (work order planned_date or PO created_at)
+    const filteredPurchaseOrders = purchaseOrders?.filter(po => {
+      let dateToCheck: string
+      
+      if (po.work_order_id) {
+        const workOrder = workOrdersMap.get(po.work_order_id)
+        if (workOrder?.planned_date) {
+          dateToCheck = workOrder.planned_date
+        } else {
+          // Fallback to PO created_at if work order doesn't have planned_date
+          dateToCheck = po.created_at
+        }
+      } else {
+        // Direct purchase/service orders without work order - use PO created_at
+        dateToCheck = po.created_at
+      }
+      
+      // Check if the date falls within the selected range
+      return dateToCheck >= startDate && dateToCheck <= endDate
+    }) || []
 
     // Service orders are not used for cost calculations since they're always linked to work orders that have POs
     // We only count purchase orders for costs
@@ -174,8 +203,8 @@ export async function POST(req: Request) {
       })
     })
 
-    // Process purchase orders - GROUP BY ASSET
-    purchaseOrders?.forEach(po => {
+    // Process purchase orders - GROUP BY ASSET (using filtered list)
+    filteredPurchaseOrders.forEach(po => {
       const finalAmount = po.actual_amount ? parseFloat(po.actual_amount) : parseFloat(po.total_amount || '0')
       
       // If linked to work order -> get asset from work order
@@ -294,8 +323,8 @@ export async function POST(req: Request) {
       buTotal.asset_count += 1
     })
 
-    // Add unlinked purchase orders to plant totals only
-    purchaseOrders?.forEach(po => {
+    // Add unlinked purchase orders to plant totals only (using filtered list)
+    filteredPurchaseOrders.forEach(po => {
       const workOrder = po.work_order_id ? workOrdersMap.get(po.work_order_id) : null
       if (!workOrder?.asset_id && po.plant_id && plantTotals.has(po.plant_id)) {
         const finalAmount = po.actual_amount ? parseFloat(po.actual_amount) : parseFloat(po.total_amount || '0')
