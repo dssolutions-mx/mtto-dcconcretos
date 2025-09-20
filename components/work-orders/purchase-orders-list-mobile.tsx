@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
@@ -50,6 +50,7 @@ import {
 import { Separator } from "@/components/ui/separator"
 import { useAuthZustand } from "@/hooks/use-auth-zustand"
 import { formatCurrency } from "@/lib/utils"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
 interface PurchaseOrderWithWorkOrder extends Omit<PurchaseOrder, 'is_adjustment' | 'original_purchase_order_id'> {
   work_orders?: {
@@ -95,13 +96,13 @@ function getPurchaseOrderTypeIcon(poType: string | null) {
 // Helper function to get badge variant based on status
 function getStatusVariant(status: string | null) {
   switch (status) {
-    case PurchaseOrderStatus.Pending:
+    case PurchaseOrderStatus.PendingApproval:
       return "outline"
     case PurchaseOrderStatus.Approved:
       return "secondary"
-    case PurchaseOrderStatus.Ordered:
-      return "default"
     case PurchaseOrderStatus.Received:
+      return "default"
+    case PurchaseOrderStatus.Validated:
       return "default"
     case PurchaseOrderStatus.Rejected:
       return "destructive"
@@ -229,7 +230,7 @@ function PurchaseOrderCard({
                   </Link>
                 </DropdownMenuItem>
                 
-                {order.status === PurchaseOrderStatus.Pending && !order.is_adjustment && (
+                {order.status === PurchaseOrderStatus.PendingApproval && !order.is_adjustment && (
                   <DropdownMenuItem asChild>
                     <Link href={`/compras/${order.id}/aprobar`}>
                       <Check className="mr-2 h-4 w-4" />
@@ -247,7 +248,7 @@ function PurchaseOrderCard({
                   </DropdownMenuItem>
                 )}
                 
-                {order.status === PurchaseOrderStatus.Ordered && !order.is_adjustment && (
+                {order.status === PurchaseOrderStatus.Validated && !order.is_adjustment && (
                   <DropdownMenuItem asChild>
                     <Link href={`/compras/${order.id}/recibido`}>
                       <Package className="mr-2 h-4 w-4" />
@@ -451,6 +452,7 @@ export function PurchaseOrdersListMobile() {
   const [userAuthLimit, setUserAuthLimit] = useState<number>(0)
   const [isLoadingAuth, setIsLoadingAuth] = useState(true)
   const isMobile = useIsMobile()
+  const [selectedAssetId, setSelectedAssetId] = useState<string>("")
   
   // Enhanced approval functionality state
   const [showApprovalDialog, setShowApprovalDialog] = useState(false)
@@ -651,12 +653,12 @@ export function PurchaseOrdersListMobile() {
 
   // Calculate summary metrics
   const summaryMetrics = {
-    pending: orders.filter(o => o.status === PurchaseOrderStatus.Pending && !o.is_adjustment).length,
+    pending: orders.filter(o => o.status === PurchaseOrderStatus.PendingApproval && !o.is_adjustment).length,
     approved: orders.filter(o => o.status === PurchaseOrderStatus.Approved && !o.is_adjustment).length,
-    ordered: orders.filter(o => o.status === PurchaseOrderStatus.Ordered && !o.is_adjustment).length,
+    validated: orders.filter(o => o.status === PurchaseOrderStatus.Validated && !o.is_adjustment).length,
     adjustments: orders.filter(o => o.is_adjustment).length,
     totalPendingValue: orders
-      .filter(o => o.status === PurchaseOrderStatus.Pending && !o.is_adjustment)
+      .filter(o => o.status === PurchaseOrderStatus.PendingApproval && !o.is_adjustment)
       .reduce((sum, o) => {
         const amount = typeof o.total_amount === 'string' ? parseFloat(o.total_amount) : (o.total_amount || 0);
         return sum + amount;
@@ -677,16 +679,37 @@ export function PurchaseOrdersListMobile() {
   // Filter orders by status tab
   const filteredOrdersByTab = orders.filter(order => {
     if (activeTab === "all") return true;
-    if (activeTab === "pending") return order.status === PurchaseOrderStatus.Pending && !order.is_adjustment;
+    if (activeTab === "pending") return order.status === PurchaseOrderStatus.PendingApproval && !order.is_adjustment;
     if (activeTab === "approved") return order.status === PurchaseOrderStatus.Approved && !order.is_adjustment;
-    if (activeTab === "ordered") return order.status === PurchaseOrderStatus.Ordered && !order.is_adjustment;
+    if (activeTab === "validated") return order.status === PurchaseOrderStatus.Validated && !order.is_adjustment;
     if (activeTab === "received") return order.status === PurchaseOrderStatus.Received && !order.is_adjustment;
     if (activeTab === "adjustments") return order.is_adjustment === true;
     return true;
   });
 
+  // Asset options built from orders
+  const assetOptions = useMemo(() => {
+    const map: Record<string, { id: string; label: string }> = {}
+    orders.forEach(o => {
+      const asset = o.work_orders?.assets
+      if (o.work_orders?.asset_id && asset) {
+        const id = o.work_orders.asset_id
+        const labelBase = asset.asset_id || asset.name || "Activo"
+        const plant = asset.plants?.name ? ` • ${asset.plants.name}` : ""
+        map[id] = { id, label: `${labelBase}${plant}` }
+      }
+    })
+    return Object.values(map).sort((a, b) => a.label.localeCompare(b.label))
+  }, [orders])
+
+  // Filter by selected asset
+  const filteredByAsset = filteredOrdersByTab.filter(order => {
+    if (!selectedAssetId) return true
+    return order.work_orders?.asset_id === selectedAssetId
+  })
+
   // Filter orders by search term
-  const filteredOrders = filteredOrdersByTab.filter(
+  const filteredOrders = filteredByAsset.filter(
     (order) => {
       const workOrder = getWorkOrder(order);
       return (
@@ -774,6 +797,21 @@ export function PurchaseOrdersListMobile() {
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
               />
+            </div>
+
+            {/* Asset Filter */}
+            <div>
+              <Select value={selectedAssetId || "all"} onValueChange={(val) => setSelectedAssetId(val === "all" ? "" : val)}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Filtrar por activo" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos los activos</SelectItem>
+                  {assetOptions.map(a => (
+                    <SelectItem key={a.id} value={a.id}>{a.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </div>
         </CardHeader>

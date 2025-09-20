@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -51,6 +51,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { Separator } from "@/components/ui/separator"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
 // Enhanced interface with additional data for authorization decisions
 interface PurchaseOrderWithWorkOrder extends Omit<PurchaseOrder, 'is_adjustment' | 'original_purchase_order_id'> {
@@ -216,6 +217,7 @@ export function PurchaseOrdersList() {
   const [technicians, setTechnicians] = useState<Record<string, Profile>>({})
   const [userAuthLimit, setUserAuthLimit] = useState<number>(0)
   const [isLoadingAuth, setIsLoadingAuth] = useState(true)
+  const [selectedAssetId, setSelectedAssetId] = useState<string>("")
   
   // Enhanced approval functionality state
   const [showApprovalDialog, setShowApprovalDialog] = useState(false)
@@ -517,6 +519,21 @@ export function PurchaseOrdersList() {
     return <PurchaseOrdersListMobile />
   }
 
+  // Build asset options from loaded orders (unique assets only)
+  const assetOptions = useMemo(() => {
+    const map: Record<string, { id: string; label: string }> = {}
+    orders.forEach(o => {
+      const asset = o.work_orders?.assets
+      if (o.work_orders?.asset_id && asset) {
+        const id = o.work_orders.asset_id
+        const labelBase = asset.asset_id || asset.name || "Activo"
+        const plant = asset.plants?.name ? ` • ${asset.plants.name}` : ""
+        map[id] = { id, label: `${labelBase}${plant}` }
+      }
+    })
+    return Object.values(map).sort((a, b) => a.label.localeCompare(b.label))
+  }, [orders])
+
   // Calculate summary metrics
   const summaryMetrics = {
     pending: orders.filter(o => o.status === PurchaseOrderStatus.PendingApproval && !o.is_adjustment).length,
@@ -553,8 +570,14 @@ export function PurchaseOrdersList() {
     return true;
   });
 
+  // Filter orders by asset (when selected)
+  const filteredByAsset = filteredOrdersByTab.filter(order => {
+    if (!selectedAssetId) return true
+    return order.work_orders?.asset_id === selectedAssetId
+  })
+
   // Filter orders by search term
-  const filteredOrders = filteredOrdersByTab.filter(
+  const filteredOrders = filteredByAsset.filter(
     (order) => {
       const workOrder = getWorkOrder(order);
       return (
@@ -728,6 +751,19 @@ export function PurchaseOrdersList() {
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
               />
+            </div>
+            <div className="w-full md:w-72">
+              <Select value={selectedAssetId || "all"} onValueChange={(val) => setSelectedAssetId(val === "all" ? "" : val)}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Filtrar por activo" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos los activos</SelectItem>
+                  {assetOptions.map((a) => (
+                    <SelectItem key={a.id} value={a.id}>{a.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </div>
           

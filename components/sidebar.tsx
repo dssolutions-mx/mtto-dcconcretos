@@ -281,19 +281,17 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                         </Link>
                       </Button>
                     )}
-                  {ui.shouldShowInNavigation('inventory') && (
                     <Button
-                      variant={isPathActive("/diesel") ? "secondary" : "ghost"}
+                      variant={isPathActive("/diesel-inventory") ? "secondary" : "ghost"}
                       className="w-full justify-start pl-8"
                       asChild
                       onClick={handleLinkClick}
                     >
-                      <Link href="/diesel">
+                      <Link href="/diesel-inventory">
                         <Fuel className="mr-2 h-4 w-4" />
-                        Inventario Diesel
+                        Control de Diesel
                       </Link>
                     </Button>
-                  )}
                   </CollapsibleContent>
                 </Collapsible>
               </div>
@@ -594,19 +592,6 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                         </Link>
                       </Button>
                     )}
-                  {ui.shouldShowInNavigation('inventory') && (
-                    <Button
-                      variant={isPathActive("/diesel") ? "secondary" : "ghost"}
-                      className="w-full justify-start pl-8"
-                      asChild
-                      onClick={handleLinkClick}
-                    >
-                      <Link href="/diesel">
-                        <Fuel className="mr-2 h-4 w-4" />
-                        Inventario Diesel
-                      </Link>
-                    </Button>
-                  )}
                   </CollapsibleContent>
                 </Collapsible>
               </div>
@@ -877,11 +862,11 @@ export function CollapsedSidebar({ className, onLinkClick }: SidebarProps) {
       id: "procurement",
       icon: ShoppingCart,
       label: "Compras",
-      active: isSectionActive(["/compras", "/inventario"]),
+      active: isSectionActive(["/compras", "/inventario", "/diesel-inventory"]),
       items: [
         { href: "/compras", icon: CreditCard, label: "Órdenes de Compra", active: isPathActive("/compras") },
         { href: "/inventario", icon: Boxes, label: "Inventario", active: isPathActive("/inventario") },
-        { href: "/diesel", icon: Fuel, label: "Inventario Diesel", active: isPathActive("/diesel") }
+        { href: "/diesel-inventory", icon: Fuel, label: "Control de Diesel", active: isPathActive("/diesel-inventory") }
       ]
     },
     {
