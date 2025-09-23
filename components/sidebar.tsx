@@ -36,6 +36,7 @@ import {
   Sparkles,
   Shield,
   Fuel,
+  IdCard,
 } from "lucide-react"
 import { UserNav } from "@/components/user-nav"
 import { ModeToggle } from "@/components/mode-toggle"
@@ -164,6 +165,23 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
               <Link href={isOperator ? "/dashboard/operator" : "/dashboard"}>
                 <Home className="mr-2 h-4 w-4" />
                 Dashboard
+              </Link>
+            </Button>
+          </div>
+        </div>
+
+        {/* Personal Credential - Available to all users */}
+        <div className="px-4 py-2">
+          <div className="space-y-1">
+            <Button
+              variant={pathname === "/credencial" ? "secondary" : "ghost"}
+              className="w-full justify-start"
+              asChild
+              onClick={handleLinkClick}
+            >
+              <Link href="/credencial">
+                <IdCard className="mr-2 h-4 w-4" />
+                Mi Credencial
               </Link>
             </Button>
           </div>
@@ -735,6 +753,19 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                     </Link>
                   </Button>
                 )}
+                {['GERENCIA_GENERAL', 'AREA_ADMINISTRATIVA', 'JEFE_UNIDAD_NEGOCIO'].includes(profile.role) && (
+                  <Button
+                    variant={isPathActive("/gestion/credenciales") ? "secondary" : "ghost"}
+                    className="w-full justify-start pl-8"
+                    asChild
+                    onClick={handleLinkClick}
+                  >
+                    <Link href="/gestion/credenciales">
+                      <IdCard className="mr-2 h-4 w-4" />
+                      Credenciales de Empleados
+                    </Link>
+                  </Button>
+                )}
               </CollapsibleContent>
             </Collapsible>
           </div>
@@ -837,6 +868,13 @@ export function CollapsedSidebar({ className, onLinkClick }: SidebarProps) {
       active: pathname === "/dashboard"
     },
     {
+      id: "credential",
+      icon: IdCard,
+      label: "Mi Credencial",
+      href: "/credencial",
+      active: pathname === "/credencial"
+    },
+    {
       id: "equipment",
       icon: Wrench,
       label: "Equipos",
@@ -883,13 +921,14 @@ export function CollapsedSidebar({ className, onLinkClick }: SidebarProps) {
       id: "organization",
       icon: Building2,
       label: "Organización",
-      active: isSectionActive(["/personal", "/activos/asignacion", "/gestion/activos/asignacion-plantas", "/plantas", "/gestion/autorizaciones"]),
+      active: isSectionActive(["/personal", "/activos/asignacion", "/gestion/activos/asignacion-plantas", "/plantas", "/gestion/autorizaciones", "/gestion/credenciales"]),
       items: [
         { href: "/personal", icon: Users, label: "Gestión de Personal", active: isPathActive("/personal") },
         { href: "/activos/asignacion", icon: UserCheck, label: "Asignación de Activos", active: isPathActive("/activos/asignacion") },
         { href: "/gestion/activos/asignacion-plantas", icon: Settings, label: "Activos a Plantas", active: isPathActive("/gestion/activos/asignacion-plantas") },
         { href: "/plantas", icon: Building2, label: "Configuración de Plantas", active: isPathActive("/plantas") },
-        { href: "/gestion/autorizaciones", icon: Shield, label: "Gestión de Autorizaciones", active: isPathActive("/gestion/autorizaciones") }
+        { href: "/gestion/autorizaciones", icon: Shield, label: "Gestión de Autorizaciones", active: isPathActive("/gestion/autorizaciones") },
+        { href: "/gestion/credenciales", icon: IdCard, label: "Credenciales de Empleados", active: isPathActive("/gestion/credenciales") }
       ]
     },
     {

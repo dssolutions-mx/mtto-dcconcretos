@@ -14,9 +14,17 @@ export interface UserProfile {
   status: string
   employee_code: string | null
   telefono: string | null
+  avatar_url: string | null
+  position: string | null
+  hire_date: string | null
+  imss_number: string | null
+  system_username: string | null
+  system_password: string | null
+  system_access_password: string | null
   emergency_contact: {
     name?: string | null
     phone?: string | null
+    relationship?: string | null
   } | null
   plants?: {
     id: string
