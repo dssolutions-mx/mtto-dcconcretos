@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from 'react'
-import { User, Phone, Shield, Calendar, CreditCard, Key, QrCode, Building2, Mail, MapPin } from 'lucide-react'
+import { User } from 'lucide-react'
 import jsPDF from 'jspdf'
 import html2canvas from 'html2canvas'
 // Removed UserProfile import as we're now using our own interface
@@ -173,14 +173,14 @@ export function CredentialCard({
         {/* Details - Compact */}
         <div className="space-y-1 text-[11px] mt-4">
           <div className="flex justify-between items-center py-0.5">
-            <span className="text-gray-500 font-medium label-inline"><Shield size={12} className="text-gray-400 icon-inline" /> Cargo</span>
+            <span className="text-gray-500 font-medium">Cargo</span>
             <span className="font-semibold text-gray-900 text-[10px]">
               {employeeData.position || 'Empleado'}
             </span>
           </div>
           <div className="h-px w-full bg-gray-200"></div>
           <div className="flex justify-between items-center py-0.5">
-            <span className="text-gray-500 font-medium label-inline"><Calendar size={12} className="text-gray-400 icon-inline" /> Ingreso</span>
+            <span className="text-gray-500 font-medium">Ingreso</span>
             <span className="font-semibold text-gray-900 text-[10px]">
               {employeeData.hire_date ? new Date(employeeData.hire_date).toLocaleDateString('es-MX', { day: '2-digit', month: '2-digit', year: 'numeric' }) : 'N/A'}
             </span>
@@ -189,7 +189,7 @@ export function CredentialCard({
             <>
               <div className="h-px w-full bg-gray-200"></div>
               <div className="flex justify-between items-center py-0.5">
-                <span className="text-gray-500 font-medium label-inline"><CreditCard size={12} className="text-gray-400 icon-inline" /> IMSS</span>
+                <span className="text-gray-500 font-medium">IMSS</span>
                 <span className="font-mono font-semibold text-gray-900 text-[10px]">
                   {employeeData.imss_number}
                 </span>
@@ -256,18 +256,18 @@ export function CredentialCard({
             <h3 className="font-semibold text-gray-800 text-[10px] mb-1.5 uppercase tracking-wider text-center">
               INFORMACIÓN PERSONAL
             </h3>
-            <div className="space-y-1 text-[11px]">
-              <div className="flex justify-between items-center py-0.5">
-                <span className="text-gray-500 font-medium label-inline"><Mail size={12} className="text-gray-400 icon-inline" /> Correo</span>
-                <span className="text-gray-900 text-[10px] max-w-[200px] break-all whitespace-normal text-right">
-                  {employeeData.email || 'N/A'}
-                </span>
-              </div>
+              <div className="space-y-1 text-[11px]">
+                <div className="flex justify-between items-center py-1">
+                  <span className="text-gray-500 font-medium">Correo</span>
+                  <span className="text-gray-900 text-[10px] max-w-[200px] break-all whitespace-normal text-right">
+                    {employeeData.email || 'N/A'}
+                  </span>
+                </div>
               {employeeData.telefono && (
                 <>
                   <div className="h-px w-full bg-gray-200"></div>
-                  <div className="flex justify-between items-center py-0.5">
-                    <span className="text-gray-500 font-medium label-inline"><Phone size={12} className="text-gray-400 icon-inline" /> Teléfono</span>
+                  <div className="flex justify-between items-center py-1">
+                    <span className="text-gray-500 font-medium">Teléfono</span>
                     <span className="text-gray-900 text-[10px]">{employeeData.telefono}</span>
                   </div>
                 </>
@@ -282,7 +282,7 @@ export function CredentialCard({
             </h3>
             <div className="space-y-1 text-[11px]">
               <div className="flex justify-between items-center py-0.5">
-                <span className="text-gray-500 font-medium label-inline"><Key size={12} className="text-gray-400 icon-inline" /> Código de Acceso</span>
+                <span className="text-gray-500 font-medium">Código de Acceso</span>
                 <span className="text-gray-900 text-[10px]">{credentials.accessPassword}</span>
               </div>
             </div>
@@ -295,13 +295,13 @@ export function CredentialCard({
             </h3>
             {employeeData.emergency_contact ? (
               <div className="space-y-1 text-[11px]">
-                <div className="flex justify-between items-center py-0.5">
-                  <span className="text-gray-500 font-medium label-inline"><Phone size={12} className="text-gray-400 icon-inline" /> Teléfono</span>
+                <div className="flex justify-between items-center py-1">
+                  <span className="text-gray-500 font-medium">Teléfono</span>
                   <span className="text-gray-900 text-[10px]">{employeeData.emergency_contact.phone}</span>
                 </div>
                 <div className="h-px w-full bg-gray-200"></div>
                 <div className="flex justify-between items-center py-0.5">
-                  <span className="text-gray-500 font-medium label-inline"><User size={12} className="text-gray-400 icon-inline" /> Contacto</span>
+                  <span className="text-gray-500 font-medium">Contacto</span>
                   <span className="font-semibold text-gray-900 text-[10px]">
                     {employeeData.emergency_contact.name}
                     {employeeData.emergency_contact.relationship ? ` (${employeeData.emergency_contact.relationship})` : ''}
@@ -321,7 +321,7 @@ export function CredentialCard({
             <div className="space-y-1 text-[11px]">
               <div className="py-0.5">
                 <div className="flex justify-between items-start">
-                  <span className="text-gray-500 font-medium label-inline"><MapPin size={12} className="text-gray-400 icon-inline" /> Dirección</span>
+                  <span className="text-gray-500 font-medium">Dirección</span>
                   <span className="text-gray-900 text-[10px] text-right max-w-[200px] leading-snug">
                     Calle Caracas #12428, El Paraíso 22106
                   </span>
@@ -329,17 +329,17 @@ export function CredentialCard({
               </div>
               <div className="h-px w-full bg-gray-200"></div>
               <div className="flex justify-between items-center py-0.5">
-                <span className="text-gray-500 font-medium label-inline"><Mail size={12} className="text-gray-400 icon-inline" /> Correo</span>
+                <span className="text-gray-500 font-medium">Correo</span>
                 <span className="text-gray-900 text-[10px] max-w-[200px] break-all whitespace-normal text-right">rh.tj@dcconcretos.com.mx</span>
               </div>
               <div className="h-px w-full bg-gray-200"></div>
               <div className="flex justify-between items-center py-0.5">
-                <span className="text-gray-500 font-medium label-inline"><Phone size={12} className="text-gray-400 icon-inline" /> Teléfono</span>
+                <span className="text-gray-500 font-medium">Teléfono</span>
                 <span className="text-gray-900 text-[10px]">664 905 1813 (Oficina)</span>
               </div>
               <div className="h-px w-full bg-gray-200"></div>
               <div className="flex justify-between items-center py-0.5">
-                <span className="text-gray-500 font-medium label-inline"><Phone size={12} className="text-gray-400 icon-inline" /> RH</span>
+                <span className="text-gray-500 font-medium">RH</span>
                 <span className="text-gray-900 text-[10px]">477 288 0120</span>
               </div>
             </div>
@@ -385,9 +385,8 @@ export function CredentialCard({
         @media screen {
           .print-card { box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04); }
         }
-        /* Force consistent baseline and icon alignment during html2canvas/print */
-        .label-inline { display: inline-flex; align-items: center; gap: 4px; line-height: 1; position: relative; z-index: 2; overflow: visible; }
-        .icon-inline { vertical-align: middle; position: relative; top: 1px; display: inline-block; z-index: 3; }
+        /* Force stacking context for print-card */
+        .print-card { position: relative; }
       `}</style>
 
       {/* View Toggle */}
