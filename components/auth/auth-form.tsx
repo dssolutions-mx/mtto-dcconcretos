@@ -100,40 +100,8 @@ export function AuthForm({ mode = "login" }: { mode: "login" | "register" }) {
         router.refresh()
         router.push("/dashboard")
       } else {
-        // Register mode - call our custom registration API
-        const registerValues = values as RegisterFormValues
-        
-        const response = await fetch('/api/auth/register', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            nombre: registerValues.nombre,
-            apellido: registerValues.apellido,
-            email: registerValues.email,
-            role: registerValues.role,
-            telefono: registerValues.telefono || null,
-            emergency_contact: registerValues.emergency_contact_name || registerValues.emergency_contact_phone 
-              ? {
-                  name: registerValues.emergency_contact_name || null,
-                  phone: registerValues.emergency_contact_phone || null,
-                }
-              : null,
-            password: registerValues.password,
-          }),
-        })
-
-        const data = await response.json()
-
-        if (!response.ok) {
-          throw new Error(data.error || 'Error en el registro')
-        }
-
-        // Registration successful
-        console.log('✅ Registration successful, redirecting...')
-        router.refresh()
-        router.push("/dashboard")
+        // Registration disabled
+        throw new Error('El registro público está deshabilitado. Contacte al administrador.')
       }
     } catch (error: any) {
       console.error(`❌ ${mode === 'login' ? 'Login' : 'Registration'} error:`, error)
@@ -146,120 +114,22 @@ export function AuthForm({ mode = "login" }: { mode: "login" | "register" }) {
   return (
     <Card className="w-full">
       <CardHeader>
-        <CardTitle>{mode === "login" ? "Iniciar Sesión" : "Registrarse"}</CardTitle>
+        <CardTitle>{mode === "login" ? "Iniciar Sesión" : "Registro deshabilitado"}</CardTitle>
         <CardDescription>
           {mode === "login"
             ? "Ingrese sus credenciales para acceder al sistema"
-            : "Cree una nueva cuenta para acceder al sistema"}
+            : "El registro público está deshabilitado. Contacte al administrador."}
         </CardDescription>
       </CardHeader>
       <CardContent>
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
             {mode === "register" && (
-              <>
-                <div className="grid grid-cols-2 gap-4">
-                  <FormField
-                    control={form.control}
-                    name="nombre"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Nombre *</FormLabel>
-                        <FormControl>
-                          <Input placeholder="Nombre" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  
-                  <FormField
-                    control={form.control}
-                    name="apellido"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Apellido *</FormLabel>
-                        <FormControl>
-                          <Input placeholder="Apellido" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
-
-                <FormField
-                  control={form.control}
-                  name="role"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Rol *</FormLabel>
-                      <Select onValueChange={field.onChange} defaultValue={field.value}>
-                        <FormControl>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Seleccione su rol" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          {USER_ROLES.map((role) => (
-                            <SelectItem key={role.value} value={role.value}>
-                              {role.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="telefono"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Teléfono</FormLabel>
-                      <FormControl>
-                        <Input placeholder="Número de teléfono" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <div className="space-y-3">
-                  <h4 className="text-sm font-medium text-gray-700">Contacto de Emergencia (Opcional)</h4>
-                  <div className="grid grid-cols-2 gap-4">
-                    <FormField
-                      control={form.control}
-                      name="emergency_contact_name"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Nombre</FormLabel>
-                          <FormControl>
-                            <Input placeholder="Nombre completo" {...field} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    
-                    <FormField
-                      control={form.control}
-                      name="emergency_contact_phone"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Teléfono</FormLabel>
-                          <FormControl>
-                            <Input placeholder="Teléfono" {...field} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  </div>
-                </div>
-              </>
+              <Alert variant="destructive">
+                <AlertDescription>
+                  El registro público está deshabilitado. Contacte al administrador.
+                </AlertDescription>
+              </Alert>
             )}
 
             <FormField
@@ -312,32 +182,7 @@ export function AuthForm({ mode = "login" }: { mode: "login" | "register" }) {
               </div>
             )}
 
-            {mode === "register" && (
-              <FormField
-                control={form.control}
-                name="passwordConfirm"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Confirmar contraseña *</FormLabel>
-                    <FormControl>
-                      <div className="relative">
-                        <Input type={showPassword ? "text" : "password"} placeholder="••••••••" {...field} />
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          className="absolute right-0 top-0 h-full px-3"
-                          onClick={() => setShowPassword(!showPassword)}
-                        >
-                          {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                        </Button>
-                      </div>
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            )}
+            {mode === "register" && null}
 
             {error && (
               <Alert variant="destructive">
@@ -345,7 +190,7 @@ export function AuthForm({ mode = "login" }: { mode: "login" | "register" }) {
               </Alert>
             )}
 
-            <Button type="submit" className="w-full" disabled={isLoading}>
+            <Button type="submit" className="w-full" disabled={isLoading || mode === 'register'}>
               {isLoading ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -354,7 +199,7 @@ export function AuthForm({ mode = "login" }: { mode: "login" | "register" }) {
               ) : mode === "login" ? (
                 "Iniciar Sesión"
               ) : (
-                "Registrarse"
+                "Registro deshabilitado"
               )}
             </Button>
           </form>
@@ -363,10 +208,7 @@ export function AuthForm({ mode = "login" }: { mode: "login" | "register" }) {
       <CardFooter className="flex justify-center">
         {mode === "login" ? (
           <p className="text-sm text-muted-foreground">
-            ¿No tiene una cuenta?{" "}
-            <Button variant="link" className="p-0" onClick={() => router.push("/register")}>
-              Registrarse
-            </Button>
+            ¿Necesita una cuenta? Contacte al administrador.
           </p>
         ) : (
           <p className="text-sm text-muted-foreground">

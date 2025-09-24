@@ -2,7 +2,15 @@ import { createClient } from '@/lib/supabase-server'
 import { NextRequest, NextResponse } from 'next/server'
 
 export async function POST(request: NextRequest) {
-  console.log('🚀 Registration attempt started')
+  // Disable public registration at API level
+  console.log('🛑 Registration endpoint is disabled')
+  const host = request.headers.get('x-forwarded-host') || request.headers.get('host') || ''
+  return NextResponse.json({
+    error: 'Public registration is disabled',
+    host,
+  }, { status: 403 })
+
+  // The code below is preserved for potential future re-enable
   try {
     const body = await request.json()
     console.log('📝 Request body received:', { ...body, password: '[HIDDEN]' })

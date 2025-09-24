@@ -15,7 +15,7 @@ export function RoleProvider({ children }: { children: React.ReactNode }) {
     if (loading || !user) return
 
     // Skip checking for public routes
-    const publicRoutes = ["/login", "/register", "/auth/callback"]
+    const publicRoutes = ["/login", "/auth/callback"]
     if (publicRoutes.some(route => pathname.startsWith(route))) return
 
     // If we have a user but no profile, there's an issue

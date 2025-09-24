@@ -6,6 +6,23 @@ export async function middleware(request: NextRequest) {
     request,
   })
 
+  // Enforce host allowlist (set ALLOWED_HOSTS="domain.com,www.domain.com" in env)
+  const forwardedHost = request.headers.get('x-forwarded-host') || ''
+  const hostHeader = request.headers.get('host') || ''
+  const requestHost = (forwardedHost || hostHeader).toLowerCase()
+
+  const allowedHostsEnv = (process.env.ALLOWED_HOSTS || '').split(',')
+    .map((h) => h.trim().toLowerCase())
+    .filter(Boolean)
+
+  // Always allow local development
+  const devHosts = new Set(["localhost:3000", "127.0.0.1:3000"]) as Set<string>
+  const allowedHosts = new Set<string>([...allowedHostsEnv, ...Array.from(devHosts)])
+
+  if (allowedHostsEnv.length > 0 && requestHost && !allowedHosts.has(requestHost)) {
+    return new NextResponse('Forbidden host', { status: 403 })
+  }
+
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -114,7 +131,6 @@ export async function middleware(request: NextRequest) {
   // Define public routes (pages that don't require authentication)
   const publicRoutes = [
     "/login", 
-    "/register", 
     "/auth/callback",
     "/forgot-password",
     "/auth/reset-password",
