@@ -9,6 +9,7 @@ import { RoleProvider } from "@/components/auth/role-provider"
 import { SessionMonitor } from "@/components/auth/session-monitor"
 import { Toaster } from "@/components/ui/toaster"
 import { CacheConsoleLoader } from "@/components/cache-console-loader"
+import { Analytics } from "@vercel/analytics/next"
 
 const inter = Inter({ subsets: ["latin"] })
 
@@ -34,6 +35,7 @@ export default function RootLayout({
           </RoleProvider>
           <Toaster />
           <CacheConsoleLoader />
+          <Analytics />
         </ThemeProvider>
       </body>
     </html>
