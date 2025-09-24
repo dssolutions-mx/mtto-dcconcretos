@@ -1103,7 +1103,15 @@ export function SidebarWrapper({ children }: { children: React.ReactNode }) {
     setIsMobileMenuOpen(false)
   }, [pathname])
 
-  if (pathname?.startsWith("/login") || pathname?.startsWith("/register")) {
+  const authChromeLessPaths = [
+    "/login",
+    "/register",
+    "/forgot-password",
+    "/auth/reset-password",
+    "/auth/confirm",
+    "/auth/callback",
+  ]
+  if (authChromeLessPaths.some((p) => pathname?.startsWith(p))) {
     return <>{children}</>
   }
 

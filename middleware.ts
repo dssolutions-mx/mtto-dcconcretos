@@ -172,6 +172,8 @@ export async function middleware(request: NextRequest) {
   }
 
   // IMPORTANT: You must return the supabaseResponse object as it is.
+  // Set X-Robots-Tag header to prevent indexing across the app
+  supabaseResponse.headers.set('X-Robots-Tag', 'noindex, nofollow, noarchive')
   return supabaseResponse
 }
 
