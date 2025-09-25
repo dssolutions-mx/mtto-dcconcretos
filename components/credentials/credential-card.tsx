@@ -14,6 +14,7 @@ interface CredentialCardProps {
     email?: string;
     employee_code?: string;
     position?: string;
+    departamento?: string;
     role?: string;
     hire_date?: string;
     status?: string;
@@ -173,9 +174,9 @@ export function CredentialCard({
         {/* Details - Compact */}
         <div className="space-y-1 text-[11px] mt-4">
           <div className="flex justify-between items-center py-0.5">
-            <span className="text-gray-500 font-medium">Cargo</span>
+            <span className="text-gray-500 font-medium">Departamento</span>
             <span className="font-semibold text-gray-900 text-[10px]">
-              {employeeData.position || 'Empleado'}
+              {employeeData.departamento || 'N/A'}
             </span>
           </div>
           <div className="h-px w-full bg-gray-200"></div>
