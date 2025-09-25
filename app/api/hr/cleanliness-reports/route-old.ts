@@ -81,6 +81,8 @@ export async function GET(request: NextRequest) {
     const technician = searchParams.get('technician')
     const search = searchParams.get('search')
 
+    // We no longer rely on templates or versions here; we will derive cleanliness directly from completed_items
+
     // Calculate date range based on week number and year (UTC-based for consistency with database)
     let startDate = ''
     let endDate = ''
@@ -125,7 +127,6 @@ export async function GET(request: NextRequest) {
     const currentYear = parseInt(year)
     const currentWeekNumber = getISOWeek(now)
     
-    // Calculate date range based on period
     if (period === 'specific_week' && weekNumber) {
       // Filter by specific week number
       const targetWeek = parseInt(weekNumber)
@@ -150,14 +151,15 @@ export async function GET(request: NextRequest) {
       endDate = end.toISOString()
     }
 
-    // Get all completed WEEKLY checklists with cleanliness evaluations in the date range
-    // Filter specifically for weekly checklists using template version relationships
-    let baseQuery = supabase
+    const reports: CleanlinessReport[] = []
+    const processedChecklistIds = new Set<string>()
+
+    // Fetch all completed checklists in the period (no template gating)
+    let listQuery = supabase
       .from('completed_checklists')
       .select(`
         id,
         checklist_id,
-        template_version_id,
         completion_date,
         technician,
         completed_items,
@@ -167,110 +169,94 @@ export async function GET(request: NextRequest) {
           name,
           asset_id
         ),
-        checklist_template_versions!inner (
-          id,
-          template_id,
-          version_number,
-          name
-        ),
-        checklists!inner (
+        checklists(
           id,
           name,
-          frequency
+          frequency,
+          description
         )
       `)
       .gte('completion_date', startDate)
       .lte('completion_date', endDate)
-      .not('completed_items', 'is', null)
-      .eq('checklists.frequency', 'semanal')
 
     if (technician && technician !== 'all') {
-      baseQuery = baseQuery.ilike('technician', `%${technician}%`)
+      listQuery = listQuery.ilike('technician', `%${technician}%`)
     }
 
-    const { data: completedChecklists, error: checklistError } = await baseQuery
-
-    if (checklistError) {
-      throw checklistError
+    const { data: completedList, error: listError } = await listQuery
+    if (listError) {
+      throw listError
     }
 
-    // Get cleanliness section items from template version JSONB sections
-    const templateVersionIds = completedChecklists?.map(cc => cc.template_version_id).filter(Boolean) || []
-    
-    let cleanlinessItemsMap: Record<string, string[]> = {}
-    
-    if (templateVersionIds.length > 0) {
-      const { data: templateVersions, error: templateError } = await supabase
-        .from('checklist_template_versions')
-        .select(`
-          id,
-          template_id,
-          sections
-        `)
-        .in('id', templateVersionIds)
+    // Parse items and collect item_ids missing descriptions
+    const missingDescIds = new Set<string>()
+    const parsed = (completedList || []).map((c: any) => {
+      let items = c.completed_items
+      if (typeof items === 'string') {
+        try { items = JSON.parse(items) } catch { items = [] }
+      }
+      if (!Array.isArray(items)) items = []
+      for (const it of items) {
+        const hasDesc = !!(it?.description || it?.item_description)
+        const hasId = !!(it?.item_id || it?.id)
+        if (!hasDesc && hasId) missingDescIds.add(it.item_id || it.id)
+      }
+      return { ...c, completed_items: items }
+    })
 
-      if (!templateError && templateVersions) {
-        // Build map of template_version_id to cleanliness item IDs by parsing JSONB sections
-        for (const templateVersion of templateVersions) {
-          const sections = templateVersion.sections as any[]
-          if (!sections || !Array.isArray(sections)) continue
-          
-          const cleanlinessItemIds: string[] = []
-          
-          // Find cleanliness sections by title and get ALL items from those sections
-          for (const section of sections) {
-            if (!section.items || !Array.isArray(section.items)) continue
-            
-            // Check if this is a cleanliness section by title
-            if (isCleanlinessSection(section.title)) {
-              // Add ALL items from cleanliness sections
-              for (const item of section.items) {
-                cleanlinessItemIds.push(item.id)
-              }
-            }
-          }
-          
-          if (cleanlinessItemIds.length > 0) {
-            cleanlinessItemsMap[templateVersion.id] = cleanlinessItemIds
-          }
-        }
+    // Batch fetch descriptions for missing items
+    let itemDescMap: Record<string, string> = {}
+    if (missingDescIds.size > 0) {
+      const ids = Array.from(missingDescIds)
+      const { data: itemsData } = await supabase
+        .from('checklist_items')
+        .select('id, description')
+        .in('id', ids)
+      if (itemsData) {
+        itemDescMap = itemsData.reduce((acc: any, it: any) => { acc[it.id] = it.description; return acc }, {})
       }
     }
 
-    const reports: CleanlinessReport[] = []
+    const cleanlinessKeywords = ['limpieza', 'clean', 'aseo', 'interior', 'exterior', 'cabina', 'carrocer', 'llanta', 'ventana', 'parabrisas', 'faros']
+    const getDesc = (it: any) => it?.description || it?.item_description || itemDescMap[it?.item_id || it?.id] || ''
+    const isCleanliness = (d: string) => {
+      const s = (d || '').toLowerCase()
+      return cleanlinessKeywords.some(k => s.includes(k))
+    }
 
-    // Process each completed checklist
-    for (const checklist of completedChecklists || []) {
+    for (const checklist of parsed) {
+      if (processedChecklistIds.has(checklist.id)) continue
+      processedChecklistIds.add(checklist.id)
+
       // Apply search filter if provided
       if (search) {
         const asset = Array.isArray(checklist.assets) ? checklist.assets[0] : checklist.assets
-        const assetMatches = asset?.name?.toLowerCase().includes(search.toLowerCase()) ||
-                             asset?.asset_id?.toLowerCase().includes(search.toLowerCase())
+        const assetMatches = asset?.name?.toLowerCase().includes(search.toLowerCase()) || asset?.asset_id?.toLowerCase().includes(search.toLowerCase())
         const technicianMatches = checklist.technician?.toLowerCase().includes(search.toLowerCase())
-        
-        if (!assetMatches && !technicianMatches) {
-          continue
-        }
+        if (!assetMatches && !technicianMatches) continue
       }
 
-      // Get cleanliness item IDs for this specific template version
-      const templateVersionId = checklist.template_version_id
-      if (!templateVersionId) continue
-      
-      const cleanlinessItemIds = cleanlinessItemsMap[templateVersionId] || []
-      
-      if (cleanlinessItemIds.length === 0) {
-        continue // Skip if no cleanliness items found for this template
-      }
+      // Enrich missing descriptions inline for evaluation
+      const enrichedItems = (checklist.completed_items as any[]).map(it => ({
+        ...it,
+        description: it?.description || it?.item_description || itemDescMap[it?.item_id || it?.id] || it?.description
+      }))
+      checklist.completed_items = enrichedItems
 
-      // Calculate cleanliness evaluation using template-specific item IDs
-      const evaluation = calculateCleanlinessEvaluationByTemplate(checklist, cleanlinessItemIds)
-      
+      // Determine cleanliness item ids
+      const cleanlinessItemIds = enrichedItems
+        .filter(it => it && (it.status === 'pass' || it.status === 'flag' || it.status === 'fail'))
+        .filter(it => isCleanliness(getDesc(it)))
+        .map(it => it.item_id || it.id)
+
+      if (cleanlinessItemIds.length === 0) continue
+
+      const evaluation = calculateCleanlinessEvaluation(checklist, cleanlinessItemIds)
       if (evaluation) {
         const asset = Array.isArray(checklist.assets) ? checklist.assets[0] : checklist.assets
         reports.push({
           id: checklist.id,
-          asset_id: asset?.id, // Store asset ID for operator lookup
+          asset_id: asset?.id,
           asset_name: asset?.name || 'N/A',
           asset_code: asset?.asset_id || 'N/A',
           technician_name: checklist.technician || 'N/A',
@@ -374,13 +360,12 @@ export async function GET(request: NextRequest) {
 
 async function getEvaluationDetails(supabase: any, evaluationId: string): Promise<NextResponse> {
   try {
-    // Get the completed checklist with template version information (filter for weekly only)
+    // Get the completed checklist
     const { data: checklist, error: checklistError } = await supabase
       .from('completed_checklists')
       .select(`
         id,
         checklist_id,
-        template_version_id,
         completion_date,
         technician,
         completed_items,
@@ -391,74 +376,77 @@ async function getEvaluationDetails(supabase: any, evaluationId: string): Promis
           name,
           asset_id
         ),
-        checklist_template_versions!inner (
-          id,
-          name,
-          version_number,
-          template_id
-        ),
-        checklists!inner (
-          id,
-          name,
-          frequency
+        checklists (
+          name
         )
       `)
       .eq('id', evaluationId)
-      .eq('checklists.frequency', 'semanal')
       .single()
 
     if (checklistError || !checklist) {
       return NextResponse.json(
-        { error: 'Evaluación no encontrada o no es de tipo semanal' },
+        { error: 'Evaluación no encontrada' },
         { status: 404 }
       )
     }
 
-    // Get cleanliness section items from the template version JSONB sections
-    const { data: templateVersion, error: templateError } = await supabase
-      .from('checklist_template_versions')
-      .select(`
-        id,
-        sections
-      `)
-      .eq('id', checklist.template_version_id)
-      .single()
-
-    if (templateError) {
-      throw templateError
+    // Ensure completed_items is a parsed array
+    let completedItems = checklist.completed_items || []
+    if (typeof completedItems === 'string') {
+      try {
+        completedItems = JSON.parse(completedItems)
+      } catch {
+        completedItems = []
+      }
     }
 
-    // Parse cleanliness items from JSONB sections - ONLY from cleanliness sections
-    // and only show sections that have completed items to avoid duplicates
-    const sections = templateVersion?.sections as any[] || []
-    const cleanlinessItems: any[] = []
-    const completedItemIds = new Set(checklist.completed_items?.map((item: any) => item.item_id) || [])
-    const processedSectionTitles = new Set<string>()
-    
-    for (const section of sections) {
-      if (!section.items || !Array.isArray(section.items)) continue
-      
-      // Only process sections that are specifically cleanliness sections
-      if (isCleanlinessSection(section.title)) {
-        // Check if this section has any completed items
-        const sectionHasCompletedItems = section.items.some((item: any) => 
-          completedItemIds.has(item.id)
-        )
-        
-        // Skip duplicate section titles or sections with no completed items
-        if (!sectionHasCompletedItems || processedSectionTitles.has(section.title)) {
-          continue
-        }
-        
-        processedSectionTitles.add(section.title)
-        cleanlinessItems.push({
-          id: section.id,
-          title: section.title,
-          checklist_items: section.items.map((item: any) => ({
-            id: item.id,
-            description: item.description
-          }))
-        })
+    // Build cleanliness view directly from completed_items, without relying on templates or versions
+    const itemsArray: any[] = Array.isArray(completedItems) ? completedItems : []
+
+    // Helper to safely get description
+    const getDesc = (it: any) => (it.description || it.item_description || `Ítem ${it.item_id || it.id}`)
+
+    // Classify items heuristically into Interior/Exterior/General cleanliness
+    const interiorKeywords = ['interior', 'cabina', 'asiento', 'tablero', 'alfombra']
+    const exteriorKeywords = ['exterior', 'carrocer', 'llanta', 'ventana', 'parabrisas', 'faros']
+    const cleanlinessKeywords = ['limpieza', 'clean', 'aseo']
+
+    const lower = (s: string) => (s || '').toLowerCase()
+    const isMatch = (desc: string, keywords: string[]) => keywords.some(k => lower(desc).includes(k))
+
+    const interiorItems = itemsArray
+      .filter(it => it && (it.status === 'pass' || it.status === 'flag' || it.status === 'fail'))
+      .filter(it => isMatch(getDesc(it), interiorKeywords))
+      .map(it => ({ id: it.item_id || it.id, description: getDesc(it), status: it.status, notes: it.notes || undefined }))
+
+    const exteriorItems = itemsArray
+      .filter(it => it && (it.status === 'pass' || it.status === 'flag' || it.status === 'fail'))
+      .filter(it => isMatch(getDesc(it), exteriorKeywords))
+      .map(it => ({ id: it.item_id || it.id, description: getDesc(it), status: it.status, notes: it.notes || undefined }))
+
+    // General cleanliness: items that mention cleanliness or that are not clearly interior/exterior but appear cleanliness-related
+    const generalItems = itemsArray
+      .filter(it => it && (it.status === 'pass' || it.status === 'flag' || it.status === 'fail'))
+      .filter(it => {
+        const d = getDesc(it)
+        const isInterior = isMatch(d, interiorKeywords)
+        const isExterior = isMatch(d, exteriorKeywords)
+        const isCleanliness = isMatch(d, cleanlinessKeywords)
+        return !isInterior && !isExterior && isCleanliness
+      })
+      .map(it => ({ id: it.item_id || it.id, description: getDesc(it), status: it.status, notes: it.notes || undefined }))
+
+    const formattedSections: { title: string, items: Array<{ id: string, description: string, status: 'pass' | 'fail' | 'flag', notes?: string }> }[] = []
+    if (interiorItems.length > 0) formattedSections.push({ title: 'Interior', items: interiorItems })
+    if (exteriorItems.length > 0) formattedSections.push({ title: 'Exterior', items: exteriorItems })
+    if (generalItems.length > 0) formattedSections.push({ title: 'Limpieza General', items: generalItems })
+    // If none matched heuristics but there are items, provide a single section fallback
+    if (formattedSections.length === 0 && itemsArray.length > 0) {
+      const allCleanliness = itemsArray
+        .filter(it => it && (it.status === 'pass' || it.status === 'flag' || it.status === 'fail'))
+        .map(it => ({ id: it.item_id || it.id, description: getDesc(it), status: it.status, notes: it.notes || undefined }))
+      if (allCleanliness.length > 0) {
+        formattedSections.push({ title: 'Limpieza', items: allCleanliness })
       }
     }
 
@@ -482,37 +470,13 @@ async function getEvaluationDetails(supabase: any, evaluationId: string): Promis
       // Don't throw error, just continue without evidence
     }
 
-    // Build cleanliness item IDs from template sections
-    const cleanlinessItemIds = cleanlinessItems?.flatMap((section: any) => 
-      section.checklist_items?.map((item: any) => item.id) || []
-    ) || []
-
-    // Filter completed items to only cleanliness items using template-specific item IDs
-    const completedCleanlinessItems = checklist.completed_items?.filter((item: any) => 
-      cleanlinessItemIds.includes(item.item_id)
-    ) || []
-
-    // Format cleanliness sections using template structure
-    const formattedSections = cleanlinessItems?.map((section: any) => ({
-      title: section.title,
-      items: (section.checklist_items || []).map((templateItem: any) => {
-        const completedItem = completedCleanlinessItems.find((ci: any) => ci.item_id === templateItem.id)
-        return {
-          id: templateItem.id,
-          description: templateItem.description,
-          status: completedItem?.status || 'pass',
-          notes: completedItem?.notes || undefined
-        }
-      })
-    })) || []
-
     const evaluation: EvaluationDetails = {
       id: checklist.id,
       asset_name: checklist.assets?.name || 'N/A',
       asset_code: checklist.assets?.asset_id || 'N/A',
       technician_name: checklist.technician || 'N/A',
       completed_date: checklist.completion_date,
-      checklist_name: checklist.checklist_template_versions?.name || 'N/A',
+      checklist_name: checklist.checklists?.name || 'N/A',
       cleanliness_sections: formattedSections,
       notes: checklist.notes || '',
       signature_data: checklist.signature_data || undefined,
@@ -562,34 +526,14 @@ async function getEvaluationDetails(supabase: any, evaluationId: string): Promis
   }
 }
 
-// Function to identify cleanliness sections by their exact titles
-function isCleanlinessSection(sectionTitle: string): boolean {
-  if (!sectionTitle) return false
-  
-  const title = sectionTitle.toLowerCase().trim()
-  
-  // Exact cleanliness section titles from the database
-  const cleanlinessSectionTitles = [
-    'verificación de limpieza',
-    'verificacion de limpieza',  // without accent
-    'verificación de limpieza 1',
-    'verificacion de limpieza 1', // without accent
-    'limpieza',
-    'cleanliness',
-    'cleaning'
-  ]
-  
-  return cleanlinessSectionTitles.includes(title)
-}
-
-function calculateCleanlinessEvaluationByTemplate(checklist: any, cleanlinessItemIds: string[]) {
+function calculateCleanlinessEvaluation(checklist: any, itemIds: string[]) {
   if (!checklist.completed_items || !Array.isArray(checklist.completed_items)) {
     return null
   }
 
-  // Filter items to only cleanliness items using the template-specific item IDs
+  // Filter items to only cleanliness items for this template
   const cleanlinessItems = checklist.completed_items.filter((item: any) => 
-    cleanlinessItemIds.includes(item.item_id)
+    itemIds.includes(item.item_id)
   )
 
   if (cleanlinessItems.length === 0) {
@@ -616,13 +560,11 @@ function calculateCleanlinessEvaluationByTemplate(checklist: any, cleanlinessIte
     return averageScore >= 0.75 ? 'pass' : 'fail'
   }
 
-  // Categorize items by description patterns for interior/exterior classification
+  // Categorize items (assuming interior/exterior based on description)
   const interiorItems = cleanlinessItems.filter((item: any) => 
     item.description?.toLowerCase().includes('interior') ||
     item.description?.toLowerCase().includes('cabina') ||
-    item.description?.toLowerCase().includes('asientos') ||
-    item.description?.toLowerCase().includes('espejo') ||
-    item.description?.toLowerCase().includes('luz interior')
+    item.description?.toLowerCase().includes('asientos')
   )
   
   const exteriorItems = cleanlinessItems.filter((item: any) => 
@@ -630,53 +572,44 @@ function calculateCleanlinessEvaluationByTemplate(checklist: any, cleanlinessIte
     item.description?.toLowerCase().includes('carrocería') ||
     item.description?.toLowerCase().includes('llantas')
   )
-  
-  const generalItems = cleanlinessItems.filter((item: any) => 
-    item.description?.toLowerCase().includes('olla') ||
-    item.description?.toLowerCase().includes('limpi') && 
-    !item.description?.toLowerCase().includes('interior') && 
-    !item.description?.toLowerCase().includes('exterior')
-  )
 
-  // Combine general items with both interior and exterior for scoring
-  const allInteriorItems = [...interiorItems, ...generalItems]
-  const allExteriorItems = [...exteriorItems, ...generalItems]
+  // If we can't categorize, treat all as general cleanliness
+  const hasCategories = interiorItems.length > 0 || exteriorItems.length > 0
   
   let interiorStatus: 'pass' | 'fail' = 'pass'
   let exteriorStatus: 'pass' | 'fail' = 'pass'
   let interiorNotes = ''
   let exteriorNotes = ''
 
-  // Check interior items (including general cleanliness)
-  if (allInteriorItems.length > 0) {
-    interiorStatus = getSectionStatus(allInteriorItems)
-    const issueItems = allInteriorItems.filter((item: any) => 
-      item.status === 'fail' || item.status === 'flag'
-    )
-    interiorNotes = issueItems.map((item: any) => item.notes).filter(Boolean).join('; ')
-  }
+  if (hasCategories) {
+    // Check interior items using weighted scoring
+    if (interiorItems.length > 0) {
+      interiorStatus = getSectionStatus(interiorItems)
+      const issueItems = interiorItems.filter((item: any) => 
+        item.status === 'fail' || item.status === 'flag'
+      )
+      interiorNotes = issueItems.map((item: any) => item.notes).filter(Boolean).join('; ')
+    }
 
-  // Check exterior items (including general cleanliness)
-  if (allExteriorItems.length > 0) {
-    exteriorStatus = getSectionStatus(allExteriorItems)
-    const issueItems = allExteriorItems.filter((item: any) => 
-      item.status === 'fail' || item.status === 'flag'
-    )
-    exteriorNotes = issueItems.map((item: any) => item.notes).filter(Boolean).join('; ')
-  }
-
-  // If we couldn't categorize, treat all as general cleanliness
-  if (allInteriorItems.length === 0 && allExteriorItems.length === 0) {
+    // Check exterior items using weighted scoring
+    if (exteriorItems.length > 0) {
+      exteriorStatus = getSectionStatus(exteriorItems)
+      const issueItems = exteriorItems.filter((item: any) => 
+        item.status === 'fail' || item.status === 'flag'
+      )
+      exteriorNotes = issueItems.map((item: any) => item.notes).filter(Boolean).join('; ')
+    }
+  } else {
+    // General cleanliness evaluation using weighted scoring
     const generalStatus = getSectionStatus(cleanlinessItems)
     const issueItems = cleanlinessItems.filter((item: any) => 
       item.status === 'fail' || item.status === 'flag'
     )
-    const notes = issueItems.map((item: any) => item.notes).filter(Boolean).join('; ')
     
     interiorStatus = generalStatus
     exteriorStatus = generalStatus
-    interiorNotes = notes
-    exteriorNotes = notes
+    interiorNotes = issueItems.map((item: any) => item.notes).filter(Boolean).join('; ')
+    exteriorNotes = interiorNotes
   }
 
   // Calculate overall score using weighted scoring (pass=100%, flag=50%, fail=0%)
