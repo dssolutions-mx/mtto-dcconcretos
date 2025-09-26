@@ -287,6 +287,7 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
         order_index: section.order_index,
         section_type: section.section_type || 'checklist',
         evidence_config: section.evidence_config || undefined,
+        cleanliness_config: section.cleanliness_config || undefined,
         items: section.checklist_items?.map((item: any) => ({
           id: item.id,
           description: item.description,
@@ -882,6 +883,15 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
         categories: ['Estado General'],
         descriptions: { 'Estado General': 'Vista general del equipo' }
       } : undefined,
+      cleanliness_config: newType === 'cleanliness_bonus' ? {
+        min_photos: 2,
+        max_photos: 4,
+        areas: ['Interior', 'Exterior'],
+        descriptions: {
+          'Interior': 'Fotografiar evidencia del estado de limpieza interior',
+          'Exterior': 'Fotografiar evidencia del estado de limpieza exterior'
+        }
+      } : template.sections[sectionIndex].cleanliness_config,
       items: newType === 'evidence' ? [] : template.sections[sectionIndex].items
     })
   }
@@ -1188,6 +1198,40 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
         }
       })
 
+      // Sanitize cleanliness config to avoid empty/invalid states
+      template.sections = template.sections.map((section) => {
+        if (section.section_type === 'cleanliness_bonus') {
+          const minPhotos = section.cleanliness_config?.min_photos ?? 2
+          const maxPhotos = section.cleanliness_config?.max_photos ?? 6
+          const areasRaw = section.cleanliness_config?.areas || []
+          const areas = areasRaw
+            .map(a => (a || '').trim())
+            .filter(a => a.length > 0)
+          const descriptions = section.cleanliness_config?.descriptions || {}
+          const safeAreas = areas.length > 0 ? areas : ['Interior', 'Exterior']
+          const safeDescriptions = { ...descriptions }
+          safeAreas.forEach(a => {
+            if (!safeDescriptions[a]) {
+              safeDescriptions[a] = a.toLowerCase().includes('interior')
+                ? 'Fotografiar evidencia del estado de limpieza interior'
+                : a.toLowerCase().includes('exterior')
+                  ? 'Fotografiar evidencia del estado de limpieza exterior'
+                  : `Evidencia fotográfica para ${a}`
+            }
+          })
+          return {
+            ...section,
+            cleanliness_config: {
+              min_photos: Math.max(1, minPhotos),
+              max_photos: Math.max(Math.max(1, minPhotos), maxPhotos),
+              areas: safeAreas,
+              descriptions: safeDescriptions
+            }
+          }
+        }
+        return section
+      })
+
       const supabase = createClient()
 
       if (templateId) {
@@ -1386,15 +1430,16 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
               title: section.title,
               order_index: i,
               section_type: section.section_type || 'checklist',
-              evidence_config: section.evidence_config || null
+              evidence_config: section.evidence_config || null,
+              cleanliness_config: section.cleanliness_config || null
             })
             .select('id')
             .single()
 
           if (sectionError) throw sectionError
 
-          // Create items for checklist sections
-          if (section.section_type === 'checklist' || !section.section_type) {
+          // Create items for checklist and cleanliness sections
+          if (section.section_type === 'checklist' || section.section_type === 'cleanliness_bonus' || !section.section_type) {
             for (let j = 0; j < section.items.length; j++) {
               const item = section.items[j]
               await supabase

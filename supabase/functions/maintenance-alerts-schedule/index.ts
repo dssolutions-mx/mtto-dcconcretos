@@ -7,7 +7,27 @@ const SENDGRID_API_KEY = Deno.env.get('SENDGRID_API_KEY')!
 
 const FROM_EMAIL = 'juan.aguirre@dssolutions-mx.com'
 const FROM_NAME = 'DASHBOARD DE MANTENIMIENTO'
-const RECIPIENT_EMAIL = 'juan.aguirre@dssolutions-mx.com'
+const RECIPIENT_EMAIL = 'juan.aguirre@dssolutions-mx.com, mantenimientotij@dcconcretos.com.mx'
+
+function buildRecipients(): { email: string }[] {
+  const envTo = Deno.env.get('SENDGRID_TO')
+  const raw: unknown = envTo ?? (RECIPIENT_EMAIL as unknown)
+  if (Array.isArray(raw)) {
+    return (raw as unknown[]).map(v => ({ email: String(v) }))
+  }
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw)
+      if (Array.isArray(parsed)) return parsed.map((v: any) => ({ email: String(v) }))
+    } catch {}
+    return raw
+      .split(/[;,]/)
+      .map(s => s.trim())
+      .filter(Boolean)
+      .map(email => ({ email }))
+  }
+  return [{ email: String(raw || RECIPIENT_EMAIL) }]
+}
 
 function formatDate(d?: string | null) {
   if (!d) return '-'
@@ -125,7 +145,7 @@ serve(async (req) => {
 
     const emailContent = buildEmail(alerts)
     const payload = {
-      personalizations: [{ to: [{ email: RECIPIENT_EMAIL }], subject: `Alertas de Mantenimiento` }],
+      personalizations: [{ to: buildRecipients(), subject: `Alertas de Mantenimiento` }],
       from: { email: FROM_EMAIL, name: FROM_NAME },
       content: [{ type: 'text/html', value: emailContent }]
     }

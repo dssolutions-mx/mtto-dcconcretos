@@ -7,7 +7,29 @@ const SENDGRID_API_KEY = Deno.env.get('SENDGRID_API_KEY')!
 
 const FROM_EMAIL = "juan.aguirre@dssolutions-mx.com"
 const FROM_NAME = "DASHBOARD DE MANTENIMIENTO"
-const RECIPIENT_EMAIL = "juan.aguirre@dssolutions-mx.com"
+const RECIPIENT_EMAIL = "juan.aguirre@dssolutions-mx.com, mantenimientotij@dcconcretos.com.mx"
+
+// Build recipients array robustly from env or fallback constant
+function buildRecipients(): { email: string }[] {
+  const envTo = Deno.env.get('SENDGRID_TO')
+  const raw: unknown = envTo ?? (RECIPIENT_EMAIL as unknown)
+  if (Array.isArray(raw)) {
+    return (raw as unknown[]).map(v => ({ email: String(v) }))
+  }
+  if (typeof raw === 'string') {
+    // Allow JSON array string, or comma/semicolon-separated values
+    try {
+      const parsed = JSON.parse(raw)
+      if (Array.isArray(parsed)) return parsed.map((v: any) => ({ email: String(v) }))
+    } catch {}
+    return raw
+      .split(/[;,]/)
+      .map(s => s.trim())
+      .filter(Boolean)
+      .map(email => ({ email }))
+  }
+  return [{ email: String(raw || RECIPIENT_EMAIL) }]
+}
 
 // Mexico timezone helpers (GMT-6)
 const TIMEZONE_OFFSET = -6 * 60 * 60 * 1000
@@ -275,7 +297,7 @@ serve(async (req) => {
     const emailData = {
       personalizations: [
         {
-          to: [{ email: RECIPIENT_EMAIL }],
+          to: buildRecipients(),
           subject: `Checklist Programados - ${targetDate} - Dashboard de Mantenimiento`
         }
       ],

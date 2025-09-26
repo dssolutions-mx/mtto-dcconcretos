@@ -1919,11 +1919,14 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
                           <EvidenceCaptureSection
                             sectionId={section.id}
                             sectionTitle={section.title}
-                            config={section.evidence_config || {
-                              min_photos: 1,
-                              max_photos: 5,
-                              categories: ['Estado General']
-                            }}
+                            config={(section.evidence_config && Array.isArray(section.evidence_config.categories) && section.evidence_config.categories.length > 0)
+                              ? section.evidence_config
+                              : {
+                                  min_photos: section.evidence_config?.min_photos ?? 1,
+                                  max_photos: section.evidence_config?.max_photos ?? 5,
+                                  categories: ['Estado General']
+                                }
+                            }
                             onEvidenceChange={handleEvidenceChange}
                             disabled={submitting}
                           />
@@ -2086,21 +2089,32 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
                               <Camera className="h-4 w-4" />
                               Evidencia Fotográfica para Verificación de Limpieza
                             </h4>
-                            <EvidenceCaptureSection
+                            {(() => {
+                              const items = (section.checklist_items || section.items || []) as any[]
+                              const configuredAreas = section.cleanliness_config?.areas || []
+                              const hasAreas = configuredAreas.length > 0
+                              // If areas missing or clearly outdated, derive from items (first 3 words of description)
+                              const derivedAreas = !hasAreas || configuredAreas.length < items.length
+                                ? items.map((it, idx) => (it?.description?.split(' ').slice(0, 3).join(' ') || `Área ${idx + 1}`)).slice(0, 20)
+                                : configuredAreas
+
+                              return (
+                                <EvidenceCaptureSection
                               sectionId={section.id}
                               sectionTitle={section.title}
-                              config={{
-                                min_photos: section.cleanliness_config?.min_photos || 2,
-                                max_photos: section.cleanliness_config?.max_photos || 6,
-                                categories: section.cleanliness_config?.areas || ['Interior', 'Exterior'],
-                                descriptions: section.cleanliness_config?.descriptions || {
-                                  'Interior': 'Documentar el estado de limpieza del interior',
-                                  'Exterior': 'Fotografiar la limpieza exterior del equipo'
-                                }
-                              }}
-                              onEvidenceChange={handleEvidenceChange}
-                              disabled={submitting}
-                            />
+                                  config={{
+                                    min_photos: (section.cleanliness_config?.min_photos ?? 2),
+                                    max_photos: (section.cleanliness_config?.max_photos ?? 6),
+                                    categories: derivedAreas.length > 0 ? derivedAreas : ['Interior', 'Exterior'],
+                                    descriptions: (section.cleanliness_config?.descriptions && Object.keys(section.cleanliness_config.descriptions).length > 0)
+                                      ? section.cleanliness_config.descriptions
+                                      : undefined
+                                  }}
+                                  onEvidenceChange={handleEvidenceChange}
+                                  disabled={submitting}
+                                />
+                              )
+                            })()}
                           </div>
                         </div>
                       </CollapsibleContent>

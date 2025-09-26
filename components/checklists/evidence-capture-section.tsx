@@ -101,6 +101,17 @@ export function EvidenceCaptureSection({
   }, [])
 
   // Enhanced online/offline monitoring
+  // Keep selectedCategory valid when config.categories changes
+  useEffect(() => {
+    if (!config?.categories || config.categories.length === 0) {
+      if (selectedCategory) setSelectedCategory('')
+      return
+    }
+    if (!selectedCategory || !config.categories.includes(selectedCategory)) {
+      setSelectedCategory(config.categories[0])
+    }
+  }, [config?.categories])
+
   useEffect(() => {
     if (typeof window === 'undefined') return
     
