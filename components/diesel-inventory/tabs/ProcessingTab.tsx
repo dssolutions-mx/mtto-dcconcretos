@@ -26,13 +26,7 @@ import {
   FileText
 } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { 
-  useDieselStore, 
-  useDieselProcessingStatus, 
-  useDieselBatch, 
-  useDieselErrors,
-  dieselUtils 
-} from '@/store/diesel-store'
+import { useDieselStore } from '@/store/diesel-store'
 
 interface ProcessingTabProps {
   onBackToMapping?: () => void
@@ -59,12 +53,18 @@ export function ProcessingTab({ onBackToMapping, onComplete }: ProcessingTabProp
     setCurrentStep,
     setOverallProgress,
     addNotification,
-    reset
+    reset,
+    getProcessingSummary,
+    processingStatus: status,
+    currentStep: step,
+    overallProgress: progress,
+    currentBatch,
+    errors
   } = useDieselStore()
   
-  const { status, step, progress } = useDieselProcessingStatus()
-  const { currentBatch, canStart } = useDieselBatch()
-  const { errors, hasErrors, errorCount } = useDieselErrors()
+  const hasErrors = errors.length > 0
+  const errorCount = errors.length
+  const canStart = parsedData.length > 0 && status !== 'processing'
   
   const [processingSteps, setProcessingSteps] = useState<ProcessingStep[]>([
     {
@@ -311,7 +311,7 @@ export function ProcessingTab({ onBackToMapping, onComplete }: ProcessingTabProp
   }, [setProcessingStatus, setCurrentStep, setOverallProgress, reset])
 
   // Processing summary
-  const processingSummary = dieselUtils.getProcessingStats()
+  const processingSummary = getProcessingSummary()
   
   // Check if we can start processing
   const canProcess = parsedData.length > 0 && !isProcessing && status !== 'processing'

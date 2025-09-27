@@ -22,7 +22,7 @@ import {
   MapPin
 } from "lucide-react"
 import { AssetMapper } from '../migration/AssetMapper'
-import { useDieselStore, useDieselProcessingStatus } from '@/store/diesel-store'
+import { useDieselStore } from '@/store/diesel-store'
 
 interface MappingTabProps {
   onBackToImport?: () => void
@@ -38,7 +38,7 @@ export function MappingTab({ onBackToImport, onProceedToProcessing }: MappingTab
     errors
   } = useDieselStore()
   
-  const { status, step, progress } = useDieselProcessingStatus()
+  const { processingStatus: status, currentStep: step, overallProgress: progress } = useDieselStore()
   
   const [showInstructions, setShowInstructions] = useState(true)
 

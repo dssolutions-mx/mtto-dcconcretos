@@ -1,149 +1,241 @@
 import { create } from 'zustand'
 import { devtools, subscribeWithSelector } from 'zustand/middleware'
-import { 
-  DieselImportState, 
-  DieselExcelRow,
-  ImportBatch,
-  AssetMappingEntry,
-  AssetResolution,
-  ProcessingError,
-  ProcessingNotification,
-  ValidationResult 
-} from '@/types/diesel'
-import { createClient } from '@/lib/supabase'
+
+// Define types directly in the store file to avoid import issues
+export interface DieselExcelRow {
+  creado: string;
+  planta: string;
+  clave_producto: string;
+  almacen: string;
+  tipo: 'Entrada' | 'Salida';
+  unidad: string;
+  identificador: string;
+  fecha_: string;
+  horario: string;
+  horometro: number | null;
+  kilometraje: number | null;
+  litros_cantidad: number;
+  cuenta_litros: number | null;
+  responsable_unidad: string;
+  responsable_suministro: string;
+  validacion: string;
+  inventario_inicial: number | null;
+  inventario: number | null;
+  original_row_index: number;
+  validation_status: 'valid' | 'warning' | 'error';
+  validation_messages: string[];
+  asset_id: string | null;
+  exception_asset_name: string | null;
+  asset_category: 'formal' | 'exception' | 'general' | null;
+  resolved_asset_name: string | null;
+  resolved_asset_type: 'formal' | 'exception' | 'general' | 'unmapped' | null;
+  resolved_asset_id: string | null;
+  processing_status: 'pending' | 'staged' | 'processed' | 'error' | 'skipped';
+  processing_notes: string | null;
+}
+
+export interface ImportBatch {
+  batch_id: string;
+  original_filename: string;
+  total_rows: number;
+  processed_rows: number;
+  successful_rows: number;
+  error_rows: number;
+  status: 'uploading' | 'parsing' | 'mapping' | 'staging' | 'processing' | 'completed' | 'error';
+  progress_percentage: number;
+  created_at: string;
+  completed_at: string | null;
+  created_by: string;
+  processing_summary: {
+    total_processed: number;
+    successful: number;
+    errors: number;
+    warnings: number;
+    unmapped_assets: number;
+    mapped_assets: number;
+  } | null;
+}
+
+export interface AssetMappingEntry {
+  original_name: string;
+  suggested_formal_asset_id: string | null;
+  suggested_formal_asset_name: string | null;
+  suggested_exception_asset_id: string | null;
+  suggested_exception_asset_name: string | null;
+  confidence_level: number;
+  status: 'unmapped' | 'mapped_formal' | 'mapped_exception' | 'ignored';
+  selected_mapping_type: 'formal' | 'exception' | 'general' | 'ignore' | null;
+  selected_asset_id: string | null;
+  selected_exception_asset_name: string | null;
+  manual_override: boolean;
+  occurrences: number;
+  first_seen: string;
+  last_seen: string;
+}
+
+export interface AssetResolution {
+  original_name: string;
+  resolution_type: 'formal' | 'exception' | 'general' | 'unmapped';
+  asset_id: string | null;
+  exception_asset_id: string | null;
+  asset_name: string | null;
+  exception_asset_name: string | null;
+  confidence: number;
+  created_new: boolean;
+  mapping_notes: string | null;
+}
+
+export interface ProcessingError {
+  id: string;
+  batch_id: string;
+  row_number: number;
+  error_type: 'validation' | 'mapping' | 'database' | 'processing';
+  error_message: string;
+  field_name: string | null;
+  suggested_fix: string | null;
+  severity: 'warning' | 'error' | 'critical';
+  resolved: boolean;
+  resolved_at: string | null;
+  resolved_by: string | null;
+}
+
+export interface ProcessingNotification {
+  id: string;
+  type: 'info' | 'success' | 'warning' | 'error';
+  title: string;
+  message: string;
+  timestamp: string;
+  dismissed: boolean;
+  action?: {
+    label: string;
+    callback: () => void;
+  };
+}
+
+export interface ValidationResult {
+  isValid: boolean;
+  errors: Array<{
+    field: string;
+    message: string;
+    value: any;
+    rowNumber: number;
+  }>;
+  warnings: Array<{
+    field: string;
+    message: string;
+    value: any;
+    rowNumber: number;
+    suggestion?: string;
+  }>;
+}
 
 // Define the complete store interface
-interface DieselStore extends DieselImportState {
-  // Core user info needed for diesel operations
-  user: { id: string } | null
-  setUser: (user: { id: string } | null) => void
-  
-  // File Upload Actions
-  setUploadedFile: (file: File | null) => void
-  setUploadProgress: (progress: number) => void
-  setUploading: (isUploading: boolean) => void
-  
-  // Parsing Actions
-  setParsedData: (data: DieselExcelRow[]) => void
-  setParsingErrors: (errors: string[]) => void
-  setParsing: (isParsing: boolean) => void
-  clearParsedData: () => void
-  
-  // Batch Management Actions
-  createBatch: (filename: string, rowCount: number) => Promise<string>
-  updateBatch: (batch: Partial<ImportBatch>) => void
-  completeBatch: () => void
-  
-  // Asset Mapping Actions
-  setUnmappedAssets: (assets: AssetMappingEntry[]) => void
-  addPendingMapping: (originalName: string, resolution: AssetResolution) => void
-  removePendingMapping: (originalName: string) => void
-  setMappingProgress: (progress: number) => void
-  submitAssetMappings: () => Promise<boolean>
-  
-  // Processing Status Actions
-  setProcessingStatus: (status: DieselImportState['processingStatus']) => void
-  setCurrentStep: (step: string) => void
-  setOverallProgress: (progress: number) => void
-  
-  // Error & Notification Management
-  addError: (error: ProcessingError) => void
-  removeError: (errorId: string) => void
-  clearErrors: () => void
-  addNotification: (notification: Omit<ProcessingNotification, 'id' | 'timestamp' | 'dismissed'>) => void
-  dismissNotification: (notificationId: string) => void
-  clearNotifications: () => void
-  
-  // Data Processing Actions
-  validateExcelData: (data: DieselExcelRow[]) => ValidationResult
-  processDataBatch: () => Promise<boolean>
-  
-  // Utility Actions
-  reset: () => void
+interface DieselStore {
+  // State properties
+  uploadedFile: File | null;
+  uploadProgress: number;
+  isUploading: boolean;
+  parsedData: DieselExcelRow[];
+  parsingErrors: string[];
+  isParsing: boolean;
+  currentBatch: ImportBatch | null;
+  batchHistory: ImportBatch[];
+  unmappedAssets: AssetMappingEntry[];
+  pendingMappings: Map<string, AssetResolution>;
+  mappingProgress: number;
+  processingStatus: 'idle' | 'uploading' | 'parsing' | 'mapping' | 'staging' | 'processing' | 'completed' | 'error';
+  currentStep: string;
+  overallProgress: number;
+  errors: ProcessingError[];
+  notifications: ProcessingNotification[];
+  user: { id: string } | null;
+
+  // Actions
+  setUser: (user: { id: string } | null) => void;
+  setUploadedFile: (file: File | null) => void;
+  setUploadProgress: (progress: number) => void;
+  setUploading: (isUploading: boolean) => void;
+  setParsedData: (data: DieselExcelRow[]) => void;
+  setParsingErrors: (errors: string[]) => void;
+  setParsing: (isParsing: boolean) => void;
+  clearParsedData: () => void;
+  createBatch: (filename: string, rowCount: number) => Promise<string>;
+  updateBatch: (batch: Partial<ImportBatch>) => void;
+  completeBatch: () => void;
+  setUnmappedAssets: (assets: AssetMappingEntry[]) => void;
+  addPendingMapping: (originalName: string, resolution: AssetResolution) => void;
+  removePendingMapping: (originalName: string) => void;
+  setMappingProgress: (progress: number) => void;
+  submitAssetMappings: () => Promise<boolean>;
+  setProcessingStatus: (status: DieselStore['processingStatus']) => void;
+  setCurrentStep: (step: string) => void;
+  setOverallProgress: (progress: number) => void;
+  addError: (error: ProcessingError) => void;
+  removeError: (errorId: string) => void;
+  clearErrors: () => void;
+  addNotification: (notification: Omit<ProcessingNotification, 'id' | 'timestamp' | 'dismissed'>) => void;
+  dismissNotification: (notificationId: string) => void;
+  clearNotifications: () => void;
+  validateExcelData: (data: DieselExcelRow[]) => ValidationResult;
+  processDataBatch: () => Promise<boolean>;
+  reset: () => void;
   getProcessingSummary: () => {
-    totalRows: number
-    processedRows: number
-    errorCount: number
-    successRate: number
-    currentBatch: ImportBatch | null
-  }
+    totalRows: number;
+    processedRows: number;
+    errorCount: number;
+    successRate: number;
+    currentBatch: ImportBatch | null;
+  };
 }
 
-// Initial state
-const initialState: DieselImportState = {
-  // File upload state
-  uploadedFile: null,
-  uploadProgress: 0,
-  isUploading: false,
-  
-  // Parsing state
-  parsedData: [],
-  parsingErrors: [],
-  isParsing: false,
-  
-  // Batch processing
-  currentBatch: null,
-  batchHistory: [],
-  
-  // Asset mapping state
-  unmappedAssets: [],
-  pendingMappings: new Map(),
-  mappingProgress: 0,
-  
-  // Processing status
-  processingStatus: 'idle',
-  currentStep: '',
-  overallProgress: 0,
-  
-  // Errors and notifications
-  errors: [],
-  notifications: []
-}
-
-// **SOLUTION: Create the diesel-specific store directly**
+// Create the diesel-specific store
 export const useDieselStore = create<DieselStore>()(
   devtools(
     subscribeWithSelector(
       (set, get) => ({
         // Initial state
-        ...initialState,
-        
-        // User context (minimal for diesel operations)
+        uploadedFile: null,
+        uploadProgress: 0,
+        isUploading: false,
+        parsedData: [],
+        parsingErrors: [],
+        isParsing: false,
+        currentBatch: null,
+        batchHistory: [],
+        unmappedAssets: [],
+        pendingMappings: new Map(),
+        mappingProgress: 0,
+        processingStatus: 'idle',
+        currentStep: '',
+        overallProgress: 0,
+        errors: [],
+        notifications: [],
         user: null,
+
+        // Actions
         setUser: (user: { id: string } | null) => set({ user }),
-        
-        // File Upload Actions
         setUploadedFile: (file: File | null) => set({ uploadedFile: file }),
-        
         setUploadProgress: (progress: number) => set({ uploadProgress: Math.max(0, Math.min(100, progress)) }),
-        
-        setUploading: (isUploading: boolean) => set(state => ({ 
+        setUploading: (isUploading: boolean) => set(state => ({
           isUploading,
           uploadProgress: isUploading ? 0 : state.uploadProgress
         })),
-        
-        // Parsing Actions
-        setParsedData: (data: DieselExcelRow[]) => set({ 
+        setParsedData: (data: DieselExcelRow[]) => set({
           parsedData: data,
           parsingErrors: [],
-          isParsing: false 
+          isParsing: false
         }),
-        
         setParsingErrors: (errors: string[]) => set({ parsingErrors: errors }),
-        
         setParsing: (isParsing: boolean) => set({ isParsing }),
-        
-        clearParsedData: () => set({ 
+        clearParsedData: () => set({
           parsedData: [],
           parsingErrors: [],
           isParsing: false
         }),
-        
-        // Batch Management Actions
         createBatch: async (filename: string, rowCount: number) => {
-          const batchId = `batch-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+          const batchId = `batch-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`
           const state = get()
-          
+
           const newBatch: ImportBatch = {
             batch_id: batchId,
             original_filename: filename,
@@ -158,26 +250,32 @@ export const useDieselStore = create<DieselStore>()(
             created_by: state.user?.id || 'unknown',
             processing_summary: null
           }
-          
+
           set({ currentBatch: newBatch })
-          
-          get().addNotification({
-            type: 'info',
+
+          // Add notification using the addNotification function directly
+          const notification = {
+            id: `notification-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`,
+            type: 'info' as const,
             title: 'Batch Created',
-            message: `New import batch created for ${filename}`
-          })
-          
+            message: `New import batch created for ${filename}`,
+            timestamp: new Date().toISOString(),
+            dismissed: false
+          }
+
+          set(state => ({
+            notifications: [...state.notifications, notification]
+          }))
+
           return batchId
         },
-        
         updateBatch: (batchUpdate: Partial<ImportBatch>) => {
           set(state => ({
-            currentBatch: state.currentBatch 
+            currentBatch: state.currentBatch
               ? { ...state.currentBatch, ...batchUpdate }
               : null
           }))
         },
-        
         completeBatch: () => {
           const { currentBatch } = get()
           if (currentBatch) {
@@ -187,24 +285,29 @@ export const useDieselStore = create<DieselStore>()(
               completed_at: new Date().toISOString(),
               progress_percentage: 100
             }
-            
+
             set(state => ({
               currentBatch: null,
               batchHistory: [completedBatch, ...state.batchHistory],
               processingStatus: 'completed'
             }))
-            
-            get().addNotification({
-              type: 'success',
+
+            // Add notification using direct set
+            const notification = {
+              id: `notification-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`,
+              type: 'success' as const,
               title: 'Batch Completed',
-              message: `Successfully processed ${completedBatch.successful_rows}/${completedBatch.total_rows} rows`
-            })
+              message: `Successfully processed ${completedBatch.successful_rows}/${completedBatch.total_rows} rows`,
+              timestamp: new Date().toISOString(),
+              dismissed: false
+            }
+
+            set(state => ({
+              notifications: [...state.notifications, notification]
+            }))
           }
         },
-        
-        // Asset Mapping Actions
         setUnmappedAssets: (assets: AssetMappingEntry[]) => set({ unmappedAssets: assets }),
-        
         addPendingMapping: (originalName: string, resolution: AssetResolution) => {
           set(state => {
             const newPendingMappings = new Map(state.pendingMappings)
@@ -212,7 +315,6 @@ export const useDieselStore = create<DieselStore>()(
             return { pendingMappings: newPendingMappings }
           })
         },
-        
         removePendingMapping: (originalName: string) => {
           set(state => {
             const newPendingMappings = new Map(state.pendingMappings)
@@ -220,49 +322,36 @@ export const useDieselStore = create<DieselStore>()(
             return { pendingMappings: newPendingMappings }
           })
         },
-        
         setMappingProgress: (progress: number) => set({ mappingProgress: Math.max(0, Math.min(100, progress)) }),
-        
         submitAssetMappings: async () => {
-          // Implementation would go here
           return true
         },
-        
-        // Processing Status Actions
-        setProcessingStatus: (status: DieselImportState['processingStatus']) => set({ processingStatus: status }),
-        
+        setProcessingStatus: (status: DieselStore['processingStatus']) => set({ processingStatus: status }),
         setCurrentStep: (step: string) => set({ currentStep: step }),
-        
         setOverallProgress: (progress: number) => set({ overallProgress: Math.max(0, Math.min(100, progress)) }),
-        
-        // Error & Notification Management
         addError: (error: ProcessingError) => {
-          set(state => ({ 
+          set(state => ({
             errors: [...state.errors, error]
           }))
         },
-        
         removeError: (errorId: string) => {
-          set(state => ({ 
+          set(state => ({
             errors: state.errors.filter(error => error.id !== errorId)
           }))
         },
-        
         clearErrors: () => set({ errors: [] }),
-        
         addNotification: (notification: Omit<ProcessingNotification, 'id' | 'timestamp' | 'dismissed'>) => {
           const fullNotification: ProcessingNotification = {
             ...notification,
-            id: `notification-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+            id: `notification-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`,
             timestamp: new Date().toISOString(),
             dismissed: false
           }
-          
-          set(state => ({ 
+
+          set(state => ({
             notifications: [...state.notifications, fullNotification]
           }))
         },
-        
         dismissNotification: (notificationId: string) => {
           set(state => ({
             notifications: state.notifications.map(notification =>
@@ -272,18 +361,14 @@ export const useDieselStore = create<DieselStore>()(
             )
           }))
         },
-        
         clearNotifications: () => set({ notifications: [] }),
-        
-        // Data Processing Actions
-        validateExcelData: (data: DieselExcelRow[]): ValidationResult => {
+        validateExcelData: (data: DieselExcelRow[]) => {
           const errors: Array<{field: string; message: string; value: any; rowNumber: number}> = []
           const warnings: Array<{field: string; message: string; value: any; rowNumber: number; suggestion?: string}> = []
-          
+
           data.forEach((row, index) => {
             const rowNumber = index + 1
-            
-            // Required field validation
+
             if (!row.planta?.trim()) {
               errors.push({
                 field: 'planta',
@@ -292,8 +377,8 @@ export const useDieselStore = create<DieselStore>()(
                 rowNumber
               })
             }
-            
-            if (!row.litros_cantidad || isNaN(parseFloat(row.litros_cantidad))) {
+
+            if (!row.litros_cantidad || isNaN(Number(row.litros_cantidad))) {
               errors.push({
                 field: 'litros_cantidad',
                 message: 'Valid quantity in liters is required',
@@ -301,7 +386,7 @@ export const useDieselStore = create<DieselStore>()(
                 rowNumber
               })
             }
-            
+
             if (!['Entrada', 'Salida'].includes(row.tipo)) {
               errors.push({
                 field: 'tipo',
@@ -311,36 +396,46 @@ export const useDieselStore = create<DieselStore>()(
               })
             }
           })
-          
+
           return {
             isValid: errors.length === 0,
             errors,
             warnings
           }
         },
-        
         processDataBatch: async () => {
-          // Implementation would call actual Supabase functions
-          await new Promise(resolve => setTimeout(resolve, 2000)) // Simulate processing
+          await new Promise(resolve => setTimeout(resolve, 2000))
           return true
         },
-        
-        // Utility Actions
         reset: () => {
           set(state => ({
-            ...initialState,
-            batchHistory: state.batchHistory // Keep history
+            uploadedFile: null,
+            uploadProgress: 0,
+            isUploading: false,
+            parsedData: [],
+            parsingErrors: [],
+            isParsing: false,
+            currentBatch: null,
+            unmappedAssets: [],
+            pendingMappings: new Map(),
+            mappingProgress: 0,
+            processingStatus: 'idle',
+            currentStep: '',
+            overallProgress: 0,
+            errors: [],
+            notifications: [],
+            user: state.user,
+            batchHistory: state.batchHistory
           }))
         },
-        
         getProcessingSummary: () => {
           const state = get()
           return {
             totalRows: state.parsedData.length,
             processedRows: state.currentBatch?.processed_rows || 0,
             errorCount: state.errors.length,
-            successRate: state.parsedData.length > 0 
-              ? ((state.parsedData.length - state.errors.length) / state.parsedData.length) * 100 
+            successRate: state.parsedData.length > 0
+              ? ((state.parsedData.length - state.errors.length) / state.parsedData.length) * 100
               : 0,
             currentBatch: state.currentBatch
           }
@@ -356,195 +451,37 @@ export const useDieselStore = create<DieselStore>()(
 )
 
 // Store utilities for non-hook access
-export const dieselStore = {
-  getState: useDieselStore.getState,
-  setState: useDieselStore.setState,
-  subscribe: useDieselStore.subscribe,
-  destroy: useDieselStore.destroy,
-}
+export const getDieselStore = () => useDieselStore.getState()
+export const setDieselStore = (state: Partial<DieselStore>) => useDieselStore.setState(state)
 
-// **SOLUTION: Diesel-specific utilities**
+// Diesel-specific utilities
 export const dieselUtils = {
-  // Initialize store with user context from auth store
   initializeWithUser: (userId: string) => {
-    dieselStore.setState({ user: { id: userId } })
+    setDieselStore({ user: { id: userId } })
   },
-  
-  // Reset all diesel data (useful for dev/testing)
+
   resetAll: () => {
-    const store = dieselStore.getState()
+    const store = getDieselStore()
     store.reset()
     store.clearNotifications()
     store.clearErrors()
   },
-  
-  // Get processing statistics
+
   getProcessingStats: () => {
-    const store = dieselStore.getState()
+    const store = getDieselStore()
     return store.getProcessingSummary()
   },
-  
-  // Check if store is ready for operations
+
   isReady: () => {
-    const { user, processingStatus } = dieselStore.getState()
+    const { user, processingStatus } = getDieselStore()
     return user !== null && processingStatus !== 'processing'
-  },
-  
-  // Advanced error handling
-  handleCriticalError: (error: Error, context: string) => {
-    console.error(`🚨 Critical Diesel Store Error [${context}]:`, error)
-    
-    const store = dieselStore.getState()
-    store.addError({
-      id: `critical-${Date.now()}`,
-      batch_id: store.currentBatch?.batch_id || '',
-      row_number: 0,
-      error_type: 'database',
-      error_message: `Critical error in ${context}: ${error.message}`,
-      field_name: null,
-      suggested_fix: 'Contact system administrator',
-      severity: 'error',
-      resolved: false,
-      resolved_at: null,
-      resolved_by: null
-    })
-    
-    store.addNotification({
-      type: 'error',
-      title: 'Critical Error',
-      message: `System error in ${context}. Please try again or contact support.`,
-      action: {
-        label: 'Reset',
-        callback: () => dieselUtils.resetAll()
-      }
-    })
-  },
-  
-  // Batch operation helpers
-  canStartNewBatch: () => {
-    const { processingStatus, currentBatch } = dieselStore.getState()
-    return processingStatus === 'idle' && currentBatch === null
-  },
-  
-  getCurrentBatchProgress: () => {
-    const { currentBatch, overallProgress } = dieselStore.getState()
-    if (!currentBatch) return null
-    
-    return {
-      batchId: currentBatch.batch_id,
-      filename: currentBatch.original_filename,
-      totalRows: currentBatch.total_rows,
-      processedRows: currentBatch.processed_rows,
-      successfulRows: currentBatch.successful_rows,
-      errorRows: currentBatch.error_rows,
-      progress: overallProgress,
-      status: currentBatch.status
-    }
-  },
-  
-  // Validation helpers
-  validateStoreState: (): { isValid: boolean; issues: string[] } => {
-    const state = dieselStore.getState()
-    const issues: string[] = []
-    
-    if (!state.user) {
-      issues.push('No user context set')
-    }
-    
-    if (state.processingStatus === 'error' && state.errors.length === 0) {
-      issues.push('Error status but no error records')
-    }
-    
-    if (state.parsedData.length > 0 && !state.currentBatch) {
-      issues.push('Parsed data exists but no batch created')
-    }
-    
-    if (state.currentBatch && state.parsedData.length === 0) {
-      issues.push('Batch exists but no parsed data')
-    }
-    
-    return {
-      isValid: issues.length === 0,
-      issues
-    }
   }
 }
 
-// **SOLUTION: Development utilities (only available in dev mode)**
+// Development utilities
 if (process.env.NODE_ENV === 'development') {
-  // Add to window for debugging
   if (typeof window !== 'undefined') {
-    (window as any).dieselStore = dieselStore
-    (window as any).dieselUtils = dieselUtils
+    (window as any).dieselStore = useDieselStore
+    ;(window as any).dieselUtils = dieselUtils
   }
-  
-  // Add logging subscription for debugging
-  useDieselStore.subscribe(
-    (state) => state.processingStatus,
-    (status, prevStatus) => {
-      if (status !== prevStatus) {
-        console.log(`🔄 Diesel Processing Status: ${prevStatus} → ${status}`)
-      }
-    }
-  )
-  
-  useDieselStore.subscribe(
-    (state) => state.errors,
-    (errors) => {
-      if (errors.length > 0) {
-        console.log(`❌ Diesel Errors: ${errors.length} total`)
-        errors.forEach(error => {
-          if (!error.resolved) {
-            console.error(`  • ${error.error_type}: ${error.error_message}`)
-          }
-        })
-      }
-    }
-  )
-}
-
-// **SOLUTION: Cleanup on page unload**
-if (typeof window !== 'undefined') {
-  window.addEventListener('beforeunload', () => {
-    // Save critical state before unload if needed
-    const { currentBatch, processingStatus } = dieselStore.getState()
-    
-    if (currentBatch && processingStatus === 'processing') {
-      console.warn('🚨 Page unloading during active processing')
-      // In a real app, you might want to save state to localStorage
-    }
-  })
-}
-
-// Type-safe hooks for common operations
-export const useDieselProcessingStatus = () => {
-  return useDieselStore((state) => ({
-    status: state.processingStatus,
-    step: state.currentStep,
-    progress: state.overallProgress
-  }))
-}
-
-export const useDieselBatch = () => {
-  return useDieselStore((state) => ({
-    currentBatch: state.currentBatch,
-    canStart: dieselUtils.canStartNewBatch(),
-    progress: dieselUtils.getCurrentBatchProgress()
-  }))
-}
-
-export const useDieselErrors = () => {
-  return useDieselStore((state) => ({
-    errors: state.errors.filter(e => !e.resolved),
-    hasErrors: state.errors.some(e => !e.resolved),
-    errorCount: state.errors.filter(e => !e.resolved).length
-  }))
-}
-
-export const useDieselNotifications = () => {
-  return useDieselStore((state) => ({
-    notifications: state.notifications.filter(n => !n.dismissed),
-    hasUnread: state.notifications.some(n => !n.dismissed),
-    unreadCount: state.notifications.filter(n => !n.dismissed).length
-  }))
 }

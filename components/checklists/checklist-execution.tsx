@@ -483,77 +483,33 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
             console.log(`🧹 Evidence in this section:`, sectionEvidences.length)
           }
           
-          // If no evidence found in this section, look for related evidence sections
+          // If no evidence found in this section, check if there are evidence sections with enough photos
           if (sectionEvidences.length === 0 && areas.length > 0) {
-            // Find evidence sections that might be related to this cleanliness section
-            const relatedEvidenceSection = checklist.sections?.find((s: any) => 
-              s.section_type === 'evidence' && 
-              s.title?.toLowerCase().includes('limpieza') &&
-              section.title?.toLowerCase().includes('limpieza')
-            )
-            
-            if (relatedEvidenceSection) {
-              // Use evidence from the related evidence section instead
-              const relatedEvidences = evidenceData[relatedEvidenceSection.id] || []
-              
-              if (process.env.NODE_ENV === 'development') {
-                console.log(`🔗 Found related evidence section: "${relatedEvidenceSection.title}"`)
-                console.log(`🔗 Related evidence count: ${relatedEvidences.length}`)
-                console.log(`🔗 Categories:`, relatedEvidences.map(e => e.category))
-              }
-              
-              areas.forEach((area: string) => {
-                const areaLower = area.toLowerCase()
-                const areaCount = relatedEvidences.filter(e => {
-                  const categoryLower = e.category?.toLowerCase() || ''
-                  // Flexible matching: exact match OR category contains the area name
-                  return categoryLower === areaLower || 
-                         categoryLower.includes(areaLower) ||
-                         (areaLower.includes('interior') && categoryLower.includes('interior')) ||
-                         (areaLower.includes('exterior') && categoryLower.includes('exterior'))
-                }).length
-                
-                if (process.env.NODE_ENV === 'development') {
-                  console.log(`🔍 Area "${area}": found ${areaCount} photos (need ${minPhotos})`)
-                }
-                
-                if (areaCount < minPhotos) {
-                  errors.push(`Se requieren al menos ${minPhotos} fotos para "${area}" en ${section.title}`)
-                }
-              })
-            } else {
-              // No related evidence section found, check if there are any cleanliness-related evidence sections
-              const hasCleanlinessEvidence = checklist.sections?.some((s: any) => 
-                s.section_type === 'evidence' && s.title?.toLowerCase().includes('limpieza')
-              )
-              
-              if (!hasCleanlinessEvidence) {
-                areas.forEach((area: string) => {
-                  errors.push(`Se requieren al menos ${minPhotos} fotos para "${area}" en ${section.title}`)
-                })
-              }
-            }
-          } else {
-            // Original logic for hybrid sections with evidence in the same section
-            areas.forEach((area: string) => {
-              const areaLower = area.toLowerCase()
-              const areaCount = sectionEvidences.filter(e => {
-                const categoryLower = e.category?.toLowerCase() || ''
-                // Flexible matching: exact match OR category contains the area name
-                return categoryLower === areaLower || 
-                       categoryLower.includes(areaLower) ||
-                       (areaLower.includes('interior') && categoryLower.includes('interior')) ||
-                       (areaLower.includes('exterior') && categoryLower.includes('exterior'))
-              }).length
-              
-              if (process.env.NODE_ENV === 'development') {
-                console.log(`🔍 Hybrid Area "${area}": found ${areaCount} photos (need ${minPhotos})`)
-              }
-              
-              if (areaCount < minPhotos) {
-                errors.push(`Se requieren al menos ${minPhotos} fotos para "${area}" en ${section.title}`)
+            // Count total photos across all evidence sections
+            let totalEvidencePhotos = 0
+            checklist.sections?.forEach((s: any) => {
+              if (s.section_type === 'evidence') {
+                const sectionEvidence = evidenceData[s.id] || []
+                totalEvidencePhotos += sectionEvidence.length
               }
             })
+            
+            // Calculate total required photos (areas * minPhotos per area)
+            const totalRequiredPhotos = areas.length * minPhotos
+            
+            if (process.env.NODE_ENV === 'development') {
+              console.log(`🔍 Cleanliness validation: found ${totalEvidencePhotos} total evidence photos, need ${totalRequiredPhotos}`)
+            }
+            
+            if (totalEvidencePhotos < totalRequiredPhotos) {
+              errors.push(`Se requieren al menos ${totalRequiredPhotos} fotos de evidencia para completar la verificación de limpieza`)
+            }
+          } else if (sectionEvidences.length > 0) {
+            // Original logic for hybrid sections with evidence in the same section
+            const totalRequiredPhotos = areas.length * minPhotos
+            if (sectionEvidences.length < totalRequiredPhotos) {
+              errors.push(`Se requieren al menos ${totalRequiredPhotos} fotos de evidencia en ${section.title}`)
+            }
           }
         }
       })

@@ -356,7 +356,7 @@ export async function POST(request: Request) {
       }
     }
 
-    // Create a service order manually since we can't call the DB function directly
+    // Create a service order (DB will assign order_id via trigger)
     let serviceOrderId = null;
     
     try {
@@ -371,64 +371,7 @@ export async function POST(request: Request) {
         throw new Error("Error fetching work order details");
       }
       
-      // Generate unique service order ID using a robust method
-      let orderId = '';
-      let attempts = 0;
-      const maxAttempts = 50;
-      
-      while (attempts < maxAttempts) {
-        // Get the highest existing numeric ID
-        const { data: existingOrders, error: queryError } = await supabase
-          .from("service_orders")
-          .select("order_id")
-          .like("order_id", "OS-%")
-          .order("order_id", { ascending: false })
-          .limit(100);
-          
-        if (queryError) {
-          throw new Error("Error querying existing service orders");
-        }
-        
-        // Extract numeric part and find the highest
-        let highestNumber = 0;
-        if (existingOrders && existingOrders.length > 0) {
-          for (const order of existingOrders) {
-            const match = order.order_id.match(/^OS-(\d+)$/);
-            if (match) {
-              const num = parseInt(match[1], 10);
-              if (num > highestNumber) {
-                highestNumber = num;
-              }
-            }
-          }
-        }
-        
-        // Generate next ID
-        const orderNumber = highestNumber + 1 + attempts;
-        orderId = `OS-${orderNumber.toString().padStart(4, '0')}`;
-        
-        // Check if this ID already exists
-        const { data: existingOrder, error: checkError } = await supabase
-          .from("service_orders")
-          .select("id")
-          .eq("order_id", orderId)
-          .single();
-          
-        if (checkError && checkError.code === 'PGRST116') {
-          // No record found, ID is unique
-          break;
-        } else if (!checkError && existingOrder) {
-          // ID exists, try again
-          attempts++;
-          continue;
-        } else if (checkError) {
-          throw new Error("Error checking service order ID uniqueness");
-        }
-      }
-      
-      if (attempts >= maxAttempts) {
-        throw new Error("Could not generate unique service order ID after multiple attempts");
-      }
+      // order_id will be generated in DB trigger; do not generate in app
       
       // Calculate parts cost
       let partsCost = 0;
@@ -471,8 +414,7 @@ export async function POST(request: Request) {
       
       // Insert the service order
       try {
-        const serviceOrderData = {
-          order_id: orderId,
+        const serviceOrderData: any = {
           asset_id: workOrder.asset_id,
           asset_name: workOrder.asset?.name || 'Activo sin nombre',
           description: `Servicio completado: ${workOrder.description}`,
@@ -503,7 +445,6 @@ export async function POST(request: Request) {
         }
         
         console.log("API: Creando orden de servicio con datos:", {
-          order_id: serviceOrderData.order_id,
           asset_id: serviceOrderData.asset_id,
           description: serviceOrderData.description.substring(0, 30) + "..."
         });

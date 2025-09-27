@@ -20,8 +20,10 @@ import {
   Info
 } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { useDieselStore, dieselUtils } from '@/store/diesel-store'
+import { useDieselStore } from '@/store/diesel-store'
 import { DieselExcelRow } from '@/types/diesel'
+import * as XLSX from 'xlsx'
+import DieselPreview from './DieselPreview'
 import { useAuthZustand } from "@/hooks/use-auth-zustand"
 
 interface ExcelUploaderProps {
@@ -93,79 +95,143 @@ export function ExcelUploader({ onDataParsed, onBatchCreated }: ExcelUploaderPro
   const fileInputRef = useRef<HTMLInputElement>(null)
   const dropZoneRef = useRef<HTMLDivElement>(null)
 
-  // Parse CSV content to DieselExcelRow format
+  // Utilities
+  const normalize = (s: string) => s
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+
+  const headerLookup: Record<string, string> = EXPECTED_COLUMNS
+    .reduce((acc, col) => {
+      acc[normalize(col.label)] = col.key
+      return acc
+    }, {} as Record<string, string>)
+
+  const coerceNumber = (val: any): number | null => {
+    if (val === null || val === undefined || val === '') return null
+    const n = typeof val === 'number' ? val : Number(String(val).replace(/,/g, '.'))
+    return isNaN(n) ? null : n
+  }
+
+  const coerceTipo = (val: any): 'Entrada' | 'Salida' => {
+    const v = String(val || '').toLowerCase()
+    if (v.includes('entrada')) return 'Entrada'
+    return 'Salida'
+  }
+
+  const buildRow = (raw: Record<string, any>, indexZeroBased: number): DieselExcelRow => {
+    return {
+      creado: String(raw.creado ?? ''),
+      planta: String(raw.planta ?? ''),
+      clave_producto: String(raw.clave_producto ?? ''),
+      almacen: String(raw.almacen ?? ''),
+      tipo: coerceTipo(raw.tipo),
+      unidad: String(raw.unidad ?? ''),
+      identificador: String(raw.identificador ?? ''),
+      fecha_: String(raw.fecha_ ?? ''),
+      horario: String(raw.horario ?? ''),
+      horometro: coerceNumber(raw.horometro),
+      kilometraje: coerceNumber(raw.kilometraje),
+      litros_cantidad: coerceNumber(raw.litros_cantidad) ?? 0,
+      cuenta_litros: coerceNumber(raw.cuenta_litros),
+      responsable_unidad: String(raw.responsable_unidad ?? ''),
+      responsable_suministro: String(raw.responsable_suministro ?? ''),
+      validacion: String(raw.validacion ?? ''),
+      inventario_inicial: coerceNumber(raw.inventario_inicial),
+      inventario: coerceNumber(raw.inventario),
+      original_row_index: indexZeroBased + 1,
+      validation_status: 'valid',
+      validation_messages: [],
+      asset_id: null,
+      exception_asset_name: null,
+      asset_category: null,
+      resolved_asset_name: null,
+      resolved_asset_type: 'unmapped',
+      resolved_asset_id: null,
+      processing_status: 'pending',
+      processing_notes: null,
+    }
+  }
+
+  const mapHeaderIndices = (headers: string[]) => {
+    const indices: Record<string, number> = {}
+    headers.forEach((h, i) => {
+      const nh = normalize(h)
+      // direct match or loose contains match on normalized strings
+      if (headerLookup[nh]) {
+        indices[headerLookup[nh]] = i
+      } else {
+        // try fuzzy contains against known labels
+        const match = Object.entries(headerLookup).find(([k]) => nh.includes(k) || k.includes(nh))
+        if (match) indices[match[1]] = i
+      }
+    })
+    return indices
+  }
+
+  // Parse CSV content to DieselExcelRow format (robust, with type coercion)
   const parseCSVContent = useCallback((content: string): DieselExcelRow[] => {
-    const lines = content.split('\n').filter(line => line.trim())
+    const lines = content.split(/\r?\n/).filter(line => line.trim())
     if (lines.length < 2) {
       throw new Error('File must contain at least a header and one data row')
     }
 
-    // Parse header
-    const header = lines[0].split(',').map(col => col.trim().replace(/"/g, ''))
-    
-    // Create column mapping
-    const columnMapping: Record<string, number> = {}
-    EXPECTED_COLUMNS.forEach(({ key, label }) => {
-      const index = header.findIndex(h => 
-        h.toLowerCase().includes(label.toLowerCase()) ||
-        label.toLowerCase().includes(h.toLowerCase())
-      )
-      if (index !== -1) {
-        columnMapping[key] = index
-      }
-    })
+    // naive CSV split; for complex CSVs we recommend uploading .xlsx
+    const headerCells = lines[0].split(',').map(col => col.trim().replace(/"/g, ''))
+    const columnMapping = mapHeaderIndices(headerCells)
 
-    // Validate required columns
     const missingColumns = EXPECTED_COLUMNS
       .filter(col => col.required && !(col.key in columnMapping))
       .map(col => col.label)
-    
     if (missingColumns.length > 0) {
       throw new Error(`Missing required columns: ${missingColumns.join(', ')}`)
     }
 
-    // Parse data rows
     const parsedRows: DieselExcelRow[] = []
-    
     for (let i = 1; i < lines.length; i++) {
-      const line = lines[i]
-      if (!line.trim()) continue
-      
-      const cells = line.split(',').map(cell => cell.trim().replace(/"/g, ''))
-      
-      const row: Partial<DieselExcelRow> = {}
-      
-      // Map columns to row object
-      Object.entries(columnMapping).forEach(([key, index]) => {
-        const value = cells[index] || ''
-        ;(row as any)[key] = value
+      const cells = lines[i].split(',').map(cell => cell.trim().replace(/"/g, ''))
+      const raw: Record<string, any> = {}
+      Object.entries(columnMapping).forEach(([key, idx]) => {
+        raw[key] = cells[idx as any] ?? ''
       })
-      
-      // Set default values for missing optional fields
-      const completeRow: DieselExcelRow = {
-        creado: row.creado || '',
-        planta: row.planta || '',
-        clave_producto: row.clave_producto || '',
-        almacen: row.almacen || '',
-        tipo: row.tipo as 'Entrada' | 'Salida',
-        unidad: row.unidad || '',
-        identificador: row.identificador || '',
-        fecha_: row.fecha_ || '',
-        horario: row.horario || '',
-        horometro: row.horometro || null,
-        kilometraje: row.kilometraje || null,
-        litros_cantidad: row.litros_cantidad || '',
-        cuenta_litros: row.cuenta_litros || null,
-        responsable_unidad: row.responsable_unidad || '',
-        responsable_suministro: row.responsable_suministro || '',
-        validacion: row.validacion || null,
-        inventario_inicial: row.inventario_inicial || '',
-        inventario: row.inventario || ''
-      }
-      
-      parsedRows.push(completeRow)
+      parsedRows.push(buildRow(raw, i))
+    }
+    return parsedRows
+  }, [])
+
+  // Parse XLSX (.xlsx/.xls) using SheetJS
+  const parseXLSXContent = useCallback(async (file: File): Promise<DieselExcelRow[]> => {
+    const arrayBuffer = await file.arrayBuffer()
+    const workbook = XLSX.read(arrayBuffer, { cellDates: true })
+    // Prefer a sheet that mentions diesel, else take first
+    const sheetName = workbook.SheetNames.find(n => normalize(n).includes('diesel')) || workbook.SheetNames[0]
+    const worksheet = workbook.Sheets[sheetName]
+    const rows: any[][] = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' }) as any[][]
+    if (!rows || rows.length < 2) {
+      throw new Error('Excel sheet appears to be empty')
+    }
+    const headerCells = rows[0].map(String)
+    const columnMapping = mapHeaderIndices(headerCells)
+
+    const missingColumns = EXPECTED_COLUMNS
+      .filter(col => col.required && !(col.key in columnMapping))
+      .map(col => col.label)
+    if (missingColumns.length > 0) {
+      throw new Error(`Missing required columns: ${missingColumns.join(', ')}`)
     }
 
+    const parsedRows: DieselExcelRow[] = []
+    for (let i = 1; i < rows.length; i++) {
+      const cells = rows[i]
+      if (!cells || cells.length === 0 || cells.every(v => (v === '' || v === null))) continue
+      const raw: Record<string, any> = {}
+      Object.entries(columnMapping).forEach(([key, idx]) => {
+        raw[key] = cells[idx as any]
+      })
+      parsedRows.push(buildRow(raw, i))
+    }
     return parsedRows
   }, [])
 
@@ -216,12 +282,15 @@ export function ExcelUploader({ onDataParsed, onBatchCreated }: ExcelUploaderPro
         await new Promise(resolve => setTimeout(resolve, 50))
       }
       
-      // Read file content
-      const content = await file.text()
-      setUploadProgress(70)
-      
-      // Parse CSV content
-      const parsed = parseCSVContent(content)
+      // Parse by type
+      const isExcel = file.type === 'application/vnd.ms-excel' || file.type === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' || /\.xlsx?$/.test(file.name)
+      let parsed: DieselExcelRow[] = []
+      if (isExcel) {
+        parsed = await parseXLSXContent(file)
+      } else {
+        const content = await file.text()
+        parsed = parseCSVContent(content)
+      }
       setUploadProgress(90)
       
       // Validate data
@@ -450,29 +519,33 @@ export function ExcelUploader({ onDataParsed, onBatchCreated }: ExcelUploaderPro
 
       {/* Success Summary */}
       {hasData && !hasErrors && (
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-4">
-              <div className="p-2 bg-green-100 rounded-full">
-                <CheckCircle className="h-6 w-6 text-green-600" />
-              </div>
-              <div className="flex-1">
-                <p className="font-medium text-green-900">
-                  Archivo procesado exitosamente
-                </p>
-                <p className="text-sm text-green-700">
-                  {parsedData.length} registros listos para procesamiento
-                </p>
-              </div>
-              <div className="text-right">
-                <div className="text-2xl font-bold text-green-600">
-                  {parsedData.length}
+        <div className="space-y-4">
+          <Card>
+            <CardContent className="pt-6">
+              <div className="flex items-center gap-4">
+                <div className="p-2 bg-green-100 rounded-full">
+                  <CheckCircle className="h-6 w-6 text-green-600" />
                 </div>
-                <div className="text-xs text-muted-foreground">filas</div>
+                <div className="flex-1">
+                  <p className="font-medium text-green-900">
+                    Archivo procesado exitosamente
+                  </p>
+                  <p className="text-sm text-green-700">
+                    {parsedData.length} registros listos para procesamiento
+                  </p>
+                </div>
+                <div className="text-right">
+                  <div className="text-2xl font-bold text-green-600">
+                    {parsedData.length}
+                  </div>
+                  <div className="text-xs text-muted-foreground">filas</div>
+                </div>
               </div>
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+
+          <DieselPreview rows={parsedData} fileName={filePreview?.name || undefined} />
+        </div>
       )}
 
       {/* Expected Format Info */}

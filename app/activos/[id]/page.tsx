@@ -40,6 +40,7 @@ import { es } from "date-fns/locale";
 import { Asset, AssetWithModel, AssetWithOrganization, EquipmentModel } from "@/types";
 import { createClient } from "@/lib/supabase";
 import { CompletedChecklistEvidenceViewer } from "@/components/checklists/completed-checklist-evidence-viewer"
+import { CreateCompositeAssetDialog } from "@/components/assets/dialogs/create-composite-asset-dialog"
 
 // Define category type
 type CategoryInfo = {
@@ -84,6 +85,12 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
   const [pendingChecklistsLoading, setPendingChecklistsLoading] = useState(true);
   const [workOrders, setWorkOrders] = useState<any[]>([]);
   const [workOrdersLoading, setWorkOrdersLoading] = useState(true);
+  // Aggregated maintenance history when part of a composite
+  const [combinedMaintenanceHistory, setCombinedMaintenanceHistory] = useState<any[] | null>(null);
+  // Composite context
+  const [compositeContext, setCompositeContext] = useState<{ composite: any | null; components: any[] }>({ composite: null, components: [] });
+  const [compositeLoading, setCompositeLoading] = useState(false);
+  const [openCreateComposite, setOpenCreateComposite] = useState(false);
   
   // Map the asset with equipment_models to use model property
   const asset = useMemo(() => {
@@ -123,8 +130,168 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
     }
   }, [asset?.model_id]);
   
+  // Load composite context (composite and its components, or parent composite if this is a component)
+  useEffect(() => {
+    const fetchCompositeContext = async () => {
+      try {
+        if (!assetId) return;
+        setCompositeLoading(true);
+        const supabase = createClient();
+
+        // Fetch minimal fields to detect composite
+        const { data: a, error: aErr } = await supabase
+          .from('assets')
+          .select('id, name, is_composite, component_assets, primary_component_id')
+          .eq('id', assetId)
+          .single();
+        if (aErr || !a) {
+          setCompositeContext({ composite: null, components: [] });
+          return;
+        }
+
+        // If this asset is a composite, load its components and aggregate dashboard
+        if ((a as any).is_composite) {
+          let components: any[] = [];
+          let aggregatedIncidents: any[] = [];
+          let aggregatedPending: any[] = [];
+          let aggregatedCompleted: any[] = [];
+          let aggregatedMaintenance: any[] = [];
+          let aggregatedUpcoming: any[] = [];
+          try {
+            const resp = await fetch(`/api/assets/composites/${assetId}/dashboard`);
+            if (resp.ok) {
+              const json = await resp.json();
+              components = json?.data?.components || [];
+              aggregatedIncidents = json?.data?.incidents || [];
+              aggregatedPending = json?.data?.pending_schedules || [];
+              aggregatedCompleted = json?.data?.completed_checklists || [];
+              aggregatedMaintenance = json?.data?.maintenance_history || [];
+              aggregatedUpcoming = json?.data?.upcoming_maintenance || [];
+            }
+          } catch {}
+          setCompositeContext({ composite: a, components });
+          // Overwrite local page states with aggregated data when viewing composite
+          try {
+            (incidents as any).splice(0, (incidents as any).length, ...aggregatedIncidents);
+          } catch {}
+          try {
+            setPendingChecklists(aggregatedPending);
+          } catch {}
+          try {
+            setCompletedChecklists(aggregatedCompleted);
+          } catch {}
+          // Keep original hook data intact; store combined separately
+          setCombinedMaintenanceHistory(aggregatedMaintenance);
+          try {
+            // Transform aggregated upcoming to page format if necessary
+            const transformed = (aggregatedUpcoming || []).map((m: any) => ({
+              intervalId: m.interval_id,
+              intervalName: m.interval_name,
+              type: m.type,
+              intervalValue: m.interval_value,
+              currentValue: m.current_value,
+              targetValue: m.target_value,
+              valueRemaining: (m.target_value - m.current_value),
+              status: m.status,
+              urgency: m.urgency,
+              progress: m.target_value > 0 ? Math.round((m.current_value / m.target_value) * 100) : 0,
+              unit: 'hours',
+              estimatedDate: new Date().toISOString(),
+              lastMaintenanceDate: null,
+              wasPerformed: false,
+              cycleForService: 0,
+              cycleLength: 0
+            }))
+            setUpcomingMaintenances(transformed)
+          } catch {}
+          return;
+        }
+
+        // Otherwise, check if this asset is part of a composite
+        const { data: rel } = await supabase
+          .from('asset_composite_relationships')
+          .select('composite_asset_id')
+          .eq('component_asset_id', assetId)
+          .eq('status', 'active')
+          .limit(1)
+          .maybeSingle();
+
+        if (!rel) {
+          setCompositeContext({ composite: null, components: [] });
+          return;
+        }
+
+        let composite: any = null;
+        let components: any[] = [];
+        let aggregatedIncidents: any[] = [];
+        let aggregatedPending: any[] = [];
+        let aggregatedCompleted: any[] = [];
+        let aggregatedMaintenance: any[] = [];
+        let aggregatedUpcoming: any[] = [];
+        try {
+          const resp = await fetch(`/api/assets/composites/${rel.composite_asset_id}/dashboard`);
+          if (resp.ok) {
+            const json = await resp.json();
+            composite = json?.data?.composite || null;
+            components = json?.data?.components || [];
+            aggregatedIncidents = json?.data?.incidents || [];
+            aggregatedPending = json?.data?.pending_schedules || [];
+            aggregatedCompleted = json?.data?.completed_checklists || [];
+            aggregatedMaintenance = json?.data?.maintenance_history || [];
+            aggregatedUpcoming = json?.data?.upcoming_maintenance || [];
+          }
+        } catch {}
+        setCompositeContext({ composite: composite, components });
+        // When part of a composite, also surface aggregated lists in page widgets
+        try {
+          (incidents as any).splice(0, (incidents as any).length, ...aggregatedIncidents);
+        } catch {}
+        try {
+          setPendingChecklists(aggregatedPending);
+        } catch {}
+        try {
+          setCompletedChecklists(aggregatedCompleted);
+        } catch {}
+        setCombinedMaintenanceHistory(aggregatedMaintenance);
+        try {
+          const transformed = (aggregatedUpcoming || []).map((m: any) => ({
+            intervalId: m.interval_id,
+            intervalName: m.interval_name,
+            type: m.type,
+            intervalValue: m.interval_value,
+            currentValue: m.current_value,
+            targetValue: m.target_value,
+            valueRemaining: (m.target_value - m.current_value),
+            status: m.status,
+            urgency: m.urgency,
+            progress: m.target_value > 0 ? Math.round((m.current_value / m.target_value) * 100) : 0,
+            unit: 'hours',
+            estimatedDate: new Date().toISOString(),
+            lastMaintenanceDate: null,
+            wasPerformed: false,
+            cycleForService: 0,
+            cycleLength: 0
+          }))
+          setUpcomingMaintenances(transformed)
+        } catch {}
+      } catch (e) {
+        console.error('Error loading composite context', e);
+        setCompositeContext({ composite: null, components: [] });
+      } finally {
+        setCompositeLoading(false);
+      }
+    };
+
+    fetchCompositeContext();
+  }, [assetId]);
+
   // Process and calculate upcoming maintenances with proper CYCLIC logic
   useEffect(() => {
+    // If this is a composite view, upcoming is driven by aggregated API
+    if (compositeContext.composite) {
+      setUpcomingLoading(false);
+      return;
+    }
     if (!maintenanceIntervals.length || !asset) {
       setUpcomingMaintenances([]);
       setUpcomingLoading(false);
@@ -141,7 +308,8 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
       const currentCycle = Math.floor(currentHours / maxInterval) + 1;
       
       // Find the hour of the last maintenance performed (any type)
-      const allMaintenanceHours = maintenanceHistory
+      const effectiveMaintenanceHistory = combinedMaintenanceHistory ?? maintenanceHistory
+      const allMaintenanceHours = effectiveMaintenanceHistory
         .map(m => Number(m.hours) || 0)
         .filter(h => h > 0)
         .sort((a, b) => b - a); // Sort from highest to lowest
@@ -152,7 +320,7 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
       const currentCycleStartHour = (currentCycle - 1) * maxInterval;
       const currentCycleEndHour = currentCycle * maxInterval;
       
-      const currentCycleMaintenances = maintenanceHistory.filter(m => {
+      const currentCycleMaintenances = effectiveMaintenanceHistory.filter(m => {
         const mHours = Number(m.hours) || 0;
         return mHours > currentCycleStartHour && mHours < currentCycleEndHour;
       });
@@ -174,24 +342,24 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
         let cycleForService = currentCycle;
         
         if (!isFirstCycleOnly || currentCycle === 1) {
-          // Calculate the due hour for current cycle
-          nextDueHour = ((currentCycle - 1) * maxInterval) + intervalHours;
+          // Calculate the due hour and keep as non-null local number
+          let computedDue = ((currentCycle - 1) * maxInterval) + intervalHours;
           
-          // Special case: if nextDueHour exceeds the current cycle end, calculate for next cycle
-          if (nextDueHour > currentCycleEndHour) {
+          // Special case: if computedDue exceeds the current cycle end, calculate for next cycle
+          if (computedDue > currentCycleEndHour) {
             cycleForService = currentCycle + 1;
-            nextDueHour = (currentCycle * maxInterval) + intervalHours;
+            computedDue = (currentCycle * maxInterval) + intervalHours;
             
             // Only show next cycle services if they're within reasonable range
-            if (nextDueHour - currentHours <= 1000) {
+            if (computedDue - currentHours <= 1000) {
               status = 'scheduled';
             } else {
               status = 'not_applicable';
             }
           } else {
                          // Current cycle logic - check if this specific interval was performed
-             if (nextDueHour !== null) {
-               const dueHour = nextDueHour; // Create non-null variable for use in closures
+            if (computedDue !== null) {
+              const dueHour = computedDue; // Non-null variable for comparisons
                
                const wasPerformedInCurrentCycle = currentCycleMaintenances.some(m => {
                  const maintenanceHours = Number(m.hours) || 0;
@@ -210,7 +378,7 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
                  
                  if (highestRelativeHour >= cycleIntervalHour && highestMaintenanceInCycle > 0) {
                    status = 'covered';
-                 } else if (currentHours >= dueHour) {
+                } else if (currentHours >= dueHour) {
                    status = 'overdue';
                  } else if (currentHours >= dueHour - 100) {
                    status = 'upcoming';
@@ -220,6 +388,8 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
                }
              }
           }
+          // Persist computed due value to nullable variable for downstream UI calculations
+          nextDueHour = computedDue;
         }
         
         // Calculate additional properties
@@ -255,9 +425,10 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
              } else {
                urgency = 'medium';
              }
-           } else if (status === 'upcoming' && nextDueHour !== null) {
-             progress = Math.round((currentHours / nextDueHour) * 100);
-             const hoursRemaining = nextDueHour - currentHours;
+          } else if (status === 'upcoming') {
+            const safeDue = Number((nextDueHour ?? intervalHours) || 0);
+            progress = safeDue > 0 ? Math.round((currentHours / safeDue) * 100) : 0;
+            const hoursRemaining = safeDue - currentHours;
              valueRemaining = hoursRemaining;
              
              if (hoursRemaining <= 50) {
@@ -265,9 +436,10 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
              } else {
                urgency = 'medium';
              }
-           } else if (status === 'scheduled' && nextDueHour !== null) {
-             progress = Math.round((currentHours / nextDueHour) * 100);
-             const hoursRemaining = nextDueHour - currentHours;
+          } else if (status === 'scheduled') {
+            const safeDue = Number((nextDueHour ?? intervalHours) || 0);
+            progress = safeDue > 0 ? Math.round((currentHours / safeDue) * 100) : 0;
+            const hoursRemaining = safeDue - currentHours;
              valueRemaining = hoursRemaining;
              urgency = 'low';
            }
@@ -593,6 +765,41 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
             </CardHeader>
             
             <CardContent className="pt-0">
+              {compositeContext.composite && (
+                <div className="mb-4 p-3 border rounded-md bg-blue-50">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                    <div className="text-sm">
+                      <span className="font-semibold">Activo Compuesto</span>{' '}
+                      {compositeContext.composite.id !== assetId ? (
+                        <>
+                          — Parte de{' '}
+                          <Link className="underline" href={`/activos/${compositeContext.composite.id}`}>
+                            {compositeContext.composite.name}
+                          </Link>
+                        </>
+                      ) : (
+                        <span>— Vista unificada</span>
+                      )}
+                    </div>
+                    {compositeContext.composite.id !== assetId && (
+                      <Button size="sm" variant="outline" asChild>
+                        <Link href={`/activos/${compositeContext.composite.id}`}>Ver vista unificada</Link>
+                      </Button>
+                    )}
+                  </div>
+                  {compositeContext.components.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {compositeContext.components.map((c: any) => (
+                        <Link key={c.id} href={`/activos/${c.id}`}>
+                          <Badge variant={c.id === assetId ? 'default' : 'outline'} className="cursor-pointer">
+                            {c.asset_id || c.name}
+                          </Badge>
+                        </Link>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
               {/* Key Metrics Row - Professional Style */}
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-6 mb-4 md:mb-6">
                 <div className="text-center">
@@ -611,10 +818,12 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
                 
                 <div className="text-center">
                   <div className="text-xl sm:text-2xl md:text-3xl font-bold">
-                    {maintenanceHistory.length > 0 && asset?.current_hours && maintenanceHistory[0]?.hours ? 
-                      `${asset.current_hours - maintenanceHistory[0].hours}h` : 
-                      "0h"
-                    }
+                    {(() => {
+                      const effectiveHistory = combinedMaintenanceHistory ?? maintenanceHistory;
+                      return (effectiveHistory.length > 0 && asset?.current_hours && effectiveHistory[0]?.hours)
+                        ? `${asset.current_hours - effectiveHistory[0].hours}h`
+                        : "0h";
+                    })()}
                   </div>
                   <div className="text-xs sm:text-sm text-muted-foreground mt-1">Desde Último Mant.</div>
                 </div>
@@ -634,11 +843,19 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
                 <div className="flex flex-col space-y-2 sm:space-y-0 sm:flex-row sm:items-center sm:gap-4 text-sm text-muted-foreground">
                   <span className="flex items-center gap-2">
                     <MapPin className="h-4 w-4 flex-shrink-0" />
-                    <span className="break-words">{(asset as any)?.plants?.name || asset?.location || "Sin planta"}</span>
+                    <span className="break-words">
+                      {compositeContext.composite && compositeContext.components.length > 0
+                        ? (compositeContext.components[0] as any)?.plants?.name || "Sin planta"
+                        : (asset as any)?.plants?.name || asset?.location || "Sin planta"}
+                    </span>
                   </span>
                   <span className="flex items-center gap-2">
                     <Users className="h-4 w-4 flex-shrink-0" />
-                    <span className="break-words">{(asset as any)?.departments?.name || asset?.department || "Sin departamento"}</span>
+                    <span className="break-words">
+                      {compositeContext.composite && compositeContext.components.length > 0
+                        ? (compositeContext.components[0] as any)?.departments?.name || "Sin departamento"
+                        : (asset as any)?.departments?.name || asset?.department || "Sin departamento"}
+                    </span>
                   </span>
                   {asset?.purchase_date && (
                     <span className="flex items-center gap-2">
@@ -679,10 +896,24 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
                       </Link>
                     </Button>
                   )}
+                  {!compositeContext.composite && (
+                    <Button size="sm" className="w-full sm:w-auto justify-center" onClick={() => setOpenCreateComposite(true)}>
+                      Crear Activo Compuesto
+                    </Button>
+                  )}
+                  {compositeContext.composite && (
+                    <Button size="sm" variant="outline" asChild className="w-full sm:w-auto justify-center">
+                      <Link href={`/checklists/programar?assetId=${assetId}`}>
+                        Programar Checklist Compuesto
+                      </Link>
+                    </Button>
+                  )}
                 </div>
               </div>
             </CardContent>
           </Card>
+
+          <CreateCompositeAssetDialog open={openCreateComposite} onOpenChange={setOpenCreateComposite} currentAssetId={assetId} />
 
           <Tabs defaultValue="status" className="w-full" onValueChange={setActiveTab}>
             <TabsList className="w-full justify-start mb-4 h-auto p-1 flex-wrap gap-1">
@@ -893,12 +1124,12 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
-                    {maintenanceLoading ? (
+                    {maintenanceLoading && !combinedMaintenanceHistory ? (
                       <div className="space-y-2">
                         <Skeleton className="h-8 w-full" />
                         <Skeleton className="h-8 w-full" />
                       </div>
-                    ) : maintenanceHistory.length === 0 ? (
+                    ) : (combinedMaintenanceHistory ?? maintenanceHistory).length === 0 ? (
                       <div className="text-center py-4">
                         <p className="text-muted-foreground">Sin historial de mantenimiento</p>
                         <Button variant="outline" className="mt-4" asChild>
@@ -909,7 +1140,7 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
                       </div>
                     ) : (
                       <div className="space-y-3">
-                        {maintenanceHistory.slice(0, 4).map((maintenance) => (
+                        {(combinedMaintenanceHistory ?? maintenanceHistory).slice(0, 4).map((maintenance: any) => (
                           <div key={maintenance.id} className="border rounded-md p-3">
                             <div className="flex justify-between items-start mb-2">
                               <div>
@@ -921,6 +1152,11 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
                                   {maintenance.type}
                                 </Badge>
                                 <h4 className="font-medium text-sm">{formatDate(maintenance.date)}</h4>
+                                {maintenance.assets?.asset_id && (
+                                  <div className="mt-1 text-xs text-muted-foreground">
+                                    Activo: <span className="font-medium">{maintenance.assets.asset_id}</span>
+                                  </div>
+                                )}
                               </div>
                               <span className="text-xs text-muted-foreground">
                                 {maintenance.hours}h
@@ -929,7 +1165,7 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
                             <p className="text-sm text-muted-foreground">{maintenance.technician || "No asignado"}</p>
                           </div>
                         ))}
-                        {maintenanceHistory.length > 4 && (
+                        {(combinedMaintenanceHistory ?? maintenanceHistory).length > 4 && (
                           <div className="mt-2 text-center">
                             <Button variant="outline" size="sm" asChild>
                               <Link href={`/activos/${assetId}/historial`}>

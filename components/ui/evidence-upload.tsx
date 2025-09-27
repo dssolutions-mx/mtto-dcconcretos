@@ -498,6 +498,9 @@ export function EvidenceUpload({
             <VisuallyHidden>
               <DialogTitle>Vista previa de evidencia</DialogTitle>
             </VisuallyHidden>
+            <VisuallyHidden>
+              <DialogDescription>Imagen ampliada en un modal de vista previa</DialogDescription>
+            </VisuallyHidden>
             <div className="relative w-full h-full flex items-center justify-center">
               <img
                 src={previewImage}

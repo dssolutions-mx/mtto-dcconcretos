@@ -206,7 +206,6 @@ export function MaintenanceChecklist({ id }: MaintenanceChecklistProps) {
 
       // 2. Generar automáticamente una orden de servicio
       const serviceOrderData = {
-        id: `OT-${Math.floor(Math.random() * 10000)}`,
         assetId: checklist.assetId,
         asset: checklist.asset,
         type: "Preventivo",
@@ -236,7 +235,6 @@ export function MaintenanceChecklist({ id }: MaintenanceChecklistProps) {
         .from("service_orders")
         .insert([
           {
-            order_id: serviceOrderData.id,
             asset_id: serviceOrderData.assetId,
             asset_name: serviceOrderData.asset,
             type: serviceOrderData.type,
@@ -269,7 +267,7 @@ export function MaintenanceChecklist({ id }: MaintenanceChecklistProps) {
           completion_date: checklistCompletionData.completionDate,
           notes: checklistCompletionData.notes,
           status: checklistCompletionData.status,
-          service_order_id: serviceOrderData.id,
+          // service_order_id can be linked later if needed
           created_at: new Date().toISOString(),
         },
       ])
@@ -292,7 +290,7 @@ export function MaintenanceChecklist({ id }: MaintenanceChecklistProps) {
       }
 
       // Mostrar diálogo de éxito
-      setGeneratedOrderId(serviceOrderData.id)
+      setGeneratedOrderId((data && data[0] && (data[0] as any).order_id) || "")
       setShowSuccessDialog(true)
     } catch (error) {
       console.error("Error al completar el checklist:", error)
@@ -599,7 +597,7 @@ export function MaintenanceChecklist({ id }: MaintenanceChecklistProps) {
             <Button variant="outline" onClick={() => router.push("/activos/" + checklist.assetId)}>
               Ver Activo
             </Button>
-            <Button onClick={() => router.push("/ordenes/" + generatedOrderId)}>Ver Orden de Servicio</Button>
+            <Button onClick={() => router.push("/ordenes/" + generatedOrderId)} disabled={!generatedOrderId}>Ver Orden de Servicio</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
