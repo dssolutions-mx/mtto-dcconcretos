@@ -64,14 +64,27 @@ interface EvaluationDetails {
 }
 
 export async function GET(request: NextRequest) {
+  const startTime = Date.now()
+  const requestId = Math.random().toString(36).substring(7)
+  
   try {
+    console.log(`[${requestId}] 🚀 Starting cleanliness reports API request`)
+    
     const supabase = await createClient()
     const { searchParams } = new URL(request.url)
+    
+    console.log(`[${requestId}] 📊 Request parameters:`, {
+      url: request.url,
+      searchParams: Object.fromEntries(searchParams),
+      userAgent: request.headers.get('user-agent'),
+      timestamp: new Date().toISOString()
+    })
     
     // Handle individual evaluation details request
     const evaluationId = searchParams.get('evaluation_id')
     if (evaluationId) {
-      return await getEvaluationDetails(supabase, evaluationId)
+      console.log(`[${requestId}] 🔍 Processing evaluation details for ID: ${evaluationId}`)
+      return await getEvaluationDetails(supabase, evaluationId, requestId)
     }
     
     // Handle cleanliness reports request
@@ -80,6 +93,14 @@ export async function GET(request: NextRequest) {
     const year = searchParams.get('year') || new Date().getFullYear().toString()
     const technician = searchParams.get('technician')
     const search = searchParams.get('search')
+
+    console.log(`[${requestId}] 📋 Processing cleanliness reports with filters:`, {
+      period,
+      weekNumber,
+      year,
+      technician,
+      search
+    })
 
     // Calculate date range based on week number and year (UTC-based for consistency with database)
     let startDate = ''
@@ -150,6 +171,14 @@ export async function GET(request: NextRequest) {
       endDate = end.toISOString()
     }
 
+    console.log(`[${requestId}] 📅 Date range calculated:`, {
+      period,
+      startDate,
+      endDate,
+      currentWeekNumber,
+      currentYear
+    })
+
     // Get all completed WEEKLY checklists with cleanliness evaluations in the date range
     // Filter specifically for weekly checklists using template version relationships
     let baseQuery = supabase
@@ -188,14 +217,20 @@ export async function GET(request: NextRequest) {
       baseQuery = baseQuery.ilike('technician', `%${technician}%`)
     }
 
+    console.log(`[${requestId}] 🔍 Executing main query for completed checklists...`)
     const { data: completedChecklists, error: checklistError } = await baseQuery
 
     if (checklistError) {
+      console.error(`[${requestId}] ❌ Error fetching completed checklists:`, checklistError)
       throw checklistError
     }
 
+    console.log(`[${requestId}] ✅ Found ${completedChecklists?.length || 0} completed weekly checklists`)
+
     // Get cleanliness section items from template version JSONB sections
     const templateVersionIds = completedChecklists?.map(cc => cc.template_version_id).filter(Boolean) || []
+    
+    console.log(`[${requestId}] 🔧 Processing ${templateVersionIds.length} unique template versions:`, templateVersionIds)
     
     let cleanlinessItemsMap: Record<string, string[]> = {}
     
@@ -209,20 +244,37 @@ export async function GET(request: NextRequest) {
         `)
         .in('id', templateVersionIds)
 
+      if (templateError) {
+        console.error(`[${requestId}] ❌ Error fetching template versions:`, templateError)
+      } else {
+        console.log(`[${requestId}] 📑 Retrieved ${templateVersions?.length || 0} template versions`)
+      }
+
       if (!templateError && templateVersions) {
         // Build map of template_version_id to cleanliness item IDs by parsing JSONB sections
         for (const templateVersion of templateVersions) {
           const sections = templateVersion.sections as any[]
-          if (!sections || !Array.isArray(sections)) continue
+          if (!sections || !Array.isArray(sections)) {
+            console.log(`[${requestId}] ⚠️ Template version ${templateVersion.id} has no valid sections`)
+            continue
+          }
           
           const cleanlinessItemIds: string[] = []
+          let totalItems = 0
+          let totalSections = sections.length
+          let cleanlinessSections = 0
           
           // Find cleanliness sections by title and get ALL items from those sections
           for (const section of sections) {
             if (!section.items || !Array.isArray(section.items)) continue
             
+            totalItems += section.items.length
+            
             // Check if this is a cleanliness section by title
             if (isCleanlinessSection(section.title)) {
+              cleanlinessSections++
+              console.log(`[${requestId}] 🧹 Found cleanliness section "${section.title}" with ${section.items.length} items`)
+              
               // Add ALL items from cleanliness sections
               for (const item of section.items) {
                 cleanlinessItemIds.push(item.id)
@@ -230,14 +282,25 @@ export async function GET(request: NextRequest) {
             }
           }
           
+          console.log(`[${requestId}] 📊 Template ${templateVersion.id}: ${cleanlinessItemIds.length} cleanliness items from ${cleanlinessSections} cleanliness sections (total: ${totalSections} sections, ${totalItems} items)`)
+          
           if (cleanlinessItemIds.length > 0) {
             cleanlinessItemsMap[templateVersion.id] = cleanlinessItemIds
           }
         }
+        
+        console.log(`[${requestId}] 🎯 Final cleanliness mapping:`, {
+          totalTemplates: Object.keys(cleanlinessItemsMap).length,
+          itemCounts: Object.fromEntries(
+            Object.entries(cleanlinessItemsMap).map(([id, items]) => [id, items.length])
+          )
+        })
       }
     }
 
     const reports: CleanlinessReport[] = []
+
+    console.log(`[${requestId}] 🔄 Processing ${completedChecklists?.length || 0} completed checklists...`)
 
     // Process each completed checklist
     for (const checklist of completedChecklists || []) {
@@ -268,6 +331,9 @@ export async function GET(request: NextRequest) {
       
       if (evaluation) {
         const asset = Array.isArray(checklist.assets) ? checklist.assets[0] : checklist.assets
+        
+        console.log(`[${requestId}] ✅ Processed checklist ${checklist.id} for asset ${asset?.asset_id}: ${evaluation.overall_score}% (${evaluation.passed_both ? 'PASSED' : 'FAILED'})`)
+        
         reports.push({
           id: checklist.id,
           asset_id: asset?.id, // Store asset ID for operator lookup
@@ -282,6 +348,8 @@ export async function GET(request: NextRequest) {
           overall_score: evaluation.overall_score,
           passed_both: evaluation.passed_both
         })
+      } else {
+        console.log(`[${requestId}] ⚠️ No cleanliness evaluation generated for checklist ${checklist.id}`)
       }
     }
 
@@ -357,6 +425,16 @@ export async function GET(request: NextRequest) {
     // Sort reports by date (most recent first)
     reports.sort((a, b) => new Date(b.completed_date).getTime() - new Date(a.completed_date).getTime())
 
+    const executionTime = Date.now() - startTime
+    
+    console.log(`[${requestId}] 🎯 Final response summary:`, {
+      totalReports: reports.length,
+      passedReports: (stats as any).passed,
+      failedReports: (stats as any).failed,
+      passRate: stats.pass_rate,
+      executionTime: `${executionTime}ms`
+    })
+
     return NextResponse.json({
       reports,
       stats,
@@ -364,7 +442,11 @@ export async function GET(request: NextRequest) {
     })
 
   } catch (error) {
-    console.error('Error in cleanliness reports API:', error)
+    const executionTime = Date.now() - startTime
+    console.error(`[${requestId}] ❌ Error in cleanliness reports API (${executionTime}ms):`, {
+      error: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined
+    })
     return NextResponse.json(
       { error: 'Error al obtener los reportes de limpieza' },
       { status: 500 }
@@ -372,8 +454,12 @@ export async function GET(request: NextRequest) {
   }
 }
 
-async function getEvaluationDetails(supabase: any, evaluationId: string): Promise<NextResponse> {
+async function getEvaluationDetails(supabase: any, evaluationId: string, requestId?: string): Promise<NextResponse> {
+  const startTime = Date.now()
+  const logId = requestId || Math.random().toString(36).substring(7)
+  
   try {
+    console.log(`[${logId}] 🔍 Getting evaluation details for ID: ${evaluationId}`)
     // Get the completed checklist with template version information (filter for weekly only)
     const { data: checklist, error: checklistError } = await supabase
       .from('completed_checklists')
@@ -551,10 +637,28 @@ async function getEvaluationDetails(supabase: any, evaluationId: string): Promis
       }
     }
 
+    const executionTime = Date.now() - startTime
+    
+    console.log(`[${logId}] ✅ Successfully retrieved evaluation details:`, {
+      evaluationId,
+      assetName: (evaluation as any).asset_name,
+      overallScore: (evaluation as any).overall_score,
+      passedBoth: (evaluation as any).passed_both,
+      sectionsCount: (evaluation as any).sections?.length || 0,
+      totalItems: (evaluation as any).sections?.reduce((acc: number, section: any) => 
+        acc + (section.checklist_items?.length || 0), 0) || 0,
+      executionTime: `${executionTime}ms`
+    })
+
     return NextResponse.json({ evaluation })
 
   } catch (error) {
-    console.error('Error getting evaluation details:', error)
+    const executionTime = Date.now() - startTime
+    console.error(`[${logId}] ❌ Error getting evaluation details (${executionTime}ms):`, {
+      error: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+      evaluationId
+    })
     return NextResponse.json(
       { error: 'Error al obtener los detalles de la evaluación' },
       { status: 500 }

@@ -21,13 +21,28 @@ const createServiceClient = () => {
 }
 
 export async function GET(request: Request) {
+  const startTime = Date.now()
+  const requestId = Math.random().toString(36).substring(7)
+  
+  console.log(`[${requestId}] 🚀 Starting checklist execution API request`)
+  
   const cookieStore = await cookies()
   const url = new URL(request.url)
   const id = url.searchParams.get('id')
   
+  console.log(`[${requestId}] 📊 Request parameters:`, {
+    url: request.url,
+    id,
+    userAgent: request.headers.get('user-agent'),
+    timestamp: new Date().toISOString()
+  })
+  
   if (!id) {
+    console.error(`[${requestId}] ❌ Missing checklist ID parameter`)
     return NextResponse.json({ error: 'Se requiere ID del checklist' }, { status: 400 })
   }
+  
+  console.log(`[${requestId}] 🔗 Creating Supabase client...`)
   
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -52,6 +67,8 @@ export async function GET(request: Request) {
     }
   )
 
+  console.log(`[${requestId}] 🔍 Querying checklist_schedules for ID: ${id}`)
+  
   const { data, error } = await supabase
     .from('checklist_schedules')
     .select(`
@@ -79,13 +96,41 @@ export async function GET(request: Request) {
     .single()
 
   if (error) {
+    console.error(`[${requestId}] ❌ Database query error:`, {
+      error: error.message,
+      code: error.code,
+      details: error.details,
+      hint: error.hint
+    })
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
+
+  const executionTime = Date.now() - startTime
+  
+  console.log(`[${requestId}] ✅ Successfully retrieved checklist data:`, {
+    checklistId: data?.id,
+    templateId: data?.template_id,
+    assetId: data?.asset_id,
+    assetName: data?.assets?.name,
+    assetCode: data?.assets?.asset_id,
+    scheduledDate: data?.scheduled_date,
+    sectionsCount: data?.checklists?.checklist_sections?.length || 0,
+    totalItems: data?.checklists?.checklist_sections?.reduce((acc: number, section: any) => 
+      acc + (section.checklist_items?.length || 0), 0) || 0,
+    executionTime: `${executionTime}ms`
+  })
 
   return NextResponse.json({ data })
 }
 
 export async function POST(request: Request) {
+  const startTime = Date.now()
+  const requestId = Math.random().toString(36).substring(7)
+  
+  console.log(`[${requestId}] 🚀 Starting checklist completion POST request`)
+  
+  const requestBody = await request.json()
+  
   const { 
     schedule_id, 
     completed_items, 
@@ -94,9 +139,26 @@ export async function POST(request: Request) {
     signature,
     equipment_hours_reading,
     equipment_kilometers_reading 
-  } = await request.json()
+  } = requestBody
+  
+  console.log(`[${requestId}] 📊 POST request parameters:`, {
+    schedule_id,
+    completed_items_count: completed_items?.length || 0,
+    technician,
+    hasNotes: !!notes,
+    hasSignature: !!signature,
+    equipment_hours_reading,
+    equipment_kilometers_reading,
+    userAgent: request.headers.get('user-agent'),
+    timestamp: new Date().toISOString()
+  })
   
   if (!schedule_id || !completed_items) {
+    console.error(`[${requestId}] ❌ Missing required fields:`, {
+      schedule_id: !!schedule_id,
+      completed_items: !!completed_items,
+      completed_items_length: completed_items?.length
+    })
     return NextResponse.json({ 
       error: 'Faltan campos requeridos (schedule_id, completed_items)' 
     }, { status: 400 })
@@ -105,7 +167,7 @@ export async function POST(request: Request) {
   try {
     // Verificar variables de entorno
     if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
-      console.log('SUPABASE_SERVICE_ROLE_KEY no está configurada, usando cliente anónimo')
+      console.log(`[${requestId}] 🔧 SUPABASE_SERVICE_ROLE_KEY no está configurada, usando cliente anónimo`)
       
       // Usar cliente anónimo si no hay service key
       const cookieStore = await cookies()
@@ -131,7 +193,8 @@ export async function POST(request: Request) {
         }
       )
       
-      return await processChecklistCompletionEnhanced(
+      console.log(`[${requestId}] 🔄 Processing checklist completion with anonymous client...`)
+      const result = await processChecklistCompletionEnhanced(
         supabase, 
         schedule_id, 
         completed_items, 
@@ -141,10 +204,16 @@ export async function POST(request: Request) {
         equipment_hours_reading,
         equipment_kilometers_reading
       )
+      
+      const executionTime = Date.now() - startTime
+      console.log(`[${requestId}] ✅ Checklist completion processed successfully (${executionTime}ms)`)
+      return result
     } else {
-      console.log('Usando cliente de servicio con service_role_key')
+      console.log(`[${requestId}] 🔧 Usando cliente de servicio con service_role_key`)
       const supabase = createServiceClient()
-      return await processChecklistCompletionEnhanced(
+      
+      console.log(`[${requestId}] 🔄 Processing checklist completion with service client...`)
+      const result = await processChecklistCompletionEnhanced(
         supabase, 
         schedule_id, 
         completed_items, 
@@ -154,10 +223,20 @@ export async function POST(request: Request) {
         equipment_hours_reading,
         equipment_kilometers_reading
       )
+      
+      const executionTime = Date.now() - startTime
+      console.log(`[${requestId}] ✅ Checklist completion processed successfully (${executionTime}ms)`)
+      return result
     }
     
   } catch (error: any) {
-    console.error('Error completing checklist:', error)
+    const executionTime = Date.now() - startTime
+    console.error(`[${requestId}] ❌ Error completing checklist (${executionTime}ms):`, {
+      error: error.message,
+      stack: error.stack,
+      schedule_id,
+      completed_items_count: completed_items?.length || 0
+    })
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 }
@@ -318,7 +397,7 @@ async function processChecklistCompletion(
   }
 
   // 5. Crear el registro de checklist completado (CON VERSIONING)
-  const insertData = {
+  const insertData: any = {
     checklist_id: scheduleData.template_id,
     asset_id: assetUuid,
     completed_items: completed_items,
