@@ -310,6 +310,28 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                         Control de Diesel
                       </Link>
                     </Button>
+                    <Button
+                      variant={isPathActive("/suppliers") ? "secondary" : "ghost"}
+                      className="w-full justify-start pl-8"
+                      asChild
+                      onClick={handleLinkClick}
+                    >
+                      <Link href="/suppliers">
+                        <Users className="mr-2 h-4 w-4" />
+                        Padrón de Proveedores
+                      </Link>
+                    </Button>
+                    <Button
+                      variant={isPathActive("/suppliers/analytics") ? "secondary" : "ghost"}
+                      className="w-full justify-start pl-8"
+                      asChild
+                      onClick={handleLinkClick}
+                    >
+                      <Link href="/suppliers/analytics">
+                        <BarChart3 className="mr-2 h-4 w-4" />
+                        Análisis de Proveedores
+                      </Link>
+                    </Button>
                   </CollapsibleContent>
                 </Collapsible>
               </div>
@@ -610,6 +632,39 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                         </Link>
                       </Button>
                     )}
+                    <Button
+                      variant={isPathActive("/diesel-inventory") ? "secondary" : "ghost"}
+                      className="w-full justify-start pl-8"
+                      asChild
+                      onClick={handleLinkClick}
+                    >
+                      <Link href="/diesel-inventory">
+                        <Fuel className="mr-2 h-4 w-4" />
+                        Control de Diesel
+                      </Link>
+                    </Button>
+                    <Button
+                      variant={isPathActive("/suppliers") ? "secondary" : "ghost"}
+                      className="w-full justify-start pl-8"
+                      asChild
+                      onClick={handleLinkClick}
+                    >
+                      <Link href="/suppliers">
+                        <Users className="mr-2 h-4 w-4" />
+                        Padrón de Proveedores
+                      </Link>
+                    </Button>
+                    <Button
+                      variant={isPathActive("/suppliers/analytics") ? "secondary" : "ghost"}
+                      className="w-full justify-start pl-8"
+                      asChild
+                      onClick={handleLinkClick}
+                    >
+                      <Link href="/suppliers/analytics">
+                        <BarChart3 className="mr-2 h-4 w-4" />
+                        Análisis de Proveedores
+                      </Link>
+                    </Button>
                   </CollapsibleContent>
                 </Collapsible>
               </div>
@@ -900,19 +955,11 @@ export function CollapsedSidebar({ className, onLinkClick }: SidebarProps) {
       id: "procurement",
       icon: ShoppingCart,
       label: "Compras",
-      active: isSectionActive(["/compras", "/inventario", "/diesel-inventory"]),
+      active: isSectionActive(["/compras", "/inventario", "/diesel-inventory", "/suppliers"]),
       items: [
         { href: "/compras", icon: CreditCard, label: "Órdenes de Compra", active: isPathActive("/compras") },
         { href: "/inventario", icon: Boxes, label: "Inventario", active: isPathActive("/inventario") },
-        { href: "/diesel-inventory", icon: Fuel, label: "Control de Diesel", active: isPathActive("/diesel-inventory") }
-      ]
-    },
-    {
-      id: "suppliers",
-      icon: Users,
-      label: "Proveedores",
-      active: isSectionActive(["/suppliers"]),
-      items: [
+        { href: "/diesel-inventory", icon: Fuel, label: "Control de Diesel", active: isPathActive("/diesel-inventory") },
         { href: "/suppliers", icon: Users, label: "Padrón de Proveedores", active: isPathActive("/suppliers") },
         { href: "/suppliers/analytics", icon: BarChart3, label: "Análisis de Proveedores", active: isPathActive("/suppliers/analytics") }
       ]

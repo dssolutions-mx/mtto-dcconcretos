@@ -245,6 +245,7 @@ export const ROUTE_PERMISSIONS: Record<string, keyof ModulePermissions> = {
   '/ordenes': 'work_orders',
   '/compras': 'purchases',
   '/inventario': 'inventory',
+  '/suppliers': 'purchases', // Proveedores es parte de compras
   '/gestion/personal': 'personnel',
   '/gestion/autorizaciones': 'personnel', // Gestión de autorizaciones es parte de personnel
   '/gestion/plantas': 'config',
