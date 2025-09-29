@@ -397,7 +397,7 @@ export function AssetAssignmentDragDrop() {
 
   const fetchAssetsByPlant = async (plantId: string) => {
     try {
-      const response = await fetch(`/api/assets?plant_id=${plantId}`)
+      const response = await fetch(`/api/assets?plant_id=${plantId}&exclude_components=true`)
       if (response.ok) {
         const data = await response.json()
         setAssets(data)

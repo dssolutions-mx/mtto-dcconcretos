@@ -29,9 +29,12 @@ import { QuotationValidator } from "./QuotationValidator"
 import { usePurchaseOrders } from "@/hooks/usePurchaseOrders"
 import { createClient } from "@/lib/supabase"
 import { useUserPlant } from "@/hooks/use-user-plant"
+import { SupplierSelector } from "@/components/suppliers/SupplierSelector"
+import { Supplier } from "@/types/suppliers"
 
 interface DirectPurchaseFormProps {
   workOrderId?: string
+  prefillSupplier?: string
   onSuccess?: (purchaseOrderId: string) => void
   onCancel?: () => void
 }
@@ -60,7 +63,8 @@ interface WorkOrderData {
 }
 
 export function DirectPurchaseForm({ 
-  workOrderId, 
+  workOrderId,
+  prefillSupplier,
   onSuccess, 
   onCancel 
 }: DirectPurchaseFormProps) {
@@ -102,6 +106,7 @@ export function DirectPurchaseForm({
   const [recentSuppliers, setRecentSuppliers] = useState<string[]>([])
   const [supplierSuggestions, setSupplierSuggestions] = useState<string[]>([])
   const [showSuggestions, setShowSuggestions] = useState(false)
+  const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(null)
 
   // Validation
   const [validationResult, setValidationResult] = useState<QuoteValidationResponse | null>(null)
@@ -109,6 +114,9 @@ export function DirectPurchaseForm({
 
   // Load work order data and recent suppliers
   useEffect(() => {
+    if (prefillSupplier) {
+      handleInputChange('supplier', prefillSupplier)
+    }
     const loadWorkOrderData = async () => {
       setIsLoadingWorkOrder(true)
       setWorkOrderError(null)
@@ -525,46 +533,21 @@ export function DirectPurchaseForm({
         <CardContent className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="supplier">Proveedor</Label>
-              <div className="relative">
-                <Input
-                  id="supplier"
-                  placeholder="Nombre del proveedor o tienda"
-                  value={formData.supplier || ""}
-                  onChange={(e) => handleSupplierChange(e.target.value)}
-                  onFocus={() => {
-                    if (recentSuppliers.length > 0) {
-                      setSupplierSuggestions(recentSuppliers)
-                      setShowSuggestions(true)
-                    }
-                  }}
-                  onBlur={() => {
-                    // Delay hiding suggestions to allow for selection
-                    setTimeout(() => setShowSuggestions(false), 200)
-                  }}
-                  required
-                />
-                {(showSuggestions && supplierSuggestions.length > 0) ? (
-                  <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-md shadow-lg max-h-60 overflow-auto">
-                    <div className="p-2 text-xs text-gray-500 border-b">
-                      Proveedores recientes:
-                    </div>
-                    {supplierSuggestions.map((supplier, index) => (
-                      <button
-                        key={index}
-                        type="button"
-                        className="w-full text-left px-3 py-2 hover:bg-gray-100 text-sm"
-                        onClick={() => selectSupplier(supplier)}
-                      >
-                        {supplier}
-                      </button>
-                    ))}
-                  </div>
-                ) : null}
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Escribe el nombre del proveedor o selecciona uno de los recientes
-              </p>
+              <Label>Proveedor</Label>
+              <SupplierSelector
+                value={selectedSupplier?.id}
+                onChange={(supplier) => {
+                  setSelectedSupplier(supplier)
+                  handleInputChange('supplier', supplier?.name || '')
+                }}
+                placeholder="Seleccionar proveedor"
+                showPerformance={true}
+                allowManualInput={true}
+                onManualInputChange={(name) => {
+                  handleInputChange('supplier', name)
+                }}
+                businessUnitId={userPlants?.[0]?.business_unit_id}
+              />
             </div>
 
             <div className="space-y-2">

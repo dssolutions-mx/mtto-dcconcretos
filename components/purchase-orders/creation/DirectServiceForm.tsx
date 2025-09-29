@@ -30,9 +30,12 @@ import { QuotationUploader } from "./QuotationUploader"
 import { usePurchaseOrders } from "@/hooks/usePurchaseOrders"
 import { createClient } from "@/lib/supabase"
 import { useUserPlant } from "@/hooks/use-user-plant"
+import { SupplierSelector } from "@/components/suppliers/SupplierSelector"
+import { Supplier } from "@/types/suppliers"
 
 interface DirectServiceFormProps {
   workOrderId?: string
+  prefillSupplier?: string
   onSuccess?: (purchaseOrderId: string) => void
   onCancel?: () => void
 }
@@ -75,7 +78,8 @@ const COMMON_SERVICE_PROVIDERS = [
 ]
 
 export function DirectServiceForm({ 
-  workOrderId, 
+  workOrderId,
+  prefillSupplier,
   onSuccess, 
   onCancel 
 }: DirectServiceFormProps) {
@@ -100,6 +104,9 @@ export function DirectServiceForm({
     service_provider: "",
     max_payment_date: undefined
   })
+
+  // Supplier state
+  const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(null)
 
   // Services management
   const [services, setServices] = useState<ServiceItem[]>([])
@@ -129,6 +136,11 @@ export function DirectServiceForm({
 
   // Load work order data and recent service providers
   useEffect(() => {
+    // Apply prefill supplier name if provided
+    if (prefillSupplier && (!selectedSupplier || selectedSupplier.name !== prefillSupplier)) {
+      handleInputChange('service_provider', prefillSupplier)
+      handleInputChange('supplier', prefillSupplier)
+    }
     const loadWorkOrderData = async () => {
       setIsLoadingWorkOrder(true)
       setWorkOrderError(null)
@@ -329,7 +341,7 @@ export function DirectServiceForm({
       errors.push('Se requiere seleccionar una planta para órdenes independientes')
     }
 
-    if (!formData.service_provider?.trim()) {
+    if (!selectedSupplier) {
       errors.push('Proveedor de servicio es requerido')
     }
 
@@ -378,23 +390,23 @@ export function DirectServiceForm({
     }
 
     try {
-                      const request: CreatePurchaseOrderRequest = {
-          work_order_id: workOrderId || undefined,
-          po_type: PurchaseOrderType.DIRECT_SERVICE,
-          supplier: formData.service_provider!, // Use service_provider as supplier
-          items: services,
-          total_amount: formData.total_amount!,
-          payment_method: formData.payment_method,
-          service_provider: formData.service_provider,
-          notes: formData.notes,
-          quotation_url: quotationUrl || undefined,
-          max_payment_date: formData.payment_method === PaymentMethod.TRANSFER ? formData.max_payment_date : undefined
-        }
+      const request: CreatePurchaseOrderRequest = {
+        work_order_id: workOrderId || undefined,
+        po_type: PurchaseOrderType.DIRECT_SERVICE,
+        supplier: selectedSupplier?.name || formData.service_provider!, // Use selected supplier name or fallback
+        items: services,
+        total_amount: formData.total_amount!,
+        payment_method: formData.payment_method,
+        service_provider: selectedSupplier?.name || formData.service_provider,
+        notes: formData.notes,
+        quotation_url: quotationUrl || undefined,
+        max_payment_date: formData.payment_method === PaymentMethod.TRANSFER ? formData.max_payment_date : undefined
+      }
 
-        // Only add plant_id for standalone orders and when a plant is selected
-        if (!workOrderId && selectedPlantId && selectedPlantId.trim() !== '') {
-          request.plant_id = selectedPlantId
-        }
+      // Only add plant_id for standalone orders and when a plant is selected
+      if (!workOrderId && selectedPlantId && selectedPlantId.trim() !== '') {
+        request.plant_id = selectedPlantId
+      }
 
       const result = await createPurchaseOrder(request)
       
@@ -598,30 +610,24 @@ export function DirectServiceForm({
           
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="service_provider">Proveedor de Servicio *</Label>
-              <div className="relative">
-                <Input
-                  id="service_provider"
-                  placeholder="Nombre del técnico o empresa de servicio"
-                  value={formData.service_provider || ""}
-                  onChange={(e) => handleProviderChange(e.target.value)}
-                  onFocus={() => setShowProviderSuggestions(true)}
-                  onBlur={() => setTimeout(() => setShowProviderSuggestions(false), 150)}
-                />
-                {showProviderSuggestions && providerSuggestions.length > 0 && (
-                  <div className="absolute z-10 w-full bg-white border border-gray-200 rounded-md mt-1 max-h-48 overflow-y-auto">
-                    {providerSuggestions.map((provider, index) => (
-                      <div
-                        key={index}
-                        className="px-3 py-2 hover:bg-gray-100 cursor-pointer text-sm"
-                        onClick={() => selectProvider(provider)}
-                      >
-                        {provider}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
+              <Label>Proveedor de Servicio *</Label>
+              <SupplierSelector
+                value={selectedSupplier?.id}
+                onChange={(supplier) => {
+                  setSelectedSupplier(supplier)
+                  handleInputChange('service_provider', supplier?.name || '')
+                  handleInputChange('supplier', supplier?.name || '')
+                }}
+                placeholder="Seleccionar proveedor de servicios"
+                filterByType="service_provider"
+                showPerformance={true}
+                allowManualInput={true}
+                onManualInputChange={(name) => {
+                  handleInputChange('service_provider', name)
+                  handleInputChange('supplier', name)
+                }}
+                businessUnitId={userPlants?.[0]?.business_unit_id}
+              />
             </div>
             <div className="space-y-2">
               <Label htmlFor="payment_method">Método de Pago *</Label>

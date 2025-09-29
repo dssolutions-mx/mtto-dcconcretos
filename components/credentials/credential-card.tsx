@@ -145,13 +145,15 @@ export function CredentialCard({
       </div>
 
       {/* Professional Photo Section */}
-      <div className="flex justify-center py-6">
-        <div className="w-28 h-28 rounded-full bg-gray-50 flex items-center justify-center overflow-hidden" style={{ borderWidth: 4, borderColor: BRAND_DARK_BLUE }}>
+      <div className="flex justify-center pt-4 pb-2">
+        <div className="w-32 h-32 bg-white flex items-center justify-center">
           {employeeData.avatar_url ? (
             <img
               src={employeeData.avatar_url}
               alt={`${employeeData.nombre} ${employeeData.apellido}`}
-              className="w-full h-full object-cover"
+              className="h-full w-auto block"
+              crossOrigin="anonymous"
+              style={{ objectFit: 'contain' }}
             />
           ) : (
             <User size={40} className="text-gray-300" />
@@ -162,7 +164,7 @@ export function CredentialCard({
       {/* Employee Information - Executive Style */}
       <div className="px-6 pb-14">{/* extra bottom padding to avoid overlapping footer */}
         {/* Name Section */}
-        <div className="text-center space-y-1 pt-4">
+        <div className="text-center space-y-1 pt-2">
           <h2 className="text-base font-bold text-gray-900 leading-tight">
             {employeeData.nombre} {employeeData.apellido}
           </h2>

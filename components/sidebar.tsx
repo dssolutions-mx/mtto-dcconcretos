@@ -908,6 +908,16 @@ export function CollapsedSidebar({ className, onLinkClick }: SidebarProps) {
       ]
     },
     {
+      id: "suppliers",
+      icon: Users,
+      label: "Proveedores",
+      active: isSectionActive(["/suppliers"]),
+      items: [
+        { href: "/suppliers", icon: Users, label: "Padrón de Proveedores", active: isPathActive("/suppliers") },
+        { href: "/suppliers/analytics", icon: BarChart3, label: "Análisis de Proveedores", active: isPathActive("/suppliers/analytics") }
+      ]
+    },
+    {
       id: "records",
       icon: FileText,
       label: "Históricos",

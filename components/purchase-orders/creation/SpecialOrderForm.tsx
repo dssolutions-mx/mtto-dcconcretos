@@ -29,10 +29,13 @@ import { QuotationValidator } from "./QuotationValidator"
 import { QuotationUploader } from "./QuotationUploader"
 import { usePurchaseOrders } from "@/hooks/usePurchaseOrders"
 import { createClient } from "@/lib/supabase"
+import { SupplierSelector } from "@/components/suppliers/SupplierSelector"
+import { Supplier } from "@/types/suppliers"
 import { useUserPlant } from "@/hooks/use-user-plant"
 
 interface SpecialOrderFormProps {
   workOrderId?: string
+  prefillSupplier?: string
   onSuccess?: (purchaseOrderId: string) => void
   onCancel?: () => void
 }
@@ -79,7 +82,8 @@ const COMMON_SUPPLIERS = [
 ]
 
 export function SpecialOrderForm({ 
-  workOrderId, 
+  workOrderId,
+  prefillSupplier,
   onSuccess, 
   onCancel 
 }: SpecialOrderFormProps) {
@@ -124,6 +128,7 @@ export function SpecialOrderForm({
   const [recentSuppliers, setRecentSuppliers] = useState<string[]>([])
   const [supplierSuggestions, setSupplierSuggestions] = useState<string[]>([])
   const [showSupplierSuggestions, setShowSupplierSuggestions] = useState(false)
+  const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(null)
 
   // Validation
   const [validationResult, setValidationResult] = useState<QuoteValidationResponse | null>(null)
@@ -134,6 +139,9 @@ export function SpecialOrderForm({
 
   // Load work order data and recent suppliers
   useEffect(() => {
+    if (prefillSupplier) {
+      handleInputChange('supplier', prefillSupplier)
+    }
     const loadWorkOrderData = async () => {
       setIsLoadingWorkOrder(true)
       setWorkOrderError(null)
@@ -610,30 +618,21 @@ export function SpecialOrderForm({
         <CardContent className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="supplier">Proveedor/Agencia *</Label>
-              <div className="relative">
-                <Input
-                  id="supplier"
-                  placeholder="Nombre de la agencia o proveedor formal"
-                  value={formData.supplier || ""}
-                  onChange={(e) => handleSupplierChange(e.target.value)}
-                  onFocus={() => setShowSupplierSuggestions(true)}
-                  onBlur={() => setTimeout(() => setShowSupplierSuggestions(false), 150)}
-                />
-                {showSupplierSuggestions && supplierSuggestions.length > 0 && (
-                  <div className="absolute z-10 w-full bg-white border border-gray-200 rounded-md mt-1 max-h-48 overflow-y-auto">
-                    {supplierSuggestions.map((supplier, index) => (
-                      <div
-                        key={index}
-                        className="px-3 py-2 hover:bg-gray-100 cursor-pointer text-sm"
-                        onClick={() => selectSupplier(supplier)}
-                      >
-                        {supplier}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
+              <Label>Proveedor/Agencia *</Label>
+              <SupplierSelector
+                value={selectedSupplier?.id}
+                onChange={(supplier) => {
+                  setSelectedSupplier(supplier)
+                  handleInputChange('supplier', supplier?.name || '')
+                }}
+                placeholder="Seleccionar proveedor/agencia"
+                showPerformance={true}
+                allowManualInput={true}
+                onManualInputChange={(name) => {
+                  handleInputChange('supplier', name)
+                }}
+                businessUnitId={userPlants?.[0]?.business_unit_id}
+              />
             </div>
             <div className="space-y-2">
               <Label htmlFor="payment_method">Método de Pago *</Label>

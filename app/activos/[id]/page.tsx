@@ -844,17 +844,25 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
                   <span className="flex items-center gap-2">
                     <MapPin className="h-4 w-4 flex-shrink-0" />
                     <span className="break-words">
-                      {compositeContext.composite && compositeContext.components.length > 0
-                        ? (compositeContext.components[0] as any)?.plants?.name || "Sin planta"
-                        : (asset as any)?.plants?.name || asset?.location || "Sin planta"}
+                      {(() => {
+                        if (compositeContext.composite && compositeContext.components.length > 0) {
+                          const names = Array.from(new Set((compositeContext.components as any[]).map(c => c?.plants?.name).filter(Boolean)));
+                          return names.length === 1 ? names[0] : 'Varios';
+                        }
+                        return (asset as any)?.plants?.name || asset?.location || 'Sin planta';
+                      })()}
                     </span>
                   </span>
                   <span className="flex items-center gap-2">
                     <Users className="h-4 w-4 flex-shrink-0" />
                     <span className="break-words">
-                      {compositeContext.composite && compositeContext.components.length > 0
-                        ? (compositeContext.components[0] as any)?.departments?.name || "Sin departamento"
-                        : (asset as any)?.departments?.name || asset?.department || "Sin departamento"}
+                      {(() => {
+                        if (compositeContext.composite && compositeContext.components.length > 0) {
+                          const names = Array.from(new Set((compositeContext.components as any[]).map(c => c?.departments?.name).filter(Boolean)));
+                          return names.length === 1 ? names[0] : 'Varios';
+                        }
+                        return (asset as any)?.departments?.name || asset?.department || 'Sin departamento';
+                      })()}
                     </span>
                   </span>
                   {asset?.purchase_date && (

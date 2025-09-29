@@ -14,7 +14,7 @@ import { Calendar } from "@/components/ui/calendar"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
-import { CalendarIcon, Save, Plus, Trash2, Camera, FileText } from "lucide-react"
+import { CalendarIcon, Save, Plus, Trash2, Camera, FileText, CheckCircle } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { createClient } from "@/lib/supabase"
 import { InsertWorkOrder, MaintenanceType, ServiceOrderPriority, WorkOrderStatus, Profile, PurchaseOrderItem } from "@/types"
@@ -22,6 +22,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { EvidenceUpload, type EvidencePhoto } from "@/components/ui/evidence-upload"
 import { Separator } from "@/components/ui/separator"
 import { Badge } from "@/components/ui/badge"
+import { SupplierSuggestionPanel } from "./SupplierSuggestionPanel"
+import { SupplierSuggestionPanelMobile } from "./SupplierSuggestionPanelMobile"
+import { Supplier } from "@/types/suppliers"
 
 // Simpler types for select dropdowns
 interface AssetForSelect {
@@ -46,6 +49,10 @@ export function WorkOrderForm() {
     status: WorkOrderStatus.Pending,
     estimated_duration: 2,
   })
+
+  // Supplier management
+  const [assignedSupplier, setAssignedSupplier] = useState<Supplier | null>(null)
+  const [supplierNotes, setSupplierNotes] = useState("")
   
   const [assets, setAssets] = useState<AssetForSelect[]>([])
   const [technicians, setTechnicians] = useState<Profile[]>([])
@@ -306,16 +313,44 @@ export function WorkOrderForm() {
         };
         
         console.log("Submitting work order:", workOrderData);
-        
+
         // Insert the work order - this will use our trigger for ID generation
-        const result = await supabase
+        const { data: insertedWorkOrder, error: insertError } = await supabase
           .from("work_orders")
           .insert(workOrderData)
           .select()
-          .single();
-          
-        data = result.data;
-        error = result.error;
+          .single()
+
+        if (insertError) {
+          throw insertError
+        }
+
+        // If supplier is assigned, update the work order with supplier information
+        if (assignedSupplier && insertedWorkOrder) {
+          await supabase
+            .from("work_orders")
+            .update({
+              assigned_supplier_id: assignedSupplier.id,
+              supplier_notes: supplierNotes,
+              supplier_assignment_date: new Date().toISOString(),
+              supplier_assignment_by: currentUser?.id,
+              updated_by: currentUser?.id
+            })
+            .eq('id', insertedWorkOrder.id)
+
+          // Log the supplier assignment in work history
+          await supabase
+            .from('supplier_work_history')
+            .insert({
+              supplier_id: assignedSupplier.id,
+              work_order_id: insertedWorkOrder.id,
+              work_type: formData.type || 'maintenance',
+              total_cost: 0, // Will be updated when work is completed
+              created_at: new Date().toISOString()
+            })
+        }
+
+        const result = insertedWorkOrder
       }
         
       if (error) throw error;
@@ -721,6 +756,95 @@ export function WorkOrderForm() {
         title="Evidencia Inicial"
         description="Suba fotografías del problema identificado, estado del equipo y cualquier documentación relevante"
       />
+
+      {/* Supplier Suggestions */}
+      <div className="hidden md:block">
+        <SupplierSuggestionPanel
+          workOrderId={formData.id}
+          assetId={formData.asset_id}
+          problemDescription={formData.description}
+          urgency={formData.priority}
+          onSupplierAssign={(supplier) => {
+            setAssignedSupplier(supplier)
+            setSupplierNotes(`Proveedor asignado automáticamente basado en recomendaciones del sistema`)
+          }}
+        />
+      </div>
+      <div className="md:hidden">
+        <SupplierSuggestionPanelMobile
+          workOrderId={formData.id}
+          assetId={formData.asset_id}
+          problemDescription={formData.description}
+          urgency={formData.priority}
+          onSupplierAssign={(supplier) => {
+            setAssignedSupplier(supplier)
+            setSupplierNotes(`Proveedor asignado automáticamente basado en recomendaciones del sistema`)
+          }}
+        />
+      </div>
+
+      {/* Assigned Supplier Display */}
+      {assignedSupplier && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <CheckCircle className="w-5 h-5 text-green-500" />
+              Proveedor Asignado
+            </CardTitle>
+            <CardDescription>
+              Proveedor seleccionado para esta orden de trabajo
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  <h4 className="font-semibold">{assignedSupplier.name}</h4>
+                  <Badge className="bg-green-50 text-green-700 border-green-200">
+                    Asignado
+                  </Badge>
+                </div>
+                {assignedSupplier.business_name && (
+                  <p className="text-sm text-muted-foreground">
+                    {assignedSupplier.business_name}
+                  </p>
+                )}
+                <div className="flex items-center gap-3 text-xs text-muted-foreground mt-1">
+                  {assignedSupplier.rating && (
+                    <span>Calificación: {assignedSupplier.rating}/5</span>
+                  )}
+                  {assignedSupplier.reliability_score && (
+                    <span>Confiabilidad: {assignedSupplier.reliability_score}%</span>
+                  )}
+                </div>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setAssignedSupplier(null)
+                  setSupplierNotes("")
+                }}
+              >
+                Cambiar
+              </Button>
+            </div>
+
+            {/* Supplier Notes */}
+            <div className="mt-4 space-y-2">
+              <Label htmlFor="supplier_notes">Notas del Proveedor</Label>
+              <Textarea
+                id="supplier_notes"
+                placeholder="Notas sobre la selección del proveedor, consideraciones especiales, etc."
+                value={supplierNotes}
+                onChange={(e) => setSupplierNotes(e.target.value)}
+                rows={2}
+              />
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <CardFooter className="flex justify-end space-x-2 fixed bottom-0 right-0 w-full bg-background p-4 border-t md:relative md:bg-transparent md:p-0 md:border-none">
         <Button type="button" variant="outline" onClick={() => router.back()} disabled={isLoading}>Cancelar</Button>

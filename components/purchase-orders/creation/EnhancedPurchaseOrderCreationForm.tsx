@@ -41,6 +41,7 @@ export function EnhancedPurchaseOrderCreationForm({
   const [currentStep, setCurrentStep] = useState<CreationStep>(CreationStep.SELECT_TYPE)
   const [selectedType, setSelectedType] = useState<PurchaseOrderType | null>(null)
   const [workOrderIdState, setWorkOrderIdState] = useState<string>("")
+  const [prefillSupplier, setPrefillSupplier] = useState<string>("")
 
   useEffect(() => {
     if (initialType && Object.values(PurchaseOrderType).includes(initialType as PurchaseOrderType)) {
@@ -56,6 +57,9 @@ export function EnhancedPurchaseOrderCreationForm({
         setWorkOrderIdState(woId)
       }
     }
+
+    const prefill = searchParams.get('prefillSupplier')
+    if (prefill) setPrefillSupplier(prefill)
   }, [initialType, workOrderId, searchParams])
 
   const handleTypeSelected = (type: PurchaseOrderType) => {
@@ -177,6 +181,7 @@ export function EnhancedPurchaseOrderCreationForm({
           {selectedType === PurchaseOrderType.DIRECT_PURCHASE && (
             <DirectPurchaseForm
               workOrderId={workOrderIdState || undefined}
+              prefillSupplier={prefillSupplier || undefined}
               onSuccess={handleFormSuccess}
               onCancel={handleFormCancel}
             />
@@ -185,6 +190,7 @@ export function EnhancedPurchaseOrderCreationForm({
           {selectedType === PurchaseOrderType.DIRECT_SERVICE && (
             <DirectServiceForm
               workOrderId={workOrderIdState || undefined}
+              prefillSupplier={prefillSupplier || undefined}
               onSuccess={handleFormSuccess}
               onCancel={handleFormCancel}
             />
@@ -193,6 +199,7 @@ export function EnhancedPurchaseOrderCreationForm({
           {selectedType === PurchaseOrderType.SPECIAL_ORDER && (
             <SpecialOrderForm
               workOrderId={workOrderIdState || undefined}
+              prefillSupplier={prefillSupplier || undefined}
               onSuccess={handleFormSuccess}
               onCancel={handleFormCancel}
             />
