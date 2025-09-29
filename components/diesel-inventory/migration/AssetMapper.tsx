@@ -56,10 +56,20 @@ import { useDieselStore } from '@/store/diesel-store'
 import { createClient } from '@/lib/supabase'
 import { 
   AssetMappingEntry, 
-  AssetResolution, 
-  AssetMappingSuggestion,
-  AssetCategory 
+  AssetResolution
 } from '@/types/diesel'
+
+// Local type definitions
+interface AssetMappingSuggestion {
+  asset_id: string
+  asset_name: string
+  similarity_score: number
+  asset_type: string
+  plant_name: string
+  last_used: string | null
+}
+
+type AssetCategory = 'formal' | 'exception' | 'general' | 'ignore'
 
 interface AssetMapperProps {
   onMappingComplete?: () => void
@@ -112,6 +122,18 @@ export function AssetMapper({ onMappingComplete, onProceedToProcessing }: AssetM
   const [selectedAsset, setSelectedAsset] = useState<string | null>(null)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [currentMapping, setCurrentMapping] = useState<MappingDecision | null>(null)
+  const [assetListSearch, setAssetListSearch] = useState('')
+  
+  // Manual list filter for formal assets in dialog
+  const filteredFormalAssets = useMemo(() => {
+    const term = assetListSearch.trim().toLowerCase()
+    if (!term) return formalAssets
+    return formalAssets.filter(a =>
+      a.name.toLowerCase().includes(term) ||
+      a.code.toLowerCase().includes(term) ||
+      a.plant_name.toLowerCase().includes(term)
+    )
+  }, [formalAssets, assetListSearch])
   
   // Extract unique asset names from parsed data
   const uniqueAssetNames = useMemo(() => {
@@ -126,7 +148,7 @@ export function AssetMapper({ onMappingComplete, onProceedToProcessing }: AssetM
       occurrences: parsedData.filter(row => row.unidad?.trim() === name).length,
       totalLiters: parsedData
         .filter(row => row.unidad?.trim() === name)
-        .reduce((sum, row) => sum + (parseFloat(row.litros_cantidad) || 0), 0)
+        .reduce((sum, row) => sum + (parseFloat(String(row.litros_cantidad)) || 0), 0)
     })).sort((a, b) => b.occurrences - a.occurrences)
   }, [parsedData])
 
@@ -157,28 +179,70 @@ export function AssetMapper({ onMappingComplete, onProceedToProcessing }: AssetM
       setIsLoading(true)
       const supabase = createClient()
       
-      const { data, error } = await supabase
+      const { data: assets, error } = await supabase
         .from('assets')
-        .select(`
-          id,
-          name,
-          code,
-          status,
-          equipment_models(category),
-          plants(name)
-        `)
-        .eq('status', 'active')
+        .select('*')
+        .or('status.eq.active,status.eq.operational,status.eq.operating,status.eq.operacional')
         .order('name')
-      
+
       if (error) throw error
-      
-      const formattedAssets: FormalAsset[] = (data || []).map(asset => ({
+
+      const assetRows = assets || []
+
+      let enrichedAssets = assetRows
+
+      // Attempt to fetch plant information, but allow failure without blocking the list
+      const plantIds = Array.from(new Set(assetRows.map(asset => asset.plant_id).filter(Boolean))) as string[]
+      if (plantIds.length > 0) {
+        const { data: plantData, error: plantError } = await supabase
+          .from('plants')
+          .select('id, name, code')
+          .in('id', plantIds)
+
+        if (plantError) {
+          console.warn('AssetMapper: failed to load plants', plantError)
+        } else {
+          const plantLookup = new Map<string, { name: string; code: string }>()
+          ;(plantData || []).forEach((plant: any) => {
+            if (plant?.id) plantLookup.set(plant.id, { name: plant.name, code: plant.code })
+          })
+      enrichedAssets = enrichedAssets.map(asset => ({
+        ...asset,
+        plant_name: asset.plant_id ? plantLookup.get(asset.plant_id)?.name || 'Sin planta' : 'Sin planta'
+      }))
+        }
+      }
+
+      // Attempt to fetch model information, also optional
+      const modelIds = Array.from(new Set(assetRows.map(asset => asset.model_id).filter(Boolean))) as string[]
+      if (modelIds.length > 0) {
+        const { data: modelData, error: modelError } = await supabase
+          .from('equipment_models')
+          .select('id, name, category')
+          .in('id', modelIds)
+
+        if (modelError) {
+          console.warn('AssetMapper: failed to load equipment models', modelError)
+        } else {
+          const modelLookup = new Map<string, { name: string; category: string }>()
+          ;(modelData || []).forEach((model: any) => {
+            if (model?.id) modelLookup.set(model.id, { name: model.name, category: model.category })
+          })
+          enrichedAssets = enrichedAssets.map(asset => ({
+            ...asset,
+            category: asset.model_id ? modelLookup.get(asset.model_id)?.category || 'Sin categoría' : 'Sin categoría'
+          }))
+        }
+      }
+
+      const formattedAssets: FormalAsset[] = enrichedAssets.map(asset => ({
         id: asset.id,
         name: asset.name,
-        code: asset.code || '',
-        plant_name: (asset as any).plants?.name || 'Sin planta',
-        category: (asset as any).equipment_models?.category || 'Sin categoría',
-        status: asset.status
+    // Use the correct column from DB: assets.asset_id is the formal code
+    code: asset.asset_id || '',
+        plant_name: (asset as any).plant_name || 'Sin planta',
+        category: (asset as any).category || 'Sin categoría',
+        status: asset.status || 'desconocido'
       }))
       
       setFormalAssets(formattedAssets)
@@ -202,9 +266,32 @@ export function AssetMapper({ onMappingComplete, onProceedToProcessing }: AssetM
     }
   }, [addError])
 
+  // Helper function to detect if an asset name is an adjustment entry
+  const isAdjustmentEntry = useCallback((assetName: string): boolean => {
+    const normalized = assetName.toLowerCase().trim()
+    const adjustmentKeywords = [
+      'ajuste',
+      'ajustes',
+      'adjustment',
+      'validacion',
+      'validación',
+      'fisico',
+      'físico',
+      'corrección',
+      'correccion',
+      'inventario'
+    ]
+    return adjustmentKeywords.some(keyword => normalized.includes(keyword))
+  }, [])
+
   // Get asset suggestions using fuzzy matching
   const getAssetSuggestions = useCallback((assetName: string): AssetMappingSuggestion[] => {
     if (!assetName.trim()) return []
+    
+    // Check if this is an adjustment entry - no suggestions needed
+    if (isAdjustmentEntry(assetName)) {
+      return []
+    }
     
     const suggestions: AssetMappingSuggestion[] = []
     const searchTerm = assetName.toLowerCase()
@@ -249,27 +336,42 @@ export function AssetMapper({ onMappingComplete, onProceedToProcessing }: AssetM
     return suggestions
       .sort((a, b) => b.similarity_score - a.similarity_score)
       .slice(0, 5) // Top 5 suggestions
-  }, [formalAssets])
+  }, [formalAssets, isAdjustmentEntry])
 
   // Open mapping dialog
   const openMappingDialog = useCallback((assetName: string) => {
     const existing = mappingDecisions.get(assetName)
     const suggestions = getAssetSuggestions(assetName)
+    const isAdjustment = isAdjustmentEntry(assetName)
     
-    setCurrentMapping(existing || {
-      originalName: assetName,
-      decision: suggestions.length > 0 && suggestions[0].similarity_score > 0.8 ? 'formal' : 'exception',
-      confidence: 0.7,
-      targetAssetId: suggestions.length > 0 && suggestions[0].similarity_score > 0.8 ? suggestions[0].asset_id : undefined,
-      targetAssetName: suggestions.length > 0 && suggestions[0].similarity_score > 0.8 ? suggestions[0].asset_name : undefined,
-      exceptionDetails: {
-        assetType: 'unknown',
-        description: `Activo externo: ${assetName}`
-      }
-    })
+    // Auto-classify adjustments as "general" (inventory adjustments)
+    if (isAdjustment && !existing) {
+      setCurrentMapping({
+        originalName: assetName,
+        decision: 'general',
+        confidence: 0.95,
+        notes: 'Ajuste de inventario detectado automáticamente',
+        exceptionDetails: {
+          assetType: 'utility',
+          description: `Ajuste de inventario: ${assetName}`
+        }
+      })
+    } else {
+      setCurrentMapping(existing || {
+        originalName: assetName,
+        decision: suggestions.length > 0 && suggestions[0].similarity_score > 0.8 ? 'formal' : 'exception',
+        confidence: 0.7,
+        targetAssetId: suggestions.length > 0 && suggestions[0].similarity_score > 0.8 ? suggestions[0].asset_id : undefined,
+        targetAssetName: suggestions.length > 0 && suggestions[0].similarity_score > 0.8 ? suggestions[0].asset_name : undefined,
+        exceptionDetails: {
+          assetType: 'unknown',
+          description: `Activo externo: ${assetName}`
+        }
+      })
+    }
     setSelectedAsset(assetName)
     setIsDialogOpen(true)
-  }, [mappingDecisions, getAssetSuggestions])
+  }, [mappingDecisions, getAssetSuggestions, isAdjustmentEntry])
 
   // Save mapping decision
   const saveMappingDecision = useCallback(() => {
@@ -282,14 +384,16 @@ export function AssetMapper({ onMappingComplete, onProceedToProcessing }: AssetM
     // Add to pending mappings in store
     const resolution: AssetResolution = {
       resolution_type: currentMapping.decision === 'general' ? 'general' : 
-                      currentMapping.decision === 'formal' ? 'formal' : 'exception',
+                      currentMapping.decision === 'formal' ? 'formal' : 
+                      currentMapping.decision === 'ignore' ? 'unmapped' : 'exception',
       asset_id: currentMapping.targetAssetId || null,
       exception_asset_id: null, // Will be created during processing
-      asset_category: currentMapping.decision as AssetCategory,
-      confidence_level: currentMapping.confidence,
-      original_name: currentMapping.originalName,
-      resolved_name: currentMapping.targetAssetName || null,
-      requires_manual_review: currentMapping.decision === 'exception'
+      asset_name: currentMapping.targetAssetName || null,
+      exception_asset_name: currentMapping.exceptionDetails?.description || null,
+      confidence: currentMapping.confidence,
+      created_new: false,
+      mapping_notes: currentMapping.notes || null,
+      original_name: currentMapping.originalName
     }
     
     addPendingMapping(currentMapping.originalName, resolution)
@@ -334,11 +438,12 @@ export function AssetMapper({ onMappingComplete, onProceedToProcessing }: AssetM
             resolution_type: 'formal',
             asset_id: bestMatch.asset_id,
             exception_asset_id: null,
-            asset_category: 'formal',
-            confidence_level: bestMatch.similarity_score,
-            original_name: asset.name,
-            resolved_name: bestMatch.asset_name,
-            requires_manual_review: false
+            asset_name: bestMatch.asset_name,
+            exception_asset_name: null,
+            confidence: bestMatch.similarity_score,
+            created_new: false,
+            mapping_notes: 'Auto-mapped based on high similarity',
+            original_name: asset.name
           }
           
           addPendingMapping(asset.name, resolution)
@@ -576,7 +681,7 @@ export function AssetMapper({ onMappingComplete, onProceedToProcessing }: AssetM
               </Select>
             </div>
             
-            <div className="flex items-end">
+            <div className="flex items-end gap-2">
               <Button
                 variant="outline"
                 onClick={() => {
@@ -586,6 +691,52 @@ export function AssetMapper({ onMappingComplete, onProceedToProcessing }: AssetM
               >
                 <RotateCcw className="mr-2 h-4 w-4" />
                 Limpiar
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  // Auto-map all adjustments as "general"
+                  const newDecisions = new Map(mappingDecisions)
+                  let count = 0
+                  filteredAssets.forEach(asset => {
+                    if (isAdjustmentEntry(asset.name) && !newDecisions.has(asset.name)) {
+                      newDecisions.set(asset.name, {
+                        originalName: asset.name,
+                        decision: 'general',
+                        confidence: 0.95,
+                        notes: 'Ajuste de inventario detectado automáticamente',
+                        exceptionDetails: {
+                          assetType: 'utility',
+                          description: `Ajuste de inventario: ${asset.name}`
+                        }
+                      })
+                      
+                      const resolution: AssetResolution = {
+                        resolution_type: 'general',
+                        asset_id: null,
+                        exception_asset_id: null,
+                        asset_name: null,
+                        exception_asset_name: `Ajuste de inventario: ${asset.name}`,
+                        confidence: 0.95,
+                        created_new: false,
+                        mapping_notes: 'Ajuste de inventario detectado automáticamente',
+                        original_name: asset.name
+                      }
+                      addPendingMapping(asset.name, resolution)
+                      count++
+                    }
+                  })
+                  setMappingDecisions(newDecisions)
+                  addNotification({
+                    title: 'Ajustes Mapeados',
+                    message: `${count} ajustes de inventario clasificados automáticamente`,
+                    type: 'info'
+                  })
+                }}
+                className="bg-amber-100 hover:bg-amber-200 text-amber-800"
+              >
+                <Zap className="mr-2 h-4 w-4" />
+                Mapear Ajustes
               </Button>
             </div>
           </div>
@@ -617,15 +768,28 @@ export function AssetMapper({ onMappingComplete, onProceedToProcessing }: AssetM
                   const decision = mappingDecisions.get(asset.name)
                   const suggestions = getAssetSuggestions(asset.name)
                   const bestMatch = suggestions[0]
+                  const isAdjustment = isAdjustmentEntry(asset.name)
                   
                   return (
                     <TableRow key={asset.name}>
                       <TableCell className="font-medium">
                         <div className="space-y-1">
-                          <div>{asset.name}</div>
-                          {bestMatch && (
+                          <div className="flex items-center gap-2">
+                            <span>{asset.name}</span>
+                            {isAdjustment && (
+                              <Badge variant="outline" className="bg-amber-50 text-amber-700 text-xs">
+                                Ajuste
+                              </Badge>
+                            )}
+                          </div>
+                          {!isAdjustment && bestMatch && (
                             <div className="text-xs text-muted-foreground">
                               Sugerencia: {bestMatch.asset_name} ({Math.round(bestMatch.similarity_score * 100)}%)
+                            </div>
+                          )}
+                          {isAdjustment && (
+                            <div className="text-xs text-amber-600">
+                              Se clasificará como activo general (ajuste de inventario)
                             </div>
                           )}
                         </div>
@@ -703,6 +867,18 @@ export function AssetMapper({ onMappingComplete, onProceedToProcessing }: AssetM
           
           {currentMapping && (
             <div className="space-y-6">
+              {/* Adjustment Detection Alert */}
+              {currentMapping && isAdjustmentEntry(currentMapping.originalName) && (
+                <Alert className="bg-amber-50 border-amber-200">
+                  <Info className="h-4 w-4 text-amber-600" />
+                  <AlertTitle className="text-amber-900">Ajuste de Inventario Detectado</AlertTitle>
+                  <AlertDescription className="text-amber-700">
+                    Este registro parece ser un ajuste de inventario y se clasificará automáticamente como "Activo General". 
+                    No necesita mapeo a un activo formal del sistema.
+                  </AlertDescription>
+                </Alert>
+              )}
+
               {/* Decision Type */}
               <div className="space-y-2">
                 <Label>Tipo de Mapeo</Label>
@@ -774,7 +950,10 @@ export function AssetMapper({ onMappingComplete, onProceedToProcessing }: AssetM
                           >
                             <div className="flex items-center justify-between">
                               <div>
-                                <div className="font-medium">{suggestion.asset_name}</div>
+                                <div className="font-medium">
+                                  {/* Show asset_id (code) first, then name for clarity */}
+                                  {formalAssets.find(a => a.id === suggestion.asset_id)?.code || ''} — {suggestion.asset_name}
+                                </div>
                                 <div className="text-sm text-muted-foreground">
                                   {suggestion.plant_name} • {suggestion.asset_type}
                                 </div>
@@ -795,6 +974,47 @@ export function AssetMapper({ onMappingComplete, onProceedToProcessing }: AssetM
                       </Alert>
                     )
                   })()}
+
+                  {/* Manual full list selector */}
+                  <div className="space-y-2">
+                    <Label>Buscar en todos los activos</Label>
+                    <Input
+                      placeholder="Buscar por nombre, código o planta..."
+                      value={assetListSearch}
+                      onChange={(e) => setAssetListSearch(e.target.value)}
+                    />
+                    <div className="border rounded max-h-56 overflow-y-auto">
+                      {filteredFormalAssets.length === 0 ? (
+                        <div className="p-3 text-sm text-muted-foreground">No hay activos que coincidan con la búsqueda</div>
+                      ) : (
+                        filteredFormalAssets.slice(0, 300).map(asset => (
+                          <div
+                            key={asset.id}
+                            className={cn(
+                              "px-3 py-2 text-sm cursor-pointer flex items-center justify-between",
+                              currentMapping.targetAssetId === asset.id ? "bg-primary/5" : "hover:bg-muted"
+                            )}
+                            onClick={() => setCurrentMapping({
+                              ...currentMapping,
+                              targetAssetId: asset.id,
+                              targetAssetName: asset.name,
+                              confidence: 0.6
+                            })}
+                          >
+                            <div className="min-w-0">
+                              <div className="font-medium truncate">
+                                {asset.code} — {asset.name}
+                              </div>
+                              <div className="text-xs text-muted-foreground truncate">{asset.plant_name}</div>
+                            </div>
+                            {currentMapping.targetAssetId === asset.id && (
+                              <Badge variant="secondary">Seleccionado</Badge>
+                            )}
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
                 </div>
               )}
               

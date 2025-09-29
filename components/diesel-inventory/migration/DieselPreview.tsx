@@ -5,10 +5,13 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Badge } from '@/components/ui/badge'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { Button } from '@/components/ui/button'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { 
-  CheckCircle, AlertTriangle, Clock, FileText, Filter, Droplets, Building2, Tags, Info
+  CheckCircle, AlertTriangle, Clock, FileText, Filter, Droplets, Building2, Tags, Info,
+  TrendingUp, TrendingDown, Activity, Gauge, Calendar, AlertCircle
 } from 'lucide-react'
-import { DieselExcelRow } from '@/types/diesel'
+import { DieselExcelRow, PlantBatch } from '@/types/diesel'
 import { useDieselStore } from '@/store/diesel-store'
 
 type Props = {
@@ -16,13 +19,25 @@ type Props = {
   fileName?: string
 }
 
+type ViewMode = 'overview' | 'plant-batch' | 'detailed'
+
 export default function DieselPreview({ rows, fileName }: Props) {
-  const { validateExcelData } = useDieselStore()
+  const { validateExcelData, plantBatches, selectPlantBatch, selectedPlantBatch } = useDieselStore()
   const [showOnlyIssues, setShowOnlyIssues] = useState(false)
   const [plantFilter, setPlantFilter] = useState<string>('')
   const [typeFilter, setTypeFilter] = useState<string>('')
+  const [viewMode, setViewMode] = useState<ViewMode>('overview')
 
   const validation = useMemo(() => validateExcelData(rows), [rows, validateExcelData])
+  
+  // Get selected batch or first batch
+  const currentBatch = useMemo(() => {
+    if (plantBatches.length === 0) return null
+    if (selectedPlantBatch) {
+      return plantBatches.find(b => b.batch_id === selectedPlantBatch) || plantBatches[0]
+    }
+    return plantBatches[0]
+  }, [plantBatches, selectedPlantBatch])
 
   // Map errors/warnings per row index (1-based in validator)
   const rowIssues = useMemo(() => {
@@ -275,6 +290,9 @@ export default function DieselPreview({ rows, fileName }: Props) {
     </div>
   )
 }
+
+
+
 
 
 

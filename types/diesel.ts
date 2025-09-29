@@ -1,5 +1,45 @@
 // Diesel Inventory Types
+
+// Movement categories
+export type MovementCategory = 
+  | 'inventory_opening'      // Entrada, no unit, no liters, has INVENTARIO INICIAL
+  | 'inventory_adjustment'   // Manual adjustment/correction
+  | 'fuel_receipt'           // Entrada, no unit, large liters
+  | 'asset_consumption'      // Salida, has unit, has liters
+  | 'unassigned_consumption' // Salida, no unit, has liters
+
+// Meter reading for an asset at a point in time
+export interface MeterReading {
+  asset_code: string
+  reading_date: Date
+  reading_time: string | null
+  horometer: number | null
+  kilometer: number | null
+  fuel_consumed: number
+  operator: string | null
+  
+  // Computed deltas (filled during processing)
+  horometer_delta: number | null
+  kilometer_delta: number | null
+  days_since_last: number | null
+  daily_hours_avg: number | null
+  daily_km_avg: number | null
+  fuel_efficiency_per_hour: number | null
+  fuel_efficiency_per_km: number | null
+  
+  // Validation
+  has_warnings: boolean
+  has_errors: boolean
+  validation_messages: string[]
+  
+  // Metadata
+  original_row_number: number
+  source_batch_id: string
+}
+
+// Enhanced parsed row with movement classification and meter tracking
 export interface DieselExcelRow {
+  // Raw fields from Excel
   creado: string;
   planta: string;
   clave_producto: string;
@@ -18,15 +58,39 @@ export interface DieselExcelRow {
   validacion: string;
   inventario_inicial: number | null;
   inventario: number | null;
+  
+  // Metadata
   original_row_index: number;
-  validation_status: 'valid' | 'warning' | 'error';
-  validation_messages: string[];
+  
+  // Parsing & classification
+  parsed_date: Date | null;
+  sort_key: string; // For chronological sorting
+  movement_category: MovementCategory;
+  
+  // Adjustment detection
+  is_likely_adjustment: boolean;
+  adjustment_reason: string | null;
+  
+  // Validation from discrepancies
+  has_validation_discrepancy: boolean;
+  validation_discrepancy_liters: number;
+  
+  // Asset resolution
   asset_id: string | null;
   exception_asset_name: string | null;
   asset_category: 'formal' | 'exception' | 'general' | null;
   resolved_asset_name: string | null;
   resolved_asset_type: 'formal' | 'exception' | 'general' | 'unmapped' | null;
   resolved_asset_id: string | null;
+  requires_asset_mapping: boolean;
+  
+  // Meter reading tracking
+  has_meter_readings: boolean;
+  meter_reading: MeterReading | null;
+  
+  // Processing state
+  validation_status: 'valid' | 'warning' | 'error';
+  validation_messages: string[];
   processing_status: 'pending' | 'staged' | 'processed' | 'error' | 'skipped';
   processing_notes: string | null;
 }
@@ -124,4 +188,93 @@ export interface ValidationResult {
     rowNumber: number;
     suggestion?: string;
   }>;
+}
+
+// Plant-specific batch for processing
+export interface PlantBatch {
+  batch_id: string
+  plant_code: string
+  warehouse_number: string
+  original_filename: string
+  
+  // Rows for this plant/warehouse
+  rows: DieselExcelRow[]
+  
+  // Computed statistics
+  total_rows: number
+  inventory_opening_row: DieselExcelRow | null
+  initial_inventory: number
+  final_inventory_computed: number
+  final_inventory_provided: number
+  inventory_discrepancy: number
+  
+  // Movement counts
+  fuel_receipts: number
+  asset_consumptions: number
+  unassigned_consumptions: number
+  adjustments: number
+  
+  // Asset tracking
+  unique_assets: string[]
+  unmapped_assets: string[]
+  assets_with_meters: string[]
+  
+  // Meter readings extracted
+  meter_readings: MeterReading[]
+  meter_conflicts: MeterConflict[]
+  
+  // Volume totals
+  total_litros_in: number
+  total_litros_out: number
+  net_change: number
+  
+  // Validation summary
+  validation_warnings: number
+  validation_errors: number
+  
+  // Date range
+  date_range: {
+    start: Date | null
+    end: Date | null
+  }
+  
+  // Processing state
+  status: 'pending' | 'ready' | 'processing' | 'completed' | 'error'
+  created_at: string
+}
+
+// Meter reading conflict with checklist data
+export interface MeterConflict {
+  asset_code: string
+  asset_id: string | null
+  
+  // From diesel import
+  diesel_horometer: number | null
+  diesel_kilometer: number | null
+  diesel_date: Date
+  diesel_row_number: number
+  
+  // From checklist (current system)
+  checklist_horometer: number | null
+  checklist_kilometer: number | null
+  checklist_date: Date | null
+  checklist_source: string // e.g., "Morning Checklist 2025-02-14"
+  
+  // Conflict analysis
+  horometer_diff: number | null
+  kilometer_diff: number | null
+  is_diesel_newer: boolean
+  is_diesel_higher: boolean
+  
+  // User decision
+  resolution: 'pending' | 'use_diesel' | 'keep_checklist' | 'skip'
+  resolved_by: string | null
+  resolved_at: string | null
+}
+
+// User preferences for meter reconciliation
+export interface MeterReconciliationPreferences {
+  default_action: 'prompt' | 'use_diesel_if_newer' | 'always_keep_checklist' | 'always_use_diesel'
+  update_threshold_days: number // Only update if diesel reading is N days newer
+  prompt_if_discrepancy_gt: number // Prompt user if difference > N hours/km
 }

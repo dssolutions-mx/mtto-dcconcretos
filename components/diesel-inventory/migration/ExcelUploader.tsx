@@ -23,7 +23,8 @@ import { cn } from "@/lib/utils"
 import { useDieselStore } from '@/store/diesel-store'
 import { DieselExcelRow } from '@/types/diesel'
 import * as XLSX from 'xlsx'
-import DieselPreview from './DieselPreview'
+import DieselPreviewEnhanced from './DieselPreviewEnhanced'
+import { buildEnhancedRow, groupIntoPlantBatches } from '@/lib/diesel-parser-utils'
 import { useAuthZustand } from "@/hooks/use-auth-zustand"
 
 interface ExcelUploaderProps {
@@ -33,13 +34,13 @@ interface ExcelUploaderProps {
 
 // Expected Excel/CSV column mapping
 const EXPECTED_COLUMNS = [
-  { key: 'creado', label: 'Creado', required: true },
+  { key: 'creado', label: 'Creado', required: false },
   { key: 'planta', label: 'Planta', required: true },
-  { key: 'clave_producto', label: 'CLAVE DE PRODUCTO', required: true },
+  { key: 'clave_producto', label: 'CLAVE DE PRODUCTO', required: false },
   { key: 'almacen', label: 'Almacen', required: true },
   { key: 'tipo', label: 'Tipo', required: true },
   { key: 'unidad', label: 'Unidad', required: false },
-  { key: 'identificador', label: 'Identificador', required: true },
+  { key: 'identificador', label: 'Identificador', required: false },
   { key: 'fecha_', label: 'Fecha_', required: true },
   { key: 'horario', label: 'Horario', required: false },
   { key: 'horometro', label: 'Horómetro', required: false },
@@ -72,7 +73,9 @@ export function ExcelUploader({ onDataParsed, onBatchCreated }: ExcelUploaderPro
     addNotification,
     addError,
     validateExcelData,
-    setUser
+    setUser,
+    setPlantBatches,
+    plantBatches
   } = useDieselStore()
   
   const { profile, user } = useAuthZustand()
@@ -121,39 +124,8 @@ export function ExcelUploader({ onDataParsed, onBatchCreated }: ExcelUploaderPro
     return 'Salida'
   }
 
-  const buildRow = (raw: Record<string, any>, indexZeroBased: number): DieselExcelRow => {
-    return {
-      creado: String(raw.creado ?? ''),
-      planta: String(raw.planta ?? ''),
-      clave_producto: String(raw.clave_producto ?? ''),
-      almacen: String(raw.almacen ?? ''),
-      tipo: coerceTipo(raw.tipo),
-      unidad: String(raw.unidad ?? ''),
-      identificador: String(raw.identificador ?? ''),
-      fecha_: String(raw.fecha_ ?? ''),
-      horario: String(raw.horario ?? ''),
-      horometro: coerceNumber(raw.horometro),
-      kilometraje: coerceNumber(raw.kilometraje),
-      litros_cantidad: coerceNumber(raw.litros_cantidad) ?? 0,
-      cuenta_litros: coerceNumber(raw.cuenta_litros),
-      responsable_unidad: String(raw.responsable_unidad ?? ''),
-      responsable_suministro: String(raw.responsable_suministro ?? ''),
-      validacion: String(raw.validacion ?? ''),
-      inventario_inicial: coerceNumber(raw.inventario_inicial),
-      inventario: coerceNumber(raw.inventario),
-      original_row_index: indexZeroBased + 1,
-      validation_status: 'valid',
-      validation_messages: [],
-      asset_id: null,
-      exception_asset_name: null,
-      asset_category: null,
-      resolved_asset_name: null,
-      resolved_asset_type: 'unmapped',
-      resolved_asset_id: null,
-      processing_status: 'pending',
-      processing_notes: null,
-    }
-  }
+  // Generate batch ID
+  const generateBatchId = () => `batch-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`
 
   const mapHeaderIndices = (headers: string[]) => {
     const indices: Record<string, number> = {}
@@ -172,11 +144,13 @@ export function ExcelUploader({ onDataParsed, onBatchCreated }: ExcelUploaderPro
   }
 
   // Parse CSV content to DieselExcelRow format (robust, with type coercion)
-  const parseCSVContent = useCallback((content: string): DieselExcelRow[] => {
+  const parseCSVContent = useCallback((content: string, filename: string): DieselExcelRow[] => {
     const lines = content.split(/\r?\n/).filter(line => line.trim())
     if (lines.length < 2) {
       throw new Error('File must contain at least a header and one data row')
     }
+
+    const batchId = generateBatchId()
 
     // naive CSV split; for complex CSVs we recommend uploading .xlsx
     const headerCells = lines[0].split(',').map(col => col.trim().replace(/"/g, ''))
@@ -196,13 +170,14 @@ export function ExcelUploader({ onDataParsed, onBatchCreated }: ExcelUploaderPro
       Object.entries(columnMapping).forEach(([key, idx]) => {
         raw[key] = cells[idx as any] ?? ''
       })
-      parsedRows.push(buildRow(raw, i))
+      parsedRows.push(buildEnhancedRow(raw, i, batchId))
     }
     return parsedRows
   }, [])
 
   // Parse XLSX (.xlsx/.xls) using SheetJS
   const parseXLSXContent = useCallback(async (file: File): Promise<DieselExcelRow[]> => {
+    const batchId = generateBatchId()
     const arrayBuffer = await file.arrayBuffer()
     const workbook = XLSX.read(arrayBuffer, { cellDates: true })
     // Prefer a sheet that mentions diesel, else take first
@@ -230,7 +205,7 @@ export function ExcelUploader({ onDataParsed, onBatchCreated }: ExcelUploaderPro
       Object.entries(columnMapping).forEach(([key, idx]) => {
         raw[key] = cells[idx as any]
       })
-      parsedRows.push(buildRow(raw, i))
+      parsedRows.push(buildEnhancedRow(raw, i, batchId))
     }
     return parsedRows
   }, [])
@@ -289,8 +264,20 @@ export function ExcelUploader({ onDataParsed, onBatchCreated }: ExcelUploaderPro
         parsed = await parseXLSXContent(file)
       } else {
         const content = await file.text()
-        parsed = parseCSVContent(content)
+        parsed = parseCSVContent(content, file.name)
       }
+      setUploadProgress(70)
+      
+      // Group into plant batches
+      const batches = groupIntoPlantBatches(parsed, file.name)
+      setPlantBatches(batches)
+      
+      addNotification({
+        type: 'info',
+        title: 'Batches Created',
+        message: `Separated into ${batches.length} plant batch(es)`
+      })
+      
       setUploadProgress(90)
       
       // Validate data
@@ -544,7 +531,7 @@ export function ExcelUploader({ onDataParsed, onBatchCreated }: ExcelUploaderPro
             </CardContent>
           </Card>
 
-          <DieselPreview rows={parsedData} fileName={filePreview?.name || undefined} />
+          <DieselPreviewEnhanced fileName={filePreview?.name || undefined} />
         </div>
       )}
 

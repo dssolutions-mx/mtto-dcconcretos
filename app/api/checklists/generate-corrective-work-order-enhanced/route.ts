@@ -1,10 +1,37 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 
+// Add function to verify database functions exist
+async function verifyDatabaseFunctions(supabase: any) {
+  try {
+    // Test if the improved functions exist by calling them
+    const { data: testId, error: testError } = await supabase
+      .rpc('generate_unique_work_order_id')
+
+    if (testError) {
+      console.warn('⚠️ Database functions may not be updated yet:', testError.message)
+      return false
+    }
+
+    console.log('✅ Database functions verified, test ID:', testId)
+    return true
+  } catch (error) {
+    console.warn('⚠️ Could not verify database functions:', error)
+    return false
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
     const supabase = await createClient()
-    
+
+    // Verify database functions exist and are working
+    const functionsVerified = await verifyDatabaseFunctions(supabase)
+
+    if (!functionsVerified) {
+      console.warn('⚠️ Database functions may not be up to date. Enhanced error handling will be used as fallback.')
+    }
+
     // Get the current user
     const { data: { user }, error: userError } = await supabase.auth.getUser()
     if (userError || !user) {
@@ -419,27 +446,101 @@ ORIGEN:
           }
 
           // Create work order (order_id will be generated automatically by trigger)
-          const { data: workOrder, error: workOrderError } = await supabase
-            .from('work_orders')
-            .insert({
-              asset_id: asset_id,
-              description: workOrderDescription.trim(),
-              type: 'corrective',
-              priority: workOrderPriority,
-              status: 'Pendiente',
-              checklist_id: checklist_id,
-              issue_items: [issue],
-              requested_by: user.id,
-              original_priority: workOrderPriority,
-              related_issues_count: 1,
-              created_at: new Date().toISOString()
-            })
-            .select('id, order_id, description, status, priority')
-            .single()
+          // Enhanced error handling for duplicate key violations
+          let workOrder, workOrderError
+          let retryCount = 0
+          const maxRetries = 3
+
+          while (retryCount < maxRetries) {
+            const { data: workOrderData, error: workOrderInsertError } = await supabase
+              .from('work_orders')
+              .insert({
+                asset_id: asset_id,
+                description: workOrderDescription.trim(),
+                type: 'corrective',
+                priority: workOrderPriority,
+                status: 'Pendiente',
+                checklist_id: checklist_id,
+                issue_items: [issue],
+                requested_by: user.id,
+                original_priority: workOrderPriority,
+                related_issues_count: 1,
+                created_at: new Date().toISOString()
+              })
+              .select('id, order_id, description, status, priority')
+              .single()
+
+            workOrder = workOrderData
+            workOrderError = workOrderInsertError
+
+            // Check if error is due to duplicate order_id
+            if (workOrderError &&
+                workOrderError.code === '23505' &&
+                workOrderError.message?.includes('work_orders_order_id_key')) {
+
+              console.warn(`Duplicate order_id collision detected for issue ${issue.id}, retrying (${retryCount + 1}/${maxRetries})`)
+
+              retryCount++
+              // Wait a bit before retrying to reduce collision probability
+              await new Promise(resolve => setTimeout(resolve, 100 * retryCount))
+              continue
+            }
+
+            // If no duplicate key error, break the retry loop
+            break
+          }
 
           if (workOrderError) {
-            console.error(`Error creating work order for issue ${issue.id}:`, workOrderError)
-            continue
+            console.error(`Error creating work order for issue ${issue.id} after ${retryCount} retries:`, workOrderError)
+
+            // If it's still a duplicate key error after retries, try one more time with explicit order_id
+            if (workOrderError.code === '23505' && workOrderError.message?.includes('work_orders_order_id_key')) {
+              try {
+                console.log('🔄 Attempting to recover from duplicate key error with explicit order_id generation')
+
+                // Generate a unique order_id using the improved function
+                const { data: explicitOrderId, error: idError } = await supabase
+                  .rpc('generate_unique_work_order_id')
+
+                if (idError) {
+                  console.error('Error generating explicit order_id:', idError)
+                  continue
+                }
+
+                // Retry insertion with explicit order_id
+                const { data: workOrderWithExplicitId, error: explicitError } = await supabase
+                  .from('work_orders')
+                  .insert({
+                    order_id: explicitOrderId,
+                    asset_id: asset_id,
+                    description: workOrderDescription.trim(),
+                    type: 'corrective',
+                    priority: workOrderPriority,
+                    status: 'Pendiente',
+                    checklist_id: checklist_id,
+                    issue_items: [issue],
+                    requested_by: user.id,
+                    original_priority: workOrderPriority,
+                    related_issues_count: 1,
+                    created_at: new Date().toISOString()
+                  })
+                  .select('id, order_id, description, status, priority')
+                  .single()
+
+                if (explicitError) {
+                  console.error(`Final attempt failed for issue ${issue.id}:`, explicitError)
+                  continue
+                }
+
+                workOrder = workOrderWithExplicitId
+                console.log(`✅ Successfully created work order with explicit order_id: ${explicitOrderId}`)
+              } catch (recoveryError) {
+                console.error(`Recovery attempt failed for issue ${issue.id}:`, recoveryError)
+                continue
+              }
+            } else {
+              continue
+            }
           }
 
           newWorkOrders.push(workOrder)
@@ -532,6 +633,7 @@ ORIGEN:
         total_similar_found: similarIssuesFound.length,
         consolidation_window_days: consolidation_window_days
       },
+      database_functions_verified: functionsVerified,
       message: message
     })
 
@@ -541,5 +643,37 @@ ORIGEN:
       { error: `Error interno del servidor: ${error instanceof Error ? error.message : 'Unknown error'}` },
       { status: 500 }
     )
+  }
+}
+
+// Add GET endpoint for testing ID generation
+export async function GET() {
+  try {
+    const supabase = await createClient()
+
+    // Test the improved ID generation function
+    const { data: testOrderId, error: testError } = await supabase
+      .rpc('generate_unique_work_order_id')
+
+    if (testError) {
+      return NextResponse.json({
+        error: 'Database functions not updated yet',
+        details: testError.message,
+        migration_needed: true
+      }, { status: 503 })
+    }
+
+    return NextResponse.json({
+      success: true,
+      test_order_id: testOrderId,
+      message: 'ID generation function is working correctly',
+      functions_verified: true
+    })
+
+  } catch (error) {
+    return NextResponse.json({
+      error: 'Test failed',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    }, { status: 500 })
   }
 } 

@@ -1,7 +1,10 @@
 import { create } from 'zustand'
 import { devtools, subscribeWithSelector } from 'zustand/middleware'
 
-// Define types directly in the store file to avoid import issues
+// Import types from centralized type file
+import type { PlantBatch, MeterConflict, MeterReconciliationPreferences } from '@/types/diesel'
+
+// Re-export for backward compatibility
 export interface DieselExcelRow {
   creado: string;
   planta: string;
@@ -140,6 +143,15 @@ interface DieselStore {
   isParsing: boolean;
   currentBatch: ImportBatch | null;
   batchHistory: ImportBatch[];
+  
+  // Plant batch management (NEW)
+  plantBatches: PlantBatch[];
+  selectedPlantBatch: string | null; // batch_id
+  
+  // Meter reconciliation (NEW)
+  meterConflicts: MeterConflict[];
+  meterPreferences: MeterReconciliationPreferences;
+  
   unmappedAssets: AssetMappingEntry[];
   pendingMappings: Map<string, AssetResolution>;
   mappingProgress: number;
@@ -162,6 +174,18 @@ interface DieselStore {
   createBatch: (filename: string, rowCount: number) => Promise<string>;
   updateBatch: (batch: Partial<ImportBatch>) => void;
   completeBatch: () => void;
+  
+  // Plant batch actions (NEW)
+  setPlantBatches: (batches: PlantBatch[]) => void;
+  selectPlantBatch: (batchId: string | null) => void;
+  getSelectedPlantBatch: () => PlantBatch | null;
+  updatePlantBatch: (batchId: string, updates: Partial<PlantBatch>) => void;
+  
+  // Meter reconciliation actions (NEW)
+  setMeterConflicts: (conflicts: MeterConflict[]) => void;
+  resolveMeterConflict: (assetCode: string, resolution: MeterConflict['resolution']) => void;
+  setMeterPreferences: (prefs: Partial<MeterReconciliationPreferences>) => void;
+  
   setUnmappedAssets: (assets: AssetMappingEntry[]) => void;
   addPendingMapping: (originalName: string, resolution: AssetResolution) => void;
   removePendingMapping: (originalName: string) => void;
@@ -202,6 +226,19 @@ export const useDieselStore = create<DieselStore>()(
         isParsing: false,
         currentBatch: null,
         batchHistory: [],
+        
+        // Plant batches (NEW)
+        plantBatches: [],
+        selectedPlantBatch: null,
+        
+        // Meter reconciliation (NEW)
+        meterConflicts: [],
+        meterPreferences: {
+          default_action: 'prompt',
+          update_threshold_days: 7,
+          prompt_if_discrepancy_gt: 10
+        },
+        
         unmappedAssets: [],
         pendingMappings: new Map(),
         mappingProgress: 0,
@@ -307,6 +344,44 @@ export const useDieselStore = create<DieselStore>()(
             }))
           }
         },
+        
+        // Plant batch actions (NEW)
+        setPlantBatches: (batches: PlantBatch[]) => set({ plantBatches: batches }),
+        selectPlantBatch: (batchId: string | null) => set({ selectedPlantBatch: batchId }),
+        getSelectedPlantBatch: () => {
+          const { plantBatches, selectedPlantBatch } = get()
+          return plantBatches.find(b => b.batch_id === selectedPlantBatch) || null
+        },
+        updatePlantBatch: (batchId: string, updates: Partial<PlantBatch>) => {
+          set(state => ({
+            plantBatches: state.plantBatches.map(batch =>
+              batch.batch_id === batchId ? { ...batch, ...updates } : batch
+            )
+          }))
+        },
+        
+        // Meter reconciliation actions (NEW)
+        setMeterConflicts: (conflicts: MeterConflict[]) => set({ meterConflicts: conflicts }),
+        resolveMeterConflict: (assetCode: string, resolution: MeterConflict['resolution']) => {
+          const state = get()
+          set({
+            meterConflicts: state.meterConflicts.map(conflict =>
+              conflict.asset_code === assetCode
+                ? {
+                    ...conflict,
+                    resolution,
+                    resolved_by: state.user?.id || 'unknown',
+                    resolved_at: new Date().toISOString()
+                  }
+                : conflict
+            )
+          })
+        },
+        setMeterPreferences: (prefs: Partial<MeterReconciliationPreferences>) => {
+          set(state => ({
+            meterPreferences: { ...state.meterPreferences, ...prefs }
+          }))
+        },
         setUnmappedAssets: (assets: AssetMappingEntry[]) => set({ unmappedAssets: assets }),
         addPendingMapping: (originalName: string, resolution: AssetResolution) => {
           set(state => {
@@ -378,13 +453,20 @@ export const useDieselStore = create<DieselStore>()(
               })
             }
 
-            if (!row.litros_cantidad || isNaN(Number(row.litros_cantidad))) {
-              errors.push({
-                field: 'litros_cantidad',
-                message: 'Valid quantity in liters is required',
-                value: row.litros_cantidad,
-                rowNumber
-              })
+            // Inventory opening rows may have litros_cantidad = 0 but must have inventario_inicial
+            const isInventoryOpening = row.movement_category === 'inventory_opening' || 
+                                       (row.tipo === 'Entrada' && !row.unidad && row.inventario_inicial != null && row.inventario_inicial > 0)
+            
+            if (!isInventoryOpening) {
+              // For non-inventory-opening rows, litros_cantidad is required and must be valid
+              if (row.litros_cantidad == null || isNaN(Number(row.litros_cantidad)) || row.litros_cantidad < 0) {
+                errors.push({
+                  field: 'litros_cantidad',
+                  message: 'Valid quantity in liters is required',
+                  value: row.litros_cantidad,
+                  rowNumber
+                })
+              }
             }
 
             if (!['Entrada', 'Salida'].includes(row.tipo)) {

@@ -27,6 +27,7 @@ import {
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useDieselStore } from '@/store/diesel-store'
+import { MeterReconciliationDialog } from '../dialogs/MeterReconciliationDialog'
 
 interface ProcessingTabProps {
   onBackToMapping?: () => void
@@ -59,12 +60,20 @@ export function ProcessingTab({ onBackToMapping, onComplete }: ProcessingTabProp
     currentStep: step,
     overallProgress: progress,
     currentBatch,
-    errors
+    errors,
+    plantBatches,
+    selectedPlantBatch,
+    getSelectedPlantBatch,
+    meterConflicts,
+    setMeterConflicts,
+    meterPreferences
   } = useDieselStore()
   
   const hasErrors = errors.length > 0
   const errorCount = errors.length
   const canStart = parsedData.length > 0 && status !== 'processing'
+  const [showMeterDialog, setShowMeterDialog] = useState(false)
+  const [processingApiResponse, setProcessingApiResponse] = useState<any>(null)
   
   const [processingSteps, setProcessingSteps] = useState<ProcessingStep[]>([
     {
@@ -134,6 +143,17 @@ export function ProcessingTab({ onBackToMapping, onComplete }: ProcessingTabProp
         type: 'warning',
         title: 'No se puede procesar',
         message: 'No hay datos válidos para procesar'
+      })
+      return
+    }
+
+    // Get current plant batch
+    const currentPlantBatch = getSelectedPlantBatch()
+    if (!currentPlantBatch) {
+      addNotification({
+        type: 'error',
+        title: 'Error',
+        message: 'No se encontró el lote de planta para procesar'
       })
       return
     }
@@ -212,29 +232,77 @@ export function ProcessingTab({ onBackToMapping, onComplete }: ProcessingTabProp
       })
       addLog('success', 'Resolución de activos completada')
 
-      // Step 4: Transaction Creation
+      // Step 4: Transaction Creation - Call API
       updateStep('transaction_creation', { status: 'active', startTime: new Date() })
-      setCurrentStep('Creando transacciones finales...')
-      addLog('info', 'Generando registros en base de datos...')
+      setCurrentStep('Procesando lote en servidor...')
+      addLog('info', 'Enviando datos al servidor...')
       
-      // Call actual processing function
-      const success = await processDataBatch()
-      
-      if (success) {
+      // Call server API
+      const response = await fetch('/api/diesel/process-batch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          plantBatch: currentPlantBatch,
+          meterPreferences: meterPreferences,
+          meterResolutions: Object.fromEntries(
+            meterConflicts
+              .filter(c => c.resolution !== 'pending')
+              .map(c => [c.asset_code, c.resolution])
+          )
+        })
+      })
+
+      if (!response.ok) {
+        throw new Error(`API error: ${response.statusText}`)
+      }
+
+      const result = await response.json()
+      setProcessingApiResponse(result)
+
+      // Check if meter conflicts need resolution
+      if (result.status === 'needs_meter_resolution') {
+        addLog('info', `Detectados ${result.conflicts.length} conflictos de medidores`)
+        setMeterConflicts(result.conflicts)
+        setShowMeterDialog(true)
+        setIsProcessing(false)
+        setProcessingStatus('idle')
+        
+        updateStep('transaction_creation', {
+          status: 'error',
+          progress: 50,
+          endTime: new Date(),
+          details: [
+            `${result.conflicts.length} conflictos de medidores detectados`,
+            'Requiere resolución manual',
+            'Por favor resuelve los conflictos y continúa'
+          ]
+        })
+        
+        addNotification({
+          type: 'warning',
+          title: 'Conflictos de Medidores',
+          message: `Se detectaron ${result.conflicts.length} conflictos con las lecturas del checklist. Resuelve los conflictos para continuar.`
+        })
+        
+        return // Stop here, user needs to resolve conflicts
+      }
+
+      // Success - process completed
+      if (result.status === 'completed') {
         updateStep('transaction_creation', { 
           status: 'completed', 
           progress: 100,
           endTime: new Date(),
           details: [
-            `${parsedData.length} transacciones creadas`,
-            'Registros de consumo insertados',
-            'Validaciones de inventario aplicadas'
+            `${result.summary.processed_rows} transacciones creadas`,
+            `${result.summary.meter_readings_updated} lecturas de medidores actualizadas`,
+            'Inventario actualizado'
           ]
         })
         addLog('success', 'Transacciones creadas exitosamente')
         setOverallProgress(85)
       } else {
-        throw new Error('Error en la creación de transacciones')
+        throw new Error('Error en el procesamiento del servidor')
       }
 
       // Step 5: Finalization
@@ -290,7 +358,24 @@ export function ProcessingTab({ onBackToMapping, onComplete }: ProcessingTabProp
     } finally {
       setIsProcessing(false)
     }
-  }, [canStart, parsedData.length, processDataBatch, pendingMappings, errorCount, addLog, updateStep, setProcessingStatus, setCurrentStep, setOverallProgress, addNotification, onComplete])
+  }, [canStart, parsedData.length, processDataBatch, pendingMappings, errorCount, addLog, updateStep, setProcessingStatus, setCurrentStep, setOverallProgress, addNotification, onComplete, getSelectedPlantBatch, meterPreferences, meterConflicts, setMeterConflicts])
+
+  // Handle meter dialog close and retry
+  const handleMeterDialogClose = () => {
+    setShowMeterDialog(false)
+  }
+
+  const handleMeterConflictsResolved = () => {
+    setShowMeterDialog(false)
+    // Restart processing with resolved conflicts
+    addNotification({
+      type: 'info',
+      title: 'Conflictos Resueltos',
+      message: 'Reiniciando procesamiento con las decisiones tomadas...'
+    })
+    // Small delay then restart
+    setTimeout(() => startProcessing(), 500)
+  }
 
   // Reset processing
   const resetProcessing = useCallback(() => {
@@ -653,10 +738,18 @@ export function ProcessingTab({ onBackToMapping, onComplete }: ProcessingTabProp
               <div>Is processing: {isProcessing.toString()}</div>
               <div>Logs: {processingLogs.length} entries</div>
               <div>Batch: {currentBatch?.batch_id || 'None'}</div>
+              <div>Meter conflicts: {meterConflicts.length}</div>
             </div>
           </CardContent>
         </Card>
       )}
+
+      {/* Meter Reconciliation Dialog */}
+      <MeterReconciliationDialog
+        open={showMeterDialog}
+        onClose={handleMeterDialogClose}
+        onResolveAll={handleMeterConflictsResolved}
+      />
     </div>
   )
 }
