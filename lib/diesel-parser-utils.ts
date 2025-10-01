@@ -11,16 +11,16 @@ import {
   MeterReading 
 } from '@/types/diesel'
 
-// Parse MM/DD/YY to Date
+// Parse DD/MM/YY to Date (Latin American format)
 export function parseSmartsheetDate(dateStr: string): Date | null {
   if (!dateStr || !dateStr.trim()) return null
   try {
-    // Handle MM/DD/YY format
+    // Handle DD/MM/YY format (e.g., 08/02/25 = February 8, 2025)
     const parts = dateStr.trim().split('/')
     if (parts.length !== 3) return null
     
-    const month = parseInt(parts[0], 10)
-    const day = parseInt(parts[1], 10)
+    const day = parseInt(parts[0], 10)      // First part is DAY
+    const month = parseInt(parts[1], 10)    // Second part is MONTH
     let year = parseInt(parts[2], 10)
     
     // Convert 2-digit year to 4-digit

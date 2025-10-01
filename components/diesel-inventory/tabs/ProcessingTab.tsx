@@ -63,6 +63,7 @@ export function ProcessingTab({ onBackToMapping, onComplete }: ProcessingTabProp
     errors,
     plantBatches,
     selectedPlantBatch,
+    selectPlantBatch,
     getSelectedPlantBatch,
     meterConflicts,
     setMeterConflicts,
@@ -138,7 +139,17 @@ export function ProcessingTab({ onBackToMapping, onComplete }: ProcessingTabProp
 
   // Start processing
   const startProcessing = useCallback(async () => {
+    console.log('[ProcessingTab] startProcessing called', {
+      canStart,
+      parsedDataLength: parsedData.length,
+      status,
+      pendingMappingsSize: pendingMappings.size,
+      plantBatchesCount: plantBatches.length,
+      selectedPlantBatch
+    })
+
     if (!canStart || parsedData.length === 0) {
+      console.warn('[ProcessingTab] Cannot start - no data')
       addNotification({
         type: 'warning',
         title: 'No se puede procesar',
@@ -148,12 +159,29 @@ export function ProcessingTab({ onBackToMapping, onComplete }: ProcessingTabProp
     }
 
     // Get current plant batch
-    const currentPlantBatch = getSelectedPlantBatch()
+    let currentPlantBatch = getSelectedPlantBatch()
+    
+    // Fallback: If no batch is selected but batches exist, select the first one
+    if (!currentPlantBatch && plantBatches.length > 0) {
+      console.warn('[ProcessingTab] No batch selected, auto-selecting first batch')
+      selectPlantBatch(plantBatches[0].batch_id)
+      currentPlantBatch = plantBatches[0]
+    }
+    
+    console.log('[ProcessingTab] Current plant batch:', currentPlantBatch ? {
+      batch_id: currentPlantBatch.batch_id,
+      plant_code: currentPlantBatch.plant_code,
+      warehouse_number: currentPlantBatch.warehouse_number,
+      total_rows: currentPlantBatch.total_rows,
+      unmapped_assets: currentPlantBatch.unmapped_assets
+    } : 'null')
+
     if (!currentPlantBatch) {
+      console.error('[ProcessingTab] No plant batch found')
       addNotification({
         type: 'error',
         title: 'Error',
-        message: 'No se encontró el lote de planta para procesar'
+        message: 'No se encontró el lote de planta para procesar. Asegúrate de haber subido un archivo primero.'
       })
       return
     }
@@ -210,7 +238,7 @@ export function ProcessingTab({ onBackToMapping, onComplete }: ProcessingTabProp
       addLog('info', 'Procesando mapeos de activos...')
       
       const mappingCategories = Array.from(pendingMappings.values()).reduce((acc, mapping) => {
-        acc[mapping.asset_category] = (acc[mapping.asset_category] || 0) + 1
+        acc[mapping.resolution_type] = (acc[mapping.resolution_type] || 0) + 1
         return acc
       }, {} as Record<string, number>)
       
@@ -237,18 +265,59 @@ export function ProcessingTab({ onBackToMapping, onComplete }: ProcessingTabProp
       setCurrentStep('Procesando lote en servidor...')
       addLog('info', 'Enviando datos al servidor...')
       
+      // Enrich plant batch rows with mapping resolutions
+      const enrichedPlantBatch = {
+        ...currentPlantBatch,
+        rows: currentPlantBatch.rows.map(row => {
+          // Apply mappings to ANY row with a unit name, not just those flagged as requiring mapping
+          // This ensures exception assets (Utilities, Partner, etc.) are always applied
+          if (row.unidad) {
+            const mapping = pendingMappings.get(row.unidad)
+            if (mapping) {
+              return {
+                ...row,
+                resolved_asset_id: mapping.asset_id,
+                resolved_asset_name: mapping.asset_name || mapping.exception_asset_name,
+                resolved_asset_type: mapping.resolution_type,
+                exception_asset_name: mapping.exception_asset_name || null,
+                asset_category: mapping.resolution_type === 'formal' ? 'formal' : 
+                               mapping.resolution_type === 'exception' ? 'exception' : 'general'
+              }
+            }
+          }
+          return row
+        })
+      }
+
+      // Debug: Count how many rows got enriched
+      const enrichedCount = enrichedPlantBatch.rows.filter(r => r.resolved_asset_type).length
+      const exceptionCount = enrichedPlantBatch.rows.filter(r => r.resolved_asset_type === 'exception').length
+      
+      addLog('info', `Enviando ${enrichedPlantBatch.rows.length} registros al servidor...`)
+      addLog('info', `Mapeos en store: ${pendingMappings.size}`)
+      addLog('info', `Registros enriquecidos: ${enrichedCount} (${exceptionCount} excepciones)`)
+      
+      console.log('[ProcessingTab] Enrichment stats:', {
+        totalRows: enrichedPlantBatch.rows.length,
+        mappingsInStore: pendingMappings.size,
+        enrichedRows: enrichedCount,
+        exceptionRows: exceptionCount,
+        sampleEnrichedRow: enrichedPlantBatch.rows.find(r => r.resolved_asset_type)
+      })
+      
       // Call server API
       const response = await fetch('/api/diesel/process-batch', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          plantBatch: currentPlantBatch,
+          plantBatch: enrichedPlantBatch,
           meterPreferences: meterPreferences,
           meterResolutions: Object.fromEntries(
             meterConflicts
               .filter(c => c.resolution !== 'pending')
               .map(c => [c.asset_code, c.resolution])
-          )
+          ),
+          assetMappings: Object.fromEntries(pendingMappings)
         })
       })
 

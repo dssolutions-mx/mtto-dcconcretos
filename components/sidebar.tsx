@@ -300,14 +300,14 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                       </Button>
                     )}
                     <Button
-                      variant={isPathActive("/diesel-inventory") ? "secondary" : "ghost"}
+                      variant={isPathActive("/diesel") ? "secondary" : "ghost"}
                       className="w-full justify-start pl-8"
                       asChild
                       onClick={handleLinkClick}
                     >
-                      <Link href="/diesel-inventory">
+                      <Link href="/diesel">
                         <Fuel className="mr-2 h-4 w-4" />
-                        Control de Diesel
+                        Gestión de Diesel
                       </Link>
                     </Button>
                     <Button
@@ -633,14 +633,14 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                       </Button>
                     )}
                     <Button
-                      variant={isPathActive("/diesel-inventory") ? "secondary" : "ghost"}
+                      variant={isPathActive("/diesel") ? "secondary" : "ghost"}
                       className="w-full justify-start pl-8"
                       asChild
                       onClick={handleLinkClick}
                     >
-                      <Link href="/diesel-inventory">
+                      <Link href="/diesel">
                         <Fuel className="mr-2 h-4 w-4" />
-                        Control de Diesel
+                        Gestión de Diesel
                       </Link>
                     </Button>
                     <Button
@@ -955,11 +955,11 @@ export function CollapsedSidebar({ className, onLinkClick }: SidebarProps) {
       id: "procurement",
       icon: ShoppingCart,
       label: "Compras",
-      active: isSectionActive(["/compras", "/inventario", "/diesel-inventory", "/suppliers"]),
+      active: isSectionActive(["/compras", "/inventario", "/diesel", "/suppliers"]),
       items: [
         { href: "/compras", icon: CreditCard, label: "Órdenes de Compra", active: isPathActive("/compras") },
         { href: "/inventario", icon: Boxes, label: "Inventario", active: isPathActive("/inventario") },
-        { href: "/diesel-inventory", icon: Fuel, label: "Control de Diesel", active: isPathActive("/diesel-inventory") },
+        { href: "/diesel", icon: Fuel, label: "Gestión de Diesel", active: isPathActive("/diesel") },
         { href: "/suppliers", icon: Users, label: "Padrón de Proveedores", active: isPathActive("/suppliers") },
         { href: "/suppliers/analytics", icon: BarChart3, label: "Análisis de Proveedores", active: isPathActive("/suppliers/analytics") }
       ]

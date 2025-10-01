@@ -21,7 +21,8 @@ import {
   BarChart3,
   Loader2,
   ChevronRight,
-  RefreshCw
+  RefreshCw,
+  Fuel
 } from "lucide-react"
 import { useAuthZustand } from "@/hooks/use-auth-zustand"
 import { useIsMobile } from "@/hooks/use-mobile"
@@ -168,6 +169,16 @@ function DashboardContent() {
   }
 
   const moduleCards = [
+    {
+      title: "Diesel",
+      description: "Control de inventario y consumos de diesel",
+      icon: Fuel,
+      module: "inventory" as const, // Uses inventory permissions
+      href: "/diesel",
+      color: "bg-blue-600",
+      shortDesc: "Diesel",
+      isHighPriority: true // Mark as high priority for quick access
+    },
     {
       title: "Activos",
       description: "Gestión de equipos y maquinaria",

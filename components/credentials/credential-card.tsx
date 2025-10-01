@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { User } from 'lucide-react'
 import jsPDF from 'jspdf'
 import html2canvas from 'html2canvas'
-// Removed UserProfile import as we're now using our own interface
+import type { Office } from '@/types'
 
 interface CredentialCardProps {
   employeeData: {
@@ -27,31 +27,13 @@ interface CredentialCardProps {
     system_access_password?: string;
     credential_notes?: string;
     emergency_contact?: {
-      name: string;
-      relationship: string;
-      phone: string;
+      name?: string;
+      relationship?: string;
+      phone?: string;
     };
-    plants?: {
-      name: string;
-      contact_phone?: string;
-      contact_email?: string;
-      address?: string;
-    }[];
+    office?: Office;
   };
   showBoth?: boolean;
-  companyInfo?: {
-    name: string;
-    address: string;
-    phone: string;
-    email: string;
-  };
-}
-
-const defaultCompanyInfo = {
-  name: "DC CONCRETOS",
-  address: "Calle Caracas #12428 Fracc. El Paraíso, C.P. 22106",
-  phone: "664 905 1813",
-  email: "rh.tj@dcconcretos.com.mx"
 }
 
 // Brand palette
@@ -60,10 +42,18 @@ const BRAND_GREEN = '#21b163'
 
 export function CredentialCard({ 
   employeeData, 
-  showBoth = false, 
-  companyInfo = defaultCompanyInfo 
+  showBoth = false
 }: CredentialCardProps) {
   const [currentView, setCurrentView] = useState<'front' | 'back'>('front');
+
+  // Get office info or use defaults
+  const officeInfo = employeeData.office || {
+    name: 'DC CONCRETOS',
+    address: 'Calle Caracas #12428, El Paraíso 22106',
+    email: 'rh.tj@dcconcretos.com.mx',
+    phone: '664 905 1813',
+    hr_phone: '477 288 0120'
+  };
 
   const formatEmployeeId = (code: string | null | undefined) => {
     if (!code) return 'DC-2025-001';
@@ -326,24 +316,24 @@ export function CredentialCard({
                 <div className="flex justify-between items-start">
                   <span className="text-gray-500 font-medium">Dirección</span>
                   <span className="text-gray-900 text-[10px] text-right max-w-[200px] leading-snug">
-                    Calle Caracas #12428, El Paraíso 22106
+                    {officeInfo.address}
                   </span>
                 </div>
               </div>
               <div className="h-px w-full bg-gray-200"></div>
               <div className="flex justify-between items-center py-0.5">
                 <span className="text-gray-500 font-medium">Correo</span>
-                <span className="text-gray-900 text-[10px] max-w-[200px] break-all whitespace-normal text-right">rh.tj@dcconcretos.com.mx</span>
+                <span className="text-gray-900 text-[10px] max-w-[200px] break-all whitespace-normal text-right">{officeInfo.email}</span>
               </div>
               <div className="h-px w-full bg-gray-200"></div>
               <div className="flex justify-between items-center py-0.5">
                 <span className="text-gray-500 font-medium">Teléfono</span>
-                <span className="text-gray-900 text-[10px]">664 905 1813 (Oficina)</span>
+                <span className="text-gray-900 text-[10px]">{officeInfo.phone} (Oficina)</span>
               </div>
               <div className="h-px w-full bg-gray-200"></div>
               <div className="flex justify-between items-center py-0.5">
                 <span className="text-gray-500 font-medium">RH</span>
-                <span className="text-gray-900 text-[10px]">477 288 0120</span>
+                <span className="text-gray-900 text-[10px]">{officeInfo.hr_phone}</span>
               </div>
             </div>
           </div>

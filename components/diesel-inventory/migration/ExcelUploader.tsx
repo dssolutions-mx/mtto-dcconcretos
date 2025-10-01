@@ -75,6 +75,7 @@ export function ExcelUploader({ onDataParsed, onBatchCreated }: ExcelUploaderPro
     validateExcelData,
     setUser,
     setPlantBatches,
+    selectPlantBatch,
     plantBatches
   } = useDieselStore()
   
@@ -271,6 +272,12 @@ export function ExcelUploader({ onDataParsed, onBatchCreated }: ExcelUploaderPro
       // Group into plant batches
       const batches = groupIntoPlantBatches(parsed, file.name)
       setPlantBatches(batches)
+      
+      // Auto-select first batch
+      if (batches.length > 0) {
+        selectPlantBatch(batches[0].batch_id)
+        console.log('[ExcelUploader] Auto-selected first batch:', batches[0].batch_id)
+      }
       
       addNotification({
         type: 'info',

@@ -153,9 +153,15 @@ export type Profile = DbTables['profiles']['Row'] & {
   plant?: Plant;
   business_unit?: BusinessUnit;
   assigned_assets?: AssetOperator[];
+  office?: Office;
 };
 export type InsertProfile = DbTables['profiles']['Insert'];
 export type UpdateProfile = DbTables['profiles']['Update'];
+
+// Tipos para oficinas
+export type Office = DbTables['offices']['Row'];
+export type InsertOffice = DbTables['offices']['Insert'];
+export type UpdateOffice = DbTables['offices']['Update'];
 
 // Tipos comunes
 export enum AssetStatus {

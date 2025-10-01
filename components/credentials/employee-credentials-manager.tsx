@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Search, Printer, Download, Eye, Edit, Users, FileText, UserPlus, Upload, X, Camera, Save, XCircle } from 'lucide-react'
+import { Search, Printer, Download, Eye, Edit, Users, FileText, UserPlus, Upload, X, Camera, Save, XCircle, Building2 } from 'lucide-react'
 import jsPDF from 'jspdf'
 import html2canvas from 'html2canvas'
 import { createRoot } from 'react-dom/client'
@@ -16,6 +16,8 @@ import { useAuthZustand } from '@/hooks/use-auth-zustand'
 import { createClient } from '@/lib/supabase'
 import { CredentialCard } from './credential-card'
 import { PrintSpecifications } from './print-specifications'
+import { OfficeManagementModal } from './office-management-modal'
+import type { Office } from '@/types'
 import {
   Dialog,
   DialogContent,
@@ -61,9 +63,9 @@ interface Employee {
   shift?: string;
   notas_rh?: string;
   emergency_contact?: {
-    name: string;
-    relationship: string;
-    phone: string;
+    name?: string;
+    relationship?: string;
+    phone?: string;
   };
   plants?: {
     id: string;
@@ -71,11 +73,13 @@ interface Employee {
     contact_phone?: string;
     contact_email?: string;
     address?: string;
-  };
+  } | null;
   business_units?: {
     id: string;
     name: string;
   };
+  office_id?: string;
+  office?: Office;
 }
 
 export function EmployeeCredentialsManager() {
@@ -90,24 +94,27 @@ export function EmployeeCredentialsManager() {
   const [stagedAvatarPreview, setStagedAvatarPreview] = useState<string | null>(null)
   const [selectedEmployees, setSelectedEmployees] = useState<string[]>([])
   const [isBulkOperation, setIsBulkOperation] = useState(false)
+  const [offices, setOffices] = useState<Office[]>([])
+  const [isOfficeModalOpen, setIsOfficeModalOpen] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   
   const { profile, hasModuleAccess, hasWriteAccess } = useAuthZustand()
   const supabase = createClient()
 
   // Check if user can access this module
-  const canManageCredentials = hasModuleAccess('gestion') && (
+  const canManageCredentials = (
     profile?.role === 'GERENCIA_GENERAL' || 
     profile?.role === 'AREA_ADMINISTRATIVA' ||
     profile?.role === 'JEFE_UNIDAD_NEGOCIO'
   )
 
-  const canEditCredentials = hasWriteAccess('profiles') || canManageCredentials
+  const canEditCredentials = canManageCredentials
 
 
   useEffect(() => {
     if (canManageCredentials) {
       fetchEmployees()
+      fetchOffices()
     }
   }, [canManageCredentials])
 
@@ -196,6 +203,24 @@ export function EmployeeCredentialsManager() {
     return out
   }
 
+  const fetchOffices = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('offices')
+        .select('*')
+        .order('name')
+
+      if (error) {
+        console.error('Error fetching offices:', error)
+        return
+      }
+
+      setOffices(data || [])
+    } catch (error) {
+      console.error('Unexpected error:', error)
+    }
+  }
+
   const fetchEmployees = async () => {
     try {
       setIsLoading(true)
@@ -229,6 +254,7 @@ export function EmployeeCredentialsManager() {
           shift,
           notas_rh,
           emergency_contact,
+          office_id,
           plants:plant_id (
             id,
             name,
@@ -239,6 +265,14 @@ export function EmployeeCredentialsManager() {
           business_units:business_unit_id (
             id,
             name
+          ),
+          offices:office_id (
+            id,
+            name,
+            address,
+            email,
+            phone,
+            hr_phone
           )
         `)
         .eq('status', 'active')
@@ -260,8 +294,22 @@ export function EmployeeCredentialsManager() {
         return
       }
 
-      const withAvatars = await resolveAvatarUrls(data || [])
-      setEmployees(withAvatars)
+      // Map offices and plants arrays to single objects
+      const mappedData = (data || []).map((emp: any) => {
+        const mapped: any = { ...emp }
+        if (emp.offices && Array.isArray(emp.offices) && emp.offices.length > 0) {
+          mapped.office = emp.offices[0]
+        }
+        if (emp.plants && Array.isArray(emp.plants) && emp.plants.length > 0) {
+          mapped.plants = emp.plants[0]
+        } else {
+          mapped.plants = null
+        }
+        delete mapped.offices
+        return mapped
+      })
+      const withAvatars = await resolveAvatarUrls(mappedData)
+      setEmployees(withAvatars as Employee[])
     } catch (error) {
       console.error('Unexpected error:', error)
       toast.error('Error inesperado al cargar datos')
@@ -488,6 +536,7 @@ export function EmployeeCredentialsManager() {
         shift: employeeData.shift,
         notas_rh: employeeData.notas_rh,
         emergency_contact: employeeData.emergency_contact,
+        office_id: employeeData.office_id || null,
         updated_at: new Date().toISOString()
       }
       if (newAvatarStoragePath) {
@@ -624,6 +673,14 @@ export function EmployeeCredentialsManager() {
           >
             <Eye className="w-4 h-4 mr-2" />
             Vista Previa
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => setIsOfficeModalOpen(true)}
+            size="sm"
+          >
+            <Building2 className="w-4 h-4 mr-2" />
+            Gestionar Oficinas
           </Button>
         </div>
       </div>
@@ -825,10 +882,11 @@ export function EmployeeCredentialsManager() {
                                 onSave={handleSaveCredentials}
                                 onCancel={() => {
                                   setEditingEmployee(null)
-                                  setAvatarPreview(null)
+                                  setStagedAvatarPreview(null)
                                 }}
                                 onStageAvatar={handleStageAvatar}
                                 stagedPreview={stagedAvatarPreview}
+                                offices={offices}
                               />
                             </DialogContent>
                           </Dialog>
@@ -874,6 +932,16 @@ export function EmployeeCredentialsManager() {
       )}
 
       <PrintSpecifications />
+      
+      {/* Office Management Modal */}
+      <OfficeManagementModal
+        isOpen={isOfficeModalOpen}
+        onClose={() => setIsOfficeModalOpen(false)}
+        onOfficeUpdate={() => {
+          fetchOffices()
+          fetchEmployees()
+        }}
+      />
     </div>
   )
 }
@@ -885,6 +953,7 @@ interface EmployeeCredentialEditFormProps {
   onCancel: () => void;
   onStageAvatar: (file: File, employeeId: string) => void;
   stagedPreview: string | null;
+  offices: Office[];
 }
 
 function EmployeeCredentialEditForm({ 
@@ -892,7 +961,8 @@ function EmployeeCredentialEditForm({
   onSave, 
   onCancel, 
   onStageAvatar, 
-  stagedPreview 
+  stagedPreview,
+  offices
 }: EmployeeCredentialEditFormProps) {
   const [formData, setFormData] = useState<Employee>(employee)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -1167,6 +1237,29 @@ function EmployeeCredentialEditForm({
               />
               <p className="text-xs text-gray-500 mt-1">
                 Código específico mostrado en credencial (ej: Planta01DC, Planta02DC)
+              </p>
+            </div>
+
+            <div>
+              <Label htmlFor="office_id">Oficina Asignada</Label>
+              <Select
+                value={formData.office_id || ''}
+                onValueChange={(value) => setFormData(prev => ({ ...prev, office_id: value }))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecciona una oficina" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">Sin oficina asignada</SelectItem>
+                  {offices.map((office) => (
+                    <SelectItem key={office.id} value={office.id}>
+                      {office.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-gray-500 mt-1">
+                La información de contacto de la oficina aparecerá en la credencial
               </p>
             </div>
 

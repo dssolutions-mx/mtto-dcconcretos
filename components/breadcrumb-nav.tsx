@@ -115,7 +115,7 @@ export function BreadcrumbNav({ className }: BreadcrumbNavProps) {
       }
     }
     // Procurement section
-    else if (["compras", "inventario"].includes(firstSegment)) {
+    else if (["compras", "inventario", "diesel"].includes(firstSegment)) {
       items.push({
         label: "Compras",
         href: "#"
@@ -131,6 +131,48 @@ export function BreadcrumbNav({ className }: BreadcrumbNavProps) {
           label: "Inventario",
           href: "/inventario"
         })
+      } else if (firstSegment === "diesel") {
+        items.push({
+          label: "Gestión de Diesel",
+          href: "/diesel"
+        })
+        
+        // Handle diesel sub-pages
+        if (pathSegments.length > 1) {
+          const secondSegment = pathSegments[1]
+          
+          if (secondSegment === "consumo") {
+            items.push({
+              label: "Registrar Consumo",
+              href: "/diesel/consumo"
+            })
+          } else if (secondSegment === "entrada") {
+            items.push({
+              label: "Registrar Entrada",
+              href: "/diesel/entrada"
+            })
+          } else if (secondSegment === "ajuste") {
+            items.push({
+              label: "Ajuste de Inventario",
+              href: "/diesel/ajuste"
+            })
+          } else if (secondSegment === "historial") {
+            items.push({
+              label: "Historial de Transacciones",
+              href: "/diesel/historial"
+            })
+          } else if (secondSegment === "analytics") {
+            items.push({
+              label: "Analíticas",
+              href: "/diesel/analytics"
+            })
+          } else if (secondSegment === "almacen" && pathSegments.length > 2) {
+            items.push({
+              label: "Detalle de Almacén",
+              href: `/diesel/almacen/${pathSegments[2]}`
+            })
+          }
+        }
       }
     }
     // Records section
