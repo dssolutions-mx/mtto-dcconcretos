@@ -171,6 +171,14 @@ export function BreadcrumbNav({ className }: BreadcrumbNavProps) {
               label: "Detalle de Almacén",
               href: `/diesel/almacen/${pathSegments[2]}`
             })
+            
+            // Handle asset detail within warehouse
+            if (pathSegments.length > 4 && pathSegments[3] === "equipo") {
+              items.push({
+                label: "Detalle de Equipo",
+                href: `/diesel/almacen/${pathSegments[2]}/equipo/${pathSegments[4]}`
+              })
+            }
           }
         }
       }

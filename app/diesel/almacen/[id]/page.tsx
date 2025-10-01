@@ -825,28 +825,34 @@ export default function WarehouseDetailPage() {
                 const maxLiters = assetConsumption[0].total_liters
                 const percentage = (asset.total_liters / maxLiters) * 100
                 const avgPerConsumption = asset.total_liters / asset.count
+                // Determine if it's an external asset (contains spaces or special chars that aren't valid UUIDs)
+                const isExternal = asset.asset_id.includes(' ') || !asset.asset_id.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)
+                const assetLink = isExternal 
+                  ? `/diesel/almacen/${warehouseId}/equipo/external:${encodeURIComponent(asset.asset_id)}`
+                  : `/diesel/almacen/${warehouseId}/equipo/${asset.asset_id}`
                 
                 return (
-                  <div key={asset.asset_id} className="space-y-2">
-                    <div className="flex items-center justify-between text-sm">
-                      <div className="flex items-center gap-2">
-                        <span className="font-mono text-xs text-muted-foreground">
-                          #{index + 1}
-                        </span>
-                        <span className="font-medium">{asset.asset_name}</span>
-                        {asset.asset_id !== asset.asset_name && (
-                          <Badge variant="outline" className="text-xs">
-                            {asset.asset_id}
-                          </Badge>
-                        )}
+                  <Link key={asset.asset_id} href={assetLink}>
+                    <div className="space-y-2 hover:bg-gray-50 p-2 rounded-lg transition-colors cursor-pointer">
+                      <div className="flex items-center justify-between text-sm">
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-xs text-muted-foreground">
+                            #{index + 1}
+                          </span>
+                          <span className="font-medium">{asset.asset_name}</span>
+                          {asset.asset_id !== asset.asset_name && (
+                            <Badge variant="outline" className="text-xs">
+                              {asset.asset_id}
+                            </Badge>
+                          )}
+                        </div>
+                        <div className="text-right">
+                          <span className="font-bold text-lg">{asset.total_liters.toFixed(1)}L</span>
+                          <span className="text-xs text-muted-foreground ml-2">
+                            ({asset.count} consumos)
+                          </span>
+                        </div>
                       </div>
-                      <div className="text-right">
-                        <span className="font-bold text-lg">{asset.total_liters.toFixed(1)}L</span>
-                        <span className="text-xs text-muted-foreground ml-2">
-                          ({asset.count} consumos)
-                        </span>
-                      </div>
-                    </div>
                     
                     <div className="flex items-center gap-2">
                       <div className="flex-1 h-2 bg-gray-200 rounded-full overflow-hidden">
@@ -859,7 +865,8 @@ export default function WarehouseDetailPage() {
                         Promedio: {avgPerConsumption.toFixed(1)}L
                       </span>
                     </div>
-                  </div>
+                    </div>
+                  </Link>
                 )
               })}
             </div>
