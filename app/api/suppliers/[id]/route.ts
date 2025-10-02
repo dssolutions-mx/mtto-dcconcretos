@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase'
+import { createClient } from '@/lib/supabase-server'
 import { UpdateSupplierRequest } from '@/types/suppliers'
 import { normalizeIndustry, normalizeSpecialty } from '@/lib/suppliers/taxonomy'
 
@@ -14,7 +14,7 @@ export async function GET(
   { params }: RouteParams
 ) {
   try {
-    const supabase = createClient()
+    const supabase = await createClient()
     const { id } = params
 
     const { data: supplier, error } = await supabase
@@ -63,7 +63,7 @@ export async function PUT(
   { params }: RouteParams
 ) {
   try {
-    const supabase = createClient()
+    const supabase = await createClient()
     const { id } = params
 
     // Get the authenticated user
@@ -157,7 +157,7 @@ export async function DELETE(
   { params }: RouteParams
 ) {
   try {
-    const supabase = createClient()
+    const supabase = await createClient()
     const { id } = params
 
     // Get the authenticated user

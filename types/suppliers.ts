@@ -374,9 +374,6 @@ export interface SupplierFormData {
   payment_terms?: PaymentTerms
   payment_methods?: PaymentMethod[]
   business_hours?: BusinessHours
-
-  // Additional Information
-  notes?: string
 }
 
 // Component Props Types

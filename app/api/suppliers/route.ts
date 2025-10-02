@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase'
+import { createClient } from '@/lib/supabase-server'
 import { SupplierSearchRequest, CreateSupplierRequest, SUPPLIER_SPECIALTIES } from '@/types/suppliers'
 import { normalizeIndustry, normalizeSpecialty } from '@/lib/suppliers/taxonomy'
 
 export async function GET(request: NextRequest) {
   try {
-    const supabase = createClient()
+    const supabase = await createClient()
 
     // Get query parameters
     const { searchParams } = new URL(request.url)
@@ -110,7 +110,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = createClient()
+    const supabase = await createClient()
 
     // Get the authenticated user
     const { data: { user }, error: authError } = await supabase.auth.getUser()

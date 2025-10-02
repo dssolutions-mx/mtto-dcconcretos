@@ -66,8 +66,7 @@ export function SupplierForm({ supplier, onSuccess, onCancel }: SupplierFormProp
     certifications: supplier?.certifications || [],
     payment_terms: supplier?.payment_terms || '30_days',
     payment_methods: supplier?.payment_methods || ['transfer'],
-    business_hours: supplier?.business_hours || {},
-    notes: ''
+    business_hours: supplier?.business_hours || {}
   })
 
   const [isSubmitting, setIsSubmitting] = useState(false)
