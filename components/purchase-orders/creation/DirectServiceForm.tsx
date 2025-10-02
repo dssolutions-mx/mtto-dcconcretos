@@ -128,8 +128,9 @@ export function DirectServiceForm({
   const [validationResult, setValidationResult] = useState<QuoteValidationResponse | null>(null)
   const [formErrors, setFormErrors] = useState<string[]>([])
   
-  // Quotation handling
-  const [quotationUrl, setQuotationUrl] = useState<string | null>(null)
+  // Quotation handling - support for multiple files
+  const [quotationUrls, setQuotationUrls] = useState<string[]>([])
+  const [quotationUrl, setQuotationUrl] = useState<string | null>(null) // Legacy support
   
   // Plant selection for standalone orders - simplified since userPlants now contains all available plants
   const [selectedPlantId, setSelectedPlantId] = useState<string>("")
@@ -373,8 +374,8 @@ export function DirectServiceForm({
     }
 
     // Validate quotation requirement for services > $10k
-    if (formData.total_amount && formData.total_amount > 10000 && !quotationUrl) {
-      errors.push('Se requiere cotización para servicios mayores a $10,000 MXN')
+    if (formData.total_amount && formData.total_amount > 10000 && quotationUrls.length === 0 && !quotationUrl) {
+      errors.push('Se requiere al menos una cotización para servicios mayores a $10,000 MXN')
     }
 
     setFormErrors(errors)
@@ -399,7 +400,8 @@ export function DirectServiceForm({
         payment_method: formData.payment_method,
         service_provider: selectedSupplier?.name || formData.service_provider,
         notes: formData.notes,
-        quotation_url: quotationUrl || undefined,
+        quotation_urls: quotationUrls.length > 0 ? quotationUrls : undefined,
+        quotation_url: quotationUrl || undefined, // Legacy fallback
         max_payment_date: formData.payment_method === PaymentMethod.TRANSFER ? formData.max_payment_date : undefined
       }
 
@@ -536,12 +538,13 @@ export function DirectServiceForm({
             <QuotationUploader
               workOrderId={workOrderId}
               isRequired={true}
-              onFileUploaded={(url) => {
-                setQuotationUrl(url)
+              allowMultiple={true}
+              onFilesUploaded={(urls) => {
+                setQuotationUrls(urls)
                 setFormErrors(prev => prev.filter(error => !error.includes('cotización')))
               }}
               onFileRemoved={() => {
-                setQuotationUrl(null)
+                setQuotationUrls([])
               }}
             />
           </CardContent>

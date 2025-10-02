@@ -67,6 +67,7 @@ export async function PATCH(
       'store_location',
       'service_provider',
       'quotation_url',
+      'quotation_urls',
       'max_payment_date',
       'items'
     ] as const
@@ -74,7 +75,12 @@ export async function PATCH(
     editableFields.forEach((field) => {
       if (Object.prototype.hasOwnProperty.call(body, field)) {
         // Basic sanitization: avoid null vs undefined confusion; allow explicit nulls to clear optional fields
-        updateData[field] = body[field]
+        // Special handling for quotation_urls - convert array to JSON string
+        if (field === 'quotation_urls' && Array.isArray(body[field])) {
+          updateData[field] = JSON.stringify(body[field])
+        } else {
+          updateData[field] = body[field]
+        }
       }
     })
 

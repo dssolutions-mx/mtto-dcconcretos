@@ -60,7 +60,8 @@ export interface EnhancedPurchaseOrder {
   purchased_at?: string                   // Timestamp de compra
   quote_required_reason?: string          // Razón de cotización
   enhanced_status?: string                // Enhanced workflow status
-  quotation_url?: string                  // URL del archivo de cotización
+  quotation_url?: string                  // URL del archivo de cotización (legacy - use quotation_urls)
+  quotation_urls?: string[]               // Array of quotation file URLs (nuevo - soporte para múltiples archivos)
   max_payment_date?: string               // Fecha máxima de pago (solo para transferencias)
   payment_date?: string                   // Fecha real cuando se realizó el pago
   payment_reference?: string              // Número de transferencia, cheque o referencia
@@ -96,7 +97,8 @@ export interface CreatePurchaseOrderRequest {
   total_amount: number
   payment_method?: PaymentMethod
   notes?: string
-  quotation_url?: string       // URL del archivo de cotización (requerido si requires_quote = true)
+  quotation_url?: string       // Legacy single URL (mantener para compatibilidad)
+  quotation_urls?: string[]    // Array of quotation URLs (preferred for new uploads)
   max_payment_date?: string    // Fecha máxima de pago (requerido solo para transferencias)
   
   // Campos específicos por tipo

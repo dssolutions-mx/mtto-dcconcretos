@@ -134,8 +134,9 @@ export function SpecialOrderForm({
   const [validationResult, setValidationResult] = useState<QuoteValidationResponse | null>(null)
   const [formErrors, setFormErrors] = useState<string[]>([])
   
-  // Quotation handling
-  const [quotationUrl, setQuotationUrl] = useState<string | null>(null)
+  // Quotation handling - support for multiple files
+  const [quotationUrls, setQuotationUrls] = useState<string[]>([])
+  const [quotationUrl, setQuotationUrl] = useState<string | null>(null) // Legacy support
 
   // Load work order data and recent suppliers
   useEffect(() => {
@@ -393,8 +394,8 @@ export function SpecialOrderForm({
 
     // Part number is now optional - removed the requirement
     // Special orders always require quotation
-    if (!quotationUrl) {
-      errors.push('Se requiere cotización formal del proveedor para pedidos especiales')
+    if (quotationUrls.length === 0 && !quotationUrl) {
+      errors.push('Se requiere al menos una cotización formal del proveedor para pedidos especiales')
     }
 
     setFormErrors(errors)
@@ -419,7 +420,8 @@ export function SpecialOrderForm({
         total_amount: formData.total_amount!,
         payment_method: formData.payment_method,
         notes: formData.notes,
-        quotation_url: quotationUrl || undefined,
+        quotation_urls: quotationUrls.length > 0 ? quotationUrls : undefined,
+        quotation_url: quotationUrl || undefined, // Legacy fallback
         ...(formData.max_payment_date && { max_payment_date: formData.max_payment_date })
       }
 
@@ -534,12 +536,13 @@ export function SpecialOrderForm({
           <QuotationUploader
             workOrderId={workOrderId}
             isRequired={true}
-            onFileUploaded={(url) => {
-              setQuotationUrl(url)
+            allowMultiple={true}
+            onFilesUploaded={(urls) => {
+              setQuotationUrls(urls)
               setFormErrors(prev => prev.filter(error => !error.includes('cotización')))
             }}
             onFileRemoved={() => {
-              setQuotationUrl(null)
+              setQuotationUrls([])
             }}
           />
         </CardContent>
