@@ -41,6 +41,7 @@ interface RecentTransaction {
   transaction_type: string
   quantity_liters: number
   asset_id: string | null
+  exception_asset_name: string | null
   asset_name: string | null
   transaction_date: string
   created_by_name: string
@@ -125,11 +126,11 @@ export default function DieselDashboardPage() {
           id,
           transaction_type,
           quantity_liters,
-          asset_id,
+          exception_asset_name,
           transaction_date,
           created_by,
           diesel_warehouses!inner(id, name, plant_id),
-          assets(asset_id, name)
+          assets!left(asset_id, name)
         `)
         .order('transaction_date', { ascending: false })
         .limit(10)
@@ -152,22 +153,29 @@ export default function DieselDashboardPage() {
         if (userIds.length > 0) {
           const { data: profilesData } = await supabase
             .from('profiles')
-            .select('id, full_name')
+            .select('id, nombre, apellido')
             .in('id', userIds)
           
           if (profilesData) {
-            profilesData.forEach(p => {
-              userProfiles[p.id] = p.full_name || 'Usuario'
+            profilesData.forEach((p: any) => {
+              userProfiles[p.id] = `${p.nombre || ''} ${p.apellido || ''}`.trim() || 'Usuario'
             })
           }
+        }
+        
+        // Debug: log first transaction to see structure
+        if (transactionsData && transactionsData.length > 0) {
+          console.log('Transaction data sample:', transactionsData[0])
+          console.log('Assets data:', transactionsData[0].assets)
         }
         
         const formattedTransactions = transactionsData?.map((t: any) => ({
           id: t.id,
           transaction_type: t.transaction_type,
           quantity_liters: t.quantity_liters,
-          asset_id: t.asset_id,
-          asset_name: t.assets?.name || 'N/A',
+          asset_id: t.assets?.asset_id || null,
+          exception_asset_name: t.exception_asset_name || null,
+          asset_name: t.assets?.name || null,
           transaction_date: t.transaction_date,
           created_by_name: userProfiles[t.created_by] || 'Usuario',
           warehouse_name: t.diesel_warehouses?.name || 'N/A'
@@ -432,7 +440,18 @@ export default function DieselDashboardPage() {
                       </div>
                       <div className="text-xs text-muted-foreground">
                         {transaction.warehouse_name}
-                        {transaction.asset_id && ` • ${transaction.asset_name}`}
+                        {transaction.asset_id && (
+                          <span>
+                            {' • '}
+                            <span className="font-mono">{transaction.asset_id}</span>
+                          </span>
+                        )}
+                        {transaction.exception_asset_name && (
+                          <span>
+                            {' • '}
+                            <span className="italic">Externo: {transaction.exception_asset_name}</span>
+                          </span>
+                        )}
                       </div>
                     </div>
                   </div>

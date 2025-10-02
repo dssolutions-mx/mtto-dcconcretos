@@ -130,3 +130,4 @@ VALUES
    'c34258ca-cc26-409d-b541-046d53b89b21', NOW(), 'manual_adjustment');
 ```
 
+
