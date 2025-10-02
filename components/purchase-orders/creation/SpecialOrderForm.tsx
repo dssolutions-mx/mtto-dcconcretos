@@ -108,6 +108,7 @@ export function SpecialOrderForm({
     total_amount: 0,
     payment_method: PaymentMethod.TRANSFER,
     notes: "Este pedido especial requiere cotización formal del proveedor.",
+    purchase_date: new Date().toISOString().split('T')[0], // Default to today
     max_payment_date: undefined
   })
 
@@ -392,6 +393,11 @@ export function SpecialOrderForm({
       errors.push('El monto total debe ser mayor a cero')
     }
 
+    // Validate purchase_date is required
+    if (!formData.purchase_date) {
+      errors.push('La fecha de compra es obligatoria')
+    }
+
     // Part number is now optional - removed the requirement
     // Special orders always require quotation
     if (quotationUrls.length === 0 && !quotationUrl) {
@@ -420,6 +426,7 @@ export function SpecialOrderForm({
         total_amount: formData.total_amount!,
         payment_method: formData.payment_method,
         notes: formData.notes,
+        purchase_date: formData.purchase_date,
         quotation_urls: quotationUrls.length > 0 ? quotationUrls : undefined,
         quotation_url: quotationUrl || undefined, // Legacy fallback
         ...(formData.max_payment_date && { max_payment_date: formData.max_payment_date })
@@ -637,6 +644,22 @@ export function SpecialOrderForm({
                 businessUnitId={userPlants?.[0]?.business_unit_id}
               />
             </div>
+            
+            {/* Purchase Date */}
+            <div className="space-y-2">
+              <Label htmlFor="purchase_date">Fecha de Compra *</Label>
+              <Input
+                id="purchase_date"
+                type="date"
+                value={formData.purchase_date || ''}
+                onChange={(e) => handleInputChange('purchase_date', e.target.value)}
+                required
+              />
+              <p className="text-xs text-muted-foreground">
+                Fecha en que se realizará o se realizó la compra
+              </p>
+            </div>
+
             <div className="space-y-2">
               <Label htmlFor="payment_method">Método de Pago *</Label>
               <Select 

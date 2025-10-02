@@ -68,6 +68,7 @@ export async function PATCH(
       'service_provider',
       'quotation_url',
       'quotation_urls',
+      'purchase_date',
       'max_payment_date',
       'items'
     ] as const

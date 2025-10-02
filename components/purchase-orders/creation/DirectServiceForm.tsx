@@ -102,6 +102,7 @@ export function DirectServiceForm({
     payment_method: PaymentMethod.TRANSFER,
     notes: "",
     service_provider: "",
+    purchase_date: new Date().toISOString().split('T')[0], // Default to today
     max_payment_date: undefined
   })
 
@@ -373,6 +374,11 @@ export function DirectServiceForm({
       errors.push('El monto total debe ser mayor a cero')
     }
 
+    // Validate purchase_date is required
+    if (!formData.purchase_date) {
+      errors.push('La fecha de compra es obligatoria')
+    }
+
     // Validate quotation requirement for services > $10k
     if (formData.total_amount && formData.total_amount > 10000 && quotationUrls.length === 0 && !quotationUrl) {
       errors.push('Se requiere al menos una cotización para servicios mayores a $10,000 MXN')
@@ -400,6 +406,7 @@ export function DirectServiceForm({
         payment_method: formData.payment_method,
         service_provider: selectedSupplier?.name || formData.service_provider,
         notes: formData.notes,
+        purchase_date: formData.purchase_date,
         quotation_urls: quotationUrls.length > 0 ? quotationUrls : undefined,
         quotation_url: quotationUrl || undefined, // Legacy fallback
         max_payment_date: formData.payment_method === PaymentMethod.TRANSFER ? formData.max_payment_date : undefined
@@ -632,6 +639,22 @@ export function DirectServiceForm({
                 businessUnitId={userPlants?.[0]?.business_unit_id}
               />
             </div>
+            
+            {/* Purchase Date */}
+            <div className="space-y-2">
+              <Label htmlFor="purchase_date">Fecha de Compra *</Label>
+              <Input
+                id="purchase_date"
+                type="date"
+                value={formData.purchase_date || ''}
+                onChange={(e) => handleInputChange('purchase_date', e.target.value)}
+                required
+              />
+              <p className="text-xs text-muted-foreground">
+                Fecha en que se realizará o se realizó la compra
+              </p>
+            </div>
+
             <div className="space-y-2">
               <Label htmlFor="payment_method">Método de Pago *</Label>
               <Select 

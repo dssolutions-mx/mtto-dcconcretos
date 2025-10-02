@@ -82,6 +82,7 @@ export class PurchaseOrderService {
           notes: request.notes,
           quotation_url: request.quotation_url,
           quotation_urls: request.quotation_urls ? JSON.stringify(request.quotation_urls) : null,
+          purchase_date: request.purchase_date,
           max_payment_date: request.max_payment_date,
           requested_by: user_id,
           status: initialStatus, // Auto-advance to pending approval

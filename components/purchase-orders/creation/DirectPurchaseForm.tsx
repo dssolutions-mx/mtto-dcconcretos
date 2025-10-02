@@ -89,6 +89,7 @@ export function DirectPurchaseForm({
     total_amount: 0,
     payment_method: PaymentMethod.CASH,
     notes: "",
+    purchase_date: new Date().toISOString().split('T')[0], // Default to today
     max_payment_date: undefined
   })
 
@@ -366,6 +367,11 @@ export function DirectPurchaseForm({
       errors.push('El monto total debe ser mayor a cero')
     }
 
+    // Validate purchase_date is required
+    if (!formData.purchase_date) {
+      errors.push('La fecha de compra es obligatoria')
+    }
+
     setFormErrors(errors)
     return errors.length === 0
   }
@@ -387,6 +393,7 @@ export function DirectPurchaseForm({
         total_amount: formData.total_amount!,
         payment_method: formData.payment_method,
         notes: formData.notes,
+        purchase_date: formData.purchase_date,
         max_payment_date: formData.payment_method === PaymentMethod.TRANSFER ? formData.max_payment_date : undefined,
         // Include plant_id for standalone orders
         ...(selectedPlantId && { plant_id: selectedPlantId })
@@ -548,6 +555,21 @@ export function DirectPurchaseForm({
                 }}
                 businessUnitId={userPlants?.[0]?.business_unit_id}
               />
+            </div>
+
+            {/* Purchase Date */}
+            <div className="space-y-2">
+              <Label htmlFor="purchase_date">Fecha de Compra *</Label>
+              <Input
+                id="purchase_date"
+                type="date"
+                value={formData.purchase_date || ''}
+                onChange={(e) => handleInputChange('purchase_date', e.target.value)}
+                required
+              />
+              <p className="text-xs text-muted-foreground">
+                Fecha en que se realizará o se realizó la compra
+              </p>
             </div>
 
             <div className="space-y-2">
