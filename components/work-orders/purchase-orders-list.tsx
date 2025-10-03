@@ -328,7 +328,6 @@ export function PurchaseOrdersList() {
     if (!orderToApprove) return
 
     setIsApproving(true)
-    const supabase = createClient()
 
     try {
       const newStatus = approvalAction === 'approve' ? 'approved' : 'rejected'
@@ -343,9 +342,14 @@ export function PurchaseOrdersList() {
         })
       })
 
+      const responseData = await response.json()
+
       if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || 'Error en la aprobación')
+        // Handle specific error cases
+        if (responseData.details) {
+          throw new Error(responseData.details)
+        }
+        throw new Error(responseData.error || responseData.message || 'Error en la aprobación')
       }
 
       // Update local state
@@ -367,7 +371,7 @@ export function PurchaseOrdersList() {
     } catch (error) {
       console.error("Error en aprobación:", error)
       toast({
-        title: "Error",
+        title: "Error en la aprobación",
         description: error instanceof Error ? error.message : "No se pudo procesar la orden",
         variant: "destructive",
       })

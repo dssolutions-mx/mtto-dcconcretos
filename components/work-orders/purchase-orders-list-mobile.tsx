@@ -79,6 +79,29 @@ interface PurchaseOrderWithWorkOrder extends Omit<PurchaseOrder, 'is_adjustment'
   service_provider?: string;
   actual_amount?: number | null;
   purchased_at?: string;
+  items_preview?: string; // Preview of first few items
+}
+
+// Helper function to preview items
+function getItemsPreview(items: any): string {
+  if (!items) return "Sin items especificados"
+  
+  try {
+    const itemsArray = typeof items === 'string' ? JSON.parse(items) : items
+    if (!Array.isArray(itemsArray) || itemsArray.length === 0) {
+      return "Sin items especificados"
+    }
+    
+    const preview = itemsArray.slice(0, 2).map((item: any) => {
+      if (typeof item === 'string') return item
+      return item.description || item.name || item.item || 'Item'
+    }).join(', ')
+    
+    const moreCount = itemsArray.length - 2
+    return moreCount > 0 ? `${preview} y ${moreCount} más` : preview
+  } catch {
+    return "Items no válidos"
+  }
 }
 
 // Helper function to get purchase order type icon
@@ -531,6 +554,63 @@ export function PurchaseOrdersListMobile() {
     setShowApprovalDialog(true)
   }
 
+  // Confirm approval/rejection
+  const confirmApproval = async () => {
+    if (!orderToApprove) return
+
+    setIsApproving(true)
+
+    try {
+      const newStatus = approvalAction === 'approve' ? 'approved' : 'rejected'
+      
+      const response = await fetch(`/api/purchase-orders/advance-workflow/${orderToApprove.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          new_status: newStatus
+        })
+      })
+
+      const responseData = await response.json()
+
+      if (!response.ok) {
+        // Handle specific error cases
+        if (responseData.details) {
+          throw new Error(responseData.details)
+        }
+        throw new Error(responseData.error || responseData.message || 'Error en la aprobación')
+      }
+
+      // Update local state
+      setOrders(prevOrders => 
+        prevOrders.map(o => 
+          o.id === orderToApprove.id 
+            ? { ...o, status: newStatus === 'approved' ? PurchaseOrderStatus.Approved : PurchaseOrderStatus.Rejected }
+            : o
+        )
+      )
+      
+      toast({
+        title: approvalAction === 'approve' ? "Orden aprobada" : "Orden rechazada",
+        description: `La orden ${orderToApprove.order_id} ha sido ${approvalAction === 'approve' ? 'aprobada' : 'rechazada'} exitosamente.`,
+      })
+      
+      setShowApprovalDialog(false)
+      setOrderToApprove(null)
+    } catch (error) {
+      console.error("Error en aprobación:", error)
+      toast({
+        title: "Error en la aprobación",
+        description: error instanceof Error ? error.message : "No se pudo procesar la orden",
+        variant: "destructive",
+      })
+    } finally {
+      setIsApproving(false)
+    }
+  }
+
   // Load user authorization limit
   useEffect(() => {
     const loadUserAuthLimit = async () => {
@@ -638,7 +718,8 @@ export function PurchaseOrdersListMobile() {
       // Merge the data
       const ordersWithWorkOrders = purchaseOrdersData.map(po => ({
         ...po,
-        work_orders: po.work_order_id ? workOrdersMap[po.work_order_id] : null
+        work_orders: po.work_order_id ? workOrdersMap[po.work_order_id] : null,
+        items_preview: getItemsPreview(po.items)
       }))
       
       setOrders(ordersWithWorkOrders as PurchaseOrderWithWorkOrder[])
@@ -1116,6 +1197,92 @@ export function PurchaseOrdersListMobile() {
               className="bg-red-600 hover:bg-red-700"
             >
               {isDeleting ? "Eliminando..." : "Eliminar OC"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Quick Approval Confirmation Dialog */}
+      <AlertDialog open={showApprovalDialog} onOpenChange={setShowApprovalDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {approvalAction === 'approve' ? 'Confirmar Aprobación' : 'Confirmar Rechazo'}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {orderToApprove && (
+                <div className="space-y-3 mt-4">
+                  <div className="p-4 bg-muted rounded-lg space-y-2">
+                    <div className="grid grid-cols-1 gap-2 text-sm">
+                      <div>
+                        <span className="font-medium">Orden:</span> {orderToApprove.order_id}
+                      </div>
+                      <div>
+                        <span className="font-medium">Monto:</span> {formatCurrency(orderToApprove.total_amount || "0")}
+                      </div>
+                      <div>
+                        <span className="font-medium">Proveedor:</span> {orderToApprove.supplier || "No especificado"}
+                      </div>
+                      <div>
+                        <span className="font-medium">Solicitado por:</span> {getTechnicianName(orderToApprove.requested_by)}
+                      </div>
+                    </div>
+                    
+                    <div className="text-sm">
+                      <span className="font-medium">Items:</span> {orderToApprove.items_preview}
+                    </div>
+                  </div>
+                  
+                  {approvalAction === 'approve' ? (
+                    <div className="flex items-center space-x-2 text-green-700 bg-green-50 p-3 rounded-lg">
+                      <Check className="h-4 w-4" />
+                      <span className="font-medium text-sm">
+                        ¿Confirmas que quieres aprobar esta orden de compra?
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="flex items-center space-x-2 text-red-700 bg-red-50 p-3 rounded-lg">
+                      <X className="h-4 w-4" />
+                      <span className="font-medium text-sm">
+                        ¿Confirmas que quieres rechazar esta orden de compra?
+                      </span>
+                    </div>
+                  )}
+                  
+                  <div className="text-xs text-muted-foreground">
+                    Tu límite de autorización: {formatCurrency(userAuthLimit)}
+                  </div>
+                </div>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isApproving}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmApproval}
+              disabled={isApproving}
+              className={approvalAction === 'approve' ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'}
+            >
+              {isApproving ? (
+                <>
+                  <Clock className="mr-2 h-4 w-4 animate-spin" />
+                  Procesando...
+                </>
+              ) : (
+                <>
+                  {approvalAction === 'approve' ? (
+                    <>
+                      <Check className="mr-2 h-4 w-4" />
+                      Aprobar
+                    </>
+                  ) : (
+                    <>
+                      <X className="mr-2 h-4 w-4" />
+                      Rechazar
+                    </>
+                  )}
+                </>
+              )}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
