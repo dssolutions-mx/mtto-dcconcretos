@@ -322,6 +322,7 @@ async function PurchaseOrderDetailsContent({ id }: { id: string }) {
                 store_location: order.store_location,
                 service_provider: order.service_provider,
                 quotation_url: order.quotation_url,
+                purchase_date: order.purchase_date,
                 max_payment_date: order.max_payment_date,
                 items: items
               }}
@@ -443,6 +444,13 @@ async function PurchaseOrderDetailsContent({ id }: { id: string }) {
               <dt className="font-medium text-sm text-muted-foreground">Fecha de Creación</dt>
               <dd className="mt-1">{formatDate(order.created_at)}</dd>
             </div>
+
+            {order.purchase_date && (
+              <div>
+                <dt className="font-medium text-sm text-muted-foreground">Fecha de Compra</dt>
+                <dd className="mt-1 font-semibold text-blue-600">{formatDate(order.purchase_date)}</dd>
+              </div>
+            )}
 
             {order.approval_date && (
               <div>

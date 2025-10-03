@@ -204,6 +204,17 @@ export function PurchaseOrderDetailsMobile({
             </div>
           </div>
 
+          {/* Purchase Date */}
+          {order.purchase_date && (
+            <div className="flex items-start space-x-3">
+              <Calendar className="h-4 w-4 text-blue-600 mt-0.5" />
+              <div className="flex-1">
+                <p className="text-xs font-medium text-muted-foreground">Fecha Planeada de Compra</p>
+                <p className="text-sm font-semibold text-blue-600">{formatDate(order.purchase_date)}</p>
+              </div>
+            </div>
+          )}
+
           {order.approval_date && (
             <div className="flex items-start space-x-3">
               <Clock className="h-4 w-4 text-green-600 mt-0.5" />

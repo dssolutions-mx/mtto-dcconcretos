@@ -83,42 +83,69 @@ export async function POST(req: Request) {
       })
     }
 
-    // Get approved purchase orders (we'll filter by date manually using work order planned_date or PO created_at)
-    let poQuery = supabase
+    // Get approved purchase orders (we'll filter by plant later after getting work order data)
+    const { data: purchaseOrders, error: poError } = await supabase
       .from("purchase_orders")
       .select(`
         id, order_id, total_amount, actual_amount, created_at, plant_id, work_order_id, status, supplier, items
       `)
       .in("status", ["approved", "validated", "received", "purchased"]) // Include validated status
-    
-    // Add plant filtering if specified
-    if (plantId) {
-      poQuery = poQuery.eq("plant_id", plantId)
-    } else if (businessUnitId && filteredPlants.length > 0) {
-      const plantIds = filteredPlants.map(p => p.id)
-      poQuery = poQuery.in("plant_id", plantIds)
-    }
-    
-    const { data: purchaseOrders, error: poError } = await poQuery
 
     if (poError) throw poError
 
     // Get work orders for the purchase orders (to get asset_id, type, and planned_date)
     const poWorkOrderIds = purchaseOrders?.map(po => po.work_order_id).filter(Boolean) || []
     let workOrdersMap = new Map()
+    let assetToPlantMap = new Map()
     
     if (poWorkOrderIds.length > 0) {
       const { data: workOrders, error: woError } = await supabase
         .from("work_orders")
-        .select("id, type, asset_id, planned_date")
+        .select(`
+          id, type, asset_id, planned_date,
+          assets (
+            id, plant_id
+          )
+        `)
         .in("id", poWorkOrderIds)
       
       if (woError) throw woError
+      
       workOrdersMap = new Map(workOrders?.map(wo => [wo.id, wo]) || [])
+      
+      // Build asset to plant mapping for filtering
+      workOrders?.forEach(wo => {
+        if (wo.assets && wo.asset_id) {
+          assetToPlantMap.set(wo.asset_id, wo.assets.plant_id)
+        }
+      })
     }
 
-    // Filter purchase orders by the correct date (work order planned_date or PO created_at)
+    // Filter purchase orders by the correct date (work order planned_date or PO created_at) and plant
     const filteredPurchaseOrders = purchaseOrders?.filter(po => {
+      // Check plant filtering first
+      let purchaseOrderPlantId = po.plant_id
+      
+      // If PO doesn't have plant_id but has work order, get plant from work order asset
+      if (!purchaseOrderPlantId && po.work_order_id) {
+        const workOrder = workOrdersMap.get(po.work_order_id)
+        if (workOrder?.asset_id) {
+          purchaseOrderPlantId = assetToPlantMap.get(workOrder.asset_id)
+        }
+      }
+      
+      // Apply plant filters
+      if (plantId && purchaseOrderPlantId !== plantId) {
+        return false
+      }
+      if (businessUnitId && filteredPlants.length > 0) {
+        const plantIds = filteredPlants.map(p => p.id)
+        if (!plantIds.includes(purchaseOrderPlantId)) {
+          return false
+        }
+      }
+      
+      // Check date filtering
       let dateToCheck: string
       
       if (po.work_order_id) {
@@ -326,16 +353,29 @@ export async function POST(req: Request) {
     // Add unlinked purchase orders to plant totals only (using filtered list)
     filteredPurchaseOrders.forEach(po => {
       const workOrder = po.work_order_id ? workOrdersMap.get(po.work_order_id) : null
-      if (!workOrder?.asset_id && po.plant_id && plantTotals.has(po.plant_id)) {
-        const finalAmount = po.actual_amount ? parseFloat(po.actual_amount) : parseFloat(po.total_amount || '0')
-        const plantTotal = plantTotals.get(po.plant_id)
-        plantTotal.purchase_orders_cost += finalAmount
-        plantTotal.total_cost += finalAmount
+      if (!workOrder?.asset_id) {
+        // For POs without work order assets, determine plant_id
+        let purchaseOrderPlantId = po.plant_id
+        
+        // If PO doesn't have plant_id but has work order, get plant from work order asset
+        if (!purchaseOrderPlantId && po.work_order_id) {
+          const workOrder = workOrdersMap.get(po.work_order_id)
+          if (workOrder?.asset_id) {
+            purchaseOrderPlantId = assetToPlantMap.get(workOrder.asset_id)
+          }
+        }
+        
+        if (purchaseOrderPlantId && plantTotals.has(purchaseOrderPlantId)) {
+          const finalAmount = po.actual_amount ? parseFloat(po.actual_amount) : parseFloat(po.total_amount || '0')
+          const plantTotal = plantTotals.get(purchaseOrderPlantId)
+          plantTotal.purchase_orders_cost += finalAmount
+          plantTotal.total_cost += finalAmount
 
-        const buTotal = buTotals.get(plantTotal.business_unit_id)
-        if (buTotal) {
-          buTotal.purchase_orders_cost += finalAmount
-          buTotal.total_cost += finalAmount
+          const buTotal = buTotals.get(plantTotal.business_unit_id)
+          if (buTotal) {
+            buTotal.purchase_orders_cost += finalAmount
+            buTotal.total_cost += finalAmount
+          }
         }
       }
     })

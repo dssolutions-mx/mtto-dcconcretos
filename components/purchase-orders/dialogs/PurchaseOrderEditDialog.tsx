@@ -17,6 +17,7 @@ type PurchaseOrderEditable = {
   notes?: string | null
   store_location?: string | null
   service_provider?: string | null
+  purchase_date?: string | null
   max_payment_date?: string | null
   items?: any[] | null
 }
@@ -43,6 +44,7 @@ export function PurchaseOrderEditDialog({ open, onOpenChange, purchaseOrderId, i
         notes: initialData.notes ?? "",
         store_location: initialData.store_location ?? "",
         service_provider: initialData.service_provider ?? "",
+        purchase_date: initialData.purchase_date ?? "",
         max_payment_date: initialData.max_payment_date ?? "",
       })
       setItems(Array.isArray(initialData.items) ? initialData.items : [])
@@ -122,6 +124,11 @@ export function PurchaseOrderEditDialog({ open, onOpenChange, purchaseOrderId, i
           <div className="space-y-2">
             <Label>Monto Total</Label>
             <Input type="number" value={form.total_amount ?? 0} onChange={e => handleChange('total_amount', Number(e.target.value))} />
+          </div>
+
+          <div className="space-y-2">
+            <Label>Fecha de Compra *</Label>
+            <Input type="date" value={form.purchase_date ? String(form.purchase_date).slice(0,10) : ''} onChange={e => handleChange('purchase_date', e.target.value)} />
           </div>
 
           <div className="space-y-2">
