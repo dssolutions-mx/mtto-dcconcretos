@@ -237,30 +237,64 @@ export function EvidenceUpload({
           ? "asset-photos"
           : "work-order-evidence"
     
-    // Create unique filename
+    // Create unique filename with timestamp to prevent conflicts
     const fileExt = evidenceItem.file.name.split('.').pop()
-    const fileName = `${context}_${workOrderId || assetId || 'general'}_${evidenceItem.id}.${fileExt}`
+    const timestamp = Date.now()
+    const randomId = Math.random().toString(36).substr(2, 9)
+    const fileName = `${context}_${workOrderId || assetId || 'general'}_${timestamp}_${randomId}.${fileExt}`
     
-    const { data, error } = await supabase.storage
-      .from(bucket)
-      .upload(fileName, evidenceItem.file, {
-        cacheControl: '3600',
-        upsert: false
-      })
+    try {
+      const { data, error } = await supabase.storage
+        .from(bucket)
+        .upload(fileName, evidenceItem.file, {
+          cacheControl: '3600',
+          upsert: true // Allow overwriting to handle duplicates gracefully
+        })
 
-    if (error) {
+      if (error) {
+        console.error('Upload error:', error)
+        throw error
+      }
+
+      const { data: urlData } = supabase.storage
+        .from(bucket)
+        .getPublicUrl(fileName)
+
+      return {
+        ...evidenceItem,
+        url: urlData.publicUrl,
+        bucket_path: fileName,
+        file: undefined // Remove file reference after upload
+      }
+    } catch (error: any) {
+      console.error('Evidence upload failed:', error)
+      // If upload fails due to duplicate, try with a new unique filename
+      if (error.message?.includes('already exists') || error.statusCode === 400) {
+        const retryFileName = `${context}_${workOrderId || assetId || 'general'}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}.${fileExt}`
+        
+        const { data: retryData, error: retryError } = await supabase.storage
+          .from(bucket)
+          .upload(retryFileName, evidenceItem.file, {
+            cacheControl: '3600',
+            upsert: true
+          })
+
+        if (retryError) {
+          throw retryError
+        }
+
+        const { data: retryUrlData } = supabase.storage
+          .from(bucket)
+          .getPublicUrl(retryFileName)
+
+        return {
+          ...evidenceItem,
+          url: retryUrlData.publicUrl,
+          bucket_path: retryFileName,
+          file: undefined
+        }
+      }
       throw error
-    }
-
-    const { data: urlData } = supabase.storage
-      .from(bucket)
-      .getPublicUrl(fileName)
-
-    return {
-      ...evidenceItem,
-      url: urlData.publicUrl,
-      bucket_path: fileName,
-      file: undefined // Remove file reference after upload
     }
   }
 

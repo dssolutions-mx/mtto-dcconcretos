@@ -338,29 +338,69 @@ class OfflineDieselService {
     const db = await this.getDB()
     if (!db) throw new Error('IndexedDB not available')
 
-    // Upload photo to Supabase storage
-    const { data: uploadData, error: uploadError } = await supabase.storage
-      .from('diesel-evidence')
-      .upload(photo.fileName, photo.file, {
-        cacheControl: '3600',
-        upsert: false
+    try {
+      // Upload photo to Supabase storage
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('diesel-evidence')
+        .upload(photo.fileName, photo.file, {
+          cacheControl: '3600',
+          upsert: true // Allow overwriting to handle duplicates gracefully
+        })
+
+      if (uploadError) {
+        console.error('Diesel photo upload error:', uploadError)
+        throw uploadError
+      }
+
+      // Get public URL
+      const { data: { publicUrl } } = supabase.storage
+        .from('diesel-evidence')
+        .getPublicUrl(photo.fileName)
+
+      // Update photo with upload URL
+      await db.put('offline-diesel-photos', {
+        ...photo,
+        uploaded: true,
+        uploadUrl: publicUrl
       })
 
-    if (uploadError) throw uploadError
+      console.log('📸 Diesel photo synced:', photo.id)
+    } catch (error: any) {
+      console.error('Diesel photo sync failed:', error)
+      // If upload fails due to duplicate, try with a new unique filename
+      if (error.message?.includes('already exists') || error.statusCode === 400) {
+        const timestamp = Date.now()
+        const randomId = Math.random().toString(36).substr(2, 9)
+        const fileExt = photo.fileName.split('.').pop()
+        const retryFileName = `diesel_${timestamp}_${randomId}.${fileExt}`
+        
+        const { data: retryData, error: retryError } = await supabase.storage
+          .from('diesel-evidence')
+          .upload(retryFileName, photo.file, {
+            cacheControl: '3600',
+            upsert: true
+          })
 
-    // Get public URL
-    const { data: { publicUrl } } = supabase.storage
-      .from('diesel-evidence')
-      .getPublicUrl(photo.fileName)
+        if (retryError) {
+          throw retryError
+        }
 
-    // Update photo with upload URL
-    await db.put('offline-diesel-photos', {
-      ...photo,
-      uploaded: true,
-      uploadUrl: publicUrl
-    })
+        const { data: { publicUrl: retryUrl } } = supabase.storage
+          .from('diesel-evidence')
+          .getPublicUrl(retryFileName)
 
-    console.log('📸 Diesel photo synced:', photo.id)
+        await db.put('offline-diesel-photos', {
+          ...photo,
+          uploaded: true,
+          uploadUrl: retryUrl,
+          fileName: retryFileName
+        })
+
+        console.log('📸 Diesel photo synced with retry:', photo.id)
+      } else {
+        throw error
+      }
+    }
   }
 
   private async syncTransaction(transaction: any): Promise<void> {
