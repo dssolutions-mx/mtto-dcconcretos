@@ -21,10 +21,12 @@ import {
   BarChart3,
   Activity,
   Filter,
-  X
+  X,
+  Edit
 } from "lucide-react"
 import { useRouter, useParams } from "next/navigation"
 import Link from "next/link"
+import { TransactionEditModal } from "@/components/diesel-inventory/transaction-edit-modal"
 
 interface WarehouseDetails {
   id: string
@@ -40,6 +42,7 @@ interface WarehouseDetails {
 
 interface Transaction {
   id: string
+  transaction_id: string
   transaction_type: string
   quantity_liters: number
   transaction_date: string
@@ -79,6 +82,10 @@ export default function WarehouseDetailPage() {
   const [stats, setStats] = useState<WarehouseStats | null>(null)
   const [balanceHistory, setBalanceHistory] = useState<Array<{date: string, balance: number}>>([])
   const [assetConsumption, setAssetConsumption] = useState<Array<{asset_id: string, asset_name: string, total_liters: number, count: number}>>([])
+  
+  // Edit modal state
+  const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null)
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false)
   
   // Filters
   const [typeFilter, setTypeFilter] = useState<string>("all")
@@ -142,6 +149,7 @@ export default function WarehouseDetailPage() {
         .from('diesel_transactions')
         .select(`
           id,
+          transaction_id,
           transaction_type,
           quantity_liters,
           transaction_date,
@@ -183,6 +191,7 @@ export default function WarehouseDetailPage() {
 
         const formatted: Transaction[] = transactionsData?.map((t: any) => ({
           id: t.id,
+          transaction_id: t.transaction_id,
           transaction_type: t.transaction_type,
           quantity_liters: t.quantity_liters,
           transaction_date: t.transaction_date,
@@ -332,6 +341,21 @@ export default function WarehouseDetailPage() {
     setDateFrom("")
     setDateTo("")
     setCurrentPage(1)
+  }
+
+  const handleEditTransaction = (transaction: Transaction) => {
+    setEditingTransaction(transaction)
+    setIsEditModalOpen(true)
+  }
+
+  const handleEditSuccess = () => {
+    // Reload warehouse data to reflect changes
+    loadWarehouseData()
+  }
+
+  const handleCloseEditModal = () => {
+    setIsEditModalOpen(false)
+    setEditingTransaction(null)
   }
 
   const getTransactionIcon = (transaction: Transaction) => {
@@ -782,6 +806,19 @@ export default function WarehouseDetailPage() {
                   <div className="text-xs text-muted-foreground">
                     Anterior: {transaction.previous_balance != null ? transaction.previous_balance.toFixed(1) : 'N/A'}L
                   </div>
+                  
+                  {/* Edit Button */}
+                  <div className="pt-2">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleEditTransaction(transaction)}
+                      className="h-8 px-2 text-xs"
+                    >
+                      <Edit className="h-3 w-3 mr-1" />
+                      Editar Fecha
+                    </Button>
+                  </div>
                 </div>
               </div>
             ))}
@@ -905,6 +942,14 @@ export default function WarehouseDetailPage() {
           </CardContent>
         </Card>
       )}
+
+      {/* Transaction Edit Modal */}
+      <TransactionEditModal
+        transaction={editingTransaction}
+        isOpen={isEditModalOpen}
+        onClose={handleCloseEditModal}
+        onSuccess={handleEditSuccess}
+      />
     </div>
   )
 }
