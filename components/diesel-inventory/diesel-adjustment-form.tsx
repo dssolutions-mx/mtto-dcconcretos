@@ -296,8 +296,8 @@ export function DieselAdjustmentForm({
         plant_id: selectedPlant,
         warehouse_id: selectedWarehouse,
         product_id: dieselProductId,
-        transaction_type: adjustmentType === 'positive' ? 'adjustment_positive' : 'adjustment_negative',
-        asset_category: 'general',  // Adjustments don't have asset
+        transaction_type: adjustmentType === 'positive' ? 'entry' : 'consumption',
+        asset_category: adjustmentType === 'positive' ? 'general' : 'exception',  // Different categories for different types
         asset_id: null,  // Adjustments cannot have asset_id
         quantity_liters: Math.abs(adjustmentValue),
         previous_balance: previousBalance,
@@ -305,6 +305,9 @@ export function DieselAdjustmentForm({
         supplier_responsible: null,
         transaction_date: new Date(transactionDate + 'T' + transactionTime + ':00').toISOString(),
         notes: `[${adjustmentType === 'positive' ? 'AJUSTE +' : 'AJUSTE -'}] ${reason}${notes ? ' | ' + notes : ''}`,
+        adjustment_reason: reason,
+        adjustment_category: 'manual',
+        exception_asset_name: adjustmentType === 'negative' ? `Ajuste negativo: ${reason}` : null,  // Required for exception category
         created_by: user.id,
         source_system: 'web_app'
       }

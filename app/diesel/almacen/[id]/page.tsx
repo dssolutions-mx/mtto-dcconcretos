@@ -215,19 +215,25 @@ export default function WarehouseDetailPage() {
 
         formatted.forEach(t => {
           if (t.transaction_type === 'entry') {
-            stats.total_entries++
-            stats.entry_liters += t.quantity_liters
-            stats.largest_entry = Math.max(stats.largest_entry, t.quantity_liters)
+            // Check if it's a positive adjustment by looking for adjustment metadata
+            if (t.notes && t.notes.includes('[AJUSTE +]')) {
+              stats.total_adjustments_positive++
+              stats.adjustment_positive_liters += t.quantity_liters
+            } else {
+              stats.total_entries++
+              stats.entry_liters += t.quantity_liters
+              stats.largest_entry = Math.max(stats.largest_entry, t.quantity_liters)
+            }
           } else if (t.transaction_type === 'consumption') {
-            stats.total_consumptions++
-            stats.consumption_liters += t.quantity_liters
-            stats.largest_consumption = Math.max(stats.largest_consumption, t.quantity_liters)
-          } else if (t.transaction_type === 'adjustment_positive') {
-            stats.total_adjustments_positive++
-            stats.adjustment_positive_liters += t.quantity_liters
-          } else if (t.transaction_type === 'adjustment_negative') {
-            stats.total_adjustments_negative++
-            stats.adjustment_negative_liters += t.quantity_liters
+            // Check if it's a negative adjustment by looking for adjustment metadata
+            if (t.notes && t.notes.includes('[AJUSTE -]')) {
+              stats.total_adjustments_negative++
+              stats.adjustment_negative_liters += t.quantity_liters
+            } else {
+              stats.total_consumptions++
+              stats.consumption_liters += t.quantity_liters
+              stats.largest_consumption = Math.max(stats.largest_consumption, t.quantity_liters)
+            }
           }
         })
 
@@ -296,7 +302,17 @@ export default function WarehouseDetailPage() {
     let filtered = [...transactions]
 
     if (typeFilter !== "all") {
-      filtered = filtered.filter(t => t.transaction_type === typeFilter)
+      if (typeFilter === "adjustment_positive") {
+        filtered = filtered.filter(t => 
+          t.transaction_type === 'entry' && t.notes && t.notes.includes('[AJUSTE +]')
+        )
+      } else if (typeFilter === "adjustment_negative") {
+        filtered = filtered.filter(t => 
+          t.transaction_type === 'consumption' && t.notes && t.notes.includes('[AJUSTE -]')
+        )
+      } else {
+        filtered = filtered.filter(t => t.transaction_type === typeFilter)
+      }
     }
 
     if (dateFrom) {
@@ -318,20 +334,30 @@ export default function WarehouseDetailPage() {
     setCurrentPage(1)
   }
 
-  const getTransactionIcon = (type: string) => {
-    if (type === 'consumption') return <TrendingDown className="h-4 w-4 text-red-600" />
-    if (type === 'entry') return <TruckIcon className="h-4 w-4 text-green-600" />
-    if (type === 'adjustment_positive') return <TrendingUp className="h-4 w-4 text-blue-600" />
-    if (type === 'adjustment_negative') return <TrendingDown className="h-4 w-4 text-orange-600" />
+  const getTransactionIcon = (transaction: Transaction) => {
+    const isPositiveAdjustment = transaction.transaction_type === 'entry' && 
+      transaction.notes && transaction.notes.includes('[AJUSTE +]')
+    const isNegativeAdjustment = transaction.transaction_type === 'consumption' && 
+      transaction.notes && transaction.notes.includes('[AJUSTE -]')
+    
+    if (isPositiveAdjustment) return <TrendingUp className="h-4 w-4 text-blue-600" />
+    if (isNegativeAdjustment) return <TrendingDown className="h-4 w-4 text-orange-600" />
+    if (transaction.transaction_type === 'consumption') return <TrendingDown className="h-4 w-4 text-red-600" />
+    if (transaction.transaction_type === 'entry') return <TruckIcon className="h-4 w-4 text-green-600" />
     return <History className="h-4 w-4 text-gray-600" />
   }
 
-  const getTransactionLabel = (type: string) => {
-    if (type === 'consumption') return 'Consumo'
-    if (type === 'entry') return 'Entrada'
-    if (type === 'adjustment_positive') return 'Ajuste +'
-    if (type === 'adjustment_negative') return 'Ajuste -'
-    return type
+  const getTransactionLabel = (transaction: Transaction) => {
+    const isPositiveAdjustment = transaction.transaction_type === 'entry' && 
+      transaction.notes && transaction.notes.includes('[AJUSTE +]')
+    const isNegativeAdjustment = transaction.transaction_type === 'consumption' && 
+      transaction.notes && transaction.notes.includes('[AJUSTE -]')
+    
+    if (isPositiveAdjustment) return 'Ajuste +'
+    if (isNegativeAdjustment) return 'Ajuste -'
+    if (transaction.transaction_type === 'consumption') return 'Consumo'
+    if (transaction.transaction_type === 'entry') return 'Entrada'
+    return transaction.transaction_type
   }
 
   const getCapacityPercentage = () => {
@@ -699,12 +725,12 @@ export default function WarehouseDetailPage() {
                 className="flex items-center justify-between p-4 rounded-lg border hover:bg-gray-50 transition-colors"
               >
                 <div className="flex items-center gap-4 flex-1">
-                  {getTransactionIcon(transaction.transaction_type)}
+                  {getTransactionIcon(transaction)}
                   
                   <div className="flex-1 space-y-1">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-semibold">
-                        {getTransactionLabel(transaction.transaction_type)}
+                        {getTransactionLabel(transaction)}
                       </span>
                       <Badge variant="outline" className="text-xs">
                         {transaction.quantity_liters.toFixed(1)}L

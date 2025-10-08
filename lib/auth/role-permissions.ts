@@ -174,6 +174,23 @@ export const ROLE_PERMISSIONS: Record<string, RoleConfig> = {
     authorizationLimit: 0,
     scope: 'global',
     description: 'Visualización de información y creación de órdenes de compra'
+  },
+  EJECUTIVO: {
+    name: 'Ejecutivo',
+    permissions: {
+      assets: 'read',
+      maintenance: 'read',
+      work_orders: 'read',
+      purchases: 'read',
+      inventory: 'read',
+      personnel: 'full',
+      checklists: 'read',
+      reports: 'read',
+      config: 'read'
+    },
+    authorizationLimit: 0,
+    scope: 'global',
+    description: 'Acceso ejecutivo con capacidad de gestión de personal y registro de usuarios'
   }
 }
 

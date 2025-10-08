@@ -12,6 +12,7 @@ import { toast } from 'react-hot-toast'
 import { Loader2, Search, Filter, Users, Building2, MapPin, RefreshCw, CheckCircle2, AlertCircle } from 'lucide-react'
 import { PersonnelDraggableItem } from './personnel-draggable-item'
 import { useAuthZustand } from '@/hooks/use-auth-zustand'
+import { UserRegistrationTool } from '@/components/auth/user-registration-tool'
 
 interface Profile {
   id: string
@@ -341,7 +342,9 @@ export function PersonnelManagementDragDrop() {
     'JEFE_UNIDAD_NEGOCIO',
     'DOSIFICADOR',
     'AUXILIAR_COMPRAS',
-    'AREA_ADMINISTRATIVA'
+    'AREA_ADMINISTRATIVA',
+    'EJECUTIVO',
+    'VISUALIZADOR'
   ]
 
   const fetchData = useCallback(async () => {
@@ -652,6 +655,24 @@ export function PersonnelManagementDragDrop() {
               </SelectContent>
             </Select>
           </div>
+        </CardContent>
+      </Card>
+
+      {/* User Registration Tool */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center justify-between">
+            <span className="flex items-center gap-2">
+              <Users className="h-5 w-5" />
+              Gestión de Usuarios
+            </span>
+            <UserRegistrationTool />
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-muted-foreground">
+            Registra nuevos usuarios en el sistema. Los usuarios registrados podrán acceder al sistema con sus credenciales.
+          </p>
         </CardContent>
       </Card>
 

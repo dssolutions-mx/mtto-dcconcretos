@@ -24,7 +24,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Only certain roles can create operators
-    const allowedRoles = ['GERENCIA_GENERAL', 'JEFE_UNIDAD_NEGOCIO', 'JEFE_PLANTA', 'ENCARGADO_MANTENIMIENTO']
+    const allowedRoles = ['GERENCIA_GENERAL', 'JEFE_UNIDAD_NEGOCIO', 'JEFE_PLANTA', 'ENCARGADO_MANTENIMIENTO', 'EJECUTIVO']
     if (!allowedRoles.includes(currentProfile.role)) {
       return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 })
     }
@@ -42,15 +42,27 @@ export async function POST(request: NextRequest) {
       hire_date,
       plant_id,
       business_unit_id,
-      can_authorize_up_to
+      can_authorize_up_to,
+      notes,
+      password
     } = await request.json()
 
     // Validate required fields
-    if (!nombre || !apellido || !email || !role || !employee_code) {
+    if (!nombre || !apellido || !email || !role || !employee_code || !password) {
       return NextResponse.json({ 
-        error: 'Missing required fields: nombre, apellido, email, role, employee_code' 
+        error: 'Missing required fields: nombre, apellido, email, role, employee_code, password' 
       }, { status: 400 })
     }
+
+    if (password.length < 6) {
+      return NextResponse.json({ 
+        error: 'Password must be at least 6 characters long' 
+      }, { status: 400 })
+    }
+
+    // Validate UUID fields - convert empty strings to null
+    const validatedPlantId = plant_id && plant_id.trim() !== '' ? plant_id : null
+    const validatedBusinessUnitId = business_unit_id && business_unit_id.trim() !== '' ? business_unit_id : null
 
     // Check if employee code already exists
     const { data: existingOperator } = await supabase
@@ -65,10 +77,32 @@ export async function POST(request: NextRequest) {
       }, { status: 400 })
     }
 
-    // Create operator profile (without auth user since this is just a profile record)
+    // Create auth user first - password is stored securely in auth.users table
+    // NEVER store passwords in profiles table for security
+    const adminSupabase = createAdminClient()
+    const { data: authData, error: createUserError } = await adminSupabase.auth.admin.createUser({
+      email,
+      password: password, // Use provided provisional password - stored in auth.users
+      email_confirm: true,
+      user_metadata: {
+        nombre,
+        apellido,
+        role,
+        employee_code
+      }
+    })
+
+    if (createUserError || !authData.user) {
+      console.error('Error creating auth user:', createUserError)
+      return NextResponse.json({ error: 'Error creating user account' }, { status: 500 })
+    }
+
+    // Create operator profile with the auth user ID
+    // NOTE: Password is NOT stored here - only in auth.users table for security
     const { data: operator, error } = await supabase
       .from('profiles')
       .insert({
+        id: authData.user.id, // Links to auth.users.id
         nombre,
         apellido,
         email,
@@ -79,12 +113,15 @@ export async function POST(request: NextRequest) {
         position,
         shift,
         hire_date: hire_date || new Date().toISOString(),
-        plant_id,
-        business_unit_id,
+        plant_id: validatedPlantId,
+        business_unit_id: validatedBusinessUnitId,
         can_authorize_up_to: can_authorize_up_to || 0,
         status: 'active',
-        created_by: user.id,
-        updated_by: user.id
+        notas_rh: notes || null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+        // system_password and system_access_password are NOT set here
+        // These are separate credentials for other systems, not auth passwords
       })
       .select(`
         id,
@@ -112,7 +149,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Error creating operator' }, { status: 500 })
     }
 
-    return NextResponse.json(operator, { status: 201 })
+    return NextResponse.json({
+      ...operator,
+      message: 'User created successfully',
+      login_instructions: {
+        email: email,
+        password: password,
+        note: 'User can login with their email and the provisional password provided'
+      }
+    }, { status: 201 })
 
   } catch (error) {
     console.error('Error in operators POST:', error)
