@@ -1243,14 +1243,14 @@ function EmployeeCredentialEditForm({
             <div>
               <Label htmlFor="office_id">Oficina Asignada</Label>
               <Select
-                value={formData.office_id || ''}
-                onValueChange={(value) => setFormData(prev => ({ ...prev, office_id: value }))}
+                value={formData.office_id || 'none'}
+                onValueChange={(value) => setFormData(prev => ({ ...prev, office_id: value === 'none' ? null : value }))}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Selecciona una oficina" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Sin oficina asignada</SelectItem>
+                  <SelectItem value="none">Sin oficina asignada</SelectItem>
                   {offices.map((office) => (
                     <SelectItem key={office.id} value={office.id}>
                       {office.name}
