@@ -11,12 +11,12 @@ function ConsumptionPageContent() {
   const router = useRouter()
 
   const handleSuccess = (transactionId: string) => {
-    // Navigate to inventory dashboard or transaction detail
-    router.push('/diesel/inventory')
+    // Navigate to diesel dashboard
+    router.push('/diesel')
   }
 
   const handleCancel = () => {
-    router.push('/diesel/inventory')
+    router.push('/diesel')
   }
 
   // TODO: Get warehouse_id and plant_id from user context

@@ -16,7 +16,8 @@ import {
   User, 
   Calendar,
   Loader2,
-  RefreshCw
+  RefreshCw,
+  Fuel
 } from 'lucide-react'
 import { useOperatorChecklists } from '@/hooks/useOperatorChecklists'
 import Link from 'next/link'
@@ -351,6 +352,14 @@ export default function OperatorDashboard() {
                 <AlertTriangle className="h-6 w-6 mb-2" />
                 <span className="font-medium">Problemas Pendientes</span>
                 <span className="text-sm text-muted-foreground">Ver problemas reportados</span>
+              </Link>
+            </Button>
+
+            <Button asChild variant="outline" className="h-auto flex flex-col p-4">
+              <Link href="/diesel">
+                <Fuel className="h-6 w-6 mb-2" />
+                <span className="font-medium">Gestión de Diesel</span>
+                <span className="text-sm text-muted-foreground">Control de inventario y consumos</span>
               </Link>
             </Button>
           </div>

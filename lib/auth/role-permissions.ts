@@ -131,7 +131,7 @@ export const ROLE_PERMISSIONS: Record<string, RoleConfig> = {
       maintenance: 'none',
       work_orders: 'none',
       purchases: 'none',
-      inventory: 'none',
+      inventory: 'read_write',
       personnel: 'none',
       checklists: 'read',
       reports: 'none',
@@ -139,7 +139,7 @@ export const ROLE_PERMISSIONS: Record<string, RoleConfig> = {
     },
     authorizationLimit: 0,
     scope: 'plant',
-    description: 'Ejecución de checklists asignados a sus activos'
+    description: 'Ejecución de checklists asignados a sus activos y gestión de diesel'
   },
   OPERADOR: {
     name: 'Operador',
