@@ -350,7 +350,8 @@ export function ConsumptionEntryForm({
       return
     }
 
-    if (!cuentaLitros) {
+    // Only require cuenta litros if warehouse has a meter
+    if (previousCuentaLitros !== null && !cuentaLitros) {
       toast.error("Ingresa la lectura del cuenta litros")
       return
     }
@@ -365,8 +366,8 @@ export function ConsumptionEntryForm({
       return
     }
 
-    // Warning for cuenta litros variance
-    if (cuentaLitrosValid === false && cuentaLitrosVariance && cuentaLitrosVariance > 2) {
+    // Warning for cuenta litros variance (only if warehouse has meter)
+    if (previousCuentaLitros !== null && cuentaLitrosValid === false && cuentaLitrosVariance && cuentaLitrosVariance > 2) {
       const proceed = confirm(
         `⚠️ La diferencia entre litros y cuenta litros es de ${cuentaLitrosVariance.toFixed(1)}L.\n\n` +
         `Cantidad: ${quantityLiters}L\n` +
@@ -425,14 +426,14 @@ export function ConsumptionEntryForm({
         transaction_type: 'consumption',
         asset_category: assetType,
         quantity_liters: parseFloat(quantityLiters),
-        cuenta_litros: parseFloat(cuentaLitros),
+        cuenta_litros: cuentaLitros ? parseFloat(cuentaLitros) : null,
         previous_balance: previousBalance,
         current_balance: currentBalance,
         operator_id: user.id,
         transaction_date: new Date(transactionDate + 'T' + transactionTime + ':00').toISOString(),
         notes: notes || null,
-        requires_validation: cuentaLitrosValid === false,
-        validation_notes: cuentaLitrosValid === false 
+        requires_validation: previousCuentaLitros !== null && cuentaLitrosValid === false,
+        validation_notes: previousCuentaLitros !== null && cuentaLitrosValid === false 
           ? `Varianza cuenta litros: ${cuentaLitrosVariance?.toFixed(1)}L`
           : null,
         created_by: user.id,
@@ -520,7 +521,7 @@ export function ConsumptionEntryForm({
         duration: 4000
       })
 
-      if (cuentaLitrosValid === false) {
+      if (previousCuentaLitros !== null && cuentaLitrosValid === false) {
         toast.warning("⚠️ Transacción marcada para validación", {
           description: "La diferencia con cuenta litros requiere revisión",
           duration: 5000
@@ -830,11 +831,16 @@ export function ConsumptionEntryForm({
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <Label htmlFor="cuenta-litros" className="text-base">
-                    6. Lectura Cuenta Litros (Auto-calculada)
+                    6. Lectura Cuenta Litros {previousCuentaLitros === null ? "(No disponible)" : "(Auto-calculada)"}
                   </Label>
                   {previousCuentaLitros !== null && (
                     <Badge variant="outline" className="text-xs">
                       Anterior: {previousCuentaLitros.toFixed(1)}L
+                    </Badge>
+                  )}
+                  {previousCuentaLitros === null && (
+                    <Badge variant="secondary" className="text-xs">
+                      Sin medidor
                     </Badge>
                   )}
                 </div>
@@ -844,19 +850,20 @@ export function ConsumptionEntryForm({
                   type="tel"
                   pattern="[0-9]*\.?[0-9]*"
                   inputMode="decimal"
-                  placeholder={previousCuentaLitros !== null ? `Sugerido: ${(previousCuentaLitros + (parseFloat(quantityLiters) || 0)).toFixed(1)}` : "Ej: 1250.5"}
+                  placeholder={previousCuentaLitros !== null ? `Sugerido: ${(previousCuentaLitros + (parseFloat(quantityLiters) || 0)).toFixed(1)}` : "N/A - Este almacén no tiene cuenta litros"}
                   value={cuentaLitros}
                   onChange={(e) => {
                     // Only allow numbers and decimal point
                     const value = e.target.value.replace(/[^0-9.]/g, '')
                     setCuentaLitros(value)
                   }}
-                  disabled={loading}
+                  disabled={loading || previousCuentaLitros === null}
                   className={`h-12 text-base ${
+                    previousCuentaLitros === null ? 'bg-gray-100 text-gray-500' :
                     cuentaLitrosValid === false ? 'border-red-500' : 
                     cuentaLitrosValid === true ? 'border-green-500' : ''
                   }`}
-                  required
+                  required={previousCuentaLitros !== null}
                 />
 
                 {/* Cuenta Litros Validation */}
@@ -977,7 +984,7 @@ export function ConsumptionEntryForm({
           
           <Button
             type="submit"
-            disabled={loading || !selectedWarehouse || (assetType === 'formal' && !selectedAsset) || (assetType === 'exception' && !exceptionAssetName) || !quantityLiters || !cuentaLitros || !machinePhoto}
+            disabled={loading || !selectedWarehouse || (assetType === 'formal' && !selectedAsset) || (assetType === 'exception' && !exceptionAssetName) || !quantityLiters || (previousCuentaLitros !== null && !cuentaLitros) || !machinePhoto}
             className="flex-1 sm:flex-none"
           >
             {loading ? (
