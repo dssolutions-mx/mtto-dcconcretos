@@ -53,6 +53,7 @@ interface Transaction {
   previous_balance: number | null
   current_balance: number | null
   notes: string | null
+  cuenta_litros: number | null
 }
 
 interface WarehouseStats {
@@ -159,6 +160,7 @@ export default function WarehouseDetailPage() {
           previous_balance,
           current_balance,
           notes,
+          cuenta_litros,
           assets(asset_id, name)
         `)
         .eq('warehouse_id', warehouseId)
@@ -201,7 +203,8 @@ export default function WarehouseDetailPage() {
           created_by_name: userProfiles[t.created_by] || 'Usuario',
           previous_balance: t.previous_balance,
           current_balance: t.current_balance,
-          notes: t.notes
+          notes: t.notes,
+          cuenta_litros: t.cuenta_litros
         })) || []
 
         setTransactions(formatted)
@@ -346,6 +349,11 @@ export default function WarehouseDetailPage() {
   const handleEditTransaction = (transaction: Transaction) => {
     setEditingTransaction(transaction)
     setIsEditModalOpen(true)
+  }
+
+  const isLatestTransaction = (transaction: Transaction) => {
+    if (transactions.length === 0) return false
+    return transaction.id === transactions[0].id
   }
 
   const handleEditSuccess = () => {
@@ -816,7 +824,7 @@ export default function WarehouseDetailPage() {
                       className="h-8 px-2 text-xs"
                     >
                       <Edit className="h-3 w-3 mr-1" />
-                      Editar Fecha
+                      Editar
                     </Button>
                   </div>
                 </div>
@@ -949,6 +957,8 @@ export default function WarehouseDetailPage() {
         isOpen={isEditModalOpen}
         onClose={handleCloseEditModal}
         onSuccess={handleEditSuccess}
+        isLatestTransaction={editingTransaction ? isLatestTransaction(editingTransaction) : false}
+        warehouseHasMeter={warehouse?.has_cuenta_litros || false}
       />
     </div>
   )
