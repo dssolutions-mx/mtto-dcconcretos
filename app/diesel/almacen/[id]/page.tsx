@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { useToast } from "@/components/ui/use-toast"
 import { 
   Fuel, 
   TruckIcon, 
@@ -54,6 +55,8 @@ interface Transaction {
   current_balance: number | null
   notes: string | null
   cuenta_litros: number | null
+  product_id?: string | null
+  product_code?: string | null
 }
 
 interface WarehouseStats {
@@ -75,6 +78,7 @@ export default function WarehouseDetailPage() {
   const router = useRouter()
   const params = useParams()
   const warehouseId = params.id as string
+  const { toast } = useToast()
 
   const [loading, setLoading] = useState(true)
   const [warehouse, setWarehouse] = useState<WarehouseDetails | null>(null)
@@ -161,6 +165,8 @@ export default function WarehouseDetailPage() {
           current_balance,
           notes,
           cuenta_litros,
+          product_id,
+          diesel_products(product_code),
           assets(asset_id, name)
         `)
         .eq('warehouse_id', warehouseId)
@@ -204,7 +210,9 @@ export default function WarehouseDetailPage() {
           previous_balance: t.previous_balance,
           current_balance: t.current_balance,
           notes: t.notes,
-          cuenta_litros: t.cuenta_litros
+          cuenta_litros: t.cuenta_litros,
+          product_id: t.product_id || null,
+          product_code: t.diesel_products?.product_code || null
         })) || []
 
         setTransactions(formatted)
@@ -313,6 +321,15 @@ export default function WarehouseDetailPage() {
   const applyFilters = () => {
     let filtered = [...transactions]
 
+    const toLocalYmd = (iso: string) => {
+      if (!iso) return ''
+      const d = new Date(iso)
+      const y = d.getFullYear()
+      const m = String(d.getMonth() + 1).padStart(2, '0')
+      const day = String(d.getDate()).padStart(2, '0')
+      return `${y}-${m}-${day}`
+    }
+
     if (typeFilter !== "all") {
       if (typeFilter === "adjustment_positive") {
         filtered = filtered.filter(t => 
@@ -328,11 +345,11 @@ export default function WarehouseDetailPage() {
     }
 
     if (dateFrom) {
-      filtered = filtered.filter(t => new Date(t.transaction_date) >= new Date(dateFrom))
+      filtered = filtered.filter(t => toLocalYmd(t.transaction_date) >= dateFrom)
     }
 
     if (dateTo) {
-      filtered = filtered.filter(t => new Date(t.transaction_date) <= new Date(dateTo + 'T23:59:59'))
+      filtered = filtered.filter(t => toLocalYmd(t.transaction_date) <= dateTo)
     }
 
     setFilteredTransactions(filtered)
@@ -401,6 +418,74 @@ export default function WarehouseDetailPage() {
     if (percentage < 20) return 'bg-red-500'
     if (percentage < 50) return 'bg-orange-500'
     return 'bg-green-500'
+  }
+
+  // Helpers for copy-to-Excel (TSV) export
+  const formatDateForAccounting = (dateStr: string): string => {
+    if (!dateStr) return '-'
+    try {
+      const base = dateStr.split('T')[0]
+      const [y, m, d] = base.split('-').map(n => parseInt(n, 10))
+      if (!y || !m || !d) return '-'
+      const dt = new Date(y, m - 1, d, 12, 0, 0)
+      const dd = String(dt.getDate()).padStart(2, '0')
+      const mm = String(dt.getMonth() + 1).padStart(2, '0')
+      const yyyy = String(dt.getFullYear())
+      return `${dd}/${mm}/${yyyy}`
+    } catch {
+      return '-'
+    }
+  }
+
+  const getWarehouseNumberFromCode = (code: string): string => {
+    if (!code) return '-'
+    // Prefer the last digit as requested; fallback to last numeric group
+    for (let i = code.length - 1; i >= 0; i--) {
+      const ch = code[i]
+      if (ch >= '0' && ch <= '9') return ch
+    }
+    const match = code.match(/(\d+)(?!.*\d)/)
+    return match ? match[1] : '-'
+  }
+
+  const buildDieselTSV = (rows: Transaction[], warehouseCode: string) => {
+    const headers = ['FECHA','CLAVE DE PRODUCTO','ALMACEN','LITROS','UNIDAD']
+    const wh = getWarehouseNumberFromCode(warehouseCode)
+    const formatRow = (t: Transaction) => [
+      formatDateForAccounting(t.transaction_date),
+      t.product_code || '07DS01',
+      wh,
+      t.quantity_liters.toFixed(2),
+      t.asset_id || t.exception_asset_name || t.asset_name || '-'
+    ].join('\t')
+    return [headers.join('\t'), ...rows.map(formatRow)].join('\n')
+  }
+
+  const handleCopyToExcel = async () => {
+    try {
+      if (!warehouse) return
+      const tsv = buildDieselTSV(filteredTransactions, warehouse.warehouse_code)
+      if (!tsv) {
+        toast({ title: 'Sin datos', description: 'No hay transacciones para copiar', variant: 'destructive' })
+        return
+      }
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(tsv)
+      } else {
+        const textarea = document.createElement('textarea')
+        textarea.value = tsv
+        textarea.style.position = 'fixed'
+        textarea.style.opacity = '0'
+        document.body.appendChild(textarea)
+        textarea.select()
+        document.execCommand('copy')
+        document.body.removeChild(textarea)
+      }
+      toast({ title: 'Copiado', description: 'Datos copiados al portapapeles' })
+    } catch (err) {
+      console.error('Copy to Excel failed:', err)
+      toast({ title: 'Error', description: 'No se pudo copiar al portapapeles', variant: 'destructive' })
+    }
   }
 
   if (loading) {
@@ -694,6 +779,11 @@ export default function WarehouseDetailPage() {
               <CardDescription>
                 {filteredTransactions.length} de {transactions.length} transacciones
               </CardDescription>
+            </div>
+            <div>
+              <Button size="sm" onClick={handleCopyToExcel} disabled={filteredTransactions.length === 0}>
+                Copiar a Excel
+              </Button>
             </div>
           </div>
         </CardHeader>
