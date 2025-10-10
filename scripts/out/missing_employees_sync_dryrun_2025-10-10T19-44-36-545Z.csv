@@ -1,0 +1,59 @@
+employee_code,nombre,apellido,email,action,reason,profile_id
+1,"MARIO OMAR","SAUCEDO SANCHEZ","mario.sanchez@mail.com",create,"Created auth user and profile",
+2,"SALVADOR","GRAJEDA ENRIQUEZ","carlos.martínez@company.com",update,"Updated missing fields",60dd93b5-9fe6-42a4-a8df-410c8fe17bb6
+3,"JOSE JESUS","MORALES HERNANDEZ","jose.hernandez@mail.com",create,"Created auth user and profile",
+7,"PABLO CESAR","ESPARZA MARES","pablo.mares@mail.com",create,"Created auth user and profile",
+13,"SERGIO","RAMIREZ","sergio.ramirez@mail.com",create,"Created auth user and profile",
+15,"MA. LOURDES","CACIQUES GARCIA","ma..garcia@mail.com",create,"Created auth user and profile",
+20,"DAVID","MARTINEZ VENEGAS","david.venegas@mail.com",create,"Created auth user and profile",
+53,"AILEEN ALITZEL","TORRES ARANO","aileen.arano@mail.com",create,"Created auth user and profile",
+63,"NORMA ANGELICA","GAMIÑO ZUÑIGA","administracion@dcconcretos.com.mx",update,"Updated missing fields",e295cee0-feec-4aaf-92c2-9e712a763b99
+65,"JORGE ALBERTO","MENDEZ RIVERA","mendezriverajorgealberto@gmail.com",update,"Updated missing fields",fde400e3-a4eb-4d03-988c-629e41eb1914
+66,"DANIELA","PADILLA ROMERO","rh@dcconcretos.com.mx",update,"Updated missing fields",d518970c-9d41-4841-b0ed-d1639e057cf5
+69,"PEDRO MARIO","MOLINA MARTINEZ","pedro.martinez@mail.com",create,"Created auth user and profile",
+71,"ELISEO BASILIO","MIRANDA TOVAR","eliseo.tovar@mail.com",create,"Created auth user and profile",
+72,"KAREN BERENICE","SANCHEZ CAUDILLO","karen.caudillo@mail.com",create,"Created auth user and profile",
+75,"GUSTAVO","PEREZ HERNANDEZ","gustavoperezcr22.p4@gmail.com",update,"Updated missing fields",cad2197a-cd40-4df4-9bd4-1d545438599e
+76,"JORGE","RUIZ DIAZ","JorgeruizCr27.p4@mail.com",update,"Updated missing fields",8c1f4366-ab30-402e-a689-5fa70a3a7bb3
+79,"MANUEL","BONILLA MARQUEZ","manuel.bonilla.marquez@mail.com",update,"Updated missing fields",0ebfde46-a347-4ea9-aa14-4035c234305c
+81,"EMILIANO","MUÑOZ MENDOZA","emiliano.mendoza@mail.com",create,"Created auth user and profile",
+84,"BRISA DEL CARMEN","RANGEL FELIX","brisa.felix@mail.com",create,"Created auth user and profile",
+90,"ANGEL","LOPEZ BALTIER","angel.baltier@mail.com",create,"Created auth user and profile",
+96,"ALICIA MARLEN","ANDRADE ALONSO","alicia.alonso@mail.com",create,"Created auth user and profile",
+97,"JORGE LUIS","LEAL GARCIA","Jorge.leal@dcconcretos.com.mx",update,"Updated missing fields",64d7f45e-3981-4fcc-a80c-b810c701f0f1
+109,"ROBERTO","BECERRIL SANDOVAL","roberto.sandoval@mail.com",create,"Created auth user and profile",
+110,"JONATHAN ADRIAN","FLORES GONZALEZ","jonathan.gonzalez@mail.com",create,"Created auth user and profile",
+112,"ENOC","RODRIGUEZ LAGUNA","enoc.laguna@mail.com",create,"Created auth user and profile",
+114,"PEDRO","SALAZAR JUAREZ","pedro.salazar.juarez@mail.com",update,"Updated missing fields",365c652f-7e3f-4440-b79c-c8d8c3ccc6ba
+116,"JOSE ALBERTO","PADILLA MIRALRIO","jose.miralrio@mail.com",create,"Created auth user and profile",
+118,"JUAN CARLOS","ALCIBIADES BACALAO","juan.bacalao@mail.com",create,"Created auth user and profile",
+122,"ABELARDO CESAR","TORRES SIORDIA","abelardo.siordia@mail.com",update,"Updated missing fields",36296e2b-d49f-4b8a-b446-eabce8b22983
+128,"GUSTAVO YAZIEL","PEDROZA CONTRERAS","gustavo.contreras@mail.com",create,"Created auth user and profile",
+131,"EDUARDO","APAEZ DELGADO","eduardo.delgado@mail.com",create,"Created auth user and profile",
+135,"MARIA FERNANDA","MARES GODINEZ","maria.godinez@mail.com",create,"Created auth user and profile",
+136,"ACXEL MAHONRRY","HERNANDEZ ZETINA","acxel.zetina@mail.com",create,"Created auth user and profile",
+141,"JUAN CARLOS","ROCHA GONZALEZ","juan.gonzalez@mail.com",create,"Created auth user and profile",
+143,"PEDRO ANGEL","SERRET CABA","pedro.caba@mail.com",create,"Created auth user and profile",
+149,"MANUEL","VILLA ARCE","ManuelvillaCr6.p2@gmail.com",update,"Updated missing fields",49b866c7-4c7e-4315-a83e-adbd3bb3e48d
+150,"KEVIN YOSEF","ROJAS UITZ","kevin.uitz@mail.com",create,"Created auth user and profile",
+155,"MARIO","PEREZ GONZALEZ","planta5@dcconcretos.com",update,"Updated missing fields",45675e7c-21f9-46c5-aed5-270512b4b735
+160,"EDGAR MANUEL","ARZATE ARROYO","edgararzatecr01.p2@gmail.com",update,"Updated missing fields",d9452156-9501-4688-9bfd-03ef21ea86e1
+161,"JESUS IVAN","NORZAGARAY VALENZUELA","jesus.valenzuela@mail.com",create,"Created auth user and profile",
+168,"RAMON ALBERTO","TORRES TOSTADO","ramon.tostado@mail.com",create,"Created auth user and profile",
+171,"EDGAR OMAR","MORA DUARTE","EdgarmoraCr2.p2@gmail.com",update,"Updated missing fields",2cc86d16-5721-4780-b4ea-25166028f599
+172,"JESUS","BARRERA CANO","jesus.cano@mail.com",create,"Created auth user and profile",
+173,"WILBER NEIZER","VILLARREAL SARAOZ","wilber.saraoz@mail.com",create,"Created auth user and profile",
+174,"JESUS ALEJANDRO","ORTIZ QUIROZ","jesus.quiroz@mail.com",create,"Created auth user and profile",
+175,"MOISES ABIMELEC","MIRANDA LOPEZ","moises.lopez@mail.com",create,"Created auth user and profile",
+179,"PEDRO","PULIDO AVILA","pedro.avila@mail.com",create,"Created auth user and profile",
+180,"ALEJANDRO","JUAREZ CUELLAR","alejandro.cuellar@mail.com",create,"Created auth user and profile",
+181,"GREGORIO DAVID","BOLAÑOS LOPEZ","gregorio.lopez@mail.com",create,"Created auth user and profile",
+183,"JUAN CARLOS","OZUNA SANCHEZ","juan.sanchez@mail.com",create,"Created auth user and profile",
+184,"EDY","SOTO ESPINOZA","edy.soto@mail.com",update,"Updated missing fields",eefb7ca6-26f3-4ae2-9fea-de039ee2c459
+185,"SAUL","SAHAGUN ORTIZ","saulsahagundc@mail.com",update,"Updated missing fields",2c586b2e-73bd-4e4e-aeb2-363d5858d7b5
+187,"MAIRA ALEJANDRA","GONZALEZ QUINTERO","maira.quintero@mail.com",create,"Created auth user and profile",
+188,"CINTHIA EVELIN","GODINES MONTIJO","cinthia.montijo@mail.com",create,"Created auth user and profile",
+189,"MIGUEL ANGEL","MORALES NUÑEZ","miguel.nunez@mail.com",create,"Created auth user and profile",
+191,"MARIA VICTORIA","HERNANDEZ IBARRA","maria.ibarra@mail.com",create,"Created auth user and profile",
+192,"ANSELMO","SALAS TORRES","anselmo.torres@mail.com",create,"Created auth user and profile",
+193,"RAUL","MERIDA ROBLERO","raul.roblero@mail.com",create,"Created auth user and profile",

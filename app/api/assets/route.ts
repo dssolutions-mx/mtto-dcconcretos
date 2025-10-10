@@ -11,28 +11,60 @@ export async function GET(request: NextRequest) {
     
     if (excludeComponents) {
       // Exclude assets that are active components of a composite to avoid incorrect assignment
-      const whereParts: string[] = []
-      if (plantId) whereParts.push(`a.plant_id = '${plantId}'`)
-      if (status) whereParts.push(`a.status = '${status}'`)
-      const whereSql = whereParts.length > 0 ? `WHERE ${whereParts.join(' AND ')}` : ''
+      // First, get all component asset IDs that are actively part of a composite
+      const { data: componentIds, error: componentError } = await supabase
+        .from('asset_composite_relationships')
+        .select('component_asset_id')
+        .eq('status', 'active')
 
-      const sql = `
-        SELECT a.id, a.name, a.asset_id, a.status, a.location, a.department, a.current_hours,
-               a.plant_id, a.department_id
-        FROM assets a
-        ${whereSql}
-        AND NOT EXISTS (
-          SELECT 1 FROM asset_composite_relationships r
-          WHERE r.component_asset_id = a.id AND r.status = 'active'
-        )
-        ORDER BY a.name ASC;
-      `
+      if (componentError) {
+        console.error('Error fetching component relationships:', componentError)
+        return NextResponse.json({ error: componentError.message }, { status: 500 })
+      }
 
-      const { data, error } = await supabase.rpc('exec_sql', { sql })
+      const excludedIds = componentIds?.map(r => r.component_asset_id) || []
+
+      // Build query to fetch assets excluding components
+      let query = supabase
+        .from('assets')
+        .select(`
+          id,
+          name,
+          asset_id,
+          status,
+          location,
+          department,
+          current_hours,
+          plant_id,
+          department_id,
+          equipment_models (
+            id,
+            name,
+            manufacturer
+          )
+        `)
+
+      // Apply filters
+      if (plantId) {
+        query = query.eq('plant_id', plantId)
+      }
+
+      if (status) {
+        query = query.eq('status', status)
+      }
+
+      const { data: allAssets, error } = await query.order('name', { ascending: true })
+      
       if (error) {
-        console.error('Error fetching assignable assets:', error)
+        console.error('Error fetching assets:', error)
         return NextResponse.json({ error: error.message }, { status: 500 })
       }
+
+      // Filter out component assets
+      const data = excludedIds.length > 0
+        ? allAssets?.filter(asset => !excludedIds.includes(asset.id))
+        : allAssets
+      
       return NextResponse.json(data || [])
     }
 

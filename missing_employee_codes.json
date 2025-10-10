@@ -1,0 +1,808 @@
+[
+  {
+    "employee_code": "1",
+    "nombre": "MARIO OMAR",
+    "apellido": "SAUCEDO SANCHEZ",
+    "position": "OPERADOR BOMBA PLUMA",
+    "role": "OPERADOR",
+    "imss_number": "31048800960",
+    "hire_date": "2017-01-21",
+    "fecha_nacimiento": "1988-05-24",
+    "emergency_contact": {
+      "phone": "472 105 08 42",
+      "name": "ALEJANDRA ESPINOZA"
+    }
+  },
+  {
+    "employee_code": "2",
+    "nombre": "SALVADOR",
+    "apellido": "GRAJEDA ENRIQUEZ",
+    "position": "GERENTE GENERAL",
+    "role": "GERENCIA_GENERAL",
+    "imss_number": "5179497523",
+    "hire_date": "2017-07-18",
+    "fecha_nacimiento": "1994-02-21",
+    "emergency_contact": null
+  },
+  {
+    "employee_code": "3",
+    "nombre": "JOSE JESUS",
+    "apellido": "MORALES HERNANDEZ",
+    "position": "AUXILIAR DE LABORATORIO",
+    "role": "OPERADOR",
+    "imss_number": "63988128888",
+    "hire_date": "2018-03-10",
+    "fecha_nacimiento": "1981-06-08",
+    "emergency_contact": {
+      "phone": "472 139 98 20",
+      "name": "EVELIA RODRIGUEZ"
+    }
+  },
+  {
+    "employee_code": "7",
+    "nombre": "PABLO CESAR",
+    "apellido": "ESPARZA MARES",
+    "position": "JEFE DE DOSIFICACION",
+    "role": "DOSIFICADOR",
+    "imss_number": "2168179097",
+    "hire_date": "2019-01-21",
+    "fecha_nacimiento": "1981-07-11",
+    "emergency_contact": {
+      "phone": "477 223 89 45",
+      "name": "ANA ESPARZA"
+    }
+  },
+  {
+    "employee_code": "13",
+    "nombre": "SERGIO",
+    "apellido": "RAMIREZ",
+    "position": "OPERADOR DE CARGADOR FRONTAL",
+    "role": "OPERADOR",
+    "imss_number": "12007716496",
+    "hire_date": "2021-06-14",
+    "fecha_nacimiento": "1978-09-30",
+    "emergency_contact": {
+      "phone": "472 211 37 51",
+      "name": "JORGE RAMIREZ"
+    }
+  },
+  {
+    "employee_code": "15",
+    "nombre": "MA. LOURDES",
+    "apellido": "CACIQUES GARCIA",
+    "position": "INTENDENTE",
+    "role": "OPERADOR",
+    "imss_number": "12066903209",
+    "hire_date": "2021-09-06",
+    "fecha_nacimiento": "1969-02-21",
+    "emergency_contact": {
+      "phone": "472 105 08 08",
+      "name": "ZAYRA CACIQUES"
+    }
+  },
+  {
+    "employee_code": "20",
+    "nombre": "DAVID",
+    "apellido": "MARTINEZ VENEGAS",
+    "position": "VIGILANTE",
+    "role": "OPERADOR",
+    "imss_number": "12856000265",
+    "hire_date": "2022-05-16",
+    "fecha_nacimiento": "1960-12-30",
+    "emergency_contact": null
+  },
+  {
+    "employee_code": "53",
+    "nombre": "AILEEN ALITZEL",
+    "apellido": "TORRES ARANO",
+    "position": "AUXILIAR DE LABORATORIO",
+    "role": "OPERADOR",
+    "imss_number": "68160010028",
+    "hire_date": "2023-09-20",
+    "fecha_nacimiento": "2000-10-27",
+    "emergency_contact": {
+      "phone": "452 167 00 27",
+      "name": "SANDRA MORALES"
+    }
+  },
+  {
+    "employee_code": "63",
+    "nombre": "NORMA ANGELICA",
+    "apellido": "GAMIÑO ZUÑIGA",
+    "position": "JEFE ADMINISTRATIVO",
+    "role": "JEFE_UNIDAD_NEGOCIO",
+    "imss_number": "12977889620",
+    "hire_date": "2024-02-19",
+    "fecha_nacimiento": "1978-05-15",
+    "emergency_contact": {
+      "phone": "462 174 88 81",
+      "name": "ALEJANDRO CASTILLO"
+    }
+  },
+  {
+    "employee_code": "65",
+    "nombre": "JORGE ALBERTO",
+    "apellido": "MENDEZ RIVERA",
+    "position": "OPERADOR BOMBA PLUMA",
+    "role": "OPERADOR",
+    "imss_number": "12947808726",
+    "hire_date": "2024-02-26",
+    "fecha_nacimiento": "1978-01-05",
+    "emergency_contact": {
+      "phone": "477 185 33 44",
+      "name": "ALEJANDRA"
+    }
+  },
+  {
+    "employee_code": "66",
+    "nombre": "DANIELA",
+    "apellido": "PADILLA ROMERO",
+    "position": "GENERALISTA RH",
+    "role": "AREA_ADMINISTRATIVA",
+    "imss_number": "44149672816",
+    "hire_date": "2024-03-12",
+    "fecha_nacimiento": "1996-04-18",
+    "emergency_contact": {
+      "phone": "479 137 18 22",
+      "name": "DOLORES ROMERO"
+    }
+  },
+  {
+    "employee_code": "69",
+    "nombre": "PEDRO MARIO",
+    "apellido": "MOLINA MARTINEZ",
+    "position": "JEFE DE CALIDAD",
+    "role": "JEFE_UNIDAD_NEGOCIO",
+    "imss_number": "19786127167",
+    "hire_date": "2024-04-16",
+    "fecha_nacimiento": "1961-10-19",
+    "emergency_contact": {
+      "phone": "554 057 63 83",
+      "name": "SOFIA MONTIEL"
+    }
+  },
+  {
+    "employee_code": "71",
+    "nombre": "ELISEO BASILIO",
+    "apellido": "MIRANDA TOVAR",
+    "position": "VIGILANTE",
+    "role": "OPERADOR",
+    "imss_number": "2196342576",
+    "hire_date": "2024-04-22",
+    "fecha_nacimiento": "1963-06-14",
+    "emergency_contact": {
+      "phone": "771 149 16 34",
+      "name": "PAOLA"
+    }
+  },
+  {
+    "employee_code": "72",
+    "nombre": "KAREN BERENICE",
+    "apellido": "SANCHEZ CAUDILLO",
+    "position": "AUXILIAR DE RECURSOS HUMANOS",
+    "role": "AREA_ADMINISTRATIVA",
+    "imss_number": "63119329611",
+    "hire_date": "2024-04-23",
+    "fecha_nacimiento": "1993-02-13",
+    "emergency_contact": {
+      "phone": "331 020 10 92",
+      "name": "CHRISTIAN SANCHEZ"
+    }
+  },
+  {
+    "employee_code": "75",
+    "nombre": "GUSTAVO",
+    "apellido": "PEREZ HERNANDEZ",
+    "position": "OPERADOR DE CR",
+    "role": "OPERADOR",
+    "imss_number": "12087307315",
+    "hire_date": "2024-04-25",
+    "fecha_nacimiento": "1973-02-26",
+    "emergency_contact": {
+      "phone": "428 114 36 15",
+      "name": "GUADALUPE SOLANO"
+    }
+  },
+  {
+    "employee_code": "76",
+    "nombre": "JORGE",
+    "apellido": "RUIZ DIAZ",
+    "position": "OPERADOR DE CR",
+    "role": "OPERADOR",
+    "imss_number": "45008335437",
+    "hire_date": "2024-04-25",
+    "fecha_nacimiento": "1983-12-22",
+    "emergency_contact": {
+      "phone": "552 184 38 97",
+      "name": "MIRNA RUIZ"
+    }
+  },
+  {
+    "employee_code": "79",
+    "nombre": "MANUEL",
+    "apellido": "BONILLA MARQUEZ",
+    "position": "OPERADOR DE CARGADOR FRONTAL",
+    "role": "OPERADOR",
+    "imss_number": "9088503892",
+    "hire_date": "2024-04-25",
+    "fecha_nacimiento": "1985-05-29",
+    "emergency_contact": {
+      "phone": "618 324 44 20",
+      "name": "DANIEL LOYA"
+    }
+  },
+  {
+    "employee_code": "81",
+    "nombre": "EMILIANO",
+    "apellido": "MUÑOZ MENDOZA",
+    "position": "ASESOR COMERCIAL",
+    "role": "EJECUTIVO",
+    "imss_number": "1179956881",
+    "hire_date": "2024-05-03",
+    "fecha_nacimiento": "1999-02-02",
+    "emergency_contact": {
+      "phone": "477 727 14 63",
+      "name": "BLANCA AZALEA"
+    }
+  },
+  {
+    "employee_code": "84",
+    "nombre": "BRISA DEL CARMEN",
+    "apellido": "RANGEL FELIX",
+    "position": "AUXILIAR DE RECURSOS HUMANOS",
+    "role": "AREA_ADMINISTRATIVA",
+    "imss_number": "21058730298",
+    "hire_date": "2024-05-21",
+    "fecha_nacimiento": "1987-08-11",
+    "emergency_contact": {
+      "phone": "664 729 73 04",
+      "name": "JOSE ARELLANO"
+    }
+  },
+  {
+    "employee_code": "90",
+    "nombre": "ANGEL",
+    "apellido": "LOPEZ BALTIER",
+    "position": "AUXILIAR DE LABORATORIO",
+    "role": "OPERADOR",
+    "imss_number": "81169959749",
+    "hire_date": "2024-06-03",
+    "fecha_nacimiento": "1999-09-13",
+    "emergency_contact": {
+      "phone": "664 221 20 46",
+      "name": "MARIA DEL CARMEN"
+    }
+  },
+  {
+    "employee_code": "96",
+    "nombre": "ALICIA MARLEN",
+    "apellido": "ANDRADE ALONSO",
+    "position": "ASISTENTE ADMINISTRATIVO",
+    "role": "AREA_ADMINISTRATIVA",
+    "imss_number": "17130108099",
+    "hire_date": "2024-07-01",
+    "fecha_nacimiento": "2001-05-23",
+    "emergency_contact": {
+      "phone": "477 264 67 29",
+      "name": "VERONICA VELOZ"
+    }
+  },
+  {
+    "employee_code": "97",
+    "nombre": "JORGE LUIS",
+    "apellido": "LEAL GARCIA",
+    "position": "JEFE DE PLANTA",
+    "role": "JEFE_PLANTA",
+    "imss_number": "21089153783",
+    "hire_date": "2024-07-01",
+    "fecha_nacimiento": "1991-10-12",
+    "emergency_contact": {
+      "phone": "664 318 62 26",
+      "name": "ENRIQUE LEAL"
+    }
+  },
+  {
+    "employee_code": "109",
+    "nombre": "ROBERTO",
+    "apellido": "BECERRIL SANDOVAL",
+    "position": "AUXILIAR DE LABORATORIO",
+    "role": "OPERADOR",
+    "imss_number": "42119610139",
+    "hire_date": "2024-08-06",
+    "fecha_nacimiento": "1996-04-20",
+    "emergency_contact": {
+      "phone": "562 478 86 40",
+      "name": "ROBERTO BECERRIL"
+    }
+  },
+  {
+    "employee_code": "110",
+    "nombre": "JONATHAN ADRIAN",
+    "apellido": "FLORES GONZALEZ",
+    "position": "JEFE DE DOSIFICACION",
+    "role": "DOSIFICADOR",
+    "imss_number": "32129478502",
+    "hire_date": "2024-08-07",
+    "fecha_nacimiento": "1994-06-08",
+    "emergency_contact": {
+      "phone": "861 112 92 03",
+      "name": "JACKELINE RIVERA"
+    }
+  },
+  {
+    "employee_code": "112",
+    "nombre": "ENOC",
+    "apellido": "RODRIGUEZ LAGUNA",
+    "position": "AUXILIAR DE COMPRAS",
+    "role": "AUXILIAR_COMPRAS",
+    "imss_number": "21119429658",
+    "hire_date": "2024-08-12",
+    "fecha_nacimiento": "1994-09-03",
+    "emergency_contact": {
+      "phone": "664 285 83 80",
+      "name": "SERGIO RODRIGUEZ"
+    }
+  },
+  {
+    "employee_code": "114",
+    "nombre": "PEDRO",
+    "apellido": "SALAZAR JUAREZ",
+    "position": "OPERADOR DE CR",
+    "role": "OPERADOR",
+    "imss_number": "25977974853",
+    "hire_date": "2024-08-21",
+    "fecha_nacimiento": "1979-07-22",
+    "emergency_contact": {
+      "phone": "665 108 57 10",
+      "name": "MELISSA SALAZAR"
+    }
+  },
+  {
+    "employee_code": "116",
+    "nombre": "JOSE ALBERTO",
+    "apellido": "PADILLA MIRALRIO",
+    "position": "JEFE DE DOSIFICACION",
+    "role": "DOSIFICADOR",
+    "imss_number": "53907428899",
+    "hire_date": "2024-09-04",
+    "fecha_nacimiento": "1974-02-21",
+    "emergency_contact": {
+      "phone": "753 153 93 91",
+      "name": "ALBERTO PADILLA"
+    }
+  },
+  {
+    "employee_code": "118",
+    "nombre": "JUAN CARLOS",
+    "apellido": "ALCIBIADES BACALAO",
+    "position": "AUXILIAR DE LABORATORIO",
+    "role": "OPERADOR",
+    "imss_number": "3208928626",
+    "hire_date": "2024-09-10",
+    "fecha_nacimiento": "1989-10-05",
+    "emergency_contact": {
+      "phone": "664 551 54 53",
+      "name": "OLGA SALAZAR"
+    }
+  },
+  {
+    "employee_code": "122",
+    "nombre": "ABELARDO CESAR",
+    "apellido": "TORRES SIORDIA",
+    "position": "MANTENIMIENTO",
+    "role": "ENCARGADO_MANTENIMIENTO",
+    "imss_number": "73169301485",
+    "hire_date": "2024-09-17",
+    "fecha_nacimiento": "1993-08-29",
+    "emergency_contact": {
+      "phone": "4721215326",
+      "name": "CRISTINA LOPEZ"
+    }
+  },
+  {
+    "employee_code": "128",
+    "nombre": "GUSTAVO YAZIEL",
+    "apellido": "PEDROZA CONTRERAS",
+    "position": "AUXILIAR DE LABORATORIO",
+    "role": "OPERADOR",
+    "imss_number": "65047905818",
+    "hire_date": "2024-10-10",
+    "fecha_nacimiento": "1979-12-20",
+    "emergency_contact": {
+      "phone": "220 475 7070",
+      "name": "SARAHI BLANCO"
+    }
+  },
+  {
+    "employee_code": "131",
+    "nombre": "EDUARDO",
+    "apellido": "APAEZ DELGADO",
+    "position": "AYUDANTE GENERAL",
+    "role": "OPERADOR",
+    "imss_number": "21139484154",
+    "hire_date": "2025-03-04",
+    "fecha_nacimiento": "1994-05-02",
+    "emergency_contact": {
+      "phone": "760 998 75 71",
+      "name": "MONICA APAEZ"
+    }
+  },
+  {
+    "employee_code": "135",
+    "nombre": "MARIA FERNANDA",
+    "apellido": "MARES GODINEZ",
+    "position": "ASISTENTE ADMINISTRATIVO",
+    "role": "AREA_ADMINISTRATIVA",
+    "imss_number": "88169738213",
+    "hire_date": "2024-12-02",
+    "fecha_nacimiento": "1997-06-03",
+    "emergency_contact": {
+      "phone": "477 598 00 46",
+      "name": "GRACIELA GODINEZ"
+    }
+  },
+  {
+    "employee_code": "136",
+    "nombre": "ACXEL MAHONRRY",
+    "apellido": "HERNANDEZ ZETINA",
+    "position": "AYUDANTE GENERAL",
+    "role": "OPERADOR",
+    "imss_number": "35210691271",
+    "hire_date": "2024-12-10",
+    "fecha_nacimiento": "2006-09-08",
+    "emergency_contact": {
+      "phone": "664  516 57 77",
+      "name": "NAYELI ZETINA"
+    }
+  },
+  {
+    "employee_code": "141",
+    "nombre": "JUAN CARLOS",
+    "apellido": "ROCHA GONZALEZ",
+    "position": "OPERADOR DE PIPA",
+    "role": "OPERADOR",
+    "imss_number": "12937508450",
+    "hire_date": "2025-02-04",
+    "fecha_nacimiento": "1975-01-30",
+    "emergency_contact": {
+      "phone": "472 149 85 20",
+      "name": "KATIA ROCHA"
+    }
+  },
+  {
+    "employee_code": "143",
+    "nombre": "PEDRO ANGEL",
+    "apellido": "SERRET CABA",
+    "position": "VIGILANTE",
+    "role": "OPERADOR",
+    "imss_number": "11987500755",
+    "hire_date": "2025-02-25",
+    "fecha_nacimiento": "1975-07-16",
+    "emergency_contact": {
+      "phone": "664 808 73 97",
+      "name": "NIDIA SERRET"
+    }
+  },
+  {
+    "employee_code": "149",
+    "nombre": "MANUEL",
+    "apellido": "VILLA ARCE",
+    "position": "OPERADOR DE CR",
+    "role": "OPERADOR",
+    "imss_number": "92907266941",
+    "hire_date": "2025-04-14",
+    "fecha_nacimiento": "1972-08-06",
+    "emergency_contact": {
+      "phone": "344 116 11 61",
+      "name": "ALEJANDRA SANCHEZ"
+    }
+  },
+  {
+    "employee_code": "150",
+    "nombre": "KEVIN YOSEF",
+    "apellido": "ROJAS UITZ",
+    "position": "AUXILIAR DE LABORATORIO",
+    "role": "OPERADOR",
+    "imss_number": "5190536838",
+    "hire_date": "2025-04-14",
+    "fecha_nacimiento": "2005-03-20",
+    "emergency_contact": {
+      "phone": "981 129 02 21",
+      "name": "MARIELY ROJAS"
+    }
+  },
+  {
+    "employee_code": "155",
+    "nombre": "MARIO",
+    "apellido": "PEREZ GONZALEZ",
+    "position": "JEFE DE DOSIFICACION",
+    "role": "DOSIFICADOR",
+    "imss_number": "56169955798",
+    "hire_date": "2025-04-28",
+    "fecha_nacimiento": "1999-07-12",
+    "emergency_contact": {
+      "phone": "477 123 84 07",
+      "name": "MARIO URBINA"
+    }
+  },
+  {
+    "employee_code": "160",
+    "nombre": "EDGAR MANUEL",
+    "apellido": "ARZATE ARROYO",
+    "position": "OPERADOR DE CR",
+    "role": "OPERADOR",
+    "imss_number": "39937693875",
+    "hire_date": "2025-05-19",
+    "fecha_nacimiento": "1976-01-10",
+    "emergency_contact": {
+      "phone": "565 559 40 05",
+      "name": "ROCIO TELLEZ"
+    }
+  },
+  {
+    "employee_code": "161",
+    "nombre": "JESUS IVAN",
+    "apellido": "NORZAGARAY VALENZUELA",
+    "position": "JEFE DE DOSIFICACION",
+    "role": "DOSIFICADOR",
+    "imss_number": "23108800329",
+    "hire_date": "2025-05-19",
+    "fecha_nacimiento": "1988-05-29",
+    "emergency_contact": {
+      "phone": "686 212 18 92",
+      "name": "PERLA BELTRAN"
+    }
+  },
+  {
+    "employee_code": "168",
+    "nombre": "RAMON ALBERTO",
+    "apellido": "TORRES TOSTADO",
+    "position": "OPERADOR DE CR",
+    "role": "OPERADOR",
+    "imss_number": "23957658695",
+    "hire_date": "2025-05-26",
+    "fecha_nacimiento": "1976-07-19",
+    "emergency_contact": {
+      "phone": "696 220 41 91",
+      "name": "CARMEN LILIANA"
+    }
+  },
+  {
+    "employee_code": "171",
+    "nombre": "EDGAR OMAR",
+    "apellido": "MORA DUARTE",
+    "position": "OPERADOR DE CR",
+    "role": "OPERADOR",
+    "imss_number": "55957800042",
+    "hire_date": "2025-05-27",
+    "fecha_nacimiento": "1978-04-25",
+    "emergency_contact": {
+      "phone": "664 440 56 23",
+      "name": "JOHANA"
+    }
+  },
+  {
+    "employee_code": "172",
+    "nombre": "JESUS",
+    "apellido": "BARRERA CANO",
+    "position": "AUXILIAR DE LABORATORIO",
+    "role": "OPERADOR",
+    "imss_number": "68149652726",
+    "hire_date": "2025-06-02",
+    "fecha_nacimiento": "1996-08-02",
+    "emergency_contact": {
+      "phone": "664 550 10 54",
+      "name": "TANIA HERNANDEZ"
+    }
+  },
+  {
+    "employee_code": "173",
+    "nombre": "WILBER NEIZER",
+    "apellido": "VILLARREAL SARAOZ",
+    "position": "COORDINADOR DE OBRA",
+    "role": "JEFE_UNIDAD_NEGOCIO",
+    "imss_number": "71119246586",
+    "hire_date": "2025-06-03",
+    "fecha_nacimiento": "1992-05-04",
+    "emergency_contact": {
+      "phone": "983 839 28 77",
+      "name": "DANIEL VILLARREAL"
+    }
+  },
+  {
+    "employee_code": "174",
+    "nombre": "JESUS ALEJANDRO",
+    "apellido": "ORTIZ QUIROZ",
+    "position": "OPERADOR DE CARGADOR FRONTAL",
+    "role": "OPERADOR",
+    "imss_number": "38210228094",
+    "hire_date": "2025-06-05",
+    "fecha_nacimiento": "2002-08-21",
+    "emergency_contact": {
+      "phone": "664 435 64 29",
+      "name": "ROSA QUIROZ"
+    }
+  },
+  {
+    "employee_code": "175",
+    "nombre": "MOISES ABIMELEC",
+    "apellido": "MIRANDA LOPEZ",
+    "position": "AUXILIAR DE LABORATORIO",
+    "role": "OPERADOR",
+    "imss_number": "15169587217",
+    "hire_date": "2025-06-09",
+    "fecha_nacimiento": "1995-03-07",
+    "emergency_contact": {
+      "phone": "673 114 92 05",
+      "name": "SANTOS LOPEZ"
+    }
+  },
+  {
+    "employee_code": "179",
+    "nombre": "PEDRO",
+    "apellido": "PULIDO AVILA",
+    "position": "OPERADOR DE PIPA",
+    "role": "OPERADOR",
+    "imss_number": "31846608268",
+    "hire_date": "2025-06-30",
+    "fecha_nacimiento": "1968-03-28",
+    "emergency_contact": {
+      "phone": "664 196 58 82",
+      "name": "LIZBETH PULIDO"
+    }
+  },
+  {
+    "employee_code": "180",
+    "nombre": "ALEJANDRO",
+    "apellido": "JUAREZ CUELLAR",
+    "position": "OPERADOR DE CR",
+    "role": "OPERADOR",
+    "imss_number": "12068813935",
+    "hire_date": "2025-07-01",
+    "fecha_nacimiento": "1988-04-08",
+    "emergency_contact": {
+      "phone": "472 161 32 61",
+      "name": "ISIDRA FERNANDEZ"
+    }
+  },
+  {
+    "employee_code": "181",
+    "nombre": "GREGORIO DAVID",
+    "apellido": "BOLAÑOS LOPEZ",
+    "position": "OPERADOR DE CR",
+    "role": "OPERADOR",
+    "imss_number": "90099104706",
+    "hire_date": "2025-07-07",
+    "fecha_nacimiento": "1991-03-30",
+    "emergency_contact": {
+      "phone": "556 512 72 21",
+      "name": "EVELYN GRIZELL"
+    }
+  },
+  {
+    "employee_code": "183",
+    "nombre": "JUAN CARLOS",
+    "apellido": "OZUNA SANCHEZ",
+    "position": "OPERADOR DE CR",
+    "role": "OPERADOR",
+    "imss_number": "72957622177",
+    "hire_date": "2025-07-21",
+    "fecha_nacimiento": "1976-03-31",
+    "emergency_contact": {
+      "phone": "744 401 67 42",
+      "name": "GABRIELA ARIZMENDIZ"
+    }
+  },
+  {
+    "employee_code": "184",
+    "nombre": "EDY",
+    "apellido": "SOTO ESPINOZA",
+    "position": "OPERADOR DE CR",
+    "role": "OPERADOR",
+    "imss_number": "38149487126",
+    "hire_date": "2025-07-21",
+    "fecha_nacimiento": "1994-06-09",
+    "emergency_contact": {
+      "phone": "664 807 60 21",
+      "name": "MERCEDES"
+    }
+  },
+  {
+    "employee_code": "185",
+    "nombre": "SAUL",
+    "apellido": "SAHAGUN ORTIZ",
+    "position": "JEFE DE DOSIFICACION",
+    "role": "DOSIFICADOR",
+    "imss_number": "21057506160",
+    "hire_date": "2025-07-21",
+    "fecha_nacimiento": "1975-01-01",
+    "emergency_contact": {
+      "phone": "664 511 35 92",
+      "name": "JULIETA SANCHEZ"
+    }
+  },
+  {
+    "employee_code": "187",
+    "nombre": "MAIRA ALEJANDRA",
+    "apellido": "GONZALEZ QUINTERO",
+    "position": "AUXILIAR DE MANTENIMIENTO",
+    "role": "ENCARGADO_MANTENIMIENTO",
+    "imss_number": "4180163380",
+    "hire_date": "2025-07-28",
+    "fecha_nacimiento": "2001-09-22",
+    "emergency_contact": {
+      "phone": "664 170 28 72",
+      "name": "LORENA QUINTERO"
+    }
+  },
+  {
+    "employee_code": "188",
+    "nombre": "CINTHIA EVELIN",
+    "apellido": "GODINES MONTIJO",
+    "position": "AUXILIAR DE RECURSOS HUMANOS",
+    "role": "AREA_ADMINISTRATIVA",
+    "imss_number": "25129427719",
+    "hire_date": "2025-07-28",
+    "fecha_nacimiento": "1994-08-14",
+    "emergency_contact": {
+      "phone": "664 116 87 28",
+      "name": "EVELIN GODINES"
+    }
+  },
+  {
+    "employee_code": "189",
+    "nombre": "MIGUEL ANGEL",
+    "apellido": "MORALES NUÑEZ",
+    "position": "COORDINADOR COMERCIAL",
+    "role": "JEFE_UNIDAD_NEGOCIO",
+    "imss_number": "62159627769",
+    "hire_date": "2025-08-01",
+    "fecha_nacimiento": "1996-12-24",
+    "emergency_contact": {
+      "phone": "352 194 45 30",
+      "name": "MIGUEL MORALES"
+    }
+  },
+  {
+    "employee_code": "191",
+    "nombre": "MARIA VICTORIA",
+    "apellido": "HERNANDEZ IBARRA",
+    "position": "VIGILANTE",
+    "role": "OPERADOR",
+    "imss_number": "21099400307",
+    "hire_date": "2025-08-25",
+    "fecha_nacimiento": "1994-06-06",
+    "emergency_contact": {
+      "phone": "472 159 90 54",
+      "name": "RUFINO MORALES"
+    }
+  },
+  {
+    "employee_code": "192",
+    "nombre": "ANSELMO",
+    "apellido": "SALAS TORRES",
+    "position": "AUXILIAR DE BOMBA",
+    "role": "OPERADOR",
+    "imss_number": "10200371077",
+    "hire_date": "2025-09-08",
+    "fecha_nacimiento": "2003-06-25",
+    "emergency_contact": {
+      "phone": "618 323 03 18",
+      "name": "TERESA ROJAS"
+    }
+  },
+  {
+    "employee_code": "193",
+    "nombre": "RAUL",
+    "apellido": "MERIDA ROBLERO",
+    "position": "VIGILANTE",
+    "role": "OPERADOR",
+    "imss_number": "25967206290",
+    "hire_date": "2025-10-06",
+    "fecha_nacimiento": "1972-08-23",
+    "emergency_contact": {
+      "phone": "664 344 38 57",
+      "name": "ERICK MERIDA"
+    }
+  }
+]
