@@ -288,7 +288,7 @@ export function BreadcrumbNav({ className }: BreadcrumbNavProps) {
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-56">
               {breadcrumbItems.slice(0, -1).map((item, index) => (
-                <DropdownMenuItem key={item.href} asChild>
+                <DropdownMenuItem key={`mobile-dropdown-${index}-${item.href}`} asChild>
                   <Link href={item.href} className="flex items-center gap-2">
                     {item.icon}
                     <span>{item.label}</span>
@@ -333,8 +333,8 @@ export function BreadcrumbNav({ className }: BreadcrumbNavProps) {
                     <span className="sr-only">Toggle menu</span>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="start">
-                    {breadcrumbItems.slice(1, -2).map((item) => (
-                      <DropdownMenuItem key={item.href} asChild>
+                    {breadcrumbItems.slice(1, -2).map((item, index) => (
+                      <DropdownMenuItem key={`dropdown-${index}-${item.href}`} asChild>
                         <Link href={item.href} className="flex items-center gap-2">
                           {item.icon}
                           <span>{item.label}</span>
@@ -348,7 +348,7 @@ export function BreadcrumbNav({ className }: BreadcrumbNavProps) {
               
               {/* Last two items */}
               {visibleItems.slice(1).map((item, index) => (
-                <React.Fragment key={item.href}>
+                <React.Fragment key={`visible-${index}-${item.href}`}>
                   <BreadcrumbItem>
                     {index === visibleItems.slice(1).length - 1 ? (
                       <BreadcrumbPage className="flex items-center gap-2">
@@ -370,7 +370,7 @@ export function BreadcrumbNav({ className }: BreadcrumbNavProps) {
             </>
           ) : (
             breadcrumbItems.map((item, index) => (
-              <React.Fragment key={item.href}>
+              <React.Fragment key={`breadcrumb-${index}-${item.href}`}>
                 <BreadcrumbItem>
                   {index === breadcrumbItems.length - 1 ? (
                     <BreadcrumbPage className="flex items-center gap-2">
