@@ -73,6 +73,8 @@ type ReportData = {
     totalConcreteM3: number
     totalDieselL: number
     costRevenueRatio: number
+    // optional overall hours in case we want to show global LPH later
+    totalHours?: number
   }
   businessUnits: Array<{
     id: string
@@ -85,6 +87,8 @@ type ReportData = {
     corrective_cost: number
     concrete_m3: number
     diesel_liters: number
+    hours_worked?: number
+    liters_per_hour?: number
     asset_count: number
   }>
   plants: Array<{
@@ -99,6 +103,8 @@ type ReportData = {
     corrective_cost: number
     concrete_m3: number
     diesel_liters: number
+    hours_worked?: number
+    liters_per_hour?: number
     asset_count: number
   }>
   assets: Array<{
@@ -110,6 +116,8 @@ type ReportData = {
     sales_with_vat: number
     diesel_cost: number
     diesel_liters: number
+    hours_worked?: number
+    liters_per_hour?: number
     maintenance_cost: number
     preventive_cost: number
     corrective_cost: number
@@ -459,6 +467,8 @@ export default function GerencialReportPage() {
                       <th className="text-right p-3 font-medium">Concreto (m³)</th>
                       <th className="text-right p-3 font-medium">Diésel</th>
                       <th className="text-right p-3 font-medium">Litros</th>
+                      <th className="text-right p-3 font-medium">Horas</th>
+                      <th className="text-right p-3 font-medium">L/H</th>
                       <th className="text-right p-3 font-medium">Mantenimiento</th>
                       <th className="text-right p-3 font-medium">Costo Total</th>
                       <th className="text-right p-3 font-medium">Ratio</th>
@@ -478,6 +488,16 @@ export default function GerencialReportPage() {
                           <td className="p-3 text-right">{formatNumber(bu.concrete_m3)}</td>
                           <td className="p-3 text-right text-warning">{formatCurrency(bu.diesel_cost)}</td>
                           <td className="p-3 text-right text-muted-foreground">{formatNumber(bu.diesel_liters)}</td>
+                          <td className="p-3 text-right text-muted-foreground">{formatNumber(bu.hours_worked || 0)}</td>
+                          <td className="p-3 text-right">
+                            {(bu.liters_per_hour || 0) > 0 ? (
+                              <Badge variant={(bu.liters_per_hour as number) < 10 ? "default" : "secondary"}>
+                                {(bu.liters_per_hour as number).toFixed(2)}
+                              </Badge>
+                            ) : (
+                              <span className="text-muted-foreground">-</span>
+                            )}
+                          </td>
                           <td className="p-3 text-right text-primary">{formatCurrency(bu.maintenance_cost)}</td>
                           <td className="p-3 text-right font-semibold">{formatCurrency(totalCost)}</td>
                           <td className="p-3 text-right">
@@ -518,6 +538,9 @@ export default function GerencialReportPage() {
                       <th className="text-right p-3 font-medium">Ventas</th>
                       <th className="text-right p-3 font-medium">m³</th>
                       <th className="text-right p-3 font-medium">Diésel</th>
+                      <th className="text-right p-3 font-medium">Litros</th>
+                      <th className="text-right p-3 font-medium">Horas</th>
+                      <th className="text-right p-3 font-medium">L/H</th>
                       <th className="text-right p-3 font-medium">Mantenimiento</th>
                       <th className="text-right p-3 font-medium">Total Costos</th>
                       <th className="text-right p-3 font-medium">Costo/m³</th>
@@ -537,6 +560,17 @@ export default function GerencialReportPage() {
                           <td className="p-3 text-right font-semibold">{formatCurrency(sales)}</td>
                           <td className="p-3 text-right">{formatNumber(plant.concrete_m3)}</td>
                           <td className="p-3 text-right text-warning">{formatCurrency(plant.diesel_cost)}</td>
+                          <td className="p-3 text-right text-muted-foreground">{formatNumber(plant.diesel_liters)}</td>
+                          <td className="p-3 text-right text-muted-foreground">{formatNumber(plant.hours_worked || 0)}</td>
+                          <td className="p-3 text-right">
+                            {(plant.liters_per_hour || 0) > 0 ? (
+                              <Badge variant={(plant.liters_per_hour as number) < 10 ? "default" : "secondary"}>
+                                {(plant.liters_per_hour as number).toFixed(2)}
+                              </Badge>
+                            ) : (
+                              <span className="text-muted-foreground">-</span>
+                            )}
+                          </td>
                           <td className="p-3 text-right text-primary">{formatCurrency(plant.maintenance_cost)}</td>
                           <td className="p-3 text-right font-semibold">{formatCurrency(totalCost)}</td>
                           <td className="p-3 text-right">{formatCurrency(costPerM3)}</td>
@@ -576,6 +610,8 @@ export default function GerencialReportPage() {
                       <th className="text-right p-3 font-medium">Diésel (L)</th>
                       <th className="text-right p-3 font-medium">Costo Diésel</th>
                       <th className="text-right p-3 font-medium">Mantenimiento</th>
+                      <th className="text-right p-3 font-medium">Horas</th>
+                      <th className="text-right p-3 font-medium">L/H</th>
                       <th className="text-right p-3 font-medium">L/m³</th>
                     </tr>
                   </thead>
@@ -623,6 +659,16 @@ export default function GerencialReportPage() {
                           <td className="p-3 text-right">{formatNumber(asset.diesel_liters)}</td>
                           <td className="p-3 text-right text-warning">{formatCurrency(asset.diesel_cost)}</td>
                           <td className="p-3 text-right text-primary">{formatCurrency(asset.maintenance_cost)}</td>
+                          <td className="p-3 text-right text-muted-foreground">{formatNumber(asset.hours_worked || 0)}</td>
+                          <td className="p-3 text-right">
+                            {(asset.liters_per_hour || 0) > 0 ? (
+                              <Badge variant={(asset.liters_per_hour as number) < 10 ? "default" : "secondary"}>
+                                {(asset.liters_per_hour as number).toFixed(2)}
+                              </Badge>
+                            ) : (
+                              <span className="text-muted-foreground">-</span>
+                            )}
+                          </td>
                           <td className="p-3 text-right">
                             {litersPerM3 > 0 ? (
                               <Badge variant={litersPerM3 < 10 ? "default" : "secondary"}>

@@ -13,6 +13,12 @@ export async function POST(req: NextRequest) {
   try {
     const { dateFrom, dateTo, businessUnitId, plantId } = (await req.json()) as Body
 
+    // Compute exclusive end-of-day bound to avoid timezone-related drops
+    const dateFromStart = new Date(`${dateFrom}T00:00:00`)
+    const dateToExclusive = new Date(`${dateTo}T00:00:00`)
+    dateToExclusive.setDate(dateToExclusive.getDate() + 1)
+    const dateToExclusiveStr = dateToExclusive.toISOString().slice(0, 10)
+
     const supabase = await createServerSupabase()
 
     // Fetch business units and plants for filters
@@ -84,12 +90,26 @@ export async function POST(req: NextRequest) {
         transaction_type,
         unit_cost,
         product_id,
-        transaction_date
+        transaction_date,
+        horometer_reading,
+        previous_horometer
       `)
       .gte('transaction_date', dateFrom)
-      .lte('transaction_date', dateTo)
+      .lt('transaction_date', dateToExclusiveStr)
 
     const { data: dieselTxs } = await dieselQuery
+
+    // Fetch checklist equipment hours (extend window to capture progression)
+    const assetIdsForHours = assets.map(a => a.id)
+    const extendedStart = new Date(dateFromStart)
+    extendedStart.setDate(extendedStart.getDate() - 30)
+    const { data: hoursData } = await supabase
+      .from('completed_checklists')
+      .select('asset_id, equipment_hours_reading, reading_timestamp')
+      .gte('reading_timestamp', extendedStart.toISOString())
+      .lt('reading_timestamp', dateToExclusive.toISOString())
+      .in('asset_id', assetIdsForHours)
+      .not('equipment_hours_reading', 'is', null)
 
     // Fetch diesel products for pricing
     const productIds = Array.from(new Set((dieselTxs || []).map(t => t.product_id).filter(Boolean)))
@@ -137,22 +157,21 @@ export async function POST(req: NextRequest) {
       workOrdersMap = new Map(workOrders?.map(wo => [wo.id, wo]) || [])
     }
 
-    // Filter purchase orders by date range
+    // Filter purchase orders by date range (inclusive start, exclusive end)
     const filteredPurchaseOrders = purchaseOrders?.filter(po => {
-      let dateToCheck: string
-      
+      let dateToCheckStr: string
       if (po.work_order_id) {
         const workOrder = workOrdersMap.get(po.work_order_id)
         if (workOrder?.planned_date) {
-          dateToCheck = workOrder.planned_date
+          dateToCheckStr = workOrder.planned_date
         } else {
-          dateToCheck = po.created_at
+          dateToCheckStr = po.created_at
         }
       } else {
-        dateToCheck = po.created_at
+        dateToCheckStr = po.created_at
       }
-      
-      return dateToCheck >= dateFrom && dateToCheck <= dateTo
+      const ts = new Date(dateToCheckStr).getTime()
+      return ts >= dateFromStart.getTime() && ts < dateToExclusive.getTime()
     }) || []
 
     // Get additional expenses
@@ -161,7 +180,7 @@ export async function POST(req: NextRequest) {
       .from('additional_expenses')
       .select('id, asset_id, amount, created_at')
       .gte('created_at', dateFrom)
-      .lte('created_at', dateTo)
+      .lt('created_at', dateToExclusiveStr)
       .in('asset_id', assetIds)
 
     // Create plant code to maintenance plant ID map
@@ -271,6 +290,8 @@ export async function POST(req: NextRequest) {
         business_unit_name: asset.business_unit_name,
         diesel_liters: 0,
         diesel_cost: 0,
+        hours_worked: 0,
+        liters_per_hour: 0,
         maintenance_cost: 0,
         preventive_cost: 0,
         corrective_cost: 0,
@@ -281,16 +302,75 @@ export async function POST(req: NextRequest) {
       })
     })
 
-    // Aggregate diesel by asset
+    // Aggregate diesel by asset and compute hours (LPH)
+    const dieselByAsset = new Map<string, any[]>()
+    type ReadingEvent = { ts: number, val: number }
+    const checklistEventsByAsset = new Map<string, ReadingEvent[]>()
+    ;(hoursData || []).forEach((h: any) => {
+      if (!h.asset_id) return
+      const val = Number(h.equipment_hours_reading)
+      const ts = new Date(h.reading_timestamp).getTime()
+      if (Number.isNaN(val) || Number.isNaN(ts)) return
+      if (!checklistEventsByAsset.has(h.asset_id)) checklistEventsByAsset.set(h.asset_id, [])
+      checklistEventsByAsset.get(h.asset_id)!.push({ ts, val })
+    })
     ;(dieselTxs || []).forEach(tx => {
       if (tx.transaction_type !== 'consumption' || !tx.asset_id) return
+      if (!dieselByAsset.has(tx.asset_id)) dieselByAsset.set(tx.asset_id, [])
+      dieselByAsset.get(tx.asset_id)!.push(tx)
+
       const asset = assetMap.get(tx.asset_id)
       if (!asset) return
-
       const qty = Number(tx.quantity_liters || 0)
       const price = avgPriceByProduct.get(tx.product_id) || Number(tx.unit_cost || 0)
       asset.diesel_liters += qty
       asset.diesel_cost += qty * price
+    })
+
+    // Compute hours_worked and liters_per_hour per asset based on combined readings
+    dieselByAsset.forEach((txs, assetId) => {
+      const asset = assetMap.get(assetId)
+      if (!asset) return
+      const events: ReadingEvent[] = []
+      // Checklist events
+      const chkEvents = checklistEventsByAsset.get(assetId) || []
+      events.push(...chkEvents)
+      // Diesel transaction events (use transaction_date timestamp)
+      txs.forEach((t: any) => {
+        const tts = new Date(t.transaction_date).getTime()
+        if (!Number.isNaN(tts)) {
+          if (t.previous_horometer != null) {
+            const v = Number(t.previous_horometer)
+            if (!Number.isNaN(v)) events.push({ ts: tts - 1, val: v })
+          }
+          if (t.horometer_reading != null) {
+            const v = Number(t.horometer_reading)
+            if (!Number.isNaN(v)) events.push({ ts: tts, val: v })
+          }
+        }
+      })
+
+      if (events.length === 0) return
+      // Choose baseline: earliest reading within [start, end) if available; otherwise last reading before start
+      const startMs = dateFromStart.getTime()
+      const endMs = dateToExclusive.getTime()
+      const withinWindow = events.filter(e => e.ts >= startMs && e.ts < endMs).sort((a, b) => a.ts - b.ts)
+      let baseline: ReadingEvent | null = null
+      if (withinWindow.length > 0) {
+        baseline = withinWindow[0]
+      } else {
+        const beforeStart = events.filter(e => e.ts < startMs).sort((a, b) => b.ts - a.ts)
+        if (beforeStart.length > 0) baseline = beforeStart[0]
+      }
+      if (!baseline) return
+      const upToEnd = events.filter(e => e.ts < endMs).sort((a, b) => a.ts - b.ts)
+      if (upToEnd.length === 0) return
+      const last = upToEnd[upToEnd.length - 1]
+      const hours = Math.max(0, last.val - baseline.val)
+      if (hours > 0) {
+        asset.hours_worked = hours
+        asset.liters_per_hour = asset.diesel_liters > 0 ? asset.diesel_liters / hours : 0
+      }
     })
 
     // Aggregate maintenance costs from purchase orders (same as executive report)
@@ -460,6 +540,8 @@ export async function POST(req: NextRequest) {
           asset_count: 0,
           diesel_liters: 0,
           diesel_cost: 0,
+          hours_worked: 0,
+          liters_per_hour: 0,
           maintenance_cost: 0,
           preventive_cost: 0,
           corrective_cost: 0,
@@ -472,12 +554,20 @@ export async function POST(req: NextRequest) {
       plant.asset_count++
       plant.diesel_liters += asset.diesel_liters
       plant.diesel_cost += asset.diesel_cost
+      plant.hours_worked += asset.hours_worked || 0
       plant.maintenance_cost += asset.maintenance_cost
       plant.preventive_cost += asset.preventive_cost || 0
       plant.corrective_cost += asset.corrective_cost || 0
       plant.sales_subtotal += asset.sales_subtotal
       plant.sales_with_vat += asset.sales_with_vat
       plant.concrete_m3 += asset.concrete_m3
+    })
+
+    // Compute plant liters_per_hour
+    plantMap.forEach(plant => {
+      if ((plant.hours_worked || 0) > 0) {
+        plant.liters_per_hour = plant.diesel_liters / plant.hours_worked
+      }
     })
 
     // Aggregate by business unit
@@ -491,6 +581,8 @@ export async function POST(req: NextRequest) {
           asset_count: 0,
           diesel_liters: 0,
           diesel_cost: 0,
+          hours_worked: 0,
+          liters_per_hour: 0,
           maintenance_cost: 0,
           preventive_cost: 0,
           corrective_cost: 0,
@@ -503,12 +595,20 @@ export async function POST(req: NextRequest) {
       bu.asset_count += plant.asset_count
       bu.diesel_liters += plant.diesel_liters
       bu.diesel_cost += plant.diesel_cost
+      bu.hours_worked += plant.hours_worked || 0
       bu.maintenance_cost += plant.maintenance_cost
       bu.preventive_cost += plant.preventive_cost
       bu.corrective_cost += plant.corrective_cost
       bu.sales_subtotal += plant.sales_subtotal
       bu.sales_with_vat += plant.sales_with_vat
       bu.concrete_m3 += plant.concrete_m3
+    })
+
+    // Compute BU liters_per_hour
+    buMap.forEach(bu => {
+      if ((bu.hours_worked || 0) > 0) {
+        bu.liters_per_hour = bu.diesel_liters / bu.hours_worked
+      }
     })
 
     // Calculate summary
@@ -520,6 +620,7 @@ export async function POST(req: NextRequest) {
     const totalCorrectiveCost = Array.from(buMap.values()).reduce((s, bu) => s + bu.corrective_cost, 0)
     const totalConcreteM3 = Array.from(buMap.values()).reduce((s, bu) => s + bu.concrete_m3, 0)
     const totalDieselL = Array.from(buMap.values()).reduce((s, bu) => s + bu.diesel_liters, 0)
+    const totalHours = Array.from(buMap.values()).reduce((s, bu) => s + (bu.hours_worked || 0), 0)
     const totalCost = totalDieselCost + totalMaintenanceCost
     const costRevenueRatio = totalSales > 0 ? (totalCost / totalSales) * 100 : 0
 
