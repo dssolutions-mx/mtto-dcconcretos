@@ -335,13 +335,13 @@ export function CredentialCard({
               <img src="/logo.png" alt="DC CONCRETOS" className="h-full w-auto block" />
             </div>
           </div>
-          {/* Base blue bar - wider on back */}
+          {/* Base blue bar - same thickness as green */}
           <div className="absolute left-0 right-0 bottom-0" style={{ height: '12px', backgroundColor: BRAND_DARK_BLUE, zIndex: 1 }} />
-          {/* Green left rectangle - wider on back */}
+          {/* Green left rectangle */}
           <div 
             className="absolute bottom-0 left-0" 
             style={{ 
-              width: '165px', 
+              width: '148px', 
               height: '12px', 
               backgroundColor: BRAND_GREEN,
               zIndex: 2
@@ -351,10 +351,10 @@ export function CredentialCard({
           <div 
             className="absolute bottom-0" 
             style={{ 
-              left: '165px',
+              left: '148px',
               width: 0,
               height: 0,
-              borderLeft: '30px solid ' + BRAND_GREEN,
+              borderLeft: '25px solid ' + BRAND_GREEN,
               borderBottom: '12px solid transparent',
               zIndex: 2
             }} 

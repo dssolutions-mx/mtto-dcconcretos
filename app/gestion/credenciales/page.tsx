@@ -6,9 +6,7 @@ import { RoleGuard } from '@/components/auth/role-guard'
 export default function CredentialsManagementPage() {
   return (
     <RoleGuard 
-      module="gestion" 
-      requireRead
-      allowedRoles={['GERENCIA_GENERAL', 'AREA_ADMINISTRATIVA', 'JEFE_UNIDAD_NEGOCIO']}
+      module="personnel"
     >
       <div className="container mx-auto py-6 px-4 max-w-7xl">
         <EmployeeCredentialsManager />
