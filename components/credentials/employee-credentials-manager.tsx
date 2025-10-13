@@ -294,17 +294,26 @@ export function EmployeeCredentialsManager() {
         return
       }
 
-      // Map offices and plants arrays to single objects
+      // Normalize office and plant relations to single objects
       const mappedData = (data || []).map((emp: any) => {
         const mapped: any = { ...emp }
-        if (emp.offices && Array.isArray(emp.offices) && emp.offices.length > 0) {
-          mapped.office = emp.offices[0]
+
+        // Office relation can come as object, array, or null
+        if (typeof emp.offices !== 'undefined' && emp.offices !== null) {
+          mapped.office = Array.isArray(emp.offices) ? (emp.offices[0] || null) : emp.offices
+        } else if (typeof emp.office !== 'undefined') {
+          mapped.office = emp.office
+        } else {
+          mapped.office = null
         }
-        if (emp.plants && Array.isArray(emp.plants) && emp.plants.length > 0) {
-          mapped.plants = emp.plants[0]
+
+        // Plants relation can come as object, array, or null
+        if (typeof emp.plants !== 'undefined' && emp.plants !== null) {
+          mapped.plants = Array.isArray(emp.plants) ? (emp.plants[0] || null) : emp.plants
         } else {
           mapped.plants = null
         }
+
         delete mapped.offices
         return mapped
       })

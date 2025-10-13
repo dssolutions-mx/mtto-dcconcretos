@@ -38,7 +38,7 @@ interface CredentialCardProps {
 
 // Brand palette
 const BRAND_DARK_BLUE = '#1f3a5c'
-const BRAND_GREEN = '#21b163'
+const BRAND_GREEN = '#079e2e' // RGB(7, 158, 46) - exact logo green
 
 export function CredentialCard({ 
   employeeData, 
@@ -119,20 +119,11 @@ export function CredentialCard({
   const CredentialCardFront = () => {
     return (
     <div className="w-[300px] h-[468px] bg-white rounded-lg shadow-lg overflow-hidden border-2 border-gray-200 print-card relative">
-      {/* Top thin dark blue bar */}
-      <div style={{ height: '4px', backgroundColor: BRAND_DARK_BLUE }} className="absolute inset-x-0 top-0 z-10" />
+      {/* Top dark blue bar */}
+      <div style={{ height: '8px', backgroundColor: BRAND_DARK_BLUE }} className="absolute inset-x-0 top-0 z-10" />
 
-      {/* Header Section - Professional */}
-      <div className="bg-gray-50 h-[70px] flex flex-col items-center justify-center px-4 pt-4 pb-2">
-        <div className="max-w-[180px] h-[36px] flex items-center justify-center">
-          <img
-            src="/logo.png"
-            alt="DC CONCRETOS"
-            className="h-full w-auto block"
-          />
-        </div>
-        <div className="h-px w-full bg-gray-200 mt-2"></div>
-      </div>
+      {/* Header spacer (removed top logo) */}
+      <div className="bg-gray-50 h-[20px] w-full" />
 
       {/* Professional Photo Section */}
       <div className="flex justify-center pt-4 pb-2">
@@ -152,7 +143,7 @@ export function CredentialCard({
       </div>
       
       {/* Employee Information - Executive Style */}
-      <div className="px-6 pb-14">{/* extra bottom padding to avoid overlapping footer */}
+      <div className="px-6 pb-24">{/* extra bottom padding to avoid overlapping enlarged footer/logo */}
         {/* Name Section */}
         <div className="text-center space-y-1 pt-2">
           <h2 className="text-base font-bold text-gray-900 leading-tight">
@@ -192,10 +183,16 @@ export function CredentialCard({
         </div>
       </div>
 
-      {/* Bottom footer using CSS shapes (html2canvas compatible) */}
-      <div className="absolute bottom-0 left-0 w-full" style={{ height: '12px' }}>
+      {/* Bottom logo strip + footer using CSS shapes (html2canvas compatible) */}
+      <div className="absolute bottom-0 left-0 w-full" style={{ height: '80px' }}>
+        {/* Bottom logo area */}
+        <div className="bg-white w-full flex items-center justify-center px-4" style={{ height: '68px' }}>
+          <div className="max-w-[280px] h-[56px] flex items-center justify-center">
+            <img src="/logo.png" alt="DC CONCRETOS" className="h-full w-auto block" />
+          </div>
+        </div>
         {/* Base blue bar */}
-        <div className="absolute inset-0" style={{ backgroundColor: BRAND_DARK_BLUE, zIndex: 1 }} />
+        <div className="absolute left-0 right-0 bottom-0" style={{ height: '12px', backgroundColor: BRAND_DARK_BLUE, zIndex: 1 }} />
         {/* Green left rectangle */}
         <div 
           className="absolute bottom-0 left-0" 
@@ -228,23 +225,14 @@ export function CredentialCard({
     
     return (
       <div className="w-[300px] h-[468px] bg-white rounded-lg shadow-lg overflow-hidden border-2 border-gray-200 print-card relative">
-        {/* Top thin dark blue bar */}
-        <div style={{ height: '4px', backgroundColor: BRAND_DARK_BLUE }} className="absolute inset-x-0 top-0 z-10" />
+        {/* Top dark blue bar */}
+        <div style={{ height: '8px', backgroundColor: BRAND_DARK_BLUE }} className="absolute inset-x-0 top-0 z-10" />
 
-        {/* Header with Logo */}
-        <div className="bg-gray-50 h-[50px] flex flex-col items-center justify-center px-4 pt-4 pb-2">
-          <div className="max-w-[180px] h-[32px] flex items-center justify-center">
-            <img
-              src="/logo.png"
-              alt="DC CONCRETOS"
-              className="h-full w-auto block"
-            />
-          </div>
-          <div className="h-px w-full bg-gray-200 mt-2"></div>
-        </div>
+        {/* Header spacer (removed top logo) */}
+        <div className="bg-gray-50 h-[16px] w-full" />
 
         {/* Employee Personal Information - Compact */}
-        <div className="px-6 py-2 pb-14">{/* extra bottom padding */}
+        <div className="px-6 py-2 pb-24">{/* extra bottom padding to avoid overlapping enlarged footer/logo */}
           <div className="p-0 mb-2">
             <h3 className="font-semibold text-gray-800 text-[10px] mb-1.5 uppercase tracking-wider text-center">
               INFORMACIÓN PERSONAL
@@ -339,15 +327,21 @@ export function CredentialCard({
           </div>
         </div>
 
-        {/* Bottom footer using CSS shapes (html2canvas compatible) */}
-        <div className="absolute bottom-0 left-0 w-full" style={{ height: '12px' }}>
-          {/* Base blue bar */}
-          <div className="absolute inset-0" style={{ backgroundColor: BRAND_DARK_BLUE, zIndex: 1 }} />
-          {/* Green left rectangle */}
+        {/* Bottom logo strip + footer using CSS shapes (html2canvas compatible) */}
+        <div className="absolute bottom-0 left-0 w-full" style={{ height: '80px' }}>
+          {/* Bottom logo area */}
+          <div className="bg-white w-full flex items-center justify-center px-4" style={{ height: '68px' }}>
+            <div className="max-w-[280px] h-[56px] flex items-center justify-center">
+              <img src="/logo.png" alt="DC CONCRETOS" className="h-full w-auto block" />
+            </div>
+          </div>
+          {/* Base blue bar - wider on back */}
+          <div className="absolute left-0 right-0 bottom-0" style={{ height: '12px', backgroundColor: BRAND_DARK_BLUE, zIndex: 1 }} />
+          {/* Green left rectangle - wider on back */}
           <div 
             className="absolute bottom-0 left-0" 
             style={{ 
-              width: '150px', 
+              width: '165px', 
               height: '12px', 
               backgroundColor: BRAND_GREEN,
               zIndex: 2
@@ -357,10 +351,10 @@ export function CredentialCard({
           <div 
             className="absolute bottom-0" 
             style={{ 
-              left: '150px',
+              left: '165px',
               width: 0,
               height: 0,
-              borderLeft: '25px solid ' + BRAND_GREEN,
+              borderLeft: '30px solid ' + BRAND_GREEN,
               borderBottom: '12px solid transparent',
               zIndex: 2
             }} 

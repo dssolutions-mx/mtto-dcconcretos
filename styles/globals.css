@@ -101,3 +101,73 @@ body {
 [data-state="open"][role="tooltip"] {
   z-index: 9999999 !important;
 }
+
+/* Liquid Glass Effects - iOS 26 Inspired */
+@layer components {
+  .glass-base {
+    background: rgba(255, 255, 255, 0.7);
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+  }
+
+  .glass-thick {
+    background: rgba(255, 255, 255, 0.8);
+    backdrop-filter: blur(30px) saturate(180%);
+    -webkit-backdrop-filter: blur(30px) saturate(180%);
+    border: 1px solid rgba(255, 255, 255, 0.4);
+    box-shadow: 
+      0 8px 32px 0 rgba(31, 38, 135, 0.15),
+      inset 0 1px 0 0 rgba(255, 255, 255, 0.5);
+  }
+
+  .glass-thin {
+    background: rgba(255, 255, 255, 0.5);
+    backdrop-filter: blur(10px) saturate(180%);
+    -webkit-backdrop-filter: blur(10px) saturate(180%);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+  }
+
+  .glass-interactive {
+    background: rgba(255, 255, 255, 0.7);
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .glass-interactive:hover {
+    background: rgba(255, 255, 255, 0.85);
+    border: 1px solid rgba(255, 255, 255, 0.5);
+    transform: translateY(-2px);
+    box-shadow: 
+      0 12px 40px 0 rgba(31, 38, 135, 0.2),
+      inset 0 1px 0 0 rgba(255, 255, 255, 0.6);
+  }
+
+  .glass-interactive:active {
+    transform: translateY(0px);
+    box-shadow: 
+      0 4px 16px 0 rgba(31, 38, 135, 0.15),
+      inset 0 1px 0 0 rgba(255, 255, 255, 0.4);
+  }
+
+  /* Dark Mode Glass */
+  .dark .glass-base {
+    background: rgba(28, 28, 30, 0.7);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+  }
+
+  .dark .glass-thick {
+    background: rgba(28, 28, 30, 0.8);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    box-shadow: 
+      0 8px 32px 0 rgba(0, 0, 0, 0.3),
+      inset 0 1px 0 0 rgba(255, 255, 255, 0.1);
+  }
+
+  .dark .glass-thin {
+    background: rgba(28, 28, 30, 0.5);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+  }
+}
