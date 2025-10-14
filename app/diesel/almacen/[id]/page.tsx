@@ -109,6 +109,9 @@ export default function WarehouseDetailPage() {
     currentPage * itemsPerPage
   )
 
+  // Precompute max balance for chart scaling (avoid division by zero)
+  const maxBalanceForChart = balanceHistory.reduce((max, p) => Math.max(max, p.balance), 0) || 1
+
   const supabase = createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
@@ -707,11 +710,9 @@ export default function WarehouseDetailPage() {
               {/* Simple line chart visualization */}
               <div className="relative h-48 flex items-end gap-1">
                 {balanceHistory.map((point, index) => {
-                  const maxBalance = Math.max(...balanceHistory.map(p => p.balance))
-                  const height = (point.balance / maxBalance) * 100
-                  
+                  const height = (point.balance / maxBalanceForChart) * 100
                   return (
-                    <div key={index} className="flex-1 flex flex-col items-center gap-1">
+                    <div key={index} className="flex-1 h-full">
                       <div 
                         className="w-full bg-blue-500 rounded-t hover:bg-blue-600 transition-colors"
                         style={{ height: `${height}%` }}
