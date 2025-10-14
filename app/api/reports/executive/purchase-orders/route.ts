@@ -32,6 +32,7 @@ export async function GET(request: NextRequest) {
           id,
           type,
           asset_id,
+          planned_date,
           assets (
             id,
             asset_id,
@@ -50,11 +51,6 @@ export async function GET(request: NextRequest) {
       .in("status", ["approved", "validated", "received", "purchased"])
       .order('created_at', { ascending: false })
 
-    if (assetId) {
-      // Filter by specific asset through work orders
-      query = query.eq('work_orders.asset_id', assetId)
-    }
-
     const { data: purchaseOrders, error } = await query
 
     if (error) {
@@ -62,8 +58,21 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
+    // Filter by date using planned_date (if available) or created_at to match executive report logic
+    // Also filter by assetId if provided
+    const filteredPOs = (purchaseOrders || []).filter((po: any) => {
+      // Filter by asset if specified
+      if (assetId && po.work_orders?.asset_id !== assetId) {
+        return false
+      }
+      
+      // Filter by date
+      const dateToCheck = po.work_orders?.planned_date || po.created_at
+      return dateToCheck >= startDate! && dateToCheck <= endDate!
+    })
+
     // Transform the data for easier consumption
-    const transformedPOs = purchaseOrders?.map(po => {
+    const transformedPOs = filteredPOs.map(po => {
       const finalAmount = po.actual_amount ? parseFloat(po.actual_amount) : parseFloat(po.total_amount || '0')
       
       return {
@@ -78,6 +87,7 @@ export async function GET(request: NextRequest) {
         work_order: po.work_orders ? {
           id: po.work_orders.id,
           type: po.work_orders.type,
+          planned_date: po.work_orders.planned_date,
           asset: po.work_orders.assets ? {
             id: po.work_orders.assets.id,
             code: po.work_orders.assets.asset_id,

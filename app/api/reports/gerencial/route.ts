@@ -7,11 +7,12 @@ type Body = {
   dateTo: string
   businessUnitId?: string | null
   plantId?: string | null
+  hideZeroActivity?: boolean
 }
 
 export async function POST(req: NextRequest) {
   try {
-    const { dateFrom, dateTo, businessUnitId, plantId } = (await req.json()) as Body
+    const { dateFrom, dateTo, businessUnitId, plantId, hideZeroActivity } = (await req.json()) as Body
 
     // Compute exclusive end-of-day bound to avoid timezone-related drops
     const dateFromStart = new Date(`${dateFrom}T00:00:00`)
@@ -43,7 +44,8 @@ export async function POST(req: NextRequest) {
         plants:plants(
           id, name, code, business_unit_id,
           assets:assets(
-            id, asset_id, name, plant_id
+            id, asset_id, name, plant_id, model_id,
+            equipment_models(name, manufacturer, category)
           )
         )
       `)
@@ -66,6 +68,13 @@ export async function POST(req: NextRequest) {
         if (plantId && plant.id !== plantId) continue
         
         for (const asset of (plant.assets || [])) {
+          // Determine equipment type: 1.b) By assets.asset_id starting with BP (bombas)
+          const assetCode: string | undefined = asset.asset_id || undefined
+          const modelCategory: string | undefined = (asset as any).equipment_models?.category || undefined
+          const equipmentType = (assetCode && assetCode.toUpperCase().startsWith('BP'))
+            ? 'Bomba'
+            : (modelCategory || 'Sin categoría')
+
           assets.push({
             id: asset.id,
             asset_code: asset.asset_id,
@@ -74,7 +83,9 @@ export async function POST(req: NextRequest) {
             plant_name: plant.name,
             plant_code: plant.code,
             business_unit_id: bu.id,
-            business_unit_name: bu.name
+            business_unit_name: bu.name,
+            model_category: modelCategory || null,
+            equipment_type: equipmentType
           })
         }
       }
@@ -288,6 +299,8 @@ export async function POST(req: NextRequest) {
         plant_code: asset.plant_code,
         business_unit_id: asset.business_unit_id,
         business_unit_name: asset.business_unit_name,
+        model_category: (asset as any).model_category || null,
+        equipment_type: (asset as any).equipment_type || 'Sin categoría',
         diesel_liters: 0,
         diesel_cost: 0,
         hours_worked: 0,
@@ -298,6 +311,7 @@ export async function POST(req: NextRequest) {
         sales_subtotal: 0,
         sales_with_vat: 0,
         concrete_m3: 0,
+        total_m3: 0,
         remisiones_count: 0
       })
     })
@@ -474,6 +488,7 @@ export async function POST(req: NextRequest) {
         asset.sales_subtotal += Number(sale.subtotal_amount || 0)
         asset.sales_with_vat += Number(sale.total_amount_with_vat || 0)
         asset.concrete_m3 += Number(sale.concrete_m3 || 0)
+        asset.total_m3 += Number(sale.total_m3 || 0)
         asset.remisiones_count += Number(sale.remisiones_count || 0)
         if (matchMethod === 'fuzzy') {
           asset._fuzzy_matches = asset._fuzzy_matches || []
@@ -504,6 +519,7 @@ export async function POST(req: NextRequest) {
             sales_subtotal: 0,
             sales_with_vat: 0,
             concrete_m3: 0,
+            total_m3: 0,
             remisiones_count: 0,
             _is_unmatched: true
           })
@@ -513,6 +529,7 @@ export async function POST(req: NextRequest) {
         virtualAsset.sales_subtotal += Number(sale.subtotal_amount || 0)
         virtualAsset.sales_with_vat += Number(sale.total_amount_with_vat || 0)
         virtualAsset.concrete_m3 += Number(sale.concrete_m3 || 0)
+        virtualAsset.total_m3 += Number(sale.total_m3 || 0)
         virtualAsset.remisiones_count += Number(sale.remisiones_count || 0)
         
         unmatchedAssets.push({
@@ -547,7 +564,8 @@ export async function POST(req: NextRequest) {
           corrective_cost: 0,
           sales_subtotal: 0,
           sales_with_vat: 0,
-          concrete_m3: 0
+          concrete_m3: 0,
+          total_m3: 0
         })
       }
       const plant = plantMap.get(asset.plant_id)
@@ -561,6 +579,7 @@ export async function POST(req: NextRequest) {
       plant.sales_subtotal += asset.sales_subtotal
       plant.sales_with_vat += asset.sales_with_vat
       plant.concrete_m3 += asset.concrete_m3
+      plant.total_m3 += asset.total_m3
     })
 
     // Compute plant liters_per_hour
@@ -588,7 +607,8 @@ export async function POST(req: NextRequest) {
           corrective_cost: 0,
           sales_subtotal: 0,
           sales_with_vat: 0,
-          concrete_m3: 0
+          concrete_m3: 0,
+          total_m3: 0
         })
       }
       const bu = buMap.get(plant.business_unit_id)
@@ -602,6 +622,7 @@ export async function POST(req: NextRequest) {
       bu.sales_subtotal += plant.sales_subtotal
       bu.sales_with_vat += plant.sales_with_vat
       bu.concrete_m3 += plant.concrete_m3
+      bu.total_m3 += plant.total_m3
     })
 
     // Compute BU liters_per_hour
@@ -619,6 +640,7 @@ export async function POST(req: NextRequest) {
     const totalPreventiveCost = Array.from(buMap.values()).reduce((s, bu) => s + bu.preventive_cost, 0)
     const totalCorrectiveCost = Array.from(buMap.values()).reduce((s, bu) => s + bu.corrective_cost, 0)
     const totalConcreteM3 = Array.from(buMap.values()).reduce((s, bu) => s + bu.concrete_m3, 0)
+    const totalRemisiones = Array.from(assetMap.values()).reduce((s, a: any) => s + (a.remisiones_count || 0), 0)
     const totalDieselL = Array.from(buMap.values()).reduce((s, bu) => s + bu.diesel_liters, 0)
     const totalHours = Array.from(buMap.values()).reduce((s, bu) => s + (bu.hours_worked || 0), 0)
     const totalCost = totalDieselCost + totalMaintenanceCost
@@ -680,6 +702,12 @@ export async function POST(req: NextRequest) {
       console.log('=================================\n')
     }
 
+    // Build assets array for response; optionally hide zero-activity assets
+    const assetsArrayAll = Array.from(assetMap.values())
+    const assetsArray = hideZeroActivity
+      ? assetsArrayAll.filter((a: any) => (a.hours_worked || 0) > 0 || (a.diesel_liters || 0) > 0)
+      : assetsArrayAll
+
     return NextResponse.json({
       summary: {
         totalSales,
@@ -690,11 +718,12 @@ export async function POST(req: NextRequest) {
         totalCorrectiveCost,
         totalConcreteM3,
         totalDieselL,
+        totalRemisiones,
         costRevenueRatio
       },
       businessUnits: Array.from(buMap.values()),
       plants: Array.from(plantMap.values()),
-      assets: Array.from(assetMap.values()),
+      assets: assetsArray,
       filters: {
         businessUnits: businessUnits || [],
         plants: plants || []
