@@ -57,6 +57,9 @@ interface Transaction {
   cuenta_litros: number | null
   product_id?: string | null
   product_code?: string | null
+  unit_cost?: number | null
+  total_cost?: number | null
+  supplier_responsible?: string | null
 }
 
 interface WarehouseStats {
@@ -143,9 +146,13 @@ export default function WarehouseDetailPage() {
       if (warehouseError) {
         console.error('Error loading warehouse:', warehouseError)
       } else {
+        const plantsAny: any = (warehouseData as any).plants
+        const plantName = Array.isArray(plantsAny)
+          ? plantsAny[0]?.name
+          : plantsAny?.name
         setWarehouse({
           ...warehouseData,
-          plant_name: warehouseData.plants?.name || 'N/A'
+          plant_name: plantName || 'N/A'
         })
       }
 
@@ -166,6 +173,9 @@ export default function WarehouseDetailPage() {
           notes,
           cuenta_litros,
           product_id,
+          unit_cost,
+          total_cost,
+          supplier_responsible,
           diesel_products(product_code),
           assets(asset_id, name)
         `)
@@ -212,7 +222,10 @@ export default function WarehouseDetailPage() {
           notes: t.notes,
           cuenta_litros: t.cuenta_litros,
           product_id: t.product_id || null,
-          product_code: t.diesel_products?.product_code || null
+          product_code: t.diesel_products?.product_code || null,
+          unit_cost: t.unit_cost ?? null,
+          total_cost: t.total_cost ?? null,
+          supplier_responsible: t.supplier_responsible ?? null
         })) || []
 
         setTransactions(formatted)

@@ -599,7 +599,7 @@ export function DieselEntryForm({
                 {/* Unit Cost */}
                 <div className="space-y-2">
                   <Label htmlFor="unit-cost" className="text-sm">
-                    Costo por Litro (Opcional)
+                    Costo por Litro (sin IVA, Opcional)
                   </Label>
                   <Input
                     id="unit-cost"
@@ -614,7 +614,7 @@ export function DieselEntryForm({
                   />
                   {totalCost && (
                     <div className="text-sm text-muted-foreground">
-                      Costo total: <span className="font-semibold">${totalCost} MXN</span>
+                      Costo total (sin IVA): <span className="font-semibold">${totalCost} MXN</span>
                     </div>
                   )}
                 </div>

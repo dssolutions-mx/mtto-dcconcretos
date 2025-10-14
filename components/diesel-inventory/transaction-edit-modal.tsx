@@ -42,6 +42,11 @@ export function TransactionEditModal({
   const [quantityLiters, setQuantityLiters] = useState("")
   const [cuentaLitros, setCuentaLitros] = useState("")
   const [showQuantityWarning, setShowQuantityWarning] = useState(false)
+  // Entry-specific fields
+  const [supplierName, setSupplierName] = useState("")
+  const [unitCost, setUnitCost] = useState("")
+  const [invoiceNumber, setInvoiceNumber] = useState("")
+  const [notes, setNotes] = useState("")
 
   const supabase = createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -57,6 +62,19 @@ export function TransactionEditModal({
       setQuantityLiters(transaction.quantity_liters.toString())
       setCuentaLitros(transaction.cuenta_litros?.toString() || "")
       setShowQuantityWarning(false)
+      // Initialize entry fields from transaction notes pattern when type is entry
+      if (transaction.transaction_type === 'entry') {
+        const rawNotes = transaction.notes || ""
+        setNotes(rawNotes.replace(/^Factura:\s*[^|]+\s*\|?\s*/i, '').trim())
+        const match = rawNotes.match(/Factura:\s*([^|]+)/i)
+        setInvoiceNumber(match ? match[1].trim() : "")
+      } else {
+        setNotes(transaction.notes || "")
+        setInvoiceNumber("")
+      }
+      // supplier/unit cost are not available in this component's props; keep empty for now
+      setSupplierName("")
+      setUnitCost("")
     }
   }, [transaction])
 
@@ -119,6 +137,29 @@ export function TransactionEditModal({
         return
       }
 
+      // If entry transaction: update additional fields and notes
+      if (transaction.transaction_type === 'entry') {
+        const updates: any = {}
+        if (unitCost.trim()) updates.unit_cost = parseFloat(unitCost)
+        if (unitCost.trim() && quantityLiters.trim()) updates.total_cost = parseFloat(unitCost) * parseFloat(quantityLiters)
+        if (supplierName.trim()) updates.supplier_responsible = supplierName.trim()
+        // Rebuild notes with optional invoice prefix
+        const cleanNotes = notes.trim()
+        const finalNotes = invoiceNumber.trim() ? `Factura: ${invoiceNumber.trim()}${cleanNotes ? ' | ' + cleanNotes : ''}` : (cleanNotes || null)
+        updates.notes = finalNotes
+
+        const { error: updErr } = await supabase
+          .from('diesel_transactions')
+          .update(updates)
+          .eq('id', transaction.id)
+
+        if (updErr) {
+          console.error('Error updating extra fields:', updErr)
+          toast.error('Error al guardar proveedor/costos/notas')
+          return
+        }
+      }
+
       toast.success(`Transacción actualizada correctamente. ${data?.affected_transactions || 0} transacciones recalculadas.`)
       onSuccess()
       onClose()
@@ -141,7 +182,7 @@ export function TransactionEditModal({
 
   return (
     <Dialog open={isOpen} onOpenChange={handleClose}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="w-[95vw] sm:max-w-lg md:max-w-xl max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Calendar className="h-5 w-5" />
@@ -254,6 +295,58 @@ export function TransactionEditModal({
               <p className="text-xs text-muted-foreground">
                 Solo se puede editar en la transacción más reciente.
               </p>
+            </div>
+          )}
+
+          {/* Entry-specific fields */}
+          {transaction.transaction_type === 'entry' && (
+            <div className="space-y-4 pt-2">
+              <div className="space-y-2">
+                <Label htmlFor="supplierName">Proveedor / Responsable</Label>
+                <Input
+                  id="supplierName"
+                  type="text"
+                  value={supplierName}
+                  onChange={(e) => setSupplierName(e.target.value)}
+                  disabled={loading}
+                  placeholder="Ej: Gasolinera Shell"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="unitCost">Costo por Litro (sin IVA)</Label>
+                <Input
+                  id="unitCost"
+                  type="number"
+                  step="0.01"
+                  inputMode="decimal"
+                  value={unitCost}
+                  onChange={(e) => setUnitCost(e.target.value)}
+                  disabled={loading}
+                  placeholder="Ej: 23.50"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="invoiceNumber">Número de Factura (Opcional)</Label>
+                <Input
+                  id="invoiceNumber"
+                  type="text"
+                  value={invoiceNumber}
+                  onChange={(e) => setInvoiceNumber(e.target.value)}
+                  disabled={loading}
+                  placeholder="Ej: F-2025-001234"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="notes">Notas (Opcional)</Label>
+                <Input
+                  id="notes"
+                  type="text"
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  disabled={loading}
+                  placeholder="Observaciones..."
+                />
+              </div>
             </div>
           )}
 
