@@ -813,6 +813,12 @@ export function ConsumptionEntryForm({
                   placeholder="Ej: 150.5"
                   value={quantityLiters}
                   onChange={(e) => setQuantityLiters(e.target.value)}
+                  onWheel={(e) => e.currentTarget.blur()}
+                  onKeyDown={(e) => {
+                    if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                      e.preventDefault()
+                    }
+                  }}
                   disabled={loading}
                   className="h-12 text-lg font-semibold"
                   required

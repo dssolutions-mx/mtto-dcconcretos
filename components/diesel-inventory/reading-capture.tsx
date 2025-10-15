@@ -197,6 +197,12 @@ export function ReadingCapture({
               placeholder={currentHours !== null ? `Mayor a ${currentHours}` : "Ej: 5000"}
               value={hoursReading}
               onChange={(e) => setHoursReading(e.target.value)}
+              onWheel={(e) => e.currentTarget.blur()}
+              onKeyDown={(e) => {
+                if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                  e.preventDefault()
+                }
+              }}
               disabled={disabled}
               className={`h-12 text-base ${
                 hoursValid === false ? 'border-red-500' : 
@@ -263,6 +269,12 @@ export function ReadingCapture({
               placeholder={currentKilometers !== null ? `Mayor a ${currentKilometers}` : "Ej: 50000"}
               value={kilometersReading}
               onChange={(e) => setKilometersReading(e.target.value)}
+              onWheel={(e) => e.currentTarget.blur()}
+              onKeyDown={(e) => {
+                if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                  e.preventDefault()
+                }
+              }}
               disabled={disabled}
               className={`h-12 text-base ${
                 kilometersValid === false ? 'border-red-500' : 
