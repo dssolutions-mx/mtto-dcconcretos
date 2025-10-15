@@ -69,6 +69,27 @@ export async function POST(
       );
     }
 
+    // If the new status represents completion, update related incident to Resuelto
+    const completedStatuses = ['Completada', WorkOrderStatus.Completed, 'Verified', 'Verificado'];
+    if (completedStatuses.includes(newWorkOrderStatus as any)) {
+      try {
+        // Prefer updating by incident_id if present; fallback to work_order_id
+        const { data: woDetails } = await supabase
+          .from('work_orders')
+          .select('incident_id')
+          .eq('id', workOrderId)
+          .single();
+
+        const query = woDetails?.incident_id
+          ? supabase.from('incident_history').update({ status: 'Resuelto', updated_at: new Date().toISOString() }).eq('id', woDetails.incident_id)
+          : supabase.from('incident_history').update({ status: 'Resuelto', updated_at: new Date().toISOString() }).eq('work_order_id', workOrderId);
+
+        await query;
+      } catch (_) {
+        // non-blocking
+      }
+    }
+
     return NextResponse.json({ 
       success: true, 
       data,
