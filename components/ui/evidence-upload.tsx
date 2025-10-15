@@ -226,34 +226,56 @@ export function EvidenceUpload({
       throw new Error("No file to upload")
     }
 
-    const supabase = createClient()
-    
     // Determine bucket based on context
-    const bucket = context === "checklist" 
-      ? "checklist-photos" 
-      : context === "incident" 
-        ? "incident-evidence" 
+    const bucket = context === "checklist"
+      ? "checklist-photos"
+      : context === "incident"
+        ? "incident-evidence"
         : context === "asset"
           ? "asset-photos"
           : "work-order-evidence"
-    
-    // Create unique filename with timestamp to prevent conflicts
-    const fileExt = evidenceItem.file.name.split('.').pop()
-    const timestamp = Date.now()
-    const randomId = Math.random().toString(36).substr(2, 9)
-    const fileName = `${context}_${workOrderId || assetId || 'general'}_${timestamp}_${randomId}.${fileExt}`
-    
+
+    // Prefer server-side upload API (better auth/session handling; avoids mobile CORS issues)
+    const formData = new FormData()
+    formData.append('file', evidenceItem.file)
+    formData.append('bucket', bucket)
+
     try {
-      const { data, error } = await supabase.storage
+      const res = await fetch('/api/storage/upload', {
+        method: 'POST',
+        body: formData
+      })
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err?.error || 'Upload failed')
+      }
+
+      const data = await res.json()
+      return {
+        ...evidenceItem,
+        url: data.url,
+        bucket_path: data.path,
+        file: undefined
+      }
+    } catch (serverError: any) {
+      console.warn('Server upload failed, falling back to client storage upload:', serverError)
+
+      // Fallback to client-side Supabase Storage upload
+      const supabase = createClient()
+      const fileExt = evidenceItem.file.name.split('.').pop()
+      const fileName = `${context}_${workOrderId || assetId || 'general'}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}.${fileExt}`
+
+      const { error } = await supabase.storage
         .from(bucket)
         .upload(fileName, evidenceItem.file, {
           cacheControl: '3600',
-          upsert: true // Allow overwriting to handle duplicates gracefully
+          upsert: true
         })
 
       if (error) {
-        console.error('Upload error:', error)
-        throw error
+        console.error('Client storage upload failed:', error)
+        throw new Error(error.message || 'Upload failed')
       }
 
       const { data: urlData } = supabase.storage
@@ -264,37 +286,8 @@ export function EvidenceUpload({
         ...evidenceItem,
         url: urlData.publicUrl,
         bucket_path: fileName,
-        file: undefined // Remove file reference after upload
+        file: undefined
       }
-    } catch (error: any) {
-      console.error('Evidence upload failed:', error)
-      // If upload fails due to duplicate, try with a new unique filename
-      if (error.message?.includes('already exists') || error.statusCode === 400) {
-        const retryFileName = `${context}_${workOrderId || assetId || 'general'}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}.${fileExt}`
-        
-        const { data: retryData, error: retryError } = await supabase.storage
-          .from(bucket)
-          .upload(retryFileName, evidenceItem.file, {
-            cacheControl: '3600',
-            upsert: true
-          })
-
-        if (retryError) {
-          throw retryError
-        }
-
-        const { data: retryUrlData } = supabase.storage
-          .from(bucket)
-          .getPublicUrl(retryFileName)
-
-        return {
-          ...evidenceItem,
-          url: retryUrlData.publicUrl,
-          bucket_path: retryFileName,
-          file: undefined
-        }
-      }
-      throw error
     }
   }
 

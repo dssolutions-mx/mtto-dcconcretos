@@ -60,11 +60,11 @@ export async function GET(request: NextRequest) {
     const suggestions = await generateSupplierSuggestions({
       assetContext,
       workOrderContext,
-      problemDescription,
-      requiredServices,
+      problemDescription: problem_description || undefined,
+      requiredServices: required_services || undefined,
       urgency,
-      budgetMin,
-      budgetMax,
+      budgetMin: budget_min || undefined,
+      budgetMax: budget_max || undefined,
       limit
     })
 
