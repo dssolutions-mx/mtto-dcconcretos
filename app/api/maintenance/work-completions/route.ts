@@ -555,7 +555,7 @@ export async function POST(request: Request) {
             incidentUpdateQuery = supabase
               .from("incident_history")
               .update({ 
-                status: 'Cerrado',
+                status: 'Resuelto',
                 resolution: completionData.resolution_details || 'Trabajo completado exitosamente',
                 updated_at: new Date().toISOString(),
                 updated_by: sessionData.session.user.id
@@ -566,7 +566,7 @@ export async function POST(request: Request) {
             incidentUpdateQuery = supabase
               .from("incident_history")
               .update({ 
-                status: 'Cerrado',
+                status: 'Resuelto',
                 resolution: completionData.resolution_details || 'Trabajo completado exitosamente',
                 updated_at: new Date().toISOString(),
                 updated_by: sessionData.session.user.id

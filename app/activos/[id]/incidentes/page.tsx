@@ -41,6 +41,21 @@ export default function IncidentPage({ params }: IncidentPageProps) {
   };
 
   const getStatusBadge = (status: string) => {
+    // Normalizar estados equivalentes (compatibilidad hacia atrás)
+    const normalized = status?.toLowerCase();
+    const isResolved = normalized === 'resuelto' || normalized === 'cerrado';
+    const isPending = normalized === 'pendiente';
+    const isInProgress = normalized === 'en progreso';
+
+    if (isResolved) {
+      return <Badge variant="outline" className="text-green-600 border-green-600"><CheckCircle className="h-3 w-3 mr-1" />Resuelto</Badge>
+    }
+    if (isPending) {
+      return <Badge variant="destructive"><AlertCircle className="h-3 w-3 mr-1" />Pendiente</Badge>
+    }
+    if (isInProgress) {
+      return <Badge variant="default"><AlertTriangle className="h-3 w-3 mr-1" />En Progreso</Badge>
+    }
     switch (status?.toLowerCase()) {
       case "resuelto":
         return <Badge variant="outline" className="text-green-600 border-green-600"><CheckCircle className="h-3 w-3 mr-1" />Resuelto</Badge>
@@ -319,7 +334,10 @@ export default function IncidentPage({ params }: IncidentPageProps) {
             <Card>
               <CardContent className="pt-6">
                 <div className="text-2xl font-bold text-red-600">
-                  {incidents.filter(i => i.status?.toLowerCase() === 'pendiente').length}
+                  {incidents.filter(i => {
+                    const s = i.status?.toLowerCase();
+                    return s === 'pendiente';
+                  }).length}
                 </div>
                 <p className="text-xs text-muted-foreground">Pendientes</p>
               </CardContent>
@@ -327,7 +345,10 @@ export default function IncidentPage({ params }: IncidentPageProps) {
             <Card>
               <CardContent className="pt-6">
                 <div className="text-2xl font-bold text-green-600">
-                  {incidents.filter(i => i.status?.toLowerCase() === 'resuelto').length}
+                  {incidents.filter(i => {
+                    const s = i.status?.toLowerCase();
+                    return s === 'resuelto' || s === 'cerrado';
+                  }).length}
                 </div>
                 <p className="text-xs text-muted-foreground">Resueltos</p>
               </CardContent>
