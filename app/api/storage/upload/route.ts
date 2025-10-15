@@ -68,11 +68,20 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Validate file type - Allow images and PDFs for purchase orders
-    const allowedTypes = ['image/jpeg', 'image/png', 'image/jpg', 'application/pdf']
+    // Validate file type - Allow images and documents
+    const allowedTypes = [
+      'image/jpeg',
+      'image/png', 
+      'image/gif',
+      'image/webp',
+      'application/pdf',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    ]
     if (!allowedTypes.includes(file.type)) {
+      console.error(`Invalid file type: ${file.type}. File name: ${file.name}`)
       return NextResponse.json(
-        { error: 'Solo se permiten archivos PDF, JPG, JPEG o PNG' },
+        { error: `Tipo de archivo no permitido: ${file.type}. Solo se permiten imágenes (JPG, PNG, GIF, WebP) y documentos (PDF, DOC, DOCX)` },
         { status: 400 }
       )
     }
@@ -106,9 +115,23 @@ export async function POST(request: NextRequest) {
       })
 
     if (error) {
-      console.error('Upload error:', error)
+      console.error('Supabase storage upload error:', {
+        error,
+        bucket: finalBucket,
+        fileName,
+        fileType: file.type,
+        fileSize: file.size,
+        message: error.message
+      })
       return NextResponse.json(
-        { error: `Error al subir archivo: ${error.message}` },
+        { 
+          error: `Error al subir archivo: ${error.message}`,
+          details: {
+            bucket: finalBucket,
+            fileName,
+            errorCode: error.statusCode || 'unknown'
+          }
+        },
         { status: 500 }
       )
     }
