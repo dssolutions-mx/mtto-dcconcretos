@@ -28,6 +28,7 @@ import {
 import { useRouter, useParams } from "next/navigation"
 import Link from "next/link"
 import { TransactionEditModal } from "@/components/diesel-inventory/transaction-edit-modal"
+import { TransactionEvidenceModal } from "@/components/diesel-inventory/transaction-evidence-modal"
 
 interface WarehouseDetails {
   id: string
@@ -94,6 +95,10 @@ export default function WarehouseDetailPage() {
   // Edit modal state
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null)
   const [isEditModalOpen, setIsEditModalOpen] = useState(false)
+  
+  // Evidence modal state
+  const [evidenceTransaction, setEvidenceTransaction] = useState<Transaction | null>(null)
+  const [isEvidenceModalOpen, setIsEvidenceModalOpen] = useState(false)
   
   // Filters
   const [typeFilter, setTypeFilter] = useState<string>("all")
@@ -382,6 +387,11 @@ export default function WarehouseDetailPage() {
   const handleEditTransaction = (transaction: Transaction) => {
     setEditingTransaction(transaction)
     setIsEditModalOpen(true)
+  }
+
+  const handleOpenEvidence = (transaction: Transaction) => {
+    setEvidenceTransaction(transaction)
+    setIsEvidenceModalOpen(true)
   }
 
   const isLatestTransaction = (transaction: Transaction) => {
@@ -858,7 +868,8 @@ export default function WarehouseDetailPage() {
             {paginatedTransactions.map((transaction) => (
               <div
                 key={transaction.id}
-                className="flex items-center justify-between p-4 rounded-lg border hover:bg-gray-50 transition-colors"
+                className="flex items-center justify-between p-4 rounded-lg border hover:bg-gray-50 transition-colors cursor-pointer"
+                onClick={() => handleOpenEvidence(transaction)}
               >
                 <div className="flex items-center gap-4 flex-1">
                   {getTransactionIcon(transaction)}
@@ -924,7 +935,7 @@ export default function WarehouseDetailPage() {
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() => handleEditTransaction(transaction)}
+                      onClick={(e) => { e.stopPropagation(); handleEditTransaction(transaction) }}
                       className="h-8 px-2 text-xs"
                     >
                       <Edit className="h-3 w-3 mr-1" />
@@ -1063,6 +1074,15 @@ export default function WarehouseDetailPage() {
         onSuccess={handleEditSuccess}
         isLatestTransaction={editingTransaction ? isLatestTransaction(editingTransaction) : false}
         warehouseHasMeter={warehouse?.has_cuenta_litros || false}
+      />
+
+      {/* Transaction Evidence Modal */}
+      <TransactionEvidenceModal
+        transactionId={evidenceTransaction?.id || null}
+        isOpen={isEvidenceModalOpen}
+        onClose={() => { setIsEvidenceModalOpen(false); setEvidenceTransaction(null) }}
+        headerTitle={evidenceTransaction ? `Evidencia • ${getTransactionLabel(evidenceTransaction)} • ${evidenceTransaction.quantity_liters.toFixed(1)}L` : 'Evidencia'}
+        subheader={evidenceTransaction ? new Date(evidenceTransaction.transaction_date).toLocaleString('es-MX', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : undefined}
       />
     </div>
   )
