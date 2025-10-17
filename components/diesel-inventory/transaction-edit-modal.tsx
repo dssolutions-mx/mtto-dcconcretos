@@ -56,9 +56,18 @@ export function TransactionEditModal({
   // Initialize form when transaction changes
   useEffect(() => {
     if (transaction) {
-      const date = new Date(transaction.transaction_date)
-      setTransactionDate(date.toISOString().split('T')[0])
-      setTransactionTime(date.toTimeString().slice(0, 5))
+      // Parse UTC timestamp and convert to local timezone for display
+      const utcDate = new Date(transaction.transaction_date)
+      
+      // Get local date components
+      const year = utcDate.getFullYear()
+      const month = String(utcDate.getMonth() + 1).padStart(2, '0')
+      const day = String(utcDate.getDate()).padStart(2, '0')
+      const hours = String(utcDate.getHours()).padStart(2, '0')
+      const minutes = String(utcDate.getMinutes()).padStart(2, '0')
+      
+      setTransactionDate(`${year}-${month}-${day}`)
+      setTransactionTime(`${hours}:${minutes}`)
       setQuantityLiters(transaction.quantity_liters.toString())
       setCuentaLitros(transaction.cuenta_litros?.toString() || "")
       setShowQuantityWarning(false)
@@ -120,8 +129,13 @@ export function TransactionEditModal({
         return
       }
 
-      // Create new datetime string
-      const newDateTime = new Date(transactionDate + 'T' + transactionTime + ':00').toISOString()
+      // Convert local date/time back to UTC for storage
+      const [year, month, day] = transactionDate.split('-').map(Number)
+      const [hours, minutes] = transactionTime.split(':').map(Number)
+      
+      // Create local date and convert to UTC ISO string
+      const localDate = new Date(year, month - 1, day, hours, minutes, 0)
+      const newDateTime = localDate.toISOString()
 
       // Call API to update transaction with recalculation
       const { data, error } = await supabase.rpc('update_transaction_with_recalculation', {
@@ -134,6 +148,13 @@ export function TransactionEditModal({
       if (error) {
         console.error('Error updating transaction:', error)
         toast.error("Error al actualizar la transacción")
+        return
+      }
+
+      // Check if the RPC returned an error
+      if (data && typeof data === 'object' && 'error' in data) {
+        console.error('RPC returned error:', data.error)
+        toast.error(`Error: ${data.error}`)
         return
       }
 
@@ -160,7 +181,8 @@ export function TransactionEditModal({
         }
       }
 
-      toast.success(`Transacción actualizada correctamente. ${data?.affected_transactions || 0} transacciones recalculadas.`)
+      console.log('Transaction update result:', data)
+      toast.success("Transacción actualizada correctamente. Balance recalculado.")
       onSuccess()
       onClose()
 
