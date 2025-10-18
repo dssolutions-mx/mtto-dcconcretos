@@ -75,10 +75,19 @@ export async function PATCH(
 
     editableFields.forEach((field) => {
       if (Object.prototype.hasOwnProperty.call(body, field)) {
-        // Basic sanitization: avoid null vs undefined confusion; allow explicit nulls to clear optional fields
-        // Special handling for quotation_urls - convert array to JSON string
-        if (field === 'quotation_urls' && Array.isArray(body[field])) {
-          updateData[field] = JSON.stringify(body[field])
+        // Ensure quotation_urls remains a JSONB array (do NOT stringify)
+        if (field === 'quotation_urls') {
+          const value = body[field]
+          if (value === null) {
+            updateData[field] = null
+          } else if (Array.isArray(value)) {
+            updateData[field] = value
+          } else if (typeof value === 'string' && value.trim().length > 0) {
+            updateData[field] = [value]
+          } else {
+            // fallback to empty array for invalid types
+            updateData[field] = []
+          }
         } else {
           updateData[field] = body[field]
         }

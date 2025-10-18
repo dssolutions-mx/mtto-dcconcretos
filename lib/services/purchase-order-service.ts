@@ -81,7 +81,8 @@ export class PurchaseOrderService {
           items: request.items,
           notes: request.notes,
           quotation_url: request.quotation_url,
-          quotation_urls: request.quotation_urls ? JSON.stringify(request.quotation_urls) : null,
+          // Store quotation_urls as JSONB array; avoid stringifying to prevent scalar JSON issues
+          quotation_urls: Array.isArray(request.quotation_urls) ? request.quotation_urls : (request.quotation_urls ? [request.quotation_urls] : null),
           purchase_date: request.purchase_date,
           max_payment_date: request.max_payment_date,
           requested_by: user_id,

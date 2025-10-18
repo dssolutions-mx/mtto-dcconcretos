@@ -111,8 +111,8 @@ export const ROLE_PERMISSIONS: Record<string, RoleConfig> = {
     name: 'Auxiliar de Compras',
     permissions: {
       assets: 'none',
-      maintenance: 'none',
-      work_orders: 'none',
+      maintenance: 'read',
+      work_orders: 'read',
       purchases: 'full',
       inventory: 'full',
       personnel: 'none',
@@ -259,6 +259,7 @@ export function getRoleDisplayName(userRole: string): string {
 export const ROUTE_PERMISSIONS: Record<string, keyof ModulePermissions> = {
   '/activos': 'assets',
   '/preventivo': 'maintenance',
+  '/incidentes': 'maintenance',
   '/ordenes': 'work_orders',
   '/compras': 'purchases',
   '/inventario': 'inventory',
