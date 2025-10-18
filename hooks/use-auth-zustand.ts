@@ -42,6 +42,14 @@ export function useAuthZustand() {
     }))
   )
 
+  // Enforce inactive users cannot access: if profile.is_active === false, sign out ASAP
+  if (typeof window !== 'undefined' && profile && (profile as any).is_active === false) {
+    // Fire and forget sign out; avoid render loops by checking loading state
+    queueMicrotask(() => {
+      try { signOut() } catch {}
+    })
+  }
+
   // Permission checking functions bound to current user
   const permissionCheckers = {
     hasModuleAccess: (module: keyof ModulePermissions) => 

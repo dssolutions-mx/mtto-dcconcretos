@@ -129,7 +129,26 @@ export async function PUT(
     }
     
     // Handle specific quotation validation error
-    if (error instanceof Error && error.message.includes('Quotation required for this purchase order before approval')) {
+    if (error instanceof Error && (
+      error.message.includes('Quotation required for this purchase order before approval') ||
+      error.message.includes('Cannot approve: quotation is required but not uploaded')
+    )) {
+      return NextResponse.json({ 
+        success: false,
+        error: 'Error de validación de cotización',
+        details: 'Esta orden requiere cotización antes de ser aprobada. Por favor, sube la cotización antes de continuar.',
+        requires_fix: true,
+        fix_type: 'quotation'
+      }, { status: 400 })
+    }
+    
+    // Also handle Supabase error object case for quotation required
+    if (
+      error && typeof error === 'object' && 'code' in error && (error as any).code === 'P0001' &&
+      'message' in error && typeof (error as any).message === 'string' &&
+      ((error as any).message.includes('Quotation required for this purchase order before approval') ||
+       (error as any).message.includes('Cannot approve: quotation is required but not uploaded'))
+    ) {
       return NextResponse.json({ 
         success: false,
         error: 'Error de validación de cotización',

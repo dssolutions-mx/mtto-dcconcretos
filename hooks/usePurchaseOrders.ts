@@ -119,7 +119,15 @@ export function usePurchaseOrders(): UsePurchaseOrdersReturn {
     })
 
     if (!response.ok) {
-      throw new Error(`API Error: ${response.status} ${response.statusText}`)
+      // Try to extract JSON error payload for better messaging
+      try {
+        const errorJson = await response.json()
+        const message = errorJson?.details || errorJson?.error || response.statusText
+        throw new Error(`API Error: ${response.status} ${message}`)
+      } catch {
+        // Fallback to status text if not JSON
+        throw new Error(`API Error: ${response.status} ${response.statusText}`)
+      }
     }
 
     return response.json()
@@ -282,8 +290,15 @@ export function usePurchaseOrders(): UsePurchaseOrdersReturn {
         return false
       }
       
-      // Handle specific quotation error
-      if (error instanceof Error && error.message.includes('Quotation required for this purchase order before approval')) {
+      // Handle specific quotation error (legacy, DB message, and API Spanish message)
+      if (
+        error instanceof Error && (
+          error.message.includes('Quotation required for this purchase order before approval') ||
+          error.message.includes('Cannot approve: quotation is required but not uploaded') ||
+          error.message.includes('Error de validación de cotización') ||
+          error.message.toLowerCase().includes('requiere cotización')
+        )
+      ) {
         toast({
           title: "Error de cotización",
           description: "Esta orden requiere cotización antes de ser aprobada. Se ha actualizado automáticamente. Intenta aprobar nuevamente.",

@@ -23,6 +23,7 @@ export async function GET(request: NextRequest) {
         total_amount, 
         actual_amount, 
         created_at, 
+        posting_date,
         plant_id,
         work_order_id, 
         status, 
@@ -46,8 +47,8 @@ export async function GET(request: NextRequest) {
           name
         )
       `)
-      .gte("created_at", startDate)
-      .lte("created_at", endDate)
+      .gte("posting_date", startDate)
+      .lte("posting_date", endDate)
       .in("status", ["approved", "validated", "received", "purchased"])
       .order('created_at', { ascending: false })
 
@@ -58,7 +59,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
-    // Filter by date using planned_date (if available) or created_at to match executive report logic
+    // Filter by date using posting_date; fallback to planned_date/created_at for safety
     // Also filter by assetId if provided
     const filteredPOs = (purchaseOrders || []).filter((po: any) => {
       // Filter by asset if specified
@@ -67,7 +68,7 @@ export async function GET(request: NextRequest) {
       }
       
       // Filter by date
-      const dateToCheck = po.work_orders?.planned_date || po.created_at
+      const dateToCheck = po.posting_date || po.work_orders?.planned_date || po.created_at
       return dateToCheck >= startDate! && dateToCheck <= endDate!
     })
 

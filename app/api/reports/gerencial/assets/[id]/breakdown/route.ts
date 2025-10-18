@@ -116,7 +116,7 @@ export async function GET(request: Request, { params }: { params: { id: string }
     // Additional expenses for the asset in the window
     const additionalExpensesPromise = supabase
       .from('additional_expenses')
-      .select('id, amount, created_at')
+      .select('id, amount, created_at, adjustment_po_id')
       .eq('asset_id', assetId)
       .gte('created_at', startISO)
       .lte('created_at', endISOInclusive)
@@ -138,7 +138,8 @@ export async function GET(request: Request, { params }: { params: { id: string }
       purchaseOrders = json.purchase_orders || []
     }
 
-    const additional_expenses = additionalExpensesRes.data || []
+    // Only show additional expenses that are pending conversion (no adjustment_po_id)
+    const additional_expenses = (additionalExpensesRes.data || []).filter((ae: any) => !ae.adjustment_po_id)
 
     return NextResponse.json({
       asset: {

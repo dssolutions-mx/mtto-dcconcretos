@@ -11,6 +11,7 @@ export async function GET(request: NextRequest) {
     const businessUnitId = searchParams.get('business_unit_id')
     const plantId = searchParams.get('plant_id')
     const includeSubordinates = searchParams.get('include_subordinates') === 'true'
+    const includeInactive = searchParams.get('include_inactive') === 'true'
 
     // Enhanced mobile session handling with retry logic
     let user = null
@@ -192,8 +193,72 @@ export async function GET(request: NextRequest) {
       }))
     })
 
+    // Normalize active users to include is_active: true for downstream logic
+    let combined = (organizationSummary || []).map((u: any) => ({ ...u, is_active: true }))
+
+    // Optionally include inactive users (who won't appear in the summary view)
+    if (includeInactive) {
+      let inactiveQuery = supabase
+        .from('profiles')
+        .select(`
+          id,
+          nombre,
+          apellido,
+          email,
+          role,
+          business_unit_id,
+          plant_id,
+          is_active,
+          business_units:business_unit_id(id, name),
+          plants:plant_id(id, name)
+        `)
+        .eq('is_active', false)
+
+      if (currentUserProfile.role === 'JEFE_UNIDAD_NEGOCIO' && currentUserProfile.business_unit_id) {
+        inactiveQuery = inactiveQuery.eq('business_unit_id', currentUserProfile.business_unit_id)
+      } else if (currentUserProfile.role === 'JEFE_PLANTA' && currentUserProfile.plant_id) {
+        inactiveQuery = inactiveQuery.eq('plant_id', currentUserProfile.plant_id)
+      }
+
+      const { data: inactiveProfiles, error: inactiveError } = await inactiveQuery
+      if (!inactiveError && Array.isArray(inactiveProfiles)) {
+        const mappedInactive = inactiveProfiles.map((p: any) => ({
+          user_id: p.id,
+          nombre: p.nombre,
+          apellido: p.apellido,
+          email: p.email,
+          role: p.role,
+          business_unit_id: p.business_unit_id,
+          business_unit_name: p.business_units?.name || null,
+          plant_id: p.plant_id,
+          plant_name: p.plants?.name || null,
+          effective_global_authorization: 0,
+          individual_limit: 0,
+          business_unit_max_limit: null,
+          is_active: false,
+        }))
+        combined = [...combined, ...mappedInactive]
+      }
+    }
+
+    // Deduplicate by user_id, prefer inactive entries when duplicates exist
+    const uniqueByUser: Record<string, any> = {}
+    for (const u of combined) {
+      const key = u.user_id
+      const existing = uniqueByUser[key]
+      if (!existing) {
+        uniqueByUser[key] = u
+      } else {
+        if (existing.is_active !== false && u.is_active === false) {
+          uniqueByUser[key] = u
+        }
+      }
+    }
+
+    const deduped = Object.values(uniqueByUser)
+
     // Group by business unit and plant for hierarchical view
-    const groupedSummary = groupByHierarchy(organizationSummary || [])
+    const groupedSummary = groupByHierarchy(deduped)
 
     return NextResponse.json({
       organization_summary: groupedSummary,

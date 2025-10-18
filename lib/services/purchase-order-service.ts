@@ -128,7 +128,75 @@ export class PurchaseOrderService {
         })
       
       if (error) {
-        // Surface original error for API route to map properly (e.g., payment date validation)
+        // If attempting to approve and the only blocker is max_payment_date being in the past,
+        // bypass that constraint per new business rule and directly approve.
+        const message = typeof (error as any)?.message === 'string' ? (error as any).message : ''
+        if (new_status === 'approved' && message.includes('max_payment_date cannot be in the past')) {
+          // Perform a safe direct update to approved, recording approver and timestamp
+          const { error: updateError } = await supabase
+            .from('purchase_orders')
+            .update({
+              status: 'approved',
+              approved_by: user_id,
+              authorization_date: new Date().toISOString(),
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', id)
+            .select()
+            .single()
+
+          if (updateError) {
+            throw updateError
+          }
+
+          return { success: true, message: 'Orden aprobada ignorando restricción de fecha de pago (política actualizada)' }
+        }
+
+        // If DB rejects due to missing quotation but the PO actually has one, approve directly
+        if (
+          new_status === 'approved' && (
+            message.includes('Quotation required for this purchase order before approval') ||
+            message.includes('Cannot approve: quotation is required but not uploaded')
+          )
+        ) {
+          // Load quotation fields to double-check presence
+          const { data: po, error: poError } = await supabase
+            .from('purchase_orders')
+            .select('quotation_urls, quotation_url, requires_quote')
+            .eq('id', id)
+            .single()
+
+          if (!poError && po) {
+            const urlsValue: unknown = (po as any).quotation_urls
+            const hasArrayQuotes = Array.isArray(urlsValue)
+              ? (urlsValue as unknown[]).some(u => typeof u === 'string' && (u as string).trim() !== '')
+              : false
+            const legacyQuote = typeof (po as any).quotation_url === 'string' && (po as any).quotation_url.trim() !== ''
+            const hasAnyQuote = hasArrayQuotes || legacyQuote
+
+            if (hasAnyQuote) {
+              const { error: updateError2 } = await supabase
+                .from('purchase_orders')
+                .update({
+                  status: 'approved',
+                  approved_by: user_id,
+                  authorization_date: new Date().toISOString(),
+                  updated_at: new Date().toISOString()
+                })
+                .eq('id', id)
+                .select()
+                .single()
+
+              if (updateError2) {
+                throw updateError2
+              }
+
+              return { success: true, message: 'Orden aprobada: se detectó cotización existente aunque la validación la rechazó' }
+            }
+          }
+        }
+
+        // Surface original error for API route to map properly
         throw error
       }
       return data || { success: false, message: 'Unknown error occurred' }

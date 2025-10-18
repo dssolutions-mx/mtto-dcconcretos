@@ -9,7 +9,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
-import { AlertDialog, AlertDialogAction, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { AlertCircle, AlertTriangle, Users, Building2, Factory, Plus, Edit, Trash2, Shield, Settings, DollarSign, UserCheck, Info } from 'lucide-react'
@@ -56,6 +56,7 @@ interface UserProfile {
   total_delegated_in: number
   position?: string
   employee_code?: string
+  is_active?: boolean
 }
 
 interface BusinessUnitLimit {
@@ -99,6 +100,9 @@ export default function AuthorizationManagementPage() {
   const [showBusinessUnitLimitDialog, setShowBusinessUnitLimitDialog] = useState(false)
   const [showValidationError, setShowValidationError] = useState(false)
   const [validationErrorMessage, setValidationErrorMessage] = useState('')
+  const [showDeactivateDialog, setShowDeactivateDialog] = useState(false)
+  const [deactivationReason, setDeactivationReason] = useState('')
+  const [deactivationTarget, setDeactivationTarget] = useState<UserProfile | null>(null)
 
   // Form states
   const [userEditForm, setUserEditForm] = useState({
@@ -207,7 +211,7 @@ export default function AuthorizationManagementPage() {
 
   const loadUsers = async () => {
     try {
-      const response = await fetch('/api/authorization/summary')
+      const response = await fetch('/api/authorization/summary?include_inactive=true')
       const data = await response.json()
       if (data.error) {
         console.error('Error loading users:', data.error)
@@ -385,6 +389,57 @@ export default function AuthorizationManagementPage() {
       }
     } catch (err) {
       toast.error('Error configurando límite')
+      console.error(err)
+    }
+  }
+
+
+  const openDeactivateDialog = (user: UserProfile) => {
+    setDeactivationTarget(user)
+    setDeactivationReason('')
+    setShowDeactivateDialog(true)
+  }
+
+  const handleConfirmDeactivate = async () => {
+    if (!deactivationTarget) return
+    try {
+      const response = await fetch('/api/users/deactivate', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: deactivationTarget.user_id, reason: deactivationReason, revoke_sessions: true })
+      })
+      const data = await response.json()
+      if (!response.ok) {
+        toast.error(data.error || 'Error al desactivar usuario')
+      } else {
+        toast.success('Usuario desactivado')
+        setShowDeactivateDialog(false)
+        setDeactivationTarget(null)
+        setDeactivationReason('')
+        loadUsers()
+      }
+    } catch (err) {
+      toast.error('Error al desactivar usuario')
+      console.error(err)
+    }
+  }
+
+  const handlePermanentDelete = async () => {
+    if (!deactivationTarget) return
+    try {
+      const response = await fetch(`/api/users/${deactivationTarget.user_id}`, { method: 'DELETE' })
+      const data = await response.json()
+      if (!response.ok) {
+        toast.error(data.error || 'Error al eliminar usuario')
+      } else {
+        toast.success('Usuario eliminado permanentemente')
+        setShowDeactivateDialog(false)
+        setDeactivationTarget(null)
+        setDeactivationReason('')
+        loadUsers()
+      }
+    } catch (err) {
+      toast.error('Error al eliminar usuario')
       console.error(err)
     }
   }
@@ -682,6 +737,7 @@ export default function AuthorizationManagementPage() {
                   <TableRow>
                     <TableHead>Usuario</TableHead>
                     <TableHead>Rol</TableHead>
+                    <TableHead>Estado</TableHead>
                     <TableHead>Límite Individual</TableHead>
                     <TableHead>Límite Unidad de Negocio</TableHead>
                     <TableHead>Autorización Efectiva</TableHead>
@@ -701,6 +757,11 @@ export default function AuthorizationManagementPage() {
                       <TableCell>
                         <Badge className={getRoleColor(user.role)} variant="secondary">
                           {getRoleDisplayName(user.role)}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant={(user as any).is_active === false ? 'secondary' : 'default'}>
+                          {(user as any).is_active === false ? 'Inactivo' : 'Activo'}
                         </Badge>
                       </TableCell>
                       <TableCell>{formatCurrency(user.individual_limit)}</TableCell>
@@ -730,6 +791,16 @@ export default function AuthorizationManagementPage() {
                         >
                           <Edit className="h-4 w-4" />
                         </Button>
+                        {user.role !== 'GERENCIA_GENERAL' && (user as any).is_active !== false && (
+                              <Button 
+                                variant="destructive" 
+                                size="sm" 
+                                className="ml-2"
+                                onClick={() => openDeactivateDialog(user)}
+                              >
+                                Desactivar
+                              </Button>
+                            )}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -874,6 +945,55 @@ export default function AuthorizationManagementPage() {
           <AlertDialogFooter>
             <AlertDialogAction onClick={() => setShowValidationError(false)}>
               Entendido
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Deactivate/Delete User Dialog */}
+      <AlertDialog open={showDeactivateDialog} onOpenChange={setShowDeactivateDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-red-600" />
+              {profile?.role === 'GERENCIA_GENERAL' ? 'Desactivar o Eliminar Usuario' : 'Desactivar Usuario'}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {deactivationTarget ? (
+                <div className="space-y-3">
+                  <div>
+                    Estás a punto de {profile?.role === 'GERENCIA_GENERAL' ? 'desactivar o eliminar permanentemente' : 'desactivar'} a
+                    {' '}<span className="font-semibold">{deactivationTarget.nombre} {deactivationTarget.apellido}</span>.
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Motivo (opcional)</Label>
+                    <Textarea
+                      value={deactivationReason}
+                      onChange={(e) => setDeactivationReason(e.target.value)}
+                      placeholder="Motivo de desactivación"
+                    />
+                  </div>
+                  <div className="text-sm text-muted-foreground">
+                    - Un usuario desactivado no podrá acceder al sistema ni aparecerá en credenciales.
+                    {profile?.role === 'GERENCIA_GENERAL' && (
+                      <>
+                        <br/>- La eliminación permanente borra al usuario de autenticación y su perfil; esta acción no se puede deshacer.
+                      </>
+                    )}
+                  </div>
+                </div>
+              ) : null}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            {profile?.role === 'GERENCIA_GENERAL' && (
+              <AlertDialogAction className="bg-red-600 hover:bg-red-700" onClick={handlePermanentDelete}>
+                Eliminar Permanentemente
+              </AlertDialogAction>
+            )}
+            <AlertDialogAction onClick={handleConfirmDeactivate}>
+              Desactivar
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

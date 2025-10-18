@@ -62,12 +62,14 @@ export function AssetDrilldownDialog({ open, onOpenChange, asset, startDate, end
 
   const maintenanceKPIs = {
     totalPOs: data?.maintenance?.purchase_orders?.length || 0,
-    totalPOCost: (data?.maintenance?.purchase_orders || []).reduce((sum: number, po: any) => sum + Number(po.final_amount || 0), 0),
+    // Prefer normalized amount field from executive API, fallback to final_amount/total_amount
+    totalPOCost: (data?.maintenance?.purchase_orders || []).reduce((sum: number, po: any) => sum + Number((po as any).amount ?? (po as any).final_amount ?? (po as any).total_amount ?? 0), 0),
     totalExpenses: data?.maintenance?.additional_expenses?.length || 0,
     totalExpensesCost: (data?.maintenance?.additional_expenses || []).reduce((sum: number, ae: any) => sum + Number(ae.amount || 0), 0),
     totalCost: 0
   }
-  maintenanceKPIs.totalCost = maintenanceKPIs.totalPOCost + maintenanceKPIs.totalExpensesCost
+  // Total cost for maintenance is tracked exclusively via Purchase Orders
+  maintenanceKPIs.totalCost = maintenanceKPIs.totalPOCost
 
   useEffect(() => {
     const load = async () => {
@@ -339,6 +341,7 @@ export function AssetDrilldownDialog({ open, onOpenChange, asset, startDate, end
                       <Package className="h-8 w-8 text-muted-foreground opacity-50" />
                     </div>
                     <p className="text-xs text-muted-foreground mt-1">{formatCurrency(maintenanceKPIs.totalExpensesCost)}</p>
+                    <p className="text-[10px] text-muted-foreground mt-2">Sólo se muestran gastos pendientes de convertir a OC. Los costos oficiales se registran por OC.</p>
                   </CardContent>
                 </Card>
                 

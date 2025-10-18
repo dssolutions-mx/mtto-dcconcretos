@@ -276,6 +276,7 @@ export function EmployeeCredentialsManager() {
           )
         `)
         .eq('status', 'active')
+        .eq('is_active', true)
 
       // Apply RLS filters based on user's role and scope
       if (profile?.role !== 'GERENCIA_GENERAL') {

@@ -146,7 +146,7 @@ export async function POST(req: NextRequest) {
     const { data: purchaseOrders } = await supabase
       .from('purchase_orders')
       .select(`
-        id, order_id, total_amount, actual_amount, created_at, plant_id, work_order_id, status
+        id, order_id, total_amount, actual_amount, created_at, posting_date, plant_id, work_order_id, status
       `)
       .in('status', ['approved', 'validated', 'received', 'purchased'])
 
@@ -170,16 +170,14 @@ export async function POST(req: NextRequest) {
 
     // Filter purchase orders by date range (inclusive start, exclusive end)
     const filteredPurchaseOrders = purchaseOrders?.filter(po => {
-      let dateToCheckStr: string
-      if (po.work_order_id) {
+      // Use posting_date for accounting allocation when available
+      const preferredDate = (po as any).posting_date || po.created_at
+      let dateToCheckStr: string = preferredDate
+      if (!preferredDate && po.work_order_id) {
         const workOrder = workOrdersMap.get(po.work_order_id)
         if (workOrder?.planned_date) {
           dateToCheckStr = workOrder.planned_date
-        } else {
-          dateToCheckStr = po.created_at
         }
-      } else {
-        dateToCheckStr = po.created_at
       }
       const ts = new Date(dateToCheckStr).getTime()
       return ts >= dateFromStart.getTime() && ts < dateToExclusive.getTime()
@@ -189,10 +187,11 @@ export async function POST(req: NextRequest) {
     const assetIds = assets.map(a => a.id)
     const { data: additionalExpenses } = await supabase
       .from('additional_expenses')
-      .select('id, asset_id, amount, created_at')
+      .select('id, asset_id, amount, created_at, adjustment_po_id')
       .gte('created_at', dateFrom)
       .lt('created_at', dateToExclusiveStr)
       .in('asset_id', assetIds)
+      .is('adjustment_po_id', null)
 
     // Create plant code to maintenance plant ID map
     const plantCodeToIdMap = new Map<string, string>()
@@ -410,15 +409,8 @@ export async function POST(req: NextRequest) {
       }
     })
 
-    // Add additional expenses to corrective costs
-    ;(additionalExpenses || []).forEach(ae => {
-      const asset = assetMap.get(ae.asset_id)
-      if (asset) {
-        const amount = parseFloat(ae.amount || '0')
-        asset.maintenance_cost += amount
-        asset.corrective_cost += amount
-      }
-    })
+    // Do not add additional_expenses directly to costs in gerencial report.
+    // Costs are tracked exclusively via purchase orders (including adjustments).
 
     // Aggregate sales by asset using name mapping and plant matching
     let salesMatched = 0

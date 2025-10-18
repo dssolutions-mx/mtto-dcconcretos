@@ -52,13 +52,50 @@ export async function POST(request: Request) {
     // Parse request data
     const data = await request.json()
     const { 
-      workOrderId,
+      workOrderId: bodyWorkOrderId,
       originalPurchaseOrderId,
       additionalExpenses,
+      additionalExpenseIds,
       supplier
     } = data
 
-    if (!workOrderId || !additionalExpenses || additionalExpenses.length === 0) {
+    // Normalize additional expenses input: accept either full objects or IDs
+    let workOrderId = bodyWorkOrderId as string | undefined
+    let normalizedExpenses: Array<{ id?: string, description: string, justification?: string, amount: number }> = []
+
+    if (Array.isArray(additionalExpenses) && additionalExpenses.length > 0) {
+      normalizedExpenses = additionalExpenses.map((e: any) => ({
+        id: e.id,
+        description: e.description,
+        justification: e.justification,
+        amount: parseFloat(e.amount) || 0
+      }))
+    } else if (Array.isArray(additionalExpenseIds) && additionalExpenseIds.length > 0) {
+      const { data: aeRows, error: aeErr } = await supabase
+        .from("additional_expenses")
+        .select("id, description, justification, amount, work_order_id, adjustment_po_id")
+        .in("id", additionalExpenseIds)
+
+      if (aeErr) {
+        return NextResponse.json({ error: "No se pudieron obtener los gastos adicionales" }, { status: 500 })
+      }
+
+      // Ensure none already converted
+      const alreadyLinked = (aeRows || []).filter(r => r.adjustment_po_id)
+      if (alreadyLinked.length > 0) {
+        return NextResponse.json({ error: "Algunos gastos ya están convertidos a OC" }, { status: 400 })
+      }
+
+      // Ensure a single work order
+      const woIds = Array.from(new Set((aeRows || []).map(r => r.work_order_id).filter(Boolean)))
+      if (woIds.length !== 1 && !workOrderId) {
+        return NextResponse.json({ error: "Los gastos deben pertenecer a una sola OT" }, { status: 400 })
+      }
+      workOrderId = workOrderId || (woIds[0] as string)
+      normalizedExpenses = (aeRows || []).map(r => ({ id: r.id, description: r.description || 'Gasto adicional', justification: r.justification || '', amount: parseFloat(r.amount as any) || 0 }))
+    }
+
+    if (!workOrderId || normalizedExpenses.length === 0) {
       return NextResponse.json(
         { error: "Datos incompletos para generar orden de compra de ajuste" },
         { status: 400 }
@@ -121,7 +158,7 @@ export async function POST(request: Request) {
     const orderId = `AJ-${orderNumber.toString().padStart(4, '0')}`
 
     // Format expenses as items for the purchase order
-    const poItems = additionalExpenses.map((expense: any) => ({
+    const poItems = normalizedExpenses.map((expense: any) => ({
       name: expense.description,
       description: `Gasto adicional: ${expense.description}`,
       justification: expense.justification,
@@ -163,15 +200,18 @@ export async function POST(request: Request) {
       )
     }
 
-    // Update additional expenses with the new purchase order ID
-    for (const expense of additionalExpenses) {
+    // Auto-approve and update additional expenses with the new purchase order ID
+    for (const expense of normalizedExpenses) {
       await supabase
         .from("additional_expenses")
         .update({ 
+          status: 'convertido_po',
+          approved_by: sessionData.session.user.id,
+          approved_at: new Date().toISOString(),
           adjustment_po_id: newPO.id,
           updated_at: new Date().toISOString()
         })
-        .eq("id", expense.id)
+        .eq("id", expense.id as string)
     }
 
     return NextResponse.json({
