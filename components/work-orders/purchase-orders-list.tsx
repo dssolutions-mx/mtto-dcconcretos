@@ -522,11 +522,6 @@ export function PurchaseOrdersList() {
     loadOrders()
   }, [])
 
-  // Use mobile-optimized component for mobile devices  
-  if (isMobile) {
-    return <PurchaseOrdersListMobile />
-  }
-
   // Build asset options from loaded orders (unique assets only)
   const assetOptions = useMemo(() => {
     const map: Record<string, { id: string; label: string }> = {}
@@ -541,6 +536,11 @@ export function PurchaseOrdersList() {
     })
     return Object.values(map).sort((a, b) => a.label.localeCompare(b.label))
   }, [orders])
+
+  // Use mobile-optimized component for mobile devices
+  if (isMobile) {
+    return <PurchaseOrdersListMobile />
+  }
 
   // Calculate summary metrics
   const summaryMetrics = {
