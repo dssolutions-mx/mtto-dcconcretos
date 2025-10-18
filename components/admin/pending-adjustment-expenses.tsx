@@ -1,4 +1,4 @@
-import 'use client'
+'use client'
 
 import { useMemo, useState } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
