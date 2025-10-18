@@ -824,7 +824,7 @@ function DashboardContent() {
 
             return (
               <Card 
-                key={card.module} 
+                key={card.href} 
                 className={cn(
                   "relative overflow-hidden transition-all",
                   hasAccess ? 'cursor-pointer hover:shadow-md' : 'opacity-50',
