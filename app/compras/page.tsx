@@ -125,16 +125,16 @@ export default function PurchaseOrdersPage() {
   
   return (
     <DashboardShell>
-      <div className="flex justify-between items-center mb-6">
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-6">
         <DashboardHeader
           heading="Órdenes de Compra"
           text="Gestiona las órdenes de compra generadas a partir de órdenes de trabajo."
         />
-        <div className="flex space-x-2">
+        <div className="flex flex-col sm:flex-row sm:flex-wrap gap-2 w-full md:w-auto">
           {/* ✅ Solo mostrar botón de comprobantes si tiene acceso de lectura */}
           {profile && hasCreateAccess('purchases') && (
             <Link href="/compras/comprobantes">
-              <Button variant="outline">
+              <Button variant="outline" className="w-full sm:w-auto">
                 <Receipt className="mr-2 h-4 w-4" />
                 Ver Comprobantes
               </Button>
@@ -144,7 +144,7 @@ export default function PurchaseOrdersPage() {
           {/* ✅ NUEVO: Botón de Cuentas por Pagar para administradores */}
           {profile && (profile.role === 'GERENCIA_GENERAL' || profile.role === 'AREA_ADMINISTRATIVA') && (
             <Link href="/compras/cuentas-por-pagar">
-              <Button variant="outline" className="bg-orange-50 border-orange-200 text-orange-700 hover:bg-orange-100">
+              <Button variant="outline" className="w-full sm:w-auto bg-orange-50 border-orange-200 text-orange-700 hover:bg-orange-100">
                 <DollarSign className="mr-2 h-4 w-4" />
                 Cuentas por Pagar
               </Button>
@@ -154,7 +154,7 @@ export default function PurchaseOrdersPage() {
           {/* ✅ NUEVO SISTEMA: Solo mostrar si puede crear órdenes */}
           {canCreateOrders && (
             <Link href="/compras/crear-tipificada">
-              <Button>
+              <Button className="w-full sm:w-auto">
                 <Plus className="mr-2 h-4 w-4" />
                 Nueva Orden Tipificada
               </Button>
