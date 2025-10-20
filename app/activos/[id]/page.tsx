@@ -85,6 +85,8 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
   const [pendingChecklistsLoading, setPendingChecklistsLoading] = useState(true);
   const [workOrders, setWorkOrders] = useState<any[]>([]);
   const [workOrdersLoading, setWorkOrdersLoading] = useState(true);
+  const [poByWorkOrder, setPoByWorkOrder] = useState<Record<string, any>>({});
+  const [poLoading, setPoLoading] = useState<boolean>(false);
   // Aggregated maintenance history when part of a composite
   const [combinedMaintenanceHistory, setCombinedMaintenanceHistory] = useState<any[] | null>(null);
   // Composite context
@@ -564,6 +566,46 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
     }
   }, [assetId])
   
+  // Fetch Purchase Orders for maintenance history work orders (prefer for cost display)
+  useEffect(() => {
+    const fetchPurchaseOrdersForHistory = async () => {
+      try {
+        setPoLoading(true)
+        const supabase = createClient()
+        const effectiveHistory = (combinedMaintenanceHistory ?? maintenanceHistory) || []
+        // Limit to recent set to avoid heavy queries
+        const recent = effectiveHistory.slice(0, 20)
+        const workOrderIds = Array.from(new Set(recent.map((m: any) => m.work_order_id).filter(Boolean)))
+        if (workOrderIds.length === 0) {
+          setPoByWorkOrder({})
+          return
+        }
+        const { data, error } = await supabase
+          .from('purchase_orders')
+          .select('id, work_order_id, total_amount, adjusted_total_amount, actual_amount, status')
+          .in('work_order_id', workOrderIds as string[])
+        if (error) {
+          console.error('Error fetching purchase orders for history:', error)
+          setPoByWorkOrder({})
+          return
+        }
+        const map: Record<string, any> = {}
+        ;(data || []).forEach((po: any) => {
+          if (po?.work_order_id) {
+            map[po.work_order_id] = po
+          }
+        })
+        setPoByWorkOrder(map)
+      } catch (e) {
+        console.error('Unexpected error fetching purchase orders for history:', e)
+        setPoByWorkOrder({})
+      } finally {
+        setPoLoading(false)
+      }
+    }
+    fetchPurchaseOrdersForHistory()
+  }, [assetId, combinedMaintenanceHistory, maintenanceHistory])
+  
   // Add a new effect to fetch pending checklists
   useEffect(() => {
     if (assetId) {
@@ -691,6 +733,33 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
   const formatDate = (dateString: string | null) => {
     if (!dateString) return "No disponible";
     return format(new Date(dateString), "dd 'de' MMMM 'de' yyyy", { locale: es });
+  }
+
+  const formatCurrency = (value: number | string | null | undefined) => {
+    const num = typeof value === 'string' ? parseFloat(value) : (value ?? 0);
+    if (!num || isNaN(Number(num))) return null;
+    try {
+      return new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'USD', maximumFractionDigits: 2 }).format(Number(num));
+    } catch {
+      return `$${Number(num).toFixed(2)}`;
+    }
+  }
+
+  const getIntervalLabelForMaintenance = (maintenance: any) => {
+    try {
+      const planId = maintenance?.maintenance_plan_id;
+      if (!planId) return null;
+      const interval = (maintenanceIntervals || []).find((i: any) => i.id === planId);
+      if (!interval) return null;
+      const unit = interval.type === 'kilometers' ? 'km' : 'h';
+      const base = interval.description || interval.name || '';
+      if (base) return base;
+      const value = Number(interval.interval_value) || 0;
+      if (value > 0) return `${value}${unit}`;
+      return null;
+    } catch {
+      return null;
+    }
   }
 
   return (
@@ -1160,6 +1229,26 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
                                   {maintenance.type}
                                 </Badge>
                                 <h4 className="font-medium text-sm">{formatDate(maintenance.date)}</h4>
+                                <div className="mt-1 text-xs text-muted-foreground flex flex-wrap gap-3">
+                                  {(() => {
+                                    const intervalLabel = getIntervalLabelForMaintenance(maintenance);
+                                    return intervalLabel ? (
+                                      <span>
+                                        Intervalo: <span className="font-medium">{intervalLabel}</span>
+                                      </span>
+                                    ) : null;
+                                  })()}
+                                  {(() => {
+                                    const po = poByWorkOrder?.[maintenance.work_order_id]
+                                    const poCost = po?.adjusted_total_amount ?? po?.total_amount ?? po?.actual_amount ?? null
+                                    const formatted = formatCurrency(poCost)
+                                    return formatted ? (
+                                      <span>
+                                        Costo: <span className="font-medium">{formatted}</span>
+                                      </span>
+                                    ) : null;
+                                  })()}
+                                </div>
                                 {maintenance.assets?.asset_id && (
                                   <div className="mt-1 text-xs text-muted-foreground">
                                     Activo: <span className="font-medium">{maintenance.assets.asset_id}</span>

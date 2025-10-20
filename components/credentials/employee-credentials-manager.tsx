@@ -97,6 +97,7 @@ export function EmployeeCredentialsManager() {
   const [offices, setOffices] = useState<Office[]>([])
   const [isOfficeModalOpen, setIsOfficeModalOpen] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const [photoFilter, setPhotoFilter] = useState<'all' | 'with' | 'without'>('all')
   
   const { profile, hasModuleAccess, hasWriteAccess } = useAuthZustand()
   const supabase = createClient()
@@ -119,18 +120,22 @@ export function EmployeeCredentialsManager() {
   }, [canManageCredentials])
 
   useEffect(() => {
+    const searchLower = searchTerm.toLowerCase()
     const filtered = employees.filter(emp => {
-      const searchLower = searchTerm.toLowerCase()
-      return (
+      const matchesSearch = (
         emp.nombre?.toLowerCase().includes(searchLower) ||
         emp.apellido?.toLowerCase().includes(searchLower) ||
         emp.employee_code?.toLowerCase().includes(searchLower) ||
         emp.position?.toLowerCase().includes(searchLower) ||
         emp.email?.toLowerCase().includes(searchLower)
       )
+      if (!matchesSearch) return false
+      if (photoFilter === 'with') return !!emp.avatar_url
+      if (photoFilter === 'without') return !emp.avatar_url
+      return true
     })
     setFilteredEmployees(filtered)
-  }, [searchTerm, employees])
+  }, [searchTerm, employees, photoFilter])
 
   // Simple in-memory cache for signed URLs
   const signedUrlCache = useRef<Map<string, { url: string; expiresAt: number }>>(new Map())
@@ -708,6 +713,22 @@ export function EmployeeCredentialsManager() {
                 className="pl-10"
               />
             </div>
+            <div className="flex items-center gap-2">
+              <Label className="text-sm text-gray-600">Foto</Label>
+              <Select
+                value={photoFilter}
+                onValueChange={(value) => setPhotoFilter(value as 'all' | 'with' | 'without')}
+              >
+                <SelectTrigger className="w-[160px]">
+                  <SelectValue placeholder="Filtro de foto" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todas</SelectItem>
+                  <SelectItem value="with">Con foto</SelectItem>
+                  <SelectItem value="without">Sin foto</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
             <div className="flex gap-2">
               <Button
                 onClick={() => handlePrintCredentials()}
@@ -830,6 +851,13 @@ export function EmployeeCredentialsManager() {
                         <div>
                           <p className="font-medium">{employee.nombre} {employee.apellido}</p>
                           <p className="text-sm text-gray-500">{employee.email}</p>
+                          {!employee.avatar_url && (
+                            <div className="mt-1">
+                              <Badge variant="outline" className="text-xs text-red-700 border-red-300">
+                                Sin foto
+                              </Badge>
+                            </div>
+                          )}
                         </div>
                       </div>
                     </TableCell>
