@@ -72,17 +72,19 @@ export function WorkflowStatusDisplay({
   const [isUploading, setIsUploading] = useState(false)
   const [actualAmount, setActualAmount] = useState<string>("")
   const [receiptUrl, setReceiptUrl] = useState<string | null>(null)
-  const [purchaseOrderAmount, setPurchaseOrderAmount] = useState<number>(0)
   const [effectiveAuthLimit, setEffectiveAuthLimit] = useState<number>(0)
   const [isLoadingAuth, setIsLoadingAuth] = useState(true)
   const [showPaymentDateFix, setShowPaymentDateFix] = useState(false)
+  
+  // Get PO amount from workflowStatus (always fresh)
+  const purchaseOrderAmount = parseFloat(workflowStatus?.purchase_order?.total_amount || '0')
 
 
   // Load workflow status on mount and fetch existing receipt if any
   useEffect(() => {
     loadWorkflowStatus(purchaseOrderId)
     
-    // Load purchase order basic data
+    // Load purchase order basic data for receipt and actual amount (amount now comes from workflowStatus)
     const loadPurchaseOrderData = async () => {
       try {
         // Load purchase order basic data
@@ -91,9 +93,6 @@ export function WorkflowStatusDisplay({
           const orderData = await orderResponse.json()
           if (orderData.actual_amount) {
             setActualAmount(orderData.actual_amount.toString())
-          }
-          if (orderData.total_amount) {
-            setPurchaseOrderAmount(parseFloat(orderData.total_amount))
           }
         }
 
@@ -603,6 +602,16 @@ export function WorkflowStatusDisplay({
       if (fileInput) fileInput.value = ''
       // Update receipt URL state
       if (fileUrl) setReceiptUrl(fileUrl)
+      
+      // Show success toast with appropriate message
+      if (newStatus === 'approved') {
+        // Check if response indicates escalation
+        toast({
+          title: "Autorización Registrada",
+          description: "La orden ha sido procesada correctamente.",
+        })
+      }
+      
       // Reload workflow status
       await loadWorkflowStatus(purchaseOrderId)
       if (onStatusChange) {
@@ -860,7 +869,7 @@ export function WorkflowStatusDisplay({
         </CardContent>
       </Card>
 
-      {/* Authorization Check for Approval Actions */}
+      {/* Authorization Check for Approval Actions - Now shows 2-step approval status */}
       {currentStatus === 'pending_approval' && purchaseOrderAmount > 0 && (
         <Card className="border-yellow-200 bg-yellow-50">
           <CardHeader>
@@ -869,33 +878,94 @@ export function WorkflowStatusDisplay({
               Información de Autorización
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-medium">Monto a Autorizar:</span>
-              <span className="text-lg font-bold">{formatCurrency(purchaseOrderAmount)}</span>
-            </div>
-            {profile && (
-              <>
+          <CardContent className="space-y-4">
+            {/* Amount and Limit */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium">Monto a Autorizar:</span>
+                <span className="text-lg font-bold">{formatCurrency(purchaseOrderAmount)}</span>
+              </div>
+              {profile && (
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-medium">Tu Límite de Autorización:</span>
-                                      <span className="text-lg font-bold text-green-600">
-                      {isLoadingAuth ? 'Cargando...' : (
-                        effectiveAuthLimit === Number.MAX_SAFE_INTEGER
-                          ? 'Sin límite' 
-                          : formatCurrency(effectiveAuthLimit)
-                      )}
-                    </span>
+                  <span className="text-lg font-bold text-green-600">
+                    {isLoadingAuth ? 'Cargando...' : (
+                      effectiveAuthLimit === Number.MAX_SAFE_INTEGER
+                        ? 'Sin límite' 
+                        : formatCurrency(effectiveAuthLimit)
+                    )}
+                  </span>
                 </div>
-                {!isLoadingAuth && effectiveAuthLimit > 0 && purchaseOrderAmount > effectiveAuthLimit && (
-                  <Alert className="border-red-200 bg-red-50">
-                    <AlertTriangle className="h-4 w-4 text-red-600" />
-                    <AlertDescription className="text-red-700">
-                      <strong>No puedes autorizar esta orden.</strong> El monto excede tu límite de autorización.
-                      Esta orden debe ser aprobada por un superior con mayor límite.
-                    </AlertDescription>
-                  </Alert>
+              )}
+            </div>
+            
+            {/* 2-Step Approval Status */}
+            {purchaseOrderAmount > 5000 && (
+              <div className="border-t pt-4 space-y-3">
+                <div className="flex items-center gap-2 text-sm font-medium">
+                  <Info className="h-4 w-4" />
+                  <span>Proceso de Aprobación en 2 Pasos</span>
+                </div>
+                
+                <div className="space-y-2 ml-6">
+                  {/* Step 1: BU Manager */}
+                  <div className="flex items-start gap-3">
+                    <div className={`mt-0.5 h-5 w-5 rounded-full flex items-center justify-center text-xs font-bold ${
+                      workflowStatus?.purchase_order?.authorized_by 
+                        ? 'bg-green-100 text-green-700' 
+                        : 'bg-gray-100 text-gray-600'
+                    }`}>
+                      {workflowStatus?.purchase_order?.authorized_by ? '✓' : '1'}
+                    </div>
+                    <div className="flex-1">
+                      <div className="text-sm font-medium">Jefe de Unidad de Negocio</div>
+                      <div className="text-xs text-muted-foreground">
+                        {workflowStatus?.purchase_order?.authorized_by 
+                          ? 'Aprobación completada' 
+                          : 'Debe aprobar primero esta orden'}
+                      </div>
+                    </div>
+                    <Badge variant={workflowStatus?.purchase_order?.authorized_by ? "default" : "outline"} className="text-xs">
+                      {workflowStatus?.purchase_order?.authorized_by ? 'Completado' : 'Pendiente'}
+                    </Badge>
+                  </div>
+                  
+                  {/* Step 2: GM */}
+                  <div className="flex items-start gap-3">
+                    <div className={`mt-0.5 h-5 w-5 rounded-full flex items-center justify-center text-xs font-bold ${
+                      workflowStatus?.purchase_order?.authorized_by 
+                        ? 'bg-blue-100 text-blue-700' 
+                        : 'bg-gray-100 text-gray-400'
+                    }`}>
+                      2
+                    </div>
+                    <div className="flex-1">
+                      <div className="text-sm font-medium">Gerencia General</div>
+                      <div className="text-xs text-muted-foreground">
+                        {workflowStatus?.purchase_order?.authorized_by 
+                          ? 'Listo para aprobación final' 
+                          : 'Aprobará después del Paso 1'}
+                      </div>
+                    </div>
+                    <Badge variant="outline" className="text-xs">
+                      {workflowStatus?.purchase_order?.authorized_by ? 'En curso' : 'Bloqueado'}
+                    </Badge>
+                  </div>
+                </div>
+                
+                {/* GM Notice */}
+                {profile?.role === 'GERENCIA_GENERAL' && !workflowStatus?.purchase_order?.authorized_by && (
+                  <div className="mt-3 p-3 bg-white rounded-md border text-sm">
+                    <div className="flex items-start gap-2">
+                      <Info className="h-4 w-4 mt-0.5 text-blue-600 flex-shrink-0" />
+                      <div className="text-muted-foreground">
+                        Como <strong>Gerente General</strong>, puedes aprobar esta orden directamente (bypass), 
+                        pero el proceso recomendado es esperar la aprobación del Jefe de Unidad primero.
+                      </div>
+                    </div>
+                  </div>
                 )}
-              </>
+              </div>
             )}
           </CardContent>
         </Card>

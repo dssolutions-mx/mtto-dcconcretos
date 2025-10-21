@@ -3,6 +3,8 @@
 import type { Metadata } from "next"
 import Link from "next/link"
 import { Suspense, useState, useEffect } from "react"
+import { useSearchParams } from "next/navigation"
+import { useToast } from "@/hooks/use-toast"
 import { PurchaseOrdersList } from "@/components/work-orders/purchase-orders-list"
 import { DashboardHeader } from "@/components/dashboard/dashboard-header"
 import { DashboardShell } from "@/components/dashboard/dashboard-shell"
@@ -31,9 +33,19 @@ function PurchaseOrdersListFallback() {
 }
 
 export default function PurchaseOrdersPage() {
+  return (
+    <Suspense fallback={<div className="p-6">Cargando órdenes de compra...</div>}>
+      <PurchaseOrdersPageContent />
+    </Suspense>
+  )
+}
+
+function PurchaseOrdersPageContent() {
   const { profile, hasCreateAccess, authorizationLimit, refreshProfile } = useAuthZustand()
   const [effectiveAuthLimit, setEffectiveAuthLimit] = useState<number>(0)
   const [isLoadingAuth, setIsLoadingAuth] = useState(true)
+  const searchParams = useSearchParams()
+  const { toast } = useToast()
 
   // Load effective authorization limit from the same source as authorization page
   useEffect(() => {
@@ -122,6 +134,22 @@ export default function PurchaseOrdersPage() {
   }
   
   const userCapabilities = getUserCapabilities()
+  
+  // Feedback banner/toast for direct actions from email links
+  useEffect(() => {
+    const action = searchParams.get('action')
+    const poId = searchParams.get('po')
+    if (!action) return
+    if (action === 'approved') {
+      toast({ title: 'Orden aprobada', description: `La orden de compra fue aprobada correctamente${poId ? ` (${poId})` : ''}.` })
+    } else if (action === 'rejected') {
+      toast({ title: 'Orden rechazada', description: `La orden de compra fue rechazada${poId ? ` (${poId})` : ''}.`, variant: 'destructive' })
+    } else if (action === 'error') {
+      toast({ title: 'Error en acción', description: 'No fue posible procesar la acción solicitada.', variant: 'destructive' })
+    }
+    // We do not mutate URL here to avoid extra rerenders; navigation can clear params if desired
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
   
   return (
     <DashboardShell>

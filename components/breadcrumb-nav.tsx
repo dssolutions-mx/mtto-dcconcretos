@@ -20,6 +20,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Home, ChevronLeft, ChevronDown } from "lucide-react"
+import { useBreadcrumbStore } from "@/hooks/use-breadcrumbs"
 
 interface BreadcrumbNavProps {
   className?: string
@@ -34,6 +35,7 @@ interface BreadcrumbItemData {
 export function BreadcrumbNav({ className }: BreadcrumbNavProps) {
   const pathname = usePathname()
   const router = useRouter()
+  const customItems = useBreadcrumbStore((state) => state.items)
 
   // Skip breadcrumbs for auth pages
   const authChromeLessPaths = [
@@ -52,6 +54,10 @@ export function BreadcrumbNav({ className }: BreadcrumbNavProps) {
   
   // Build breadcrumb items based on current navigation structure
   const getBreadcrumbItems = (): BreadcrumbItemData[] => {
+    if (customItems.length > 0) {
+      return customItems
+    }
+
     const items: BreadcrumbItemData[] = [
       {
         label: "Dashboard",

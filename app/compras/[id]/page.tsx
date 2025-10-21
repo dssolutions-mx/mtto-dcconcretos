@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
 import { ArrowLeft, FileCheck, Package, ShoppingCart, Truck, FileText, Download, ExternalLink, Store, Wrench, Building2, Receipt, AlertCircle, DollarSign, Calendar, User } from "lucide-react"
+import { Alert, AlertDescription } from "@/components/ui/alert"
 import Link from "next/link"
 import { notFound } from "next/navigation"
 import { format } from "date-fns"
@@ -300,6 +301,21 @@ async function PurchaseOrderDetailsContent({ id }: { id: string }) {
 
   return (
     <div className="container mx-auto px-6 py-4 md:py-8">
+      {/* Escalation/Approval banners */}
+      {order?.status === 'pending_approval' && order?.authorized_by && (
+        <Alert className="mb-6 border-blue-200 bg-blue-50">
+          <AlertDescription>
+            Esta orden ya fue autorizada por el Jefe de Unidad y se ha escalado a Gerencia General para aprobación final.
+          </AlertDescription>
+        </Alert>
+      )}
+      {order?.status === 'approved' && (
+        <Alert className="mb-6 border-green-200 bg-green-50">
+          <AlertDescription>
+            Orden aprobada. Puede proceder con la compra o el siguiente paso del flujo.
+          </AlertDescription>
+        </Alert>
+      )}
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold">Orden de Compra: {order.order_id}</h1>

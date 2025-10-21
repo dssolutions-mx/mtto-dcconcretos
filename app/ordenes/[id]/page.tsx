@@ -1,6 +1,8 @@
 import type { Metadata } from "next"
 import { DashboardShell } from "@/components/dashboard/dashboard-shell"
 import { ServiceOrderDetails } from "@/components/work-orders/service-order-details"
+import { EntityRelations } from "@/components/navigation/entity-relations"
+import { BreadcrumbSetter } from "@/components/navigation/breadcrumb-setter"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
@@ -13,7 +15,7 @@ import Link from "next/link"
 import { cn } from "@/lib/utils"
 import { 
   ArrowLeft, ShoppingCart, CalendarCheck, CheckCircle, Edit, Clock, 
-  User, Wrench, Plus, CalendarDays, ChevronDown, Camera, FileText 
+  User, Wrench, Plus, CalendarDays, ChevronDown, Camera, FileText, ClipboardCheck 
 } from "lucide-react"
 import { 
   MaintenanceType, 
@@ -115,7 +117,7 @@ export default async function WorkOrderDetailsPage({
   const { id } = await params;
   
   const supabase = await createClient();
-  
+
   // Fetch work order with related data
   const { data: workOrder, error } = await supabase
     .from("work_orders")
@@ -165,6 +167,35 @@ export default async function WorkOrderDetailsPage({
       maintenanceHistory = historyData
     }
   }
+
+  // Compute preventive cycle context (best-effort) using cyclic-maintenance-logic
+  let cycleContext: { cycle?: number; intervalHours?: number; status?: string; estimated?: boolean } | null = null
+  try {
+    const maxIntervalRes = await supabase
+      .from("maintenance_intervals")
+      .select("interval_value")
+      .eq("model_id", extendedWorkOrder.asset?.model_id || null)
+    const intervals = (maxIntervalRes.data || []) as Array<{ interval_value: number }>
+    if (intervals.length > 0 && (extendedWorkOrder.asset?.current_hours || 0) >= 0) {
+      const maxInterval = Math.max(...intervals.map(i => Number(i.interval_value) || 0)) || 0
+      if (maxInterval > 0) {
+        const currentHours = Number(extendedWorkOrder.asset?.current_hours) || 0
+        const cycle = Math.floor(currentHours / maxInterval) + 1
+        let intervalHours: number | undefined
+        // Derive interval from maintenance_history when available
+        if (maintenanceHistory?.maintenance_plan_id) {
+          const plan = await supabase.from("maintenance_intervals").select("interval_value").eq("id", maintenanceHistory.maintenance_plan_id).maybeSingle()
+          intervalHours = Number(plan.data?.interval_value) || undefined
+        }
+        cycleContext = {
+          cycle,
+          intervalHours,
+          status: maintenanceHistory ? "completed" : undefined,
+          estimated: !maintenanceHistory,
+        }
+      }
+    }
+  } catch {}
   
   // Fetch technician and requester details
   const profiles: Record<string, Profile> = {}
@@ -194,6 +225,13 @@ export default async function WorkOrderDetailsPage({
       profiles[extendedWorkOrder.assigned_to] = technician
     }
   }
+
+  // Fetch related service order (if any) to enable bidirectional navigation
+  const { data: relatedServiceOrder } = await supabase
+    .from("service_orders")
+    .select("id")
+    .eq("work_order_id", id)
+    .maybeSingle()
   
   // Format dates
   const formatDate = (dateString: string | null) => {
@@ -318,8 +356,18 @@ export default async function WorkOrderDetailsPage({
     hasAdjustmentPO = true;
   }
   
+  const breadcrumbItems = [
+    { label: "Dashboard", href: "/dashboard" },
+    { label: "Órdenes de Trabajo", href: "/ordenes" },
+    extendedWorkOrder.asset?.id
+      ? { label: extendedWorkOrder.asset.asset_id || extendedWorkOrder.asset.name || "Activo", href: `/activos/${extendedWorkOrder.asset.id}` }
+      : undefined,
+    { label: `OT ${extendedWorkOrder.order_id}` },
+  ].filter(Boolean) as { label: string; href?: string }[]
+
   return (
     <div className="container mx-auto px-4 md:px-6 lg:px-8 py-4 md:py-8">
+      <BreadcrumbSetter items={breadcrumbItems} />
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-2">
           <Button variant="outline" size="icon" asChild>
@@ -395,6 +443,17 @@ export default async function WorkOrderDetailsPage({
               <CardDescription>Detalles básicos de la orden de trabajo</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
+              {cycleContext && cycleContext.cycle && (
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge variant="secondary">Ciclo {cycleContext.cycle}</Badge>
+                  {typeof cycleContext.intervalHours === 'number' && (
+                    <Badge variant="outline">Intervalo {cycleContext.intervalHours}h</Badge>
+                  )}
+                  {cycleContext.estimated && (
+                    <Badge variant="outline">Estimado</Badge>
+                  )}
+                </div>
+              )}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-1">
                   <p className="text-sm font-medium text-muted-foreground">Tipo</p>
@@ -660,6 +719,24 @@ export default async function WorkOrderDetailsPage({
         </div>
         
         <div className="space-y-6">
+          {/* Related entities quick access */}
+          {extendedWorkOrder.asset && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Relaciones</CardTitle>
+                <CardDescription>Accesos a entidades relacionadas</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <EntityRelations
+                  assetId={extendedWorkOrder.asset.id}
+                  workOrderId={id}
+                  serviceOrderId={relatedServiceOrder?.id || null}
+                  incidentId={extendedWorkOrder.incident_id || null}
+                  purchaseOrderId={extendedWorkOrder.purchase_order_id || null}
+                />
+              </CardContent>
+            </Card>
+          )}
           <Card>
             <CardHeader>
               <CardTitle>Activo</CardTitle>
@@ -755,6 +832,14 @@ export default async function WorkOrderDetailsPage({
                 <Link href={`/ordenes/${id}/editar`}>
                   <Edit className="mr-2 h-4 w-4" />
                   Editar
+                </Link>
+              </Button>
+
+              {/* Direct access to maintenance checklist execution for this OT */}
+              <Button variant="outline" asChild className="w-full">
+                <Link href={`/checklists/mantenimiento/${id}`}>
+                  <ClipboardCheck className="mr-2 h-4 w-4" />
+                  Checklist de mantenimiento
                 </Link>
               </Button>
               

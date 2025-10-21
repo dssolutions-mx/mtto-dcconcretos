@@ -154,11 +154,24 @@ serve(async (req) => {
       }
     }
 
-    // Threshold rule: <= 5000 -> BU Manager only; > 5000 -> Gerencia General only
+    // NEW: BU-first with escalation logic
+    // If PO has been authorized_by (BU approved), check if escalation to GM is needed
+    const { data: poFull } = await supabase.from('purchase_orders').select('authorized_by').eq('id', po.id).maybeSingle()
+    const hasFirstApproval = !!poFull?.authorized_by
+    
     let recipients: Array<{ userId?: string; email: string; name: string }> = []
-    if (amount > 5000) {
-      recipients = gmRecipients
+    
+    if (hasFirstApproval) {
+      // BU already approved; check if amount exceeds BU limit → escalate to GM
+      // For now, use a simple threshold: if amount > 5000 and BU approved, notify GM
+      if (amount > 5000) {
+        recipients = gmRecipients
+      } else {
+        // Amount within BU limit; no further escalation needed
+        recipients = []
+      }
     } else {
+      // No first approval yet → always notify BU Manager first
       if (businessUnitManagerEmail) {
         // Resolve BU manager real auth email
         let buManagerAuthEmail = businessUnitManagerEmail
@@ -231,7 +244,27 @@ serve(async (req) => {
         notesHtml = `<div class="meta" style="margin-top:10px"><div class="row" style="justify-content:flex-start"><div><strong>Notas</strong></div></div><div style="margin-top:6px">${safeNotes.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div></div>`
       }
 
-      const htmlReadyPo = { ...po, work_order_id_html: workOrderHtml, quotation_html: quotationHtml, notes_html: notesHtml }
+      // Add asset code when available
+      let assetHtml = ''
+      if ((po as any).work_order_id) {
+        const { data: wo2 } = await supabase
+          .from('work_orders')
+          .select('asset_id')
+          .eq('id', (po as any).work_order_id)
+          .maybeSingle()
+        if (wo2?.asset_id) {
+          const { data: asset2 } = await supabase
+            .from('assets')
+            .select('asset_id')
+            .eq('id', wo2.asset_id)
+            .maybeSingle()
+          if (asset2?.asset_id) {
+            assetHtml = `<div class="row"><div>Activo</div><div><strong>${asset2.asset_id}</strong></div></div>`
+          }
+        }
+      }
+
+      const htmlReadyPo = { ...po, work_order_id_html: workOrderHtml + assetHtml, quotation_html: quotationHtml, notes_html: notesHtml }
 
       const html = buildEmailHtml(htmlReadyPo, r.name, approveUrl, rejectUrl, viewUrl)
 

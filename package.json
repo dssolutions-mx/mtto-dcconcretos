@@ -7,6 +7,9 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
+    "test:e2e": "playwright test",
+    "test:e2e:headed": "playwright test --headed",
+    "test:e2e:install": "playwright install --with-deps",
     "sync:dry": "node -r dotenv/config scripts/sync_missing_employees.mjs --dry-run",
     "sync:run": "node -r dotenv/config scripts/sync_missing_employees.mjs"
   },
@@ -79,6 +82,7 @@
     "zustand": "^4.5.7"
   },
   "devDependencies": {
+    "@playwright/test": "^1.48.0",
     "@types/node": "^22",
     "@types/react": "^19",
     "@types/react-dom": "^19",

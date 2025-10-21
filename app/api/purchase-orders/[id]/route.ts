@@ -151,7 +151,46 @@ export async function PATCH(
         }
         return NextResponse.json({ error: 'Failed to update purchase order', details: error.message }, { status: 500 })
       }
-      
+      // Cascade: if actual_amount provided and PO is linked to a work order or service order, update related totals
+      try {
+        if (updateData.actual_amount !== undefined) {
+          // Load linkage
+          const { data: poLink } = await supabase
+            .from('purchase_orders')
+            .select('work_order_id')
+            .eq('id', id)
+            .single()
+
+          // Update service order total_cost if linked through work order
+          if (poLink?.work_order_id) {
+            const { data: wo } = await supabase
+              .from('work_orders')
+              .select('id, service_order_id')
+              .eq('id', poLink.work_order_id)
+              .single()
+
+            if (wo?.service_order_id) {
+              // Increment service order total_cost by actual_amount (or set if null)
+              const { data: so } = await supabase
+                .from('service_orders')
+                .select('total_cost')
+                .eq('id', wo.service_order_id)
+                .single()
+
+              const currentTotal = Number(so?.total_cost || 0)
+              const nextTotal = currentTotal + Number(updateData.actual_amount || 0)
+
+              await supabase
+                .from('service_orders')
+                .update({ total_cost: nextTotal })
+                .eq('id', wo.service_order_id)
+            }
+          }
+        }
+      } catch (cascadeError) {
+        console.warn('Non-blocking: failed to cascade actual_amount to related orders', cascadeError)
+      }
+
       updatedOrder = data
     }
 

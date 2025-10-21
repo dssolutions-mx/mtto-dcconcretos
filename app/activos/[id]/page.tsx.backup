@@ -107,11 +107,13 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
     return assetWithModel;
   }, [rawAsset]);
 
-  const breadcrumbItems = [
-    { label: "Dashboard", href: "/dashboard" },
-    { label: "Activos", href: "/activos" },
-    { label: asset?.asset_id || asset?.name || "Detalle" },
-  ];
+  const breadcrumbItems = useMemo(() => {
+    return [
+      { label: "Dashboard", href: "/dashboard" },
+      { label: "Activos", href: "/activos" },
+      { label: asset?.asset_id || asset?.name || "Detalle" },
+    ];
+  }, [asset?.asset_id, asset?.name]);
   
   // Load maintenance intervals for this equipment model
   useEffect(() => {
@@ -646,7 +648,7 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
       const fetchWorkOrders = async () => {
         try {
           setWorkOrdersLoading(true)
-          const supabase = createClient();
+          const supabase = createClient()
           
           const { data, error } = await supabase
             .from('work_orders')
@@ -671,9 +673,9 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
             setWorkOrders([])
           } else {
             // If we have work orders, also fetch technician names
-            const workOrdersData = data || [];
+            const workOrdersData = data || []
             if (workOrdersData.length > 0) {
-              const technicianIds = [...new Set(workOrdersData.filter(wo => wo.assigned_to).map(wo => wo.assigned_to))];
+              const technicianIds = [...new Set(workOrdersData.filter(wo => wo.assigned_to).map(wo => wo.assigned_to))]
               
               if (technicianIds.length > 0) {
                 const { data: techData } = await supabase
@@ -685,55 +687,52 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
                 const workOrdersWithTechnicians = workOrdersData.map(wo => ({
                   ...wo,
                   technician_profile: techData?.find(tech => tech.id === wo.assigned_to)
-                }));
+                }))
                 
-                setWorkOrders(workOrdersWithTechnicians);
+                setWorkOrders(workOrdersWithTechnicians)
               } else {
-                setWorkOrders(workOrdersData);
+                setWorkOrders(workOrdersData)
               }
             } else {
-              setWorkOrders(workOrdersData);
+              setWorkOrders(workOrdersData)
             }
           }
         } catch (err) {
           console.error("Error fetching work orders:", err)
-          setWorkOrders([]);
+          setWorkOrders([])
         } finally {
-          setWorkOrdersLoading(false);
+          setWorkOrdersLoading(false)
         }
       }
       
       fetchWorkOrders()
     }
-  }, [assetId])
-  
-  // Helper function to check if incident is pending (case-insensitive)
+  }, [assetId]);
+
   const isPendingIncident = (incident: any) => {
     const status = incident.status?.toLowerCase();
-    return status === 'pendiente' || 
-           status === 'pending' || 
-           status === 'en proceso' || 
+    return status === 'pendiente' ||
+           status === 'pending' ||
+           status === 'en proceso' ||
            status === 'en progreso' ||
            status === 'abierto' ||
            status === 'open';
   };
-  
-  // Get pending incidents count
+
   const pendingIncidentsCount = incidents.filter(isPendingIncident).length;
-  
-  // Función para mostrar el estado con un color adecuado
+
   const getStatusBadge = (status: string) => {
     switch (status) {
       case "operational":
-        return <Badge className="bg-green-500">Operativo</Badge>
+        return <Badge className="bg-green-500">Operativo</Badge>;
       case "maintenance":
-        return <Badge className="bg-yellow-500">En Mantenimiento</Badge>
+        return <Badge className="bg-yellow-500">En Mantenimiento</Badge>;
       case "repair":
-        return <Badge className="bg-red-500">En Reparación</Badge>
+        return <Badge className="bg-red-500">En Reparación</Badge>;
       case "inactive":
-        return <Badge variant="outline">Inactivo</Badge>
+        return <Badge variant="outline">Inactivo</Badge>;
       default:
-        return <Badge variant="secondary">{status || "Desconocido"}</Badge>
+        return <Badge variant="secondary">{status || "Desconocido"}</Badge>;
     }
   };
 
@@ -771,6 +770,7 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
 
   return (
     <DashboardShell>
+      <BreadcrumbSetter items={breadcrumbItems} />
       <DashboardHeader
         heading=""
         text=""
@@ -1219,7 +1219,6 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
                       <div className="space-y-2">
                         <Skeleton className="h-8 w-full" />
                         <Skeleton className="h-8 w-full" />
-                        <Skeleton className="h-8 w-full" />
                       </div>
                     ) : (combinedMaintenanceHistory ?? maintenanceHistory).length === 0 ? (
                       <div className="text-center py-4">
@@ -1237,49 +1236,48 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
                             <div className="flex flex-wrap justify-between gap-2">
                               <div className="space-y-2">
                                 <div className="flex items-center gap-2">
-                                  <Badge
-                                    variant={maintenance.type === 'Preventivo' ? 'default' :
-                                            maintenance.type === 'Correctivo' ? 'destructive' : 'outline'}
-                                    className="text-xs"
-                                  >
-                                    {maintenance.type}
-                                  </Badge>
-                                  <span className="text-sm font-medium text-muted-foreground flex items-center gap-1">
-                                    <Clock className="h-3 w-3" />
-                                    {maintenance.hours || 0}h
-                                  </span>
+                                  <Badge 
+                                  variant={maintenance.type === 'Preventivo' ? 'default' : 
+                                          maintenance.type === 'Correctivo' ? 'destructive' : 'outline'}
+                                  className="text-xs"
+                                >
+                                  {maintenance.type}
+                                </Badge>
+                                <span className="text-sm font-medium text-muted-foreground flex items-center gap-1">
+                                  <Clock className="h-3 w-3" />
+                                  {maintenance.hours || 0}h
+                                </span>
+                              </div>
+                              <h4 className="font-medium text-base">
+                                {formatDate(maintenance.date)}
+                              </h4>
+                              {maintenance.assets?.asset_id && (
+                                <div className="text-xs text-muted-foreground">
+                                  Activo:
+                                  <span className="ml-1 font-medium">{maintenance.assets.asset_id}</span>
                                 </div>
-                                <h4 className="font-medium text-base">
-                                  {formatDate(maintenance.date)}
-                                </h4>
-                                {maintenance.assets?.asset_id && (
-                                  <div className="text-xs text-muted-foreground">
-                                    Activo:
-                                    <span className="ml-1 font-medium">{maintenance.assets.asset_id}</span>
-                                  </div>
-                                )}
-                                <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
-                                  {(() => {
-                                    const intervalLabel = getIntervalLabelForMaintenance(maintenance);
-                                    return intervalLabel ? (
-                                      <span>
-                                        Intervalo:
-                                        <span className="ml-1 font-medium">{intervalLabel}</span>
-                                      </span>
-                                    ) : null;
-                                  })()}
-                                  {(() => {
-                                    const po = poByWorkOrder?.[maintenance.work_order_id]
-                                    const poCost = po?.adjusted_total_amount ?? po?.total_amount ?? po?.actual_amount ?? null
-                                    const formatted = formatCurrency(poCost)
-                                    return formatted ? (
-                                      <span>
-                                        Costo:
-                                        <span className="ml-1 font-medium">{formatted}</span>
-                                      </span>
-                                    ) : null;
-                                  })()}
-                                </div>
+                              )}
+                              <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
+                                {(() => {
+                                  const intervalLabel = getIntervalLabelForMaintenance(maintenance);
+                                  return intervalLabel ? (
+                                    <span>
+                                      Intervalo:
+                                      <span className="ml-1 font-medium">{intervalLabel}</span>
+                                    </span>
+                                  ) : null;
+                                })()}
+                                {(() => {
+                                  const po = poByWorkOrder?.[maintenance.work_order_id]
+                                  const poCost = po?.adjusted_total_amount ?? po?.total_amount ?? po?.actual_amount ?? null
+                                  const formatted = formatCurrency(poCost)
+                                  return formatted ? (
+                                    <span>
+                                      Costo:
+                                      <span className="ml-1 font-medium">{formatted}</span>
+                                    </span>
+                                  ) : null;
+                                })()}
                               </div>
                             </div>
                             <p className="text-sm text-muted-foreground">

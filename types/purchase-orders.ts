@@ -124,6 +124,11 @@ export interface WorkflowStatusResponse {
   can_advance: boolean
   workflow_stage: string
   recommendation?: string
+  purchase_order?: {
+    authorized_by?: string | null
+    authorization_date?: string | null
+    total_amount?: string | null
+  }
 }
 
 // Advance Workflow Request

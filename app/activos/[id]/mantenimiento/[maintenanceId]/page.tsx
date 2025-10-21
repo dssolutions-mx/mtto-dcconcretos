@@ -6,6 +6,7 @@ import { useEffect, useState, use } from "react"
 import { createClient } from "@/lib/supabase"
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
 import { DashboardHeader } from "@/components/dashboard/dashboard-header";
+import { BreadcrumbSetter } from "@/components/navigation/breadcrumb-setter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { ArrowLeft, Loader2, Edit, Trash2 } from "lucide-react";
@@ -184,6 +185,14 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
     }
   };
 
+  const breadcrumbItems = [
+    { label: "Dashboard", href: "/dashboard" },
+    { label: "Activos", href: "/activos" },
+    asset ? { label: asset.asset_id || asset.name || "Activo", href: `/activos/${id}` } : undefined,
+    { label: "Plan", href: `/activos/${id}/mantenimiento` },
+    { label: "Registro" },
+  ].filter(Boolean) as { label: string; href?: string }[]
+
   if (error) {
     return (
       <DashboardShell>
@@ -243,6 +252,7 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
 
   return (
     <DashboardShell>
+      <BreadcrumbSetter items={breadcrumbItems} />
       <DashboardHeader
         heading={`Mantenimiento: ${asset?.name || ''}`}
         text={`Detalles del mantenimiento realizado el ${maintenance?.date || ''}`}
@@ -277,7 +287,6 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
           )}
         </div>
       </DashboardHeader>
-      
       {maintenancePlan && (
         <div className="mb-6 px-1">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-2">

@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -67,6 +68,7 @@ interface ServiceOrderWithAssetDetails extends ServiceOrder {
 }
 
 export function ServiceOrdersList() {
+  const searchParams = useSearchParams()
   const [serviceOrders, setServiceOrders] = useState<ServiceOrderWithAssetDetails[]>([])
   const [filteredOrders, setFilteredOrders] = useState<ServiceOrderWithAssetDetails[]>([])
   const [searchQuery, setSearchQuery] = useState("")
@@ -123,7 +125,23 @@ export function ServiceOrdersList() {
   // Apply filters when search criteria or filters change
   useEffect(() => {
     let result = [...serviceOrders]
+    const assetIdParam = searchParams?.get('assetId')
+    const workOrderIdParam = searchParams?.get('workOrderId')
+    const incidentIdParam = searchParams?.get('incidentId')
     
+    // Apply asset filter from URL first for IA consistency
+    if (assetIdParam) {
+      result = result.filter(order => order.asset_id === assetIdParam)
+    }
+
+    if (workOrderIdParam) {
+      result = result.filter(order => (order as any).work_order_id === workOrderIdParam)
+    }
+
+    if (incidentIdParam) {
+      result = result.filter(order => (order as any).incident_id === incidentIdParam)
+    }
+
     // Apply search filter
     if (searchQuery) {
       const query = searchQuery.toLowerCase()
@@ -147,7 +165,7 @@ export function ServiceOrdersList() {
     }
     
     setFilteredOrders(result)
-  }, [searchQuery, statusFilter, typeFilter, serviceOrders])
+  }, [searchQuery, statusFilter, typeFilter, serviceOrders, searchParams])
 
   const getStatusBadge = (status: string) => {
     const statusMap: Record<string, { variant: "default" | "outline" | "secondary" | "destructive", label: string, color: string }> = {

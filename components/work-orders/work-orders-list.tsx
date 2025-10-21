@@ -891,6 +891,22 @@ function DesktopView({
                         <span>Ver Detalles</span>
                       </Link>
                     </DropdownMenuItem>
+                  {/* Link to Service Order if exists (client-side discovery) */}
+                  <DropdownMenuItem asChild>
+                    <Link href={`/servicios?workOrderId=${order.id}`}>
+                      <FileText className="mr-2 h-4 w-4" />
+                      <span>Ver Servicio</span>
+                    </Link>
+                  </DropdownMenuItem>
+                  {/* Link to Incident if present on order */}
+                  {order.incident_id && (
+                    <DropdownMenuItem asChild>
+                      <Link href={`/incidentes`}>
+                        <AlertTriangle className="mr-2 h-4 w-4" />
+                        <span>Incidente</span>
+                      </Link>
+                    </DropdownMenuItem>
+                  )}
                     <DropdownMenuItem asChild>
                        <Link href={`/ordenes/${order.id}/editar`}> 
                         <Edit className="mr-2 h-4 w-4" />

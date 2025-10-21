@@ -45,24 +45,99 @@ export async function PUT(
       }, { status: 400 })
     }
     
-    // ✅ NUEVO SISTEMA: Validación dinámica para aprobación
+    // ✅ NUEVO SISTEMA (Paso 1 de 2): Aprobación BU primero, escalamiento a Gerencia si excede límite
     if (body.new_status === 'approved') {
-      // Get the purchase order to check amount
+      // Get the purchase order to check amount and links
       const { data: purchaseOrder } = await supabase
         .from('purchase_orders')
-        .select('total_amount')
+        .select('id, status, total_amount, work_order_id, plant_id, authorized_by, authorization_date')
         .eq('id', id)
         .single()
-      
+
       if (purchaseOrder) {
-        const amount = parseFloat(purchaseOrder.total_amount)
-        const userLimit = profile.can_authorize_up_to || 0
-        
-        // ✅ Validación basada en límite dinámico del usuario
-        if (amount > userLimit) {
-          return NextResponse.json({ 
-            error: `Tu límite de autorización (${userLimit.toLocaleString('es-MX', { style: 'currency', currency: 'MXN' })}) no permite aprobar órdenes de ${amount.toLocaleString('es-MX', { style: 'currency', currency: 'MXN' })}. Esta orden debe ser aprobada por un superior.` 
-          }, { status: 403 })
+        const amount = Number(purchaseOrder.total_amount || 0)
+        const userLimit = Number(profile.can_authorize_up_to || 0)
+
+        // Resolve Business Unit from plant (direct) or via work order -> asset -> plant
+        let resolvedPlantId: string | null = purchaseOrder.plant_id || null
+        if (!resolvedPlantId && purchaseOrder.work_order_id) {
+          const { data: wo } = await supabase
+            .from('work_orders')
+            .select('id, asset_id, service_order_id')
+            .eq('id', purchaseOrder.work_order_id)
+            .maybeSingle()
+          if (wo?.asset_id) {
+            const { data: asset } = await supabase
+              .from('assets')
+              .select('plant_id')
+              .eq('id', wo.asset_id)
+              .maybeSingle()
+            resolvedPlantId = asset?.plant_id || null
+          }
+        }
+
+        let buId: string | null = null
+        if (resolvedPlantId) {
+          const { data: plant } = await supabase
+            .from('plants')
+            .select('business_unit_id')
+            .eq('id', resolvedPlantId)
+            .maybeSingle()
+          buId = (plant?.business_unit_id as string | null) || null
+        }
+
+        // If first approval not recorded yet, only BU Manager of that BU can perform it (GM can bypass)
+        if (!purchaseOrder.authorized_by) {
+          const isBuManager = profile.role === 'JEFE_UNIDAD_NEGOCIO' && buId && profile.business_unit_id === buId
+          const isGM = profile.role === 'GERENCIA_GENERAL'
+          
+          if (!isBuManager && !isGM) {
+            return NextResponse.json({ 
+              error: 'Solo el Jefe de Unidad de Negocio correspondiente o Gerencia General puede aprobar esta orden.' 
+            }, { status: 403 })
+          }
+
+          // Record BU authorization
+          const { error: authUpdateError } = await supabase
+            .from('purchase_orders')
+            .update({ authorized_by: user.id, authorization_date: new Date().toISOString() })
+            .eq('id', id)
+          if (authUpdateError) {
+            return NextResponse.json({ error: 'No se pudo registrar la autorización de BU' }, { status: 500 })
+          }
+
+          // If within BU limit, proceed to full approval now (single-step)
+          if (amount <= userLimit) {
+            // continue to approval below via service call
+          } else {
+            // Exceeds BU limit: do NOT finalize approval here; escalate to Gerencia General
+            // Ensure PO status stays as 'pending_approval' to trigger GM notification
+            // The database trigger notify_po_pending_approval will fire automatically on status update
+            const { error: statusError } = await supabase
+              .from('purchase_orders')
+              .update({ 
+                status: 'pending_approval',
+                updated_at: new Date().toISOString()
+              })
+              .eq('id', id)
+            
+            if (statusError) {
+              console.error('Failed to update status for escalation:', statusError)
+            }
+
+            return NextResponse.json({
+              success: true,
+              message: 'Autorización de BU registrada. Se ha escalado a Gerencia General para aprobación final.',
+              escalated_to_gm: true
+            })
+          }
+        } else {
+          // Second lock: if already BU-authorized and amount exceeds BU limit, require GM role to approve
+          if (amount > userLimit && profile.role !== 'GERENCIA_GENERAL') {
+            return NextResponse.json({ 
+              error: 'Esta orden requiere aprobación de Gerencia General después de la autorización del Jefe de Unidad.' 
+            }, { status: 403 })
+          }
         }
       }
     }

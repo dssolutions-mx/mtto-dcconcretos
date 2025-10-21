@@ -19,6 +19,8 @@ import {
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
 import Link from "next/link"
+import { EntityRelations } from "@/components/navigation/entity-relations"
+import { BreadcrumbSetter } from "@/components/navigation/breadcrumb-setter"
 
 interface ServiceOrderDetailProps {
   id: string
@@ -1116,6 +1118,20 @@ Documento confidencial - Solo para uso interno de la organización
         }
       `}</style>
 
+      <BreadcrumbSetter
+        items={[
+          { label: "Dashboard", href: "/dashboard" },
+          { label: "Órdenes de Servicio", href: "/servicios" },
+          serviceOrder.asset_id
+            ? {
+                label: (serviceOrder.asset as any)?.asset_id || serviceOrder.asset_name || "Detalle",
+                href: `/activos/${serviceOrder.asset_id}`,
+              }
+            : undefined,
+          { label: `Servicio ${serviceOrder.order_id}` },
+        ].filter(Boolean) as { label: string; href?: string }[]}
+      />
+
       {/* Header */}
       <div className="flex items-center justify-between no-print">
         <div>
@@ -1320,6 +1336,21 @@ Documento confidencial - Solo para uso interno de la organización
         
         {/* Sidebar - 1/3 width */}
         <div className="space-y-6">
+          {/* Related panel */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Relaciones</CardTitle>
+              <CardDescription>Accesos a entidades relacionadas</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <EntityRelations
+                assetId={serviceOrder.asset_id || serviceOrder.asset?.asset_id}
+                workOrderId={serviceOrder.work_order_id}
+                serviceOrderId={serviceOrder.id}
+                checklistId={serviceOrder.checklist_id}
+              />
+            </CardContent>
+          </Card>
           
           {/* Cost Summary */}
           <Card>

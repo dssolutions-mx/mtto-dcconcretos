@@ -1,4 +1,5 @@
 import { Metadata } from "next"
+import { Suspense } from "react"
 import { ServiceOrdersList } from "@/components/service-orders/service-orders-list"
 
 export const metadata: Metadata = {
@@ -9,7 +10,9 @@ export const metadata: Metadata = {
 export default function ServiceOrdersPage() {
   return (
     <div className="container py-8">
-      <ServiceOrdersList />
+      <Suspense fallback={<div>Cargando órdenes de servicio...</div>}>
+        <ServiceOrdersList />
+      </Suspense>
     </div>
   )
 } 

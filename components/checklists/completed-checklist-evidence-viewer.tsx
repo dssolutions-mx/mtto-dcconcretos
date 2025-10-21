@@ -176,23 +176,25 @@ export function CompletedChecklistEvidenceViewer({
             <Camera className="h-5 w-5 text-blue-600" />
             Evidencias Fotográficas del Checklist
           </DialogTitle>
-          <DialogDescription className="space-y-1">
-            <div className="flex flex-wrap gap-4 text-sm">
-              <span className="flex items-center gap-1">
-                <Calendar className="h-4 w-4" />
-                {format(new Date(completionDate), "PPP", { locale: es })}
-              </span>
-              <span className="flex items-center gap-1">
-                <User className="h-4 w-4" />
-                {technician}
-              </span>
-              <span className="flex items-center gap-1">
-                <MapPin className="h-4 w-4" />
-                {assetName}
-              </span>
-            </div>
-            <div className="text-lg font-medium text-gray-900">
-              {checklistName}
+          <DialogDescription asChild>
+            <div className="space-y-1">
+              <div className="flex flex-wrap gap-4 text-sm">
+                <span className="flex items-center gap-1">
+                  <Calendar className="h-4 w-4" />
+                  {format(new Date(completionDate), "PPP", { locale: es })}
+                </span>
+                <span className="flex items-center gap-1">
+                  <User className="h-4 w-4" />
+                  {technician}
+                </span>
+                <span className="flex items-center gap-1">
+                  <MapPin className="h-4 w-4" />
+                  {assetName}
+                </span>
+              </div>
+              <div className="text-lg font-medium text-gray-900">
+                {checklistName}
+              </div>
             </div>
           </DialogDescription>
         </DialogHeader>

@@ -353,6 +353,20 @@ export function SpecialOrderForm({
     setItems(prev => prev.filter(item => item.id !== itemId))
   }
 
+  // Edit existing item inline
+  const handleItemChange = (itemId: string, field: keyof OrderItem, value: any) => {
+    setItems(prev => prev.map(item => {
+      if (item.id !== itemId) return item
+      const updated: OrderItem = { ...item, [field]: value }
+      if (field === 'quantity' || field === 'unit_price') {
+        const quantity = field === 'quantity' ? Number(value) || 0 : Number(item.quantity) || 0
+        const unitPrice = field === 'unit_price' ? Number(value) || 0 : Number(item.unit_price) || 0
+        updated.total_price = quantity * unitPrice
+      }
+      return updated
+    }))
+  }
+
   // Validate form
   const validateForm = (): boolean => {
     const errors: string[] = []
@@ -892,37 +906,71 @@ export function SpecialOrderForm({
                   {items.map((item) => (
                     <TableRow key={item.id}>
                       <TableCell>
-                        <div>
-                          <p className="font-medium">{item.description}</p>
-                          {item.part_number && (
-                            <p className="text-sm text-muted-foreground">P/N: {item.part_number}</p>
-                          )}
-                          {item.is_special_order && (
-                            <Badge variant="secondary" className="text-xs mt-1">
-                              <FileText className="h-3 w-3 mr-1" />
-                              Especial
-                            </Badge>
-                          )}
+                        <div className="space-y-1">
+                          <Input
+                            value={item.description}
+                            onChange={(e) => handleItemChange(item.id, 'description', e.target.value)}
+                            placeholder="Descripción del artículo"
+                          />
+                          <div className="grid grid-cols-2 gap-2">
+                            <Input
+                              value={item.part_number}
+                              onChange={(e) => handleItemChange(item.id, 'part_number', e.target.value)}
+                              placeholder="P/N"
+                            />
+                            {item.is_special_order && (
+                              <Badge variant="secondary" className="justify-self-start text-xs mt-1">
+                                <FileText className="h-3 w-3 mr-1" />
+                                Especial
+                              </Badge>
+                            )}
+                          </div>
                         </div>
                       </TableCell>
-                      <TableCell>{item.brand || '-'}</TableCell>
-                      <TableCell>{Number(item.quantity)}</TableCell>
                       <TableCell>
-                        ${Number(item.unit_price).toLocaleString('es-MX', { 
-                          minimumFractionDigits: 2, 
-                          maximumFractionDigits: 2 
-                        })}
+                        <Input
+                          value={item.brand}
+                          onChange={(e) => handleItemChange(item.id, 'brand', e.target.value)}
+                          placeholder="Marca"
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <Input
+                          type="number"
+                          min={1}
+                          value={item.quantity}
+                          onChange={(e) => handleItemChange(item.id, 'quantity', e.target.value)}
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <div className="relative">
+                          <span className="absolute left-2 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">$</span>
+                          <Input
+                            className="pl-6"
+                            type="number"
+                            step="0.01"
+                            min={0}
+                            value={item.unit_price}
+                            onChange={(e) => handleItemChange(item.id, 'unit_price', e.target.value)}
+                          />
+                        </div>
                       </TableCell>
                       <TableCell className="font-medium">
-                        ${item.total_price.toLocaleString('es-MX', { 
-                          minimumFractionDigits: 2, 
-                          maximumFractionDigits: 2 
+                        ${item.total_price.toLocaleString('es-MX', {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2
                         })}
                       </TableCell>
                       <TableCell>
-                        <div className="flex items-center space-x-1">
+                        <div className="flex items-center space-x-2">
                           <Clock className="h-4 w-4 text-muted-foreground" />
-                          <span className="text-sm">{item.lead_time_days || 15}d</span>
+                          <Input
+                            type="number"
+                            min={1}
+                            value={item.lead_time_days || 15}
+                            onChange={(e) => handleItemChange(item.id, 'lead_time_days', Number(e.target.value))}
+                          />
+                          <span className="text-sm">d</span>
                         </div>
                       </TableCell>
                       <TableCell>

@@ -174,6 +174,7 @@ export class PurchaseOrderService {
             const legacyQuote = typeof (po as any).quotation_url === 'string' && (po as any).quotation_url.trim() !== ''
             const hasAnyQuote = hasArrayQuotes || legacyQuote
 
+            // If we have any quotes, proceed with direct approval
             if (hasAnyQuote) {
               const { error: updateError2 } = await supabase
                 .from('purchase_orders')
@@ -215,10 +216,10 @@ export class PurchaseOrderService {
     const supabase = await createClient()
     
     try {
-      // Get current PO
+      // Get current PO with authorization info for 2-step approval display
       const { data: po, error: poError } = await supabase
         .from('purchase_orders')
-        .select('id, status, po_type, requires_quote')
+        .select('id, status, po_type, requires_quote, authorized_by, authorization_date, total_amount')
         .eq('id', id)
         .single()
       
@@ -246,7 +247,12 @@ export class PurchaseOrderService {
         requires_quote: po.requires_quote,
         can_advance: (nextStatuses?.length || 0) > 0,
         workflow_stage: this.getWorkflowStage(po.status, po.po_type),
-        recommendation: this.getWorkflowRecommendation(po.status, po.po_type)
+        recommendation: this.getWorkflowRecommendation(po.status, po.po_type),
+        purchase_order: {
+          authorized_by: po.authorized_by,
+          authorization_date: po.authorization_date,
+          total_amount: po.total_amount
+        }
       }
     } catch (error) {
       console.error('Error getting workflow status:', error)
