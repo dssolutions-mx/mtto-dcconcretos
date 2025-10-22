@@ -316,9 +316,10 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
       const maxInterval = Math.max(...maintenanceIntervals.map(i => i.interval_value));
       const currentCycle = Math.floor(currentHours / maxInterval) + 1;
       
-      // Find the hour of the last maintenance performed (any type)
+      // Find the hour of the last preventive maintenance performed (plan-linked)
       const effectiveMaintenanceHistory = combinedMaintenanceHistory ?? maintenanceHistory
-      const allMaintenanceHours = effectiveMaintenanceHistory
+      const preventiveHistory = effectiveMaintenanceHistory.filter((m: any) => m?.type === 'Preventivo' && m?.maintenance_plan_id)
+      const allMaintenanceHours = preventiveHistory
         .map(m => Number(m.hours) || 0)
         .filter(h => h > 0)
         .sort((a, b) => b - a); // Sort from highest to lowest
@@ -329,7 +330,7 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
       const currentCycleStartHour = (currentCycle - 1) * maxInterval;
       const currentCycleEndHour = currentCycle * maxInterval;
       
-      const currentCycleMaintenances = effectiveMaintenanceHistory.filter(m => {
+      const currentCycleMaintenances = preventiveHistory.filter((m: any) => {
         const mHours = Number(m.hours) || 0;
         return mHours > currentCycleStartHour && mHours < currentCycleEndHour;
       });
@@ -380,21 +381,29 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
                
                if (wasPerformedInCurrentCycle) {
                  status = 'completed';
-               } else {
-                 // Check if it's covered by a higher maintenance in current cycle
-                 const cycleIntervalHour = dueHour - currentCycleStartHour;
-                 const highestRelativeHour = highestMaintenanceInCycle - currentCycleStartHour;
-                 
-                 if (highestRelativeHour >= cycleIntervalHour && highestMaintenanceInCycle > 0) {
-                   status = 'covered';
+              } else {
+                // Plan-aware coverage: a higher/equal preventive interval in same unit/category covers lower ones
+                const isCoveredByHigher = currentCycleMaintenances.some((m: any) => {
+                  const performedPlanId = m.maintenance_plan_id;
+                  const performedInterval = (maintenanceIntervals || []).find((i: any) => i.id === performedPlanId);
+                  const dueInterval = interval;
+                  if (!performedInterval || !dueInterval) return false;
+                  const sameUnit = performedInterval.type === dueInterval.type;
+                  const sameCategory = (performedInterval as any).maintenance_category === (dueInterval as any).maintenance_category;
+                  const categoryOk = (performedInterval as any).maintenance_category && (dueInterval as any).maintenance_category ? sameCategory : true;
+                  const higherOrEqual = Number(performedInterval.interval_value) >= Number(dueInterval.interval_value);
+                  return sameUnit && categoryOk && higherOrEqual;
+                });
+                if (isCoveredByHigher) {
+                  status = 'covered';
                 } else if (currentHours >= dueHour) {
-                   status = 'overdue';
-                 } else if (currentHours >= dueHour - 100) {
-                   status = 'upcoming';
-                 } else {
-                   status = 'scheduled';
-                 }
-               }
+                  status = 'overdue';
+                } else if (currentHours >= dueHour - 100) {
+                  status = 'upcoming';
+                } else {
+                  status = 'scheduled';
+                }
+              }
              }
           }
           // Persist computed due value to nullable variable for downstream UI calculations

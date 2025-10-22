@@ -173,7 +173,9 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
                 const currentCycleStartHour = (currentCycleNum - 1) * maxInterval;
                 const currentCycleEndHour = currentCycleNum * maxInterval;
 
-                const currentCycleMaintenances = componentHistory.filter((m: any) => {
+                // Use preventive, plan-linked entries only for coverage/completion
+                const componentPreventiveHistory = componentHistory.filter((m: any) => m?.type === 'Preventivo' && m?.maintenance_plan_id)
+                const currentCycleMaintenances = componentPreventiveHistory.filter((m: any) => {
                   const mHours = Number(m.hours) || 0;
                   return mHours > currentCycleStartHour && mHours < currentCycleEndHour;
                 });
@@ -227,11 +229,20 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
                       if (wasPerformedInCurrentCycle) {
                         status = 'completed';
                       } else {
-                        // Check if it's covered by a higher maintenance in current cycle
-                        const cycleIntervalHour = Number(nextDueHour) - currentCycleStartHour; // Relative to cycle start
-                        const highestRelativeHour = highestMaintenanceInCycle - currentCycleStartHour;
+                        // Plan-aware coverage: higher/equal interval (same unit/category) covers lower ones
+                        const isCoveredByHigher = currentCycleMaintenances.some((m: any) => {
+                          const performedPlanId = m.maintenance_plan_id;
+                          const performedInterval = (intervals as any[]).find((i: any) => i.id === performedPlanId);
+                          const dueInterval = interval;
+                          if (!performedInterval || !dueInterval) return false;
+                          const sameUnit = performedInterval.type === dueInterval.type;
+                          const sameCategory = (performedInterval as any).maintenance_category === (dueInterval as any).maintenance_category;
+                          const categoryOk = (performedInterval as any).maintenance_category && (dueInterval as any).maintenance_category ? sameCategory : true;
+                          const higherOrEqual = Number(performedInterval.interval_value) >= Number(dueInterval.interval_value);
+                          return sameUnit && categoryOk && higherOrEqual;
+                        });
 
-                        if (highestRelativeHour >= cycleIntervalHour && highestMaintenanceInCycle > 0) {
+                        if (isCoveredByHigher) {
                           status = 'covered';
                         } else if (componentHours >= Number(nextDueHour)) {
                           status = 'overdue';
@@ -316,7 +327,9 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
             const currentCycleStartHour = (currentCycleNum - 1) * maxInterval;
             const currentCycleEndHour = currentCycleNum * maxInterval;
 
-            const currentCycleMaintenances = maintenanceHistory.filter(m => {
+            // Use preventive, plan-linked entries only for coverage/completion
+            const preventiveHistory = maintenanceHistory.filter(m => m?.type === 'Preventivo' && m?.maintenance_plan_id)
+            const currentCycleMaintenances = preventiveHistory.filter(m => {
               const mHours = Number(m.hours) || 0;
               // Exclude maintenance that marks the end of previous cycle (exactly at cycle boundary)
               return mHours > currentCycleStartHour && mHours < currentCycleEndHour;
@@ -372,11 +385,20 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
                   if (wasPerformedInCurrentCycle) {
                     status = 'completed';
                   } else {
-                    // Check if it's covered by a higher maintenance in current cycle
-                    const cycleIntervalHour = Number(nextDueHour) - currentCycleStartHour; // Relative to cycle start
-                    const highestRelativeHour = highestMaintenanceInCycle - currentCycleStartHour;
+                    // Plan-aware coverage: higher/equal interval (same unit/category) covers lower ones
+                    const isCoveredByHigher = currentCycleMaintenances.some(m => {
+                      const performedPlanId = m.maintenance_plan_id;
+                      const performedInterval = intervals.find((i: any) => i.id === performedPlanId);
+                      const dueInterval = interval;
+                      if (!performedInterval || !dueInterval) return false;
+                      const sameUnit = performedInterval.type === dueInterval.type;
+                      const sameCategory = (performedInterval as any).maintenance_category === (dueInterval as any).maintenance_category;
+                      const categoryOk = (performedInterval as any).maintenance_category && (dueInterval as any).maintenance_category ? sameCategory : true;
+                      const higherOrEqual = Number(performedInterval.interval_value) >= Number(dueInterval.interval_value);
+                      return sameUnit && categoryOk && higherOrEqual;
+                    });
 
-                    if (highestRelativeHour >= cycleIntervalHour && highestMaintenanceInCycle > 0) {
+                    if (isCoveredByHigher) {
                       status = 'covered';
                     } else if (currentHours >= Number(nextDueHour)) {
                       status = 'overdue';
