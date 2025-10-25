@@ -956,8 +956,8 @@ export default function WarehouseDetailPage() {
                               const deltaMin = Math.floor((created - registered) / 60000)
                               if (deltaMin > 120) {
                                 return (
-                                  <Badge title={`Antidatada por ${deltaMin} min`} variant="outline" className="text-[10px] bg-yellow-50 text-yellow-800 border-yellow-300">
-                                    Antidatada {deltaMin}m
+                                  <Badge title={`Fuera de tiempo por ${deltaMin} min`} variant="outline" className="text-[10px] bg-yellow-50 text-yellow-800 border-yellow-300">
+                                    Fuera de tiempo {deltaMin}m
                                   </Badge>
                                 )
                               }
@@ -965,6 +965,22 @@ export default function WarehouseDetailPage() {
                           } catch {}
                         })()
                       )}
+                      {/* Future-dated hint */}
+                      {(() => {
+                        try {
+                          const registered = new Date(transaction.transaction_date).getTime()
+                          const created = transaction.created_at ? new Date(transaction.created_at).getTime() : undefined
+                          const refTime = created ?? Date.now()
+                          const futureMin = Math.floor((registered - refTime) / 60000)
+                          if (futureMin > 0) {
+                            return (
+                              <Badge title={`Fuera de tiempo por ${futureMin} min`} variant="outline" className="text-[10px] bg-blue-50 text-blue-800 border-blue-300">
+                                Fuera de tiempo {futureMin}m
+                              </Badge>
+                            )
+                          }
+                        } catch {}
+                      })()}
                     </div>
                     {transaction.notes && (
                       <div className="text-xs text-muted-foreground italic">
