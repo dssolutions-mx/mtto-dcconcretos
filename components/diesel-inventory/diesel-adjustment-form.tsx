@@ -60,6 +60,7 @@ export function DieselAdjustmentForm({
   const [transactionTime, setTransactionTime] = useState<string>(new Date().toTimeString().slice(0, 5))
   const [reason, setReason] = useState<string>("")
   const [notes, setNotes] = useState("")
+  const [backdatingThresholdMinutes, setBackdatingThresholdMinutes] = useState<number>(120)
   
   // Evidence photos (flexible - not always required)
   const [evidencePhoto1, setEvidencePhoto1] = useState<string | null>(null)
@@ -88,6 +89,7 @@ export function DieselAdjustmentForm({
   useEffect(() => {
     loadOrganizationalStructure()
     loadDieselProduct()
+    loadBackdatingThreshold()
   }, [])
 
   const loadDieselProduct = async () => {
@@ -113,6 +115,17 @@ export function DieselAdjustmentForm({
       }
     } catch (error) {
       console.error('Error loading diesel product:', error)
+    }
+  }
+
+  const loadBackdatingThreshold = async () => {
+    try {
+      const { data, error } = await supabase.rpc('get_diesel_backdating_threshold_minutes')
+      if (!error && typeof data === 'number') {
+        setBackdatingThresholdMinutes(data)
+      }
+    } catch (e) {
+      console.warn('Using default backdating threshold (120m)')
     }
   }
 
@@ -248,6 +261,40 @@ export function DieselAdjustmentForm({
     if (!reason.trim()) {
       toast.error("Especifica la razón del ajuste")
       return
+    }
+
+    // Pre-submit policy warning for out-of-order/backdated adjustments
+    try {
+      if (selectedWarehouse) {
+        const selectedIso = new Date(transactionDate + 'T' + transactionTime + ':00')
+        const { data: latestTx } = await supabase
+          .from('diesel_transactions')
+          .select('transaction_date')
+          .eq('warehouse_id', selectedWarehouse)
+          .order('transaction_date', { ascending: false })
+          .limit(1)
+          .single()
+
+        const now = new Date()
+        const deltaMinutes = Math.floor((now.getTime() - selectedIso.getTime()) / 60000)
+        const isBackdated = deltaMinutes > backdatingThresholdMinutes
+        const isOutOfOrder = latestTx?.transaction_date
+          ? selectedIso.getTime() < new Date(latestTx.transaction_date).getTime()
+          : false
+
+        if (isBackdated || isOutOfOrder) {
+          const proceed = confirm(
+            '⚠️ Este movimiento será marcado para validación.\n\n' +
+            'No cumple la política de control de diésel (posible amonestación).\n' +
+            (isOutOfOrder ? '\n• Fuera de orden respecto a movimientos previos.' : '') +
+            (isBackdated ? `\n• Antidatado por ${deltaMinutes} min.` : '') +
+            '\n\n¿Deseas continuar?'
+          )
+          if (!proceed) return
+        }
+      }
+    } catch (warnErr) {
+      console.warn('Pre-submit policy check failed', warnErr)
     }
 
     try {

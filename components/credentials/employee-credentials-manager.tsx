@@ -98,6 +98,9 @@ export function EmployeeCredentialsManager() {
   const [isOfficeModalOpen, setIsOfficeModalOpen] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [photoFilter, setPhotoFilter] = useState<'all' | 'with' | 'without'>('all')
+  const [departmentFilter, setDepartmentFilter] = useState<string>('all')
+  const [officeFilter, setOfficeFilter] = useState<string>('all')
+  const [plantFilter, setPlantFilter] = useState<string>('all')
   
   const { profile, hasModuleAccess, hasWriteAccess } = useAuthZustand()
   const supabase = createClient()
@@ -111,6 +114,24 @@ export function EmployeeCredentialsManager() {
 
   const canEditCredentials = canManageCredentials
 
+  // Get unique departments, offices, and plants for filters
+  const uniqueDepartments = Array.from(new Set(employees
+    .filter(emp => emp.departamento)
+    .map(emp => emp.departamento)
+  )).sort()
+
+  const hasEmployeesWithoutDept = employees.some(emp => !emp.departamento)
+
+  const uniquePlants = Array.from(new Set(employees
+    .filter(emp => emp.plants)
+    .map(emp => emp.plants?.id)
+  )).filter(Boolean) as string[]
+
+  const plantsData = Array.from(new Map(
+    employees
+      .filter(emp => emp.plants)
+      .map(emp => [emp.plants?.id, emp.plants])
+  ).values())
 
   useEffect(() => {
     if (canManageCredentials) {
@@ -130,12 +151,21 @@ export function EmployeeCredentialsManager() {
         emp.email?.toLowerCase().includes(searchLower)
       )
       if (!matchesSearch) return false
-      if (photoFilter === 'with') return !!emp.avatar_url
-      if (photoFilter === 'without') return !emp.avatar_url
+      
+      if (photoFilter === 'with' && !emp.avatar_url) return false
+      if (photoFilter === 'without' && emp.avatar_url) return false
+      
+      if (departmentFilter !== 'all') {
+        if (departmentFilter === 'no-dept' && emp.departamento) return false
+        if (departmentFilter !== 'no-dept' && emp.departamento !== departmentFilter) return false
+      }
+      if (officeFilter !== 'all' && emp.office_id !== officeFilter) return false
+      if (plantFilter !== 'all' && emp.plants?.id !== plantFilter) return false
+      
       return true
     })
     setFilteredEmployees(filtered)
-  }, [searchTerm, employees, photoFilter])
+  }, [searchTerm, employees, photoFilter, departmentFilter, officeFilter, plantFilter])
 
   // Simple in-memory cache for signed URLs
   const signedUrlCache = useRef<Map<string, { url: string; expiresAt: number }>>(new Map())
@@ -343,52 +373,171 @@ export function EmployeeCredentialsManager() {
       return
     }
 
-    await generatePDFForEmployees(toPrint, action)
+    // Show loading state
+    const loadingToastId = toast.loading('Preparando credenciales...')
+
+    try {
+      // Split into batches of 5 credentials per PDF
+      const BATCH_SIZE = 5
+      const batches = []
+      for (let i = 0; i < toPrint.length; i += BATCH_SIZE) {
+        batches.push(toPrint.slice(i, i + BATCH_SIZE))
+      }
+
+      console.log(`[Credentials] Starting PDF generation: ${toPrint.length} employees in ${batches.length} batches`)
+
+      if (batches.length === 1) {
+        // Single batch - process normally
+        toast.dismiss(loadingToastId)
+        await generatePDFForEmployees(batches[0], action, 1, 1)
+      } else {
+        // Multiple batches - process sequentially with progress
+        for (let i = 0; i < batches.length; i++) {
+          const batchNum = i + 1
+          const totalBatches = batches.length
+          console.log(`[Credentials] Processing batch ${batchNum} of ${totalBatches}...`)
+          
+          try {
+            toast.dismiss(loadingToastId)
+            toast.loading(`Generando lote ${batchNum} de ${totalBatches}...`)
+            
+            await generatePDFForEmployees(batches[i], action, batchNum, totalBatches)
+            
+            // Small delay between batch processing
+            if (i < batches.length - 1) {
+              await new Promise(r => setTimeout(r, 800))
+            }
+          } catch (error) {
+            console.error(`[Credentials] Error processing batch ${batchNum}:`, error)
+            toast.dismiss(loadingToastId)
+            toast.error(`Error en lote ${batchNum} de ${totalBatches}: ${error instanceof Error ? error.message : 'Error desconocido'}`)
+            throw error
+          }
+        }
+        
+        console.log('[Credentials] All batches processed successfully!')
+        toast.dismiss(loadingToastId)
+        toast.success(`${batches.length} lotes generados exitosamente`)
+      }
+    } catch (error) {
+      console.error('[Credentials] Batch processing failed:', error)
+      toast.dismiss(loadingToastId)
+      if (!(error instanceof Error && error.message.includes('Falló'))) {
+        toast.error('Error inesperado al generar credenciales')
+      }
+    }
   }
 
-  const generatePDFForEmployees = async (rows: Employee[], action: 'print' | 'download') => {
+  const generatePDFForEmployees = async (rows: Employee[], action: 'print' | 'download', batchNum = 1, totalBatches = 1) => {
+    console.log(`[PDF Gen] Starting PDF generation for batch ${batchNum}/${totalBatches} with ${rows.length} credentials`)
+    
     const container = document.createElement('div')
     container.style.cssText = 'position:absolute;left:-10000px;top:-10000px;width:auto;height:auto;background:white;'
     document.body.appendChild(container)
 
+    console.log('[PDF Gen] Container created and appended')
+
     const root = createRoot(container)
     root.render(
-      <div id="__print_capture_bulk__">
-        {rows.map((emp) => (
-          <div key={emp.id} className="mb-6">
-            <div className="flex justify-center">
-              <CredentialCard employeeData={emp} showBoth={true} />
-            </div>
+      <div id="__print_capture_bulk__" style={{ padding: '0', margin: '0' }}>
+        {rows.map((emp, idx) => (
+          <div 
+            key={emp.id} 
+            style={{
+              marginBottom: idx === rows.length - 1 ? '0' : '8px',
+              pageBreakInside: 'avoid',
+              display: 'flex',
+              justifyContent: 'center'
+            }}
+          >
+            <CredentialCard employeeData={emp} showBoth={true} />
           </div>
         ))}
       </div>
     )
 
+    console.log('[PDF Gen] React component rendered')
+
     const waitNextFrame = () => new Promise(requestAnimationFrame)
     await waitNextFrame()
 
-    const wrapper = container.querySelector('#__print_capture_bulk__') as HTMLElement
-    if (!wrapper) {
-      try { root.unmount() } catch {}
-      document.body.removeChild(container)
-      toast.error('No se pudo preparar la vista de impresión')
-      return
+    console.log('[PDF Gen] Waiting for next frame complete')
+
+    // Wait for wrapper and print-card elements to be rendered
+    let wrapper: HTMLElement | null = null
+    let attempts = 0
+    const maxAttempts = 50 // 5 seconds max (50 * 100ms)
+    
+    while (!wrapper && attempts < maxAttempts) {
+      wrapper = container.querySelector('#__print_capture_bulk__') as HTMLElement
+      if (!wrapper || wrapper.querySelector('.print-card') === null) {
+        console.log(`[PDF Gen] Waiting for cards to render... attempt ${attempts + 1}`)
+        await new Promise(r => setTimeout(r, 100))
+        attempts++
+      } else {
+        break
+      }
     }
 
+    if (!wrapper) {
+      console.error('[PDF Gen] ERROR: Wrapper element not found after 5 seconds!')
+      try { root.unmount() } catch {}
+      document.body.removeChild(container)
+      throw new Error('No se pudo preparar la vista de impresión - timeout')
+    }
+
+    const printCards = wrapper.querySelectorAll('.print-card')
+    if (printCards.length === 0) {
+      console.error(`[PDF Gen] ERROR: No print-card elements found! Wrapper HTML:`, wrapper.innerHTML.substring(0, 500))
+      try { root.unmount() } catch {}
+      document.body.removeChild(container)
+      throw new Error('No se encontraron tarjetas para exportar')
+    }
+
+    console.log(`[PDF Gen] Wrapper found with ${printCards.length} cards, waiting for images...`)
+    
     const waitForImages = async (scope: HTMLElement) => {
       const imgs = Array.from(scope.querySelectorAll('img')) as HTMLImageElement[]
-      await Promise.all(
-        imgs.map(img => (
-          img.complete && img.naturalWidth > 0
-            ? Promise.resolve()
-            : new Promise<void>(resolve => {
-                img.onload = () => resolve()
-                img.onerror = () => resolve()
-              })
-        ))
-      )
+      console.log(`[PDF Gen] Found ${imgs.length} images to wait for`)
+      
+      if (imgs.length === 0) {
+        console.log('[PDF Gen] No images to wait for')
+        return
+      }
+      
+      const loadPromises = imgs.map((img, idx) => {
+        if (img.complete && img.naturalWidth > 0) {
+          console.log(`[PDF Gen] Image ${idx + 1} already loaded`)
+          return Promise.resolve()
+        }
+        return new Promise<void>((resolve) => {
+          const timeout = setTimeout(() => {
+            console.warn(`[PDF Gen] Image ${idx + 1} timeout after 15s`)
+            resolve()
+          }, 15000) // 15s timeout per image
+          
+          img.onload = () => {
+            console.log(`[PDF Gen] Image ${idx + 1} loaded`)
+            clearTimeout(timeout)
+            resolve()
+          }
+          img.onerror = () => {
+            console.warn(`[PDF Gen] Image ${idx + 1} failed to load`)
+            clearTimeout(timeout)
+            resolve()
+          }
+        })
+      })
+      await Promise.all(loadPromises)
+      console.log('[PDF Gen] All images loaded')
     }
-    await waitForImages(wrapper)
+      
+      await waitForImages(wrapper)
+    
+    // Wait time for 5 credentials: 600ms base + (5 × 200ms) = 1600ms
+    // This is optimized since each PDF has max 5 credentials
+    const waitTime = 600 + (rows.length * 200)
+    await new Promise(resolve => setTimeout(resolve, waitTime))
 
     try {
       const pageW = 85.725
@@ -400,45 +549,105 @@ export function EmployeeCredentialsManager() {
         throw new Error('No se encontraron tarjetas para exportar')
       }
 
-      const captureCard = async (el: HTMLElement, isFirstPage: boolean) => {
-        const canvas = await html2canvas(el, {
-          scale: 3,
-          useCORS: true,
-          allowTaint: true,
-          backgroundColor: '#ffffff',
-          scrollX: 0,
-          scrollY: 0
-        })
-        const imgData = canvas.toDataURL('image/png')
-        const ratio = Math.min(pageW / canvas.width, pageH / canvas.height)
-        const w = canvas.width * ratio
-        const h = canvas.height * ratio
-        const x = (pageW - w) / 2
-        const y = (pageH - h) / 2
-        if (!isFirstPage) pdf.addPage()
-        pdf.addImage(imgData, 'PNG', x, y, w, h)
+      const captureCard = async (el: HTMLElement, isFirstPage: boolean, retryCount = 0): Promise<void> => {
+        try {
+          // HIGH QUALITY: Keep scale at 3 since we limit to 5 per PDF
+          const canvas = await html2canvas(el, {
+            scale: 3,
+            useCORS: true,
+            allowTaint: true,
+            backgroundColor: '#ffffff',
+            scrollX: 0,
+            scrollY: 0,
+            logging: false,
+            timeout: 45000,
+            windowHeight: el.offsetHeight || 1000,
+            windowWidth: el.offsetWidth || 400,
+          })
+          
+          // High quality PNG (no compression)
+          const imgData = canvas.toDataURL('image/png')
+          const ratio = Math.min(pageW / canvas.width, pageH / canvas.height)
+          const w = canvas.width * ratio
+          const h = canvas.height * ratio
+          const x = (pageW - w) / 2
+          const y = (pageH - h) / 2
+          
+          if (!isFirstPage) pdf.addPage()
+          pdf.addImage(imgData, 'PNG', x, y, w, h)
+        } catch (cardError) {
+          if (retryCount < 2) {
+            console.warn(`Retry ${retryCount + 1} for card capture:`, cardError)
+            await new Promise(r => setTimeout(r, 500 * (retryCount + 1)))
+            return captureCard(el, isFirstPage, retryCount + 1)
+          }
+          console.error(`Error capturing card after ${retryCount + 1} attempts:`, cardError)
+          throw cardError
+        }
       }
 
       for (let i = 0; i < cards.length; i++) {
-        await captureCard(cards[i], i === 0)
+        try {
+          await captureCard(cards[i], i === 0)
+        } catch (error) {
+          console.error(`Failed to capture card ${i + 1} of ${cards.length}:`, error)
+          throw new Error(`Falló al procesar credencial ${i + 1} de ${cards.length}`)
+        }
+        
+        // Small delay between cards to prevent memory buildup
+        if (i < cards.length - 1) {
+          await new Promise(r => setTimeout(r, 100))
+        }
+      }
+
+      console.log(`[PDF Gen] All ${cards.length} cards captured successfully, generating PDF...`)
+
+      // Generate filename for all actions
+      let filename: string
+      if (rows.length === 1) {
+        filename = `credencial-${rows[0].nombre}-${rows[0].apellido}.pdf`
+      } else if (totalBatches === 1) {
+        filename = `credenciales-${rows.length}-empleados.pdf`
+      } else {
+        // Multiple batches - include batch number in filename
+        filename = `credenciales-lote-${batchNum}-de-${totalBatches}.pdf`
       }
 
       if (action === 'print') {
-        pdf.autoPrint()
-        const blobUrl = pdf.output('bloburl')
-        window.open(blobUrl)
-      } else {
-        const filename = rows.length === 1
-          ? `credencial-${rows[0].nombre}-${rows[0].apellido}.pdf`
-          : `credenciales-${rows.length}-empleados.pdf`
+        console.log('[PDF Gen] Action is PRINT, saving for print: ' + filename)
+        // Save the PDF - user can print from downloads
         pdf.save(filename)
+        console.log('[PDF Gen] PDF saved, user can print from downloads folder')
+      } else {
+        console.log(`[PDF Gen] Action is DOWNLOAD, saving as: ${filename}`)
+        // Download the PDF
+        pdf.save(filename)
+        console.log('[PDF Gen] PDF saved successfully')
+      }
+      
+      // Show success message for each batch
+      if (totalBatches > 1) {
+        console.log(`[PDF Gen] Batch ${batchNum}/${totalBatches} completed successfully`)
+        toast.success(`Lote ${batchNum} de ${totalBatches} completado (${rows.length} credenciales)`)
+      } else {
+        console.log('[PDF Gen] Single batch completed successfully')
+        toast.success(`PDF generado exitosamente (${rows.length} credenciales)`)
       }
     } catch (error) {
-      console.error('Error generating PDF:', error)
-      toast.error('Error al generar PDF de credenciales')
+      console.error('[PDF Gen] ERROR in PDF generation:', error)
+      console.error('[PDF Gen] Error details:', {
+        message: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : 'No stack trace'
+      })
+      if (totalBatches > 1) {
+        throw error // Re-throw to be caught by batch handler
+      }
+      toast.error(`Error al generar PDF: ${error instanceof Error ? error.message : 'Error desconocido'}`)
     } finally {
+      console.log('[PDF Gen] Cleaning up - unmounting React and removing container')
       try { root.unmount() } catch {}
-      document.body.removeChild(container)
+      try { document.body.removeChild(container) } catch {}
+      console.log('[PDF Gen] Cleanup complete')
     }
   }
 
@@ -703,33 +912,122 @@ export function EmployeeCredentialsManager() {
       {/* Search and Actions */}
       <Card>
         <CardContent className="p-6">
-          <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
-            <div className="relative flex-1 max-w-sm">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
-              <Input
-                placeholder="Buscar empleados..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10"
-              />
+          <div className="space-y-4">
+            {/* Search Bar */}
+            <div className="flex flex-col sm:flex-row gap-4">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+                <Input
+                  placeholder="Buscar empleados..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-10"
+                />
+              </div>
             </div>
-            <div className="flex items-center gap-2">
-              <Label className="text-sm text-gray-600">Foto</Label>
-              <Select
-                value={photoFilter}
-                onValueChange={(value) => setPhotoFilter(value as 'all' | 'with' | 'without')}
-              >
-                <SelectTrigger className="w-[160px]">
-                  <SelectValue placeholder="Filtro de foto" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Todas</SelectItem>
-                  <SelectItem value="with">Con foto</SelectItem>
-                  <SelectItem value="without">Sin foto</SelectItem>
-                </SelectContent>
-              </Select>
+            
+            {/* Filters Row */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-3">
+              <div>
+                <Label className="text-xs text-gray-600 mb-1 block">Foto</Label>
+                <Select
+                  value={photoFilter}
+                  onValueChange={(value) => setPhotoFilter(value as 'all' | 'with' | 'without')}
+                >
+                  <SelectTrigger className="w-full h-9 text-sm">
+                    <SelectValue placeholder="Todas" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todas</SelectItem>
+                    <SelectItem value="with">Con foto</SelectItem>
+                    <SelectItem value="without">Sin foto</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div>
+                <Label className="text-xs text-gray-600 mb-1 block">Departamento</Label>
+                <Select
+                  value={departmentFilter}
+                  onValueChange={setDepartmentFilter}
+                >
+                  <SelectTrigger className="w-full h-9 text-sm">
+                    <SelectValue placeholder="Todos" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todos</SelectItem>
+                    {uniqueDepartments.map(dept => (
+                      <SelectItem key={dept} value={dept}>
+                        {dept}
+                      </SelectItem>
+                    ))}
+                    {hasEmployeesWithoutDept && (
+                       <SelectItem value="no-dept">Sin Departamento</SelectItem>
+                     )}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div>
+                <Label className="text-xs text-gray-600 mb-1 block">Oficina</Label>
+                <Select
+                  value={officeFilter}
+                  onValueChange={setOfficeFilter}
+                >
+                  <SelectTrigger className="w-full h-9 text-sm">
+                    <SelectValue placeholder="Todas" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todas</SelectItem>
+                    {offices.map(office => (
+                      <SelectItem key={office.id} value={office.id}>
+                        {office.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div>
+                <Label className="text-xs text-gray-600 mb-1 block">Planta</Label>
+                <Select
+                  value={plantFilter}
+                  onValueChange={setPlantFilter}
+                >
+                  <SelectTrigger className="w-full h-9 text-sm">
+                    <SelectValue placeholder="Todas" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todas</SelectItem>
+                    {plantsData.map(plant => (
+                      <SelectItem key={plant?.id} value={plant?.id || ''}>
+                        {plant?.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="flex items-end gap-2">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    setSearchTerm('')
+                    setPhotoFilter('all')
+                    setDepartmentFilter('all')
+                    setOfficeFilter('all')
+                    setPlantFilter('all')
+                  }}
+                  className="w-full"
+                >
+                  Limpiar
+                </Button>
+              </div>
             </div>
-            <div className="flex gap-2">
+
+            {/* Action Buttons */}
+            <div className="flex gap-2 justify-end">
               <Button
                 onClick={() => handlePrintCredentials()}
                 disabled={filteredEmployees.length === 0}

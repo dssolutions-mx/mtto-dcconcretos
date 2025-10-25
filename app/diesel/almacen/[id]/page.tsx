@@ -48,6 +48,8 @@ interface Transaction {
   transaction_type: string
   quantity_liters: number
   transaction_date: string
+  created_at?: string
+  updated_at?: string
   asset_name: string | null
   asset_id: string | null
   exception_asset_name: string | null
@@ -61,6 +63,7 @@ interface Transaction {
   unit_cost?: number | null
   total_cost?: number | null
   supplier_responsible?: string | null
+  requires_validation?: boolean
 }
 
 interface WarehouseStats {
@@ -104,6 +107,7 @@ export default function WarehouseDetailPage() {
   const [typeFilter, setTypeFilter] = useState<string>("all")
   const [dateFrom, setDateFrom] = useState<string>("")
   const [dateTo, setDateTo] = useState<string>("")
+  const [validationOnly, setValidationOnly] = useState<boolean>(false)
   
   // Pagination
   const [currentPage, setCurrentPage] = useState(1)
@@ -173,6 +177,8 @@ export default function WarehouseDetailPage() {
           transaction_type,
           quantity_liters,
           transaction_date,
+          created_at,
+          updated_at,
           asset_id,
           exception_asset_name,
           created_by,
@@ -180,6 +186,7 @@ export default function WarehouseDetailPage() {
           current_balance,
           notes,
           cuenta_litros,
+          requires_validation,
           product_id,
           unit_cost,
           total_cost,
@@ -221,6 +228,8 @@ export default function WarehouseDetailPage() {
           transaction_type: t.transaction_type,
           quantity_liters: t.quantity_liters,
           transaction_date: t.transaction_date,
+          created_at: t.created_at,
+          updated_at: t.updated_at,
           asset_name: t.assets?.name || null,
           asset_id: t.assets?.asset_id || t.asset_id || null,
           exception_asset_name: t.exception_asset_name || null,
@@ -229,6 +238,7 @@ export default function WarehouseDetailPage() {
           current_balance: t.current_balance,
           notes: t.notes,
           cuenta_litros: t.cuenta_litros,
+          requires_validation: t.requires_validation,
           product_id: t.product_id || null,
           product_code: t.diesel_products?.product_code || null,
           unit_cost: t.unit_cost ?? null,
@@ -373,6 +383,10 @@ export default function WarehouseDetailPage() {
       filtered = filtered.filter(t => toLocalYmd(t.transaction_date) <= dateTo)
     }
 
+    if (validationOnly) {
+      filtered = filtered.filter(t => t.requires_validation)
+    }
+
     setFilteredTransactions(filtered)
     setCurrentPage(1) // Reset to first page when filters change
   }
@@ -382,6 +396,7 @@ export default function WarehouseDetailPage() {
     setDateFrom("")
     setDateTo("")
     setCurrentPage(1)
+    setValidationOnly(false)
   }
 
   const handleEditTransaction = (transaction: Transaction) => {
@@ -817,7 +832,7 @@ export default function WarehouseDetailPage() {
           <div className="flex items-center gap-2 mb-3">
             <Filter className="h-4 w-4 text-muted-foreground" />
             <span className="text-sm font-medium">Filtros</span>
-            {(typeFilter !== "all" || dateFrom || dateTo) && (
+            {(typeFilter !== "all" || dateFrom || dateTo || validationOnly) && (
               <Button variant="ghost" size="sm" onClick={clearFilters}>
                 <X className="h-3 w-3 mr-1" />
                 Limpiar
@@ -861,6 +876,18 @@ export default function WarehouseDetailPage() {
               />
             </div>
           </div>
+
+          {/* Validation-only toggle */}
+          <div className="mt-3 flex items-center gap-2">
+            <input
+              id="validation-only"
+              type="checkbox"
+              checked={validationOnly}
+              onChange={(e) => setValidationOnly(e.target.checked)}
+              className="h-4 w-4"
+            />
+            <Label htmlFor="validation-only" className="text-sm">Solo marcadas para validación</Label>
+          </div>
         </CardContent>
         
         <CardContent className="pt-4">
@@ -898,7 +925,7 @@ export default function WarehouseDetailPage() {
                         </Badge>
                       )}
                     </div>
-                    <div className="text-xs text-muted-foreground flex items-center gap-2">
+                    <div className="text-xs text-muted-foreground flex items-center gap-2 flex-wrap">
                       <span>{transaction.created_by_name}</span>
                       <span>•</span>
                       <span>
@@ -910,6 +937,34 @@ export default function WarehouseDetailPage() {
                           minute: '2-digit'
                         })}
                       </span>
+                      {transaction.created_at && (
+                        <span className="ml-2">creada: {new Date(transaction.created_at).toLocaleString('es-MX', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                      )}
+                      {transaction.updated_at && (
+                        <span>• modificada: {new Date(transaction.updated_at).toLocaleString('es-MX', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                      )}
+                      {transaction.requires_validation && (
+                        <Badge title="Marcada para validación" variant="destructive" className="text-[10px]">Marcada para validación</Badge>
+                      )}
+                      {/* Client-computed hints */}
+                      {transaction.created_at && (
+                        (() => {
+                          try {
+                            const created = new Date(transaction.created_at).getTime()
+                            const registered = new Date(transaction.transaction_date).getTime()
+                            if (!isNaN(created) && !isNaN(registered)) {
+                              const deltaMin = Math.floor((created - registered) / 60000)
+                              if (deltaMin > 120) {
+                                return (
+                                  <Badge title={`Antidatada por ${deltaMin} min`} variant="outline" className="text-[10px] bg-yellow-50 text-yellow-800 border-yellow-300">
+                                    Antidatada {deltaMin}m
+                                  </Badge>
+                                )
+                              }
+                            }
+                          } catch {}
+                        })()
+                      )}
                     </div>
                     {transaction.notes && (
                       <div className="text-xs text-muted-foreground italic">

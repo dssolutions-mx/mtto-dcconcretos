@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { User } from 'lucide-react'
 import jsPDF from 'jspdf'
 import html2canvas from 'html2canvas'
@@ -45,6 +45,49 @@ export function CredentialCard({
   showBoth = false
 }: CredentialCardProps) {
   const [currentView, setCurrentView] = useState<'front' | 'back'>('front');
+  const [processedAvatarUrl, setProcessedAvatarUrl] = useState<string | null>(null);
+
+  // Process avatar image with brightness enhancement baked into pixels
+  // This ensures the enhancement appears in both screen view and PDF export
+  useEffect(() => {
+    const sourceUrl = employeeData.avatar_url;
+    if (!sourceUrl) {
+      setProcessedAvatarUrl(null);
+      return;
+    }
+
+    let cancelled = false;
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.src = sourceUrl;
+
+    img.onload = () => {
+      if (cancelled) return;
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.width = img.naturalWidth || 256;
+        canvas.height = img.naturalHeight || 256;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+
+        // Draw image without filters for natural appearance
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        
+        const enhancedUrl = canvas.toDataURL('image/png');
+        setProcessedAvatarUrl(enhancedUrl);
+      } catch (error) {
+        console.error('Error processing avatar image:', error);
+        setProcessedAvatarUrl(null);
+      }
+    };
+
+    img.onerror = () => {
+      console.error('Error loading avatar image');
+      setProcessedAvatarUrl(null);
+    };
+
+    return () => { cancelled = true; };
+  }, [employeeData.avatar_url]);
 
   // Get office info or use defaults
   const officeInfo = employeeData.office || {
@@ -120,17 +163,17 @@ export function CredentialCard({
     return (
     <div className="w-[300px] h-[468px] bg-white rounded-lg shadow-lg overflow-hidden border-2 border-gray-200 print-card relative">
       {/* Top dark blue bar */}
-      <div style={{ height: '8px', backgroundColor: BRAND_DARK_BLUE }} className="absolute inset-x-0 top-0 z-10" />
+      <div style={{ height: '12px', backgroundColor: BRAND_DARK_BLUE }} className="absolute inset-x-0 top-0 z-10" />
 
       {/* Header spacer (removed top logo) */}
       <div className="bg-gray-50 h-[20px] w-full" />
 
       {/* Professional Photo Section */}
-      <div className="flex justify-center pt-4 pb-2">
+      <div className="flex justify-center pt-10 pb-2">
         <div className="w-32 h-32 bg-white flex items-center justify-center">
-          {employeeData.avatar_url ? (
+          {processedAvatarUrl ? (
             <img
-              src={employeeData.avatar_url}
+              src={processedAvatarUrl}
               alt={`${employeeData.nombre} ${employeeData.apellido}`}
               className="h-full w-auto block"
               crossOrigin="anonymous"
@@ -143,7 +186,7 @@ export function CredentialCard({
       </div>
       
       {/* Employee Information - Executive Style */}
-      <div className="px-6 pb-24">{/* extra bottom padding to avoid overlapping enlarged footer/logo */}
+      <div className="px-6 pb-20">{/* extra bottom padding to avoid overlapping enlarged footer/logo */}
         {/* Name Section */}
         <div className="text-center space-y-1 pt-2">
           <h2 className="text-base font-bold text-gray-900 leading-tight">
@@ -156,6 +199,13 @@ export function CredentialCard({
 
         {/* Details - Compact */}
         <div className="space-y-1 text-[11px] mt-4">
+          <div className="flex justify-between items-center py-0.5">
+            <span className="text-gray-500 font-medium">Empleado #</span>
+            <span className="font-semibold text-gray-900 text-[12px]">
+              {employeeData.employee_code || employeeData.id}
+            </span>
+          </div>
+          <div className="h-px w-full bg-gray-200"></div>
           <div className="flex justify-between items-center py-0.5">
             <span className="text-gray-500 font-medium">Departamento</span>
             <span className="font-semibold text-gray-900 text-[10px]">
@@ -192,13 +242,13 @@ export function CredentialCard({
           </div>
         </div>
         {/* Base blue bar */}
-        <div className="absolute left-0 right-0 bottom-0" style={{ height: '12px', backgroundColor: BRAND_DARK_BLUE, zIndex: 1 }} />
+        <div className="absolute left-0 right-0 bottom-0" style={{ height: '16px', backgroundColor: BRAND_DARK_BLUE, zIndex: 1 }} />
         {/* Green left rectangle */}
         <div 
           className="absolute bottom-0 left-0" 
           style={{ 
             width: '135px', 
-            height: '12px', 
+            height: '16px', 
             backgroundColor: BRAND_GREEN,
             zIndex: 2
           }} 
@@ -211,7 +261,7 @@ export function CredentialCard({
             width: 0,
             height: 0,
             borderLeft: '20px solid ' + BRAND_GREEN,
-            borderTop: '12px solid transparent',
+            borderTop: '16px solid transparent',
             zIndex: 2
           }} 
         />
@@ -226,19 +276,19 @@ export function CredentialCard({
     return (
       <div className="w-[300px] h-[468px] bg-white rounded-lg shadow-lg overflow-hidden border-2 border-gray-200 print-card relative">
         {/* Top dark blue bar */}
-        <div style={{ height: '8px', backgroundColor: BRAND_DARK_BLUE }} className="absolute inset-x-0 top-0 z-10" />
+        <div style={{ height: '12px', backgroundColor: BRAND_DARK_BLUE }} className="absolute inset-x-0 top-0 z-10" />
 
         {/* Header spacer (removed top logo) */}
         <div className="bg-gray-50 h-[16px] w-full" />
 
         {/* Employee Personal Information - Compact */}
-        <div className="px-6 py-2 pb-24">{/* extra bottom padding to avoid overlapping enlarged footer/logo */}
+        <div className="p-5 pb-24" style={{ marginTop: '20px' }}>{/* extra bottom padding to avoid overlapping enlarged footer/logo */}
           <div className="p-0 mb-2">
-            <h3 className="font-semibold text-gray-800 text-[10px] mb-1.5 uppercase tracking-wider text-center">
+            <h3 className="font-semibold text-gray-800 text-[10px] mb-1 uppercase tracking-wider text-center">
               INFORMACIÓN PERSONAL
             </h3>
-              <div className="space-y-1 text-[11px]">
-                <div className="flex justify-between items-center py-1">
+              <div className="space-y-0.5 text-[11px]">
+                <div className="flex justify-between items-center py-0.5">
                   <span className="text-gray-500 font-medium">Correo</span>
                   <span className="text-gray-900 text-[10px] max-w-[200px] break-all whitespace-normal text-right">
                     {employeeData.email || 'N/A'}
@@ -247,7 +297,7 @@ export function CredentialCard({
               {employeeData.telefono && (
                 <>
                   <div className="h-px w-full bg-gray-200"></div>
-                  <div className="flex justify-between items-center py-1">
+                  <div className="flex justify-between items-center py-0.5">
                     <span className="text-gray-500 font-medium">Teléfono</span>
                     <span className="text-gray-900 text-[10px]">{employeeData.telefono}</span>
                   </div>
@@ -258,10 +308,10 @@ export function CredentialCard({
 
           {/* System Access - Compact */}
           <div className="mb-2">
-            <h3 className="font-semibold text-gray-800 text-[10px] mb-1.5 uppercase tracking-wider text-center">
+            <h3 className="font-semibold text-gray-800 text-[10px] mb-1 uppercase tracking-wider text-center">
               ACCESO AL SISTEMA
             </h3>
-            <div className="space-y-1 text-[11px]">
+            <div className="space-y-0.5 text-[11px]">
               <div className="flex justify-between items-center py-0.5">
                 <span className="text-gray-500 font-medium">Código de Acceso</span>
                 <span className="text-gray-900 text-[10px]">{credentials.accessPassword}</span>
@@ -271,12 +321,12 @@ export function CredentialCard({
 
           {/* Emergency Contact - Compact */}
           <div className="mb-2">
-            <h3 className="font-semibold text-gray-800 text-[10px] mb-1.5 uppercase tracking-wider text-center">
+            <h3 className="font-semibold text-gray-800 text-[10px] mb-1 uppercase tracking-wider text-center">
               CONTACTO DE EMERGENCIA
             </h3>
             {employeeData.emergency_contact ? (
-              <div className="space-y-1 text-[11px]">
-                <div className="flex justify-between items-center py-1">
+              <div className="space-y-0.5 text-[11px]">
+                <div className="flex justify-between items-center py-0.5">
                   <span className="text-gray-500 font-medium">Teléfono</span>
                   <span className="text-gray-900 text-[10px]">{employeeData.emergency_contact.phone}</span>
                 </div>
@@ -296,10 +346,10 @@ export function CredentialCard({
 
           {/* Company Contact - Compact */}
           <div>
-            <h3 className="font-semibold text-gray-800 text-[10px] mb-1.5 uppercase tracking-wider text-center">
+            <h3 className="font-semibold text-gray-800 text-[10px] mb-1 uppercase tracking-wider text-center">
               CONTACTO DE LA EMPRESA
             </h3>
-            <div className="space-y-1 text-[11px]">
+            <div className="space-y-0.5 text-[11px]">
               <div className="py-0.5">
                 <div className="flex justify-between items-start">
                   <span className="text-gray-500 font-medium">Dirección</span>
@@ -331,18 +381,18 @@ export function CredentialCard({
         <div className="absolute bottom-0 left-0 w-full" style={{ height: '80px' }}>
           {/* Bottom logo area */}
           <div className="bg-white w-full flex items-center justify-center px-4" style={{ height: '68px' }}>
-            <div className="max-w-[280px] h-[56px] flex items-center justify-center">
+            <div className="max-w-[220px] h-[44px] flex items-center justify-center">
               <img src="/logo.png" alt="DC CONCRETOS" className="h-full w-auto block" />
             </div>
           </div>
           {/* Base blue bar - same thickness as green */}
-          <div className="absolute left-0 right-0 bottom-0" style={{ height: '12px', backgroundColor: BRAND_DARK_BLUE, zIndex: 1 }} />
+          <div className="absolute left-0 right-0 bottom-0" style={{ height: '16px', backgroundColor: BRAND_DARK_BLUE, zIndex: 1 }} />
           {/* Green left rectangle */}
           <div 
             className="absolute bottom-0 left-0" 
             style={{ 
               width: '148px', 
-              height: '12px', 
+              height: '16px', 
               backgroundColor: BRAND_GREEN,
               zIndex: 2
             }} 
@@ -355,7 +405,7 @@ export function CredentialCard({
               width: 0,
               height: 0,
               borderLeft: '25px solid ' + BRAND_GREEN,
-              borderBottom: '12px solid transparent',
+              borderBottom: '16px solid transparent',
               zIndex: 2
             }} 
           />
