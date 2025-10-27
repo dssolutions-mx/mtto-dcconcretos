@@ -233,10 +233,57 @@ export async function PUT(
       }, { status: 400 })
     }
     
+    // Generic Postgres/Supabase error mapping to avoid unhelpful 500s
+    const e: any = error
+    const code = e?.code || e?.status || null
+    const message = typeof e?.message === 'string' ? e.message : (typeof e === 'string' ? e : null)
+    const errDetails = typeof e?.details === 'string' ? e.details : null
+    const hint = typeof e?.hint === 'string' ? e.hint : null
+    const details = message || errDetails || (typeof e?.error_description === 'string' ? e.error_description : 'Unknown error')
+
+    // Map permission errors to 403
+    if (
+      String(code) === '42501' ||
+      (typeof message === 'string' && (message.includes('permission denied') || message.toLowerCase().includes('row-level security')))
+    ) {
+      return NextResponse.json({ 
+        success: false,
+        error: 'Permisos insuficientes',
+        details,
+        code: code || '42501',
+        hint
+      }, { status: 403 })
+    }
+
+    // Treat business rule violations and constraint failures as client errors
+    const clientErrorCodes = new Set(['P0001', '23514', '23503', '23505', '23502', '22P02'])
+    if (code && clientErrorCodes.has(String(code))) {
+      return NextResponse.json({ 
+        success: false,
+        error: 'No se pudo avanzar el workflow',
+        details,
+        code,
+        hint
+      }, { status: 400 })
+    }
+
+    // Function not found or server errors – still return JSON with details
+    if (String(code) === '42883') {
+      return NextResponse.json({
+        success: false,
+        error: 'Función de workflow no encontrada',
+        details,
+        code,
+        hint
+      }, { status: 500 })
+    }
+
     return NextResponse.json({ 
       success: false,
       error: 'Failed to advance workflow',
-      details: error instanceof Error ? error.message : 'Unknown error'
+      details,
+      code: code || null,
+      hint
     }, { status: 500 })
   }
 } 
