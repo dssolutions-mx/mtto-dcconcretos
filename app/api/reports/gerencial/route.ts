@@ -142,13 +142,13 @@ export async function POST(req: NextRequest) {
       avgPriceByProduct.set(pid, priceByProduct.get(pid) || avg || 0)
     })
 
-    // Fetch purchase orders (same as executive report)
+    // Fetch purchase orders (exclude only pending_approval)
     const { data: purchaseOrders } = await supabase
       .from('purchase_orders')
       .select(`
-        id, order_id, total_amount, actual_amount, created_at, posting_date, plant_id, work_order_id, status
+        id, order_id, total_amount, actual_amount, created_at, posting_date, purchased_at, plant_id, work_order_id, status
       `)
-      .in('status', ['approved', 'validated', 'received', 'purchased'])
+      .neq('status', 'pending_approval')
 
     // Get work orders for the purchase orders (to get asset_id and type)
     const poWorkOrderIds = purchaseOrders?.map(po => po.work_order_id).filter(Boolean) || []
@@ -158,7 +158,7 @@ export async function POST(req: NextRequest) {
       const { data: workOrders } = await supabase
         .from('work_orders')
         .select(`
-          id, type, asset_id, planned_date,
+          id, type, asset_id, planned_date, completed_at, created_at,
           assets (
             id, plant_id
           )
@@ -169,16 +169,36 @@ export async function POST(req: NextRequest) {
     }
 
     // Filter purchase orders by date range (inclusive start, exclusive end)
+    // Priority: purchased_at → work_order.completed_at → work_order.planned_date → work_order.created_at
     const filteredPurchaseOrders = purchaseOrders?.filter(po => {
-      // Use posting_date for accounting allocation when available
-      const preferredDate = (po as any).posting_date || po.created_at
-      let dateToCheckStr: string = preferredDate
-      if (!preferredDate && po.work_order_id) {
+      let dateToCheckStr: string
+      
+      // First priority: purchased_at
+      if (po.purchased_at) {
+        dateToCheckStr = po.purchased_at
+      } else if (po.work_order_id) {
         const workOrder = workOrdersMap.get(po.work_order_id)
-        if (workOrder?.planned_date) {
+        // Second priority: work_order.completed_at
+        if (workOrder?.completed_at) {
+          dateToCheckStr = workOrder.completed_at
+        }
+        // Third priority: work_order.planned_date
+        else if (workOrder?.planned_date) {
           dateToCheckStr = workOrder.planned_date
         }
+        // Fourth priority: work_order.created_at
+        else if (workOrder?.created_at) {
+          dateToCheckStr = workOrder.created_at
+        }
+        // Fallback to PO created_at
+        else {
+          dateToCheckStr = po.created_at
+        }
+      } else {
+        // No work order - use PO created_at
+        dateToCheckStr = po.created_at
       }
+      
       const ts = new Date(dateToCheckStr).getTime()
       return ts >= dateFromStart.getTime() && ts < dateToExclusive.getTime()
     }) || []

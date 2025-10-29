@@ -22,8 +22,10 @@ import {
   ChevronUp,
   Building2,
   Factory,
-  Truck
+  Truck,
+  FileText
 } from 'lucide-react'
+import { useRouter } from 'next/navigation'
 import {
   BarChart,
   Bar,
@@ -133,6 +135,7 @@ type ReportData = {
 }
 
 export default function GerencialReportPage() {
+  const router = useRouter()
   const [loading, setLoading] = useState(true)
   const [data, setData] = useState<ReportData | null>(null)
   const [dateFrom, setDateFrom] = useState<string>('')
@@ -340,11 +343,17 @@ export default function GerencialReportPage() {
   return (
     <div className="container mx-auto py-6 px-4 max-w-7xl space-y-6">
       {/* Header */}
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">Reporte Gerencial</h1>
-        <p className="text-muted-foreground">
-          Análisis ejecutivo integrado: ventas, diésel y mantenimiento
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Reporte Gerencial</h1>
+          <p className="text-muted-foreground">
+            Análisis ejecutivo integrado: ventas, diésel y mantenimiento
+          </p>
+        </div>
+        <Button onClick={() => router.push('/reportes/gerencial/ingresos-gastos')}>
+          <FileText className="w-4 h-4 mr-2" />
+          Ingresos vs Gastos
+        </Button>
       </div>
 
       {/* Filters */}

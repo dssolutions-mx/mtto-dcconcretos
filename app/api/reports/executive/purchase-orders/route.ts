@@ -24,6 +24,7 @@ export async function GET(request: NextRequest) {
         actual_amount, 
         created_at, 
         posting_date,
+        purchased_at,
         plant_id,
         work_order_id, 
         status, 
@@ -34,6 +35,8 @@ export async function GET(request: NextRequest) {
           type,
           asset_id,
           planned_date,
+          completed_at,
+          created_at,
           assets (
             id,
             asset_id,
@@ -47,9 +50,7 @@ export async function GET(request: NextRequest) {
           name
         )
       `)
-      .gte("posting_date", startDate)
-      .lte("posting_date", endDate)
-      .in("status", ["approved", "validated", "received", "purchased"])
+      .neq("status", "pending_approval")
       .order('created_at', { ascending: false })
 
     const { data: purchaseOrders, error } = await query
@@ -59,7 +60,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
-    // Filter by date using posting_date; fallback to planned_date/created_at for safety
+    // Filter by date using priority: purchased_at → work_order.completed_at → work_order.planned_date → work_order.created_at
     // Also filter by assetId if provided
     const filteredPOs = (purchaseOrders || []).filter((po: any) => {
       // Filter by asset if specified
@@ -67,8 +68,20 @@ export async function GET(request: NextRequest) {
         return false
       }
       
-      // Filter by date
-      const dateToCheck = po.posting_date || po.work_orders?.planned_date || po.created_at
+      // Filter by date - priority: purchased_at → work_order.completed_at → work_order.planned_date → work_order.created_at
+      let dateToCheck: string
+      if (po.purchased_at) {
+        dateToCheck = po.purchased_at
+      } else if (po.work_orders?.completed_at) {
+        dateToCheck = po.work_orders.completed_at
+      } else if (po.work_orders?.planned_date) {
+        dateToCheck = po.work_orders.planned_date
+      } else if (po.work_orders?.created_at) {
+        dateToCheck = po.work_orders.created_at
+      } else {
+        dateToCheck = po.created_at
+      }
+      
       return dateToCheck >= startDate! && dateToCheck <= endDate!
     })
 

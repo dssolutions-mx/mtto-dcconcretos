@@ -83,17 +83,17 @@ export async function POST(req: Request) {
       })
     }
 
-    // Get approved purchase orders (we'll filter by plant later after getting work order data)
+    // Get purchase orders (exclude only pending_approval)
     const { data: purchaseOrders, error: poError } = await supabase
       .from("purchase_orders")
       .select(`
-        id, order_id, total_amount, actual_amount, created_at, plant_id, work_order_id, status, supplier, items
+        id, order_id, total_amount, actual_amount, created_at, purchased_at, plant_id, work_order_id, status, supplier, items
       `)
-      .in("status", ["approved", "validated", "received", "purchased"]) // Include validated status
+      .neq("status", "pending_approval")
 
     if (poError) throw poError
 
-    // Get work orders for the purchase orders (to get asset_id, type, and planned_date)
+    // Get work orders for the purchase orders (to get asset_id, type, planned_date, and completed_at)
     const poWorkOrderIds = purchaseOrders?.map(po => po.work_order_id).filter(Boolean) || []
     let workOrdersMap = new Map()
     let assetToPlantMap = new Map()
@@ -102,7 +102,7 @@ export async function POST(req: Request) {
       const { data: workOrders, error: woError } = await supabase
         .from("work_orders")
         .select(`
-          id, type, asset_id, planned_date,
+          id, type, asset_id, planned_date, completed_at, created_at,
           assets (
             id, plant_id
           )
@@ -145,15 +145,28 @@ export async function POST(req: Request) {
         }
       }
       
-      // Check date filtering
+      // Check date filtering - priority: purchased_at → work_order.completed_at → work_order.planned_date → work_order.created_at
       let dateToCheck: string
       
-      if (po.work_order_id) {
+      // First priority: purchased_at
+      if (po.purchased_at) {
+        dateToCheck = po.purchased_at
+      } else if (po.work_order_id) {
         const workOrder = workOrdersMap.get(po.work_order_id)
-        if (workOrder?.planned_date) {
+        // Second priority: work_order.completed_at
+        if (workOrder?.completed_at) {
+          dateToCheck = workOrder.completed_at
+        } 
+        // Third priority: work_order.planned_date
+        else if (workOrder?.planned_date) {
           dateToCheck = workOrder.planned_date
-        } else {
-          // Fallback to PO created_at if work order doesn't have planned_date
+        }
+        // Fourth priority: work_order.created_at
+        else if (workOrder?.created_at) {
+          dateToCheck = workOrder.created_at
+        }
+        // Fallback to PO created_at if work order doesn't have any date
+        else {
           dateToCheck = po.created_at
         }
       } else {

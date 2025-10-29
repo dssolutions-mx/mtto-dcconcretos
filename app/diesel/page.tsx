@@ -23,6 +23,7 @@ import {
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { DieselOfflineStatus } from "@/components/diesel-inventory/diesel-offline-status"
+import { CreateDieselWarehouseDialog } from "@/components/diesel/dialogs/create-warehouse-dialog"
 
 interface WarehouseSummary {
   id: string
@@ -55,6 +56,7 @@ export default function DieselDashboardPage() {
   const [recentTransactions, setRecentTransactions] = useState<RecentTransaction[]>([])
   const [totalInventory, setTotalInventory] = useState(0)
   const [userProfile, setUserProfile] = useState<any>(null)
+  const [createDialogOpen, setCreateDialogOpen] = useState(false)
 
   const supabase = createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -317,10 +319,16 @@ export default function DieselDashboardPage() {
 
       {/* Warehouses Grid */}
       <div>
-        <h2 className="text-2xl font-semibold mb-4 flex items-center gap-2">
-          <Fuel className="h-6 w-6" />
-          Almacenes
-        </h2>
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="text-2xl font-semibold flex items-center gap-2">
+            <Fuel className="h-6 w-6" />
+            Almacenes
+          </h2>
+          <Button onClick={() => setCreateDialogOpen(true)}>
+            <Plus className="h-4 w-4 mr-2" />
+            Nuevo Almacén
+          </Button>
+        </div>
         
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {warehouses.map((warehouse) => {
@@ -474,6 +482,14 @@ export default function DieselDashboardPage() {
           )}
         </CardContent>
       </Card>
+
+      <CreateDieselWarehouseDialog
+        open={createDialogOpen}
+        onOpenChange={setCreateDialogOpen}
+        onCreated={() => {
+          loadDashboardData()
+        }}
+      />
     </div>
   )
 }
