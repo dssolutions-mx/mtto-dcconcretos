@@ -25,7 +25,8 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  Receipt
 } from "lucide-react"
 import {
   BarChart,
@@ -129,6 +130,15 @@ type ExecutiveData = {
     businessUnits: BusinessUnit[]
     plants: Plant[]
   }
+  unlinkedAdditionalExpenses?: Array<{
+    id: string
+    amount: number
+    created_at: string
+    description?: string
+    status?: string
+    work_order_id?: string
+    asset_id?: string
+  }>
   error?: string
 }
 
@@ -164,6 +174,7 @@ export function ExecutiveReport() {
   const [purchaseOrdersData, setPurchaseOrdersData] = useState<any>(null)
   const [loadingPOs, setLoadingPOs] = useState(false)
   const [expandedAssets, setExpandedAssets] = useState<Set<string>>(new Set())
+  const [filterByAdditionalExpenses, setFilterByAdditionalExpenses] = useState(false)
 
   const toggleAssetExpansion = (assetId: string) => {
     setExpandedAssets(prev => {
@@ -404,7 +415,6 @@ export function ExecutiveReport() {
                 </SelectContent>
               </Select>
             </div>
-
             <div className="flex gap-2">
               <Button onClick={load} disabled={loading}>
                 <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
@@ -415,6 +425,17 @@ export function ExecutiveReport() {
                 Exportar
               </Button>
             </div>
+          </div>
+          <div className="mt-4 flex items-center gap-4">
+            <label className="flex items-center space-x-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={filterByAdditionalExpenses}
+                onChange={(e) => setFilterByAdditionalExpenses(e.target.checked)}
+                className="rounded"
+              />
+              <span className="text-sm">Solo activos con gastos adicionales</span>
+            </label>
           </div>
         </CardContent>
       </Card>
@@ -431,7 +452,7 @@ export function ExecutiveReport() {
       )}
 
       {/* Executive Summary */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Costo Total</CardTitle>
@@ -467,6 +488,19 @@ export function ExecutiveReport() {
             <div className="text-2xl font-bold">{formatNumber(data?.summary.totalHours || 0)}</div>
             <p className="text-xs text-muted-foreground">
               Promedio: {((data?.summary.totalHours || 0) / (data?.summary.assetCount || 1)).toFixed(0)} hrs/activo
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Gastos Adicionales</CardTitle>
+            <Receipt className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{formatCurrency(data?.summary.additionalExpenses || 0)}</div>
+            <p className="text-xs text-muted-foreground">
+              {((data?.summary.additionalExpenses || 0) / (data?.summary.totalCost || 1) * 100).toFixed(1)}% del total
             </p>
           </CardContent>
         </Card>
@@ -683,7 +717,13 @@ export function ExecutiveReport() {
                         </tr>
                       </thead>
                     <tbody>
-                      {data?.assets.data.map(asset => {
+                      {(filterByAdditionalExpenses 
+                        ? data?.assets.data.filter(asset => {
+                            const hasAdditionalExpenses = (asset as any).additional_expenses_list && (asset as any).additional_expenses_list.length > 0
+                            return hasAdditionalExpenses
+                          })
+                        : data?.assets.data
+                      )?.map(asset => {
                         const preventiveRatio = asset.total_cost > 0 ? (asset.preventive_cost / asset.total_cost) * 100 : 0
                         const costPerHour = asset.hours_worked > 0 ? asset.total_cost / asset.hours_worked : 0
                         const isExpanded = expandedAssets.has(asset.id)
@@ -824,21 +864,43 @@ export function ExecutiveReport() {
                                                 <div className="flex-1">
                                                   <div className="flex items-center gap-3">
                                                     <div>
-                                                      <div className="font-mono text-xs text-muted-foreground">{ae.id}</div>
-                                                      <div className="font-medium text-sm">Gasto Adicional</div>
+                                                      <div className="font-mono text-xs text-muted-foreground">{ae.id?.slice(0, 8)}...</div>
+                                                      <div className="font-medium text-sm">{ae.description || 'Gasto Adicional'}</div>
                                                     </div>
                                                     <div>
                                                       <div className="text-xs text-muted-foreground">
                                                         {new Date(ae.created_at).toLocaleDateString()}
                                                       </div>
+                                                      {ae.status && (
+                                                        <Badge variant={ae.status === 'approved' ? 'default' : 'secondary'} className="text-xs mt-1">
+                                                          {ae.status}
+                                                        </Badge>
+                                                      )}
                                                     </div>
                                                     <Badge variant="destructive" className="text-xs">
                                                       Correctivo
                                                     </Badge>
+                                                    {ae.work_order_id && (
+                                                      <Badge variant="outline" className="text-xs">
+                                                        WO: {ae.work_order_id?.slice(0, 8)}...
+                                                      </Badge>
+                                                    )}
                                                   </div>
                                                 </div>
                                                 <div className="text-right">
                                                   <div className="font-semibold text-lg">${ae.amount.toLocaleString()}</div>
+                                                  {ae.id && (
+                                                    <Button
+                                                      variant="ghost"
+                                                      size="sm"
+                                                      asChild
+                                                      className="h-6 w-6 p-0 mt-1"
+                                                    >
+                                                      <a href={`/compras/gastos-adicionales/${ae.id}`} target="_blank" rel="noopener noreferrer">
+                                                        <ExternalLink className="h-3 w-3" />
+                                                      </a>
+                                                    </Button>
+                                                  )}
                                                 </div>
                                               </div>
                                             ))}
@@ -884,6 +946,77 @@ export function ExecutiveReport() {
                 <div className="text-xs text-muted-foreground mt-4 p-3 bg-muted/30 rounded">
                   <strong>Interpretación de Eficiencia:</strong> Óptima (≥60% preventivo), Buena (30-59% preventivo), Reactiva (&lt;30% preventivo)
                 </div>
+
+                {/* Unlinked Additional Expenses - Audit Section */}
+                {data?.unlinkedAdditionalExpenses && data.unlinkedAdditionalExpenses.length > 0 && (
+                  <div className="mt-6 pt-6 border-t">
+                    <div className="mb-4">
+                      <div className="flex items-center gap-2 mb-2">
+                        <AlertTriangle className="h-5 w-5 text-warning" />
+                        <h3 className="text-lg font-semibold">Gastos Adicionales Sin Activo Asociado (Auditoría)</h3>
+                      </div>
+                      <p className="text-sm text-muted-foreground">
+                        Estos gastos adicionales no están asociados a ningún activo en el período seleccionado y requieren revisión.
+                      </p>
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b bg-muted/50">
+                            <th className="text-left p-3 font-medium">ID</th>
+                            <th className="text-left p-3 font-medium">Descripción</th>
+                            <th className="text-left p-3 font-medium">Estado</th>
+                            <th className="text-left p-3 font-medium">Work Order</th>
+                            <th className="text-left p-3 font-medium">Fecha</th>
+                            <th className="text-right p-3 font-medium">Monto</th>
+                            <th className="text-center p-3 font-medium">Acción</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {data.unlinkedAdditionalExpenses.map((ae: any) => (
+                            <tr key={ae.id} className="border-b hover:bg-muted/50">
+                              <td className="p-3 font-mono text-xs">{ae.id?.slice(0, 8)}...</td>
+                              <td className="p-3">{ae.description || 'Sin descripción'}</td>
+                              <td className="p-3">
+                                <Badge variant={ae.status === 'approved' ? 'default' : ae.status === 'rejected' ? 'destructive' : 'secondary'}>
+                                  {ae.status || 'pendiente'}
+                                </Badge>
+                              </td>
+                              <td className="p-3">
+                                {ae.work_order_id ? (
+                                  <span className="font-mono text-xs">{ae.work_order_id.slice(0, 8)}...</span>
+                                ) : (
+                                  <span className="text-muted-foreground">-</span>
+                                )}
+                              </td>
+                              <td className="p-3 text-muted-foreground">
+                                {new Date(ae.created_at).toLocaleDateString()}
+                              </td>
+                              <td className="p-3 text-right font-semibold">{formatCurrency(ae.amount)}</td>
+                              <td className="p-3 text-center">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  asChild
+                                  className="h-8 w-8 p-0"
+                                >
+                                  <a href={`/compras/gastos-adicionales/${ae.id}`} target="_blank" rel="noopener noreferrer">
+                                    <ExternalLink className="h-4 w-4" />
+                                  </a>
+                                </Button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                      <div className="mt-3 p-3 bg-warning/10 rounded text-sm text-warning-foreground">
+                        <strong>Total Gastos Sin Asociar:</strong> {formatCurrency(
+                          data.unlinkedAdditionalExpenses.reduce((sum: number, ae: any) => sum + ae.amount, 0)
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>

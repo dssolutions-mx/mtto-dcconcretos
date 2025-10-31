@@ -213,14 +213,16 @@ export async function POST(req: NextRequest) {
     }) || []
 
     // Get additional expenses
+    // Exclude rejected expenses and those already converted to adjustment POs (to avoid double counting)
     const assetIds = assets.map(a => a.id)
     const { data: additionalExpenses } = await supabase
       .from('additional_expenses')
-      .select('id, asset_id, amount, created_at, adjustment_po_id')
+      .select('id, asset_id, amount, created_at, adjustment_po_id, status')
       .gte('created_at', dateFrom)
       .lt('created_at', dateToExclusiveStr)
       .in('asset_id', assetIds)
       .is('adjustment_po_id', null)
+      .neq('status', 'rejected')
 
     // Create plant code to maintenance plant ID map
     const plantCodeToIdMap = new Map<string, string>()
@@ -462,8 +464,18 @@ export async function POST(req: NextRequest) {
       }
     })
 
-    // Do not add additional_expenses directly to costs in gerencial report.
-    // Costs are tracked exclusively via purchase orders (including adjustments).
+    // Aggregate additional expenses into maintenance costs
+    // These are expenses that haven't been converted to purchase orders yet (adjustment_po_id is null)
+    // and are not rejected
+    additionalExpenses?.forEach(ae => {
+      const asset = assetMap.get(ae.asset_id)
+      if (asset) {
+        const amount = parseFloat(ae.amount || '0')
+        asset.maintenance_cost += amount
+        // Additional expenses are typically corrective maintenance
+        asset.corrective_cost += amount
+      }
+    })
 
     // Aggregate sales by asset using name mapping and plant matching
     let salesMatched = 0

@@ -87,7 +87,7 @@ export async function POST(req: Request) {
     const { data: purchaseOrders, error: poError } = await supabase
       .from("purchase_orders")
       .select(`
-        id, order_id, total_amount, actual_amount, created_at, purchased_at, plant_id, work_order_id, status, supplier, items
+        id, order_id, total_amount, actual_amount, created_at, purchased_at, plant_id, work_order_id, status, supplier, items, is_adjustment
       `)
       .neq("status", "pending_approval")
 
@@ -181,15 +181,31 @@ export async function POST(req: Request) {
     // Service orders are not used for cost calculations since they're always linked to work orders that have POs
     // We only count purchase orders for costs
 
-    // Get additional expenses
-    const { data: additionalExpenses, error: aeError } = await supabase
+    // Get additional expenses (both linked to assets and unlinked for audit)
+    // Exclude those that have been converted to purchase orders (adjustment_po_id) to avoid double counting
+    let additionalExpensesQuery = supabase
       .from("additional_expenses")
-      .select("id, asset_id, amount, created_at")
+      .select("id, asset_id, amount, created_at, description, status, work_order_id, adjustment_po_id")
       .gte("created_at", startDate)
       .lte("created_at", endDate)
-      .in("asset_id", assetIds)
+      .neq("status", "rejected")
+      .is("adjustment_po_id", null) // Exclude expenses already converted to POs
+    
+    if (assetIds.length > 0) {
+      additionalExpensesQuery = additionalExpensesQuery.or(`asset_id.in.(${assetIds.join(',')}),asset_id.is.null`)
+    } else {
+      additionalExpensesQuery = additionalExpensesQuery.is("asset_id", null)
+    }
+    
+    const { data: additionalExpenses, error: aeError } = await additionalExpensesQuery
 
     if (aeError) throw aeError
+
+    // Separate linked and unlinked additional expenses
+    const linkedAdditionalExpenses = assetIds.length > 0 
+      ? (additionalExpenses || []).filter(ae => ae.asset_id && assetIds.includes(ae.asset_id))
+      : []
+    const unlinkedAdditionalExpenses = (additionalExpenses || []).filter(ae => !ae.asset_id || (assetIds.length > 0 && !assetIds.includes(ae.asset_id)))
 
     // Get equipment hours
     const extendedStart = new Date(startDate)
@@ -283,8 +299,42 @@ export async function POST(req: Request) {
     // Service orders are only used for additional details about the purchase orders
     // We'll fetch service order details when needed for the breakdown display
 
-    // Process additional expenses
-    additionalExpenses?.forEach(ae => {
+    // Process additional expenses (only linked ones)
+    // Build a map of adjustment POs by work_order_id to detect unlinked AEs
+    // This handles data integrity issues where adjustment_po_id wasn't set
+    const adjustmentPOsByWorkOrder = new Map<string, Array<{ id: string, amount: number }>>()
+    filteredPurchaseOrders.forEach(po => {
+      // Only consider adjustment POs (they're created FROM additional expenses)
+      if (po.is_adjustment && po.work_order_id) {
+        const poAmount = po.actual_amount ? parseFloat(po.actual_amount) : parseFloat(po.total_amount || '0')
+        if (!adjustmentPOsByWorkOrder.has(po.work_order_id)) {
+          adjustmentPOsByWorkOrder.set(po.work_order_id, [])
+        }
+        adjustmentPOsByWorkOrder.get(po.work_order_id)!.push({
+          id: po.id,
+          amount: poAmount
+        })
+      }
+    })
+    
+    linkedAdditionalExpenses.forEach(ae => {
+      // Skip if adjustment_po_id is already set (already converted)
+      if (ae.adjustment_po_id) {
+        return
+      }
+      
+      // Check if there's an adjustment PO for this work order with matching amount
+      // This handles cases where the adjustment_po_id wasn't set but the PO exists
+      if (ae.work_order_id) {
+        const adjustmentPOs = adjustmentPOsByWorkOrder.get(ae.work_order_id) || []
+        const aeAmount = parseFloat(ae.amount || '0')
+        // If there's an adjustment PO with matching amount, skip this AE (already counted as PO)
+        const matchingPO = adjustmentPOs.find(po => Math.abs(po.amount - aeAmount) < 0.01)
+        if (matchingPO) {
+          return // Skip - this AE was converted to a PO but adjustment_po_id wasn't set
+        }
+      }
+      
       const metrics = assetMetrics.get(ae.asset_id)
       if (metrics) {
         const amount = parseFloat(ae.amount || '0')
@@ -296,7 +346,10 @@ export async function POST(req: Request) {
         metrics.additional_expenses_list.push({
           id: ae.id,
           amount: amount,
-          created_at: ae.created_at
+          created_at: ae.created_at,
+          description: ae.description,
+          status: ae.status,
+          work_order_id: ae.work_order_id
         })
       }
     })
@@ -417,7 +470,16 @@ export async function POST(req: Request) {
       businessUnits: Array.from(buTotals.values()).sort((a, b) => b.total_cost - a.total_cost),
       plants: Array.from(plantTotals.values()).sort((a, b) => b.total_cost - a.total_cost),
       assets: { data: paginatedAssets, total: totalAssets, page, pageSize },
-      filters: { businessUnits: businessUnits || [], plants: filteredPlants }
+      filters: { businessUnits: businessUnits || [], plants: filteredPlants },
+      unlinkedAdditionalExpenses: unlinkedAdditionalExpenses.map(ae => ({
+        id: ae.id,
+        amount: parseFloat(ae.amount || '0'),
+        created_at: ae.created_at,
+        description: ae.description,
+        status: ae.status,
+        work_order_id: ae.work_order_id,
+        asset_id: ae.asset_id
+      }))
     })
 
   } catch (error: any) {
