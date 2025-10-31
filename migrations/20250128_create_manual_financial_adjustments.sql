@@ -115,3 +115,5 @@ COMMENT ON COLUMN manual_financial_adjustments.department IS 'Optional departmen
 COMMENT ON COLUMN manual_financial_adjustments.subcategory IS 'Free-form subcategory for flexibility';
 
 
+
+

@@ -20,6 +20,9 @@ interface TransactionEditModalProps {
     previous_balance: number | null
     current_balance: number | null
     cuenta_litros: number | null
+    unit_cost?: number | null
+    total_cost?: number | null
+    supplier_responsible?: string | null
   } | null
   isOpen: boolean
   onClose: () => void
@@ -77,13 +80,15 @@ export function TransactionEditModal({
         setNotes(rawNotes.replace(/^Factura:\s*[^|]+\s*\|?\s*/i, '').trim())
         const match = rawNotes.match(/Factura:\s*([^|]+)/i)
         setInvoiceNumber(match ? match[1].trim() : "")
+        // Initialize unit cost and supplier from transaction data
+        setUnitCost(transaction.unit_cost?.toString() || "")
+        setSupplierName(transaction.supplier_responsible || "")
       } else {
         setNotes(transaction.notes || "")
         setInvoiceNumber("")
+        setSupplierName("")
+        setUnitCost("")
       }
-      // supplier/unit cost are not available in this component's props; keep empty for now
-      setSupplierName("")
-      setUnitCost("")
     }
   }, [transaction])
 

@@ -15,7 +15,7 @@ export async function GET() {
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
-    return NextResponse.json(data || [])
+    return NextResponse.json({ business_units: data || [] })
   } catch (e: any) {
     console.error('GET business units error:', e)
     return NextResponse.json({ error: e?.message || 'Unexpected error' }, { status: 500 })

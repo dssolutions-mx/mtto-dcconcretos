@@ -23,7 +23,9 @@ import {
   Activity,
   Filter,
   X,
-  Edit
+  Edit,
+  DollarSign,
+  CheckCircle2
 } from "lucide-react"
 import { useRouter, useParams } from "next/navigation"
 import Link from "next/link"
@@ -909,6 +911,28 @@ export default function WarehouseDetailPage() {
                       <Badge variant="outline" className="text-xs">
                         {transaction.quantity_liters.toFixed(1)}L
                       </Badge>
+                      {transaction.transaction_type === 'entry' && (
+                        transaction.unit_cost ? (
+                          <Badge 
+                            variant="outline" 
+                            className="text-xs bg-green-50 text-green-700 border-green-300 flex items-center gap-1"
+                            title={`Precio unitario: $${transaction.unit_cost.toFixed(2)}/L`}
+                          >
+                            <CheckCircle2 className="h-3 w-3" />
+                            <DollarSign className="h-3 w-3" />
+                            ${transaction.unit_cost.toFixed(2)}/L
+                          </Badge>
+                        ) : (
+                          <Badge 
+                            variant="outline" 
+                            className="text-xs bg-yellow-50 text-yellow-700 border-yellow-300 flex items-center gap-1"
+                            title="Falta precio unitario"
+                          >
+                            <AlertTriangle className="h-3 w-3" />
+                            Sin precio
+                          </Badge>
+                        )
+                      )}
                       {transaction.asset_name && (
                         <Badge variant="secondary" className="text-xs">
                           {transaction.asset_name}

@@ -177,3 +177,5 @@ Successfully implemented a dedicated financial analysis page for the gerencial r
 - [ ] Create backup of manual adjustments table regularly
 
 
+
+

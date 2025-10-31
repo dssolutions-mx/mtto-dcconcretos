@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createServerSupabase } from '@/lib/supabase-server'
 import { createClient } from '@supabase/supabase-js'
+import { calculateDieselCostsFIFO } from '@/lib/fifo-diesel-costs'
 
 type Body = {
   dateFrom: string
@@ -132,15 +133,23 @@ export async function POST(req: NextRequest) {
     const priceByProduct = new Map<string, number>()
     ;(products || []).forEach(p => priceByProduct.set(p.id, Number(p.price_per_liter || 0)))
 
-    // Calculate effective price per product
-    const avgPriceByProduct = new Map<string, number>()
-    productIds.forEach(pid => {
-      const productTxs = (dieselTxs || []).filter(t => t.product_id === pid && t.transaction_type === 'entry')
-      const avg = productTxs.length > 0
-        ? productTxs.reduce((acc, t) => acc + Number(t.unit_cost || 0), 0) / productTxs.length
-        : 0
-      avgPriceByProduct.set(pid, priceByProduct.get(pid) || avg || 0)
-    })
+    // Calculate FIFO diesel costs per transaction
+    // Get plant codes for all plants in the report
+    const plantCodes = Array.from(new Set((plants || [])
+      .filter(p => !plantId || p.id === plantId)
+      .filter(p => !businessUnitId || p.business_unit_id === businessUnitId)
+      .map(p => p.code)
+      .filter(Boolean))) as string[]
+    
+    // Calculate FIFO costs before processing diesel transactions
+    const fifoResult = plantCodes.length > 0 ? await calculateDieselCostsFIFO(
+      supabase,
+      dateFrom,
+      dateTo,
+      plantCodes,
+      priceByProduct
+    ) : { plantCosts: new Map(), transactionCosts: new Map() }
+    const fifoTransactionCosts = fifoResult.transactionCosts // Map of transaction_id -> FIFO cost
 
     // Fetch purchase orders (exclude only pending_approval)
     const { data: purchaseOrders } = await supabase
@@ -273,8 +282,20 @@ export async function POST(req: NextRequest) {
 
     // Helper function for fuzzy matching asset codes
     const normalizeAssetCode = (code: string): string => {
-      // Remove common suffixes like -1, -A, -B, etc.
-      return code.toUpperCase().replace(/[-\s]+(1|2|3|A|B|C|D)$/i, '').trim()
+      let normalized = code.toUpperCase().trim()
+      
+      // Step 1: Remove dash-separated suffixes (CR-17-B → CR-17, CR-17-1 → CR-17, CR-14-B → CR-14)
+      // This matches patterns like "-B", "-1", "-A", etc. at the end
+      normalized = normalized.replace(/[-\s]+[0-9A-Z]+$/i, '')
+      
+      // Step 2: Remove single letter directly after number (no dash) (CR-17B → CR-17, CR-15A → CR-15)
+      // Only matches if letter comes directly after a digit without a dash
+      normalized = normalized.replace(/(\d)([A-Z])$/i, '$1')
+      
+      // Note: We do NOT remove trailing digits to avoid corrupting multi-digit numbers
+      // (e.g., CR-14 should stay CR-14, not become CR-1)
+      
+      return normalized
     }
 
     // Create asset name mappings for quick lookup
@@ -355,9 +376,21 @@ export async function POST(req: NextRequest) {
       const asset = assetMap.get(tx.asset_id)
       if (!asset) return
       const qty = Number(tx.quantity_liters || 0)
-      const price = avgPriceByProduct.get(tx.product_id) || Number(tx.unit_cost || 0)
+      
+      // Use FIFO cost if available, otherwise fallback to transaction unit_cost or product default
+      const fifoCost = fifoTransactionCosts.get(tx.id)
+      let cost = 0
+      if (fifoCost !== undefined) {
+        // FIFO cost is already calculated for this transaction
+        cost = fifoCost
+      } else {
+        // Fallback: use transaction unit_cost or product default price
+        const price = Number(tx.unit_cost || 0) || priceByProduct.get(tx.product_id || '') || 0
+        cost = qty * price
+      }
+      
       asset.diesel_liters += qty
-      asset.diesel_cost += qty * price
+      asset.diesel_cost += cost
     })
 
     // Compute hours_worked and liters_per_hour per asset based on combined readings
@@ -481,17 +514,110 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      // Strategy 2: Fuzzy matching (CR-15 → CR-15-1, CR-24-B → CR-24)
+      // Strategy 2: Fuzzy matching (CR-15 → CR-15-1, CR-24-B → CR-24, CR-17B → CR-17)
       if (!assetId) {
         const normalizedName = normalizeAssetCode(assetName)
-        const candidates = normalizedCodeToAssets.get(normalizedName)
         
-        if (candidates && candidates.length > 0) {
-          // Prefer assets in the same plant
-          const plantMatch = candidates.find(c => c.plant_id === maintenancePlantId)
-          const match = plantMatch || candidates[0]
-          assetId = match.id
-          matchMethod = 'fuzzy'
+        // Only skip if normalization shortened the code significantly (more than 2 chars)
+        // This prevents over-normalization while still allowing suffix removal
+        if (normalizedName.length >= assetName.length - 2) {
+          const candidates = normalizedCodeToAssets.get(normalizedName)
+          
+          if (candidates && candidates.length > 0) {
+            // First priority: assets that start with the original asset name (prefix match)
+            // This ensures "CR-15" matches "CR-15-1" before "CR-19"
+            const prefixMatch = candidates.find(c => {
+              const code = (c.asset_code || '').toUpperCase()
+              return code && code.startsWith(assetName)
+            })
+            
+            if (prefixMatch) {
+              assetId = prefixMatch.id
+              matchMethod = 'fuzzy'
+            } else {
+              // Second priority: assets in the same plant
+              const plantMatch = candidates.find(c => c.plant_id === maintenancePlantId)
+              if (plantMatch) {
+                assetId = plantMatch.id
+                matchMethod = 'fuzzy'
+              } else if (candidates.length > 0) {
+                // Last resort: use first candidate (but this shouldn't happen for "CR-15")
+                assetId = candidates[0].id
+                matchMethod = 'fuzzy'
+              }
+            }
+          }
+        }
+      }
+
+      // Strategy 3: Partial prefix matching
+      // First try direct prefix match (CR-15 → CR-15-1), then iteratively remove characters
+      if (!assetId) {
+        // Step 3a: Try direct prefix match - find assets that start with the original name
+        // This handles cases like "CR-15" → "CR-15-1" when Strategy 2 didn't catch it
+        const directPrefixMatch = Array.from(assetMap.values()).find(a => 
+          a.plant_id === maintenancePlantId && 
+          a.asset_code && 
+          a.asset_code.toUpperCase().startsWith(assetName) &&
+          a.asset_code.toUpperCase() !== assetName // Don't match exact (already tried in Strategy 1)
+        )
+        
+        if (directPrefixMatch) {
+          assetId = directPrefixMatch.id
+          matchMethod = 'partial_prefix'
+        } else {
+          // Step 3b: Iteratively remove trailing characters
+          // Example: "CR-17B" → try "CR-17" → try "CR-1" → try "CR"
+          let testName = assetName
+          while (testName.length > 2 && !assetId) {
+            // Remove last character
+            testName = testName.slice(0, -1)
+            
+            // Try exact match first
+            const exactMatch = Array.from(assetMap.values()).find(a => 
+              a.plant_id === maintenancePlantId && 
+              a.asset_code && 
+              a.asset_code.toUpperCase() === testName
+            )
+            
+            if (exactMatch) {
+              assetId = exactMatch.id
+              matchMethod = 'partial_prefix'
+              break
+            }
+            
+            // Try normalized match, but prefer assets that start with testName (prefix match)
+            const normalizedTest = normalizeAssetCode(testName)
+            const candidates = normalizedCodeToAssets.get(normalizedTest)
+            if (candidates && candidates.length > 0) {
+              // Prefer assets that start with testName (prefix match)
+              const prefixMatch = candidates.find(c => {
+                const code = (c.asset_code || '').toUpperCase()
+                return code && code.startsWith(testName)
+              })
+              
+              if (prefixMatch) {
+                assetId = prefixMatch.id
+                matchMethod = 'partial_prefix'
+                break
+              }
+              
+              // Then prefer assets in the same plant
+              const plantMatch = candidates.find(c => c.plant_id === maintenancePlantId)
+              if (plantMatch) {
+                assetId = plantMatch.id
+                matchMethod = 'partial_prefix'
+                break
+              }
+              
+              // Last resort
+              if (candidates.length > 0) {
+                assetId = candidates[0].id
+                matchMethod = 'partial_prefix'
+                break
+              }
+            }
+          }
         }
       }
 
@@ -502,10 +628,21 @@ export async function POST(req: NextRequest) {
         asset.concrete_m3 += Number(sale.concrete_m3 || 0)
         asset.total_m3 += Number(sale.total_m3 || 0)
         asset.remisiones_count += Number(sale.remisiones_count || 0)
-        if (matchMethod === 'fuzzy') {
+        
+        // Track fuzzy and partial prefix matches for debugging
+        if (matchMethod === 'fuzzy' || matchMethod === 'partial_prefix') {
           asset._fuzzy_matches = asset._fuzzy_matches || []
           asset._fuzzy_matches.push(sale.asset_name)
+          
+          // Log successful matches for debugging
+          if (matchMethod === 'fuzzy') {
+            const normalizedName = normalizeAssetCode(assetName)
+            console.log(`[Asset Matching] Fuzzy match: "${assetName}" → "${asset.asset_code}" (normalized: "${normalizedName}")`)
+          } else if (matchMethod === 'partial_prefix') {
+            console.log(`[Asset Matching] Partial prefix match: "${assetName}" → "${asset.asset_code}"`)
+          }
         }
+        
         salesMatched++
       } else {
         // Create virtual unmatched asset

@@ -24,16 +24,31 @@ export async function GET(req: NextRequest) {
         *,
         plant:plants(id, name, code),
         business_unit:business_units(id, name, code),
-        created_by_profile:profiles!manual_financial_adjustments_created_by_fkey(id, full_name, email)
+        created_by_profile:profiles!manual_financial_adjustments_created_by_fkey(id, nombre, apellido, email),
+        distributions:manual_financial_adjustment_distributions(
+          id,
+          business_unit_id,
+          plant_id,
+          department,
+          percentage,
+          amount,
+          volume_m3,
+          business_unit:business_units(id, name, code),
+          plant:plants(id, name, code)
+        )
       `)
       .eq('period_month', periodMonth)
       .order('created_at', { ascending: false })
 
+    // Filter by plant or business unit if specified
+    // Note: Filtering works for both direct assignments and distributed entries
+    // Distributed entries keep business_unit_id for filtering, but allocation is via distributions
     if (plantId) {
       query = query.eq('plant_id', plantId)
     } else if (businessUnitId) {
       query = query.eq('business_unit_id', businessUnitId)
     }
+    // If no filter, show all entries for the month
 
     const { data, error } = await query
 
@@ -62,7 +77,11 @@ export async function POST(req: NextRequest) {
       subcategory,
       description,
       amount,
-      notes
+      notes,
+      isBonus,
+      isCashPayment,
+      distributionMethod,
+      distributions // Array of distribution targets
     } = body
 
     // Validation
@@ -80,11 +99,47 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    if (!plantId && !businessUnitId) {
-      return NextResponse.json(
-        { error: 'Either plantId or businessUnitId must be provided' },
-        { status: 400 }
-      )
+    // Validation logic:
+    // - If plantId is set: direct assignment, no distributions needed
+    // - If only businessUnitId is set: distributions required to allocate to plants within that BU
+    // - If neither is set: distributions required (company-wide distribution)
+    if (!plantId) {
+      // No plant selected - distributions are required
+      if (!distributions || !Array.isArray(distributions) || distributions.length === 0) {
+        return NextResponse.json(
+          { error: businessUnitId 
+            ? 'Distributions must be provided when only business unit is selected. Please distribute the cost among plants.'
+            : 'Either plantId or distributions must be provided' },
+          { status: 400 }
+        )
+      }
+
+      // Validate distribution method
+      if (!distributionMethod || !['percentage', 'volume'].includes(distributionMethod)) {
+        return NextResponse.json(
+          { error: 'distributionMethod must be "percentage" or "volume" when using distributions' },
+          { status: 400 }
+        )
+      }
+
+      // Validate percentage method: percentages must sum to 100
+      if (distributionMethod === 'percentage') {
+        const totalPercentage = distributions.reduce((sum: number, d: any) => sum + (Number(d.percentage) || 0), 0)
+        if (Math.abs(totalPercentage - 100) > 0.01) {
+          return NextResponse.json(
+            { error: `Distribution percentages must sum to 100%. Current sum: ${totalPercentage.toFixed(2)}%` },
+            { status: 400 }
+          )
+        }
+      }
+    } else {
+      // Plant is selected - no distributions allowed (direct assignment)
+      if (distributions && distributions.length > 0) {
+        return NextResponse.json(
+          { error: 'Cannot use distributions when a plant is directly assigned' },
+          { status: 400 }
+        )
+      }
     }
 
     const [year, monthNum] = month.split('-').map(Number)
@@ -98,30 +153,109 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { data, error } = await supabase
+    const isDistributed = !!(distributions && distributions.length > 0)
+    const totalAmount = parseFloat(amount)
+
+    // Create the main adjustment record
+    // Note: Store business_unit_id even when distributed for filtering/reporting purposes
+    // The distribution records handle the actual allocation, but the main record keeps BU for reference
+    const adjustmentData: any = {
+      business_unit_id: businessUnitId || null, // Keep BU even when distributed for filtering
+      plant_id: plantId || null, // Only store plant if directly assigned (not distributed)
+      period_month: periodMonth,
+      category,
+      department: department || null,
+      subcategory: subcategory || null,
+      description: description || null,
+      amount: totalAmount,
+      notes: notes || null,
+      is_bonus: Boolean(isBonus),
+      is_cash_payment: Boolean(isCashPayment),
+      is_distributed: isDistributed,
+      distribution_method: distributionMethod || null,
+      created_by: user.id,
+      updated_by: user.id
+    }
+
+    const { data: adjustment, error: adjError } = await supabase
       .from('manual_financial_adjustments')
-      .insert({
-        business_unit_id: businessUnitId || null,
-        plant_id: plantId || null,
-        period_month: periodMonth,
-        category,
-        department: department || null,
-        subcategory: subcategory || null,
-        description: description || null,
-        amount: parseFloat(amount),
-        notes: notes || null,
-        created_by: user.id,
-        updated_by: user.id
-      })
+      .insert(adjustmentData)
       .select()
       .single()
 
-    if (error) {
-      console.error('Insert manual cost error:', error)
-      return NextResponse.json({ error: error.message }, { status: 500 })
+    if (adjError) {
+      console.error('Insert manual cost error:', adjError)
+      return NextResponse.json({ error: adjError.message }, { status: 500 })
     }
 
-    return NextResponse.json({ adjustment: data }, { status: 201 })
+    // Create distribution records if applicable
+    if (isDistributed && distributions && distributions.length > 0) {
+      const distributionRecords = distributions.map((dist: any) => {
+        let calculatedAmount = 0
+        let calculatedPercentage = 0
+
+        if (distributionMethod === 'percentage') {
+          calculatedPercentage = Number(dist.percentage) || 0
+          calculatedAmount = (totalAmount * calculatedPercentage) / 100
+        } else if (distributionMethod === 'volume') {
+          // For volume-based, percentage and amount should already be calculated on frontend
+          calculatedPercentage = Number(dist.percentage) || 0
+          calculatedAmount = Number(dist.amount) || 0
+        }
+
+        return {
+          adjustment_id: adjustment.id,
+          business_unit_id: dist.businessUnitId || null,
+          plant_id: dist.plantId || null,
+          department: dist.department || null,
+          percentage: calculatedPercentage,
+          amount: calculatedAmount,
+          volume_m3: dist.volumeM3 || null,
+          created_by: user.id
+        }
+      })
+
+      const { error: distError } = await supabase
+        .from('manual_financial_adjustment_distributions')
+        .insert(distributionRecords)
+
+      if (distError) {
+        console.error('Insert distributions error:', distError)
+        // Rollback: delete the adjustment if distributions fail
+        await supabase.from('manual_financial_adjustments').delete().eq('id', adjustment.id)
+        return NextResponse.json({ error: distError.message }, { status: 500 })
+      }
+    }
+
+    // Fetch the complete record with distributions
+    const { data: completeAdjustment, error: fetchError } = await supabase
+      .from('manual_financial_adjustments')
+      .select(`
+        *,
+        plant:plants(id, name, code),
+        business_unit:business_units(id, name, code),
+        created_by_profile:profiles!manual_financial_adjustments_created_by_fkey(id, nombre, apellido, email),
+        distributions:manual_financial_adjustment_distributions(
+          id,
+          business_unit_id,
+          plant_id,
+          department,
+          percentage,
+          amount,
+          volume_m3,
+          business_unit:business_units(id, name, code),
+          plant:plants(id, name, code)
+        )
+      `)
+      .eq('id', adjustment.id)
+      .single()
+
+    if (fetchError) {
+      console.error('Fetch complete adjustment error:', fetchError)
+      return NextResponse.json({ adjustment }, { status: 201 })
+    }
+
+    return NextResponse.json({ adjustment: completeAdjustment }, { status: 201 })
   } catch (e: any) {
     console.error('POST manual costs error:', e)
     return NextResponse.json({ error: e?.message || 'Unexpected error' }, { status: 500 })
@@ -138,7 +272,11 @@ export async function PUT(req: NextRequest) {
       subcategory,
       description,
       amount,
-      notes
+      notes,
+      isBonus,
+      isCashPayment,
+      distributionMethod,
+      distributions
     } = body
 
     if (!id) {
@@ -153,6 +291,17 @@ export async function PUT(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
+    // Fetch current adjustment to check if it's distributed
+    const { data: currentAdjustment, error: fetchError } = await supabase
+      .from('manual_financial_adjustments')
+      .select('id, is_distributed, amount')
+      .eq('id', id)
+      .single()
+
+    if (fetchError || !currentAdjustment) {
+      return NextResponse.json({ error: 'Adjustment not found' }, { status: 404 })
+    }
+
     const updateData: any = {
       updated_by: user.id,
       updated_at: new Date().toISOString()
@@ -163,7 +312,38 @@ export async function PUT(req: NextRequest) {
     if (description !== undefined) updateData.description = description
     if (amount !== undefined) updateData.amount = parseFloat(amount)
     if (notes !== undefined) updateData.notes = notes
+    if (isBonus !== undefined) updateData.is_bonus = Boolean(isBonus)
+    if (isCashPayment !== undefined) updateData.is_cash_payment = Boolean(isCashPayment)
+    if (distributionMethod !== undefined) updateData.distribution_method = distributionMethod
 
+    const totalAmount = amount !== undefined ? parseFloat(amount) : currentAdjustment.amount
+    const isDistributed = !!(distributions && distributions.length > 0)
+    
+    if (distributions !== undefined) {
+      updateData.is_distributed = isDistributed
+
+      // Validate distributions if provided
+      if (isDistributed) {
+        if (!distributionMethod || !['percentage', 'volume'].includes(distributionMethod)) {
+          return NextResponse.json(
+            { error: 'distributionMethod must be "percentage" or "volume" when using distributions' },
+            { status: 400 }
+          )
+        }
+
+        if (distributionMethod === 'percentage') {
+          const totalPercentage = distributions.reduce((sum: number, d: any) => sum + (Number(d.percentage) || 0), 0)
+          if (Math.abs(totalPercentage - 100) > 0.01) {
+            return NextResponse.json(
+              { error: `Distribution percentages must sum to 100%. Current sum: ${totalPercentage.toFixed(2)}%` },
+              { status: 400 }
+            )
+          }
+        }
+      }
+    }
+
+    // Update the main adjustment record
     const { data, error } = await supabase
       .from('manual_financial_adjustments')
       .update(updateData)
@@ -176,7 +356,80 @@ export async function PUT(req: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
-    return NextResponse.json({ adjustment: data })
+    // Update distributions if provided
+    if (distributions !== undefined) {
+      // Delete existing distributions
+      await supabase
+        .from('manual_financial_adjustment_distributions')
+        .delete()
+        .eq('adjustment_id', id)
+
+      // Insert new distributions if any
+      if (isDistributed && distributions.length > 0) {
+        const distributionRecords = distributions.map((dist: any) => {
+          let calculatedAmount = 0
+          let calculatedPercentage = 0
+
+          if (distributionMethod === 'percentage') {
+            calculatedPercentage = Number(dist.percentage) || 0
+            calculatedAmount = (totalAmount * calculatedPercentage) / 100
+          } else if (distributionMethod === 'volume') {
+            calculatedPercentage = Number(dist.percentage) || 0
+            calculatedAmount = Number(dist.amount) || 0
+          }
+
+          return {
+            adjustment_id: id,
+            business_unit_id: dist.businessUnitId || null,
+            plant_id: dist.plantId || null,
+            department: dist.department || null,
+            percentage: calculatedPercentage,
+            amount: calculatedAmount,
+            volume_m3: dist.volumeM3 || null,
+            created_by: user.id
+          }
+        })
+
+        const { error: distError } = await supabase
+          .from('manual_financial_adjustment_distributions')
+          .insert(distributionRecords)
+
+        if (distError) {
+          console.error('Update distributions error:', distError)
+          return NextResponse.json({ error: distError.message }, { status: 500 })
+        }
+      }
+    }
+
+    // Fetch complete record with distributions
+    const { data: completeAdjustment, error: fetchCompleteError } = await supabase
+      .from('manual_financial_adjustments')
+      .select(`
+        *,
+        plant:plants(id, name, code),
+        business_unit:business_units(id, name, code),
+        created_by_profile:profiles!manual_financial_adjustments_created_by_fkey(id, nombre, apellido, email),
+        distributions:manual_financial_adjustment_distributions(
+          id,
+          business_unit_id,
+          plant_id,
+          department,
+          percentage,
+          amount,
+          volume_m3,
+          business_unit:business_units(id, name, code),
+          plant:plants(id, name, code)
+        )
+      `)
+      .eq('id', id)
+      .single()
+
+    if (fetchCompleteError) {
+      console.error('Fetch complete adjustment error:', fetchCompleteError)
+      return NextResponse.json({ adjustment: data })
+    }
+
+    return NextResponse.json({ adjustment: completeAdjustment })
   } catch (e: any) {
     console.error('PUT manual costs error:', e)
     return NextResponse.json({ error: e?.message || 'Unexpected error' }, { status: 500 })
@@ -211,5 +464,7 @@ export async function DELETE(req: NextRequest) {
     return NextResponse.json({ error: e?.message || 'Unexpected error' }, { status: 500 })
   }
 }
+
+
 
 

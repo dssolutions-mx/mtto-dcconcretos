@@ -28,3 +28,5 @@ COMMENT ON POLICY "Supervisors create diesel warehouses in accessible plants" ON
 IS 'Allows insert when user has a supervisory role and the target plant is within their scope.';
 
 
+
+
