@@ -224,8 +224,8 @@ export function ExecutiveReport() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          startDate: new Date(startDate).toISOString(),
-          endDate: new Date(endDate + 'T23:59:59').toISOString(),
+          startDate: new Date(startDate + 'T00:00:00').toISOString(),
+          endDate: new Date(endDate + 'T00:00:00').toISOString(), // Send as start of day, API will add 1 day for exclusive end
           businessUnitId: businessUnitId || null,
           plantId: plantId || null,
           page,

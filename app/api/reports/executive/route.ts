@@ -23,6 +23,17 @@ export async function POST(req: Request) {
     }
 
     const { startDate, endDate, businessUnitId, plantId, page, pageSize } = parsed.data
+    
+    // Parse dates same way as gerencial report for consistency
+    // startDate and endDate come as ISO strings, extract date part if needed
+    const dateFromStr = startDate.includes('T') ? startDate.split('T')[0] : startDate
+    const dateToStr = endDate.includes('T') ? endDate.split('T')[0] : endDate
+    
+    // Compute exclusive end-of-day bound (same as gerencial)
+    const dateFromStart = new Date(`${dateFromStr}T00:00:00`)
+    const dateToExclusive = new Date(`${dateToStr}T00:00:00`)
+    dateToExclusive.setDate(dateToExclusive.getDate() + 1) // Add 1 day for exclusive end
+    
     const supabase = await createServerSupabase()
 
     // Get organizational structure
@@ -175,7 +186,10 @@ export async function POST(req: Request) {
       }
       
       // Check if the date falls within the selected range
-      return dateToCheck >= startDate && dateToCheck <= endDate
+      // Use same logic as gerencial: inclusive start, exclusive end (for consistency)
+      const dateToCheckTime = new Date(dateToCheck).getTime()
+      
+      return dateToCheckTime >= dateFromStart.getTime() && dateToCheckTime < dateToExclusive.getTime()
     }) || []
 
     // Service orders are not used for cost calculations since they're always linked to work orders that have POs
@@ -186,8 +200,8 @@ export async function POST(req: Request) {
     let additionalExpensesQuery = supabase
       .from("additional_expenses")
       .select("id, asset_id, amount, created_at, description, status, work_order_id, adjustment_po_id")
-      .gte("created_at", startDate)
-      .lte("created_at", endDate)
+      .gte("created_at", dateFromStart.toISOString())
+      .lt("created_at", dateToExclusive.toISOString()) // Exclusive end, same as gerencial
       .neq("status", "rejected")
       .is("adjustment_po_id", null) // Exclude expenses already converted to POs
     
@@ -208,14 +222,24 @@ export async function POST(req: Request) {
     const unlinkedAdditionalExpenses = (additionalExpenses || []).filter(ae => !ae.asset_id || (assetIds.length > 0 && !assetIds.includes(ae.asset_id)))
 
     // Get equipment hours
-    const extendedStart = new Date(startDate)
+    // For hours calculation, we need a flexible window:
+    // - Extended start (30 days before) to get baseline readings
+    // - Extended end (inclusive of the end date) to include readings on the last day
+    // This allows us to calculate hours worked within the period even if readings
+    // fall just before the start or on the last day
+    const extendedStart = new Date(dateFromStart)
     extendedStart.setDate(extendedStart.getDate() - 30)
+    
+    // For hours, we want to include readings through the end date (inclusive)
+    // Add a small buffer to include all of the last day
+    const extendedEnd = new Date(dateToExclusive)
+    extendedEnd.setMilliseconds(extendedEnd.getMilliseconds() - 1) // Include the last millisecond before exclusive end
     
     const { data: hoursData, error: hoursError } = await supabase
       .from("completed_checklists")
       .select("asset_id, equipment_hours_reading, reading_timestamp")
       .gte("reading_timestamp", extendedStart.toISOString())
-      .lte("reading_timestamp", endDate)
+      .lte("reading_timestamp", extendedEnd.toISOString()) // Inclusive end for hours calculation
       .in("asset_id", assetIds)
       .not("equipment_hours_reading", "is", null)
 
@@ -236,6 +260,9 @@ export async function POST(req: Request) {
         business_unit_id: asset.business_unit_id,
         total_cost: 0,
         purchase_orders_cost: 0,
+        service_orders_cost: 0,
+        labor_cost: 0,
+        parts_cost: 0,
         additional_expenses: 0,
         hours_worked: 0,
         preventive_cost: 0,
@@ -300,41 +327,10 @@ export async function POST(req: Request) {
     // We'll fetch service order details when needed for the breakdown display
 
     // Process additional expenses (only linked ones)
-    // Build a map of adjustment POs by work_order_id to detect unlinked AEs
-    // This handles data integrity issues where adjustment_po_id wasn't set
-    const adjustmentPOsByWorkOrder = new Map<string, Array<{ id: string, amount: number }>>()
-    filteredPurchaseOrders.forEach(po => {
-      // Only consider adjustment POs (they're created FROM additional expenses)
-      if (po.is_adjustment && po.work_order_id) {
-        const poAmount = po.actual_amount ? parseFloat(po.actual_amount) : parseFloat(po.total_amount || '0')
-        if (!adjustmentPOsByWorkOrder.has(po.work_order_id)) {
-          adjustmentPOsByWorkOrder.set(po.work_order_id, [])
-        }
-        adjustmentPOsByWorkOrder.get(po.work_order_id)!.push({
-          id: po.id,
-          amount: poAmount
-        })
-      }
-    })
-    
+    // Include all AEs with adjustment_po_id = null, same as gerencial report
+    // Note: This includes AEs that have been converted to adjustment POs but where
+    // the adjustment_po_id wasn't set in the database. Both the AE and the PO will be counted.
     linkedAdditionalExpenses.forEach(ae => {
-      // Skip if adjustment_po_id is already set (already converted)
-      if (ae.adjustment_po_id) {
-        return
-      }
-      
-      // Check if there's an adjustment PO for this work order with matching amount
-      // This handles cases where the adjustment_po_id wasn't set but the PO exists
-      if (ae.work_order_id) {
-        const adjustmentPOs = adjustmentPOsByWorkOrder.get(ae.work_order_id) || []
-        const aeAmount = parseFloat(ae.amount || '0')
-        // If there's an adjustment PO with matching amount, skip this AE (already counted as PO)
-        const matchingPO = adjustmentPOs.find(po => Math.abs(po.amount - aeAmount) < 0.01)
-        if (matchingPO) {
-          return // Skip - this AE was converted to a PO but adjustment_po_id wasn't set
-        }
-      }
-      
       const metrics = assetMetrics.get(ae.asset_id)
       if (metrics) {
         const amount = parseFloat(ae.amount || '0')
@@ -452,6 +448,8 @@ export async function POST(req: Request) {
     const paginatedAssets = assetList.slice((page - 1) * pageSize, page * pageSize)
 
     // Calculate summary
+    // Note: totalCost should equal purchaseOrdersCost + serviceOrdersCost + laborCost + partsCost + additionalExpenses
+    // This ensures all cost components are included in the total
     const summary = {
       totalCost: Array.from(buTotals.values()).reduce((sum, bu) => sum + bu.total_cost, 0),
       purchaseOrdersCost: Array.from(buTotals.values()).reduce((sum, bu) => sum + bu.purchase_orders_cost, 0),
@@ -463,6 +461,24 @@ export async function POST(req: Request) {
       assetCount: Array.from(buTotals.values()).reduce((sum, bu) => sum + bu.asset_count, 0),
       preventiveCost: Array.from(buTotals.values()).reduce((sum, bu) => sum + bu.preventive_cost, 0),
       correctiveCost: Array.from(buTotals.values()).reduce((sum, bu) => sum + bu.corrective_cost, 0)
+    }
+    
+    // Validation: Log if there's a mismatch (for debugging)
+    const calculatedComponentsTotal = summary.purchaseOrdersCost + summary.serviceOrdersCost + 
+                                     summary.laborCost + summary.partsCost + summary.additionalExpenses
+    if (Math.abs(summary.totalCost - calculatedComponentsTotal) > 0.01) {
+      console.warn('Executive Report Summary Mismatch:', {
+        totalCost: summary.totalCost,
+        calculatedComponentsTotal,
+        difference: summary.totalCost - calculatedComponentsTotal,
+        components: {
+          purchaseOrdersCost: summary.purchaseOrdersCost,
+          serviceOrdersCost: summary.serviceOrdersCost,
+          laborCost: summary.laborCost,
+          partsCost: summary.partsCost,
+          additionalExpenses: summary.additionalExpenses
+        }
+      })
     }
 
     return NextResponse.json({
