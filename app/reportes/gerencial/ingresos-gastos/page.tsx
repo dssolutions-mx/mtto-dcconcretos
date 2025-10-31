@@ -1,13 +1,15 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import React, { useState, useEffect } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { RefreshCw, Download, AlertCircle, Settings } from 'lucide-react'
+import { Switch } from '@/components/ui/switch'
+import { RefreshCw, Download, AlertCircle, Settings, ChevronRight, ChevronDown, Loader2 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
+import * as XLSX from 'xlsx'
 
 type PlantData = {
   plant_id: string
@@ -68,6 +70,21 @@ type ReportData = {
   }
 }
 
+type CostDetails = {
+  departments: Array<{
+    department: string
+    total: number
+    entries: Array<{
+      id: string
+      description: string | null
+      subcategory: string | null
+      amount: number
+      is_distributed: boolean
+      distribution_method: string | null
+    }>
+  }>
+}
+
 const formatCurrency = (amount: number) =>
   new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(amount)
 
@@ -87,6 +104,16 @@ export default function IngresosGastosPage() {
   })
   const [businessUnitId, setBusinessUnitId] = useState<string>('')
   const [plantId, setPlantId] = useState<string>('')
+  const [groupByBusinessUnit, setGroupByBusinessUnit] = useState(false)
+  
+  // State for expandable costs: Map<`${plantId}-${category}`, boolean>
+  const [expandedCosts, setExpandedCosts] = useState<Map<string, boolean>>(new Map())
+  // State for expanded departments: Map<`${plantId}-${category}-${department}`, boolean>
+  const [expandedDepartments, setExpandedDepartments] = useState<Map<string, boolean>>(new Map())
+  // State for cost details: Map<`${plantId}-${category}`, CostDetails>
+  const [costDetails, setCostDetails] = useState<Map<string, CostDetails>>(new Map())
+  // State for loading cost details: Map<`${plantId}-${category}`, boolean>
+  const [loadingCostDetails, setLoadingCostDetails] = useState<Map<string, boolean>>(new Map())
 
   useEffect(() => {
     if (selectedMonth) {
@@ -134,11 +161,455 @@ export default function IngresosGastosPage() {
     setPlantId(value === 'all' ? '' : value)
   }
 
+  const toggleCostExpansion = async (category: 'nomina' | 'otros_indirectos') => {
+    const key = `all-${category}`
+    const isExpanded = expandedCosts.get(key) || false
+    
+    if (!isExpanded) {
+      // Fetch cost details for ALL plants when expanding
+      setLoadingCostDetails(prev => new Map(prev).set(key, true))
+      try {
+        // Fetch details for all plants in parallel
+        const detailPromises = plants.map(plant =>
+          fetch(`/api/reports/gerencial/ingresos-gastos/details?month=${selectedMonth}&plantId=${plant.plant_id}&category=${category}`)
+            .then(res => res.ok ? res.json() : null)
+            .catch(() => null)
+        )
+        
+        const allDetails = await Promise.all(detailPromises)
+        
+        // Aggregate departments across all plants
+        const departmentMap = new Map<string, {
+          department: string
+          total: number
+          entriesByPlant: Map<string, Array<{
+            id: string
+            description: string | null
+            subcategory: string | null
+            amount: number
+            is_distributed: boolean
+            distribution_method: string | null
+          }>>
+        }>()
+        
+        allDetails.forEach((details, plantIndex) => {
+          if (!details?.departments) return
+          const plant = plants[plantIndex]
+          
+          details.departments.forEach((dept: any) => {
+            const deptKey = dept.department
+            if (!departmentMap.has(deptKey)) {
+              departmentMap.set(deptKey, {
+                department: deptKey,
+                total: 0,
+                entriesByPlant: new Map()
+              })
+            }
+            
+            const deptData = departmentMap.get(deptKey)!
+            deptData.total += dept.total
+            deptData.entriesByPlant.set(plant.plant_id, dept.entries)
+          })
+        })
+        
+        // Convert to array format
+        const aggregatedDetails: CostDetails = {
+          departments: Array.from(departmentMap.values()).map(dept => ({
+            department: dept.department,
+            total: dept.total,
+            entries: Array.from(dept.entriesByPlant.entries()).flatMap(([plantId, entries]) =>
+              entries.map(entry => ({ ...entry, plantId }))
+            )
+          }))
+        }
+        
+        setCostDetails(prev => new Map(prev).set(key, aggregatedDetails))
+      } catch (err) {
+        console.error('Error loading cost details:', err)
+      } finally {
+        setLoadingCostDetails(prev => {
+          const newMap = new Map(prev)
+          newMap.delete(key)
+          return newMap
+        })
+      }
+    }
+    
+    setExpandedCosts(prev => {
+      const newMap = new Map(prev)
+      newMap.set(key, !isExpanded)
+      return newMap
+    })
+  }
+
+  const toggleDepartmentExpansion = (category: 'nomina' | 'otros_indirectos', department: string) => {
+    const key = `${category}-${department}`
+    setExpandedDepartments(prev => {
+      const newMap = new Map(prev)
+      newMap.set(key, !(prev.get(key) || false))
+      return newMap
+    })
+  }
+
+  const exportToExcel = () => {
+    if (!data || plants.length === 0) return
+
+    const workbook = XLSX.utils.book_new()
+    
+    // Prepare data for export
+    const exportData: any[] = []
+    
+    // Build headers first to know column count
+    const headers = ['Métrica']
+    if (groupByBusinessUnit && groupedPlants) {
+      Object.entries(groupedPlants).forEach(([buId, buPlants]) => {
+        const buName = businessUnitNames.get(buId) || 'Sin Unidad'
+        headers.push(buName)
+      })
+      headers.push('TOTAL')
+    } else {
+      plants.forEach(plant => {
+        headers.push(plant.plant_code || plant.plant_name)
+      })
+      headers.push('TOTAL')
+    }
+    
+    // Title and metadata rows
+    const reportTitle = 'REPORTE GERENCIAL - INGRESOS VS GASTOS'
+    const monthDisplay = new Date(`${selectedMonth}-01`).toLocaleDateString('es-MX', { year: 'numeric', month: 'long' })
+    exportData.push([reportTitle, ...Array(headers.length - 1).fill('')])
+    exportData.push([`Período: ${monthDisplay}`, ...Array(headers.length - 1).fill('')])
+    exportData.push([]) // Empty row
+    
+    // Header row
+    exportData.push(headers)
+
+    // Track row metadata for styling
+    const rowMetadata: Array<{ type: 'title' | 'section' | 'metric' | 'total' | 'empty', rowIndex: number }> = [
+      { type: 'title', rowIndex: 0 },
+      { type: 'title', rowIndex: 1 },
+      { type: 'empty', rowIndex: 2 },
+      { type: 'metric', rowIndex: 3 } // Header row
+    ]
+    let currentRowIndex = 4
+
+    // Helper to add a row with metadata tracking
+    const addRow = (label: string, getValue: (plant: PlantData) => number, formatFn: (val: number) => string, isTotalRow = false) => {
+      const row: any[] = [label]
+      if (groupByBusinessUnit && groupedPlants) {
+        Object.entries(groupedPlants).forEach(([buId, buPlants]) => {
+          const buTotal = buPlants.reduce((sum, p) => sum + getValue(p), 0)
+          row.push(buTotal) // Store as number for proper Excel formatting
+        })
+        const grandTotal = calculateGrandTotal(getValue)
+        row.push(grandTotal)
+      } else {
+        plants.forEach(plant => {
+          row.push(getValue(plant)) // Store as number
+        })
+        const grandTotal = calculateGrandTotal(getValue)
+        row.push(grandTotal)
+      }
+      exportData.push(row)
+      rowMetadata.push({ 
+        type: isTotalRow ? 'total' : 'metric', 
+        rowIndex: currentRowIndex++ 
+      })
+    }
+
+    // Ingresos Concreto Section
+    exportData.push(['INGRESOS CONCRETO', ...Array(headers.length - 1).fill('')])
+    rowMetadata.push({ type: 'section', rowIndex: currentRowIndex++ })
+    addRow('Volumen Concreto (m³)', p => p.volumen_concreto, val => formatNumber(val, 2))
+    addRow('f\'c Ponderada (kg/cm²)', p => p.fc_ponderada, val => formatNumber(val, 2))
+    addRow('Edad Ponderada (días)', p => p.edad_ponderada, val => formatNumber(val, 2))
+    addRow('PV Unitario', p => p.pv_unitario, formatCurrency)
+    addRow('Ventas Total Concreto', p => p.ventas_total, formatCurrency, true)
+    exportData.push([])
+    rowMetadata.push({ type: 'empty', rowIndex: currentRowIndex++ })
+
+    // Costo Materia Prima Section
+    exportData.push(['COSTO MATERIA PRIMA', ...Array(headers.length - 1).fill('')])
+    rowMetadata.push({ type: 'section', rowIndex: currentRowIndex++ })
+    addRow('Costo MP Unitario', p => p.costo_mp_unitario, formatCurrency)
+    addRow('Consumo Cem / m3 (kg)', p => p.consumo_cem_m3, val => formatNumber(val, 2))
+    addRow('Costo Cem / m3 ($ Unitario)', p => p.costo_cem_m3, formatCurrency)
+    addRow('Costo Cem %', p => p.costo_cem_pct, formatPercent)
+    addRow('Costo MP Total Concreto', p => p.costo_mp_total, formatCurrency, true)
+    addRow('Costo MP %', p => p.costo_mp_pct, formatPercent)
+    exportData.push([])
+    rowMetadata.push({ type: 'empty', rowIndex: currentRowIndex++ })
+
+    // Spread Section
+    exportData.push(['SPREAD', ...Array(headers.length - 1).fill('')])
+    rowMetadata.push({ type: 'section', rowIndex: currentRowIndex++ })
+    addRow('Spread Unitario', p => p.spread_unitario, formatCurrency)
+    addRow('Spread Unitario %', p => p.spread_unitario_pct, formatPercent)
+    exportData.push([])
+    rowMetadata.push({ type: 'empty', rowIndex: currentRowIndex++ })
+
+    // Costo Operativo Section
+    exportData.push(['COSTO OPERATIVO', ...Array(headers.length - 1).fill('')])
+    rowMetadata.push({ type: 'section', rowIndex: currentRowIndex++ })
+    addRow('Diesel (Todas las Unidades)', p => p.diesel_total, formatCurrency)
+    addRow('Diesel Unitario (m3)', p => p.diesel_unitario, formatCurrency)
+    addRow('Diesel %', p => p.diesel_pct, formatPercent)
+    addRow('MANTTO. (Todas las Unidades)', p => p.mantto_total, formatCurrency)
+    addRow('Mantto. Unitario (m3)', p => p.mantto_unitario, formatCurrency)
+    addRow('Mantenimiento %', p => p.mantto_pct, formatPercent)
+    addRow('Nómina Totales', p => p.nomina_total, formatCurrency)
+    addRow('Nómina Unitario (m3)', p => p.nomina_unitario, formatCurrency)
+    addRow('Nómina %', p => p.nomina_pct, formatPercent)
+    addRow('Otros Indirectos Totales', p => p.otros_indirectos_total, formatCurrency)
+    addRow('Otros Indirectos Unitario (m3)', p => p.otros_indirectos_unitario, formatCurrency)
+    addRow('Otros Indirectos %', p => p.otros_indirectos_pct, formatPercent)
+    addRow('TOTAL COSTO OP', p => p.total_costo_op, formatCurrency, true)
+    addRow('TOTAL COSTO OP %', p => p.total_costo_op_pct, formatPercent)
+    exportData.push([])
+    rowMetadata.push({ type: 'empty', rowIndex: currentRowIndex++ })
+
+    // EBITDA Section
+    exportData.push(['EBITDA', ...Array(headers.length - 1).fill('')])
+    rowMetadata.push({ type: 'section', rowIndex: currentRowIndex++ })
+    addRow('EBITDA', p => p.ebitda, formatCurrency, true)
+    addRow('EBITDA %', p => p.ebitda_pct, formatPercent)
+
+    // Optional Bombeo Section
+    if (plants.some(p => p.ingresos_bombeo_vol && p.ingresos_bombeo_vol > 0)) {
+      exportData.push([])
+      rowMetadata.push({ type: 'empty', rowIndex: currentRowIndex++ })
+      exportData.push(['INGRESOS BOMBEO', ...Array(headers.length - 1).fill('')])
+      rowMetadata.push({ type: 'section', rowIndex: currentRowIndex++ })
+      addRow('Ingresos Bombeo Vol', p => p.ingresos_bombeo_vol || 0, val => formatNumber(val, 2))
+      addRow('Ingresos Bombeo $ Unit', p => p.ingresos_bombeo_unit || 0, formatCurrency)
+    }
+
+    // Create worksheet
+    const worksheet = XLSX.utils.aoa_to_sheet(exportData)
+    
+    // Set column widths - wider for metric column, narrower for data columns
+    const columnWidths = [
+      { wch: 38 }, // Metric column
+      ...Array(headers.length - 1).fill({ wch: 16 }) // Data columns
+    ]
+    worksheet['!cols'] = columnWidths
+
+    // Freeze first row (header) and first column (metrics)
+    worksheet['!freeze'] = { xSplit: 1, ySplit: 4, topLeftCell: 'B5', activePane: 'bottomRight', state: 'frozen' }
+
+    // Default border style
+    const defaultBorder = {
+      top: { style: 'thin', color: { rgb: 'CCCCCC' } },
+      bottom: { style: 'thin', color: { rgb: 'CCCCCC' } },
+      left: { style: 'thin', color: { rgb: 'CCCCCC' } },
+      right: { style: 'thin', color: { rgb: 'CCCCCC' } }
+    }
+
+    const thickBorder = {
+      top: { style: 'medium', color: { rgb: '000000' } },
+      bottom: { style: 'medium', color: { rgb: '000000' } },
+      left: { style: 'medium', color: { rgb: '000000' } },
+      right: { style: 'medium', color: { rgb: '000000' } }
+    }
+
+    // Apply comprehensive styling
+    const range = XLSX.utils.decode_range(worksheet['!ref'] || 'A1')
+    
+    for (let row = 0; row <= range.e.r; row++) {
+      for (let col = 0; col <= range.e.c; col++) {
+        const cellAddress = XLSX.utils.encode_cell({ r: row, c: col })
+        if (!worksheet[cellAddress]) continue
+
+        const metadata = rowMetadata.find(m => m.rowIndex === row)
+        const isHeaderRow = row === 3
+        const isTitleRow = row === 0 || row === 1
+        const isSectionRow = metadata?.type === 'section'
+        const isTotalRow = metadata?.type === 'total'
+        const isMetricCol = col === 0
+        const isTotalCol = col === headers.length - 1
+        const isDataCell = col > 0 && col < headers.length - 1
+
+        let cellStyle: any = {
+          border: defaultBorder,
+          alignment: { 
+            horizontal: isMetricCol ? 'left' : 'right', 
+            vertical: 'center',
+            wrapText: true
+          }
+        }
+
+        // Title rows
+        if (isTitleRow) {
+          cellStyle.font = { bold: true, sz: row === 0 ? 16 : 12, color: { rgb: '1F497D' } }
+          cellStyle.fill = { fgColor: { rgb: 'E7F3FF' } }
+          cellStyle.alignment.horizontal = 'left'
+          if (row === 0) {
+            cellStyle.border = thickBorder
+          }
+        }
+        // Header row
+        else if (isHeaderRow) {
+          cellStyle.font = { bold: true, sz: 11, color: { rgb: 'FFFFFF' } }
+          cellStyle.fill = { fgColor: { rgb: '1F497D' } }
+          cellStyle.alignment.horizontal = 'center'
+          cellStyle.border = thickBorder
+        }
+        // Section headers
+        else if (isSectionRow && isMetricCol) {
+          cellStyle.font = { bold: true, sz: 11, color: { rgb: 'FFFFFF' } }
+          cellStyle.fill = { fgColor: { rgb: '4472C4' } }
+          cellStyle.alignment.horizontal = 'left'
+          cellStyle.border = thickBorder
+        }
+        // Total rows
+        else if (isTotalRow) {
+          cellStyle.font = { bold: true, sz: 11 }
+          if (isMetricCol) {
+            cellStyle.fill = { fgColor: { rgb: 'E2EFDA' } }
+          } else {
+            cellStyle.fill = { fgColor: { rgb: 'FFF2CC' } }
+          }
+          cellStyle.border = thickBorder
+        }
+        // Regular metric rows
+        else if (isMetricCol && metadata?.type === 'metric') {
+          cellStyle.font = { sz: 10 }
+          cellStyle.fill = { fgColor: { rgb: 'F8F9FA' } }
+        }
+        // Data cells
+        else if (isDataCell && metadata?.type === 'metric') {
+          cellStyle.font = { sz: 10 }
+          cellStyle.numFmt = '#,##0.00' // Number format with thousands separator
+        }
+        // Total column cells
+        else if (isTotalCol && metadata?.type === 'metric') {
+          cellStyle.font = { bold: true, sz: 10 }
+          cellStyle.fill = { fgColor: { rgb: 'E7F3FF' } }
+          cellStyle.numFmt = '#,##0.00'
+        }
+
+        // Apply number formatting based on content
+        const cellValue = worksheet[cellAddress].v
+        if (typeof cellValue === 'number' && !isMetricCol) {
+          // Determine format based on row label
+          const rowLabel = exportData[row]?.[0] || ''
+          if (rowLabel.includes('%')) {
+            cellStyle.numFmt = '0.00%'
+          } else if (rowLabel.includes('m³') || rowLabel.includes('kg') || rowLabel.includes('días') || rowLabel.includes('cm²')) {
+            cellStyle.numFmt = '#,##0.00'
+          } else {
+            cellStyle.numFmt = '$#,##0.00'
+          }
+        }
+
+        worksheet[cellAddress].s = cellStyle
+      }
+    }
+
+    // Merge title cells
+    const titleRange = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: 0, c: headers.length - 1 } })
+    if (!worksheet['!merges']) worksheet['!merges'] = []
+    worksheet['!merges'].push({ s: { r: 0, c: 0 }, e: { r: 0, c: headers.length - 1 } })
+    worksheet['!merges'].push({ s: { r: 1, c: 0 }, e: { r: 1, c: headers.length - 1 } })
+
+    // Add worksheet to workbook
+    XLSX.utils.book_append_sheet(workbook, worksheet, `Ingresos vs Gastos`)
+
+    // Generate Excel file
+    const excelBuffer = XLSX.write(workbook, { type: 'array', bookType: 'xlsx' })
+    const blob = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+    
+    // Download
+    const url = window.URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.style.display = 'none'
+    a.href = url
+    a.download = `Ingresos-vs-Gastos-${selectedMonth}.xlsx`
+    document.body.appendChild(a)
+    a.click()
+    window.URL.revokeObjectURL(url)
+    document.body.removeChild(a)
+  }
+
   const availablePlants = data?.filters.plants.filter(p =>
     !businessUnitId || p.business_unit_id === businessUnitId
   ) || []
 
-  const plants = data?.plants || []
+  // Filter plants with no data (already filtered in API, but ensure client-side too)
+  const filteredPlants = (data?.plants || []).filter(plant => {
+    return plant.ventas_total > 0 || 
+      plant.diesel_total > 0 || 
+      plant.mantto_total > 0 || 
+      plant.nomina_total > 0 || 
+      plant.otros_indirectos_total > 0
+  })
+
+  // Group plants by business unit if enabled
+  const groupedPlants = groupByBusinessUnit 
+    ? filteredPlants.reduce((acc, plant) => {
+        const buId = plant.business_unit_id || 'unassigned'
+        if (!acc[buId]) {
+          acc[buId] = []
+        }
+        acc[buId].push(plant)
+        return acc
+      }, {} as Record<string, PlantData[]>)
+    : null
+
+  // Get business unit names
+  const businessUnitNames = new Map<string, string>()
+  data?.filters.businessUnits.forEach(bu => {
+    businessUnitNames.set(bu.id, bu.name)
+  })
+
+  const plants = filteredPlants
+
+  // Helper function to calculate grand total for a metric
+  const calculateGrandTotal = (getValue: (plant: PlantData) => number): number => {
+    return plants.reduce((sum, plant) => sum + getValue(plant), 0)
+  }
+
+  // Helper function to render grand total cell
+  const renderGrandTotalCell = (total: number, formatFn: (val: number) => string, isTotalRow = false) => (
+    <td className={`sticky right-0 z-10 bg-muted/30 text-right p-3 font-medium min-w-[140px] ${isTotalRow ? 'font-bold text-lg' : ''}`}>
+      {formatFn(total)}
+    </td>
+  )
+
+  // Render plants columns (handles grouping)
+  const renderPlantColumns = (getValue: (plant: PlantData) => number, formatFn: (val: number) => string, isTotalRow = false) => {
+    if (groupByBusinessUnit && groupedPlants) {
+      // Render grouped by BU - only show BU totals, hide individual plants
+      return (
+        <>
+          {Object.entries(groupedPlants).map(([buId, buPlants]) => {
+            const buTotal = buPlants.reduce((sum, p) => sum + getValue(p), 0)
+            return (
+              <td key={buId} className={`text-right p-3 border-r ${isTotalRow ? 'font-bold text-lg' : ''}`}>
+                {formatFn(buTotal)}
+              </td>
+            )
+          })}
+        </>
+      )
+    } else {
+      // Render flat list
+      return (
+        <>
+          {plants.map(plant => (
+            <td key={plant.plant_id} className={`text-right p-3 border-r ${isTotalRow ? 'font-bold text-lg' : ''}`}>
+              {formatFn(getValue(plant))}
+            </td>
+          ))}
+        </>
+      )
+    }
+  }
+
+  // Calculate plant column count (for colspan)
+  const plantColumnCount = groupByBusinessUnit && groupedPlants
+    ? Object.keys(groupedPlants).length // Only count BU columns when grouped (not including grand total)
+    : plants.length
 
   return (
     <div className="container mx-auto py-6 px-4 max-w-[1600px] space-y-6">
@@ -205,12 +676,25 @@ export default function IngresosGastosPage() {
               </Select>
             </div>
 
-            <div className="flex items-end gap-2 col-span-2">
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2">
+                <Switch
+                  id="group-by-bu"
+                  checked={groupByBusinessUnit}
+                  onCheckedChange={setGroupByBusinessUnit}
+                />
+                <Label htmlFor="group-by-bu" className="cursor-pointer">
+                  Agrupar por Unidad de Negocio
+                </Label>
+              </div>
+            </div>
+
+            <div className="flex items-end gap-2">
               <Button onClick={loadData} disabled={loading} className="flex-1">
                 <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
                 {loading ? 'Cargando...' : 'Actualizar'}
               </Button>
-              <Button variant="outline" disabled={!data || loading}>
+              <Button variant="outline" disabled={!data || loading || plants.length === 0} onClick={exportToExcel}>
                 <Download className="w-4 h-4" />
               </Button>
             </div>
@@ -249,254 +733,489 @@ export default function IngresosGastosPage() {
                     <th className="sticky left-0 z-10 bg-background text-left p-3 font-medium min-w-[200px] border-r-2">
                       Métrica
                     </th>
-                    {plants.map(plant => (
-                      <th key={plant.plant_id} className="text-right p-3 font-medium min-w-[140px] border-r">
-                        {plant.plant_code || plant.plant_name}
-                      </th>
-                    ))}
+                    {groupByBusinessUnit && groupedPlants ? (
+                      // Render grouped headers - only show BU totals, hide individual plants
+                      <>
+                        {Object.entries(groupedPlants).map(([buId, buPlants]) => (
+                          <th key={buId} className="text-right p-3 font-medium min-w-[140px] border-r">
+                            {businessUnitNames.get(buId) || 'Total'}
+                          </th>
+                        ))}
+                        <th className="sticky right-0 z-10 bg-muted/30 text-right p-3 font-medium min-w-[140px] border-r-2">
+                          TOTAL
+                        </th>
+                      </>
+                    ) : (
+                      // Render flat headers
+                      <>
+                        {plants.map(plant => (
+                          <th key={plant.plant_id} className="text-right p-3 font-medium min-w-[140px] border-r">
+                            {plant.plant_code || plant.plant_name}
+                          </th>
+                        ))}
+                        <th className="sticky right-0 z-10 bg-muted/30 text-right p-3 font-medium min-w-[140px] border-r-2">
+                          TOTAL
+                        </th>
+                      </>
+                    )}
                   </tr>
                 </thead>
                 <tbody>
                   {/* INGRESOS CONCRETO SECTION */}
                   <tr className="bg-blue-50 dark:bg-blue-950/20">
-                    <td colSpan={plants.length + 1} className="p-2 font-semibold text-sm uppercase tracking-wide">
+                    <td colSpan={plantColumnCount + 1} className="p-2 font-semibold text-sm uppercase tracking-wide">
                       Ingresos Concreto
                     </td>
                   </tr>
                   <tr className="border-b hover:bg-muted/30">
                     <td className="sticky left-0 z-10 bg-background p-3 border-r-2">Volumen Concreto (m³)</td>
-                    {plants.map(p => (
-                      <td key={p.plant_id} className="text-right p-3 border-r">{formatNumber(p.volumen_concreto, 2)}</td>
-                    ))}
+                    {renderPlantColumns(p => p.volumen_concreto, (val) => formatNumber(val, 2))}
+                    {renderGrandTotalCell(calculateGrandTotal(p => p.volumen_concreto), (val) => formatNumber(val, 2))}
                   </tr>
                   <tr className="border-b hover:bg-muted/30">
                     <td className="sticky left-0 z-10 bg-background p-3 border-r-2">f'c Ponderada (kg/cm²)</td>
-                    {plants.map(p => (
-                      <td key={p.plant_id} className="text-right p-3 border-r">{formatNumber(p.fc_ponderada, 2)}</td>
-                    ))}
+                    {renderPlantColumns(p => p.fc_ponderada, (val) => formatNumber(val, 2))}
+                    {renderGrandTotalCell(calculateGrandTotal(p => p.fc_ponderada), (val) => formatNumber(val, 2))}
                   </tr>
                   <tr className="border-b hover:bg-muted/30">
                     <td className="sticky left-0 z-10 bg-background p-3 border-r-2">Edad Ponderada (días)</td>
-                    {plants.map(p => (
-                      <td key={p.plant_id} className="text-right p-3 border-r">{formatNumber(p.edad_ponderada, 2)}</td>
-                    ))}
+                    {renderPlantColumns(p => p.edad_ponderada, (val) => formatNumber(val, 2))}
+                    {renderGrandTotalCell(calculateGrandTotal(p => p.edad_ponderada), (val) => formatNumber(val, 2))}
                   </tr>
                   <tr className="border-b hover:bg-muted/30">
                     <td className="sticky left-0 z-10 bg-background p-3 border-r-2">PV Unitario</td>
-                    {plants.map(p => (
-                      <td key={p.plant_id} className="text-right p-3 border-r font-medium">{formatCurrency(p.pv_unitario)}</td>
-                    ))}
+                    {renderPlantColumns(p => p.pv_unitario, formatCurrency)}
+                    {renderGrandTotalCell(calculateGrandTotal(p => p.pv_unitario), formatCurrency)}
                   </tr>
                   <tr className="border-b hover:bg-muted/30 bg-blue-100/50 dark:bg-blue-900/20">
                     <td className="sticky left-0 z-10 bg-blue-100 dark:bg-blue-900/30 p-3 border-r-2 font-bold">Ventas Total Concreto</td>
-                    {plants.map(p => (
-                      <td key={p.plant_id} className="text-right p-3 border-r font-bold text-lg">{formatCurrency(p.ventas_total)}</td>
-                    ))}
+                    {renderPlantColumns(p => p.ventas_total, formatCurrency, true)}
+                    {renderGrandTotalCell(calculateGrandTotal(p => p.ventas_total), formatCurrency, true)}
                   </tr>
 
                   {/* COSTO MATERIA PRIMA SECTION */}
                   <tr className="bg-orange-50 dark:bg-orange-950/20">
-                    <td colSpan={plants.length + 1} className="p-2 font-semibold text-sm uppercase tracking-wide">
+                    <td colSpan={plantColumnCount + 1} className="p-2 font-semibold text-sm uppercase tracking-wide">
                       Costo Materia Prima
                     </td>
                   </tr>
                   <tr className="border-b hover:bg-muted/30">
                     <td className="sticky left-0 z-10 bg-background p-3 border-r-2">Costo MP Unitario</td>
-                    {plants.map(p => (
-                      <td key={p.plant_id} className="text-right p-3 border-r font-medium">{formatCurrency(p.costo_mp_unitario)}</td>
-                    ))}
+                    {renderPlantColumns(p => p.costo_mp_unitario, formatCurrency)}
+                    {renderGrandTotalCell(calculateGrandTotal(p => p.costo_mp_unitario), formatCurrency)}
                   </tr>
                   <tr className="border-b hover:bg-muted/30">
                     <td className="sticky left-0 z-10 bg-background p-3 border-r-2">Consumo Cem / m3 (kg)</td>
-                    {plants.map(p => (
-                      <td key={p.plant_id} className="text-right p-3 border-r">{formatNumber(p.consumo_cem_m3, 2)}</td>
-                    ))}
+                    {renderPlantColumns(p => p.consumo_cem_m3, (val) => formatNumber(val, 2))}
+                    {renderGrandTotalCell(calculateGrandTotal(p => p.consumo_cem_m3), (val) => formatNumber(val, 2))}
                   </tr>
                   <tr className="border-b hover:bg-muted/30">
                     <td className="sticky left-0 z-10 bg-background p-3 border-r-2">Costo Cem / m3 ($ Unitario)</td>
-                    {plants.map(p => (
-                      <td key={p.plant_id} className="text-right p-3 border-r">{formatCurrency(p.costo_cem_m3)}</td>
-                    ))}
+                    {renderPlantColumns(p => p.costo_cem_m3, formatCurrency)}
+                    {renderGrandTotalCell(calculateGrandTotal(p => p.costo_cem_m3), formatCurrency)}
                   </tr>
                   <tr className="border-b hover:bg-muted/30">
                     <td className="sticky left-0 z-10 bg-background p-3 border-r-2">Costo Cem %</td>
-                    {plants.map(p => (
-                      <td key={p.plant_id} className="text-right p-3 border-r">{formatPercent(p.costo_cem_pct)}</td>
-                    ))}
+                    {renderPlantColumns(p => p.costo_cem_pct, formatPercent)}
+                    {renderGrandTotalCell(calculateGrandTotal(p => p.costo_cem_pct), formatPercent)}
                   </tr>
                   <tr className="border-b hover:bg-muted/30 bg-orange-100/50 dark:bg-orange-900/20">
                     <td className="sticky left-0 z-10 bg-orange-100 dark:bg-orange-900/30 p-3 border-r-2 font-bold">Costo MP Total Concreto</td>
-                    {plants.map(p => (
-                      <td key={p.plant_id} className="text-right p-3 border-r font-bold text-lg">{formatCurrency(p.costo_mp_total)}</td>
-                    ))}
+                    {renderPlantColumns(p => p.costo_mp_total, formatCurrency, true)}
+                    {renderGrandTotalCell(calculateGrandTotal(p => p.costo_mp_total), formatCurrency, true)}
                   </tr>
                   <tr className="border-b hover:bg-muted/30">
                     <td className="sticky left-0 z-10 bg-background p-3 border-r-2">Costo MP %</td>
-                    {plants.map(p => (
-                      <td key={p.plant_id} className="text-right p-3 border-r font-medium">{formatPercent(p.costo_mp_pct)}</td>
-                    ))}
+                    {renderPlantColumns(p => p.costo_mp_pct, formatPercent)}
+                    {renderGrandTotalCell(calculateGrandTotal(p => p.costo_mp_pct), formatPercent)}
                   </tr>
 
                   {/* SPREAD SECTION */}
                   <tr className="bg-green-50 dark:bg-green-950/20">
-                    <td colSpan={plants.length + 1} className="p-2 font-semibold text-sm uppercase tracking-wide">
+                    <td colSpan={plantColumnCount + 1} className="p-2 font-semibold text-sm uppercase tracking-wide">
                       Spread
                     </td>
                   </tr>
                   <tr className="border-b hover:bg-muted/30">
                     <td className="sticky left-0 z-10 bg-background p-3 border-r-2">Spread Unitario</td>
-                    {plants.map(p => (
-                      <td key={p.plant_id} className="text-right p-3 border-r font-semibold text-green-700 dark:text-green-400">
-                        {formatCurrency(p.spread_unitario)}
-                      </td>
-                    ))}
+                    {renderPlantColumns(p => p.spread_unitario, formatCurrency)}
+                    {renderGrandTotalCell(calculateGrandTotal(p => p.spread_unitario), formatCurrency)}
                   </tr>
                   <tr className="border-b hover:bg-muted/30">
                     <td className="sticky left-0 z-10 bg-background p-3 border-r-2">Spread Unitario %</td>
-                    {plants.map(p => (
-                      <td key={p.plant_id} className="text-right p-3 border-r font-medium">{formatPercent(p.spread_unitario_pct)}</td>
-                    ))}
+                    {renderPlantColumns(p => p.spread_unitario_pct, formatPercent)}
+                    {renderGrandTotalCell(calculateGrandTotal(p => p.spread_unitario_pct), formatPercent)}
                   </tr>
 
                   {/* COSTO OPERATIVO SECTION */}
                   <tr className="bg-purple-50 dark:bg-purple-950/20">
-                    <td colSpan={plants.length + 1} className="p-2 font-semibold text-sm uppercase tracking-wide">
+                    <td colSpan={plantColumnCount + 1} className="p-2 font-semibold text-sm uppercase tracking-wide">
                       Costo Operativo
                     </td>
                   </tr>
                   <tr className="border-b hover:bg-muted/30 bg-yellow-50/50 dark:bg-yellow-900/10">
                     <td className="sticky left-0 z-10 bg-yellow-50 dark:bg-yellow-900/20 p-3 border-r-2 font-semibold">Diesel (Todas las Unidades)</td>
-                    {plants.map(p => (
-                      <td key={p.plant_id} className="text-right p-3 border-r font-semibold">{formatCurrency(p.diesel_total)}</td>
-                    ))}
+                    {renderPlantColumns(p => p.diesel_total, formatCurrency)}
+                    {renderGrandTotalCell(calculateGrandTotal(p => p.diesel_total), formatCurrency)}
                   </tr>
                   <tr className="border-b hover:bg-muted/30">
                     <td className="sticky left-0 z-10 bg-background p-3 border-r-2">Diesel Unitario (m3)</td>
-                    {plants.map(p => (
-                      <td key={p.plant_id} className="text-right p-3 border-r">{formatCurrency(p.diesel_unitario)}</td>
-                    ))}
+                    {renderPlantColumns(p => p.diesel_unitario, formatCurrency)}
+                    {renderGrandTotalCell(calculateGrandTotal(p => p.diesel_unitario), formatCurrency)}
                   </tr>
                   <tr className="border-b hover:bg-muted/30">
                     <td className="sticky left-0 z-10 bg-background p-3 border-r-2">Diesel %</td>
-                    {plants.map(p => (
-                      <td key={p.plant_id} className="text-right p-3 border-r">{formatPercent(p.diesel_pct)}</td>
-                    ))}
+                    {renderPlantColumns(p => p.diesel_pct, formatPercent)}
+                    {renderGrandTotalCell(calculateGrandTotal(p => p.diesel_pct), formatPercent)}
                   </tr>
                   <tr className="border-b hover:bg-muted/30 bg-orange-50/50 dark:bg-orange-900/10">
                     <td className="sticky left-0 z-10 bg-orange-50 dark:bg-orange-900/20 p-3 border-r-2 font-semibold">MANTTO. (Todas las Unidades)</td>
-                    {plants.map(p => (
-                      <td key={p.plant_id} className="text-right p-3 border-r font-semibold">{formatCurrency(p.mantto_total)}</td>
-                    ))}
+                    {renderPlantColumns(p => p.mantto_total, formatCurrency)}
+                    {renderGrandTotalCell(calculateGrandTotal(p => p.mantto_total), formatCurrency)}
                   </tr>
                   <tr className="border-b hover:bg-muted/30">
                     <td className="sticky left-0 z-10 bg-background p-3 border-r-2">Mantto. Unitario (m3)</td>
-                    {plants.map(p => (
-                      <td key={p.plant_id} className="text-right p-3 border-r">{formatCurrency(p.mantto_unitario)}</td>
-                    ))}
+                    {renderPlantColumns(p => p.mantto_unitario, formatCurrency)}
+                    {renderGrandTotalCell(calculateGrandTotal(p => p.mantto_unitario), formatCurrency)}
                   </tr>
                   <tr className="border-b hover:bg-muted/30">
                     <td className="sticky left-0 z-10 bg-background p-3 border-r-2">Mantenimiento %</td>
-                    {plants.map(p => (
-                      <td key={p.plant_id} className="text-right p-3 border-r">{formatPercent(p.mantto_pct)}</td>
-                    ))}
+                    {renderPlantColumns(p => p.mantto_pct, formatPercent)}
+                    {renderGrandTotalCell(calculateGrandTotal(p => p.mantto_pct), formatPercent)}
                   </tr>
+                  {/* Nómina Totales - Expandable */}
                   <tr className="border-b hover:bg-muted/30 bg-amber-50/50 dark:bg-amber-900/10">
-                    <td className="sticky left-0 z-10 bg-amber-50 dark:bg-amber-900/20 p-3 border-r-2 font-semibold">Nómina Totales</td>
-                    {plants.map(p => (
-                      <td key={p.plant_id} className="text-right p-3 border-r font-semibold">{formatCurrency(p.nomina_total)}</td>
-                    ))}
+                    <td className="sticky left-0 z-10 bg-amber-50 dark:bg-amber-900/20 p-3 border-r-2 font-semibold">
+                      <button
+                        onClick={() => toggleCostExpansion('nomina')}
+                        className="flex items-center gap-2 hover:opacity-70 transition-opacity"
+                        disabled={groupByBusinessUnit}
+                      >
+                        {expandedCosts.get('all-nomina') ? (
+                          <ChevronDown className="w-4 h-4" />
+                        ) : (
+                          <ChevronRight className="w-4 h-4" />
+                        )}
+                        Nómina Totales
+                      </button>
+                    </td>
+                    {renderPlantColumns(p => p.nomina_total, formatCurrency)}
+                    {renderGrandTotalCell(calculateGrandTotal(p => p.nomina_total), formatCurrency)}
                   </tr>
+                  {/* Expanded Nómina details - grouped by department across all plants */}
+                  {!groupByBusinessUnit && (() => {
+                    const key = 'all-nomina'
+                    const isExpanded = expandedCosts.get(key) || false
+                    const details = costDetails.get(key)
+                    const isLoading = loadingCostDetails.get(key) || false
+                    
+                    if (!isExpanded) return null
+                    
+                    // Aggregate departments with plant-specific amounts
+                    const departmentMap = new Map<string, {
+                      department: string
+                      totalsByPlant: Map<string, number>
+                      entriesByPlant: Map<string, Array<{
+                        id: string
+                        description: string | null
+                        subcategory: string | null
+                        amount: number
+                        plantId?: string
+                      }>>
+                    }>()
+                    
+                    if (details?.departments) {
+                      details.departments.forEach(dept => {
+                        if (!departmentMap.has(dept.department)) {
+                          departmentMap.set(dept.department, {
+                            department: dept.department,
+                            totalsByPlant: new Map(),
+                            entriesByPlant: new Map()
+                          })
+                        }
+                        
+                        const deptData = departmentMap.get(dept.department)!
+                        // Group entries by plant
+                        dept.entries.forEach(entry => {
+                          const plantId = (entry as any).plantId || 'unknown'
+                          if (!deptData.totalsByPlant.has(plantId)) {
+                            deptData.totalsByPlant.set(plantId, 0)
+                            deptData.entriesByPlant.set(plantId, [])
+                          }
+                          deptData.totalsByPlant.set(plantId, deptData.totalsByPlant.get(plantId)! + entry.amount)
+                          deptData.entriesByPlant.get(plantId)!.push(entry)
+                        })
+                      })
+                    }
+                    
+                    return (
+                      <>
+                        {isLoading ? (
+                          <tr>
+                            <td colSpan={plantColumnCount + 2} className="p-4 text-center">
+                              <Loader2 className="w-4 h-4 animate-spin inline mr-2" />
+                              Cargando detalles...
+                            </td>
+                          </tr>
+                        ) : departmentMap.size > 0 ? (
+                          Array.from(departmentMap.entries()).map(([deptName, deptData]) => {
+                            const deptKey = `nomina-${deptName}`
+                            const isDeptExpanded = expandedDepartments.get(deptKey) || false
+                            const grandTotal = Array.from(deptData.totalsByPlant.values()).reduce((sum, val) => sum + val, 0)
+                            
+                            return (
+                              <React.Fragment key={deptKey}>
+                                <tr className="bg-muted/20">
+                                  <td className="sticky left-0 z-10 bg-muted/30 pl-6 p-3 border-r-2 font-medium">
+                                    <button
+                                      onClick={() => toggleDepartmentExpansion('nomina', deptName)}
+                                      className="flex items-center gap-2 hover:opacity-70 transition-opacity"
+                                    >
+                                      {isDeptExpanded ? (
+                                        <ChevronDown className="w-4 h-4" />
+                                      ) : (
+                                        <ChevronRight className="w-4 h-4" />
+                                      )}
+                                      {deptName}
+                                    </button>
+                                  </td>
+                                  {plants.map(plant => (
+                                    <td key={plant.plant_id} className="text-right p-3 border-r">
+                                      {formatCurrency(deptData.totalsByPlant.get(plant.plant_id) || 0)}
+                                    </td>
+                                  ))}
+                                  {renderGrandTotalCell(grandTotal, formatCurrency)}
+                                </tr>
+                                {isDeptExpanded && Array.from(deptData.entriesByPlant.entries()).map(([plantId, entries]) => {
+                                  const plant = plants.find(p => p.plant_id === plantId)
+                                  if (!plant || entries.length === 0) return null
+                                  
+                                  return entries.map(entry => (
+                                    <tr key={`${entry.id}-${plantId}`} className="bg-muted/10">
+                                      <td className="sticky left-0 z-10 bg-background pl-10 p-3 border-r-2">
+                                        {entry.description || entry.subcategory || 'Sin descripción'}
+                                      </td>
+                                      {plants.map(p => (
+                                        <td key={p.plant_id} className="text-right p-3 border-r">
+                                          {p.plant_id === plantId ? formatCurrency(entry.amount) : ''}
+                                        </td>
+                                      ))}
+                                      {renderGrandTotalCell(entry.amount, formatCurrency)}
+                                    </tr>
+                                  ))
+                                })}
+                              </React.Fragment>
+                            )
+                          })
+                        ) : (
+                          <tr>
+                            <td colSpan={plantColumnCount + 2} className="pl-6 p-3 text-muted-foreground">
+                              No hay costos manuales registrados
+                            </td>
+                          </tr>
+                        )}
+                      </>
+                    )
+                  })()}
                   <tr className="border-b hover:bg-muted/30">
                     <td className="sticky left-0 z-10 bg-background p-3 border-r-2">Nómina Unitario (m3)</td>
-                    {plants.map(p => (
-                      <td key={p.plant_id} className="text-right p-3 border-r">{formatCurrency(p.nomina_unitario)}</td>
-                    ))}
+                    {renderPlantColumns(p => p.nomina_unitario, formatCurrency)}
+                    {renderGrandTotalCell(calculateGrandTotal(p => p.nomina_unitario), formatCurrency)}
                   </tr>
                   <tr className="border-b hover:bg-muted/30">
                     <td className="sticky left-0 z-10 bg-background p-3 border-r-2">Nómina %</td>
-                    {plants.map(p => (
-                      <td key={p.plant_id} className="text-right p-3 border-r">{formatPercent(p.nomina_pct)}</td>
-                    ))}
+                    {renderPlantColumns(p => p.nomina_pct, formatPercent)}
+                    {renderGrandTotalCell(calculateGrandTotal(p => p.nomina_pct), formatPercent)}
                   </tr>
+                  {/* Otros Indirectos Totales - Expandable */}
                   <tr className="border-b hover:bg-muted/30 bg-cyan-50/50 dark:bg-cyan-900/10">
-                    <td className="sticky left-0 z-10 bg-cyan-50 dark:bg-cyan-900/20 p-3 border-r-2 font-semibold">Otros Indirectos Totales</td>
-                    {plants.map(p => (
-                      <td key={p.plant_id} className="text-right p-3 border-r font-semibold">{formatCurrency(p.otros_indirectos_total)}</td>
-                    ))}
+                    <td className="sticky left-0 z-10 bg-cyan-50 dark:bg-cyan-900/20 p-3 border-r-2 font-semibold">
+                      <button
+                        onClick={() => toggleCostExpansion('otros_indirectos')}
+                        className="flex items-center gap-2 hover:opacity-70 transition-opacity"
+                        disabled={groupByBusinessUnit}
+                      >
+                        {expandedCosts.get('all-otros_indirectos') ? (
+                          <ChevronDown className="w-4 h-4" />
+                        ) : (
+                          <ChevronRight className="w-4 h-4" />
+                        )}
+                        Otros Indirectos Totales
+                      </button>
+                    </td>
+                    {renderPlantColumns(p => p.otros_indirectos_total, formatCurrency)}
+                    {renderGrandTotalCell(calculateGrandTotal(p => p.otros_indirectos_total), formatCurrency)}
                   </tr>
+                  {/* Expanded Otros Indirectos details - grouped by department across all plants */}
+                  {!groupByBusinessUnit && (() => {
+                    const key = 'all-otros_indirectos'
+                    const isExpanded = expandedCosts.get(key) || false
+                    const details = costDetails.get(key)
+                    const isLoading = loadingCostDetails.get(key) || false
+                    
+                    if (!isExpanded) return null
+                    
+                    // Aggregate departments with plant-specific amounts
+                    const departmentMap = new Map<string, {
+                      department: string
+                      totalsByPlant: Map<string, number>
+                      entriesByPlant: Map<string, Array<{
+                        id: string
+                        description: string | null
+                        subcategory: string | null
+                        amount: number
+                        plantId?: string
+                      }>>
+                    }>()
+                    
+                    if (details?.departments) {
+                      details.departments.forEach(dept => {
+                        if (!departmentMap.has(dept.department)) {
+                          departmentMap.set(dept.department, {
+                            department: dept.department,
+                            totalsByPlant: new Map(),
+                            entriesByPlant: new Map()
+                          })
+                        }
+                        
+                        const deptData = departmentMap.get(dept.department)!
+                        // Group entries by plant
+                        dept.entries.forEach(entry => {
+                          const plantId = (entry as any).plantId || 'unknown'
+                          if (!deptData.totalsByPlant.has(plantId)) {
+                            deptData.totalsByPlant.set(plantId, 0)
+                            deptData.entriesByPlant.set(plantId, [])
+                          }
+                          deptData.totalsByPlant.set(plantId, deptData.totalsByPlant.get(plantId)! + entry.amount)
+                          deptData.entriesByPlant.get(plantId)!.push(entry)
+                        })
+                      })
+                    }
+                    
+                    return (
+                      <>
+                        {isLoading ? (
+                          <tr>
+                            <td colSpan={plantColumnCount + 2} className="p-4 text-center">
+                              <Loader2 className="w-4 h-4 animate-spin inline mr-2" />
+                              Cargando detalles...
+                            </td>
+                          </tr>
+                        ) : departmentMap.size > 0 ? (
+                          Array.from(departmentMap.entries()).map(([deptName, deptData]) => {
+                            const deptKey = `otros_indirectos-${deptName}`
+                            const isDeptExpanded = expandedDepartments.get(deptKey) || false
+                            const grandTotal = Array.from(deptData.totalsByPlant.values()).reduce((sum, val) => sum + val, 0)
+                            
+                            return (
+                              <React.Fragment key={deptKey}>
+                                <tr className="bg-muted/20">
+                                  <td className="sticky left-0 z-10 bg-muted/30 pl-6 p-3 border-r-2 font-medium">
+                                    <button
+                                      onClick={() => toggleDepartmentExpansion('otros_indirectos', deptName)}
+                                      className="flex items-center gap-2 hover:opacity-70 transition-opacity"
+                                    >
+                                      {isDeptExpanded ? (
+                                        <ChevronDown className="w-4 h-4" />
+                                      ) : (
+                                        <ChevronRight className="w-4 h-4" />
+                                      )}
+                                      {deptName}
+                                    </button>
+                                  </td>
+                                  {plants.map(plant => (
+                                    <td key={plant.plant_id} className="text-right p-3 border-r">
+                                      {formatCurrency(deptData.totalsByPlant.get(plant.plant_id) || 0)}
+                                    </td>
+                                  ))}
+                                  {renderGrandTotalCell(grandTotal, formatCurrency)}
+                                </tr>
+                                {isDeptExpanded && Array.from(deptData.entriesByPlant.entries()).map(([plantId, entries]) => {
+                                  const plant = plants.find(p => p.plant_id === plantId)
+                                  if (!plant || entries.length === 0) return null
+                                  
+                                  return entries.map(entry => (
+                                    <tr key={`${entry.id}-${plantId}`} className="bg-muted/10">
+                                      <td className="sticky left-0 z-10 bg-background pl-10 p-3 border-r-2">
+                                        {entry.description || entry.subcategory || 'Sin descripción'}
+                                      </td>
+                                      {plants.map(p => (
+                                        <td key={p.plant_id} className="text-right p-3 border-r">
+                                          {p.plant_id === plantId ? formatCurrency(entry.amount) : ''}
+                                        </td>
+                                      ))}
+                                      {renderGrandTotalCell(entry.amount, formatCurrency)}
+                                    </tr>
+                                  ))
+                                })}
+                              </React.Fragment>
+                            )
+                          })
+                        ) : (
+                          <tr>
+                            <td colSpan={plantColumnCount + 2} className="pl-6 p-3 text-muted-foreground">
+                              No hay costos manuales registrados
+                            </td>
+                          </tr>
+                        )}
+                      </>
+                    )
+                  })()}
                   <tr className="border-b hover:bg-muted/30">
                     <td className="sticky left-0 z-10 bg-background p-3 border-r-2">Otros Indirectos Unitario (m3)</td>
-                    {plants.map(p => (
-                      <td key={p.plant_id} className="text-right p-3 border-r">{formatCurrency(p.otros_indirectos_unitario)}</td>
-                    ))}
+                    {renderPlantColumns(p => p.otros_indirectos_unitario, formatCurrency)}
+                    {renderGrandTotalCell(calculateGrandTotal(p => p.otros_indirectos_unitario), formatCurrency)}
                   </tr>
                   <tr className="border-b hover:bg-muted/30">
                     <td className="sticky left-0 z-10 bg-background p-3 border-r-2">Otros Indirectos %</td>
-                    {plants.map(p => (
-                      <td key={p.plant_id} className="text-right p-3 border-r">{formatPercent(p.otros_indirectos_pct)}</td>
-                    ))}
+                    {renderPlantColumns(p => p.otros_indirectos_pct, formatPercent)}
+                    {renderGrandTotalCell(calculateGrandTotal(p => p.otros_indirectos_pct), formatPercent)}
                   </tr>
                   <tr className="border-b-2 hover:bg-muted/30 bg-purple-100/70 dark:bg-purple-900/30">
                     <td className="sticky left-0 z-10 bg-purple-100 dark:bg-purple-900/40 p-3 border-r-2 font-bold text-base">TOTAL COSTO OP</td>
-                    {plants.map(p => (
-                      <td key={p.plant_id} className="text-right p-3 border-r font-bold text-lg">{formatCurrency(p.total_costo_op)}</td>
-                    ))}
+                    {renderPlantColumns(p => p.total_costo_op, formatCurrency, true)}
+                    {renderGrandTotalCell(calculateGrandTotal(p => p.total_costo_op), formatCurrency, true)}
                   </tr>
                   <tr className="border-b-2 hover:bg-muted/30">
                     <td className="sticky left-0 z-10 bg-background p-3 border-r-2 font-bold">TOTAL COSTO OP %</td>
-                    {plants.map(p => (
-                      <td key={p.plant_id} className="text-right p-3 border-r font-bold">{formatPercent(p.total_costo_op_pct)}</td>
-                    ))}
+                    {renderPlantColumns(p => p.total_costo_op_pct, formatPercent)}
+                    {renderGrandTotalCell(calculateGrandTotal(p => p.total_costo_op_pct), formatPercent)}
                   </tr>
 
                   {/* EBITDA SECTION */}
                   <tr className="bg-emerald-50 dark:bg-emerald-950/20">
-                    <td colSpan={plants.length + 1} className="p-2 font-semibold text-sm uppercase tracking-wide">
+                    <td colSpan={plantColumnCount + 1} className="p-2 font-semibold text-sm uppercase tracking-wide">
                       EBITDA
                     </td>
                   </tr>
                   <tr className="border-b-2 hover:bg-muted/30 bg-emerald-100/70 dark:bg-emerald-900/30">
                     <td className="sticky left-0 z-10 bg-emerald-100 dark:bg-emerald-900/40 p-3 border-r-2 font-bold text-base">EBITDA</td>
-                    {plants.map(p => (
-                      <td 
-                        key={p.plant_id} 
-                        className={`text-right p-3 border-r font-bold text-lg ${p.ebitda < 0 ? 'text-red-600 dark:text-red-400' : 'text-emerald-700 dark:text-emerald-400'}`}
-                      >
-                        {formatCurrency(p.ebitda)}
-                      </td>
-                    ))}
+                    {renderPlantColumns(p => p.ebitda, formatCurrency, true)}
+                    {renderGrandTotalCell(calculateGrandTotal(p => p.ebitda), formatCurrency, true)}
                   </tr>
                   <tr className="border-b-2 hover:bg-muted/30">
                     <td className="sticky left-0 z-10 bg-background p-3 border-r-2 font-bold">EBITDA %</td>
-                    {plants.map(p => (
-                      <td 
-                        key={p.plant_id} 
-                        className={`text-right p-3 border-r font-bold ${p.ebitda_pct < 0 ? 'text-red-600 dark:text-red-400' : ''}`}
-                      >
-                        {formatPercent(p.ebitda_pct)}
-                      </td>
-                    ))}
+                    {renderPlantColumns(p => p.ebitda_pct, formatPercent)}
+                    {renderGrandTotalCell(calculateGrandTotal(p => p.ebitda_pct), formatPercent)}
                   </tr>
 
                   {/* OPTIONAL BOMBEO SECTION */}
                   {plants.some(p => p.ingresos_bombeo_vol && p.ingresos_bombeo_vol > 0) && (
                     <>
                       <tr className="bg-slate-50 dark:bg-slate-950/20">
-                        <td colSpan={plants.length + 1} className="p-2 font-semibold text-sm uppercase tracking-wide">
+                        <td colSpan={plantColumnCount + 1} className="p-2 font-semibold text-sm uppercase tracking-wide">
                           Ingresos Bombeo
                         </td>
                       </tr>
                       <tr className="border-b hover:bg-muted/30">
                         <td className="sticky left-0 z-10 bg-background p-3 border-r-2">Ingresos Bombeo Vol</td>
-                        {plants.map(p => (
-                          <td key={p.plant_id} className="text-right p-3 border-r">{formatNumber(p.ingresos_bombeo_vol || 0, 2)}</td>
-                        ))}
+                        {renderPlantColumns(p => p.ingresos_bombeo_vol || 0, (val) => formatNumber(val, 2))}
+                        {renderGrandTotalCell(calculateGrandTotal(p => p.ingresos_bombeo_vol || 0), (val) => formatNumber(val, 2))}
                       </tr>
                       <tr className="border-b hover:bg-muted/30">
                         <td className="sticky left-0 z-10 bg-background p-3 border-r-2">Ingresos Bombeo $ Unit</td>
-                        {plants.map(p => (
-                          <td key={p.plant_id} className="text-right p-3 border-r">{formatCurrency(p.ingresos_bombeo_unit || 0)}</td>
-                        ))}
+                        {renderPlantColumns(p => p.ingresos_bombeo_unit || 0, formatCurrency)}
+                        {renderGrandTotalCell(calculateGrandTotal(p => p.ingresos_bombeo_unit || 0), formatCurrency)}
                       </tr>
                     </>
                   )}

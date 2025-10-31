@@ -862,9 +862,19 @@ export async function POST(req: NextRequest) {
       }
     })
 
+    // Filter out plants with no data (ventas_total === 0 and all operational costs zero)
+    const filteredPlantData = plantData.filter(plant => {
+      const hasData = plant.ventas_total > 0 || 
+        plant.diesel_total > 0 || 
+        plant.mantto_total > 0 || 
+        plant.nomina_total > 0 || 
+        plant.otros_indirectos_total > 0
+      return hasData
+    })
+
     return NextResponse.json({
       month,
-      plants: plantData,
+      plants: filteredPlantData,
       filters: {
         businessUnits: businessUnits || [],
         plants: plants || []

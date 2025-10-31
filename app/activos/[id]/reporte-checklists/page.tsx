@@ -16,32 +16,102 @@ export default function ReporteChecklistsPage({ params }: PageProps) {
   const assetId = resolvedParams.id
   
   useEffect(() => {
-    // Hide navigation elements on mount for clean print view
-    const hideNavigation = () => {
-      const navigationElements = document.querySelectorAll('nav, header, .sidebar, .navigation, .nav, .header, [role="navigation"], [role="banner"], .navbar, .menu, .breadcrumb, .breadcrumbs')
-      navigationElements.forEach(el => {
-        const element = el as HTMLElement
-        element.style.display = 'none'
-      })
+    // Minimal print styles - only hide sidebar, preserve ALL formatting
+    const styleId = 'reporte-checklists-page-print-styles'
+    if (document.getElementById(styleId)) {
+      return
     }
     
-    // Hide immediately and after a short delay to catch dynamically loaded nav
-    hideNavigation()
-    const timer = setTimeout(hideNavigation, 100)
+    const style = document.createElement('style')
+    style.id = styleId
+    style.textContent = `
+      @media print {
+        /* Hide sidebar and navigation */
+        aside,
+        nav,
+        header:not(.print-header),
+        [role="navigation"],
+        [role="banner"],
+        .breadcrumb,
+        .breadcrumbs,
+        .print\\:hidden {
+          display: none !important;
+          width: 0 !important;
+          min-width: 0 !important;
+          margin: 0 !important;
+          padding: 0 !important;
+        }
+        
+        /* Page margins */
+        @page {
+          margin: 1cm;
+        }
+        
+        /* Prevent horizontal overflow */
+        html,
+        body {
+          width: 100% !important;
+          max-width: 100% !important;
+          margin: 0 !important;
+          padding: 0 !important;
+          overflow-x: hidden !important;
+          overflow-y: visible !important;
+        }
+        
+        /* Fix layout containers */
+        body > div,
+        body > div > div {
+          width: 100% !important;
+          max-width: 100% !important;
+          margin: 0 !important;
+          padding: 0 !important;
+        }
+        
+        /* Flex container - remove sidebar space */
+        div[class*="flex"][class*="min-h-screen"] {
+          display: block !important;
+          width: 100% !important;
+          max-width: 100% !important;
+        }
+        
+        /* Sidebar zero space */
+        aside {
+          display: none !important;
+          width: 0 !important;
+          flex: 0 0 0 !important;
+        }
+        
+        /* Main content wrapper */
+        div.flex.flex-1 {
+          width: 100% !important;
+          max-width: 100% !important;
+        }
+        
+        /* Main content */
+        main {
+          width: 100% !important;
+          max-width: 100% !important;
+        }
+        
+        /* Prevent horizontal overflow on containers */
+        div, section, article {
+          max-width: 100% !important;
+          box-sizing: border-box !important;
+        }
+      }
+    `
+    document.head.appendChild(style)
     
     return () => {
-      clearTimeout(timer)
-      // Restore navigation on unmount
-      const navigationElements = document.querySelectorAll('nav, header, .sidebar, .navigation, .nav, .header, [role="navigation"], [role="banner"], .navbar, .menu, .breadcrumb, .breadcrumbs')
-      navigationElements.forEach(el => {
-        const element = el as HTMLElement
-        element.style.display = ''
-      })
+      const existingStyle = document.getElementById(styleId)
+      if (existingStyle) {
+        document.head.removeChild(existingStyle)
+      }
     }
   }, [])
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-white print:w-full print:m-0 print:p-0">
       <AssetChecklistEvidenceReport 
         assetId={assetId} 
         onClose={() => router.back()}

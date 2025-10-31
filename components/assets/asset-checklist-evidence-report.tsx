@@ -219,6 +219,125 @@ export function AssetChecklistEvidenceReport({
     return checklist.completed_items.find(item => item.item_id === itemId) || null
   }
 
+  useEffect(() => {
+    // Add print styles - ONLY hide sidebar/nav, preserve ALL formatting
+    const styleId = 'asset-checklist-report-print-styles'
+    if (document.getElementById(styleId)) {
+      return
+    }
+    
+    const style = document.createElement('style')
+    style.id = styleId
+    style.textContent = `
+      @media print {
+        /* Hide sidebar and navigation */
+        aside,
+        nav,
+        header:not(.print-header),
+        [role="navigation"],
+        [role="banner"],
+        .breadcrumb,
+        .breadcrumbs,
+        .print\\:hidden {
+          display: none !important;
+          width: 0 !important;
+          min-width: 0 !important;
+          margin: 0 !important;
+          padding: 0 !important;
+        }
+        
+        /* Page margins */
+        @page {
+          margin: 1cm;
+          size: A4;
+        }
+        
+        /* Prevent horizontal overflow */
+        html,
+        body {
+          width: 100% !important;
+          max-width: 100% !important;
+          margin: 0 !important;
+          padding: 0 !important;
+          background: white !important;
+          overflow-x: hidden !important;
+          overflow-y: visible !important;
+        }
+        
+        /* Fix flex container - remove sidebar space completely */
+        body > div,
+        body > div > div {
+          width: 100% !important;
+          max-width: 100% !important;
+          margin: 0 !important;
+          padding: 0 !important;
+        }
+        
+        /* Flex container with sidebar - make it block or ensure no sidebar space */
+        div[class*="flex"][class*="min-h-screen"],
+        div.flex.min-h-screen {
+          display: block !important;
+          width: 100% !important;
+          max-width: 100% !important;
+        }
+        
+        /* Ensure sidebar takes zero space */
+        aside {
+          display: none !important;
+          width: 0 !important;
+          min-width: 0 !important;
+          max-width: 0 !important;
+          margin: 0 !important;
+          padding: 0 !important;
+          flex: 0 0 0 !important;
+        }
+        
+        /* Main content wrapper - full width */
+        div.flex.flex-1 {
+          width: 100% !important;
+          max-width: 100% !important;
+          margin: 0 !important;
+          padding: 0 !important;
+        }
+        
+        /* Main content - full width but preserve internal structure */
+        main {
+          width: 100% !important;
+          max-width: 100% !important;
+          margin: 0 !important;
+          padding: 0 !important;
+        }
+        
+        /* Report container - full width */
+        .report-container {
+          width: 100% !important;
+          max-width: 100% !important;
+          margin: 0 !important;
+        }
+        
+        /* Prevent page breaks in cards */
+        .break-inside-avoid {
+          page-break-inside: avoid;
+          break-inside: avoid;
+        }
+        
+        /* Prevent horizontal overflow on containers only */
+        div, section, article {
+          max-width: 100% !important;
+          box-sizing: border-box !important;
+        }
+      }
+    `
+    document.head.appendChild(style)
+    
+    return () => {
+      const existingStyle = document.getElementById(styleId)
+      if (existingStyle) {
+        document.head.removeChild(existingStyle)
+      }
+    }
+  }, [])
+
   if (loading) {
     return (
       <div className="min-h-screen p-8 bg-white">
@@ -265,7 +384,7 @@ export function AssetChecklistEvidenceReport({
   }
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-white report-container">
       {/* Header - Hidden when printing */}
       <div className="print:hidden bg-white border-b p-4 sticky top-0 z-10">
         <div className="max-w-4xl mx-auto flex items-center justify-between">
@@ -291,7 +410,7 @@ export function AssetChecklistEvidenceReport({
       </div>
 
       {/* Report Content */}
-      <div className="max-w-4xl mx-auto p-8 print:p-4">
+      <div className="max-w-4xl mx-auto p-8 print:p-4 print:max-w-full print:mx-0">
         {/* Report Header */}
         <div className="text-center mb-8 print:mb-6">
           <h1 className="text-3xl font-bold text-gray-900 mb-2">
