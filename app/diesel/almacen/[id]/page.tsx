@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { createBrowserClient } from "@supabase/ssr"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -134,7 +134,101 @@ export default function WarehouseDetailPage() {
 
   useEffect(() => {
     applyFilters()
-  }, [transactions, typeFilter, dateFrom, dateTo])
+  }, [transactions, typeFilter, dateFrom, dateTo, validationOnly])
+
+  // Calculate stats from filtered transactions
+  const filteredStats = useMemo(() => {
+    if (filteredTransactions.length === 0 && transactions.length > 0) {
+      // Return empty stats if all transactions are filtered out
+      return {
+        total_entries: 0,
+        total_consumptions: 0,
+        total_adjustments_positive: 0,
+        total_adjustments_negative: 0,
+        total_transactions: 0,
+        entry_liters: 0,
+        consumption_liters: 0,
+        adjustment_positive_liters: 0,
+        adjustment_negative_liters: 0,
+        average_consumption: 0,
+        largest_entry: 0,
+        largest_consumption: 0
+      }
+    }
+
+    const calculatedStats: WarehouseStats = {
+      total_entries: 0,
+      total_consumptions: 0,
+      total_adjustments_positive: 0,
+      total_adjustments_negative: 0,
+      total_transactions: filteredTransactions.length,
+      entry_liters: 0,
+      consumption_liters: 0,
+      adjustment_positive_liters: 0,
+      adjustment_negative_liters: 0,
+      average_consumption: 0,
+      largest_entry: 0,
+      largest_consumption: 0
+    }
+
+    filteredTransactions.forEach(t => {
+      if (t.transaction_type === 'entry') {
+        // Check if it's a positive adjustment by looking for adjustment metadata
+        if (t.notes && t.notes.includes('[AJUSTE +]')) {
+          calculatedStats.total_adjustments_positive++
+          calculatedStats.adjustment_positive_liters += t.quantity_liters
+        } else {
+          calculatedStats.total_entries++
+          calculatedStats.entry_liters += t.quantity_liters
+          calculatedStats.largest_entry = Math.max(calculatedStats.largest_entry, t.quantity_liters)
+        }
+      } else if (t.transaction_type === 'consumption') {
+        // Check if it's a negative adjustment by looking for adjustment metadata
+        if (t.notes && t.notes.includes('[AJUSTE -]')) {
+          calculatedStats.total_adjustments_negative++
+          calculatedStats.adjustment_negative_liters += t.quantity_liters
+        } else {
+          calculatedStats.total_consumptions++
+          calculatedStats.consumption_liters += t.quantity_liters
+          calculatedStats.largest_consumption = Math.max(calculatedStats.largest_consumption, t.quantity_liters)
+        }
+      }
+    })
+
+    calculatedStats.average_consumption = calculatedStats.total_consumptions > 0 
+      ? calculatedStats.consumption_liters / calculatedStats.total_consumptions 
+      : 0
+
+    return calculatedStats
+  }, [filteredTransactions, transactions.length])
+
+  // Calculate asset consumption from filtered transactions
+  const filteredAssetConsumption = useMemo(() => {
+    const assetMap = new Map<string, {asset_id: string, asset_name: string, total_liters: number, count: number}>()
+    
+    filteredTransactions.forEach(t => {
+      if (t.transaction_type === 'consumption') {
+        const assetKey = t.asset_id || t.exception_asset_name || 'unknown'
+        const assetName = t.asset_name || t.exception_asset_name || 'Desconocido'
+        
+        if (assetMap.has(assetKey)) {
+          const existing = assetMap.get(assetKey)!
+          existing.total_liters += t.quantity_liters
+          existing.count++
+        } else {
+          assetMap.set(assetKey, {
+            asset_id: assetKey,
+            asset_name: assetName,
+            total_liters: t.quantity_liters,
+            count: 1
+          })
+        }
+      }
+    })
+    
+    return Array.from(assetMap.values())
+      .sort((a, b) => b.total_liters - a.total_liters)
+  }, [filteredTransactions])
 
   const loadWarehouseData = async () => {
     try {
@@ -250,8 +344,8 @@ export default function WarehouseDetailPage() {
 
         setTransactions(formatted)
         
-        // Calculate statistics
-        const stats: WarehouseStats = {
+        // Calculate initial statistics (for when no filters are applied)
+        const initialStats: WarehouseStats = {
           total_entries: 0,
           total_consumptions: 0,
           total_adjustments_positive: 0,
@@ -270,31 +364,31 @@ export default function WarehouseDetailPage() {
           if (t.transaction_type === 'entry') {
             // Check if it's a positive adjustment by looking for adjustment metadata
             if (t.notes && t.notes.includes('[AJUSTE +]')) {
-              stats.total_adjustments_positive++
-              stats.adjustment_positive_liters += t.quantity_liters
+              initialStats.total_adjustments_positive++
+              initialStats.adjustment_positive_liters += t.quantity_liters
             } else {
-              stats.total_entries++
-              stats.entry_liters += t.quantity_liters
-              stats.largest_entry = Math.max(stats.largest_entry, t.quantity_liters)
+              initialStats.total_entries++
+              initialStats.entry_liters += t.quantity_liters
+              initialStats.largest_entry = Math.max(initialStats.largest_entry, t.quantity_liters)
             }
           } else if (t.transaction_type === 'consumption') {
             // Check if it's a negative adjustment by looking for adjustment metadata
             if (t.notes && t.notes.includes('[AJUSTE -]')) {
-              stats.total_adjustments_negative++
-              stats.adjustment_negative_liters += t.quantity_liters
+              initialStats.total_adjustments_negative++
+              initialStats.adjustment_negative_liters += t.quantity_liters
             } else {
-              stats.total_consumptions++
-              stats.consumption_liters += t.quantity_liters
-              stats.largest_consumption = Math.max(stats.largest_consumption, t.quantity_liters)
+              initialStats.total_consumptions++
+              initialStats.consumption_liters += t.quantity_liters
+              initialStats.largest_consumption = Math.max(initialStats.largest_consumption, t.quantity_liters)
             }
           }
         })
 
-        stats.average_consumption = stats.total_consumptions > 0 
-          ? stats.consumption_liters / stats.total_consumptions 
+        initialStats.average_consumption = initialStats.total_consumptions > 0 
+          ? initialStats.consumption_liters / initialStats.total_consumptions 
           : 0
 
-        setStats(stats)
+        setStats(initialStats)
 
         // Build balance history for chart (last 30 transactions)
         const history: Array<{date: string, balance: number}> = []
@@ -591,7 +685,7 @@ export default function WarehouseDetailPage() {
             <CardDescription>Total Transacciones</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats?.total_transactions || 0}</div>
+            <div className="text-2xl font-bold">{(dateFrom || dateTo || typeFilter !== "all" || validationOnly) ? filteredStats.total_transactions : (stats?.total_transactions || 0)}</div>
             <p className="text-xs text-muted-foreground mt-1">
               Movimientos registrados
             </p>
@@ -605,10 +699,10 @@ export default function WarehouseDetailPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-green-600">
-              {stats?.entry_liters.toFixed(1) || 0}L
+              {((dateFrom || dateTo || typeFilter !== "all" || validationOnly) ? filteredStats.entry_liters : (stats?.entry_liters || 0)).toFixed(1)}L
             </div>
             <p className="text-xs text-muted-foreground mt-1">
-              {stats?.total_entries || 0} entradas
+              {((dateFrom || dateTo || typeFilter !== "all" || validationOnly) ? filteredStats.total_entries : (stats?.total_entries || 0))} entradas
             </p>
           </CardContent>
         </Card>
@@ -620,10 +714,10 @@ export default function WarehouseDetailPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-red-600">
-              {stats?.consumption_liters.toFixed(1) || 0}L
+              {((dateFrom || dateTo || typeFilter !== "all" || validationOnly) ? filteredStats.consumption_liters : (stats?.consumption_liters || 0)).toFixed(1)}L
             </div>
             <p className="text-xs text-muted-foreground mt-1">
-              {stats?.total_consumptions || 0} consumos
+              {((dateFrom || dateTo || typeFilter !== "all" || validationOnly) ? filteredStats.total_consumptions : (stats?.total_consumptions || 0))} consumos
             </p>
           </CardContent>
         </Card>
@@ -635,7 +729,7 @@ export default function WarehouseDetailPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-blue-600">
-              {stats?.average_consumption.toFixed(1) || 0}L
+              {((dateFrom || dateTo || typeFilter !== "all" || validationOnly) ? filteredStats.average_consumption : (stats?.average_consumption || 0)).toFixed(1)}L
             </div>
             <p className="text-xs text-muted-foreground mt-1">
               Por transacción
@@ -774,34 +868,34 @@ export default function WarehouseDetailPage() {
             <div className="space-y-1">
               <p className="text-sm text-muted-foreground">Mayor Entrada</p>
               <p className="text-xl font-bold text-green-600">
-                {stats?.largest_entry.toFixed(1) || 0}L
+                {((dateFrom || dateTo || typeFilter !== "all" || validationOnly) ? filteredStats.largest_entry : (stats?.largest_entry || 0)).toFixed(1)}L
               </p>
             </div>
             
             <div className="space-y-1">
               <p className="text-sm text-muted-foreground">Mayor Consumo</p>
               <p className="text-xl font-bold text-red-600">
-                {stats?.largest_consumption.toFixed(1) || 0}L
+                {((dateFrom || dateTo || typeFilter !== "all" || validationOnly) ? filteredStats.largest_consumption : (stats?.largest_consumption || 0)).toFixed(1)}L
               </p>
             </div>
             
             <div className="space-y-1">
               <p className="text-sm text-muted-foreground">Ajustes Positivos</p>
               <p className="text-xl font-bold text-blue-600">
-                +{stats?.adjustment_positive_liters.toFixed(1) || 0}L
+                +{((dateFrom || dateTo || typeFilter !== "all" || validationOnly) ? filteredStats.adjustment_positive_liters : (stats?.adjustment_positive_liters || 0)).toFixed(1)}L
               </p>
               <p className="text-xs text-muted-foreground">
-                {stats?.total_adjustments_positive || 0} ajustes
+                {((dateFrom || dateTo || typeFilter !== "all" || validationOnly) ? filteredStats.total_adjustments_positive : (stats?.total_adjustments_positive || 0))} ajustes
               </p>
             </div>
             
             <div className="space-y-1">
               <p className="text-sm text-muted-foreground">Ajustes Negativos</p>
               <p className="text-xl font-bold text-orange-600">
-                -{stats?.adjustment_negative_liters.toFixed(1) || 0}L
+                -{((dateFrom || dateTo || typeFilter !== "all" || validationOnly) ? filteredStats.adjustment_negative_liters : (stats?.adjustment_negative_liters || 0)).toFixed(1)}L
               </p>
               <p className="text-xs text-muted-foreground">
-                {stats?.total_adjustments_negative || 0} ajustes
+                {((dateFrom || dateTo || typeFilter !== "all" || validationOnly) ? filteredStats.total_adjustments_negative : (stats?.total_adjustments_negative || 0))} ajustes
               </p>
             </div>
           </div>
@@ -1089,7 +1183,7 @@ export default function WarehouseDetailPage() {
       </Card>
 
       {/* Asset Consumption Analytics (Warehouse-Specific) */}
-      {assetConsumption.length > 0 && (
+      {((dateFrom || dateTo || typeFilter !== "all" || validationOnly) ? filteredAssetConsumption : assetConsumption).length > 0 && (
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -1098,12 +1192,14 @@ export default function WarehouseDetailPage() {
             </CardTitle>
             <CardDescription>
               Top equipos consumidores en este almacén
+              {(dateFrom || dateTo || typeFilter !== "all" || validationOnly) && " (filtrado)"}
             </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
-              {assetConsumption.slice(0, 10).map((asset, index) => {
-                const maxLiters = assetConsumption[0].total_liters
+              {((dateFrom || dateTo || typeFilter !== "all" || validationOnly) ? filteredAssetConsumption : assetConsumption).slice(0, 10).map((asset, index) => {
+                const displayList = (dateFrom || dateTo || typeFilter !== "all" || validationOnly) ? filteredAssetConsumption : assetConsumption
+                const maxLiters = displayList[0]?.total_liters || 1
                 const percentage = (asset.total_liters / maxLiters) * 100
                 const avgPerConsumption = asset.total_liters / asset.count
                 // Determine if it's an external asset (contains spaces or special chars that aren't valid UUIDs)
@@ -1152,9 +1248,9 @@ export default function WarehouseDetailPage() {
               })}
             </div>
             
-            {assetConsumption.length > 10 && (
+            {((dateFrom || dateTo || typeFilter !== "all" || validationOnly) ? filteredAssetConsumption : assetConsumption).length > 10 && (
               <p className="text-sm text-muted-foreground text-center mt-4">
-                Y {assetConsumption.length - 10} equipos más...
+                Y {((dateFrom || dateTo || typeFilter !== "all" || validationOnly) ? filteredAssetConsumption : assetConsumption).length - 10} equipos más...
               </p>
             )}
           </CardContent>
