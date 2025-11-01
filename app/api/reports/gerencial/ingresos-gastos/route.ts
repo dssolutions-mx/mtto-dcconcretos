@@ -539,7 +539,7 @@ export async function POST(req: NextRequest) {
       // Purchase orders + work orders for maintenance
       const { data: purchaseOrders } = await supabase
         .from('purchase_orders')
-        .select('id, total_amount, actual_amount, created_at, posting_date, purchased_at, work_order_id, status')
+        .select('id, total_amount, actual_amount, created_at, posting_date, purchase_date, work_order_id, status')
         .neq('status', 'pending_approval')
       const workOrderIds = (purchaseOrders || []).map(po => po.work_order_id).filter(Boolean)
       const { data: workOrders } = workOrderIds.length > 0 ? await supabase
@@ -554,9 +554,9 @@ export async function POST(req: NextRequest) {
       ;(purchaseOrders || []).forEach(po => {
         let dateToCheckStr: string
         
-        // Priority: purchased_at → work_order.completed_at → work_order.planned_date → work_order.created_at
-        if (po.purchased_at) {
-          dateToCheckStr = po.purchased_at
+        // Priority: purchase_date → work_order.completed_at → work_order.planned_date → work_order.created_at
+        if (po.purchase_date) {
+          dateToCheckStr = po.purchase_date
         } else if (po.work_order_id) {
           const wo = woById.get(po.work_order_id)
           if (wo?.completed_at) {

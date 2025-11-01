@@ -98,7 +98,7 @@ export async function POST(req: Request) {
     const { data: purchaseOrders, error: poError } = await supabase
       .from("purchase_orders")
       .select(`
-        id, order_id, total_amount, actual_amount, created_at, purchased_at, plant_id, work_order_id, status, supplier, items, is_adjustment
+        id, order_id, total_amount, actual_amount, created_at, purchase_date, plant_id, work_order_id, status, supplier, items, is_adjustment
       `)
       .neq("status", "pending_approval")
 
@@ -156,12 +156,12 @@ export async function POST(req: Request) {
         }
       }
       
-      // Check date filtering - priority: purchased_at → work_order.completed_at → work_order.planned_date → work_order.created_at
+      // Check date filtering - priority: purchase_date → work_order.completed_at → work_order.planned_date → work_order.created_at
       let dateToCheck: string
       
-      // First priority: purchased_at
-      if (po.purchased_at) {
-        dateToCheck = po.purchased_at
+      // First priority: purchase_date
+      if (po.purchase_date) {
+        dateToCheck = po.purchase_date
       } else if (po.work_order_id) {
         const workOrder = workOrdersMap.get(po.work_order_id)
         // Second priority: work_order.completed_at

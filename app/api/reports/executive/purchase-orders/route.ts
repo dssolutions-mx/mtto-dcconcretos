@@ -24,7 +24,7 @@ export async function GET(request: NextRequest) {
         actual_amount, 
         created_at, 
         posting_date,
-        purchased_at,
+        purchase_date,
         plant_id,
         work_order_id, 
         status, 
@@ -60,7 +60,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
-    // Filter by date using priority: purchased_at → work_order.completed_at → work_order.planned_date → work_order.created_at
+    // Filter by date using priority: purchase_date → work_order.completed_at → work_order.planned_date → work_order.created_at
     // Also filter by assetId if provided
     const filteredPOs = (purchaseOrders || []).filter((po: any) => {
       // Filter by asset if specified
@@ -68,10 +68,10 @@ export async function GET(request: NextRequest) {
         return false
       }
       
-      // Filter by date - priority: purchased_at → work_order.completed_at → work_order.planned_date → work_order.created_at
+      // Filter by date - priority: purchase_date → work_order.completed_at → work_order.planned_date → work_order.created_at
       let dateToCheck: string
-      if (po.purchased_at) {
-        dateToCheck = po.purchased_at
+      if (po.purchase_date) {
+        dateToCheck = po.purchase_date
       } else if (po.work_orders?.completed_at) {
         dateToCheck = po.work_orders.completed_at
       } else if (po.work_orders?.planned_date) {

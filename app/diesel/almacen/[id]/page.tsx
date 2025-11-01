@@ -448,13 +448,19 @@ export default function WarehouseDetailPage() {
   const applyFilters = () => {
     let filtered = [...transactions]
 
-    const toLocalYmd = (iso: string) => {
-      if (!iso) return ''
-      const d = new Date(iso)
-      const y = d.getFullYear()
-      const m = String(d.getMonth() + 1).padStart(2, '0')
-      const day = String(d.getDate()).padStart(2, '0')
-      return `${y}-${m}-${day}`
+    // Convert UTC timestamp to local date (GMT-6) and extract YYYY-MM-DD
+    // This matches the timezone handling used in other diesel modules
+    const toLocalYmd = (utcTimestamp: string) => {
+      if (!utcTimestamp) return ''
+      const utcDate = new Date(utcTimestamp)
+      // GMT-6 means subtract 6 hours from UTC to get local date
+      const localTimeMs = utcDate.getTime() - (6 * 60 * 60 * 1000)
+      const localDate = new Date(localTimeMs)
+      // Extract YYYY-MM-DD from the adjusted time
+      const year = localDate.getUTCFullYear()
+      const month = String(localDate.getUTCMonth() + 1).padStart(2, '0')
+      const day = String(localDate.getUTCDate()).padStart(2, '0')
+      return `${year}-${month}-${day}`
     }
 
     if (typeFilter !== "all") {
@@ -472,11 +478,17 @@ export default function WarehouseDetailPage() {
     }
 
     if (dateFrom) {
-      filtered = filtered.filter(t => toLocalYmd(t.transaction_date) >= dateFrom)
+      filtered = filtered.filter(t => {
+        const transactionDateStr = toLocalYmd(t.transaction_date)
+        return transactionDateStr >= dateFrom
+      })
     }
 
     if (dateTo) {
-      filtered = filtered.filter(t => toLocalYmd(t.transaction_date) <= dateTo)
+      filtered = filtered.filter(t => {
+        const transactionDateStr = toLocalYmd(t.transaction_date)
+        return transactionDateStr <= dateTo
+      })
     }
 
     if (validationOnly) {
