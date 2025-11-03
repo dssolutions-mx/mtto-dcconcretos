@@ -468,7 +468,7 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
                  status = 'completed';
               } else {
                  // Plan-aware coverage: a higher/equal preventive interval in same unit/category covers lower ones
-                // CRITICAL: Coverage is based SOLELY on interval value comparison
+                // CRITICAL: Coverage requires BOTH interval value comparison AND timing check
                 // CRITICAL: Match via interval_id from maintenance_plans mapping
                 const isCoveredByHigher = currentCycleMaintenances.some((m: any) => {
                   // CRITICAL: maintenance_plan_id IS the interval ID
@@ -478,14 +478,19 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
                   const sameUnit = performedInterval.type === dueInterval.type;
                   const sameCategory = (performedInterval as any).maintenance_category === (dueInterval as any).maintenance_category;
                   const categoryOk = (performedInterval as any).maintenance_category && (dueInterval as any).maintenance_category ? sameCategory : true;
-                  // CRITICAL: Coverage based SOLELY on interval value comparison
-                  // If performed interval value >= due interval value, it covers it
-                  // Works forward: performing 1500h covers all intervals <= 1500h, even future ones
+                  
+                  // CRITICAL: Coverage requires interval value >= due interval value
                   const higherOrEqual = Number(performedInterval.interval_value) >= Number(dueInterval.interval_value);
-                  const covers = sameUnit && categoryOk && higherOrEqual;
+                  
+                  // CRITICAL: Also check timing - the performed service must be done AFTER the due hour
+                  // This prevents a 1500h service at 5145h from covering a 1800h interval due at 5400h
+                  const performedAtHour = Number(m.hours) || 0;
+                  const performedAfterDue = performedAtHour >= dueHour;
+                  
+                  const covers = sameUnit && categoryOk && higherOrEqual && performedAfterDue;
                   
                   if (interval.interval_value <= 1500 && covers) {
-                    console.log(`[ASSET ${assetId}] ${interval.interval_value}h covered by ${performedInterval.interval_value}h`);
+                    console.log(`[ASSET ${assetId}] ${interval.interval_value}h covered by ${performedInterval.interval_value}h (performed at ${performedAtHour}h, due at ${dueHour}h)`);
                   }
                   
                   return covers;

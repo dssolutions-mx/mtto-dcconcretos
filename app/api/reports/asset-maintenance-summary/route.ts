@@ -371,6 +371,7 @@ export async function POST(req: NextRequest) {
       let selectedInterval: any = null
       let lastServiceDate: string | null = null
       let lastServiceValue: number | null = null
+      let lastServiceIntervalValue: number | null = null
       let hoursOverdue: number | undefined = undefined
       let kilometersOverdue: number | undefined = undefined
       let hoursRemaining: number | undefined = undefined
@@ -514,7 +515,7 @@ export async function POST(req: NextRequest) {
             }
 
             // Check if covered by higher service in same cycle
-            // CRITICAL: Coverage is based SOLELY on interval value comparison
+            // CRITICAL: Coverage requires BOTH interval value comparison AND timing check
             // CRITICAL: maintenance_plan_id IS the interval ID
             const isCoveredByHigher = cycleForService === currentCycle && 
               currentCycleMaintenances.some((m: any) => {
@@ -529,12 +530,15 @@ export async function POST(req: NextRequest) {
                   ? sameCategory 
                   : true
                 
-                // CRITICAL: Coverage based SOLELY on interval value comparison
-                // If performed interval value >= due interval value, it covers it
-                // Works forward: performing 1500h covers all intervals <= 1500h, even future ones
+                // CRITICAL: Coverage requires interval value >= due interval value
                 const higherOrEqual = Number(performedInterval.interval_value) >= Number(interval.interval_value)
                 
-                return sameUnit && categoryOk && higherOrEqual
+                // CRITICAL: Also check timing - the performed service must be done AFTER the due hour
+                // This prevents a 1500h service at 5145h from covering a 1800h interval due at 5400h
+                const performedAtHour = Number(m.hours) || 0
+                const performedAfterDue = performedAtHour >= nextDueHour
+                
+                return sameUnit && categoryOk && higherOrEqual && performedAfterDue
               })
             
             // DEBUG: Log for specific asset and intervals
@@ -612,6 +616,9 @@ export async function POST(req: NextRequest) {
             if (allPreventiveMaintenance.length > 0) {
               lastServiceDate = allPreventiveMaintenance[0].date
               lastServiceValue = allPreventiveMaintenance[0].hours
+              // Find the interval value for this last service
+              const lastServiceInterval = intervals.find(i => i.id === allPreventiveMaintenance[0].maintenance_plan_id)
+              lastServiceIntervalValue = lastServiceInterval?.interval_value || null
             }
           }
 
@@ -659,6 +666,8 @@ export async function POST(req: NextRequest) {
               if (lastServiceForInterval) {
                 lastServiceDate = lastServiceForInterval.date
                 lastServiceValue = lastServiceForInterval.hours
+                // The interval value is from the selectedInterval (which is the interval we're checking)
+                lastServiceIntervalValue = selectedInterval.interval_value || null
               }
             } else {
               // Find next upcoming interval
@@ -811,6 +820,9 @@ export async function POST(req: NextRequest) {
             if (allPreventiveMaintenance.length > 0) {
               lastServiceDate = allPreventiveMaintenance[0].date
               lastServiceValue = allPreventiveMaintenance[0].kilometers
+              // Find the interval value for this last service
+              const lastServiceInterval = intervals.find(i => i.id === allPreventiveMaintenance[0].maintenance_plan_id)
+              lastServiceIntervalValue = lastServiceInterval?.interval_value || null
             }
           }
 
@@ -837,6 +849,8 @@ export async function POST(req: NextRequest) {
               if (lastServiceForInterval) {
                 lastServiceDate = lastServiceForInterval.date
                 lastServiceValue = lastServiceForInterval.kilometers
+                // The interval value is from the selectedInterval (which is the interval we're checking)
+                lastServiceIntervalValue = selectedInterval.interval_value || null
               }
             } else {
               const upcomingIntervals = actionableIntervals.filter(s => s.status === 'upcoming' || s.status === 'scheduled')
@@ -945,6 +959,7 @@ export async function POST(req: NextRequest) {
         last_service_date: lastServiceDate,
         last_service_hours: maintenanceUnit === 'hours' ? lastServiceValue : undefined,
         last_service_kilometers: maintenanceUnit === 'kilometers' ? lastServiceValue : undefined,
+        last_service_interval_value: lastServiceIntervalValue,
         hours_remaining: hoursRemaining,
         kilometers_remaining: kilometersRemaining,
         hours_overdue: hoursOverdue,

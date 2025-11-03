@@ -664,6 +664,12 @@ export function ExecutiveReport() {
                           ? `${asset.last_service_kilometers} km`
                           : ''
                         
+                        const lastServiceIntervalText = asset.last_service_interval_value !== undefined && asset.last_service_interval_value !== null
+                          ? ` (Intervalo: ${asset.last_service_interval_value} ${asset.maintenance_unit === 'hours' ? 'h' : 'km'})`
+                          : ''
+                        
+                        const lastServiceFullText = lastServiceValue + lastServiceIntervalText
+                        
                         const remaining = asset.hours_remaining !== undefined
                           ? `${asset.hours_remaining} h`
                           : asset.kilometers_remaining !== undefined
@@ -684,7 +690,7 @@ export function ExecutiveReport() {
                           asset.maintenance_unit === 'hours' ? 'Horas' : 'Kilómetros',
                           currentValueFormatted,
                           lastServiceDateFormatted,
-                          lastServiceValue,
+                          lastServiceFullText || '',
                           remaining,
                           overdue,
                           asset.maintenance_cost || 0,
@@ -901,6 +907,11 @@ export function ExecutiveReport() {
                                   {asset.last_service_kilometers !== undefined && (
                                     <div className="text-xs text-muted-foreground">
                                       {formatNumber(asset.last_service_kilometers)} km
+                                    </div>
+                                  )}
+                                  {asset.last_service_interval_value !== undefined && asset.last_service_interval_value !== null && (
+                                    <div className="text-xs font-medium text-blue-600 dark:text-blue-400 mt-1">
+                                      Intervalo: {formatNumber(asset.last_service_interval_value)} {asset.maintenance_unit === 'hours' ? 'h' : 'km'}
                                     </div>
                                   )}
                                 </div>
