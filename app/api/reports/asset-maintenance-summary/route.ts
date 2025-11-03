@@ -657,17 +657,26 @@ export async function POST(req: NextRequest) {
                 })
               }
 
-              // Update last service to be specific to this selected interval (if it exists)
+              // Update last service to be specific to this selected interval (if it exists AND is more recent)
               // CRITICAL: maintenance_plan_id IS the interval ID
+              // Only update if the interval-specific service is more recent than the overall last service
               const lastServiceForInterval = assetMaintenanceHistory
                 .filter(m => m.maintenance_plan_id === selectedInterval.id)
                 .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0]
               
               if (lastServiceForInterval) {
-                lastServiceDate = lastServiceForInterval.date
-                lastServiceValue = lastServiceForInterval.hours
-                // The interval value is from the selectedInterval (which is the interval we're checking)
-                lastServiceIntervalValue = selectedInterval.interval_value || null
+                const lastServiceForIntervalDate = new Date(lastServiceForInterval.date).getTime()
+                const currentLastServiceDate = lastServiceDate ? new Date(lastServiceDate).getTime() : 0
+                
+                // Only update if this interval's last service is more recent than the overall last service
+                if (lastServiceForIntervalDate >= currentLastServiceDate) {
+                  lastServiceDate = lastServiceForInterval.date
+                  lastServiceValue = lastServiceForInterval.hours
+                  // The interval value is from the selectedInterval (which is the interval we're checking)
+                  lastServiceIntervalValue = selectedInterval.interval_value || null
+                }
+                // Otherwise keep the more recent overall service - DO NOT change lastServiceIntervalValue
+                // lastServiceIntervalValue should always reflect the interval of the actual last service performed
               }
             } else {
               // Find next upcoming interval
@@ -692,15 +701,25 @@ export async function POST(req: NextRequest) {
                   })
                 }
 
-                // Update last service to be specific to this selected interval (if it exists)
+                // Update last service to be specific to this selected interval (if it exists AND is more recent)
                 // CRITICAL: maintenance_plan_id IS the interval ID
+                // Only update if the interval-specific service is more recent than the overall last service
                 const lastServiceForInterval = assetMaintenanceHistory
                   .filter(m => m.maintenance_plan_id === selectedInterval.id)
                   .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0]
                 
                 if (lastServiceForInterval) {
-                  lastServiceDate = lastServiceForInterval.date
-                  lastServiceValue = lastServiceForInterval.hours
+                  const lastServiceForIntervalDate = new Date(lastServiceForInterval.date).getTime()
+                  const currentLastServiceDate = lastServiceDate ? new Date(lastServiceDate).getTime() : 0
+                  
+                  // Only update if this interval's last service is more recent than the overall last service
+                  if (lastServiceForIntervalDate >= currentLastServiceDate) {
+                    lastServiceDate = lastServiceForInterval.date
+                    lastServiceValue = lastServiceForInterval.hours
+                    lastServiceIntervalValue = selectedInterval.interval_value || null
+                  }
+                  // Otherwise keep the more recent overall service - DO NOT change lastServiceIntervalValue
+                  // lastServiceIntervalValue should always reflect the interval of the actual last service performed
                 }
               }
             }
@@ -847,10 +866,18 @@ export async function POST(req: NextRequest) {
                 .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0]
               
               if (lastServiceForInterval) {
-                lastServiceDate = lastServiceForInterval.date
-                lastServiceValue = lastServiceForInterval.kilometers
-                // The interval value is from the selectedInterval (which is the interval we're checking)
-                lastServiceIntervalValue = selectedInterval.interval_value || null
+                const lastServiceForIntervalDate = new Date(lastServiceForInterval.date).getTime()
+                const currentLastServiceDate = lastServiceDate ? new Date(lastServiceDate).getTime() : 0
+                
+                // Only update if this interval's last service is more recent than the overall last service
+                if (lastServiceForIntervalDate >= currentLastServiceDate) {
+                  lastServiceDate = lastServiceForInterval.date
+                  lastServiceValue = lastServiceForInterval.kilometers
+                  // The interval value is from the selectedInterval (which is the interval we're checking)
+                  lastServiceIntervalValue = selectedInterval.interval_value || null
+                }
+                // Otherwise keep the more recent overall service - DO NOT change lastServiceIntervalValue
+                // lastServiceIntervalValue should always reflect the interval of the actual last service performed
               }
             } else {
               const upcomingIntervals = actionableIntervals.filter(s => s.status === 'upcoming' || s.status === 'scheduled')
@@ -871,8 +898,17 @@ export async function POST(req: NextRequest) {
                   .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0]
                 
                 if (lastServiceForInterval) {
-                  lastServiceDate = lastServiceForInterval.date
-                  lastServiceValue = lastServiceForInterval.kilometers
+                  const lastServiceForIntervalDate = new Date(lastServiceForInterval.date).getTime()
+                  const currentLastServiceDate = lastServiceDate ? new Date(lastServiceDate).getTime() : 0
+                  
+                  // Only update if this interval's last service is more recent than the overall last service
+                  if (lastServiceForIntervalDate >= currentLastServiceDate) {
+                    lastServiceDate = lastServiceForInterval.date
+                    lastServiceValue = lastServiceForInterval.kilometers
+                    lastServiceIntervalValue = selectedInterval.interval_value || null
+                  }
+                  // Otherwise keep the more recent overall service - DO NOT change lastServiceIntervalValue
+                  // lastServiceIntervalValue should always reflect the interval of the actual last service performed
                 }
               }
             }

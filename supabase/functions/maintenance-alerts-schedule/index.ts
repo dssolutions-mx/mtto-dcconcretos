@@ -456,14 +456,22 @@ async function calculateMaintenanceSummary(supabase: any): Promise<MaintenanceAl
             const overdue = currentValue - (overdueItem?.nextDueHour || 0)
             hoursOverdue = overdue
             
-            // Update last service for this interval
+            // Update last service for this interval (only if more recent than overall last service)
             const lastServiceForInterval = assetMaintenanceHistory
               .filter(m => m.maintenance_plan_id === selectedInterval.id)
               .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0]
             if (lastServiceForInterval) {
-              lastServiceDate = lastServiceForInterval.date
-              lastServiceValue = lastServiceForInterval.hours
-              lastServiceIntervalValue = selectedInterval.interval_value || null
+              const lastServiceForIntervalDate = new Date(lastServiceForInterval.date).getTime()
+              const currentLastServiceDate = lastServiceDate ? new Date(lastServiceDate).getTime() : 0
+              
+              // Only update if this interval's last service is more recent than the overall last service
+              if (lastServiceForIntervalDate >= currentLastServiceDate) {
+                lastServiceDate = lastServiceForInterval.date
+                lastServiceValue = lastServiceForInterval.hours
+                lastServiceIntervalValue = selectedInterval.interval_value || null
+              }
+              // Otherwise keep the more recent overall service - DO NOT change lastServiceIntervalValue
+              // lastServiceIntervalValue should always reflect the interval of the actual last service performed
             }
           } else {
             const upcomingIntervals = actionableIntervals.filter(s => s.status === 'upcoming' || s.status === 'scheduled')
@@ -480,9 +488,17 @@ async function calculateMaintenanceSummary(supabase: any): Promise<MaintenanceAl
                 .filter(m => m.maintenance_plan_id === selectedInterval.id)
                 .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0]
               if (lastServiceForInterval) {
-                lastServiceDate = lastServiceForInterval.date
-                lastServiceValue = lastServiceForInterval.hours
-                lastServiceIntervalValue = selectedInterval.interval_value || null
+                const lastServiceForIntervalDate = new Date(lastServiceForInterval.date).getTime()
+                const currentLastServiceDate = lastServiceDate ? new Date(lastServiceDate).getTime() : 0
+                
+                // Only update if this interval's last service is more recent than the overall last service
+                if (lastServiceForIntervalDate >= currentLastServiceDate) {
+                  lastServiceDate = lastServiceForInterval.date
+                  lastServiceValue = lastServiceForInterval.hours
+                  lastServiceIntervalValue = selectedInterval.interval_value || null
+                }
+                // Otherwise keep the more recent overall service - DO NOT change lastServiceIntervalValue
+                // lastServiceIntervalValue should always reflect the interval of the actual last service performed
               }
             }
           }
@@ -607,14 +623,22 @@ async function calculateMaintenanceSummary(supabase: any): Promise<MaintenanceAl
             const overdue = currentValue - ((overdueItem as any).nextDueKm || 0)
             kilometersOverdue = overdue
             
-            // Update last service for this interval
+            // Update last service for this interval (only if more recent than overall last service)
             const lastServiceForInterval = assetMaintenanceHistory
               .filter(m => m.maintenance_plan_id === selectedInterval.id)
               .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0]
             if (lastServiceForInterval) {
-              lastServiceDate = lastServiceForInterval.date
-              lastServiceValue = lastServiceForInterval.kilometers
-              lastServiceIntervalValue = selectedInterval.interval_value || null
+              const lastServiceForIntervalDate = new Date(lastServiceForInterval.date).getTime()
+              const currentLastServiceDate = lastServiceDate ? new Date(lastServiceDate).getTime() : 0
+              
+              // Only update if this interval's last service is more recent than the overall last service
+              if (lastServiceForIntervalDate >= currentLastServiceDate) {
+                lastServiceDate = lastServiceForInterval.date
+                lastServiceValue = lastServiceForInterval.kilometers
+                lastServiceIntervalValue = selectedInterval.interval_value || null
+              }
+              // Otherwise keep the more recent overall service - DO NOT change lastServiceIntervalValue
+              // lastServiceIntervalValue should always reflect the interval of the actual last service performed
             }
           } else {
             const upcomingIntervals = actionableIntervals.filter(s => s.status === 'upcoming' || s.status === 'scheduled')
@@ -631,9 +655,17 @@ async function calculateMaintenanceSummary(supabase: any): Promise<MaintenanceAl
                 .filter(m => m.maintenance_plan_id === selectedInterval.id)
                 .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0]
               if (lastServiceForInterval) {
-                lastServiceDate = lastServiceForInterval.date
-                lastServiceValue = lastServiceForInterval.kilometers
-                lastServiceIntervalValue = selectedInterval.interval_value || null
+                const lastServiceForIntervalDate = new Date(lastServiceForInterval.date).getTime()
+                const currentLastServiceDate = lastServiceDate ? new Date(lastServiceDate).getTime() : 0
+                
+                // Only update if this interval's last service is more recent than the overall last service
+                if (lastServiceForIntervalDate >= currentLastServiceDate) {
+                  lastServiceDate = lastServiceForInterval.date
+                  lastServiceValue = lastServiceForInterval.kilometers
+                  lastServiceIntervalValue = selectedInterval.interval_value || null
+                }
+                // Otherwise keep the more recent overall service - DO NOT change lastServiceIntervalValue
+                // lastServiceIntervalValue should always reflect the interval of the actual last service performed
               }
             }
           }
