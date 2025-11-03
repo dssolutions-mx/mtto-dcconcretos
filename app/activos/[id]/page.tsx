@@ -307,18 +307,88 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
       return;
     }
     
-    try {
-      setUpcomingLoading(true);
-      
-      const currentHours = asset.current_hours || 0;
-      
-      // Calculate cycle length (highest interval - same as maintenance page)
-      const maxInterval = Math.max(...maintenanceIntervals.map(i => i.interval_value));
-      const currentCycle = Math.floor(currentHours / maxInterval) + 1;
-      
-      // Find the hour of the last preventive maintenance performed (plan-linked)
-      const effectiveMaintenanceHistory = combinedMaintenanceHistory ?? maintenanceHistory
-      const preventiveHistory = effectiveMaintenanceHistory.filter((m: any) => m?.type === 'Preventivo' && m?.maintenance_plan_id)
+    async function calculateUpcoming() {
+      try {
+        setUpcomingLoading(true);
+        
+        if (!asset) return;
+        
+        const currentHours = asset.current_hours || 0;
+        
+        // Calculate cycle length (highest interval - same as maintenance page)
+        const maxInterval = Math.max(...maintenanceIntervals.map(i => i.interval_value));
+        const currentCycle = Math.floor(currentHours / maxInterval) + 1;
+        
+        // CRITICAL: Fetch maintenance_plans to map maintenance_plan_id to interval_id
+        const supabase = createClient();
+        const { data: maintenancePlans } = await supabase
+          .from('maintenance_plans')
+          .select('id, interval_id')
+          .eq('asset_id', assetId);
+        
+        console.log(`[ASSET ${assetId}] Fetched maintenance_plans:`, maintenancePlans);
+        
+        // Create mapping: maintenance_plan_id -> interval_id
+        const planToIntervalMap = new Map<string, string>();
+        (maintenancePlans || []).forEach(plan => {
+          if (plan.id && plan.interval_id) {
+            planToIntervalMap.set(plan.id, plan.interval_id);
+          }
+        });
+        
+        console.log(`[ASSET ${assetId}] Plan to Interval Map:`, Array.from(planToIntervalMap.entries()));
+        console.log(`[ASSET ${assetId}] Available intervals:`, maintenanceIntervals.map((i: any) => ({
+          id: i.id,
+          value: i.interval_value,
+          type: i.type
+        })));
+        
+        // Find the hour of the last preventive maintenance performed (plan-linked)
+        const effectiveMaintenanceHistory = combinedMaintenanceHistory ?? maintenanceHistory
+        
+        console.log(`[ASSET ${assetId}] Total maintenance history:`, effectiveMaintenanceHistory.length);
+        console.log(`[ASSET ${assetId}] Sample history entries:`, effectiveMaintenanceHistory.slice(0, 3).map((m: any) => ({
+          date: m.date,
+          type: m.type,
+          maintenance_plan_id: m.maintenance_plan_id,
+          hours: m.hours
+        })));
+        
+        // CRITICAL: maintenance_history.maintenance_plan_id DIRECTLY stores maintenance_intervals.id!
+        // The field name is misleading - it should be called interval_id
+        // Direct reference: maintenance_history.maintenance_plan_id → maintenance_intervals.id
+        const preventiveHistory = effectiveMaintenanceHistory.filter((m: any) => {
+          // Check for 'preventive' (English) or 'preventivo' (Spanish) - handle both languages and cases
+          const typeLower = m?.type?.toLowerCase();
+          const isPreventive = typeLower === 'preventive' || typeLower === 'preventivo';
+          if (!isPreventive || !m?.maintenance_plan_id) {
+            console.log(`[ASSET ${assetId}] Skipping non-preventive or null plan: type=${m?.type}, plan_id=${m?.maintenance_plan_id}`);
+            return false;
+          }
+          
+          // maintenance_plan_id IS the interval.id - check directly
+          const found = maintenanceIntervals.some((interval: any) => interval.id === m.maintenance_plan_id);
+          
+          if (found) {
+            console.log(`[ASSET ${assetId}] ✓ Found interval for maintenance_plan_id ${m.maintenance_plan_id}`);
+          } else {
+            console.log(`[ASSET ${assetId}] ❌ Interval ${m.maintenance_plan_id} NOT found in intervals array`);
+          }
+          return found;
+        });
+        
+        console.log(`[ASSET ${assetId}] Preventive history after filtering:`, preventiveHistory.length);
+        console.log(`[ASSET ${assetId}] Preventive history details:`, preventiveHistory.map((m: any) => {
+          // maintenance_plan_id is actually the interval_id from maintenance_plans
+          const interval = maintenanceIntervals.find(i => i.id === m.maintenance_plan_id);
+          return {
+            date: m.date,
+            maintenance_plan_id: m.maintenance_plan_id,
+            interval_id: m.maintenance_plan_id,
+            interval_value: interval?.interval_value,
+            hours: m.hours
+          };
+        }));
       const allMaintenanceHours = preventiveHistory
         .map(m => Number(m.hours) || 0)
         .filter(h => h > 0)
@@ -330,16 +400,25 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
       const currentCycleStartHour = (currentCycle - 1) * maxInterval;
       const currentCycleEndHour = currentCycle * maxInterval;
       
-      const currentCycleMaintenances = preventiveHistory.filter((m: any) => {
-        const mHours = Number(m.hours) || 0;
-        return mHours > currentCycleStartHour && mHours < currentCycleEndHour;
-      });
-      
-      const highestMaintenanceInCycle = currentCycleMaintenances.length > 0 
-        ? Math.max(...currentCycleMaintenances.map(m => Number(m.hours) || 0))
-        : 0;
-      
-      const upcomingList = maintenanceIntervals.map(interval => {
+        const currentCycleMaintenances = preventiveHistory.filter((m: any) => {
+          const mHours = Number(m.hours) || 0;
+          return mHours > currentCycleStartHour && mHours < currentCycleEndHour;
+        });
+        
+        console.log(`[ASSET ${assetId}] Current cycle: ${currentCycle}, Range: ${currentCycleStartHour}h - ${currentCycleEndHour}h`);
+        console.log(`[ASSET ${assetId}] Current cycle maintenances:`, currentCycleMaintenances.length);
+        console.log(`[ASSET ${assetId}] Current cycle details:`, currentCycleMaintenances.map((m: any) => ({
+          date: m.date,
+          maintenance_plan_id: m.maintenance_plan_id,
+          hours: m.hours,
+          interval_value: maintenanceIntervals.find(i => i.id === m.maintenance_plan_id)?.interval_value
+        })));
+        
+        const highestMaintenanceInCycle = currentCycleMaintenances.length > 0 
+          ? Math.max(...currentCycleMaintenances.map(m => Number(m.hours) || 0))
+          : 0;
+        
+        const upcomingList = maintenanceIntervals.map(interval => {
         const intervalHours = interval.interval_value || 0;
         
         // Handle new fields with fallbacks for backward compatibility
@@ -371,28 +450,45 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
             if (computedDue !== null) {
               const dueHour = computedDue; // Non-null variable for comparisons
                
-               const wasPerformedInCurrentCycle = currentCycleMaintenances.some(m => {
-                 const maintenanceHours = Number(m.hours) || 0;
-                 const tolerance = 200; // Allow some tolerance for when maintenance is done early/late
-                 
-                 return m.maintenance_plan_id === interval.id && 
-                        Math.abs(maintenanceHours - dueHour) <= tolerance;
-               });
+              const wasPerformedInCurrentCycle = currentCycleMaintenances.some(m => {
+                // CRITICAL: m.maintenance_plan_id contains the interval_id value from maintenance_plans
+                // This interval_id IS the actual interval.id we're looking for
+                const matches = m.maintenance_plan_id === interval.id;
+                if (interval.interval_value === 1500 || matches) {
+                  console.log(`[ASSET ${assetId}] Checking ${interval.interval_value}h completion:`, {
+                    maintenance_plan_id: m.maintenance_plan_id,
+                    target_interval_id: interval.id,
+                    matches
+                  });
+                }
+                return matches;
+              });
                
                if (wasPerformedInCurrentCycle) {
                  status = 'completed';
               } else {
-                // Plan-aware coverage: a higher/equal preventive interval in same unit/category covers lower ones
+                 // Plan-aware coverage: a higher/equal preventive interval in same unit/category covers lower ones
+                // CRITICAL: Coverage is based SOLELY on interval value comparison
+                // CRITICAL: Match via interval_id from maintenance_plans mapping
                 const isCoveredByHigher = currentCycleMaintenances.some((m: any) => {
-                  const performedPlanId = m.maintenance_plan_id;
-                  const performedInterval = (maintenanceIntervals || []).find((i: any) => i.id === performedPlanId);
+                  // CRITICAL: maintenance_plan_id IS the interval ID
+                  const performedInterval = (maintenanceIntervals || []).find((i: any) => i.id === m.maintenance_plan_id);
                   const dueInterval = interval;
                   if (!performedInterval || !dueInterval) return false;
                   const sameUnit = performedInterval.type === dueInterval.type;
                   const sameCategory = (performedInterval as any).maintenance_category === (dueInterval as any).maintenance_category;
                   const categoryOk = (performedInterval as any).maintenance_category && (dueInterval as any).maintenance_category ? sameCategory : true;
+                  // CRITICAL: Coverage based SOLELY on interval value comparison
+                  // If performed interval value >= due interval value, it covers it
+                  // Works forward: performing 1500h covers all intervals <= 1500h, even future ones
                   const higherOrEqual = Number(performedInterval.interval_value) >= Number(dueInterval.interval_value);
-                  return sameUnit && categoryOk && higherOrEqual;
+                  const covers = sameUnit && categoryOk && higherOrEqual;
+                  
+                  if (interval.interval_value <= 1500 && covers) {
+                    console.log(`[ASSET ${assetId}] ${interval.interval_value}h covered by ${performedInterval.interval_value}h`);
+                  }
+                  
+                  return covers;
                 });
                 if (isCoveredByHigher) {
                   status = 'covered';
@@ -425,6 +521,7 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
             wasPerformed = true;
             
             // Find the last maintenance of this type
+            // CRITICAL: maintenance_plan_id IS the interval ID
             const lastMaintenanceOfType = currentCycleMaintenances.find(m => 
               m.maintenance_plan_id === interval.id
             );
@@ -509,17 +606,20 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
           return urgencyB - urgencyA;
         }
         
-        return a.intervalValue - b.intervalValue;
-      });
-      
-      setUpcomingMaintenances(sorted);
-    } catch (error) {
-      console.error('Error calculating upcoming maintenances:', error);
-      setUpcomingMaintenances([]);
-    } finally {
-      setUpcomingLoading(false);
+          return a.intervalValue - b.intervalValue;
+        });
+        
+        setUpcomingMaintenances(sorted);
+      } catch (error) {
+        console.error('Error calculating upcoming maintenances:', error);
+        setUpcomingMaintenances([]);
+      } finally {
+        setUpcomingLoading(false);
+      }
     }
-  }, [maintenanceIntervals, asset, maintenanceHistory]);
+    
+    calculateUpcoming();
+  }, [maintenanceIntervals, asset, maintenanceHistory, assetId, combinedMaintenanceHistory]);
   
   // Add a new effect to fetch completed checklists
   useEffect(() => {

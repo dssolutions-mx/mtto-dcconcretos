@@ -57,6 +57,7 @@
     "date-fns": "latest",
     "dotenv": "^17.2.2",
     "embla-carousel-react": "8.5.1",
+    "exceljs": "^4.4.0",
     "html2canvas": "^1.4.1",
     "idb": "^8.0.3",
     "input-otp": "1.4.1",

@@ -294,12 +294,14 @@ export default function IngresosGastosPage() {
     let currentRowIndex = 4
 
     // Helper to add a row with metadata tracking
-    const addRow = (label: string, getValue: (plant: PlantData) => number, formatFn: (val: number) => string, isTotalRow = false) => {
+    const addRow = (label: string, getValue: (plant: PlantData) => number, formatFn: (val: number) => string, metricKey: string, isTotalRow = false) => {
       const row: any[] = [label]
       if (groupByBusinessUnit && groupedPlants) {
+        // Use calculateBUValue for correct aggregation
+        const metricType = getMetricType(metricKey)
         Object.entries(groupedPlants).forEach(([buId, buPlants]) => {
-          const buTotal = buPlants.reduce((sum, p) => sum + getValue(p), 0)
-          row.push(buTotal) // Store as number for proper Excel formatting
+          const buValue = calculateBUValue(buPlants, getValue, metricType, metricKey)
+          row.push(buValue) // Store as number for proper Excel formatting
         })
         const grandTotal = calculateGrandTotal(getValue)
         row.push(grandTotal)
@@ -320,59 +322,59 @@ export default function IngresosGastosPage() {
     // Ingresos Concreto Section
     exportData.push(['INGRESOS CONCRETO', ...Array(headers.length - 1).fill('')])
     rowMetadata.push({ type: 'section', rowIndex: currentRowIndex++ })
-    addRow('Volumen Concreto (m³)', p => p.volumen_concreto, val => formatNumber(val, 2))
-    addRow('f\'c Ponderada (kg/cm²)', p => p.fc_ponderada, val => formatNumber(val, 2))
-    addRow('Edad Ponderada (días)', p => p.edad_ponderada, val => formatNumber(val, 2))
-    addRow('PV Unitario', p => p.pv_unitario, formatCurrency)
-    addRow('Ventas Total Concreto', p => p.ventas_total, formatCurrency, true)
+    addRow('Volumen Concreto (m³)', p => p.volumen_concreto, val => formatNumber(val, 2), 'volumen_concreto')
+    addRow('f\'c Ponderada (kg/cm²)', p => p.fc_ponderada, val => formatNumber(val, 2), 'fc_ponderada')
+    addRow('Edad Ponderada (días)', p => p.edad_ponderada, val => formatNumber(val, 2), 'edad_ponderada')
+    addRow('PV Unitario', p => p.pv_unitario, formatCurrency, 'pv_unitario')
+    addRow('Ventas Total Concreto', p => p.ventas_total, formatCurrency, 'ventas_total', true)
     exportData.push([])
     rowMetadata.push({ type: 'empty', rowIndex: currentRowIndex++ })
 
     // Costo Materia Prima Section
     exportData.push(['COSTO MATERIA PRIMA', ...Array(headers.length - 1).fill('')])
     rowMetadata.push({ type: 'section', rowIndex: currentRowIndex++ })
-    addRow('Costo MP Unitario', p => p.costo_mp_unitario, formatCurrency)
-    addRow('Consumo Cem / m3 (kg)', p => p.consumo_cem_m3, val => formatNumber(val, 2))
-    addRow('Costo Cem / m3 ($ Unitario)', p => p.costo_cem_m3, formatCurrency)
-    addRow('Costo Cem %', p => p.costo_cem_pct, formatPercent)
-    addRow('Costo MP Total Concreto', p => p.costo_mp_total, formatCurrency, true)
-    addRow('Costo MP %', p => p.costo_mp_pct, formatPercent)
+    addRow('Costo MP Unitario', p => p.costo_mp_unitario, formatCurrency, 'costo_mp_unitario')
+    addRow('Consumo Cem / m3 (kg)', p => p.consumo_cem_m3, val => formatNumber(val, 2), 'consumo_cem_m3')
+    addRow('Costo Cem / m3 ($ Unitario)', p => p.costo_cem_m3, formatCurrency, 'costo_cem_m3')
+    addRow('Costo Cem %', p => p.costo_cem_pct, formatPercent, 'costo_cem_pct')
+    addRow('Costo MP Total Concreto', p => p.costo_mp_total, formatCurrency, 'costo_mp_total', true)
+    addRow('Costo MP %', p => p.costo_mp_pct, formatPercent, 'costo_mp_pct')
     exportData.push([])
     rowMetadata.push({ type: 'empty', rowIndex: currentRowIndex++ })
 
     // Spread Section
     exportData.push(['SPREAD', ...Array(headers.length - 1).fill('')])
     rowMetadata.push({ type: 'section', rowIndex: currentRowIndex++ })
-    addRow('Spread Unitario', p => p.spread_unitario, formatCurrency)
-    addRow('Spread Unitario %', p => p.spread_unitario_pct, formatPercent)
+    addRow('Spread Unitario', p => p.spread_unitario, formatCurrency, 'spread_unitario')
+    addRow('Spread Unitario %', p => p.spread_unitario_pct, formatPercent, 'spread_unitario_pct')
     exportData.push([])
     rowMetadata.push({ type: 'empty', rowIndex: currentRowIndex++ })
 
     // Costo Operativo Section
     exportData.push(['COSTO OPERATIVO', ...Array(headers.length - 1).fill('')])
     rowMetadata.push({ type: 'section', rowIndex: currentRowIndex++ })
-    addRow('Diesel (Todas las Unidades)', p => p.diesel_total, formatCurrency)
-    addRow('Diesel Unitario (m3)', p => p.diesel_unitario, formatCurrency)
-    addRow('Diesel %', p => p.diesel_pct, formatPercent)
-    addRow('MANTTO. (Todas las Unidades)', p => p.mantto_total, formatCurrency)
-    addRow('Mantto. Unitario (m3)', p => p.mantto_unitario, formatCurrency)
-    addRow('Mantenimiento %', p => p.mantto_pct, formatPercent)
-    addRow('Nómina Totales', p => p.nomina_total, formatCurrency)
-    addRow('Nómina Unitario (m3)', p => p.nomina_unitario, formatCurrency)
-    addRow('Nómina %', p => p.nomina_pct, formatPercent)
-    addRow('Otros Indirectos Totales', p => p.otros_indirectos_total, formatCurrency)
-    addRow('Otros Indirectos Unitario (m3)', p => p.otros_indirectos_unitario, formatCurrency)
-    addRow('Otros Indirectos %', p => p.otros_indirectos_pct, formatPercent)
-    addRow('TOTAL COSTO OP', p => p.total_costo_op, formatCurrency, true)
-    addRow('TOTAL COSTO OP %', p => p.total_costo_op_pct, formatPercent)
+    addRow('Diesel (Todas las Unidades)', p => p.diesel_total, formatCurrency, 'diesel_total')
+    addRow('Diesel Unitario (m3)', p => p.diesel_unitario, formatCurrency, 'diesel_unitario')
+    addRow('Diesel %', p => p.diesel_pct, formatPercent, 'diesel_pct')
+    addRow('MANTTO. (Todas las Unidades)', p => p.mantto_total, formatCurrency, 'mantto_total')
+    addRow('Mantto. Unitario (m3)', p => p.mantto_unitario, formatCurrency, 'mantto_unitario')
+    addRow('Mantenimiento %', p => p.mantto_pct, formatPercent, 'mantto_pct')
+    addRow('Nómina Totales', p => p.nomina_total, formatCurrency, 'nomina_total')
+    addRow('Nómina Unitario (m3)', p => p.nomina_unitario, formatCurrency, 'nomina_unitario')
+    addRow('Nómina %', p => p.nomina_pct, formatPercent, 'nomina_pct')
+    addRow('Otros Indirectos Totales', p => p.otros_indirectos_total, formatCurrency, 'otros_indirectos_total')
+    addRow('Otros Indirectos Unitario (m3)', p => p.otros_indirectos_unitario, formatCurrency, 'otros_indirectos_unitario')
+    addRow('Otros Indirectos %', p => p.otros_indirectos_pct, formatPercent, 'otros_indirectos_pct')
+    addRow('TOTAL COSTO OP', p => p.total_costo_op, formatCurrency, 'total_costo_op', true)
+    addRow('TOTAL COSTO OP %', p => p.total_costo_op_pct, formatPercent, 'total_costo_op_pct')
     exportData.push([])
     rowMetadata.push({ type: 'empty', rowIndex: currentRowIndex++ })
 
     // EBITDA Section
     exportData.push(['EBITDA', ...Array(headers.length - 1).fill('')])
     rowMetadata.push({ type: 'section', rowIndex: currentRowIndex++ })
-    addRow('EBITDA', p => p.ebitda, formatCurrency, true)
-    addRow('EBITDA %', p => p.ebitda_pct, formatPercent)
+    addRow('EBITDA', p => p.ebitda, formatCurrency, 'ebitda', true)
+    addRow('EBITDA %', p => p.ebitda_pct, formatPercent, 'ebitda_pct')
 
     // Optional Bombeo Section
     if (plants.some(p => p.ingresos_bombeo_vol && p.ingresos_bombeo_vol > 0)) {
@@ -380,8 +382,8 @@ export default function IngresosGastosPage() {
       rowMetadata.push({ type: 'empty', rowIndex: currentRowIndex++ })
       exportData.push(['INGRESOS BOMBEO', ...Array(headers.length - 1).fill('')])
       rowMetadata.push({ type: 'section', rowIndex: currentRowIndex++ })
-      addRow('Ingresos Bombeo Vol', p => p.ingresos_bombeo_vol || 0, val => formatNumber(val, 2))
-      addRow('Ingresos Bombeo $ Unit', p => p.ingresos_bombeo_unit || 0, formatCurrency)
+      addRow('Ingresos Bombeo Vol', p => p.ingresos_bombeo_vol || 0, val => formatNumber(val, 2), 'ingresos_bombeo_vol')
+      addRow('Ingresos Bombeo $ Unit', p => p.ingresos_bombeo_unit || 0, formatCurrency, 'ingresos_bombeo_unit')
     }
 
     // Create worksheet
@@ -564,6 +566,196 @@ export default function IngresosGastosPage() {
 
   const plants = filteredPlants
 
+  // Metric type mapping for correct aggregation
+  const metricTypes: Record<string, 'total' | 'unit' | 'percent' | 'weighted_avg' | 'consumption'> = {
+    // Totals
+    'ventas_total': 'total',
+    'diesel_total': 'total',
+    'mantto_total': 'total',
+    'nomina_total': 'total',
+    'otros_indirectos_total': 'total',
+    'total_costo_op': 'total',
+    'ebitda': 'total',
+    'costo_mp_total': 'total',
+    
+    // Unit costs
+    'pv_unitario': 'unit',
+    'costo_mp_unitario': 'unit',
+    'costo_cem_m3': 'unit',
+    'diesel_unitario': 'unit',
+    'mantto_unitario': 'unit',
+    'nomina_unitario': 'unit',
+    'otros_indirectos_unitario': 'unit',
+    'spread_unitario': 'unit',
+    
+    // Percentages
+    'costo_cem_pct': 'percent',
+    'costo_mp_pct': 'percent',
+    'diesel_pct': 'percent',
+    'mantto_pct': 'percent',
+    'nomina_pct': 'percent',
+    'otros_indirectos_pct': 'percent',
+    'total_costo_op_pct': 'percent',
+    'ebitda_pct': 'percent',
+    'spread_unitario_pct': 'percent',
+    
+    // Weighted averages (volume-weighted)
+    'fc_ponderada': 'weighted_avg',
+    'edad_ponderada': 'weighted_avg',
+    
+    // Consumption (recalculated from total consumption / total volume)
+    'consumo_cem_m3': 'consumption',
+    
+    // Volumes (simple sum)
+    'volumen_concreto': 'total',
+    'ingresos_bombeo_vol': 'total',
+    'ingresos_bombeo_unit': 'unit'
+  }
+
+  // Helper function to get metric type from getter function
+  // This requires passing a metric identifier along with the getter
+  const getMetricType = (metricKey: string): 'total' | 'unit' | 'percent' | 'weighted_avg' | 'consumption' => {
+    return metricTypes[metricKey] || 'total'
+  }
+
+  // Helper function to calculate BU aggregated value based on metric type
+  const calculateBUValue = (
+    buPlants: PlantData[],
+    getValue: (plant: PlantData) => number,
+    metricType: 'total' | 'unit' | 'percent' | 'weighted_avg' | 'consumption',
+    metricKey: string // Used to determine numerator/denominator for unit/percent calculations
+  ): number => {
+    if (buPlants.length === 0) return 0
+
+    switch (metricType) {
+      case 'total':
+        return buPlants.reduce((sum, p) => sum + getValue(p), 0)
+      
+      case 'unit': {
+        // For unit costs, we need to find the corresponding total and divide by volume
+        // Map metric keys to their corresponding total metric keys
+        const unitToTotalMap: Record<string, string> = {
+          'pv_unitario': 'ventas_total',
+          'costo_mp_unitario': 'costo_mp_total',
+          'costo_cem_m3': 'costo_mp_total', // Approximate - uses MP total
+          'diesel_unitario': 'diesel_total',
+          'mantto_unitario': 'mantto_total',
+          'nomina_unitario': 'nomina_total',
+          'otros_indirectos_unitario': 'otros_indirectos_total',
+          'spread_unitario': 'ventas_total', // Approximate - uses ventas
+          'ingresos_bombeo_unit': 'ingresos_bombeo_vol'
+        }
+        
+        const totalKey = unitToTotalMap[metricKey]
+        if (!totalKey) {
+          // Fallback: simple average if mapping not found
+          const total = buPlants.reduce((sum, p) => sum + getValue(p), 0)
+          return total / buPlants.length
+        }
+        
+        const totalVolume = buPlants.reduce((sum, p) => sum + p.volumen_concreto, 0)
+        if (totalVolume === 0) return 0
+        
+        if (metricKey === 'pv_unitario') {
+          const totalSales = buPlants.reduce((sum, p) => sum + p.ventas_total, 0)
+          return totalSales / totalVolume
+        } else if (metricKey === 'costo_mp_unitario') {
+          const totalMP = buPlants.reduce((sum, p) => sum + p.costo_mp_total, 0)
+          return totalMP / totalVolume
+        } else if (metricKey === 'costo_cem_m3') {
+          // This is tricky - we'd need total cement cost, but we can approximate
+          const totalMP = buPlants.reduce((sum, p) => sum + p.costo_mp_total, 0)
+          return totalMP / totalVolume // Approximation
+        } else if (metricKey === 'diesel_unitario') {
+          const totalDiesel = buPlants.reduce((sum, p) => sum + p.diesel_total, 0)
+          return totalDiesel / totalVolume
+        } else if (metricKey === 'mantto_unitario') {
+          const totalMantto = buPlants.reduce((sum, p) => sum + p.mantto_total, 0)
+          return totalMantto / totalVolume
+        } else if (metricKey === 'nomina_unitario') {
+          const totalNomina = buPlants.reduce((sum, p) => sum + p.nomina_total, 0)
+          return totalNomina / totalVolume
+        } else if (metricKey === 'otros_indirectos_unitario') {
+          const totalOtros = buPlants.reduce((sum, p) => sum + p.otros_indirectos_total, 0)
+          return totalOtros / totalVolume
+        } else if (metricKey === 'spread_unitario') {
+          const totalVentas = buPlants.reduce((sum, p) => sum + p.ventas_total, 0)
+          const totalMP = buPlants.reduce((sum, p) => sum + p.costo_mp_total, 0)
+          return (totalVentas - totalMP) / totalVolume
+        } else if (metricKey === 'ingresos_bombeo_unit') {
+          const totalBombeoVol = buPlants.reduce((sum, p) => sum + (p.ingresos_bombeo_vol || 0), 0)
+          if (totalBombeoVol === 0) return 0
+          // Would need ingresos_bombeo_total, but it's not in the data structure
+          // Fallback to weighted average
+          const weightedSum = buPlants.reduce((sum, p) => {
+            const val = p.ingresos_bombeo_unit || 0
+            const vol = p.ingresos_bombeo_vol || 0
+            return sum + (val * vol)
+          }, 0)
+          return weightedSum / totalBombeoVol
+        }
+        
+        return 0
+      }
+      
+      case 'percent': {
+        // For percentages, we need the numerator (cost) and denominator (sales)
+        const percentToNumeratorMap: Record<string, (p: PlantData) => number> = {
+          'costo_cem_pct': p => p.costo_mp_total, // Approximation
+          'costo_mp_pct': p => p.costo_mp_total,
+          'diesel_pct': p => p.diesel_total,
+          'mantto_pct': p => p.mantto_total,
+          'nomina_pct': p => p.nomina_total,
+          'otros_indirectos_pct': p => p.otros_indirectos_total,
+          'total_costo_op_pct': p => p.total_costo_op,
+          'ebitda_pct': p => p.ebitda,
+          'spread_unitario_pct': p => p.ventas_total - p.costo_mp_total
+        }
+        
+        const getNumerator = percentToNumeratorMap[metricKey]
+        if (!getNumerator) return 0
+        
+        const totalNumerator = buPlants.reduce((sum, p) => sum + getNumerator(p), 0)
+        const totalDenominator = buPlants.reduce((sum, p) => sum + p.ventas_total, 0)
+        
+        if (totalDenominator === 0) return 0
+        return (totalNumerator / totalDenominator) * 100
+      }
+      
+      case 'weighted_avg': {
+        // Volume-weighted average
+        const totalVolume = buPlants.reduce((sum, p) => sum + p.volumen_concreto, 0)
+        if (totalVolume === 0) return 0
+        
+        const weightedSum = buPlants.reduce((sum, p) => {
+          const value = getValue(p)
+          const volume = p.volumen_concreto
+          return sum + (value * volume)
+        }, 0)
+        
+        return weightedSum / totalVolume
+      }
+      
+      case 'consumption': {
+        // Recalculate from total consumption / total volume
+        // consumo_cem_m3 is already per m³, so we need: sum(consumo * volumen) / sum(volumen)
+        const totalVolume = buPlants.reduce((sum, p) => sum + p.volumen_concreto, 0)
+        if (totalVolume === 0) return 0
+        
+        const totalConsumption = buPlants.reduce((sum, p) => {
+          const consumoPerM3 = getValue(p) // consumo_cem_m3
+          const volumen = p.volumen_concreto
+          return sum + (consumoPerM3 * volumen)
+        }, 0)
+        
+        return totalConsumption / totalVolume
+      }
+      
+      default:
+        return buPlants.reduce((sum, p) => sum + getValue(p), 0)
+    }
+  }
+
   // Helper function to calculate grand total for a metric
   const calculateGrandTotal = (getValue: (plant: PlantData) => number): number => {
     return plants.reduce((sum, plant) => sum + getValue(plant), 0)
@@ -577,16 +769,22 @@ export default function IngresosGastosPage() {
   )
 
   // Render plants columns (handles grouping)
-  const renderPlantColumns = (getValue: (plant: PlantData) => number, formatFn: (val: number) => string, isTotalRow = false) => {
+  const renderPlantColumns = (
+    getValue: (plant: PlantData) => number, 
+    formatFn: (val: number) => string, 
+    metricKey: string,
+    isTotalRow = false
+  ) => {
     if (groupByBusinessUnit && groupedPlants) {
-      // Render grouped by BU - only show BU totals, hide individual plants
+      // Render grouped by BU - use correct calculation based on metric type
+      const metricType = getMetricType(metricKey)
       return (
         <>
           {Object.entries(groupedPlants).map(([buId, buPlants]) => {
-            const buTotal = buPlants.reduce((sum, p) => sum + getValue(p), 0)
+            const buValue = calculateBUValue(buPlants, getValue, metricType, metricKey)
             return (
               <td key={buId} className={`text-right p-3 border-r ${isTotalRow ? 'font-bold text-lg' : ''}`}>
-                {formatFn(buTotal)}
+                {formatFn(buValue)}
               </td>
             )
           })}
@@ -769,27 +967,27 @@ export default function IngresosGastosPage() {
                   </tr>
                   <tr className="border-b hover:bg-muted/30">
                     <td className="sticky left-0 z-10 bg-background p-3 border-r-2">Volumen Concreto (m³)</td>
-                    {renderPlantColumns(p => p.volumen_concreto, (val) => formatNumber(val, 2))}
+                    {renderPlantColumns(p => p.volumen_concreto, (val) => formatNumber(val, 2), 'volumen_concreto')}
                     {renderGrandTotalCell(calculateGrandTotal(p => p.volumen_concreto), (val) => formatNumber(val, 2))}
                   </tr>
                   <tr className="border-b hover:bg-muted/30">
                     <td className="sticky left-0 z-10 bg-background p-3 border-r-2">f'c Ponderada (kg/cm²)</td>
-                    {renderPlantColumns(p => p.fc_ponderada, (val) => formatNumber(val, 2))}
+                    {renderPlantColumns(p => p.fc_ponderada, (val) => formatNumber(val, 2), 'fc_ponderada')}
                     {renderGrandTotalCell(calculateGrandTotal(p => p.fc_ponderada), (val) => formatNumber(val, 2))}
                   </tr>
                   <tr className="border-b hover:bg-muted/30">
                     <td className="sticky left-0 z-10 bg-background p-3 border-r-2">Edad Ponderada (días)</td>
-                    {renderPlantColumns(p => p.edad_ponderada, (val) => formatNumber(val, 2))}
+                    {renderPlantColumns(p => p.edad_ponderada, (val) => formatNumber(val, 2), 'edad_ponderada')}
                     {renderGrandTotalCell(calculateGrandTotal(p => p.edad_ponderada), (val) => formatNumber(val, 2))}
                   </tr>
                   <tr className="border-b hover:bg-muted/30">
                     <td className="sticky left-0 z-10 bg-background p-3 border-r-2">PV Unitario</td>
-                    {renderPlantColumns(p => p.pv_unitario, formatCurrency)}
+                    {renderPlantColumns(p => p.pv_unitario, formatCurrency, 'pv_unitario')}
                     {renderGrandTotalCell(calculateGrandTotal(p => p.pv_unitario), formatCurrency)}
                   </tr>
                   <tr className="border-b hover:bg-muted/30 bg-blue-100/50 dark:bg-blue-900/20">
                     <td className="sticky left-0 z-10 bg-blue-100 dark:bg-blue-900/30 p-3 border-r-2 font-bold">Ventas Total Concreto</td>
-                    {renderPlantColumns(p => p.ventas_total, formatCurrency, true)}
+                    {renderPlantColumns(p => p.ventas_total, formatCurrency, 'ventas_total', true)}
                     {renderGrandTotalCell(calculateGrandTotal(p => p.ventas_total), formatCurrency, true)}
                   </tr>
 
@@ -801,32 +999,32 @@ export default function IngresosGastosPage() {
                   </tr>
                   <tr className="border-b hover:bg-muted/30">
                     <td className="sticky left-0 z-10 bg-background p-3 border-r-2">Costo MP Unitario</td>
-                    {renderPlantColumns(p => p.costo_mp_unitario, formatCurrency)}
+                    {renderPlantColumns(p => p.costo_mp_unitario, formatCurrency, 'costo_mp_unitario')}
                     {renderGrandTotalCell(calculateGrandTotal(p => p.costo_mp_unitario), formatCurrency)}
                   </tr>
                   <tr className="border-b hover:bg-muted/30">
                     <td className="sticky left-0 z-10 bg-background p-3 border-r-2">Consumo Cem / m3 (kg)</td>
-                    {renderPlantColumns(p => p.consumo_cem_m3, (val) => formatNumber(val, 2))}
+                    {renderPlantColumns(p => p.consumo_cem_m3, (val) => formatNumber(val, 2), 'consumo_cem_m3')}
                     {renderGrandTotalCell(calculateGrandTotal(p => p.consumo_cem_m3), (val) => formatNumber(val, 2))}
                   </tr>
                   <tr className="border-b hover:bg-muted/30">
                     <td className="sticky left-0 z-10 bg-background p-3 border-r-2">Costo Cem / m3 ($ Unitario)</td>
-                    {renderPlantColumns(p => p.costo_cem_m3, formatCurrency)}
+                    {renderPlantColumns(p => p.costo_cem_m3, formatCurrency, 'costo_cem_m3')}
                     {renderGrandTotalCell(calculateGrandTotal(p => p.costo_cem_m3), formatCurrency)}
                   </tr>
                   <tr className="border-b hover:bg-muted/30">
                     <td className="sticky left-0 z-10 bg-background p-3 border-r-2">Costo Cem %</td>
-                    {renderPlantColumns(p => p.costo_cem_pct, formatPercent)}
+                    {renderPlantColumns(p => p.costo_cem_pct, formatPercent, 'costo_cem_pct')}
                     {renderGrandTotalCell(calculateGrandTotal(p => p.costo_cem_pct), formatPercent)}
                   </tr>
                   <tr className="border-b hover:bg-muted/30 bg-orange-100/50 dark:bg-orange-900/20">
                     <td className="sticky left-0 z-10 bg-orange-100 dark:bg-orange-900/30 p-3 border-r-2 font-bold">Costo MP Total Concreto</td>
-                    {renderPlantColumns(p => p.costo_mp_total, formatCurrency, true)}
+                    {renderPlantColumns(p => p.costo_mp_total, formatCurrency, 'costo_mp_total', true)}
                     {renderGrandTotalCell(calculateGrandTotal(p => p.costo_mp_total), formatCurrency, true)}
                   </tr>
                   <tr className="border-b hover:bg-muted/30">
                     <td className="sticky left-0 z-10 bg-background p-3 border-r-2">Costo MP %</td>
-                    {renderPlantColumns(p => p.costo_mp_pct, formatPercent)}
+                    {renderPlantColumns(p => p.costo_mp_pct, formatPercent, 'costo_mp_pct')}
                     {renderGrandTotalCell(calculateGrandTotal(p => p.costo_mp_pct), formatPercent)}
                   </tr>
 
@@ -838,12 +1036,12 @@ export default function IngresosGastosPage() {
                   </tr>
                   <tr className="border-b hover:bg-muted/30">
                     <td className="sticky left-0 z-10 bg-background p-3 border-r-2">Spread Unitario</td>
-                    {renderPlantColumns(p => p.spread_unitario, formatCurrency)}
+                    {renderPlantColumns(p => p.spread_unitario, formatCurrency, 'spread_unitario')}
                     {renderGrandTotalCell(calculateGrandTotal(p => p.spread_unitario), formatCurrency)}
                   </tr>
                   <tr className="border-b hover:bg-muted/30">
                     <td className="sticky left-0 z-10 bg-background p-3 border-r-2">Spread Unitario %</td>
-                    {renderPlantColumns(p => p.spread_unitario_pct, formatPercent)}
+                    {renderPlantColumns(p => p.spread_unitario_pct, formatPercent, 'spread_unitario_pct')}
                     {renderGrandTotalCell(calculateGrandTotal(p => p.spread_unitario_pct), formatPercent)}
                   </tr>
 
@@ -855,32 +1053,32 @@ export default function IngresosGastosPage() {
                   </tr>
                   <tr className="border-b hover:bg-muted/30 bg-yellow-50/50 dark:bg-yellow-900/10">
                     <td className="sticky left-0 z-10 bg-yellow-50 dark:bg-yellow-900/20 p-3 border-r-2 font-semibold">Diesel (Todas las Unidades)</td>
-                    {renderPlantColumns(p => p.diesel_total, formatCurrency)}
+                    {renderPlantColumns(p => p.diesel_total, formatCurrency, 'diesel_total')}
                     {renderGrandTotalCell(calculateGrandTotal(p => p.diesel_total), formatCurrency)}
                   </tr>
                   <tr className="border-b hover:bg-muted/30">
                     <td className="sticky left-0 z-10 bg-background p-3 border-r-2">Diesel Unitario (m3)</td>
-                    {renderPlantColumns(p => p.diesel_unitario, formatCurrency)}
+                    {renderPlantColumns(p => p.diesel_unitario, formatCurrency, 'diesel_unitario')}
                     {renderGrandTotalCell(calculateGrandTotal(p => p.diesel_unitario), formatCurrency)}
                   </tr>
                   <tr className="border-b hover:bg-muted/30">
                     <td className="sticky left-0 z-10 bg-background p-3 border-r-2">Diesel %</td>
-                    {renderPlantColumns(p => p.diesel_pct, formatPercent)}
+                    {renderPlantColumns(p => p.diesel_pct, formatPercent, 'diesel_pct')}
                     {renderGrandTotalCell(calculateGrandTotal(p => p.diesel_pct), formatPercent)}
                   </tr>
                   <tr className="border-b hover:bg-muted/30 bg-orange-50/50 dark:bg-orange-900/10">
                     <td className="sticky left-0 z-10 bg-orange-50 dark:bg-orange-900/20 p-3 border-r-2 font-semibold">MANTTO. (Todas las Unidades)</td>
-                    {renderPlantColumns(p => p.mantto_total, formatCurrency)}
+                    {renderPlantColumns(p => p.mantto_total, formatCurrency, 'mantto_total')}
                     {renderGrandTotalCell(calculateGrandTotal(p => p.mantto_total), formatCurrency)}
                   </tr>
                   <tr className="border-b hover:bg-muted/30">
                     <td className="sticky left-0 z-10 bg-background p-3 border-r-2">Mantto. Unitario (m3)</td>
-                    {renderPlantColumns(p => p.mantto_unitario, formatCurrency)}
+                    {renderPlantColumns(p => p.mantto_unitario, formatCurrency, 'mantto_unitario')}
                     {renderGrandTotalCell(calculateGrandTotal(p => p.mantto_unitario), formatCurrency)}
                   </tr>
                   <tr className="border-b hover:bg-muted/30">
                     <td className="sticky left-0 z-10 bg-background p-3 border-r-2">Mantenimiento %</td>
-                    {renderPlantColumns(p => p.mantto_pct, formatPercent)}
+                    {renderPlantColumns(p => p.mantto_pct, formatPercent, 'mantto_pct')}
                     {renderGrandTotalCell(calculateGrandTotal(p => p.mantto_pct), formatPercent)}
                   </tr>
                   {/* Nómina Totales - Expandable */}
@@ -899,7 +1097,7 @@ export default function IngresosGastosPage() {
                         Nómina Totales
                       </button>
                     </td>
-                    {renderPlantColumns(p => p.nomina_total, formatCurrency)}
+                    {renderPlantColumns(p => p.nomina_total, formatCurrency, 'nomina_total')}
                     {renderGrandTotalCell(calculateGrandTotal(p => p.nomina_total), formatCurrency)}
                   </tr>
                   {/* Expanded Nómina details - grouped by department across all plants */}
@@ -1019,12 +1217,12 @@ export default function IngresosGastosPage() {
                   })()}
                   <tr className="border-b hover:bg-muted/30">
                     <td className="sticky left-0 z-10 bg-background p-3 border-r-2">Nómina Unitario (m3)</td>
-                    {renderPlantColumns(p => p.nomina_unitario, formatCurrency)}
+                    {renderPlantColumns(p => p.nomina_unitario, formatCurrency, 'nomina_unitario')}
                     {renderGrandTotalCell(calculateGrandTotal(p => p.nomina_unitario), formatCurrency)}
                   </tr>
                   <tr className="border-b hover:bg-muted/30">
                     <td className="sticky left-0 z-10 bg-background p-3 border-r-2">Nómina %</td>
-                    {renderPlantColumns(p => p.nomina_pct, formatPercent)}
+                    {renderPlantColumns(p => p.nomina_pct, formatPercent, 'nomina_pct')}
                     {renderGrandTotalCell(calculateGrandTotal(p => p.nomina_pct), formatPercent)}
                   </tr>
                   {/* Otros Indirectos Totales - Expandable */}
@@ -1043,7 +1241,7 @@ export default function IngresosGastosPage() {
                         Otros Indirectos Totales
                       </button>
                     </td>
-                    {renderPlantColumns(p => p.otros_indirectos_total, formatCurrency)}
+                    {renderPlantColumns(p => p.otros_indirectos_total, formatCurrency, 'otros_indirectos_total')}
                     {renderGrandTotalCell(calculateGrandTotal(p => p.otros_indirectos_total), formatCurrency)}
                   </tr>
                   {/* Expanded Otros Indirectos details - grouped by department across all plants */}
@@ -1163,22 +1361,22 @@ export default function IngresosGastosPage() {
                   })()}
                   <tr className="border-b hover:bg-muted/30">
                     <td className="sticky left-0 z-10 bg-background p-3 border-r-2">Otros Indirectos Unitario (m3)</td>
-                    {renderPlantColumns(p => p.otros_indirectos_unitario, formatCurrency)}
+                    {renderPlantColumns(p => p.otros_indirectos_unitario, formatCurrency, 'otros_indirectos_unitario')}
                     {renderGrandTotalCell(calculateGrandTotal(p => p.otros_indirectos_unitario), formatCurrency)}
                   </tr>
                   <tr className="border-b hover:bg-muted/30">
                     <td className="sticky left-0 z-10 bg-background p-3 border-r-2">Otros Indirectos %</td>
-                    {renderPlantColumns(p => p.otros_indirectos_pct, formatPercent)}
+                    {renderPlantColumns(p => p.otros_indirectos_pct, formatPercent, 'otros_indirectos_pct')}
                     {renderGrandTotalCell(calculateGrandTotal(p => p.otros_indirectos_pct), formatPercent)}
                   </tr>
                   <tr className="border-b-2 hover:bg-muted/30 bg-purple-100/70 dark:bg-purple-900/30">
                     <td className="sticky left-0 z-10 bg-purple-100 dark:bg-purple-900/40 p-3 border-r-2 font-bold text-base">TOTAL COSTO OP</td>
-                    {renderPlantColumns(p => p.total_costo_op, formatCurrency, true)}
+                    {renderPlantColumns(p => p.total_costo_op, formatCurrency, 'total_costo_op', true)}
                     {renderGrandTotalCell(calculateGrandTotal(p => p.total_costo_op), formatCurrency, true)}
                   </tr>
                   <tr className="border-b-2 hover:bg-muted/30">
                     <td className="sticky left-0 z-10 bg-background p-3 border-r-2 font-bold">TOTAL COSTO OP %</td>
-                    {renderPlantColumns(p => p.total_costo_op_pct, formatPercent)}
+                    {renderPlantColumns(p => p.total_costo_op_pct, formatPercent, 'total_costo_op_pct')}
                     {renderGrandTotalCell(calculateGrandTotal(p => p.total_costo_op_pct), formatPercent)}
                   </tr>
 
@@ -1190,12 +1388,12 @@ export default function IngresosGastosPage() {
                   </tr>
                   <tr className="border-b-2 hover:bg-muted/30 bg-emerald-100/70 dark:bg-emerald-900/30">
                     <td className="sticky left-0 z-10 bg-emerald-100 dark:bg-emerald-900/40 p-3 border-r-2 font-bold text-base">EBITDA</td>
-                    {renderPlantColumns(p => p.ebitda, formatCurrency, true)}
+                    {renderPlantColumns(p => p.ebitda, formatCurrency, 'ebitda', true)}
                     {renderGrandTotalCell(calculateGrandTotal(p => p.ebitda), formatCurrency, true)}
                   </tr>
                   <tr className="border-b-2 hover:bg-muted/30">
                     <td className="sticky left-0 z-10 bg-background p-3 border-r-2 font-bold">EBITDA %</td>
-                    {renderPlantColumns(p => p.ebitda_pct, formatPercent)}
+                    {renderPlantColumns(p => p.ebitda_pct, formatPercent, 'ebitda_pct')}
                     {renderGrandTotalCell(calculateGrandTotal(p => p.ebitda_pct), formatPercent)}
                   </tr>
 
@@ -1209,12 +1407,12 @@ export default function IngresosGastosPage() {
                       </tr>
                       <tr className="border-b hover:bg-muted/30">
                         <td className="sticky left-0 z-10 bg-background p-3 border-r-2">Ingresos Bombeo Vol</td>
-                        {renderPlantColumns(p => p.ingresos_bombeo_vol || 0, (val) => formatNumber(val, 2))}
+                        {renderPlantColumns(p => p.ingresos_bombeo_vol || 0, (val) => formatNumber(val, 2), 'ingresos_bombeo_vol')}
                         {renderGrandTotalCell(calculateGrandTotal(p => p.ingresos_bombeo_vol || 0), (val) => formatNumber(val, 2))}
                       </tr>
                       <tr className="border-b hover:bg-muted/30">
                         <td className="sticky left-0 z-10 bg-background p-3 border-r-2">Ingresos Bombeo $ Unit</td>
-                        {renderPlantColumns(p => p.ingresos_bombeo_unit || 0, formatCurrency)}
+                        {renderPlantColumns(p => p.ingresos_bombeo_unit || 0, formatCurrency, 'ingresos_bombeo_unit')}
                         {renderGrandTotalCell(calculateGrandTotal(p => p.ingresos_bombeo_unit || 0), formatCurrency)}
                       </tr>
                     </>

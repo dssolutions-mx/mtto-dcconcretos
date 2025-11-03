@@ -254,30 +254,18 @@ export async function POST(req: NextRequest) {
       }
     })
 
-    // Build list of cotizador plant IDs to query
-    let cotizadorPlantIds: string[] = []
-    if (plantId) {
-      // Find cotizador plant ID for this maintenance plant
-      const plantCode = (plants || []).find(p => p.id === plantId)?.code
-      if (plantCode) {
-        const cotizadorPlant = (cotizadorPlants || []).find(cp => cp.code === plantCode)
-        if (cotizadorPlant) cotizadorPlantIds = [cotizadorPlant.id]
-      }
-    } else if (businessUnitId && plants) {
-      const buPlants = plants.filter(p => p.business_unit_id === businessUnitId)
-      buPlants.forEach(p => {
-        const cotizadorPlant = (cotizadorPlants || []).find(cp => cp.code === p.code)
-        if (cotizadorPlant) cotizadorPlantIds.push(cotizadorPlant.id)
-      })
-    }
-
+    // CRITICAL: DO NOT filter remisiones by plant!
+    // Fetch ALL sales data regardless of plant filter to preserve remisiones history
+    // when assets move between plants. Plant filtering will be applied later during asset matching.
+    // const cotizadorPlantIds = [] // Intentionally empty - fetch all plants
+    
     const salesResp = await fetch(`${base}/api/integrations/cotizador/sales/assets/weekly`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ 
         dateFrom, 
         dateTo, 
-        plantIds: cotizadorPlantIds.length > 0 ? cotizadorPlantIds : undefined 
+        plantIds: undefined // Always fetch ALL plants - remisiones should not be filtered by plant
       })
     })
     const salesRows = salesResp.ok ? await salesResp.json() : []
@@ -514,12 +502,22 @@ export async function POST(req: NextRequest) {
       let matchMethod = 'exact'
 
       // Strategy 1: Exact mapping from asset_name_mappings or exact code match
+      // CRITICAL: Match by asset code/name first, prefer current plant but allow any plant
+      // This preserves remisiones when assets move between plants
       if (!assetId) {
-        const matchingAsset = Array.from(assetMap.values()).find(a => 
+        // First try current plant (preferred)
+        let matchingAsset = Array.from(assetMap.values()).find(a => 
           a.plant_id === maintenancePlantId && 
           a.asset_code && 
           a.asset_code.toUpperCase() === assetName
         )
+        // If not found in current plant, try any plant (for moved assets)
+        if (!matchingAsset) {
+          matchingAsset = Array.from(assetMap.values()).find(a => 
+            a.asset_code && 
+            a.asset_code.toUpperCase() === assetName
+          )
+        }
         if (matchingAsset) {
           assetId = matchingAsset.id
           matchMethod = 'exact_code'
@@ -547,13 +545,13 @@ export async function POST(req: NextRequest) {
               assetId = prefixMatch.id
               matchMethod = 'fuzzy'
             } else {
-              // Second priority: assets in the same plant
+              // Second priority: assets in the same plant (preferred, but not required)
               const plantMatch = candidates.find(c => c.plant_id === maintenancePlantId)
               if (plantMatch) {
                 assetId = plantMatch.id
                 matchMethod = 'fuzzy'
               } else if (candidates.length > 0) {
-                // Last resort: use first candidate (but this shouldn't happen for "CR-15")
+                // Last resort: use first candidate from any plant (preserves remisiones when assets move)
                 assetId = candidates[0].id
                 matchMethod = 'fuzzy'
               }
@@ -567,12 +565,21 @@ export async function POST(req: NextRequest) {
       if (!assetId) {
         // Step 3a: Try direct prefix match - find assets that start with the original name
         // This handles cases like "CR-15" → "CR-15-1" when Strategy 2 didn't catch it
-        const directPrefixMatch = Array.from(assetMap.values()).find(a => 
+        // Prefer current plant but allow any plant (for moved assets)
+        let directPrefixMatch = Array.from(assetMap.values()).find(a => 
           a.plant_id === maintenancePlantId && 
           a.asset_code && 
           a.asset_code.toUpperCase().startsWith(assetName) &&
           a.asset_code.toUpperCase() !== assetName // Don't match exact (already tried in Strategy 1)
         )
+        // If not found in current plant, try any plant
+        if (!directPrefixMatch) {
+          directPrefixMatch = Array.from(assetMap.values()).find(a => 
+            a.asset_code && 
+            a.asset_code.toUpperCase().startsWith(assetName) &&
+            a.asset_code.toUpperCase() !== assetName
+          )
+        }
         
         if (directPrefixMatch) {
           assetId = directPrefixMatch.id
@@ -585,12 +592,19 @@ export async function POST(req: NextRequest) {
             // Remove last character
             testName = testName.slice(0, -1)
             
-            // Try exact match first
-            const exactMatch = Array.from(assetMap.values()).find(a => 
+            // Try exact match first - prefer current plant but allow any plant
+            let exactMatch = Array.from(assetMap.values()).find(a => 
               a.plant_id === maintenancePlantId && 
               a.asset_code && 
               a.asset_code.toUpperCase() === testName
             )
+            // If not found in current plant, try any plant
+            if (!exactMatch) {
+              exactMatch = Array.from(assetMap.values()).find(a => 
+                a.asset_code && 
+                a.asset_code.toUpperCase() === testName
+              )
+            }
             
             if (exactMatch) {
               assetId = exactMatch.id
@@ -614,7 +628,7 @@ export async function POST(req: NextRequest) {
                 break
               }
               
-              // Then prefer assets in the same plant
+              // Then prefer assets in the same plant (but not required)
               const plantMatch = candidates.find(c => c.plant_id === maintenancePlantId)
               if (plantMatch) {
                 assetId = plantMatch.id
@@ -622,7 +636,7 @@ export async function POST(req: NextRequest) {
                 break
               }
               
-              // Last resort
+              // Last resort: use first candidate from any plant (preserves remisiones when assets move)
               if (candidates.length > 0) {
                 assetId = candidates[0].id
                 matchMethod = 'partial_prefix'

@@ -174,7 +174,13 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
                 const currentCycleEndHour = currentCycleNum * maxInterval;
 
                 // Use preventive, plan-linked entries only for coverage/completion
-                const componentPreventiveHistory = componentHistory.filter((m: any) => m?.type === 'Preventivo' && m?.maintenance_plan_id)
+                // CRITICAL: Only consider maintenance_history entries where maintenance_plan_id matches an actual interval
+                // This excludes work orders and service orders NOT linked to cycle intervals
+                const componentPreventiveHistory = componentHistory.filter((m: any) => {
+                  if (m?.type !== 'Preventivo' || !m?.maintenance_plan_id) return false
+                  // Verify maintenance_plan_id exists in the intervals array
+                  return intervals.some((interval: any) => interval.id === m.maintenance_plan_id)
+                })
                 const currentCycleMaintenances = componentPreventiveHistory.filter((m: any) => {
                   const mHours = Number(m.hours) || 0;
                   return mHours > currentCycleStartHour && mHours < currentCycleEndHour;
@@ -230,6 +236,10 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
                         status = 'completed';
                       } else {
                         // Plan-aware coverage: higher/equal interval (same unit/category) covers lower ones
+                        // CRITICAL: Coverage is based SOLELY on interval value comparison
+                        // If a higher interval service is performed, it covers ALL lower interval services (including future ones)
+                        // Example: If 1500h service performed at 1150h, it covers 300h, 600h, 900h, 1200h, 1500h
+                        // NO timing/position verification needed - purely interval value comparison
                         const isCoveredByHigher = currentCycleMaintenances.some((m: any) => {
                           const performedPlanId = m.maintenance_plan_id;
                           const performedInterval = (intervals as any[]).find((i: any) => i.id === performedPlanId);
@@ -238,6 +248,9 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
                           const sameUnit = performedInterval.type === dueInterval.type;
                           const sameCategory = (performedInterval as any).maintenance_category === (dueInterval as any).maintenance_category;
                           const categoryOk = (performedInterval as any).maintenance_category && (dueInterval as any).maintenance_category ? sameCategory : true;
+                          // CRITICAL: Coverage based SOLELY on interval value comparison
+                          // If performed interval value >= due interval value, it covers it
+                          // Works forward: performing 1500h covers all intervals <= 1500h, even future ones
                           const higherOrEqual = Number(performedInterval.interval_value) >= Number(dueInterval.interval_value);
                           return sameUnit && categoryOk && higherOrEqual;
                         });
@@ -328,12 +341,65 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
             const currentCycleEndHour = currentCycleNum * maxInterval;
 
             // Use preventive, plan-linked entries only for coverage/completion
-            const preventiveHistory = maintenanceHistory.filter(m => m?.type === 'Preventivo' && m?.maintenance_plan_id)
+            // CRITICAL: Fetch maintenance_plans to map maintenance_plan_id to interval_id
+            const { data: maintenancePlans } = await supabase
+              .from('maintenance_plans')
+              .select('id, interval_id')
+              .eq('asset_id', assetId);
+            
+            console.log(`[MAINT PAGE ${assetId}] Fetched maintenance_plans:`, maintenancePlans);
+            
+            // Create mapping: maintenance_plan_id -> interval_id
+            const planToIntervalMap = new Map<string, string>();
+            (maintenancePlans || []).forEach(plan => {
+              if (plan.id && plan.interval_id) {
+                planToIntervalMap.set(plan.id, plan.interval_id);
+              }
+            });
+            
+            console.log(`[MAINT PAGE ${assetId}] Plan to Interval Map:`, Array.from(planToIntervalMap.entries()));
+            
+            console.log(`[MAINT PAGE ${assetId}] Total maintenance history:`, maintenanceHistory.length);
+            console.log(`[MAINT PAGE ${assetId}] Intervals:`, intervals.map(i => ({id: i.id, value: i.interval_value})));
+            
+            // CRITICAL: maintenance_history.maintenance_plan_id DIRECTLY stores maintenance_intervals.id!
+            // Direct reference: maintenance_history.maintenance_plan_id → maintenance_intervals.id
+            const preventiveHistory = maintenanceHistory.filter(m => {
+              // Check for 'preventive' (English) or 'preventivo' (Spanish) - handle both languages and cases
+              const typeLower = m?.type?.toLowerCase();
+              const isPreventive = typeLower === 'preventive' || typeLower === 'preventivo';
+              if (!isPreventive || !m?.maintenance_plan_id) return false
+              
+              // maintenance_plan_id IS the interval.id - check directly
+              return intervals.some(interval => interval.id === m.maintenance_plan_id);
+            });
+            
+            console.log(`[MAINT PAGE ${assetId}] Preventive history after filtering:`, preventiveHistory.length);
+            console.log(`[MAINT PAGE ${assetId}] Preventive details:`, preventiveHistory.map(m => {
+              // maintenance_plan_id is actually the interval_id which IS the interval.id
+              const interval = intervals.find(i => i.id === m.maintenance_plan_id);
+              return {
+                date: m.date,
+                maintenance_plan_id: m.maintenance_plan_id,
+                interval_id: m.maintenance_plan_id,
+                interval_value: interval?.interval_value,
+                hours: m.hours
+              };
+            }));
             const currentCycleMaintenances = preventiveHistory.filter(m => {
               const mHours = Number(m.hours) || 0;
               // Exclude maintenance that marks the end of previous cycle (exactly at cycle boundary)
               return mHours > currentCycleStartHour && mHours < currentCycleEndHour;
             });
+            
+            console.log(`[MAINT PAGE ${assetId}] Current cycle: ${currentCycleNum}, Range: ${currentCycleStartHour}h - ${currentCycleEndHour}h`);
+            console.log(`[MAINT PAGE ${assetId}] Current cycle maintenances:`, currentCycleMaintenances.length);
+            console.log(`[MAINT PAGE ${assetId}] Current cycle details:`, currentCycleMaintenances.map(m => ({
+              date: m.date,
+              maintenance_plan_id: m.maintenance_plan_id,
+              hours: m.hours,
+              interval_value: intervals.find(i => i.id === m.maintenance_plan_id)?.interval_value
+            })));
 
             const highestMaintenanceInCycle = currentCycleMaintenances.length > 0
               ? Math.max(...currentCycleMaintenances.map(m => Number(m.hours) || 0))
@@ -372,28 +438,35 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
                 } else {
                   // Current cycle logic (includes services that fall exactly at cycle boundary)
                   // Check if this specific interval was performed in the current cycle
-                  const safeDue = Number(nextDueHour ?? 0)
-                  const wasPerformedInCurrentCycle = safeDue > 0 && currentCycleMaintenances.some(m => {
-                    const maintenanceHours = Number(m.hours) || 0;
-                    // The maintenance should match both the plan ID AND be in the right hour range for this cycle
-                    const tolerance = 200; // Allow some tolerance for when maintenance is done early/late
-
-                    return m.maintenance_plan_id === interval.id &&
-                           Math.abs(maintenanceHours - safeDue) <= tolerance;
+                  // CRITICAL: maintenance_plan_id IS the interval ID
+                  const wasPerformedInCurrentCycle = currentCycleMaintenances.some(m => {
+                    const matches = m.maintenance_plan_id === interval.id;
+                    if (interval.interval_value === 1500 || matches) {
+                      console.log(`[MAINT PAGE ${assetId}] Checking ${interval.interval_value}h completion:`, {
+                        maintenance_plan_id: m.maintenance_plan_id,
+                        target_interval_id: interval.id,
+                        matches
+                      });
+                    }
+                    return matches;
                   });
 
                   if (wasPerformedInCurrentCycle) {
                     status = 'completed';
                   } else {
                     // Plan-aware coverage: higher/equal interval (same unit/category) covers lower ones
+                    // CRITICAL: Coverage is based SOLELY on interval value comparison
+                    // CRITICAL: maintenance_plan_id IS the interval ID
                     const isCoveredByHigher = currentCycleMaintenances.some(m => {
-                      const performedPlanId = m.maintenance_plan_id;
-                      const performedInterval = intervals.find((i: any) => i.id === performedPlanId);
+                      const performedInterval = intervals.find((i: any) => i.id === m.maintenance_plan_id);
                       const dueInterval = interval;
                       if (!performedInterval || !dueInterval) return false;
                       const sameUnit = performedInterval.type === dueInterval.type;
                       const sameCategory = (performedInterval as any).maintenance_category === (dueInterval as any).maintenance_category;
                       const categoryOk = (performedInterval as any).maintenance_category && (dueInterval as any).maintenance_category ? sameCategory : true;
+                      // CRITICAL: Coverage based SOLELY on interval value comparison
+                      // If performed interval value >= due interval value, it covers it
+                      // Works forward: performing 1500h covers all intervals <= 1500h, even future ones
                       const higherOrEqual = Number(performedInterval.interval_value) >= Number(dueInterval.interval_value);
                       return sameUnit && categoryOk && higherOrEqual;
                     });

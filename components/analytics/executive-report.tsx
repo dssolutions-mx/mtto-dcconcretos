@@ -151,14 +151,17 @@ const formatCurrency = (amount: number) => {
   }).format(amount)
 }
 
-const formatNumber = (num: number) => {
-  return new Intl.NumberFormat('es-MX').format(num)
+const formatNumber = (num: number, decimals: number = 0) => {
+  return new Intl.NumberFormat('es-MX', {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals
+  }).format(num)
 }
 
 export function ExecutiveReport() {
   const [startDate, setStartDate] = useState(() => {
     const date = new Date()
-    date.setMonth(date.getMonth() - 3)
+    date.setDate(date.getDate() - 30)
     return date.toISOString().split('T')[0]
   })
   
@@ -175,6 +178,8 @@ export function ExecutiveReport() {
   const [loadingPOs, setLoadingPOs] = useState(false)
   const [expandedAssets, setExpandedAssets] = useState<Set<string>>(new Set())
   const [filterByAdditionalExpenses, setFilterByAdditionalExpenses] = useState(false)
+  const [maintenanceSummary, setMaintenanceSummary] = useState<any[]>([])
+  const [loadingSummary, setLoadingSummary] = useState(false)
 
   const toggleAssetExpansion = (assetId: string) => {
     setExpandedAssets(prev => {
@@ -255,8 +260,37 @@ export function ExecutiveReport() {
     }
   }
 
+  const loadMaintenanceSummary = async () => {
+    if (!startDate || !endDate) return
+    
+    setLoadingSummary(true)
+    try {
+      const response = await fetch("/api/reports/asset-maintenance-summary", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          dateFrom: startDate,
+          dateTo: endDate,
+          businessUnitId: businessUnitId || null,
+          plantId: plantId || null
+        })
+      })
+
+      const result = await response.json()
+      if (result.error) throw new Error(result.error)
+      
+      setMaintenanceSummary(result.assets || [])
+    } catch (error: any) {
+      console.error("Error loading maintenance summary:", error)
+      setMaintenanceSummary([])
+    } finally {
+      setLoadingSummary(false)
+    }
+  }
+
   useEffect(() => {
     load()
+    loadMaintenanceSummary()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [startDate, endDate, businessUnitId, plantId, page])
 
@@ -532,6 +566,391 @@ export function ExecutiveReport() {
         </TabsList>
 
         <TabsContent value="overview" className="space-y-4">
+          {/* Asset Maintenance Summary Table */}
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle>Resumen de Mantenimiento de Activos</CardTitle>
+                  <CardDescription>
+                    Estado de mantenimiento, costos, consumo de diesel y ventas por activo
+                  </CardDescription>
+                </div>
+                <Button 
+                  variant="outline" 
+                  onClick={async () => {
+                    try {
+                      // Import exceljs dynamically
+                      const ExcelJS = await import('exceljs')
+                      
+                      // Create workbook and worksheet
+                      const workbook = new ExcelJS.Workbook()
+                      const worksheet = workbook.addWorksheet('Resumen Mantenimiento')
+                      
+                      // Define headers
+                      const headers = [
+                        'Activo',
+                        'Código',
+                        'Plan de Mantenimiento',
+                        'Planta',
+                        'Unidad',
+                        'Horas/Km Actuales',
+                        'Último Servicio',
+                        'Último Servicio (Valor)',
+                        'Restante',
+                        'Vencido por',
+                        'Gastado',
+                        'Horas Trabajadas',
+                        'Litros Diesel',
+                        'Remisiones',
+                        'm³ Concreto'
+                      ]
+                      
+                      // Add header row with styling
+                      const headerRow = worksheet.addRow(headers)
+                      headerRow.font = { 
+                        bold: true, 
+                        size: 11, 
+                        color: { argb: 'FFFFFFFF' },
+                        name: 'Calibri'
+                      }
+                      headerRow.fill = {
+                        type: 'pattern',
+                        pattern: 'solid',
+                        fgColor: { argb: 'FF4472C4' } // Blue background
+                      }
+                      headerRow.alignment = { 
+                        horizontal: 'center', 
+                        vertical: 'middle',
+                        wrapText: true
+                      }
+                      headerRow.height = 25
+                      
+                      // Style header borders
+                      headers.forEach((_, colIndex) => {
+                        const cell = headerRow.getCell(colIndex + 1)
+                        cell.border = {
+                          top: { style: 'thin', color: { argb: 'FF000000' } },
+                          bottom: { style: 'thin', color: { argb: 'FF000000' } },
+                          left: { style: 'thin', color: { argb: 'FF000000' } },
+                          right: { style: 'thin', color: { argb: 'FF000000' } }
+                        }
+                      })
+                      
+                      // Prepare and add data rows
+                      maintenanceSummary.forEach((asset, index) => {
+                        const isOverdue = (asset.hours_overdue !== undefined && asset.hours_overdue > 0) ||
+                                        (asset.kilometers_overdue !== undefined && asset.kilometers_overdue > 0)
+                        
+                        const currentValue = asset.maintenance_unit === 'hours' 
+                          ? (asset.current_hours !== undefined ? asset.current_hours : null)
+                          : (asset.current_kilometers !== undefined ? asset.current_kilometers : null)
+                        
+                        const currentValueFormatted = currentValue !== null 
+                          ? `${currentValue} ${asset.maintenance_unit === 'hours' ? 'h' : 'km'}` 
+                          : '-'
+                        
+                        const lastServiceDate = asset.last_service_date 
+                          ? new Date(asset.last_service_date)
+                          : null
+                        
+                        const lastServiceDateFormatted = lastServiceDate
+                          ? lastServiceDate.toLocaleDateString('es-MX')
+                          : 'N/A'
+                        
+                        const lastServiceValue = asset.last_service_hours !== undefined
+                          ? `${asset.last_service_hours} h`
+                          : asset.last_service_kilometers !== undefined
+                          ? `${asset.last_service_kilometers} km`
+                          : ''
+                        
+                        const remaining = asset.hours_remaining !== undefined
+                          ? `${asset.hours_remaining} h`
+                          : asset.kilometers_remaining !== undefined
+                          ? `${asset.kilometers_remaining} km`
+                          : '-'
+                        
+                        const overdue = asset.hours_overdue !== undefined && asset.hours_overdue > 0
+                          ? `${asset.hours_overdue} h`
+                          : asset.kilometers_overdue !== undefined && asset.kilometers_overdue > 0
+                          ? `${asset.kilometers_overdue} km`
+                          : '-'
+                        
+                        const row = worksheet.addRow([
+                          asset.asset_name || '',
+                          asset.asset_code || '',
+                          asset.maintenance_plan_name || 'N/A',
+                          asset.plant_name || '',
+                          asset.maintenance_unit === 'hours' ? 'Horas' : 'Kilómetros',
+                          currentValueFormatted,
+                          lastServiceDateFormatted,
+                          lastServiceValue,
+                          remaining,
+                          overdue,
+                          asset.maintenance_cost || 0,
+                          asset.hours_worked > 0 ? asset.hours_worked : null,
+                          asset.diesel_liters > 0 ? asset.diesel_liters : null,
+                          asset.remisiones_count || 0,
+                          asset.concrete_m3 || 0
+                        ])
+                        
+                        // Conditional formatting for overdue rows (priority over alternate colors)
+                        if (isOverdue) {
+                          row.fill = {
+                            type: 'pattern',
+                            pattern: 'solid',
+                            fgColor: { argb: 'FFFFEBEE' } // Light red background
+                          }
+                          // Make overdue values bold and red
+                          const overdueCell = row.getCell(10) // "Vencido por" column
+                          overdueCell.font = { bold: true, color: { argb: 'FFD32F2F' } }
+                        } else {
+                          // Alternate row colors for better readability (only if not overdue)
+                          if (index % 2 === 0) {
+                            row.fill = {
+                              type: 'pattern',
+                              pattern: 'solid',
+                              fgColor: { argb: 'FFF5F5F5' } // Light gray
+                            }
+                          }
+                        }
+                        
+                        // Set borders for all cells
+                        row.eachCell((cell) => {
+                          cell.border = {
+                            top: { style: 'thin', color: { argb: 'FFCCCCCC' } },
+                            bottom: { style: 'thin', color: { argb: 'FFCCCCCC' } },
+                            left: { style: 'thin', color: { argb: 'FFCCCCCC' } },
+                            right: { style: 'thin', color: { argb: 'FFCCCCCC' } }
+                          }
+                        })
+                        
+                        // Format specific columns
+                        // Gastado (column 11) - Currency format
+                        const gastadoCell = row.getCell(11)
+                        if (gastadoCell.value && typeof gastadoCell.value === 'number') {
+                          gastadoCell.numFmt = '$#,##0.00'
+                          gastadoCell.alignment = { horizontal: 'right', vertical: 'middle' }
+                          gastadoCell.font = { color: { argb: 'FF006100' } } // Green for money
+                        }
+                        
+                        // Horas Trabajadas (column 12) - Number format
+                        const horasCell = row.getCell(12)
+                        if (horasCell.value && typeof horasCell.value === 'number') {
+                          horasCell.numFmt = '#,##0'
+                          horasCell.alignment = { horizontal: 'right', vertical: 'middle' }
+                        }
+                        
+                        // Litros Diesel (column 13) - Number format
+                        const litrosCell = row.getCell(13)
+                        if (litrosCell.value && typeof litrosCell.value === 'number') {
+                          litrosCell.numFmt = '#,##0'
+                          litrosCell.alignment = { horizontal: 'right', vertical: 'middle' }
+                        }
+                        
+                        // Remisiones (column 14) - Number format
+                        const remisionesCell = row.getCell(14)
+                        if (remisionesCell.value && typeof remisionesCell.value === 'number') {
+                          remisionesCell.numFmt = '#,##0'
+                          remisionesCell.alignment = { horizontal: 'right', vertical: 'middle' }
+                        }
+                        
+                        // m³ Concreto (column 15) - Decimal format
+                        const concretoCell = row.getCell(15)
+                        if (concretoCell.value && typeof concretoCell.value === 'number') {
+                          concretoCell.numFmt = '#,##0.00'
+                          concretoCell.alignment = { horizontal: 'right', vertical: 'middle' }
+                        }
+                        
+                        // Center align date column
+                        const dateCell = row.getCell(7) // Último Servicio
+                        if (dateCell.value && dateCell.value !== 'N/A') {
+                          dateCell.alignment = { horizontal: 'center', vertical: 'middle' }
+                        }
+                        
+                        // Right align numeric text columns
+                        row.getCell(6).alignment = { horizontal: 'right', vertical: 'middle' } // Horas/Km Actuales
+                        row.getCell(8).alignment = { horizontal: 'right', vertical: 'middle' } // Último Servicio (Valor)
+                        row.getCell(9).alignment = { horizontal: 'right', vertical: 'middle' } // Restante
+                        row.getCell(10).alignment = { horizontal: 'right', vertical: 'middle' } // Vencido por
+                      })
+                      
+                      // Set column widths
+                      worksheet.columns = [
+                        { width: 30 }, // Activo
+                        { width: 12 }, // Código
+                        { width: 35 }, // Plan de Mantenimiento
+                        { width: 20 }, // Planta
+                        { width: 12 }, // Unidad
+                        { width: 18 }, // Horas/Km Actuales
+                        { width: 15 }, // Último Servicio
+                        { width: 20 }, // Último Servicio (Valor)
+                        { width: 12 }, // Restante
+                        { width: 12 }, // Vencido por
+                        { width: 15 }, // Gastado
+                        { width: 15 }, // Horas Trabajadas
+                        { width: 15 }, // Litros Diesel
+                        { width: 12 }, // Remisiones
+                        { width: 12 }  // m³ Concreto
+                      ]
+                      
+                      // Freeze header row
+                      worksheet.views = [
+                        {
+                          state: 'frozen',
+                          ySplit: 1
+                        }
+                      ]
+                      
+                      // Generate Excel file buffer
+                      const buffer = await workbook.xlsx.writeBuffer()
+                      
+                      // Create blob and download
+                      const blob = new Blob([buffer], { 
+                        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
+                      })
+                      const url = URL.createObjectURL(blob)
+                      const link = document.createElement('a')
+                      link.href = url
+                      link.download = `resumen-mantenimiento-${startDate}-${endDate}.xlsx`
+                      link.style.visibility = 'hidden'
+                      document.body.appendChild(link)
+                      link.click()
+                      document.body.removeChild(link)
+                      URL.revokeObjectURL(url)
+                    } catch (err) {
+                      console.error('Error exporting to Excel:', err)
+                      alert('Error al exportar a Excel. Por favor, intente nuevamente.')
+                    }
+                  }}
+                  disabled={loadingSummary || maintenanceSummary.length === 0}
+                >
+                  <Download className="h-4 w-4 mr-2" />
+                  Exportar Excel
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {loadingSummary ? (
+                <div className="flex items-center justify-center py-8">
+                  <RefreshCw className="h-6 w-6 animate-spin text-muted-foreground" />
+                  <span className="ml-2 text-muted-foreground">Cargando resumen...</span>
+                </div>
+              ) : maintenanceSummary.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  No hay datos disponibles para el período seleccionado
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b bg-muted/50">
+                        <th className="text-left p-3 font-medium">Activo</th>
+                        <th className="text-left p-3 font-medium">Plan de Mantenimiento</th>
+                        <th className="text-left p-3 font-medium">Planta</th>
+                        <th className="text-left p-3 font-medium">Unidad</th>
+                        <th className="text-right p-3 font-medium">Horas/Km Actuales</th>
+                        <th className="text-left p-3 font-medium">Último Servicio</th>
+                        <th className="text-right p-3 font-medium">Restante</th>
+                        <th className="text-right p-3 font-medium">Vencido por</th>
+                        <th className="text-right p-3 font-medium">Gastado</th>
+                        <th className="text-right p-3 font-medium">Horas Trabajadas</th>
+                        <th className="text-right p-3 font-medium">Litros Diesel</th>
+                        <th className="text-right p-3 font-medium">Remisiones</th>
+                        <th className="text-right p-3 font-medium">m³ Concreto</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {maintenanceSummary.map((asset) => {
+                        const isOverdue = asset.hours_overdue !== undefined && asset.hours_overdue > 0 ||
+                                         asset.kilometers_overdue !== undefined && asset.kilometers_overdue > 0
+                        
+                        return (
+                          <tr 
+                            key={asset.asset_id} 
+                            className={`border-b hover:bg-muted/50 ${isOverdue ? 'bg-red-50 dark:bg-red-950/20' : ''}`}
+                          >
+                            <td className="p-3">
+                              <div className="font-medium">{asset.asset_name}</div>
+                              <div className="text-xs text-muted-foreground font-mono">{asset.asset_code}</div>
+                            </td>
+                            <td className="p-3">
+                              {asset.maintenance_plan_name || <span className="text-muted-foreground">N/A</span>}
+                            </td>
+                            <td className="p-3">{asset.plant_name}</td>
+                            <td className="p-3">
+                              {asset.maintenance_unit === 'hours' ? 'Horas' : 'Kilómetros'}
+                            </td>
+                            <td className="p-3 text-right">
+                              {asset.maintenance_unit === 'hours' 
+                                ? (asset.current_hours !== undefined ? formatNumber(asset.current_hours) + ' h' : '-')
+                                : (asset.current_kilometers !== undefined ? formatNumber(asset.current_kilometers) + ' km' : '-')
+                              }
+                            </td>
+                            <td className="p-3">
+                              {asset.last_service_date ? (
+                                <div>
+                                  <div className="text-sm">
+                                    {new Date(asset.last_service_date).toLocaleDateString('es-MX')}
+                                  </div>
+                                  {asset.last_service_hours !== undefined && (
+                                    <div className="text-xs text-muted-foreground">
+                                      {formatNumber(asset.last_service_hours)} h
+                                    </div>
+                                  )}
+                                  {asset.last_service_kilometers !== undefined && (
+                                    <div className="text-xs text-muted-foreground">
+                                      {formatNumber(asset.last_service_kilometers)} km
+                                    </div>
+                                  )}
+                                </div>
+                              ) : (
+                                <span className="text-muted-foreground">N/A</span>
+                              )}
+                            </td>
+                            <td className="p-3 text-right">
+                              {asset.hours_remaining !== undefined ? (
+                                <span className="text-green-600">{formatNumber(asset.hours_remaining)} h</span>
+                              ) : asset.kilometers_remaining !== undefined ? (
+                                <span className="text-green-600">{formatNumber(asset.kilometers_remaining)} km</span>
+                              ) : (
+                                <span className="text-muted-foreground">-</span>
+                              )}
+                            </td>
+                            <td className="p-3 text-right">
+                              {asset.hours_overdue !== undefined && asset.hours_overdue > 0 ? (
+                                <span className="text-red-600 font-semibold">{formatNumber(asset.hours_overdue)} h</span>
+                              ) : asset.kilometers_overdue !== undefined && asset.kilometers_overdue > 0 ? (
+                                <span className="text-red-600 font-semibold">{formatNumber(asset.kilometers_overdue)} km</span>
+                              ) : (
+                                <span className="text-muted-foreground">-</span>
+                              )}
+                            </td>
+                            <td className="p-3 text-right">
+                              {formatCurrency(asset.maintenance_cost)}
+                            </td>
+                            <td className="p-3 text-right">
+                              {asset.hours_worked > 0 ? formatNumber(asset.hours_worked) + ' h' : <span className="text-muted-foreground">-</span>}
+                            </td>
+                            <td className="p-3 text-right">
+                              {asset.diesel_liters > 0 ? formatNumber(asset.diesel_liters) + ' L' : <span className="text-muted-foreground">-</span>}
+                            </td>
+                            <td className="p-3 text-right">
+                              {formatNumber(asset.remisiones_count)}
+                            </td>
+                            <td className="p-3 text-right">
+                              {formatNumber(asset.concrete_m3, 2)} m³
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <Card>
               <CardHeader>
