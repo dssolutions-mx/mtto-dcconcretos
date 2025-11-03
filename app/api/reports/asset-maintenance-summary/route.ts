@@ -84,7 +84,7 @@ export async function POST(req: NextRequest) {
     // Fetch maintenance intervals for all models
     const { data: maintenanceIntervals, error: intervalsError } = await supabase
       .from('maintenance_intervals')
-      .select('id, model_id, interval_value, name, type')
+      .select('id, model_id, interval_value, name, type, is_first_cycle_only, is_recurring')
       .in('model_id', modelIds)
 
     if (intervalsError) {
