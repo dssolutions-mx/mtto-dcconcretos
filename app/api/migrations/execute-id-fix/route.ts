@@ -175,10 +175,6 @@ export async function POST() {
          SET work_order_id = v_work_order_id, updated_at = NOW()
          WHERE id = p_incident_id;
          
-         UPDATE assets
-         SET status = 'maintenance'
-         WHERE id = v_incident.asset_id AND status != 'maintenance';
-         
          RETURN v_work_order_id;
        END;
        $$;`,

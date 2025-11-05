@@ -591,14 +591,6 @@ ORIGEN:
       }
     }
 
-    // Update asset status to maintenance if priority is high
-    if (priority === 'Alta' && createdWorkOrders.length > 0) {
-      await supabase
-        .from('assets')
-        .update({ status: 'maintenance' })
-        .eq('id', asset_id)
-    }
-
     // Prepare response message
     let message = ''
     const totalCreated = newWorkOrders.length

@@ -183,12 +183,6 @@ BEGIN
       updated_at = NOW()
   WHERE id = p_incident_id;
   
-  -- Actualizar estado del activo a mantenimiento si no está ya
-  UPDATE assets
-  SET status = 'maintenance'
-  WHERE id = v_incident.asset_id
-  AND status != 'maintenance';
-  
   RETURN v_work_order_id;
 END;
 $$;
