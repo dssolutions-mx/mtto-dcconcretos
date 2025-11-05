@@ -803,11 +803,27 @@ export function AssetAssignmentDragDrop() {
                       </SortableContext>
                       {getUnassignedOperators().length === 0 && (
                         <div className="text-center py-12 text-gray-500">
-                          <Users className="w-12 h-12 mx-auto mb-4 opacity-30" />
-                          <p className="text-sm">No hay operadores disponibles</p>
-                          <p className="text-xs text-gray-400 mt-1">
-                            {searchOperators ? 'Intenta con otra búsqueda' : 'Todos los operadores están asignados'}
+                          <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-gray-100 mb-4">
+                            <Users className="w-8 h-8 text-gray-400" />
+                          </div>
+                          <h3 className="text-base font-semibold text-gray-700 mb-2">
+                            No hay operadores disponibles
+                          </h3>
+                          <p className="text-sm text-gray-500 mb-4">
+                            {searchOperators 
+                              ? 'Intenta con otra búsqueda o ajusta los filtros'
+                              : 'Todos los operadores están asignados a activos'
+                            }
                           </p>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setShowCreateOperator(true)}
+                            className="mt-2"
+                          >
+                            <UserPlus className="w-4 h-4 mr-2" />
+                            Crear Nuevo Operador
+                          </Button>
                         </div>
                       )}
                     </div>
@@ -852,10 +868,17 @@ export function AssetAssignmentDragDrop() {
                     </div>
                     {filteredAssets.length === 0 && (
                       <div className="text-center py-12 text-gray-500">
-                        <Package className="w-12 h-12 mx-auto mb-4 opacity-30" />
-                        <p className="text-sm">No hay activos disponibles</p>
-                        <p className="text-xs text-gray-400 mt-1">
-                          {searchAssets ? 'Intenta con otra búsqueda' : 'No hay activos en esta planta'}
+                        <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-gray-100 mb-4">
+                          <Package className="w-8 h-8 text-gray-400" />
+                        </div>
+                        <h3 className="text-base font-semibold text-gray-700 mb-2">
+                          No hay activos disponibles
+                        </h3>
+                        <p className="text-sm text-gray-500">
+                          {searchAssets 
+                            ? 'Intenta con otra búsqueda o ajusta los filtros aplicados'
+                            : 'No hay activos asignados a esta planta. Asigna activos desde la página de asignación de plantas.'
+                          }
                         </p>
                       </div>
                     )}

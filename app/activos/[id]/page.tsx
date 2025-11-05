@@ -42,6 +42,14 @@ import { Asset, AssetWithModel, AssetWithOrganization, EquipmentModel } from "@/
 import { createClient } from "@/lib/supabase";
 import { CompletedChecklistEvidenceViewer } from "@/components/checklists/completed-checklist-evidence-viewer"
 import { CreateCompositeAssetDialog } from "@/components/assets/dialogs/create-composite-asset-dialog"
+import { 
+  getMaintenanceUnit, 
+  getCurrentValue, 
+  getMaintenanceValue, 
+  getUnitLabel, 
+  getUnitDisplayName,
+  type MaintenanceUnit 
+} from "@/lib/utils/maintenance-units";
 
 // Define category type
 type CategoryInfo = {
@@ -94,6 +102,7 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
   const [compositeContext, setCompositeContext] = useState<{ composite: any | null; components: any[] }>({ composite: null, components: [] });
   const [compositeLoading, setCompositeLoading] = useState(false);
   const [openCreateComposite, setOpenCreateComposite] = useState(false);
+  const [maintenanceUnit, setMaintenanceUnit] = useState<MaintenanceUnit>('hours');
   
   // Map the asset with equipment_models to use model property
   const asset = useMemo(() => {
@@ -106,6 +115,14 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
     
     return assetWithModel;
   }, [rawAsset]);
+
+  // Detect maintenance unit from asset model
+  useEffect(() => {
+    if (asset) {
+      const unit = getMaintenanceUnit(asset);
+      setMaintenanceUnit(unit);
+    }
+  }, [asset]);
 
   const breadcrumbItems = [
     { label: "Dashboard", href: "/dashboard" },
@@ -313,11 +330,11 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
         
         if (!asset) return;
         
-        const currentHours = asset.current_hours || 0;
+        const currentValue = getCurrentValue(asset, maintenanceUnit);
         
         // Calculate cycle length (highest interval - same as maintenance page)
         const maxInterval = Math.max(...maintenanceIntervals.map(i => i.interval_value));
-        const currentCycle = Math.floor(currentHours / maxInterval) + 1;
+        const currentCycle = Math.floor(currentValue / maxInterval) + 1;
         
         // CRITICAL: Fetch maintenance_plans to map maintenance_plan_id to interval_id
         const supabase = createClient();
@@ -343,7 +360,7 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
           type: i.type
         })));
         
-        // Find the hour of the last preventive maintenance performed (plan-linked)
+        // Find the value of the last preventive maintenance performed (plan-linked)
         const effectiveMaintenanceHistory = combinedMaintenanceHistory ?? maintenanceHistory
         
         console.log(`[ASSET ${assetId}] Total maintenance history:`, effectiveMaintenanceHistory.length);
@@ -351,7 +368,7 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
           date: m.date,
           type: m.type,
           maintenance_plan_id: m.maintenance_plan_id,
-          hours: m.hours
+          value: maintenanceUnit === 'kilometers' ? m.kilometers : m.hours
         })));
         
         // CRITICAL: maintenance_history.maintenance_plan_id DIRECTLY stores maintenance_intervals.id!
@@ -386,76 +403,76 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
             maintenance_plan_id: m.maintenance_plan_id,
             interval_id: m.maintenance_plan_id,
             interval_value: interval?.interval_value,
-            hours: m.hours
+            value: getMaintenanceValue(m, maintenanceUnit)
           };
         }));
-      const allMaintenanceHours = preventiveHistory
-        .map(m => Number(m.hours) || 0)
-        .filter(h => h > 0)
+      const allMaintenanceValues = preventiveHistory
+        .map(m => getMaintenanceValue(m, maintenanceUnit))
+        .filter(v => v > 0)
         .sort((a, b) => b - a); // Sort from highest to lowest
       
-      const lastMaintenanceHours = allMaintenanceHours.length > 0 ? allMaintenanceHours[0] : 0;
+      const lastMaintenanceValue = allMaintenanceValues.length > 0 ? allMaintenanceValues[0] : 0;
       
       // Find the highest maintenance performed in current cycle (for "covered" logic)
-      const currentCycleStartHour = (currentCycle - 1) * maxInterval;
-      const currentCycleEndHour = currentCycle * maxInterval;
+      const currentCycleStartValue = (currentCycle - 1) * maxInterval;
+      const currentCycleEndValue = currentCycle * maxInterval;
       
         const currentCycleMaintenances = preventiveHistory.filter((m: any) => {
-          const mHours = Number(m.hours) || 0;
-          return mHours > currentCycleStartHour && mHours < currentCycleEndHour;
+          const mValue = getMaintenanceValue(m, maintenanceUnit);
+          return mValue > currentCycleStartValue && mValue < currentCycleEndValue;
         });
         
-        console.log(`[ASSET ${assetId}] Current cycle: ${currentCycle}, Range: ${currentCycleStartHour}h - ${currentCycleEndHour}h`);
+        console.log(`[ASSET ${assetId}] Current cycle: ${currentCycle}, Range: ${currentCycleStartValue}${getUnitLabel(maintenanceUnit)} - ${currentCycleEndValue}${getUnitLabel(maintenanceUnit)}`);
         console.log(`[ASSET ${assetId}] Current cycle maintenances:`, currentCycleMaintenances.length);
         console.log(`[ASSET ${assetId}] Current cycle details:`, currentCycleMaintenances.map((m: any) => ({
           date: m.date,
           maintenance_plan_id: m.maintenance_plan_id,
-          hours: m.hours,
+          value: getMaintenanceValue(m, maintenanceUnit),
           interval_value: maintenanceIntervals.find(i => i.id === m.maintenance_plan_id)?.interval_value
         })));
         
         const highestMaintenanceInCycle = currentCycleMaintenances.length > 0 
-          ? Math.max(...currentCycleMaintenances.map(m => Number(m.hours) || 0))
+          ? Math.max(...currentCycleMaintenances.map(m => getMaintenanceValue(m, maintenanceUnit)))
           : 0;
         
         const upcomingList = maintenanceIntervals.map(interval => {
-        const intervalHours = interval.interval_value || 0;
+        const intervalValue = interval.interval_value || 0;
         
         // Handle new fields with fallbacks for backward compatibility
         const isRecurring = (interval as any).is_recurring !== false; // Default to true
         const isFirstCycleOnly = (interval as any).is_first_cycle_only === true; // Default to false
         
-        // Calculate next due hour for current cycle (same logic as maintenance page)
-        let nextDueHour: number | null = null;
+        // Calculate next due value for current cycle (unit-agnostic, same logic as maintenance page)
+        let nextDueValue: number | null = null;
         let status = 'not_applicable';
         let cycleForService = currentCycle;
         
         if (!isFirstCycleOnly || currentCycle === 1) {
-          // Calculate the due hour and keep as non-null local number
-          let computedDue = ((currentCycle - 1) * maxInterval) + intervalHours;
+          // Calculate the due value and keep as non-null local number
+          let computedDue = ((currentCycle - 1) * maxInterval) + intervalValue;
           
           // Special case: if computedDue exceeds the current cycle end, calculate for next cycle
-          if (computedDue > currentCycleEndHour) {
+          if (computedDue > currentCycleEndValue) {
             cycleForService = currentCycle + 1;
-            computedDue = (currentCycle * maxInterval) + intervalHours;
+            computedDue = (currentCycle * maxInterval) + intervalValue;
             
             // Only show next cycle services if they're within reasonable range
-            if (computedDue - currentHours <= 1000) {
+            if (computedDue - currentValue <= 1000) {
               status = 'scheduled';
             } else {
               status = 'not_applicable';
             }
           } else {
-                         // Current cycle logic - check if this specific interval was performed
+            // Current cycle logic - check if this specific interval was performed
             if (computedDue !== null) {
-              const dueHour = computedDue; // Non-null variable for comparisons
+              const dueValue = computedDue; // Non-null variable for comparisons
                
               const wasPerformedInCurrentCycle = currentCycleMaintenances.some(m => {
                 // CRITICAL: m.maintenance_plan_id contains the interval_id value from maintenance_plans
                 // This interval_id IS the actual interval.id we're looking for
                 const matches = m.maintenance_plan_id === interval.id;
                 if (interval.interval_value === 1500 || matches) {
-                  console.log(`[ASSET ${assetId}] Checking ${interval.interval_value}h completion:`, {
+                  console.log(`[ASSET ${assetId}] Checking ${interval.interval_value}${getUnitLabel(maintenanceUnit)} completion:`, {
                     maintenance_plan_id: m.maintenance_plan_id,
                     target_interval_id: interval.id,
                     matches
@@ -482,24 +499,24 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
                   // CRITICAL: Coverage requires interval value >= due interval value
                   const higherOrEqual = Number(performedInterval.interval_value) >= Number(dueInterval.interval_value);
                   
-                  // CRITICAL: Also check timing - the performed service must be done AFTER the due hour
-                  // This prevents a 1500h service at 5145h from covering a 1800h interval due at 5400h
-                  const performedAtHour = Number(m.hours) || 0;
-                  const performedAfterDue = performedAtHour >= dueHour;
+                  // CRITICAL: Also check timing - the performed service must be done AFTER the due value
+                  // This prevents a 1500km service at 5145km from covering a 1800km interval due at 5400km
+                  const performedAtValue = getMaintenanceValue(m, maintenanceUnit);
+                  const performedAfterDue = performedAtValue >= dueValue;
                   
                   const covers = sameUnit && categoryOk && higherOrEqual && performedAfterDue;
                   
                   if (interval.interval_value <= 1500 && covers) {
-                    console.log(`[ASSET ${assetId}] ${interval.interval_value}h covered by ${performedInterval.interval_value}h (performed at ${performedAtHour}h, due at ${dueHour}h)`);
+                    console.log(`[ASSET ${assetId}] ${interval.interval_value}${getUnitLabel(maintenanceUnit)} covered by ${performedInterval.interval_value}${getUnitLabel(maintenanceUnit)} (performed at ${performedAtValue}${getUnitLabel(maintenanceUnit)}, due at ${dueValue}${getUnitLabel(maintenanceUnit)})`);
                   }
                   
                   return covers;
                 });
                 if (isCoveredByHigher) {
                   status = 'covered';
-                } else if (currentHours >= dueHour) {
+                } else if (currentValue >= dueValue) {
                   status = 'overdue';
-                } else if (currentHours >= dueHour - 100) {
+                } else if (currentValue >= dueValue - 100) {
                   status = 'upcoming';
                 } else {
                   status = 'scheduled';
@@ -508,7 +525,7 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
              }
           }
           // Persist computed due value to nullable variable for downstream UI calculations
-          nextDueHour = computedDue;
+          nextDueValue = computedDue;
         }
         
         // Calculate additional properties
@@ -518,7 +535,7 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
         let wasPerformed = false;
         let lastMaintenanceDate = null;
         
-        if (nextDueHour !== null) {
+        if (nextDueValue !== null) {
           if (status === 'completed') {
             progress = 100;
             urgency = 'low';
@@ -535,48 +552,48 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
             progress = 100;
             urgency = 'low';
             valueRemaining = 0;
-                     } else if (status === 'overdue' && nextDueHour !== null) {
+                     } else if (status === 'overdue' && nextDueValue !== null) {
              progress = 100;
-             const hoursOverdue = currentHours - nextDueHour;
-             valueRemaining = -hoursOverdue;
+             const valueOverdue = currentValue - nextDueValue;
+             valueRemaining = -valueOverdue;
              
-             if (hoursOverdue > intervalHours * 0.5) {
+             if (valueOverdue > intervalValue * 0.5) {
                urgency = 'high';
              } else {
                urgency = 'medium';
              }
           } else if (status === 'upcoming') {
-            const safeDue = Number((nextDueHour ?? intervalHours) || 0);
-            progress = safeDue > 0 ? Math.round((currentHours / safeDue) * 100) : 0;
-            const hoursRemaining = safeDue - currentHours;
-             valueRemaining = hoursRemaining;
+            const safeDue = Number((nextDueValue ?? intervalValue) || 0);
+            progress = safeDue > 0 ? Math.round((currentValue / safeDue) * 100) : 0;
+            const valueRemainingCalc = safeDue - currentValue;
+             valueRemaining = valueRemainingCalc;
              
-             if (hoursRemaining <= 50) {
+             if (valueRemainingCalc <= 50) {
                urgency = 'high';
              } else {
                urgency = 'medium';
              }
           } else if (status === 'scheduled') {
-            const safeDue = Number((nextDueHour ?? intervalHours) || 0);
-            progress = safeDue > 0 ? Math.round((currentHours / safeDue) * 100) : 0;
-            const hoursRemaining = safeDue - currentHours;
-             valueRemaining = hoursRemaining;
+            const safeDue = Number((nextDueValue ?? intervalValue) || 0);
+            progress = safeDue > 0 ? Math.round((currentValue / safeDue) * 100) : 0;
+            const valueRemainingCalc = safeDue - currentValue;
+             valueRemaining = valueRemainingCalc;
              urgency = 'low';
            }
         }
         
         return {
           intervalId: interval.id,
-          intervalName: interval.description || `${interval.type} ${interval.interval_value}h`,
+          intervalName: interval.description || `${interval.type} ${interval.interval_value}${getUnitLabel(maintenanceUnit)}`,
           type: interval.type,
           intervalValue: interval.interval_value,
-          currentValue: currentHours,
-          targetValue: nextDueHour || intervalHours,
+          currentValue: currentValue,
+          targetValue: nextDueValue || intervalValue,
           valueRemaining,
           status,
           urgency,
           progress,
-          unit: 'hours',
+          unit: maintenanceUnit === 'kilometers' ? 'kilometers' : 'hours',
           estimatedDate: new Date().toISOString(),
           lastMaintenanceDate,
           wasPerformed,
@@ -993,16 +1010,16 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
               {/* Key Metrics Row - Professional Style */}
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-6 mb-4 md:mb-6">
                 <div className="text-center">
-                  <div className="text-xl sm:text-2xl md:text-3xl font-bold">{asset?.current_hours || 0}h</div>
-                  <div className="text-xs sm:text-sm text-muted-foreground mt-1">Horas Operación</div>
+                  <div className="text-xl sm:text-2xl md:text-3xl font-bold">{getCurrentValue(asset!, maintenanceUnit)}{getUnitLabel(maintenanceUnit)}</div>
+                  <div className="text-xs sm:text-sm text-muted-foreground mt-1">{getUnitDisplayName(maintenanceUnit).charAt(0).toUpperCase() + getUnitDisplayName(maintenanceUnit).slice(1)} Operación</div>
                 </div>
                 
                 <div className="text-center">
                   <div className="text-xl sm:text-2xl md:text-3xl font-bold">
-                    {asset?.current_kilometers || 0}
+                    {maintenanceUnit === 'kilometers' ? (asset?.current_hours || 0) : (asset?.current_kilometers || 0)}
                   </div>
                   <div className="text-xs sm:text-sm text-muted-foreground mt-1">
-                    Kilómetros
+                    {maintenanceUnit === 'kilometers' ? 'Horas' : 'Kilómetros'}
                   </div>
                 </div>
                 
@@ -1010,9 +1027,14 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
                   <div className="text-xl sm:text-2xl md:text-3xl font-bold">
                     {(() => {
                       const effectiveHistory = combinedMaintenanceHistory ?? maintenanceHistory;
-                      return (effectiveHistory.length > 0 && asset?.current_hours && effectiveHistory[0]?.hours)
-                        ? `${asset.current_hours - effectiveHistory[0].hours}h`
-                        : "0h";
+                      if (effectiveHistory.length > 0) {
+                        const lastMaintenanceValue = getMaintenanceValue(effectiveHistory[0], maintenanceUnit);
+                        const currentVal = getCurrentValue(asset!, maintenanceUnit);
+                        if (lastMaintenanceValue > 0 && currentVal > 0) {
+                          return `${currentVal - lastMaintenanceValue}${getUnitLabel(maintenanceUnit)}`;
+                        }
+                      }
+                      return `0${getUnitLabel(maintenanceUnit)}`;
                     })()}
                   </div>
                   <div className="text-xs sm:text-sm text-muted-foreground mt-1">Desde Último Mant.</div>
@@ -1233,12 +1255,10 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
                               <div className="flex items-center gap-2">
                                 <Clock className="h-4 w-4 flex-shrink-0" />
                                 <span className="break-words">
-                                  {maintenance.unit === 'hours' ? 
-                                    `${maintenance.currentValue}/${maintenance.targetValue} horas` : 
-                                    `${maintenance.currentValue}/${maintenance.targetValue} km`}
+                                  {`${maintenance.currentValue}/${maintenance.targetValue} ${getUnitDisplayName(maintenance.unit === 'kilometers' ? 'kilometers' : 'hours')}`}
                                   {maintenance.status === 'overdue' && maintenance.valueRemaining < 0 && (
                                     <span className="font-medium text-red-600 ml-2">
-                                      (Excedido por {Math.abs(maintenance.valueRemaining)} {maintenance.unit === 'hours' ? 'h' : 'km'})
+                                      (Excedido por {Math.abs(maintenance.valueRemaining)} {getUnitLabel(maintenance.unit === 'kilometers' ? 'kilometers' : 'hours')})
                                     </span>
                                   )}
                                 </span>
@@ -1360,7 +1380,7 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
                                   </Badge>
                                   <span className="text-sm font-medium text-muted-foreground flex items-center gap-1">
                                     <Clock className="h-3 w-3" />
-                                    {maintenance.hours || 0}h
+                                    {getMaintenanceValue(maintenance, maintenanceUnit)}{getUnitLabel(maintenanceUnit)}
                                   </span>
                                 </div>
                                 <h4 className="font-medium text-base">

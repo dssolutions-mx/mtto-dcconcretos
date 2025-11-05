@@ -14,6 +14,15 @@ import { useAsset, useMaintenanceHistory } from "@/hooks/useSupabase";
 import { createClient } from "@/lib/supabase";
 import { format, differenceInDays } from "date-fns";
 import { es } from "date-fns/locale";
+import { 
+  getMaintenanceUnit, 
+  getCurrentValue, 
+  getMaintenanceValue, 
+  getUnitLabel, 
+  getUnitDisplayName,
+  getTableHeaderLabel,
+  type MaintenanceUnit 
+} from "@/lib/utils/maintenance-units";
 
 interface MaintenancePageProps {
   params: Promise<{
@@ -31,12 +40,15 @@ interface CyclicMaintenanceInterval {
   is_recurring: boolean;
   is_first_cycle_only: boolean;
   current_cycle: number;
-  next_due_hour: number;
+  next_due_hour: number; // Keep for backward compatibility, but will also store next_due_value
+  next_due_value: number; // Unit-agnostic value
   status: string;
   cycle_length: number;
   component_id?: string;
   component_name?: string;
   component_hours?: number;
+  component_value?: number; // Unit-agnostic current value
+  component_unit?: MaintenanceUnit; // Unit for this component
 }
 
 export default function MaintenancePage({ params }: MaintenancePageProps) {
@@ -54,6 +66,15 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
   const [cycleLength, setCycleLength] = useState<number>(0);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<Error | null>(null);
+  const [maintenanceUnit, setMaintenanceUnit] = useState<MaintenanceUnit>('hours');
+
+  // Detect maintenance unit from asset model
+  useEffect(() => {
+    if (asset) {
+      const unit = getMaintenanceUnit(asset);
+      setMaintenanceUnit(unit);
+    }
+  }, [asset]);
 
   // Detect composite context and load composite dashboard if needed
   useEffect(() => {
@@ -134,9 +155,14 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
               const maxInterval = Math.max(...intervals.map(i => i.interval_value));
               setCycleLength(maxInterval);
 
-              // Calculate current cycle based on the component with highest hours
-              const maxCurrentHours = Math.max(...components.map((c: any) => c.current_hours || 0));
-              const currentCycleNum = Math.floor(maxCurrentHours / maxInterval) + 1;
+              // Calculate current cycle based on the component with highest value (hours or kilometers)
+              // For mixed units, we need to handle each component separately
+              const componentMaxValues = components.map((c: any) => {
+                const componentUnit = getMaintenanceUnit(c);
+                return getCurrentValue(c, componentUnit);
+              });
+              const maxCurrentValue = Math.max(...componentMaxValues);
+              const currentCycleNum = Math.floor(maxCurrentValue / maxInterval) + 1;
               setCurrentCycle(currentCycleNum);
 
               // Process intervals with proper cyclic logic for each component
@@ -164,14 +190,16 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
                 const component = componentByModel[modelId];
                 if (!component) return;
 
-                const componentHours = component.current_hours || 0;
+                // Get component's maintenance unit
+                const componentUnit = getMaintenanceUnit(component);
+                const componentValue = getCurrentValue(component, componentUnit);
                 const componentHistory = (json?.data?.maintenance_history || []).filter(
                   (m: any) => m.asset_id === component.id
                 );
 
                 // Find the highest maintenance performed in current cycle (for "covered" logic)
-                const currentCycleStartHour = (currentCycleNum - 1) * maxInterval;
-                const currentCycleEndHour = currentCycleNum * maxInterval;
+                const currentCycleStartValue = (currentCycleNum - 1) * maxInterval;
+                const currentCycleEndValue = currentCycleNum * maxInterval;
 
                 // Use preventive, plan-linked entries only for coverage/completion
                 // CRITICAL: Only consider maintenance_history entries where maintenance_plan_id matches an actual interval
@@ -182,12 +210,12 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
                   return intervals.some((interval: any) => interval.id === m.maintenance_plan_id)
                 })
                 const currentCycleMaintenances = componentPreventiveHistory.filter((m: any) => {
-                  const mHours = Number(m.hours) || 0;
-                  return mHours > currentCycleStartHour && mHours < currentCycleEndHour;
+                  const mValue = getMaintenanceValue(m, componentUnit);
+                  return mValue > currentCycleStartValue && mValue < currentCycleEndValue;
                 });
 
                 const highestMaintenanceInCycle = currentCycleMaintenances.length > 0
-                  ? Math.max(...currentCycleMaintenances.map((m: any) => Number(m.hours) || 0))
+                  ? Math.max(...currentCycleMaintenances.map((m: any) => getMaintenanceValue(m, componentUnit)))
                   : 0;
 
                 // Process each interval for this component
@@ -196,25 +224,25 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
                   const isFirstCycleOnly = (interval as any).is_first_cycle_only === true;
                   const category = (interval as any).maintenance_category || 'standard';
 
-                  // Calculate next due hour for current cycle
-                  let nextDueHour: number | null = null;
+                  // Calculate next due value for current cycle (unit-agnostic)
+                  let nextDueValue: number | null = null;
                   let status = 'not_applicable';
                   let cycleForService = currentCycleNum;
 
                   if (!isFirstCycleOnly || currentCycleNum === 1) {
-                    // Calculate the due hour for current cycle
-                    nextDueHour = ((currentCycleNum - 1) * maxInterval) + interval.interval_value;
+                    // Calculate the due value for current cycle
+                    nextDueValue = ((currentCycleNum - 1) * maxInterval) + interval.interval_value;
 
-                    // Special case: if nextDueHour exceeds the current cycle end,
+                    // Special case: if nextDueValue exceeds the current cycle end,
                     // calculate for next cycle instead
-                    const currentCycleEndHour = currentCycleNum * maxInterval;
-                    if ((nextDueHour ?? 0) > currentCycleEndHour) {
+                    const currentCycleEndValue = currentCycleNum * maxInterval;
+                    if ((nextDueValue ?? 0) > currentCycleEndValue) {
                       // This service belongs to next cycle
                       cycleForService = currentCycleNum + 1;
-                      nextDueHour = (currentCycleNum * maxInterval) + interval.interval_value;
+                      nextDueValue = (currentCycleNum * maxInterval) + interval.interval_value;
 
-                      // Only show next cycle services if they're within reasonable range (e.g., 1000 hours)
-                      if (Number(nextDueHour) - componentHours <= 1000) {
+                      // Only show next cycle services if they're within reasonable range (e.g., 1000 units)
+                      if (Number(nextDueValue) - componentValue <= 1000) {
                         status = 'scheduled';
                       } else {
                         status = 'not_applicable';
@@ -222,14 +250,14 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
                     } else {
                       // Current cycle logic (includes services that fall exactly at cycle boundary)
                       // Check if this specific interval was performed in the current cycle
-                      const safeDue = Number(nextDueHour ?? 0)
+                      const safeDue = Number(nextDueValue ?? 0)
                       const wasPerformedInCurrentCycle = safeDue > 0 && currentCycleMaintenances.some((m: any) => {
-                        const maintenanceHours = Number(m.hours) || 0;
-                        // The maintenance should match both the plan ID AND be in the right hour range for this cycle
+                        const maintenanceValue = getMaintenanceValue(m, componentUnit);
+                        // The maintenance should match both the plan ID AND be in the right value range for this cycle
                         const tolerance = 200; // Allow some tolerance for when maintenance is done early/late
 
                         return m.maintenance_plan_id === interval.id &&
-                               Math.abs(maintenanceHours - safeDue) <= tolerance;
+                               Math.abs(maintenanceValue - safeDue) <= tolerance;
                       });
 
                       if (wasPerformedInCurrentCycle) {
@@ -238,7 +266,7 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
                         // Plan-aware coverage: higher/equal interval (same unit/category) covers lower ones
                         // CRITICAL: Coverage is based SOLELY on interval value comparison
                         // If a higher interval service is performed, it covers ALL lower interval services (including future ones)
-                        // Example: If 1500h service performed at 1150h, it covers 300h, 600h, 900h, 1200h, 1500h
+                        // Example: If 1500km service performed at 1150km, it covers 300km, 600km, 900km, 1200km, 1500km
                         // NO timing/position verification needed - purely interval value comparison
                         const isCoveredByHigher = currentCycleMaintenances.some((m: any) => {
                           const performedPlanId = m.maintenance_plan_id;
@@ -250,16 +278,16 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
                           const categoryOk = (performedInterval as any).maintenance_category && (dueInterval as any).maintenance_category ? sameCategory : true;
                           // CRITICAL: Coverage based SOLELY on interval value comparison
                           // If performed interval value >= due interval value, it covers it
-                          // Works forward: performing 1500h covers all intervals <= 1500h, even future ones
+                          // Works forward: performing 1500km covers all intervals <= 1500km, even future ones
                           const higherOrEqual = Number(performedInterval.interval_value) >= Number(dueInterval.interval_value);
                           return sameUnit && categoryOk && higherOrEqual;
                         });
 
                         if (isCoveredByHigher) {
                           status = 'covered';
-                        } else if (componentHours >= Number(nextDueHour)) {
+                        } else if (componentValue >= Number(nextDueValue)) {
                           status = 'overdue';
-                        } else if (componentHours >= Number(nextDueHour) - 100) {
+                        } else if (componentValue >= Number(nextDueValue) - 100) {
                           status = 'upcoming';
                         } else {
                           status = 'scheduled';
@@ -279,12 +307,15 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
                     is_recurring: isRecurring,
                     is_first_cycle_only: isFirstCycleOnly,
                     current_cycle: cycleForService,
-                    next_due_hour: nextDueHour || 0,
+                    next_due_hour: nextDueValue || 0, // Keep for backward compatibility
+                    next_due_value: nextDueValue || 0,
                     status,
                     cycle_length: maxInterval,
                     component_id: component.id,
                     component_name: component.name,
-                    component_hours: componentHours
+                    component_hours: componentValue, // Keep for backward compatibility
+                    component_value: componentValue,
+                    component_unit: componentUnit
                   });
                 });
               });
@@ -331,14 +362,14 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
             const maxInterval = Math.max(...intervals.map(i => i.interval_value));
             setCycleLength(maxInterval);
 
-            // Calculate current cycle
-            const currentHours = asset!.current_hours || 0;
-            const currentCycleNum = Math.floor(currentHours / maxInterval) + 1;
+            // Calculate current cycle using correct unit
+            const currentValue = getCurrentValue(asset!, maintenanceUnit);
+            const currentCycleNum = Math.floor(currentValue / maxInterval) + 1;
             setCurrentCycle(currentCycleNum);
 
             // Find the highest maintenance performed in current cycle (for "covered" logic)
-            const currentCycleStartHour = (currentCycleNum - 1) * maxInterval;
-            const currentCycleEndHour = currentCycleNum * maxInterval;
+            const currentCycleStartValue = (currentCycleNum - 1) * maxInterval;
+            const currentCycleEndValue = currentCycleNum * maxInterval;
 
             // Use preventive, plan-linked entries only for coverage/completion
             // CRITICAL: Fetch maintenance_plans to map maintenance_plan_id to interval_id
@@ -383,26 +414,26 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
                 maintenance_plan_id: m.maintenance_plan_id,
                 interval_id: m.maintenance_plan_id,
                 interval_value: interval?.interval_value,
-                hours: m.hours
+                value: maintenanceUnit === 'kilometers' ? m.kilometers : m.hours
               };
             }));
             const currentCycleMaintenances = preventiveHistory.filter(m => {
-              const mHours = Number(m.hours) || 0;
+              const mValue = getMaintenanceValue(m, maintenanceUnit);
               // Exclude maintenance that marks the end of previous cycle (exactly at cycle boundary)
-              return mHours > currentCycleStartHour && mHours < currentCycleEndHour;
+              return mValue > currentCycleStartValue && mValue < currentCycleEndValue;
             });
             
-            console.log(`[MAINT PAGE ${assetId}] Current cycle: ${currentCycleNum}, Range: ${currentCycleStartHour}h - ${currentCycleEndHour}h`);
+            console.log(`[MAINT PAGE ${assetId}] Current cycle: ${currentCycleNum}, Range: ${currentCycleStartValue}${getUnitLabel(maintenanceUnit)} - ${currentCycleEndValue}${getUnitLabel(maintenanceUnit)}`);
             console.log(`[MAINT PAGE ${assetId}] Current cycle maintenances:`, currentCycleMaintenances.length);
             console.log(`[MAINT PAGE ${assetId}] Current cycle details:`, currentCycleMaintenances.map(m => ({
               date: m.date,
               maintenance_plan_id: m.maintenance_plan_id,
-              hours: m.hours,
+              value: getMaintenanceValue(m, maintenanceUnit),
               interval_value: intervals.find(i => i.id === m.maintenance_plan_id)?.interval_value
             })));
 
             const highestMaintenanceInCycle = currentCycleMaintenances.length > 0
-              ? Math.max(...currentCycleMaintenances.map(m => Number(m.hours) || 0))
+              ? Math.max(...currentCycleMaintenances.map(m => getMaintenanceValue(m, maintenanceUnit)))
               : 0;
 
             // Process intervals for cyclic logic
@@ -412,25 +443,25 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
               const isFirstCycleOnly = (interval as any).is_first_cycle_only === true; // Default to false
               const category = (interval as any).maintenance_category || 'standard';
 
-              // Calculate next due hour for current cycle
-              let nextDueHour: number | null = null;
+              // Calculate next due value for current cycle (unit-agnostic)
+              let nextDueValue: number | null = null;
               let status = 'not_applicable';
               let cycleForService = currentCycleNum;
 
               if (!isFirstCycleOnly || currentCycleNum === 1) {
-                // Calculate the due hour for current cycle
-                nextDueHour = ((currentCycleNum - 1) * maxInterval) + interval.interval_value;
+                // Calculate the due value for current cycle
+                nextDueValue = ((currentCycleNum - 1) * maxInterval) + interval.interval_value;
 
-                // Special case: if nextDueHour exceeds the current cycle end,
+                // Special case: if nextDueValue exceeds the current cycle end,
                 // calculate for next cycle instead
-                const currentCycleEndHour = currentCycleNum * maxInterval;
-                if ((nextDueHour ?? 0) > currentCycleEndHour) {
+                const currentCycleEndValue = currentCycleNum * maxInterval;
+                if ((nextDueValue ?? 0) > currentCycleEndValue) {
                   // This service belongs to next cycle
                   cycleForService = currentCycleNum + 1;
-                  nextDueHour = (currentCycleNum * maxInterval) + interval.interval_value;
+                  nextDueValue = (currentCycleNum * maxInterval) + interval.interval_value;
 
-                  // Only show next cycle services if they're within reasonable range (e.g., 1000 hours)
-                  if (Number(nextDueHour) - currentHours <= 1000) {
+                  // Only show next cycle services if they're within reasonable range (e.g., 1000 units)
+                  if (Number(nextDueValue) - currentValue <= 1000) {
                     status = 'scheduled';
                   } else {
                     status = 'not_applicable';
@@ -442,7 +473,7 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
                   const wasPerformedInCurrentCycle = currentCycleMaintenances.some(m => {
                     const matches = m.maintenance_plan_id === interval.id;
                     if (interval.interval_value === 1500 || matches) {
-                      console.log(`[MAINT PAGE ${assetId}] Checking ${interval.interval_value}h completion:`, {
+                      console.log(`[MAINT PAGE ${assetId}] Checking ${interval.interval_value}${getUnitLabel(maintenanceUnit)} completion:`, {
                         maintenance_plan_id: m.maintenance_plan_id,
                         target_interval_id: interval.id,
                         matches
@@ -468,19 +499,19 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
                       // CRITICAL: Coverage requires interval value >= due interval value
                       const higherOrEqual = Number(performedInterval.interval_value) >= Number(dueInterval.interval_value);
                       
-                      // CRITICAL: Also check timing - the performed service must be done AFTER the due hour
-                      // This prevents a 1500h service at 5145h from covering a 1800h interval due at 5400h
-                      const performedAtHour = Number(m.hours) || 0;
-                      const performedAfterDue = performedAtHour >= Number(nextDueHour);
+                      // CRITICAL: Also check timing - the performed service must be done AFTER the due value
+                      // This prevents a 1500km service at 5145km from covering a 1800km interval due at 5400km
+                      const performedAtValue = getMaintenanceValue(m, maintenanceUnit);
+                      const performedAfterDue = performedAtValue >= Number(nextDueValue);
                       
                       return sameUnit && categoryOk && higherOrEqual && performedAfterDue;
                     });
 
                     if (isCoveredByHigher) {
                       status = 'covered';
-                    } else if (currentHours >= Number(nextDueHour)) {
+                    } else if (currentValue >= Number(nextDueValue)) {
                       status = 'overdue';
-                    } else if (currentHours >= Number(nextDueHour) - 100) {
+                    } else if (currentValue >= Number(nextDueValue) - 100) {
                       status = 'upcoming';
                     } else {
                       status = 'scheduled';
@@ -499,7 +530,8 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
                 is_recurring: isRecurring,
                 is_first_cycle_only: isFirstCycleOnly,
                 current_cycle: cycleForService,
-                next_due_hour: nextDueHour || 0,
+                next_due_hour: nextDueValue || 0, // Keep for backward compatibility
+                next_due_value: nextDueValue || 0,
                 status,
                 cycle_length: maxInterval
               };
@@ -580,28 +612,35 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
   const calculateCycleInfo = () => {
     if (!cycleLength) return null;
 
-    let currentHours: number;
+    let currentValue: number;
     if (isComposite) {
-      // For composite assets, use the maximum current hours from all components
+      // For composite assets, use the maximum current value from all components
       if (combinedMaintenanceHistory && combinedMaintenanceHistory.length > 0) {
-        const maxHours = Math.max(...combinedMaintenanceHistory.map((m: any) => Number(m.hours) || 0));
-        currentHours = maxHours;
+        // Get max value using correct unit per component
+        const maxValue = Math.max(...combinedMaintenanceHistory.map((m: any) => {
+          // Try to determine unit from component if available
+          // For composite, we'll use the maintenance unit from the first component or default
+          const componentUnit = (m as any).component_unit || maintenanceUnit;
+          return getMaintenanceValue(m, componentUnit);
+        }));
+        currentValue = maxValue;
       } else {
-        currentHours = 0;
+        currentValue = 0;
       }
     } else {
-      currentHours = asset?.current_hours || 0;
+      currentValue = getCurrentValue(asset!, maintenanceUnit);
     }
 
-    const hoursInCurrentCycle = currentHours % cycleLength;
+    const valueInCurrentCycle = currentValue % cycleLength;
     const nextCycleStartsAt = currentCycle * cycleLength;
-    const hoursToNextCycle = nextCycleStartsAt - currentHours;
+    const valueToNextCycle = nextCycleStartsAt - currentValue;
 
     return {
-      hoursInCurrentCycle,
+      valueInCurrentCycle,
       nextCycleStartsAt,
-      hoursToNextCycle,
-      progressInCycle: (hoursInCurrentCycle / cycleLength) * 100
+      valueToNextCycle,
+      progressInCycle: (valueInCurrentCycle / cycleLength) * 100,
+      unit: maintenanceUnit
     };
   };
 
@@ -730,7 +769,7 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
                 </CardTitle>
                 <CardDescription>
                   {isComposite
-                    ? "Estado actual del ciclo de mantenimiento del activo compuesto (basado en el componente con más horas)"
+                    ? `Estado actual del ciclo de mantenimiento del activo compuesto (basado en el componente con más ${getUnitDisplayName(maintenanceUnit)})`
                     : "Estado actual del ciclo de mantenimiento del equipo"
                   }
                 </CardDescription>
@@ -744,21 +783,24 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
                     </div>
                   </div>
                   <div className="space-y-2">
-                    <div className="text-sm font-medium text-muted-foreground">Horas Actuales</div>
+                    <div className="text-sm font-medium text-muted-foreground">{getUnitDisplayName(maintenanceUnit).charAt(0).toUpperCase() + getUnitDisplayName(maintenanceUnit).slice(1)} Actuales</div>
                     <div className="text-2xl font-bold">
                       {isComposite
-                        ? `${Math.max(...(combinedMaintenanceHistory || []).map((m: any) => Number(m.hours) || 0))}h (máx. componente)`
-                        : `${asset?.current_hours || 0}h`
+                        ? `${Math.max(...(combinedMaintenanceHistory || []).map((m: any) => {
+                            const componentUnit = (m as any).component_unit || maintenanceUnit;
+                            return getMaintenanceValue(m, componentUnit);
+                          }))}${getUnitLabel(maintenanceUnit)} (máx. componente)`
+                        : `${getCurrentValue(asset!, maintenanceUnit)}${getUnitLabel(maintenanceUnit)}`
                       }
                     </div>
                   </div>
                   <div className="space-y-2">
                     <div className="text-sm font-medium text-muted-foreground">Próximo Ciclo</div>
                     <div className="text-2xl font-bold text-green-600">
-                      {cycleInfo.nextCycleStartsAt}h
+                      {cycleInfo.nextCycleStartsAt}{getUnitLabel(maintenanceUnit)}
                     </div>
                     <div className="text-xs text-muted-foreground">
-                      Faltan {cycleInfo.hoursToNextCycle}h
+                      Faltan {cycleInfo.valueToNextCycle}{getUnitLabel(maintenanceUnit)}
                     </div>
                   </div>
                   <div className="space-y-2">
@@ -791,17 +833,17 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
                   ? `Mantenimientos programados para el Ciclo ${currentCycle} (agregados de todos los componentes)`
                   : `Mantenimientos programados para el Ciclo ${currentCycle}`
                 }
-                {cycleLength > 0 && ` (cada ${cycleLength} horas)`}
+                {cycleLength > 0 && ` (cada ${cycleLength} ${getUnitDisplayName(maintenanceUnit)})`}
               </CardDescription>
                              <div className="mt-2 text-sm text-muted-foreground bg-muted p-2 rounded">
                  <p>
-                   <span className="font-medium">Sistema Cíclico:</span> Los mantenimientos se repiten cada {cycleLength} horas.
-                   Después de completar el mantenimiento a las {cycleLength}h, el ciclo se reinicia y el próximo mantenimiento
-                   será a las {cycleLength + (cyclicIntervals[0]?.interval_value || 0)}h.
+                   <span className="font-medium">Sistema Cíclico:</span> Los mantenimientos se repiten cada {cycleLength} {getUnitDisplayName(maintenanceUnit)}.
+                   Después de completar el mantenimiento a las {cycleLength}{getUnitLabel(maintenanceUnit)}, el ciclo se reinicia y el próximo mantenimiento
+                   será a las {cycleLength + (cyclicIntervals[0]?.interval_value || 0)}{getUnitLabel(maintenanceUnit)}.
                  </p>
                  <p className="mt-1">
                    <span className="font-medium">Lógica de Cobertura:</span> Un mantenimiento mayor puede "cubrir" mantenimientos menores
-                   dentro del mismo ciclo. Por ejemplo, si se realiza el servicio de 600h, este cubre automáticamente el servicio de 300h en el mismo ciclo.
+                   dentro del mismo ciclo. Por ejemplo, si se realiza el servicio de 600{getUnitLabel(maintenanceUnit)}, este cubre automáticamente el servicio de 300{getUnitLabel(maintenanceUnit)} en el mismo ciclo.
                  </p>
                  {isComposite && (
                    <p className="mt-1">
@@ -849,7 +891,7 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
                       <TableHead>Descripción</TableHead>
                       <TableHead>Intervalo Original</TableHead>
                       <TableHead>Estado</TableHead>
-                      <TableHead>Próximo a las</TableHead>
+                      <TableHead>{getTableHeaderLabel(maintenanceUnit)}</TableHead>
                       <TableHead>Acciones</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -876,7 +918,7 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
                                 variant={getStatusBadgeVariant(interval.status)}
                                 className="whitespace-nowrap text-xs inline-flex mb-1"
                               >
-                                {interval.type} {interval.interval_value}h
+                                {interval.type} {interval.interval_value}{isComposite && (interval as any).component_unit ? getUnitLabel((interval as any).component_unit) : getUnitLabel(maintenanceUnit)}
                               </Badge>
                               <div className="text-xs font-medium">
                                 Categoría: {interval.maintenance_category}
@@ -892,7 +934,10 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
                             <TableCell>
                               <div className="font-medium">{(interval as any).component_name}</div>
                               <div className="text-xs text-muted-foreground">
-                                {(interval as any).component_hours}h actuales
+                                {(interval as any).component_value || (interval as any).component_hours || 0}{(interval as any).component_unit ? getUnitLabel((interval as any).component_unit) : getUnitLabel(maintenanceUnit)} actuales
+                                {((interval as any).component_unit && (interval as any).component_unit !== maintenanceUnit) && (
+                                  <span className="ml-1 text-blue-600">({(interval as any).component_unit === 'kilometers' ? 'km' : 'h'})</span>
+                                )}
                               </div>
                             </TableCell>
                           )}
@@ -905,9 +950,9 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
                             )}
                           </TableCell>
                           <TableCell>
-                            <div className="font-medium">Cada {interval.interval_value} horas</div>
+                            <div className="font-medium">Cada {interval.interval_value} {isComposite && (interval as any).component_unit ? getUnitDisplayName((interval as any).component_unit) : getUnitDisplayName(maintenanceUnit)}</div>
                             <div className="text-xs text-muted-foreground mt-1">
-                              En ciclo de {interval.cycle_length}h
+                              En ciclo de {interval.cycle_length}{isComposite && (interval as any).component_unit ? getUnitLabel((interval as any).component_unit) : getUnitLabel(maintenanceUnit)}
                             </div>
                             <Badge variant="secondary" className="text-xs mt-1">
                               {interval.is_recurring ? 'Recurrente' : 'Una vez'}
@@ -918,34 +963,35 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
                               <Badge variant={getStatusBadgeVariant(interval.status)}>
                                 {getStatusLabel(interval.status)}
                               </Badge>
-                              {interval.next_due_hour && asset?.current_hours && (
+                              {interval.next_due_value && (isComposite ? true : getCurrentValue(asset!, maintenanceUnit) > 0) && (
                                 <div className="text-xs text-muted-foreground">
-                                  {interval.status === 'overdue' ? (
-                                    <span className="text-red-600 font-medium">
-                                      Vencido por {asset.current_hours - interval.next_due_hour}h
-                                    </span>
-                                  ) : interval.status === 'upcoming' ? (
-                                    <span className="text-amber-600 font-medium">
-                                      Próximo en {interval.next_due_hour - asset.current_hours}h
-                                    </span>
-                                  ) : interval.status === 'scheduled' ? (
-                                    <span className="text-green-600">
-                                      Faltan {interval.next_due_hour - asset.current_hours}h
-                                    </span>
-                                  ) : null}
+                                  {(() => {
+                                    const currentVal = isComposite ? ((interval as any).component_value || (interval as any).component_hours || 0) : getCurrentValue(asset!, maintenanceUnit);
+                                    const dueVal = interval.next_due_value || interval.next_due_hour || 0;
+                                    const unitLabel = isComposite && (interval as any).component_unit ? getUnitLabel((interval as any).component_unit) : getUnitLabel(maintenanceUnit);
+                                    
+                                    if (interval.status === 'overdue') {
+                                      return <span className="text-red-600 font-medium">Vencido por {currentVal - dueVal}{unitLabel}</span>;
+                                    } else if (interval.status === 'upcoming') {
+                                      return <span className="text-amber-600 font-medium">Próximo en {dueVal - currentVal}{unitLabel}</span>;
+                                    } else if (interval.status === 'scheduled') {
+                                      return <span className="text-green-600">Faltan {dueVal - currentVal}{unitLabel}</span>;
+                                    }
+                                    return null;
+                                  })()}
                                 </div>
                               )}
                             </div>
                           </TableCell>
                           <TableCell>
-                            {interval.next_due_hour ? (
+                            {interval.next_due_value || interval.next_due_hour ? (
                               <div className="space-y-1">
-                                <div className="font-medium">{interval.next_due_hour}h</div>
+                                <div className="font-medium">{(interval.next_due_value || interval.next_due_hour || 0)}{isComposite && (interval as any).component_unit ? getUnitLabel((interval as any).component_unit) : getUnitLabel(maintenanceUnit)}</div>
                                 <div className="text-xs text-muted-foreground">
                                   Ciclo {interval.current_cycle}
                                   {isComposite && (
                                     <div className="text-xs">
-                                      {(interval as any).component_hours}h actuales
+                                      {(interval as any).component_value || (interval as any).component_hours || 0}{(interval as any).component_unit ? getUnitLabel((interval as any).component_unit) : getUnitLabel(maintenanceUnit)} actuales
                                     </div>
                                   )}
                                 </div>
@@ -981,7 +1027,7 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
                                  variant={isOverdue ? "destructive" : "default"}
                                  asChild
                                >
-                                 <Link href={`/activos/${isComposite ? (interval as any).component_id : assetId}/mantenimiento/nuevo?planId=${interval.interval_id}&cycleHour=${interval.next_due_hour}`}>
+                                 <Link href={`/activos/${isComposite ? (interval as any).component_id : assetId}/mantenimiento/nuevo?planId=${interval.interval_id}&cycleHour=${interval.next_due_value || interval.next_due_hour || 0}`}>
                                    <Wrench className="h-4 w-4 mr-2" />
                                    {isOverdue ? "¡Urgente!" : isUpcoming ? "Programar" : "Registrar"}
                                  </Link>

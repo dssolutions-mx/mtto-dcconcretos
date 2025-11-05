@@ -26,6 +26,7 @@ import { Switch } from "@/components/ui/switch"
 import { EvidenceUpload, type EvidencePhoto } from "@/components/ui/evidence-upload"
 import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { getMaintenanceUnit, getCurrentValue, getUnitLabel, getUnitDisplayName, type MaintenanceUnit } from "@/lib/utils/maintenance-units"
 
 // Date picker component
 function DatePicker({ date, setDate }: { date: Date | undefined, setDate: (date: Date | undefined) => void }) {
@@ -65,6 +66,7 @@ const workOrderCompletionSchema = z.object({
   }),
   completion_time: z.string().min(1, "La hora de finalización es requerida"),
   equipment_hours: z.coerce.number().min(0, "Las horas del equipo no pueden ser negativas").optional(),
+  equipment_kilometers: z.coerce.number().min(0, "Los kilómetros del equipo no pueden ser negativos").optional(),
   downtime_hours: z.coerce.number().min(0, "Las horas de inactividad no pueden ser negativas"),
   technician_notes: z.string().optional(),
   resolution_details: z.string().min(1, "Los detalles de resolución son requeridos"),
@@ -115,12 +117,14 @@ export function WorkOrderCompletionForm({ workOrderId, initialData }: WorkOrderC
     completed: boolean
     checklistId: string | null
   }>({ required: false, completed: false, checklistId: null })
+  const [maintenanceUnit, setMaintenanceUnit] = useState<MaintenanceUnit>('hours')
 
   // Default form values
   const defaultValues: Partial<WorkOrderCompletionFormValues> = {
     completion_date: initialData?.completion_date ? new Date(initialData.completion_date) : new Date(),
     completion_time: initialData?.completion_time || "",
     equipment_hours: 0, // Will be populated from asset data
+    equipment_kilometers: 0, // Will be populated from asset data
     downtime_hours: initialData?.downtime_hours || 0,
     technician_notes: initialData?.technician_notes || "",
     resolution_details: initialData?.resolution_details || "",
@@ -170,9 +174,18 @@ export function WorkOrderCompletionForm({ workOrderId, initialData }: WorkOrderC
         if (orderError) throw orderError
         setWorkOrder(orderData)
         
-        // Set equipment hours from asset current_hours
-        if (orderData.asset?.current_hours) {
-          form.setValue('equipment_hours', orderData.asset.current_hours)
+        // Detect maintenance unit from asset model
+        const unit = getMaintenanceUnit(orderData.asset || {})
+        setMaintenanceUnit(unit)
+        
+        // Set equipment value (hours or kilometers) from asset based on unit
+        if (orderData.asset) {
+          const currentValue = getCurrentValue(orderData.asset, unit)
+          if (unit === 'kilometers') {
+            form.setValue('equipment_kilometers', currentValue)
+          } else {
+            form.setValue('equipment_hours', currentValue)
+          }
         }
         
         // Log maintenance_plan_id for debugging
@@ -181,7 +194,8 @@ export function WorkOrderCompletionForm({ workOrderId, initialData }: WorkOrderC
           type: orderData.type,
           status: orderData.status,
           maintenance_plan_id: orderData.maintenance_plan_id || null,
-          asset_current_hours: orderData.asset?.current_hours || 0
+          maintenance_unit: unit,
+          asset_current_value: orderData.asset ? getCurrentValue(orderData.asset, unit) : 0
         });
         
         // Check if this is a preventive order that requires checklist
@@ -468,7 +482,8 @@ export function WorkOrderCompletionForm({ workOrderId, initialData }: WorkOrderC
           completionData: {
             resolution_details: updatedData.resolution_details,
             technician_notes: updatedData.technician_notes || '',
-            equipment_hours: updatedData.equipment_hours || workOrder?.asset?.current_hours || null, // Include equipment hours
+            equipment_hours: maintenanceUnit === 'hours' ? (updatedData.equipment_hours || getCurrentValue(workOrder?.asset || {}, maintenanceUnit) || null) : null,
+            equipment_kilometers: maintenanceUnit === 'kilometers' ? (updatedData.equipment_kilometers || getCurrentValue(workOrder?.asset || {}, maintenanceUnit) || null) : null,
             downtime_hours: updatedData.downtime_hours || 0,
             labor_hours: updatedData.labor_hours || 0,
             labor_cost: updatedData.labor_cost || 0,
@@ -487,7 +502,8 @@ export function WorkOrderCompletionForm({ workOrderId, initialData }: WorkOrderC
           asset_id: workOrder.asset.id,
           date: updatedData.completion_date.toISOString(),
           type: workOrder.type,
-          hours: updatedData.equipment_hours || workOrder.asset.current_hours || null, // Include equipment hours
+          hours: maintenanceUnit === 'hours' ? (updatedData.equipment_hours || getCurrentValue(workOrder.asset, maintenanceUnit) || null) : null,
+          kilometers: maintenanceUnit === 'kilometers' ? (updatedData.equipment_kilometers || getCurrentValue(workOrder.asset, maintenanceUnit) || null) : null,
           description: workOrder.description,
           technician_id: workOrder.assigned_to,
           labor_hours: updatedData.labor_hours,
@@ -854,28 +870,57 @@ export function WorkOrderCompletionForm({ workOrderId, initialData }: WorkOrderC
             />
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              <FormField
-                control={form.control}
-                name="equipment_hours"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Horas del equipo</FormLabel>
-                    <FormControl>
-                      <Input 
-                        type="number" 
-                        min="0" 
-                        step="1" 
-                        placeholder="Ej: 1500"
-                        {...field} 
-                      />
-                    </FormControl>
-                    <FormDescription className="text-xs">
-                      Horas registradas en el horómetro
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+              {maintenanceUnit === 'kilometers' ? (
+                <FormField
+                  control={form.control}
+                  name="equipment_kilometers"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Kilómetros del equipo</FormLabel>
+                      <FormControl>
+                        <Input 
+                          type="number" 
+                          min="0" 
+                          step="1" 
+                          placeholder="Ej: 50000"
+                          {...field} 
+                          value={field.value || ''}
+                          onChange={(e) => field.onChange(e.target.value ? Number(e.target.value) : undefined)}
+                        />
+                      </FormControl>
+                      <FormDescription className="text-xs">
+                        Kilómetros registrados en el odómetro
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              ) : (
+                <FormField
+                  control={form.control}
+                  name="equipment_hours"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Horas del equipo</FormLabel>
+                      <FormControl>
+                        <Input 
+                          type="number" 
+                          min="0" 
+                          step="1" 
+                          placeholder="Ej: 1500"
+                          {...field} 
+                          value={field.value || ''}
+                          onChange={(e) => field.onChange(e.target.value ? Number(e.target.value) : undefined)}
+                        />
+                      </FormControl>
+                      <FormDescription className="text-xs">
+                        Horas registradas en el horómetro
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
 
               <FormField
                 control={form.control}

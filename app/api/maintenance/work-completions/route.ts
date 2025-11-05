@@ -226,6 +226,16 @@ export async function POST(request: Request) {
     // If maintenance history data is provided, add it
     let maintenanceHistoryId = null;
     if (maintenanceHistoryData) {
+      // Get asset to determine maintenance unit
+      const { data: assetData } = await supabase
+        .from('assets')
+        .select('equipment_models(maintenance_unit)')
+        .eq('id', existingOrder.asset_id)
+        .single();
+      
+      const maintenanceUnit = (assetData as any)?.equipment_models?.maintenance_unit || 'hours';
+      const isKilometers = maintenanceUnit === 'kilometers' || maintenanceUnit === 'kilometres';
+      
       // Ensure all completion data is stored in the maintenance history
       const enhancedHistoryData: any = {
         ...maintenanceHistoryData,
@@ -233,8 +243,9 @@ export async function POST(request: Request) {
         downtime_hours: completionData.downtime_hours || 0,
         technician_notes: completionData.technician_notes || '',
         resolution_details: completionData.resolution_details,
-        // Override hours with equipment_hours from completionData if available
-        hours: completionData.equipment_hours || maintenanceHistoryData.hours || null,
+        // Override hours/kilometers with equipment_hours/equipment_kilometers from completionData if available
+        hours: isKilometers ? null : (completionData.equipment_hours || maintenanceHistoryData.hours || null),
+        kilometers: isKilometers ? (completionData.equipment_kilometers || maintenanceHistoryData.kilometers || null) : null,
       };
 
       // Derive required NOT NULL fields for maintenance_history
@@ -277,7 +288,9 @@ export async function POST(request: Request) {
         asset_id: enhancedHistoryData.asset_id,
         date: enhancedHistoryData.date,
         type: enhancedHistoryData.type,
-        hours: enhancedHistoryData.hours || 'no_hours_provided', // Equipment hours - THE KEY FIELD WE FIXED
+        maintenance_unit: maintenanceUnit,
+        hours: enhancedHistoryData.hours || (isKilometers ? 'null (using kilometers)' : 'no_hours_provided'),
+        kilometers: enhancedHistoryData.kilometers || (isKilometers ? 'no_kilometers_provided' : 'null (using hours)'),
         labor_hours: enhancedHistoryData.labor_hours,
         maintenance_plan_id: enhancedHistoryData.maintenance_plan_id || null
       }));

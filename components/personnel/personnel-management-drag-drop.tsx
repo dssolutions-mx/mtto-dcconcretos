@@ -13,6 +13,8 @@ import { Loader2, Search, Filter, Users, Building2, MapPin, RefreshCw, CheckCirc
 import { PersonnelDraggableItem } from './personnel-draggable-item'
 import { useAuthZustand } from '@/hooks/use-auth-zustand'
 import { UserRegistrationTool } from '@/components/auth/user-registration-tool'
+import { MoveConflictDialog, ConflictData, ResolutionStrategy } from './dialogs/move-conflict-dialog'
+import { BatchAssignmentDialog } from './batch-assignment-dialog'
 
 interface Profile {
   id: string
@@ -241,11 +243,13 @@ function PlantContainer({
 function UnassignedContainer({
   operators,
   onDrop,
-  draggedOperator
+  draggedOperator,
+  onBatchAssign
 }: {
   operators: Profile[]
   onDrop: (operatorId: string, target: { type: 'businessUnit' | 'plant' | 'unassigned', id?: string }) => void
   draggedOperator: Profile | null
+  onBatchAssign?: (operators: Profile[]) => void
 }) {
   
   const { setNodeRef, isOver } = useDroppable({
@@ -274,9 +278,21 @@ function UnassignedContainer({
               <p className="text-sm text-gray-600">Personal disponible para asignación</p>
             </div>
           </div>
-          <Badge variant="outline" className="bg-gray-50 text-gray-700">
-            {unassignedOperators.length}
-          </Badge>
+          <div className="flex items-center gap-2">
+            {onBatchAssign && unassignedOperators.length > 1 && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => onBatchAssign(unassignedOperators)}
+                className="text-xs"
+              >
+                Asignación Masiva
+              </Button>
+            )}
+            <Badge variant="outline" className="bg-gray-50 text-gray-700">
+              {unassignedOperators.length}
+            </Badge>
+          </div>
         </div>
       </CardHeader>
 
@@ -292,10 +308,20 @@ function UnassignedContainer({
         <ScrollArea className="h-80">
           <div className="space-y-2 pr-2">
             {unassignedOperators.length === 0 ? (
-              <div className="text-center py-8 text-gray-500">
-                <Users className="h-12 w-12 mx-auto mb-3 opacity-50" />
-                <p className="font-medium">Todo el personal está asignado</p>
-                <p className="text-sm">Arrastra personal aquí para desasignar</p>
+              <div className="text-center py-12 text-gray-500">
+                <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-gray-100 mb-4">
+                  <Users className="h-8 w-8 text-gray-400" />
+                </div>
+                <h3 className="text-lg font-semibold text-gray-700 mb-2">
+                  Todo el personal está asignado
+                </h3>
+                <p className="text-sm text-gray-500 mb-4">
+                  Arrastra personal aquí para desasignar y hacerlo disponible para otras ubicaciones
+                </p>
+                <div className="flex items-center justify-center gap-2 text-xs text-gray-400">
+                  <MapPin className="h-4 w-4" />
+                  <span>O asigna personal nuevo desde el registro</span>
+                </div>
               </div>
             ) : (
               unassignedOperators.map((operator) => (
@@ -320,6 +346,11 @@ export function PersonnelManagementDragDrop() {
   const [businessUnits, setBusinessUnits] = useState<BusinessUnit[]>([])
   const [loading, setLoading] = useState(true)
   const [draggedOperator, setDraggedOperator] = useState<Profile | null>(null)
+  const [conflictDialogOpen, setConflictDialogOpen] = useState(false)
+  const [conflictData, setConflictData] = useState<ConflictData | null>(null)
+  const [pendingMove, setPendingMove] = useState<{ operatorId: string; updateData: any; targetName: string } | null>(null)
+  const [batchDialogOpen, setBatchDialogOpen] = useState(false)
+  const [selectedOperators, setSelectedOperators] = useState<Profile[]>([])
   
   // Filtros
   const [searchTerm, setSearchTerm] = useState('')
@@ -382,11 +413,13 @@ export function PersonnelManagementDragDrop() {
 
       if (profile?.role === 'JEFE_UNIDAD_NEGOCIO' && profile?.business_unit_id) {
         // JEFE_UNIDAD_NEGOCIO can only see their business unit and its personnel/plants
+        // Also include unassigned operators (no plant_id and no business_unit_id) so they can assign them
         filteredBusinessUnits = businessUnits.filter((bu: BusinessUnit) => bu.id === profile.business_unit_id)
         filteredPlants = plants.filter((p: Plant) => p.business_unit_id === profile.business_unit_id)
         filteredOperators = operators.filter((op: Profile) => 
           op.business_unit_id === profile.business_unit_id || 
-          filteredPlants.some((p: Plant) => p.id === op.plant_id)
+          filteredPlants.some((p: Plant) => p.id === op.plant_id) ||
+          (!op.plant_id && !op.business_unit_id) // Include unassigned operators
         )
       } else if (profile?.role === 'JEFE_PLANTA' && profile?.plant_id) {
         // JEFE_PLANTA can only see their plant and its personnel
@@ -498,8 +531,49 @@ export function PersonnelManagementDragDrop() {
         body: JSON.stringify(updateData),
       })
 
+      const data = await response.json()
+
       if (!response.ok) {
-        throw new Error('Failed to update assignment')
+        // Check if this is a conflict response
+        if (response.status === 409 && data.conflicts) {
+          // Get plant names for display
+          const currentPlant = operator.plant_id ? plants.find(p => p.id === operator.plant_id) : null
+          const newPlant = updateData.plant_id ? plants.find(p => p.id === updateData.plant_id) : null
+
+          const conflictData: ConflictData = {
+            type: 'operator_move',
+            operatorId: operator.id,
+            operatorName: `${operator.nombre} ${operator.apellido}`,
+            employeeCode: operator.employee_code,
+            currentPlantId: operator.plant_id || null,
+            currentPlantName: currentPlant?.name || null,
+            newPlantId: updateData.plant_id || null,
+            newPlantName: newPlant?.name || null,
+            affected_assets: data.affected_assets || [],
+            assets_in_new_plant: data.assets_in_new_plant || [],
+            assets_in_other_plants: data.assets_in_other_plants || []
+          }
+
+          setConflictData(conflictData)
+          setPendingMove({ operatorId, updateData, targetName })
+          setConflictDialogOpen(true)
+          
+          // Rollback optimistic update
+          setOperators(prev => prev.map(op => {
+            if (op.id === operatorId) {
+              return {
+                ...op,
+                plant_id: op._originalPlantId!,
+                business_unit_id: op._originalBusinessUnitId!,
+                _isUpdating: false
+              }
+            }
+            return op
+          }))
+          return
+        }
+
+        throw new Error(data.error || 'Failed to update assignment')
       }
 
       // Confirmar el cambio exitoso
@@ -543,6 +617,137 @@ export function PersonnelManagementDragDrop() {
       toast.error('Error al actualizar asignación. Cambio revertido.')
     }
   }, [operators, businessUnits, plants, handleOptimisticUpdate])
+
+  const handleConflictResolve = useCallback(async (strategy: ResolutionStrategy) => {
+    if (!pendingMove) return
+
+    if (strategy === 'cancel') {
+      setPendingMove(null)
+      setConflictData(null)
+      return
+    }
+
+    // Apply optimistic update again
+    const operator = operators.find(op => op.id === pendingMove.operatorId)
+    if (operator) {
+      handleOptimisticUpdate(pendingMove.operatorId, {
+        type: pendingMove.updateData.plant_id ? 'plant' : 
+              pendingMove.updateData.business_unit_id ? 'businessUnit' : 'unassigned',
+        id: pendingMove.updateData.plant_id || pendingMove.updateData.business_unit_id
+      })
+    }
+
+    try {
+      const response = await fetch(`/api/operators/register/${pendingMove.operatorId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...pendingMove.updateData,
+          resolve_conflicts: strategy
+        }),
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to update assignment')
+      }
+
+      // Confirm success
+      setOperators(prev => prev.map(op => {
+        if (op.id === pendingMove.operatorId) {
+          return {
+            ...op,
+            _isUpdating: false,
+            _originalPlantId: undefined,
+            _originalBusinessUnitId: undefined
+          }
+        }
+        return op
+      }))
+
+      toast.success(
+        <div className="flex items-center gap-2">
+          <CheckCircle2 className="h-4 w-4" />
+          <span>{operator?.nombre} {operator?.apellido} → {pendingMove.targetName}</span>
+        </div>
+      )
+    } catch (error) {
+      console.error('Error updating assignment:', error)
+      
+      // Rollback
+      setOperators(prev => prev.map(op => {
+        if (op.id === pendingMove.operatorId) {
+          return {
+            ...op,
+            plant_id: op._originalPlantId!,
+            business_unit_id: op._originalBusinessUnitId!,
+            _isUpdating: false,
+            _originalPlantId: undefined,
+            _originalBusinessUnitId: undefined
+          }
+        }
+        return op
+      }))
+
+      toast.error('Error al actualizar asignación. Cambio revertido.')
+    } finally {
+      setPendingMove(null)
+      setConflictData(null)
+    }
+  }, [pendingMove, operators, handleOptimisticUpdate])
+
+  const handleConflictCancel = useCallback(() => {
+    setPendingMove(null)
+    setConflictData(null)
+  }, [])
+
+  const handleBatchAssign = useCallback(async (
+    operatorIds: string[], 
+    targetType: 'plant' | 'businessUnit', 
+    targetId: string
+  ) => {
+    try {
+      // Get target plant/business unit info
+      let targetPlantId: string | null = null
+      let targetBusinessUnitId: string | null = null
+
+      if (targetType === 'plant') {
+        const plant = plants.find(p => p.id === targetId)
+        if (plant) {
+          targetPlantId = plant.id
+          targetBusinessUnitId = plant.business_unit_id
+        }
+      } else {
+        targetBusinessUnitId = targetId
+      }
+
+      // Assign each operator
+      const promises = operatorIds.map(async (operatorId) => {
+        const response = await fetch(`/api/operators/register/${operatorId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            plant_id: targetPlantId,
+            business_unit_id: targetBusinessUnitId
+          }),
+        })
+
+        if (!response.ok) {
+          const data = await response.json()
+          throw new Error(data.error || `Failed to assign operator ${operatorId}`)
+        }
+      })
+
+      await Promise.all(promises)
+
+      // Refresh data
+      await fetchData()
+    } catch (error) {
+      console.error('Error in batch assignment:', error)
+      throw error
+    }
+  }, [plants, fetchData])
 
   const handleDragEnd = useCallback(async (event: DragEndEvent) => {
     const { active, over } = event
@@ -608,12 +813,15 @@ export function PersonnelManagementDragDrop() {
   return (
     <div className="space-y-6">
       {/* Header con filtros */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Filter className="h-5 w-5" />
+      <Card className="border-2">
+        <CardHeader className="bg-gradient-to-r from-blue-50 to-indigo-50 border-b">
+          <CardTitle className="flex items-center gap-2 text-xl">
+            <Filter className="h-6 w-6 text-blue-600" />
             Gestión de Personal
           </CardTitle>
+          <p className="text-sm text-gray-600 mt-2">
+            Arrastra y suelta personal entre unidades de negocio y plantas, o usa asignación masiva para múltiples operadores
+          </p>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -729,6 +937,10 @@ export function PersonnelManagementDragDrop() {
             operators={filteredOperators}
             onDrop={handleDrop}
             draggedOperator={draggedOperator}
+            onBatchAssign={(ops) => {
+              setSelectedOperators(ops)
+              setBatchDialogOpen(true)
+            }}
           />
 
           {/* Business Units con sus plantas */}
@@ -756,6 +968,25 @@ export function PersonnelManagementDragDrop() {
           )}
         </DragOverlay>
       </DndContext>
+
+      {/* Conflict Resolution Dialog */}
+      <MoveConflictDialog
+        open={conflictDialogOpen}
+        onOpenChange={setConflictDialogOpen}
+        conflictData={conflictData}
+        onResolve={handleConflictResolve}
+        onCancel={handleConflictCancel}
+      />
+
+      {/* Batch Assignment Dialog */}
+      <BatchAssignmentDialog
+        open={batchDialogOpen}
+        onOpenChange={setBatchDialogOpen}
+        selectedOperators={selectedOperators}
+        plants={plants}
+        businessUnits={businessUnits}
+        onAssign={handleBatchAssign}
+      />
 
       {/* Botón de actualizar */}
       <div className="flex justify-end">

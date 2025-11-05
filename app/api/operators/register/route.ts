@@ -220,9 +220,10 @@ export async function GET(request: NextRequest) {
     if (currentProfile.role === 'GERENCIA_GENERAL') {
       // General management can see all operators
     } else if (currentProfile.role === 'JEFE_UNIDAD_NEGOCIO') {
-      // Business unit managers can see operators in their business unit
+      // Business unit managers can see operators in their business unit AND unassigned operators
       if (currentProfile.business_unit_id) {
-        query = query.eq('business_unit_id', currentProfile.business_unit_id)
+        // Use OR filter to include both assigned and unassigned operators
+        query = query.or(`business_unit_id.eq.${currentProfile.business_unit_id},business_unit_id.is.null`)
       }
     } else if (currentProfile.role === 'JEFE_PLANTA' || currentProfile.role === 'ENCARGADO_MANTENIMIENTO') {
       // Plant managers and maintenance specialists can see operators in their plant
@@ -236,7 +237,12 @@ export async function GET(request: NextRequest) {
 
     // Apply additional filters if provided
     if (plant_id) {
-      query = query.eq('plant_id', plant_id)
+      // For business unit managers, include unassigned operators even when plant_id filter is applied
+      if (currentProfile.role === 'JEFE_UNIDAD_NEGOCIO') {
+        query = query.or(`plant_id.eq.${plant_id},plant_id.is.null`)
+      } else {
+        query = query.eq('plant_id', plant_id)
+      }
     }
 
     if (business_unit_id) {

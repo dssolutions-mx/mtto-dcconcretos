@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase-server'
 import { NextRequest, NextResponse } from 'next/server'
+import { checkAssetOperatorConflicts } from '@/lib/utils/conflict-detection'
 
 export async function PATCH(
   request: NextRequest,
@@ -34,7 +35,7 @@ export async function PATCH(
     // Await params before accessing its properties
     const resolvedParams = await params
     const assetId = resolvedParams.id
-    const { plant_id, notes } = await request.json()
+    const { plant_id, notes, resolve_conflicts } = await request.json()
 
     // Get current asset to verify it exists and check current assignment
     const { data: currentAsset, error: assetError } = await supabase
@@ -84,6 +85,98 @@ export async function PATCH(
         return NextResponse.json({ 
           error: 'No puedes modificar activos de otras unidades de negocio' 
         }, { status: 403 })
+      }
+    }
+
+    // Check for conflicts with assigned operators
+    const conflictCheck = await checkAssetOperatorConflicts(assetId, plant_id || null)
+    
+    // If conflicts exist and no resolution strategy provided, return conflict information
+    if (conflictCheck.conflicts && !resolve_conflicts) {
+      return NextResponse.json({
+        conflicts: true,
+        resolution_required: true,
+        affected_operators: conflictCheck.affected_operators,
+        canTransfer: conflictCheck.canTransfer,
+        requiresUnassign: conflictCheck.requiresUnassign,
+        message: 'Asset has assigned operators that may be affected by this move. Please provide a resolution strategy.'
+      }, { status: 409 }) // 409 Conflict
+    }
+
+    // Handle conflict resolution if provided
+    if (conflictCheck.conflicts && resolve_conflicts) {
+      if (resolve_conflicts === 'cancel') {
+        return NextResponse.json({
+          error: 'Move cancelled by user',
+          conflicts: true
+        }, { status: 400 })
+      }
+
+      if (resolve_conflicts === 'unassign') {
+        // Unassign all operators from this asset
+        const { error: unassignError } = await supabase
+          .from('asset_operators')
+          .update({
+            status: 'inactive',
+            end_date: new Date().toISOString().split('T')[0],
+            updated_by: user.id,
+            updated_at: new Date().toISOString(),
+            notes: `Unassigned due to asset move to ${plant_id ? 'new plant' : 'unassigned'}`
+          })
+          .eq('asset_id', assetId)
+          .eq('status', 'active')
+
+        if (unassignError) {
+          console.error('Error unassigning operators:', unassignError)
+          return NextResponse.json({
+            error: 'Failed to unassign operators',
+            details: unassignError.message
+          }, { status: 500 })
+        }
+      } else if (resolve_conflicts === 'transfer_operators' && plant_id) {
+        // Transfer operators to new plant if possible
+        if (!conflictCheck.canTransfer) {
+          return NextResponse.json({
+            error: 'Cannot transfer operators - some operators are in different business units',
+            conflicts: true,
+            requiresUnassign: true
+          }, { status: 400 })
+        }
+
+        // Get new plant's business unit
+        const { data: newPlant } = await supabase
+          .from('plants')
+          .select('business_unit_id')
+          .eq('id', plant_id)
+          .single()
+
+        if (!newPlant) {
+          return NextResponse.json({
+            error: 'Target plant not found'
+          }, { status: 404 })
+        }
+
+        // Update operators to new plant (only if they're unassigned or in same business unit)
+        for (const operator of conflictCheck.affected_operators) {
+          if (!operator.plant_id || operator.business_unit_id === newPlant.business_unit_id) {
+            const { error: updateOpError } = await supabase
+              .from('profiles')
+              .update({
+                plant_id: plant_id,
+                business_unit_id: newPlant.business_unit_id,
+                updated_by: user.id,
+                updated_at: new Date().toISOString()
+              })
+              .eq('id', operator.id)
+
+            if (updateOpError) {
+              console.error(`Error transferring operator ${operator.id}:`, updateOpError)
+            }
+          }
+        }
+      } else if (resolve_conflicts === 'keep') {
+        // Keep assignments but log warning
+        console.warn(`Asset ${assetId} moved to plant ${plant_id} with operators that may lose access`)
       }
     }
 

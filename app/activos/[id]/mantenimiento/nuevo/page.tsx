@@ -24,6 +24,13 @@ import { createClient } from "@/lib/supabase";
 import { EvidenceUpload, type EvidencePhoto } from "@/components/ui/evidence-upload";
 import { Separator } from "@/components/ui/separator";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { 
+  getMaintenanceUnit, 
+  getCurrentValue, 
+  getUnitLabel, 
+  getUnitDisplayName,
+  type MaintenanceUnit 
+} from "@/lib/utils/maintenance-units";
 
 interface MaintenancePart {
   name: string;
@@ -79,6 +86,9 @@ export default function NewMaintenancePage({ params }: NewMaintenancePageProps) 
   
   const { asset, loading: assetLoading, error: assetError } = useAsset(assetId);
   
+  // Maintenance unit state
+  const [maintenanceUnit, setMaintenanceUnit] = useState<MaintenanceUnit>('hours');
+  
   // Planning-focused state variables
   const [plannedDate, setPlannedDate] = useState<Date>(new Date());
   const [maintenanceType, setMaintenanceType] = useState<string>("Preventivo");
@@ -113,6 +123,14 @@ export default function NewMaintenancePage({ params }: NewMaintenancePageProps) 
   // Evidence state for planning documentation
   const [planningDocuments, setPlanningDocuments] = useState<EvidencePhoto[]>([]);
   const [showDocumentsDialog, setShowDocumentsDialog] = useState(false);
+  
+  // Update maintenance unit when asset changes
+  useEffect(() => {
+    if (asset) {
+      const unit = getMaintenanceUnit(asset);
+      setMaintenanceUnit(unit);
+    }
+  }, [asset]);
   
   // Cargar el plan de mantenimiento si se proporcionó un ID
   useEffect(() => {
@@ -156,35 +174,45 @@ export default function NewMaintenancePage({ params }: NewMaintenancePageProps) 
         
         // Calcular el estado del mantenimiento
         if (planData && asset) {
+          // Get maintenance unit from asset model
+          const maintenanceUnit = (asset as any).equipment_models?.maintenance_unit || 
+                                  (asset as any).model?.maintenance_unit || 
+                                  'hours';
+          const isKilometers = maintenanceUnit === 'kilometers' || maintenanceUnit === 'kilometres';
+          
           const lastMaintenance = lastMaintenanceData && lastMaintenanceData.length > 0 ? lastMaintenanceData[0] : null;
-          let lastMaintenanceHours = 0;
+          let lastMaintenanceValue = 0;
           let lastMaintenanceDate = asset.last_maintenance_date;
           
           if (lastMaintenance) {
-            lastMaintenanceHours = Number(lastMaintenance.hours) || 0;
+            lastMaintenanceValue = isKilometers 
+              ? Number(lastMaintenance.kilometers) || 0 
+              : Number(lastMaintenance.hours) || 0;
             lastMaintenanceDate = lastMaintenance.date;
           }
           
-          // Calcular próximo mantenimiento por horas
+          // Calcular próximo mantenimiento por valor (horas o kilómetros)
           const interval = planData.interval_value || 0;
-          const nextHours = lastMaintenanceHours + interval;
+          const nextValue = lastMaintenanceValue + interval;
           
           // Calcular si está pendiente o vencido
-          const currentHours = asset.current_hours || 0;
-          const hoursOverdue = currentHours - nextHours;
-          const isHoursOverdue = hoursOverdue >= 0;
+          const currentValue = isKilometers 
+            ? (asset.current_kilometers || 0) 
+            : (asset.current_hours || 0);
+          const valueOverdue = currentValue - nextValue;
+          const isOverdue = valueOverdue >= 0;
           
           // Calcular el progreso
           let progress = 0;
-          if (currentHours && lastMaintenanceHours && interval > 0) {
-            const hoursDiff = currentHours - lastMaintenanceHours;
-            progress = Math.min(Math.round((hoursDiff / interval) * 100), 100);
+          if (currentValue && lastMaintenanceValue && interval > 0) {
+            const valueDiff = currentValue - lastMaintenanceValue;
+            progress = Math.min(Math.round((valueDiff / interval) * 100), 100);
           }
           
           setMaintenanceStatus({
-            isOverdue: isHoursOverdue,
+            isOverdue: isOverdue,
             isPending: progress >= 90,
-            hoursOverdue: isHoursOverdue ? hoursOverdue : undefined,
+            hoursOverdue: isOverdue ? valueOverdue : undefined,
             progress,
             lastMaintenanceDate: lastMaintenanceDate || undefined
           });
@@ -421,7 +449,7 @@ export default function NewMaintenancePage({ params }: NewMaintenancePageProps) 
                     className="ml-2 whitespace-nowrap"
                   >
                     {maintenancePlan.type}
-                    {maintenancePlan.interval_value && ` ${maintenancePlan.interval_value}h`}
+                    {maintenancePlan.interval_value && ` ${maintenancePlan.interval_value}${getUnitLabel(maintenanceUnit)}`}
                   </Badge>
                 </CardTitle>
                 <CardDescription>
@@ -453,7 +481,7 @@ export default function NewMaintenancePage({ params }: NewMaintenancePageProps) 
                 <div className="bg-white rounded-md border p-3 space-y-1">
                   <div className="text-sm font-medium text-muted-foreground">Frecuencia</div>
                   <div className="font-medium">
-                    {maintenancePlan.interval_value && `Cada ${maintenancePlan.interval_value} horas`}
+                    {maintenancePlan.interval_value && `Cada ${maintenancePlan.interval_value} ${getUnitDisplayName(maintenanceUnit)}`}
                   </div>
                 </div>
                 
@@ -485,7 +513,7 @@ export default function NewMaintenancePage({ params }: NewMaintenancePageProps) 
                   </div>
                   
                   <div className="text-xs text-muted-foreground mb-2">
-                    Horas actuales del equipo: {asset?.current_hours || 0}h
+                    {getUnitDisplayName(maintenanceUnit).charAt(0).toUpperCase() + getUnitDisplayName(maintenanceUnit).slice(1)} actuales del equipo: {getCurrentValue(asset || {}, maintenanceUnit)}{getUnitLabel(maintenanceUnit)}
                   </div>
                   
                   {maintenanceStatus.lastMaintenanceDate && (
@@ -499,7 +527,7 @@ export default function NewMaintenancePage({ params }: NewMaintenancePageProps) 
                     <div className="flex items-center gap-2 text-sm text-red-600 font-medium">
                       <AlertTriangle className="h-4 w-4" />
                       {maintenanceStatus.hoursOverdue !== undefined && (
-                        <span>¡Mantenimiento vencido por {maintenanceStatus.hoursOverdue} horas!</span>
+                        <span>¡Mantenimiento vencido por {maintenanceStatus.hoursOverdue} {getUnitDisplayName(maintenanceUnit)}!</span>
                       )}
                     </div>
                   )}

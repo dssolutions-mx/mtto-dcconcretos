@@ -24,6 +24,8 @@ import { getAssetStatusConfig } from '@/lib/utils/asset-status'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
 import { Alert, AlertDescription } from '@/components/ui/alert'
+import { MoveConflictDialog, ConflictData, ResolutionStrategy } from '@/components/personnel/dialogs/move-conflict-dialog'
+import { QuickOperatorAssignmentDialog } from './quick-operator-assignment-dialog'
 
 import {
   DndContext,
@@ -254,10 +256,12 @@ function PlantContainer({
             </SortableContext>
             
             {plantAssets.length === 0 && !isOver && (
-              <div className="text-center py-4 text-gray-400">
-                <Package className="h-6 w-6 mx-auto mb-1 opacity-50" />
-                <p className="text-[10px] font-medium">Sin activos asignados</p>
-                <p className="text-[8px]">Arrastra activos aquí para asignarlos</p>
+              <div className="text-center py-6 text-gray-400">
+                <div className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-gray-100 mb-2">
+                  <Package className="h-5 w-5 text-gray-400" />
+                </div>
+                <p className="text-xs font-medium text-gray-600 mb-1">Sin activos asignados</p>
+                <p className="text-[10px] text-gray-500">Arrastra activos desde el panel izquierdo para asignarlos a esta planta</p>
               </div>
             )}
           </div>
@@ -390,13 +394,18 @@ function UnassignedAssetsContainer({
             </SortableContext>
             
             {filteredAssets.length === 0 && (
-              <div className="text-center py-6 text-gray-400">
-                <Package className="h-10 w-10 mx-auto mb-2 opacity-50" />
-                <p className="text-xs font-medium mb-1">
+              <div className="text-center py-8 text-gray-400">
+                <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-gray-100 mb-3">
+                  <Package className="h-6 w-6 text-gray-400" />
+                </div>
+                <h3 className="text-sm font-semibold text-gray-600 mb-1">
                   {searchTerm ? 'No se encontraron activos' : 'Todos los activos están asignados'}
-                </p>
-                <p className="text-[10px]">
-                  {searchTerm ? 'Intenta con otros términos de búsqueda' : 'Excelente organización'}
+                </h3>
+                <p className="text-xs text-gray-500">
+                  {searchTerm 
+                    ? 'Intenta con otros términos de búsqueda o verifica los filtros aplicados'
+                    : 'Excelente organización. Todos los activos tienen ubicación asignada.'
+                  }
                 </p>
               </div>
             )}
@@ -416,6 +425,11 @@ export function AssetPlantAssignmentDragDrop() {
   const [selectedBusinessUnit, setSelectedBusinessUnit] = useState<string>('all')
   const [loading, setLoading] = useState(true)
   const [activeId, setActiveId] = useState<string | null>(null)
+  const [conflictDialogOpen, setConflictDialogOpen] = useState(false)
+  const [conflictData, setConflictData] = useState<ConflictData | null>(null)
+  const [pendingAssignment, setPendingAssignment] = useState<{ assetId: string; plantId: string | null } | null>(null)
+  const [quickAssignDialogOpen, setQuickAssignDialogOpen] = useState(false)
+  const [recentlyAssignedAsset, setRecentlyAssignedAsset] = useState<{ id: string; name: string; asset_id: string; plantId: string } | null>(null)
   const { toast } = useToast()
 
   const sensors = useSensors(
@@ -508,20 +522,54 @@ export function AssetPlantAssignmentDragDrop() {
     await handleAssetPlantAssignment(assetId, plantId)
   }
 
-  const handleAssetPlantAssignment = async (assetId: string, plantId: string | null) => {
+  const handleAssetPlantAssignment = async (
+    assetId: string, 
+    plantId: string | null, 
+    resolveConflicts?: ResolutionStrategy
+  ) => {
     try {
+      const asset = assets.find(a => a.id === assetId)
+      if (!asset) return
+
       const response = await fetch(`/api/assets/${assetId}/plant-assignment`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           plant_id: plantId,
-          notes: 'Asignación actualizada mediante drag & drop'
+          notes: 'Asignación actualizada mediante drag & drop',
+          resolve_conflicts: resolveConflicts
         })
       })
 
       const data = await response.json()
       
       if (!response.ok) {
+        // Check if this is a conflict response
+        if (response.status === 409 && data.conflicts) {
+          // Get plant names for display
+          const currentPlant = asset.plants
+          const newPlant = plantId ? plants.find(p => p.id === plantId) : null
+
+          const conflictData: ConflictData = {
+            type: 'asset_move',
+            assetId: asset.id,
+            assetName: asset.name,
+            assetCode: asset.asset_id,
+            currentPlantId: asset.plant_id || null,
+            currentPlantName: currentPlant?.name || null,
+            newPlantId: plantId,
+            newPlantName: newPlant?.name || null,
+            affected_operators: data.affected_operators || [],
+            canTransfer: data.canTransfer || false,
+            requiresUnassign: data.requiresUnassign || false
+          }
+
+          setConflictData(conflictData)
+          setPendingAssignment({ assetId, plantId })
+          setConflictDialogOpen(true)
+          return
+        }
+
         toast({
           title: "Error",
           description: data.error || 'Error al actualizar asignación',
@@ -539,6 +587,17 @@ export function AssetPlantAssignmentDragDrop() {
 
       // Refresh assets to show updated assignments
       await fetchAssets()
+
+      // Show quick assignment dialog if asset was assigned to a plant
+      if (plantId && asset) {
+        setRecentlyAssignedAsset({
+          id: asset.id,
+          name: asset.name,
+          asset_id: asset.asset_id,
+          plantId: plantId
+        })
+        setQuickAssignDialogOpen(true)
+      }
       
     } catch (error) {
       toast({
@@ -547,6 +606,63 @@ export function AssetPlantAssignmentDragDrop() {
         variant: "destructive"
       })
       console.error('Error updating asset assignment:', error)
+    }
+  }
+
+  const handleConflictResolve = async (strategy: ResolutionStrategy) => {
+    if (!pendingAssignment) return
+
+    if (strategy === 'cancel') {
+      setPendingAssignment(null)
+      setConflictData(null)
+      return
+    }
+
+    await handleAssetPlantAssignment(
+      pendingAssignment.assetId,
+      pendingAssignment.plantId,
+      strategy
+    )
+
+    setPendingAssignment(null)
+    setConflictData(null)
+  }
+
+  const handleConflictCancel = () => {
+    setPendingAssignment(null)
+    setConflictData(null)
+  }
+
+  const handleQuickAssign = async (operatorId: string, assignmentType: 'primary' | 'secondary') => {
+    if (!recentlyAssignedAsset) return
+
+    try {
+      const response = await fetch('/api/asset-operators', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          asset_id: recentlyAssignedAsset.id,
+          operator_id: operatorId,
+          assignment_type: assignmentType,
+          start_date: new Date().toISOString().split('T')[0]
+        })
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || 'Error al asignar operador')
+      }
+
+      toast({
+        title: "Éxito",
+        description: `Operador asignado como ${assignmentType === 'primary' ? 'principal' : 'secundario'}`,
+      })
+
+      // Refresh assets to show the assignment
+      await fetchAssets()
+    } catch (error) {
+      console.error('Error assigning operator:', error)
+      throw error
     }
   }
 
@@ -662,6 +778,33 @@ export function AssetPlantAssignmentDragDrop() {
             </div>
           ) : null}
         </DragOverlay>
+
+        {/* Conflict Resolution Dialog */}
+        <MoveConflictDialog
+          open={conflictDialogOpen}
+          onOpenChange={setConflictDialogOpen}
+          conflictData={conflictData}
+          onResolve={handleConflictResolve}
+          onCancel={handleConflictCancel}
+        />
+
+        {/* Quick Operator Assignment Dialog */}
+        {recentlyAssignedAsset && (
+          <QuickOperatorAssignmentDialog
+            open={quickAssignDialogOpen}
+            onOpenChange={(open) => {
+              setQuickAssignDialogOpen(open)
+              if (!open) {
+                setRecentlyAssignedAsset(null)
+              }
+            }}
+            assetId={recentlyAssignedAsset.id}
+            assetName={recentlyAssignedAsset.name}
+            assetCode={recentlyAssignedAsset.asset_id}
+            plantId={recentlyAssignedAsset.plantId}
+            onAssign={handleQuickAssign}
+          />
+        )}
       </div>
     </DndContext>
   )
