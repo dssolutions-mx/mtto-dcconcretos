@@ -37,6 +37,7 @@ import {
   Shield,
   Fuel,
   IdCard,
+  Target,
 } from "lucide-react"
 import { UserNav } from "@/components/user-nav"
 import { ModeToggle } from "@/components/mode-toggle"
@@ -44,6 +45,7 @@ import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { BreadcrumbNav } from "@/components/breadcrumb-nav"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
+import { Badge } from "@/components/ui/badge"
 
 interface SidebarProps extends React.HTMLAttributes<HTMLDivElement> {
   onLinkClick?: () => void
@@ -359,6 +361,21 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                   </CollapsibleTrigger>
                   <CollapsibleContent className="space-y-1 mt-2">
                     <Button
+                      variant={isPathActive("/gestion/asignaciones") ? "secondary" : "ghost"}
+                      className="w-full justify-start pl-8 font-semibold"
+                      asChild
+                      onClick={handleLinkClick}
+                    >
+                      <Link href="/gestion/asignaciones">
+                        <Target className="mr-2 h-4 w-4" />
+                        Asignaciones Organizacionales
+                        <Badge variant="secondary" className="ml-auto text-xs">Nuevo</Badge>
+                      </Link>
+                    </Button>
+                    <div className="pl-8 pt-1 pb-2">
+                      <p className="text-xs text-gray-500 mb-2">Páginas individuales:</p>
+                    </div>
+                    <Button
                       variant={isPathActive("/personal") ? "secondary" : "ghost"}
                       className="w-full justify-start pl-8"
                       asChild
@@ -370,17 +387,30 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                       </Link>
                     </Button>
                     {(ui.canShowEditButton('assets') || profile.role === 'AREA_ADMINISTRATIVA') && (
-                      <Button
-                        variant={isPathActive("/activos/asignacion") ? "secondary" : "ghost"}
-                        className="w-full justify-start pl-8"
-                        asChild
-                        onClick={handleLinkClick}
-                      >
-                        <Link href="/activos/asignacion">
-                          <UserCheck className="mr-2 h-4 w-4" />
-                          Asignación de Activos
-                        </Link>
-                      </Button>
+                      <>
+                        <Button
+                          variant={isPathActive("/gestion/activos/asignacion-plantas") ? "secondary" : "ghost"}
+                          className="w-full justify-start pl-8"
+                          asChild
+                          onClick={handleLinkClick}
+                        >
+                          <Link href="/gestion/activos/asignacion-plantas">
+                            <Package className="mr-2 h-4 w-4" />
+                            Activos a Plantas
+                          </Link>
+                        </Button>
+                        <Button
+                          variant={isPathActive("/activos/asignacion") ? "secondary" : "ghost"}
+                          className="w-full justify-start pl-8"
+                          asChild
+                          onClick={handleLinkClick}
+                        >
+                          <Link href="/activos/asignacion">
+                            <UserCheck className="mr-2 h-4 w-4" />
+                            Asignación de Activos
+                          </Link>
+                        </Button>
+                      </>
                     )}
                     {['GERENCIA_GENERAL', 'AREA_ADMINISTRATIVA'].includes(profile.role) && (
                       <Button
@@ -746,6 +776,21 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
               </CollapsibleTrigger>
               <CollapsibleContent className="space-y-1 mt-2">
                 <Button
+                  variant={isPathActive("/gestion/asignaciones") ? "secondary" : "ghost"}
+                  className="w-full justify-start pl-8 font-semibold"
+                  asChild
+                  onClick={handleLinkClick}
+                >
+                  <Link href="/gestion/asignaciones">
+                    <Target className="mr-2 h-4 w-4" />
+                    Asignaciones Organizacionales
+                    <Badge variant="secondary" className="ml-auto text-xs">Nuevo</Badge>
+                  </Link>
+                </Button>
+                <div className="pl-8 pt-1 pb-2">
+                  <p className="text-xs text-gray-500 mb-2">Páginas individuales:</p>
+                </div>
+                <Button
                   variant={isPathActive("/personal") ? "secondary" : "ghost"}
                   className="w-full justify-start pl-8"
                   asChild
@@ -757,30 +802,30 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                   </Link>
                 </Button>
                 {(ui.canShowEditButton('assets') || profile.role === 'AREA_ADMINISTRATIVA') && (
-                  <Button
-                    variant={isPathActive("/activos/asignacion") ? "secondary" : "ghost"}
-                    className="w-full justify-start pl-8"
-                    asChild
-                    onClick={handleLinkClick}
-                  >
-                    <Link href="/activos/asignacion">
-                      <UserCheck className="mr-2 h-4 w-4" />
-                      Asignación de Activos
-                    </Link>
-                  </Button>
-                )}
-                {['GERENCIA_GENERAL', 'JEFE_UNIDAD_NEGOCIO', 'JEFE_PLANTA', 'ENCARGADO_MANTENIMIENTO', 'AREA_ADMINISTRATIVA'].includes(profile.role) && (
-                  <Button
-                    variant={isPathActive("/gestion/activos/asignacion-plantas") ? "secondary" : "ghost"}
-                    className="w-full justify-start pl-8"
-                    asChild
-                    onClick={handleLinkClick}
-                  >
-                    <Link href="/gestion/activos/asignacion-plantas">
-                      <Settings className="mr-2 h-4 w-4" />
-                      Activos a Plantas
-                    </Link>
-                  </Button>
+                  <>
+                    <Button
+                      variant={isPathActive("/gestion/activos/asignacion-plantas") ? "secondary" : "ghost"}
+                      className="w-full justify-start pl-8"
+                      asChild
+                      onClick={handleLinkClick}
+                    >
+                      <Link href="/gestion/activos/asignacion-plantas">
+                        <Package className="mr-2 h-4 w-4" />
+                        Activos a Plantas
+                      </Link>
+                    </Button>
+                    <Button
+                      variant={isPathActive("/activos/asignacion") ? "secondary" : "ghost"}
+                      className="w-full justify-start pl-8"
+                      asChild
+                      onClick={handleLinkClick}
+                    >
+                      <Link href="/activos/asignacion">
+                        <UserCheck className="mr-2 h-4 w-4" />
+                        Asignación de Activos
+                      </Link>
+                    </Button>
+                  </>
                 )}
                 {['GERENCIA_GENERAL', 'AREA_ADMINISTRATIVA'].includes(profile.role) && (
                   <Button
@@ -978,11 +1023,12 @@ export function CollapsedSidebar({ className, onLinkClick }: SidebarProps) {
       id: "organization",
       icon: Building2,
       label: "Organización",
-      active: isSectionActive(["/personal", "/activos/asignacion", "/gestion/activos/asignacion-plantas", "/plantas", "/gestion/autorizaciones", "/gestion/credenciales"]),
+      active: isSectionActive(["/gestion/asignaciones", "/personal", "/activos/asignacion", "/gestion/activos/asignacion-plantas", "/plantas", "/gestion/autorizaciones", "/gestion/credenciales"]),
       items: [
+        { href: "/gestion/asignaciones", icon: Target, label: "Asignaciones Organizacionales", active: isPathActive("/gestion/asignaciones"), badge: "Nuevo" },
         { href: "/personal", icon: Users, label: "Gestión de Personal", active: isPathActive("/personal") },
         { href: "/activos/asignacion", icon: UserCheck, label: "Asignación de Activos", active: isPathActive("/activos/asignacion") },
-        { href: "/gestion/activos/asignacion-plantas", icon: Settings, label: "Activos a Plantas", active: isPathActive("/gestion/activos/asignacion-plantas") },
+        { href: "/gestion/activos/asignacion-plantas", icon: Package, label: "Activos a Plantas", active: isPathActive("/gestion/activos/asignacion-plantas") },
         { href: "/plantas", icon: Building2, label: "Configuración de Plantas", active: isPathActive("/plantas") },
         { href: "/gestion/autorizaciones", icon: Shield, label: "Gestión de Autorizaciones", active: isPathActive("/gestion/autorizaciones") },
         { href: "/gestion/credenciales", icon: IdCard, label: "Credenciales de Empleados", active: isPathActive("/gestion/credenciales") }

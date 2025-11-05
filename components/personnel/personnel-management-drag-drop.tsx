@@ -249,7 +249,7 @@ function UnassignedContainer({
   operators: Profile[]
   onDrop: (operatorId: string, target: { type: 'businessUnit' | 'plant' | 'unassigned', id?: string }) => void
   draggedOperator: Profile | null
-  onBatchAssign?: (operators: Profile[]) => void
+  onBatchAssign?: () => void
 }) {
   
   const { setNodeRef, isOver } = useDroppable({
@@ -279,11 +279,11 @@ function UnassignedContainer({
             </div>
           </div>
           <div className="flex items-center gap-2">
-            {onBatchAssign && unassignedOperators.length > 1 && (
+            {onBatchAssign && (
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => onBatchAssign(unassignedOperators)}
+                onClick={() => onBatchAssign()}
                 className="text-xs"
               >
                 Asignación Masiva
@@ -350,7 +350,6 @@ export function PersonnelManagementDragDrop() {
   const [conflictData, setConflictData] = useState<ConflictData | null>(null)
   const [pendingMove, setPendingMove] = useState<{ operatorId: string; updateData: any; targetName: string } | null>(null)
   const [batchDialogOpen, setBatchDialogOpen] = useState(false)
-  const [selectedOperators, setSelectedOperators] = useState<Profile[]>([])
   
   // Filtros
   const [searchTerm, setSearchTerm] = useState('')
@@ -937,8 +936,7 @@ export function PersonnelManagementDragDrop() {
             operators={filteredOperators}
             onDrop={handleDrop}
             draggedOperator={draggedOperator}
-            onBatchAssign={(ops) => {
-              setSelectedOperators(ops)
+            onBatchAssign={() => {
               setBatchDialogOpen(true)
             }}
           />
@@ -982,7 +980,7 @@ export function PersonnelManagementDragDrop() {
       <BatchAssignmentDialog
         open={batchDialogOpen}
         onOpenChange={setBatchDialogOpen}
-        selectedOperators={selectedOperators}
+        availableOperators={filteredOperators}
         plants={plants}
         businessUnits={businessUnits}
         onAssign={handleBatchAssign}
