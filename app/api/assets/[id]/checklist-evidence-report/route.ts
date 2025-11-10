@@ -67,6 +67,7 @@ export async function GET(
         signature_data,
         created_by,
         completed_items,
+        security_data,
         profiles:created_by (
           id,
           nombre,
@@ -177,6 +178,8 @@ export async function GET(
         // Transform template version structure to match expected format
         const transformedSections = (templateVersion.sections || []).map((section: any) => ({
           ...section,
+          section_type: section.section_type ?? (section.security_config ? 'security_talk' : section.section_type),
+          security_config: section.security_config || null,
           checklist_items: section.items || [] // Convert 'items' to 'checklist_items'
         }))
         
@@ -189,6 +192,17 @@ export async function GET(
         }
       }
       
+      // Parse security data if present
+      let securityData = checklist.security_data || null
+      if (typeof securityData === 'string') {
+        try {
+          securityData = JSON.parse(securityData)
+        } catch (error) {
+          console.warn(`Failed to parse security_data for checklist ${checklist.id}:`, error)
+          securityData = null
+        }
+      }
+      
       // Log the structure for debugging
       console.log(`Checklist ${checklist.id} has ${completedItems.length} completed items`)
       if (completedItems.length > 0) {
@@ -198,6 +212,7 @@ export async function GET(
       return {
         ...checklist,
         completed_items: completedItems,
+        security_data: securityData,
         checklists: checklistTemplateData, // Add the template version data
         issues: issuesByChecklist[checklist.id] || [],
         profile: checklist.profiles // Make sure profile is included

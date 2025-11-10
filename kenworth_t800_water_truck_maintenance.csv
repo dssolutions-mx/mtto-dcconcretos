@@ -1,0 +1,53 @@
+﻿Intervalo (Horas/Millas),Tareas de Mantenimiento
+Diario / Cada 10 horas,"• Nivel de aceite del motor
+• Nivel de refrigerante
+• Nivel de líquido hidráulico
+• Inspección visual de fugas
+• Inspección de neumáticos y presión
+• Inspección del sistema de agua del camión"
+Semanal / Cada 50 horas,"• Nivel de fluidos (aceite, refrigerante, frenos)
+• Inspección visual de filtros de aire y combustible
+• Drenar humedad de tanques de aire
+• Inspección del sistema de agua (mangueras, válvulas, boquillas)"
+Mensual / 250 horas,"• Muestra de aceite del motor
+• Inspección de correas y mangueras
+• Lubricación del chasis
+• Inspección de frenos"
+"500 horas / 10,000 millas","• CAMBIO DE ACEITE Y FILTRO DE MOTOR (vocacional/severo)
+• Cambio de filtro de combustible primario
+• Lubricación de chasis y puntos de articulación
+• Inspección de sistema de frenos
+• Drenar tanques de aire"
+"800 horas / 25,000 millas","• CAMBIO DE ACEITE Y FILTRO DE MOTOR (aplicaciones vocacionales <6 MPG)
+• Cambio de filtro de combustible
+• Inspección de sistema de enfriamiento
+• Muestra de líquido de transmisión"
+"1,000 horas / 30,000 millas","• Cambio de filtro de aire del motor
+• Inspección completa de sistema de frenos
+• Muestra de aceite de transmisión y diferenciales
+• Inspección de suspensión
+• Reemplazo de filtro del tanque de combustible"
+"1,500 horas / 45,000 millas","• Inspección de componentes de dirección
+• Inspección del sistema eléctrico
+• Verificación de sistema de escape"
+"2,000 horas / 50,000 millas","• CAMBIO DE FLUIDO Y FILTRO DE TRANSMISIÓN
+• Inspección de embrague (transmisión manual)
+• Ajuste de válvulas del motor (overhead)"
+"3,000 horas / 100,000 millas","• Enjuague y reemplazo de líquido de frenos
+• Inspección profunda de suspensión
+• Reemplazo de mangueras hidráulicas (según condición)"
+"4,000 horas / 120,000 millas","• CAMBIO DE ACEITE DE DIFERENCIALES (delantero y trasero)
+• Inspección de cardanes y juntas universales
+• Limpieza o reemplazo de DPF (si aplica)"
+"6,000 horas / 150,000 millas","• CAMBIO DE FLUIDO DE DIFERENCIAL (servicio severo)
+• Inspección de sistema de dirección hidráulica
+• Cambio de fluido de dirección asistida"
+"10,000 horas / 250,000 millas","• CAMBIO DE REFRIGERANTE DEL MOTOR
+• Inspección profesional completa
+• Pruebas de emisiones (según regulación)"
+Según sea necesario,"• Inspección de limpiaparabrisas y nivel de fluido
+• Ajuste de torque de tuercas de ruedas
+• Limpieza de núcleos de enfriadores
+• Rotación de neumáticos cada 10,000-15,000 millas
+• Limpieza y ajuste de terminales de batería
+• Resellado anual del tanque de agua"

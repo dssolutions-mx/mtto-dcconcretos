@@ -34,10 +34,12 @@ import {
   Copy,
   CheckSquare,
   Camera,
-  Sparkles
+  Sparkles,
+  Shield
 } from 'lucide-react'
 
 import { createClient } from '@/lib/supabase'
+import { SecurityConfig } from '@/types'
 
 interface ChecklistItem {
   id?: string
@@ -67,9 +69,10 @@ interface ChecklistSection {
   id?: string
   title: string
   order_index: number
-  section_type?: 'checklist' | 'evidence' | 'cleanliness_bonus'
+  section_type?: 'checklist' | 'evidence' | 'cleanliness_bonus' | 'security_talk'
   evidence_config?: EvidenceConfig
   cleanliness_config?: CleanlinessConfig
+  security_config?: SecurityConfig
   items: ChecklistItem[]
 }
 
@@ -288,6 +291,7 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
         section_type: section.section_type || 'checklist',
         evidence_config: section.evidence_config || undefined,
         cleanliness_config: section.cleanliness_config || undefined,
+        security_config: section.security_config || undefined,
         items: section.checklist_items?.map((item: any) => ({
           id: item.id,
           description: item.description,
@@ -387,6 +391,35 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
           'Estado General': 'Capturar vista general del equipo',
           'Detalles Específicos': 'Fotografiar detalles relevantes'
         }
+      },
+      items: []
+    }
+    
+    const newSectionIndex = template.sections.length
+    setSectionTitles(prev => ({ 
+      ...prev, 
+      [newSectionIndex]: newTitle 
+    }))
+    
+    setTemplate(prev => ({
+      ...prev,
+      sections: [...prev.sections, newSection]
+    }))
+    setHasChanges(true)
+  }
+
+  const addSecuritySection = () => {
+    const newTitle = `Charla de Seguridad ${template.sections.filter(s => s.section_type === 'security_talk').length + 1}`
+    const newSection: ChecklistSection = {
+      title: newTitle,
+      order_index: template.sections.length,
+      section_type: 'security_talk',
+      security_config: {
+        mode: 'plant_manager',
+        require_attendance: true,
+        require_topic: true,
+        require_reflection: true,
+        allow_evidence: false
       },
       items: []
     }
@@ -874,7 +907,7 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
     setEvidenceDescriptions(newEvidenceDescriptions)
   }
 
-  const updateSectionType = (sectionIndex: number, newType: 'checklist' | 'evidence' | 'cleanliness_bonus') => {
+  const updateSectionType = (sectionIndex: number, newType: 'checklist' | 'evidence' | 'cleanliness_bonus' | 'security_talk') => {
     updateSection(sectionIndex, { 
       section_type: newType,
       evidence_config: newType === 'evidence' ? {
@@ -892,7 +925,14 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
           'Exterior': 'Fotografiar evidencia del estado de limpieza exterior'
         }
       } : template.sections[sectionIndex].cleanliness_config,
-      items: newType === 'evidence' ? [] : template.sections[sectionIndex].items
+      security_config: newType === 'security_talk' ? {
+        mode: 'plant_manager',
+        require_attendance: true,
+        require_topic: true,
+        require_reflection: true,
+        allow_evidence: false
+      } : template.sections[sectionIndex].security_config,
+      items: newType === 'evidence' || newType === 'security_talk' ? [] : template.sections[sectionIndex].items
     })
   }
 
@@ -1271,7 +1311,8 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
               order_index: i,
               section_type: section.section_type || 'checklist',
               evidence_config: section.evidence_config || null,
-              cleanliness_config: section.cleanliness_config || null
+              cleanliness_config: section.cleanliness_config || null,
+              security_config: section.security_config || null
             })
             .select('id')
             .single()
@@ -1431,7 +1472,8 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
               order_index: i,
               section_type: section.section_type || 'checklist',
               evidence_config: section.evidence_config || null,
-              cleanliness_config: section.cleanliness_config || null
+              cleanliness_config: section.cleanliness_config || null,
+              security_config: section.security_config || null
             })
             .select('id')
             .single()
@@ -1488,6 +1530,119 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
       case 'text': return <Edit3 className="h-4 w-4" />
       default: return <Check className="h-4 w-4" />
     }
+  }
+
+  const updateSecurityConfig = (sectionIndex: number, updates: Partial<SecurityConfig>) => {
+    const currentConfig = template.sections[sectionIndex].security_config || {
+      mode: 'plant_manager',
+      require_attendance: true,
+      require_topic: true,
+      require_reflection: true,
+      allow_evidence: false
+    }
+    updateSection(sectionIndex, {
+      security_config: { ...currentConfig, ...updates }
+    })
+  }
+
+  const renderSecuritySection = (section: ChecklistSection, sectionIndex: number) => {
+    const config = section.security_config || {
+      mode: 'plant_manager',
+      require_attendance: true,
+      require_topic: true,
+      require_reflection: true,
+      allow_evidence: false
+    }
+    
+    return (
+      <div className="space-y-4 border-l-4 border-orange-500 pl-4">
+        <div className="flex items-center gap-2 mb-4">
+          <Shield className="h-5 w-5 text-orange-600" />
+          <Badge variant="outline" className="bg-orange-50 text-orange-700 border-orange-200">
+            Sección de Charla de Seguridad
+          </Badge>
+        </div>
+        
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <Label>Modo de Uso</Label>
+            <Select
+              value={config.mode}
+              onValueChange={(value: 'plant_manager' | 'operator') => 
+                updateSecurityConfig(sectionIndex, { mode: value })
+              }
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="plant_manager">Jefe de Planta / Dosificador</SelectItem>
+                <SelectItem value="operator">Operador</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-sm text-gray-500">
+              {config.mode === 'plant_manager' 
+                ? 'Permite registrar lista de asistentes (operadores de la planta)'
+                : 'Permite registrar asistencia individual del operador'}
+            </p>
+          </div>
+
+          <div className="space-y-3 border-t pt-3">
+            <Label className="text-sm font-semibold">Campos Requeridos</Label>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label htmlFor={`attendance-${sectionIndex}`} className="text-sm font-normal">
+                  {config.mode === 'plant_manager' ? 'Lista de Asistentes' : 'Asistencia'}
+                </Label>
+                <Switch
+                  id={`attendance-${sectionIndex}`}
+                  checked={config.require_attendance}
+                  onCheckedChange={(checked) => 
+                    updateSecurityConfig(sectionIndex, { require_attendance: checked })
+                  }
+                />
+              </div>
+              <div className="flex items-center justify-between">
+                <Label htmlFor={`topic-${sectionIndex}`} className="text-sm font-normal">
+                  Tema Cubierto
+                </Label>
+                <Switch
+                  id={`topic-${sectionIndex}`}
+                  checked={config.require_topic}
+                  onCheckedChange={(checked) => 
+                    updateSecurityConfig(sectionIndex, { require_topic: checked })
+                  }
+                />
+              </div>
+              <div className="flex items-center justify-between">
+                <Label htmlFor={`reflection-${sectionIndex}`} className="text-sm font-normal">
+                  Reflexión
+                </Label>
+                <Switch
+                  id={`reflection-${sectionIndex}`}
+                  checked={config.require_reflection}
+                  onCheckedChange={(checked) => 
+                    updateSecurityConfig(sectionIndex, { require_reflection: checked })
+                  }
+                />
+              </div>
+              <div className="flex items-center justify-between">
+                <Label htmlFor={`evidence-${sectionIndex}`} className="text-sm font-normal">
+                  Permitir Evidencia Fotográfica
+                </Label>
+                <Switch
+                  id={`evidence-${sectionIndex}`}
+                  checked={config.allow_evidence}
+                  onCheckedChange={(checked) => 
+                    updateSecurityConfig(sectionIndex, { allow_evidence: checked })
+                  }
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   const renderEvidenceSection = (section: ChecklistSection, sectionIndex: number) => {
@@ -1732,13 +1887,18 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
               <Sparkles className="h-4 w-4 mr-2" />
               Verificación de Limpieza
             </Button>
+            <Button variant="outline" onClick={addSecuritySection} className="bg-orange-50 border-orange-200 text-orange-700 hover:bg-orange-100">
+              <Shield className="h-4 w-4 mr-2" />
+              Charla de Seguridad
+            </Button>
           </div>
         </div>
 
         {template.sections.map((section, sectionIndex) => (
           <Card key={sectionIndex} className={
             section.section_type === 'evidence' ? 'border-blue-200 bg-blue-50/50' : 
-            section.section_type === 'cleanliness_bonus' ? 'border-green-200 bg-green-50/50' : ''
+            section.section_type === 'cleanliness_bonus' ? 'border-green-200 bg-green-50/50' :
+            section.section_type === 'security_talk' ? 'border-orange-200 bg-orange-50/50' : ''
           }>
             <CardHeader className="pb-3">
               <div className="flex justify-between items-center">
@@ -1746,7 +1906,7 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
                   <div className="flex items-center gap-3">
                     <Select
                       value={section.section_type || 'checklist'}
-                      onValueChange={(value: 'checklist' | 'evidence' | 'cleanliness_bonus') => updateSectionType(sectionIndex, value)}
+                      onValueChange={(value: 'checklist' | 'evidence' | 'cleanliness_bonus' | 'security_talk') => updateSectionType(sectionIndex, value)}
                     >
                       <SelectTrigger className="w-48">
                         <SelectValue />
@@ -1768,6 +1928,12 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
                           <div className="flex items-center gap-2">
                             <Sparkles className="h-4 w-4" />
                             Limpieza
+                          </div>
+                        </SelectItem>
+                        <SelectItem value="security_talk">
+                          <div className="flex items-center gap-2">
+                            <Shield className="h-4 w-4" />
+                            Charla de Seguridad
                           </div>
                         </SelectItem>
                       </SelectContent>
@@ -1810,7 +1976,9 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
             <CardContent className="space-y-3">
               {section.section_type === 'evidence' ? (
                 renderEvidenceSection(section, sectionIndex)
-                            ) : section.section_type === 'cleanliness_bonus' ? (
+              ) : section.section_type === 'security_talk' ? (
+                renderSecuritySection(section, sectionIndex)
+              ) : section.section_type === 'cleanliness_bonus' ? (
                 // Render cleanliness section - hybrid of checklist items + evidence photos
                 <div className="space-y-4">
                   <div className="flex items-center gap-2 mb-4 border-l-4 border-green-500 pl-4">

@@ -117,6 +117,31 @@ export type ChecklistIssue = DbTables['checklist_issues']['Row'];
 export type InsertChecklistIssue = DbTables['checklist_issues']['Insert'];
 export type UpdateChecklistIssue = DbTables['checklist_issues']['Update'];
 
+// Security Talk Section Types
+export interface SecurityConfig {
+  mode: 'plant_manager' | 'operator';
+  require_attendance: boolean;
+  require_topic: boolean;
+  require_reflection: boolean;
+  allow_evidence: boolean;
+}
+
+export interface SecurityTalkData {
+  attendees?: string[];  // Operator IDs (for plant manager mode)
+  attendance?: boolean;   // Single attendance (for operator mode)
+  topic?: string;
+  reflection?: string;
+  evidence?: Array<{
+    photo_url: string;
+    category?: string;
+    description?: string;
+  }>;
+}
+
+export interface SecurityTalkSectionData {
+  [sectionId: string]: SecurityTalkData;
+}
+
 // Tipos para órdenes de trabajo
 export type WorkOrder = DbTables['work_orders']['Row'];
 export type InsertWorkOrder = DbTables['work_orders']['Insert'];

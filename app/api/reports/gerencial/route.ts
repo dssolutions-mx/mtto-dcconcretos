@@ -232,7 +232,38 @@ export async function POST(req: NextRequest) {
 
     // Fetch sales from cotizador
     const host = req.headers.get('host') || ''
-    const base = process.env.NEXT_PUBLIC_BASE_URL || (host.includes('localhost') ? `http://${host}` : `https://${host}`)
+    const envBaseUrl = process.env.NEXT_PUBLIC_BASE_URL
+    
+    // For internal server-to-server calls, always use the actual request host/port
+    // This prevents port mismatches (e.g., server on 3001 but env says 3000)
+    let base: string
+    if (host.includes('localhost') || host.includes('127.0.0.1')) {
+      // Extract port from host (e.g., "localhost:3001" -> "3001")
+      const port = host.split(':')[1] || '3000'
+      // Use 127.0.0.1 for more reliable server-to-server calls in local development
+      base = `http://127.0.0.1:${port}`
+    } else {
+      // Production: use host from request
+      base = `https://${host}`
+    }
+    
+    // Warn if env base URL doesn't match actual host (common in local dev)
+    if (envBaseUrl && envBaseUrl !== base) {
+      console.warn('[Gerencial Report] Base URL mismatch detected:', {
+        envBaseUrl,
+        actualBaseUrl: base,
+        host,
+        note: 'Using actual host for internal API calls'
+      })
+    }
+    
+    console.log('[Gerencial Report] Sales fetch configuration:', {
+      host,
+      baseUrl: base,
+      envBaseUrl: envBaseUrl || '(not set)',
+      dateFrom,
+      dateTo
+    })
     
     // Get cotizador plant IDs that match our maintenance plant codes
     const cotizadorSupabase = createClient(
@@ -259,16 +290,73 @@ export async function POST(req: NextRequest) {
     // when assets move between plants. Plant filtering will be applied later during asset matching.
     // const cotizadorPlantIds = [] // Intentionally empty - fetch all plants
     
-    const salesResp = await fetch(`${base}/api/integrations/cotizador/sales/assets/weekly`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ 
-        dateFrom, 
-        dateTo, 
-        plantIds: undefined // Always fetch ALL plants - remisiones should not be filtered by plant
-      })
+    const salesApiUrl = `${base}/api/integrations/cotizador/sales/assets/weekly`
+    const salesRequestPayload = { 
+      dateFrom, 
+      dateTo, 
+      plantIds: undefined // Always fetch ALL plants - remisiones should not be filtered by plant
+    }
+    
+    console.log('[Gerencial Report] Fetching sales data:', {
+      url: salesApiUrl,
+      payload: salesRequestPayload
     })
-    const salesRows = salesResp.ok ? await salesResp.json() : []
+    
+    let salesRows: any[] = []
+    try {
+      const salesResp = await fetch(salesApiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(salesRequestPayload)
+      })
+      
+      if (!salesResp.ok) {
+        const errorText = await salesResp.text()
+        let errorJson: any = null
+        try {
+          errorJson = JSON.parse(errorText)
+        } catch {
+          // Not JSON, use text as-is
+        }
+        
+        console.error('[Gerencial Report] Sales API fetch failed:', {
+          status: salesResp.status,
+          statusText: salesResp.statusText,
+          url: salesApiUrl,
+          errorBody: errorJson || errorText,
+          headers: Object.fromEntries(salesResp.headers.entries())
+        })
+        
+        // Don't throw - continue with empty sales data but log the error
+        salesRows = []
+      } else {
+        try {
+          salesRows = await salesResp.json()
+          console.log('[Gerencial Report] Sales data fetched successfully:', {
+            rowCount: salesRows?.length || 0,
+            totalSales: salesRows?.reduce((sum: number, row: any) => sum + Number(row.subtotal_amount || 0), 0) || 0,
+            totalM3: salesRows?.reduce((sum: number, row: any) => sum + Number(row.concrete_m3 || 0), 0) || 0
+          })
+        } catch (parseError: any) {
+          console.error('[Gerencial Report] Failed to parse sales API response:', {
+            error: parseError?.message,
+            status: salesResp.status,
+            url: salesApiUrl
+          })
+          salesRows = []
+        }
+      }
+    } catch (fetchError: any) {
+      console.error('[Gerencial Report] Sales API fetch exception:', {
+        error: fetchError?.message,
+        stack: fetchError?.stack,
+        url: salesApiUrl,
+        baseUrl: base,
+        host: host
+      })
+      // Continue with empty sales data
+      salesRows = []
+    }
 
     // Helper function for fuzzy matching asset codes
     const normalizeAssetCode = (code: string): string => {

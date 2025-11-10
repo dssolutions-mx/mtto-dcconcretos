@@ -191,6 +191,7 @@ export async function GET(request: NextRequest) {
     const business_unit_id = searchParams.get('business_unit_id')
     const role = searchParams.get('role')
     const status = searchParams.get('status') || 'active'
+    const ids = searchParams.get('ids') // Support fetching by IDs
 
     let query = supabase
       .from('profiles')
@@ -213,20 +214,39 @@ export async function GET(request: NextRequest) {
         plants:plant_id(id, name, code),
         business_units:business_unit_id(id, name)
       `)
-      .eq('status', status)
       .order('nombre')
-
-    // Apply role-based filtering
-    if (currentProfile.role === 'GERENCIA_GENERAL') {
-      // General management can see all operators
-    } else if (currentProfile.role === 'JEFE_UNIDAD_NEGOCIO') {
+    
+    // If IDs are provided, filter by IDs and skip status/role filters
+    // But still check if user has permission to view operators
+    const allowedRolesForViewing = ['GERENCIA_GENERAL', 'JEFE_UNIDAD_NEGOCIO', 'JEFE_PLANTA', 'ENCARGADO_MANTENIMIENTO', 'DOSIFICADOR', 'EJECUTIVO']
+    
+    if (ids) {
+      // When fetching by IDs, still verify user has permission
+      if (!allowedRolesForViewing.includes(currentProfile.role)) {
+        console.log('🔍 User role not allowed to fetch operators by ID:', currentProfile.role)
+        return NextResponse.json([])
+      }
+      
+      const idArray = ids.split(',').filter(id => id.trim())
+      console.log('🔍 Fetching operators by IDs:', idArray, 'for user role:', currentProfile.role)
+      if (idArray.length > 0) {
+        query = query.in('id', idArray)
+        // Don't filter by status when fetching by IDs - we want to show all operators regardless of status
+      }
+    } else {
+      // Apply status filter only when not fetching by IDs
+      query = query.eq('status', status)
+      // Apply role-based filtering
+      if (currentProfile.role === 'GERENCIA_GENERAL') {
+        // General management can see all operators
+      } else if (currentProfile.role === 'JEFE_UNIDAD_NEGOCIO') {
       // Business unit managers can see operators in their business unit AND unassigned operators
       if (currentProfile.business_unit_id) {
         // Use OR filter to include both assigned and unassigned operators
         query = query.or(`business_unit_id.eq.${currentProfile.business_unit_id},business_unit_id.is.null`)
       }
-    } else if (currentProfile.role === 'JEFE_PLANTA' || currentProfile.role === 'ENCARGADO_MANTENIMIENTO') {
-      // Plant managers and maintenance specialists can see operators in their plant
+    } else if (currentProfile.role === 'JEFE_PLANTA' || currentProfile.role === 'ENCARGADO_MANTENIMIENTO' || currentProfile.role === 'DOSIFICADOR') {
+      // Plant managers, maintenance specialists, and dosificadores can see operators in their plant
       if (currentProfile.plant_id) {
         query = query.eq('plant_id', currentProfile.plant_id)
       }
@@ -235,22 +255,23 @@ export async function GET(request: NextRequest) {
       return NextResponse.json([])
     }
 
-    // Apply additional filters if provided
-    if (plant_id) {
-      // For business unit managers, include unassigned operators even when plant_id filter is applied
-      if (currentProfile.role === 'JEFE_UNIDAD_NEGOCIO') {
-        query = query.or(`plant_id.eq.${plant_id},plant_id.is.null`)
-      } else {
-        query = query.eq('plant_id', plant_id)
+      // Apply additional filters if provided
+      if (plant_id) {
+        // For business unit managers, include unassigned operators even when plant_id filter is applied
+        if (currentProfile.role === 'JEFE_UNIDAD_NEGOCIO') {
+          query = query.or(`plant_id.eq.${plant_id},plant_id.is.null`)
+        } else {
+          query = query.eq('plant_id', plant_id)
+        }
       }
-    }
 
-    if (business_unit_id) {
-      query = query.eq('business_unit_id', business_unit_id)
-    }
+      if (business_unit_id) {
+        query = query.eq('business_unit_id', business_unit_id)
+      }
 
-    if (role) {
-      query = query.eq('role', role)
+      if (role) {
+        query = query.eq('role', role)
+      }
     }
 
     const { data: operators, error } = await query

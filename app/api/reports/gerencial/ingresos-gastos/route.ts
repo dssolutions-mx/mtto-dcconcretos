@@ -426,21 +426,97 @@ export async function POST(req: NextRequest) {
     // Fetch diesel and maintenance costs using existing gerencial logic
     // We'll call the gerencial API internally and extract plant-level data
     const host = req.headers.get('host') || ''
-    const base = process.env.NEXT_PUBLIC_BASE_URL || (host.includes('localhost') ? `http://${host}` : `https://${host}`)
+    const envBaseUrl = process.env.NEXT_PUBLIC_BASE_URL
     
-    const gerencialResp = await fetch(`${base}/api/reports/gerencial`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        dateFrom: dateFromStr,
-        dateTo: dateToStr,
-        businessUnitId,
-        plantId,
-        hideZeroActivity: false
+    // For internal server-to-server calls, always use the actual request host/port
+    // This prevents port mismatches (e.g., server on 3001 but env says 3000)
+    let base: string
+    if (host.includes('localhost') || host.includes('127.0.0.1')) {
+      // Extract port from host (e.g., "localhost:3001" -> "3001")
+      const port = host.split(':')[1] || '3000'
+      // Use 127.0.0.1 for more reliable server-to-server calls in local development
+      base = `http://127.0.0.1:${port}`
+    } else {
+      // Production: use host from request
+      base = `https://${host}`
+    }
+    
+    // Warn if env base URL doesn't match actual host (common in local dev)
+    if (envBaseUrl && envBaseUrl !== base) {
+      console.warn('[Ingresos Gastos Report] Base URL mismatch detected:', {
+        envBaseUrl,
+        actualBaseUrl: base,
+        host,
+        note: 'Using actual host for internal API calls'
       })
+    }
+    
+    const gerencialApiUrl = `${base}/api/reports/gerencial`
+    const gerencialRequestPayload = {
+      dateFrom: dateFromStr,
+      dateTo: dateToStr,
+      businessUnitId,
+      plantId,
+      hideZeroActivity: false
+    }
+    
+    console.log('[Ingresos Gastos Report] Fetching gerencial data:', {
+      url: gerencialApiUrl,
+      payload: gerencialRequestPayload
     })
-
-    const gerencialData = gerencialResp.ok ? await gerencialResp.json() : null
+    
+    let gerencialData: any = null
+    try {
+      const gerencialResp = await fetch(gerencialApiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(gerencialRequestPayload)
+      })
+      
+      if (!gerencialResp.ok) {
+        const errorText = await gerencialResp.text()
+        let errorJson: any = null
+        try {
+          errorJson = JSON.parse(errorText)
+        } catch {
+          // Not JSON, use text as-is
+        }
+        
+        console.error('[Ingresos Gastos Report] Gerencial API fetch failed:', {
+          status: gerencialResp.status,
+          statusText: gerencialResp.statusText,
+          url: gerencialApiUrl,
+          errorBody: errorJson || errorText
+        })
+        
+        gerencialData = null
+      } else {
+        try {
+          gerencialData = await gerencialResp.json()
+          console.log('[Ingresos Gastos Report] Gerencial data fetched successfully:', {
+            hasData: !!gerencialData,
+            businessUnitsCount: gerencialData?.businessUnits?.length || 0,
+            plantsCount: gerencialData?.plants?.length || 0
+          })
+        } catch (parseError: any) {
+          console.error('[Ingresos Gastos Report] Failed to parse gerencial API response:', {
+            error: parseError?.message,
+            status: gerencialResp.status,
+            url: gerencialApiUrl
+          })
+          gerencialData = null
+        }
+      }
+    } catch (fetchError: any) {
+      console.error('[Ingresos Gastos Report] Gerencial API fetch exception:', {
+        error: fetchError?.message,
+        stack: fetchError?.stack,
+        url: gerencialApiUrl,
+        baseUrl: base,
+        host: host
+      })
+      gerencialData = null
+    }
 
     // Calculate diesel costs using FIFO (primary method)
     // Get product prices for fallback when entries lack prices

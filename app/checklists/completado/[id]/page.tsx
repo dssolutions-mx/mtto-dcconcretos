@@ -10,9 +10,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ArrowLeft, CheckCircle, XCircle, AlertTriangle, FileText, Camera, User, Calendar, Clock, ExternalLink } from "lucide-react";
+import { ArrowLeft, CheckCircle, XCircle, AlertTriangle, FileText, Camera, User, Calendar, Clock, ExternalLink, Shield, Users, MessageSquare, Lightbulb } from "lucide-react";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
+import { SecurityConfig } from "@/types";
 
 type CompletedItem = {
   id: string;
@@ -48,6 +49,7 @@ type CompletedChecklistData = {
   status: string;
   signature_data: string | null;
   created_by: string | null;
+  security_data?: Record<string, any> | null;
   checklists: {
     id: string;
     name: string;
@@ -55,6 +57,14 @@ type CompletedChecklistData = {
       id: string;
       title: string;
       order_index: number;
+      section_type?: 'checklist' | 'evidence' | 'cleanliness_bonus' | 'security_talk';
+      security_config?: {
+        mode: 'plant_manager' | 'operator';
+        require_attendance: boolean;
+        require_topic: boolean;
+        require_reflection: boolean;
+        allow_evidence: boolean;
+      };
       checklist_items: Array<{
         id: string;
         description: string;
@@ -82,6 +92,9 @@ type CompletedChecklistData = {
   issues: ChecklistIssue[];
 };
 
+type ChecklistSectionDefinition = CompletedChecklistData['checklists']['checklist_sections'][number];
+type ChecklistItemDefinition = ChecklistSectionDefinition['checklist_items'][number];
+
 export default function CompletedChecklistDetailsPage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params);
   const checklistId = resolvedParams.id;
@@ -90,6 +103,7 @@ export default function CompletedChecklistDetailsPage({ params }: { params: Prom
   const [data, setData] = useState<CompletedChecklistData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [operatorNames, setOperatorNames] = useState<Record<string, { nombre: string; apellido: string; employee_code?: string }>>({});
 
   useEffect(() => {
     const fetchCompletedChecklist = async () => {
@@ -103,10 +117,46 @@ export default function CompletedChecklistDetailsPage({ params }: { params: Prom
         
         const result = await response.json();
         setData(result.data);
+        
+        // Fetch operator names if there's security_data with attendees
+        if (result.data?.security_data) {
+          const attendeeIds: string[] = [];
+          Object.values(result.data.security_data).forEach((sectionData: any) => {
+            if (sectionData.attendees && Array.isArray(sectionData.attendees)) {
+              attendeeIds.push(...sectionData.attendees);
+            }
+          });
+          
+          if (attendeeIds.length > 0) {
+            // Fetch unique operator IDs
+            const uniqueIds = [...new Set(attendeeIds)];
+            fetchOperatorNames(uniqueIds);
+          }
+        }
       } catch (err: any) {
         setError(err.message);
       } finally {
         setLoading(false);
+      }
+    };
+
+    const fetchOperatorNames = async (operatorIds: string[]) => {
+      try {
+        const response = await fetch(`/api/operators/register?ids=${operatorIds.join(',')}`);
+        if (response.ok) {
+          const operators = await response.json();
+          const namesMap: Record<string, { nombre: string; apellido: string; employee_code?: string }> = {};
+          operators.forEach((op: any) => {
+            namesMap[op.id] = {
+              nombre: op.nombre || '',
+              apellido: op.apellido || '',
+              employee_code: op.employee_code
+            };
+          });
+          setOperatorNames(namesMap);
+        }
+      } catch (error) {
+        console.error('Error fetching operator names:', error);
       }
     };
 
@@ -194,9 +244,39 @@ export default function CompletedChecklistDetailsPage({ params }: { params: Prom
     );
   }
 
-  const totalItems = data.checklists?.checklist_sections?.reduce(
-    (total, section) => total + (section.checklist_items?.length || 0), 0
-  ) || 0;
+  // Normalize sections to avoid duplicates and ensure consistent handling
+  const allSections = (data.checklists?.checklist_sections ?? []) as ChecklistSectionDefinition[]
+  const uniqueSections = allSections.reduce<ChecklistSectionDefinition[]>((acc, section) => {
+    if (!section) {
+      return acc
+    }
+
+    const sectionTypeKey = section.section_type ?? (section.id && data.security_data?.[section.id] ? 'security_talk' : 'checklist')
+    const key = `${sectionTypeKey}::${section.title ?? section.id ?? acc.length}`
+
+    if (!acc.some(existing => {
+      const existingTypeKey = existing.section_type ?? (existing.id && data.security_data?.[existing.id] ? 'security_talk' : 'checklist')
+      const existingKey = `${existingTypeKey}::${existing.title ?? existing.id ?? 'unknown'}`
+      return existingKey === key
+    })) {
+      acc.push(section)
+    }
+
+    return acc
+  }, [])
+
+  // Count only items from regular checklist sections (exclude security_talk, evidence, cleanliness_bonus)
+  const totalItems = uniqueSections.reduce<number>(
+    (total, section) => {
+      const securityDataForSection = section?.id ? data.security_data?.[section.id] : undefined
+      const isSecuritySection = section.section_type === 'security_talk' || !!securityDataForSection
+      if (section.section_type === 'checklist' || (!section.section_type && !isSecuritySection)) {
+        const items = section.checklist_items as ChecklistItemDefinition[] | undefined
+        return total + (items?.length ?? 0)
+      }
+      return total
+    }, 0
+  ) || 0
   
   const completedItems = data.completed_items?.length || 0;
   const passedItems = data.completed_items?.filter(item => item.status === 'pass').length || 0;
@@ -330,20 +410,176 @@ export default function CompletedChecklistDetailsPage({ params }: { params: Prom
         <div className="space-y-4">
           {/* Verificar si hay matching entre completed_items y plantilla actual */}
           {(() => {
-            const hasMatchingItems = data.checklists?.checklist_sections?.some(section =>
-              section.checklist_items?.some(item => getItemCompletionData(item.id))
-            );
+            const hasMatchingItems = uniqueSections.some((section: ChecklistSectionDefinition) =>
+              (section?.checklist_items as ChecklistItemDefinition[] | undefined)?.some((item: ChecklistItemDefinition) => getItemCompletionData(item.id))
+            )
             
-            // Si tenemos plantilla Y hay matching, mostrar por secciones
-            if (data.checklists?.checklist_sections?.length > 0 && hasMatchingItems) {
+            // Si tenemos plantilla, mostrar por secciones (incluyendo security sections)
+            if (uniqueSections.length > 0) {
               return (
-            data.checklists.checklist_sections
+            uniqueSections
               .sort((a, b) => a.order_index - b.order_index)
               .map((section) => {
-                // Solo mostrar secciones que tengan items completados
-                const completedSectionItems = section.checklist_items
-                  ?.filter((item) => getItemCompletionData(item.id))
-                  ?.sort((a, b) => a.order_index - b.order_index);
+                const securityData = section?.id ? data.security_data?.[section.id] : undefined
+                const hasSecurityData = !!securityData
+                const hasAttendeeList = Array.isArray(securityData?.attendees) && securityData?.attendees.length > 0
+
+                // Derive config intelligently: if we have stored config use it, otherwise infer from security data
+                const baseConfig: SecurityConfig = section.security_config || {
+                  mode: hasAttendeeList ? 'plant_manager' : 'operator',
+                  require_attendance: true,
+                  require_topic: true,
+                  require_reflection: true,
+                  allow_evidence: Array.isArray(securityData?.evidence) && securityData?.evidence.length > 0
+                }
+
+                const isSecuritySection = section.section_type === 'security_talk' || hasSecurityData
+                const isPlantManagerMode = baseConfig.mode === 'plant_manager' || (!section.security_config && hasAttendeeList)
+
+                // Para secciones de seguridad, mostrar si hay security_data o si la sección existe
+                if (isSecuritySection) {
+                  const config = baseConfig
+
+                  if (!securityData) {
+                    return null
+                  }
+                  
+                  return (
+                    <Card key={section.id || `security-${section.title}`}
+                      className="border-orange-200 bg-orange-50/50">
+                      <CardHeader>
+                        <CardTitle className="text-lg flex items-center gap-2">
+                          <Shield className="h-5 w-5 text-orange-600" />
+                          {section.title || 'Charla de seguridad'}
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="space-y-4">
+                          {securityData ? (
+                            <>
+                              {/* Attendance */}
+                              {config.require_attendance && (
+                                <div className="space-y-2">
+                                  <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                                    {isPlantManagerMode ? <Users className="h-4 w-4" /> : <User className="h-4 w-4" />}
+                                    {isPlantManagerMode ? 'Asistentes' : 'Asistencia'}
+                                  </div>
+                                  {isPlantManagerMode ? (
+                                    <div className="space-y-2">
+                                      {(() => {
+                                        if (securityData.attendees && Array.isArray(securityData.attendees) && securityData.attendees.length > 0) {
+                                          return (
+                                            <div className="space-y-1">
+                                              <div className="text-sm font-medium text-muted-foreground mb-2">
+                                                {securityData.attendees.length} operador{securityData.attendees.length > 1 ? 'es' : ''} asistieron:
+                                              </div>
+                                              <ul className="list-disc list-inside space-y-1 text-sm">
+                                                {securityData.attendees.map((operatorId: string) => {
+                                                  const operator = operatorNames[operatorId];
+                                                  return (
+                                                    <li key={operatorId} className="flex items-center gap-2">
+                                                      {operator ? (
+                                                        <>
+                                                          <span>{operator.nombre} {operator.apellido}</span>
+                                                          {operator.employee_code && (
+                                                            <span className="text-gray-500">({operator.employee_code})</span>
+                                                          )}
+                                                        </>
+                                                      ) : (
+                                                        <span className="text-gray-400">Cargando operador {operatorId.substring(0, 8)}...</span>
+                                                      )}
+                                                    </li>
+                                                  );
+                                                })}
+                                              </ul>
+                                            </div>
+                                          );
+                                        } else {
+                                          return (
+                                            <div className="text-sm text-muted-foreground">
+                                              No hay asistentes registrados
+                                            </div>
+                                          );
+                                        }
+                                      })()}
+                                    </div>
+                                  ) : (
+                                    <div className="flex items-center gap-2">
+                                      <CheckCircle className={`h-4 w-4 ${securityData.attendance === true ? 'text-green-600' : 'text-gray-400'}`} />
+                                      <span className="text-sm">
+                                        {securityData.attendance === true ? 'Asistió a la charla' : securityData.attendance === false ? 'No asistió' : 'No registrado'}
+                                      </span>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                              
+                              {/* Topic */}
+                              {securityData.topic && (
+                                <div className="space-y-2">
+                                  <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                                    <MessageSquare className="h-4 w-4" />
+                                    Tema Cubierto
+                                  </div>
+                                  <p className="text-sm bg-muted p-3 rounded-md">{securityData.topic}</p>
+                                </div>
+                              )}
+                              
+                              {/* Reflection */}
+                              {securityData.reflection && (
+                                <div className="space-y-2">
+                                  <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                                    <Lightbulb className="h-4 w-4" />
+                                    Reflexión
+                                  </div>
+                                  <p className="text-sm bg-muted p-3 rounded-md whitespace-pre-wrap">{securityData.reflection}</p>
+                                </div>
+                              )}
+                              
+                              {/* Evidence */}
+                              {securityData.evidence && securityData.evidence.length > 0 && (
+                                <div className="space-y-2">
+                                  <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                                    <Camera className="h-4 w-4" />
+                                    Evidencia Fotográfica
+                                  </div>
+                                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                                    {securityData.evidence.map((evidence: any, idx: number) => (
+                                      <div key={idx} className="relative">
+                                        <img 
+                                          src={evidence.photo_url} 
+                                          alt={`Evidencia ${idx + 1}`}
+                                          className="w-full h-32 object-cover rounded border"
+                                        />
+                                        <a 
+                                          href={evidence.photo_url} 
+                                          target="_blank" 
+                                          rel="noopener noreferrer"
+                                          className="absolute top-1 right-1 bg-black/70 text-white p-1 rounded"
+                                        >
+                                          <ExternalLink className="h-3 w-3" />
+                                        </a>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                            </>
+                          ) : (
+                            <div className="text-sm text-muted-foreground italic">
+                              No se registraron datos de seguridad para esta sección.
+                            </div>
+                          )}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  );
+                }
+                
+                // Para secciones normales, solo mostrar si tienen items completados
+                const completedSectionItems = (section.checklist_items as ChecklistItemDefinition[] | undefined)
+                  ?.filter((item: ChecklistItemDefinition) => getItemCompletionData(item.id))
+                  ?.sort((a: ChecklistItemDefinition, b: ChecklistItemDefinition) => a.order_index - b.order_index);
                 
                 if (!completedSectionItems?.length) return null;
                 

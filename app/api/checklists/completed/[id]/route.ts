@@ -41,7 +41,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     console.log('Trying to fetch from completed_checklists...')
     let { data: completedChecklist, error: mainError } = await supabase
       .from('completed_checklists')
-      .select('*')
+      .select('*, security_data')
       .eq('id', id)
       .maybeSingle()
 
@@ -64,7 +64,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
         console.log('Found schedule, looking for completed checklist...')
         const { data: foundCompleted, error: completedError } = await supabase
           .from('completed_checklists')
-          .select('*')
+          .select('*, security_data')
           .eq('checklist_id', scheduleData.template_id)
           .eq('asset_id', scheduleData.asset_id)
           .order('completion_date', { ascending: false })
@@ -107,8 +107,12 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       } else if (data) {
         console.log('Found template version data:', data)
         // Transformar la estructura de template version a formato compatible
+        // Ensure section_type and security_config are preserved in transformed sections
+        // Use nullish coalescing (??) to preserve 'security_talk' and other types
         const transformedSections = (data.sections || []).map((section: any) => ({
           ...section,
+          section_type: section.section_type ?? 'checklist', // Only default if null/undefined
+          security_config: section.security_config || null,
           checklist_items: section.items || [] // Convert 'items' to 'checklist_items'
         }))
         
@@ -128,7 +132,13 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
         .select(`
           *,
           checklist_sections (
-            *,
+            id,
+            title,
+            order_index,
+            section_type,
+            security_config,
+            evidence_config,
+            cleanliness_config,
             checklist_items (*)
           )
         `)
@@ -139,6 +149,22 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
         console.error('Error fetching checklist data:', checklistError)
       } else {
         console.log('Found checklist data:', data)
+        // Ensure section_type and security_config are included in sections
+        // IMPORTANT: Don't override section_type if it's already set - preserve the actual value from DB
+        if (data?.checklist_sections) {
+          data.checklist_sections = data.checklist_sections.map((section: any) => ({
+            ...section,
+            // Only set default if section_type is null/undefined, not if it's already set
+            section_type: section.section_type ?? 'checklist',
+            security_config: section.security_config || null
+          }))
+          console.log('🔍 Processed checklist sections:', data.checklist_sections.map((s: any) => ({
+            id: s.id,
+            title: s.title,
+            section_type: s.section_type,
+            security_config: s.security_config
+          })))
+        }
         checklistData = data
       }
     }
@@ -195,13 +221,18 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     // Construir la respuesta
     const response = {
       ...completedChecklist,
+      security_data: completedChecklist.security_data || null, // Ensure security_data is included
       checklists: checklistData,
       assets: assetData,
       profile: profileData,
       issues: issues || []
     }
 
-    console.log('Returning response:', response)
+    console.log('Returning response with security_data:', {
+      hasSecurityData: !!completedChecklist.security_data,
+      securityDataKeys: completedChecklist.security_data ? Object.keys(completedChecklist.security_data) : [],
+      securityData: completedChecklist.security_data
+    })
     return NextResponse.json({ data: response })
 
   } catch (error: any) {

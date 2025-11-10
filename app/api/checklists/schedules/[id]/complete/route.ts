@@ -43,7 +43,8 @@ export async function POST(
       signature,
       hours_reading,
       kilometers_reading,
-      evidence_data
+      evidence_data,
+      security_data
     } = await request.json()
 
     console.log('=== COMPLETANDO CHECKLIST SIN AUTO-WORK-ORDER ===')
@@ -374,6 +375,26 @@ export async function POST(
         }
       } catch (evidenceError) {
         console.error('Error in evidence saving process:', evidenceError)
+        // No fallar el checklist por esto
+      }
+    }
+
+    // Guardar datos de seguridad si se proporcionaron
+    if (security_data && Object.keys(security_data).length > 0 && completionResult?.completed_id) {
+      try {
+        const { error: securityError } = await supabase
+          .from('completed_checklists')
+          .update({ security_data: security_data })
+          .eq('id', completionResult.completed_id)
+
+        if (securityError) {
+          console.error('Error saving security data:', securityError)
+          // No fallar el checklist por esto, solo registrar el error
+        } else {
+          console.log('Security data saved successfully')
+        }
+      } catch (securityError) {
+        console.error('Error in security data saving process:', securityError)
         // No fallar el checklist por esto
       }
     }

@@ -24,7 +24,7 @@ import {
 } from "lucide-react"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
-import Image from "next/image"
+import { SecurityConfig, SecurityTalkData } from "@/types"
 
 interface Asset {
   id: string
@@ -71,6 +71,8 @@ interface CompletedChecklist {
       id: string
       title: string
       order_index: number
+      section_type?: 'checklist' | 'evidence' | 'cleanliness_bonus' | 'security_talk'
+      security_config?: SecurityConfig | null
       checklist_items: Array<{
         id: string
         description: string
@@ -97,6 +99,7 @@ interface CompletedChecklist {
     work_order_id: string | null
     resolved: boolean | null
   }>
+  security_data?: Record<string, SecurityTalkData> | null
 }
 
 interface ReportData {
@@ -131,6 +134,7 @@ export function AssetChecklistEvidenceReport({
   const [data, setData] = useState<ReportData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [operatorDirectory, setOperatorDirectory] = useState<Record<string, { nombre: string; apellido: string; employee_code?: string }>>({})
 
   useEffect(() => {
     fetchReportData()
@@ -152,12 +156,8 @@ export function AssetChecklistEvidenceReport({
       }
 
       const result = await response.json()
-      console.log('Report data received:', result.data)
-      if (result.data?.completed_checklists?.length > 0) {
-        console.log('First checklist structure:', result.data.completed_checklists[0])
-        if (result.data.completed_checklists[0].completed_items?.length > 0) {
-          console.log('Sample completed item:', result.data.completed_checklists[0].completed_items[0])
-        }
+      if (!result.data) {
+        throw new Error('Reporte sin datos válidos')
       }
       setData(result.data)
     } catch (err: any) {
@@ -167,6 +167,49 @@ export function AssetChecklistEvidenceReport({
     }
   }
 
+  const fetchOperatorDirectory = async (operatorIds: string[]) => {
+    if (operatorIds.length === 0) return
+
+    try {
+      const response = await fetch(`/api/operators/register?ids=${operatorIds.join(',')}`)
+      if (!response.ok) return
+
+      const operators = await response.json()
+      setOperatorDirectory(prev => {
+        const updated = { ...prev }
+        operators.forEach((op: any) => {
+          updated[op.id] = {
+            nombre: op.nombre || '',
+            apellido: op.apellido || '',
+            employee_code: op.employee_code || undefined
+          }
+        })
+        return updated
+      })
+    } catch (error) {
+      console.error('Error fetching operator directory for report:', error)
+    }
+  }
+
+  useEffect(() => {
+    if (!data?.completed_checklists?.length) return
+
+    const attendeeIds = new Set<string>()
+    data.completed_checklists.forEach(checklist => {
+      const securitySections = checklist.security_data || {}
+      Object.values(securitySections).forEach(sectionData => {
+        if (sectionData?.attendees && Array.isArray(sectionData.attendees)) {
+          sectionData.attendees.forEach(id => attendeeIds.add(id))
+        }
+      })
+    })
+
+    const missingIds = Array.from(attendeeIds).filter(id => !operatorDirectory[id])
+    if (missingIds.length > 0) {
+      fetchOperatorDirectory(missingIds)
+    }
+  }, [data, operatorDirectory])
+
   const handlePrint = () => {
     window.print()
   }
@@ -175,6 +218,108 @@ export function AssetChecklistEvidenceReport({
     // This would integrate with a PDF generation service
     // For now, we'll use the browser's print to PDF functionality
     window.print()
+  }
+
+  const getOperatorDisplayName = (operatorId: string) => {
+    const operator = operatorDirectory[operatorId]
+    if (!operator) {
+      return `Operador ${operatorId.substring(0, 8)}...`
+    }
+    const fullName = `${operator.nombre || ''} ${operator.apellido || ''}`.trim()
+    return operator.employee_code
+      ? `${fullName} (${operator.employee_code})`
+      : fullName
+  }
+
+  const renderSecuritySection = (
+    section: CompletedChecklist['checklists']['checklist_sections'][number],
+    securityData: SecurityTalkData,
+    config: SecurityConfig
+  ) => {
+    const isPlantManagerMode = config.mode === 'plant_manager' || (securityData.attendees?.length ?? 0) > 0
+
+    return (
+      <div key={section.id} className="border rounded-lg p-4">
+        <h4 className="font-medium text-lg mb-3 text-gray-900">
+          {section.title}
+        </h4>
+        <div className="space-y-3 text-sm text-gray-700">
+          <div>
+            <span className="font-medium text-gray-900">Modo:</span>{' '}
+            {isPlantManagerMode ? 'Jefe de Planta / Dosificador' : 'Operador'}
+          </div>
+
+          {config.require_attendance && (
+            isPlantManagerMode ? (
+              <div>
+                <span className="font-medium text-gray-900">Asistentes:</span>
+                {securityData.attendees && securityData.attendees.length > 0 ? (
+                  <ul className="list-disc list-inside mt-1 space-y-1">
+                    {securityData.attendees.map(attendeeId => (
+                      <li key={attendeeId}>{getOperatorDisplayName(attendeeId)}</li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="mt-1 text-gray-500">No se registraron asistentes.</p>
+                )}
+              </div>
+            ) : (
+              <div>
+                <span className="font-medium text-gray-900">Asistencia:</span>{' '}
+                {securityData.attendance === true
+                  ? 'Asistió'
+                  : securityData.attendance === false
+                    ? 'No asistió'
+                    : 'No registrado'}
+              </div>
+            )
+          )}
+
+          {config.require_topic && securityData.topic && (
+            <div>
+              <span className="font-medium text-gray-900">Tema Cubierto:</span>
+              <p className="mt-1 bg-gray-50 p-2 rounded">{securityData.topic}</p>
+            </div>
+          )}
+
+          {config.require_reflection && securityData.reflection && (
+            <div>
+              <span className="font-medium text-gray-900">Reflexión:</span>
+              <p className="mt-1 bg-gray-50 p-2 rounded whitespace-pre-wrap">
+                {securityData.reflection}
+              </p>
+            </div>
+          )}
+
+          {config.allow_evidence && securityData.evidence && securityData.evidence.length > 0 && (
+            <div>
+              <span className="font-medium text-gray-900 block mb-2">Evidencia Fotográfica:</span>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                {securityData.evidence.map((evidence, index) => (
+                  evidence?.photo_url ? (
+                    <div key={`${section.id}-evidence-${index}`} className="space-y-1">
+                      <div className="relative w-full aspect-[4/3] overflow-hidden rounded border">
+                        <img
+                          src={evidence.photo_url}
+                          alt={`Evidencia ${index + 1} - ${section.title}`}
+                          className="w-full h-full object-cover"
+                        />
+                      </div>
+                      {(evidence.category || evidence.description) && (
+                        <p className="text-xs text-gray-500">
+                          {evidence.category && <span className="font-medium">{evidence.category}: </span>}
+                          {evidence.description}
+                        </p>
+                      )}
+                    </div>
+                  ) : null
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    )
   }
 
   const formatDate = (dateString: string) => {
@@ -594,9 +739,13 @@ export function AssetChecklistEvidenceReport({
                 {/* Checklist Sections and Items */}
                 <div className="space-y-4">
                   {(() => {
-                    const hasMatchingItems = checklist.checklists?.checklist_sections?.some(section =>
-                      section.checklist_items?.some(item => getItemCompletionData(checklist, item.id))
-                    );
+                    const hasMatchingItems = checklist.checklists?.checklist_sections?.some(section => {
+                      const securityDataForSection = checklist.security_data?.[section.id]
+                      if (section.section_type === 'security_talk' || securityDataForSection) {
+                        return !!securityDataForSection
+                      }
+                      return section.checklist_items?.some(item => getItemCompletionData(checklist, item.id))
+                    })
                     
                     // Si tenemos plantilla Y hay matching, mostrar por secciones
                     if (checklist.checklists?.checklist_sections?.length > 0 && hasMatchingItems) {
@@ -604,6 +753,19 @@ export function AssetChecklistEvidenceReport({
                     checklist.checklists.checklist_sections
                       .sort((a, b) => a.order_index - b.order_index)
                       .map((section) => {
+                        const securityDataForSection = checklist.security_data?.[section.id]
+
+                        if (section.section_type === 'security_talk' || securityDataForSection) {
+                          if (!securityDataForSection) return null
+                          const inferredConfig: SecurityConfig = section.security_config || {
+                            mode: securityDataForSection.attendees && securityDataForSection.attendees.length > 0 ? 'plant_manager' : 'operator',
+                            require_attendance: true,
+                            require_topic: true,
+                            require_reflection: true,
+                            allow_evidence: Array.isArray(securityDataForSection.evidence) && securityDataForSection.evidence.length > 0
+                          }
+                          return renderSecuritySection(section, securityDataForSection, inferredConfig)
+                        }
                         // Solo mostrar secciones que tengan items completados
                         const completedSectionItems = section.checklist_items
                           ?.filter((item) => getItemCompletionData(checklist, item.id))

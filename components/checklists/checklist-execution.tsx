@@ -46,12 +46,14 @@ import {
   List,
   Minimize2,
   Maximize2,
-  Sparkles
+  Sparkles,
+  Shield
 } from "lucide-react"
 import { SignatureCanvas } from "@/components/checklists/signature-canvas"
 import { EnhancedOfflineStatus } from "@/components/checklists/enhanced-offline-status"
 import { EquipmentReadingsForm } from "@/components/checklists/equipment-readings-form"
 import { EvidenceCaptureSection } from "@/components/checklists/evidence-capture-section"
+import { SecurityTalkSection } from "@/components/checklists/security-talk-section"
 import { CorrectiveWorkOrderDialog } from "@/components/checklists/corrective-work-order-dialog"
 import { SmartPhotoUpload } from "@/components/checklists/smart-photo-upload"
 import { useOfflineSync } from "@/hooks/useOfflineSync"
@@ -75,7 +77,7 @@ interface ChecklistExecutionProps {
 interface SectionProgress {
   id: string
   title: string
-  type: 'checklist' | 'evidence' | 'cleanliness_bonus'
+  type: 'checklist' | 'evidence' | 'cleanliness_bonus' | 'security_talk'
   total: number
   completed: number
   hasIssues: boolean
@@ -107,6 +109,9 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
   
   // Estados para evidencias fotográficas
   const [evidenceData, setEvidenceData] = useState<Record<string, any[]>>({})
+  
+  // Estados para datos de charla de seguridad
+  const [securityData, setSecurityData] = useState<Record<string, any>>({})
   
   // Section Navigation States
   const [sectionCollapsed, setSectionCollapsed] = useState<Record<string, boolean>>({})
@@ -195,6 +200,84 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
           evidenceTotal: requiredPhotos,
           evidenceCompleted: evidenceCompleted
         }
+      } else if (section.section_type === 'security_talk') {
+        // Ensure we have a valid config - if section.security_config is null/undefined, use defaults
+        const config = section.security_config && typeof section.security_config === 'object' 
+          ? section.security_config 
+          : {
+              mode: 'operator',
+              require_attendance: true, // Default to true to ensure counter works
+              require_topic: true,
+              require_reflection: true,
+              allow_evidence: false
+            }
+        
+        const sectionSecurityData = securityData[section.id] || {}
+        
+        // Check if attendance is marked (for operator mode) or has attendees (for plant manager mode)
+        const isPlantManagerMode = config.mode === 'plant_manager'
+        const hasAttendance = isPlantManagerMode 
+          ? (sectionSecurityData.attendees?.length || 0) > 0
+          : sectionSecurityData.attendance === true
+        
+        // Count required fields completion
+        // Logic: If attendance is required but not marked, only count attendance field
+        // If attendance is not required OR attendance is marked, then count topic/reflection if required
+        let totalFields = 0
+        let completedFields = 0
+        
+        // Count attendance field if it's required
+        if (config.require_attendance) {
+          totalFields++
+          if (hasAttendance) {
+            completedFields++
+          }
+        }
+        
+        // Only require topic/reflection if attendance is marked (or attendance is not required)
+        const shouldRequireDetails = !config.require_attendance || hasAttendance
+        
+        // Count topic field only if it should be required (attendance marked or not required)
+        if (config.require_topic && shouldRequireDetails) {
+          totalFields++
+          if (sectionSecurityData.topic?.trim().length > 0) {
+            completedFields++
+          }
+        }
+        
+        // Count reflection field only if it should be required (attendance marked or not required)
+        if (config.require_reflection && shouldRequireDetails) {
+          totalFields++
+          if (sectionSecurityData.reflection?.trim().length > 0) {
+            completedFields++
+          }
+        }
+        
+        // If no fields are required at all, consider section as optional (complete)
+        // But this should rarely happen - at minimum attendance should be required
+        if (totalFields === 0) {
+          totalFields = 1
+          completedFields = 1
+        }
+        
+        if (process.env.NODE_ENV === 'development') {
+          console.log(`[Security Section ${section.id}] Progress: ${completedFields}/${totalFields}`, {
+            config,
+            hasAttendance,
+            shouldRequireDetails,
+            sectionSecurityData
+          })
+        }
+        
+        return {
+          id: section.id,
+          title: section.title,
+          type: 'security_talk' as const,
+          total: totalFields,
+          completed: completedFields,
+          hasIssues: false,
+          isCollapsed: sectionCollapsed[section.id] || false
+        }
       } else {
         const items = section.checklist_items || section.items || []
         const completed = items.filter((item: any) => itemStatus[item.id]).length
@@ -213,7 +296,7 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
         }
       }
     })
-  }, [checklist, itemStatus, evidenceData, sectionCollapsed])
+  }, [checklist, itemStatus, evidenceData, securityData, sectionCollapsed])
 
   // Auto-collapse completed sections when enabled
   useEffect(() => {
@@ -616,7 +699,8 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
                 asset_id,
                 location,
                 current_hours,
-                current_kilometers
+                current_kilometers,
+                plant_id
               )
             `)
             .eq('id', id)
@@ -640,6 +724,7 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
             assetCode: data.assets?.asset_id || '',
             asset: data.assets?.name || '',
             assetLocation: data.assets?.location || '',
+            plantId: data.assets?.plant_id || null,
             modelId: data.checklists?.model_id || '',
             model: data.checklists?.equipment_models?.name || 'N/A',
             manufacturer: data.checklists?.equipment_models?.manufacturer || 'N/A',
@@ -781,6 +866,15 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
     setEvidenceData(prev => ({
       ...prev,
       [sectionId]: evidences
+    }))
+    markAsUnsaved()
+  }, [markAsUnsaved])
+
+  // Manejar cambios en datos de seguridad
+  const handleSecurityDataChange = useCallback((sectionId: string, data: any) => {
+    setSecurityData(prev => ({
+      ...prev,
+      [sectionId]: data
     }))
     markAsUnsaved()
   }, [markAsUnsaved])
@@ -1215,7 +1309,8 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
         signature,
         hours_reading: equipmentReadings.hours_reading || null,
         kilometers_reading: equipmentReadings.kilometers_reading || null,
-        evidence_data: evidenceData
+        evidence_data: evidenceData,
+        security_data: Object.keys(securityData).length > 0 ? securityData : undefined
       }
       
       if (isOnline) {
@@ -1421,7 +1516,8 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
               })),
               hours_reading: equipmentReadings.hours_reading || null,
               kilometers_reading: equipmentReadings.kilometers_reading || null,
-              evidence_data: evidenceData
+              evidence_data: evidenceData,
+              security_data: Object.keys(securityData).length > 0 ? securityData : undefined
             }
             
             console.log('💾 Saving backup offline checklist with data:', {
@@ -1456,6 +1552,7 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
               hours_reading: equipmentReadings.hours_reading || null,
               kilometers_reading: equipmentReadings.kilometers_reading || null,
               evidence_data: evidenceData,
+              security_data: Object.keys(securityData).length > 0 ? securityData : undefined,
               timestamp: Date.now(),
               fallback: true
             }
@@ -1505,8 +1602,8 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
           sectionType: sectionAndItem?.section?.section_type
         }
       })
-      // Exclude cleanliness verification items from corrective work orders
-      .filter(item => item.sectionType !== 'cleanliness_bonus')
+      // Exclude cleanliness verification items and security talk sections from corrective work orders
+      .filter(item => item.sectionType !== 'cleanliness_bonus' && item.sectionType !== 'security_talk')
 
     if (itemsWithIssues.length === 0) {
       toast.error("No hay elementos con problemas para generar una orden correctiva")
@@ -2156,6 +2253,88 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
                   </div>
                 )
               }
+
+              if (section.section_type === 'security_talk') {
+                // Security Talk Section with Collapsible Wrapper
+                const config = section.security_config || {}
+                const sectionSecurityData = securityData[section.id] || {}
+                // Get plant_id from asset
+                const plantId = checklist?.plantId
+                
+                if (process.env.NODE_ENV === 'development') {
+                  console.log('🔍 Rendering SecurityTalkSection:', {
+                    sectionId: section.id,
+                    sectionTitle: section.title,
+                    config,
+                    plantId,
+                    checklistData: {
+                      id: checklist?.id,
+                      plantId: checklist?.plantId,
+                      assetId: checklist?.assetId
+                    }
+                  })
+                }
+                
+                return (
+                  <div 
+                    key={`security-${section.id}`}
+                    id={`section-${section.id}`}
+                    className="scroll-mt-20"
+                  >
+                    <Collapsible
+                      open={!isCollapsed}
+                      onOpenChange={() => toggleSectionCollapse(section.id)}
+                    >
+                      <CollapsibleTrigger asChild>
+                        <Card className="cursor-pointer hover:shadow-md transition-shadow border-orange-200 bg-orange-50/50">
+                          <CardHeader className="pb-3">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-3">
+                                <Shield className="h-5 w-5 text-orange-600" />
+                                <div>
+                                  <CardTitle className="text-lg">{section.title}</CardTitle>
+                                  <CardDescription>
+                                    Sección de charla de seguridad
+                                  </CardDescription>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <Badge 
+                                  variant={sectionStatus.isComplete ? "default" : "secondary"}
+                                  className={sectionStatus.isComplete ? "bg-green-500" : ""}
+                                >
+                                  {sectionStatus.completed}/{sectionStatus.total}
+                                </Badge>
+                                {sectionStatus.isComplete && (
+                                  <CheckCircle2 className="h-4 w-4 text-green-500" />
+                                )}
+                                {isCollapsed ? (
+                                  <ChevronRight className="h-4 w-4 text-gray-400" />
+                                ) : (
+                                  <ChevronDown className="h-4 w-4 text-gray-400" />
+                                )}
+                              </div>
+                            </div>
+                          </CardHeader>
+                        </Card>
+                      </CollapsibleTrigger>
+                      <CollapsibleContent>
+                        <div className="mt-2">
+                          <SecurityTalkSection
+                            sectionId={section.id}
+                            sectionTitle={section.title}
+                            config={config}
+                            plantId={plantId}
+                            onDataChange={handleSecurityDataChange}
+                            initialData={sectionSecurityData}
+                            disabled={submitting}
+                          />
+                        </div>
+                      </CollapsibleContent>
+                    </Collapsible>
+                  </div>
+                )
+              }
               
               // Enhanced Regular Checklist Section with Collapsible Items
               const items = section.checklist_items || section.items || []
@@ -2450,8 +2629,8 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
               sectionType: sectionAndItem?.section?.section_type
             }
           })
-          // Exclude cleanliness verification items from corrective work orders
-          .filter(item => item.sectionType !== 'cleanliness_bonus')}
+          // Exclude cleanliness verification items and security talk sections from corrective work orders
+          .filter(item => item.sectionType !== 'cleanliness_bonus' && item.sectionType !== 'security_talk')}
         onWorkOrderCreated={handleWorkOrderCreated}
         onNavigateToAssetsPage={handleNavigateToAssetsPage}
       />
