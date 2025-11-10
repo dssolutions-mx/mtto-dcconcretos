@@ -26,11 +26,37 @@ export async function GET() {
       )
     }
 
+    // Fetch completed checklists to get section_type information
+    const checklistIds = [...new Set((unresolvedIssues || []).map((issue: any) => issue.checklist_id))]
+    const { data: completedChecklists } = await supabase
+      .from('completed_checklists')
+      .select('id, completed_items')
+      .in('id', checklistIds)
+
+    // Create a map of checklist_id -> completed_items for quick lookup
+    const completedItemsMap = new Map<string, any[]>()
+    if (completedChecklists) {
+      for (const checklist of completedChecklists) {
+        completedItemsMap.set(checklist.id, checklist.completed_items || [])
+      }
+    }
+
     // Group issues by checklist and format for the component
     const issuesByChecklist = new Map<string, any>()
 
     for (const issue of unresolvedIssues || []) {
       const checklistId = issue.checklist_id
+
+      // Get section_type from completed_items
+      const completedItems = completedItemsMap.get(checklistId) || []
+      const completedItem = completedItems.find((item: any) => item.item_id === issue.item_id)
+      const sectionType = completedItem?.section_type || 'maintenance'
+      const sectionTitle = completedItem?.section_title || 'Problema detectado'
+
+      // Skip cleanliness and security sections
+      if (sectionType === 'cleanliness_bonus' || sectionType === 'security_talk') {
+        continue
+      }
 
       if (!issuesByChecklist.has(checklistId)) {
         issuesByChecklist.set(checklistId, {
@@ -56,8 +82,8 @@ export async function GET() {
         notes: issue.notes || '',
         photo: issue.photo_url,
         status: issue.status as "flag" | "fail",
-        sectionTitle: 'Problema detectado',
-        sectionType: 'maintenance'
+        sectionTitle: sectionTitle,
+        sectionType: sectionType
       })
       groupedIssue.issueCount++
     }

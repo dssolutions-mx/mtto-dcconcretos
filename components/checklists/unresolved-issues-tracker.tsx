@@ -76,7 +76,7 @@ export function UnresolvedIssuesTracker() {
         // Fallback to localStorage for backward compatibility
         const allUnresolvedKey = 'all-unresolved-issues'
         const stored = localStorage.getItem(allUnresolvedKey)
-        
+
         if (stored) {
           localIssues = JSON.parse(stored)
         }
@@ -97,6 +97,88 @@ export function UnresolvedIssuesTracker() {
       } catch (error) {
         console.error('Error fetching database issues:', error)
         // Continue with local issues only
+      }
+
+      // Auto-create work orders for issues older than 1 hour
+      const ONE_HOUR_MS = 60 * 60 * 1000
+      const now = Date.now()
+      const autoCreatePromises: Promise<void>[] = []
+
+      for (const issue of databaseIssues) {
+        const issueAge = now - issue.timestamp
+
+        if (issueAge > ONE_HOUR_MS) {
+          console.log(`🔄 Auto-creating work orders for checklist ${issue.checklistId} (${Math.round(issueAge / 1000 / 60)} minutes old)`)
+
+          // Load the full issue details and auto-create work orders
+          const autoCreatePromise = (async () => {
+            try {
+              const details = await loadIssueDetails(issue.id)
+              if (!details) {
+                console.error(`❌ Could not load details for issue ${issue.id}`)
+                return
+              }
+
+              // Determine priorities based on status
+              const priorities = details.issues.map((item: any) =>
+                item.status === 'fail' ? 'Alta' : 'Media'
+              )
+
+              // Auto-consolidate all similar issues
+              const consolidationChoices = details.issues.reduce((acc: any, item: any) => {
+                acc[item.id] = 'consolidate'
+                return acc
+              }, {})
+
+              // Call the work order creation API
+              const response = await fetch('/api/checklists/generate-corrective-work-order-enhanced', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                  checklist_id: details.checklistId,
+                  asset_id: details.assetId,
+                  items_with_issues: details.issues,
+                  priorities,
+                  consolidation_choices: consolidationChoices,
+                  auto_created: true
+                })
+              })
+
+              if (response.ok) {
+                console.log(`✅ Auto-created work orders for checklist ${details.checklistId}`)
+                // Mark as resolved
+                await removeResolvedIssue(issue.id)
+                toast.success(`🔄 Órdenes de trabajo creadas automáticamente para ${issue.assetName}`, {
+                  description: `El problema tenía más de 1 hora sin ser atendido`
+                })
+              } else {
+                console.error(`❌ Failed to auto-create work orders for checklist ${details.checklistId}:`, await response.text())
+              }
+            } catch (error) {
+              console.error(`❌ Error auto-creating work orders for issue ${issue.id}:`, error)
+            }
+          })()
+
+          autoCreatePromises.push(autoCreatePromise)
+        }
+      }
+
+      // Wait for all auto-creation to complete
+      if (autoCreatePromises.length > 0) {
+        await Promise.all(autoCreatePromises)
+
+        // Re-fetch database issues after auto-creation
+        try {
+          const response = await fetch('/api/checklists/unresolved-issues')
+          if (response.ok) {
+            const dbData = await response.json()
+            databaseIssues = dbData.issues || []
+          }
+        } catch (error) {
+          console.error('Error re-fetching database issues:', error)
+        }
       }
 
       // Combine and deduplicate issues using a Map for better deduplication

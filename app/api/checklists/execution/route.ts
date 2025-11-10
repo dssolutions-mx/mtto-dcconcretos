@@ -435,10 +435,15 @@ async function processChecklistCompletion(
   
   if (updateError) throw updateError
   
-  // 7. Si hay problemas, registrarlos
+  // 7. Si hay problemas, registrarlos (excluding cleanliness and security sections)
   if (hasIssues) {
     for (const item of completed_items) {
       if (item.status === 'flag' || item.status === 'fail') {
+        // Skip cleanliness and security sections
+        if (item.section_type === 'cleanliness_bonus' || item.section_type === 'security_talk') {
+          continue
+        }
+
         const { error: issueError } = await supabase
           .from('checklist_issues')
           .insert({
@@ -450,7 +455,7 @@ async function processChecklistCompletion(
             photo_url: item.photo_url || null,
             resolved: false
           })
-        
+
         if (issueError) throw issueError
       }
     }
