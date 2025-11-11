@@ -922,7 +922,9 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
         status: itemStatus[itemId],
         notes: itemNotes[itemId] || null,
         photo_url: itemPhotos[itemId] || null,
-        description: sectionAndItem?.item?.description || null
+        description: sectionAndItem?.item?.description || null,
+        section_type: sectionAndItem?.section?.section_type || null,
+        section_title: sectionAndItem?.section?.title || null
       }
     })
   }, [itemStatus, itemNotes, itemPhotos])
@@ -1120,7 +1122,8 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
     
     const maintenanceItemsWithIssues = allItemsWithIssues.filter(([itemId]) => {
       const sectionAndItem = findSectionAndItemById(itemId)
-      return sectionAndItem?.section?.section_type !== 'cleanliness_bonus'
+      return sectionAndItem?.section?.section_type !== 'cleanliness_bonus' &&
+             sectionAndItem?.section?.section_type !== 'security_talk'
     })
 
     const cleanlinessItemsWithIssues = allItemsWithIssues.filter(([itemId]) => {
