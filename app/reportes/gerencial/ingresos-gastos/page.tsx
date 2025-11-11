@@ -56,9 +56,14 @@ type PlantData = {
   ebitda: number
   ebitda_pct: number
 
-  // Optional Bombeo
+  // Bombeo
   ingresos_bombeo_vol?: number
   ingresos_bombeo_unit?: number
+  ingresos_bombeo_total?: number
+
+  // EBITDA con bombeo
+  ebitda_con_bombeo?: number
+  ebitda_con_bombeo_pct?: number
 }
 
 type ReportData = {
@@ -73,11 +78,15 @@ type ReportData = {
 type CostDetails = {
   departments: Array<{
     department: string
+    expense_category?: string | null
+    expense_subcategory?: string | null
     total: number
     entries: Array<{
       id: string
       description: string | null
       subcategory: string | null
+      expense_category?: string | null
+      expense_subcategory?: string | null
       amount: number
       is_distributed: boolean
       distribution_method: string | null
@@ -376,7 +385,7 @@ export default function IngresosGastosPage() {
     addRow('EBITDA', p => p.ebitda, formatCurrency, 'ebitda', true)
     addRow('EBITDA %', p => p.ebitda_pct, formatPercent, 'ebitda_pct')
 
-    // Optional Bombeo Section
+    // Bombeo Section
     if (plants.some(p => p.ingresos_bombeo_vol && p.ingresos_bombeo_vol > 0)) {
       exportData.push([])
       rowMetadata.push({ type: 'empty', rowIndex: currentRowIndex++ })
@@ -384,6 +393,14 @@ export default function IngresosGastosPage() {
       rowMetadata.push({ type: 'section', rowIndex: currentRowIndex++ })
       addRow('Ingresos Bombeo Vol', p => p.ingresos_bombeo_vol || 0, val => formatNumber(val, 2), 'ingresos_bombeo_vol')
       addRow('Ingresos Bombeo $ Unit', p => p.ingresos_bombeo_unit || 0, formatCurrency, 'ingresos_bombeo_unit')
+      addRow('Ingreso Bombeo Total', p => p.ingresos_bombeo_total || 0, formatCurrency, 'ingresos_bombeo_total')
+      
+      exportData.push([])
+      rowMetadata.push({ type: 'empty', rowIndex: currentRowIndex++ })
+      exportData.push(['EBITDA CON BOMBEO', ...Array(headers.length - 1).fill('')])
+      rowMetadata.push({ type: 'section', rowIndex: currentRowIndex++ })
+      addRow('EBITDA con bombeo', p => p.ebitda_con_bombeo || 0, formatCurrency, 'ebitda_con_bombeo', true)
+      addRow('EBITDA con bombeo %', p => p.ebitda_con_bombeo_pct || 0, formatPercent, 'ebitda_con_bombeo_pct')
     }
 
     // Create worksheet
@@ -577,6 +594,8 @@ export default function IngresosGastosPage() {
     'total_costo_op': 'total',
     'ebitda': 'total',
     'costo_mp_total': 'total',
+    'ingresos_bombeo_total': 'total',
+    'ebitda_con_bombeo': 'total',
     
     // Unit costs
     'pv_unitario': 'unit',
@@ -598,6 +617,7 @@ export default function IngresosGastosPage() {
     'total_costo_op_pct': 'percent',
     'ebitda_pct': 'percent',
     'spread_unitario_pct': 'percent',
+    'ebitda_con_bombeo_pct': 'percent',
     
     // Weighted averages (volume-weighted)
     'fc_ponderada': 'weighted_avg',
@@ -699,6 +719,26 @@ export default function IngresosGastosPage() {
       }
       
       case 'percent': {
+        // Special handling for ebitda_con_bombeo_pct
+        if (metricKey === 'ebitda_con_bombeo_pct') {
+          const totalEbitdaConBombeo = buPlants.reduce((sum, p) => sum + (p.ebitda_con_bombeo || 0), 0)
+          const totalVentas = buPlants.reduce((sum, p) => sum + p.ventas_total, 0)
+          const totalBombeo = buPlants.reduce((sum, p) => sum + (p.ingresos_bombeo_total || 0), 0)
+          const totalIngresosConBombeo = totalVentas + totalBombeo
+          if (totalIngresosConBombeo === 0) return 0
+          return (totalEbitdaConBombeo / totalIngresosConBombeo) * 100
+        }
+        
+        // Special handling for ebitda_pct - denominator is only ventas_total (concreto), NOT bombeo
+        // EBITDA con bombeo uses totalIngresos (ventas + bombeo) as denominator
+        if (metricKey === 'ebitda_pct') {
+          const totalEbitda = buPlants.reduce((sum, p) => sum + p.ebitda, 0)
+          const totalVentas = buPlants.reduce((sum, p) => sum + p.ventas_total, 0)
+          // EBITDA % is calculated only on concreto sales, not bombeo income
+          if (totalVentas === 0) return 0
+          return (totalEbitda / totalVentas) * 100
+        }
+        
         // For percentages, we need the numerator (cost) and denominator (sales)
         const percentToNumeratorMap: Record<string, (p: PlantData) => number> = {
           'costo_cem_pct': p => p.costo_mp_total, // Approximation
@@ -708,7 +748,6 @@ export default function IngresosGastosPage() {
           'nomina_pct': p => p.nomina_total,
           'otros_indirectos_pct': p => p.otros_indirectos_total,
           'total_costo_op_pct': p => p.total_costo_op,
-          'ebitda_pct': p => p.ebitda,
           'spread_unitario_pct': p => p.ventas_total - p.costo_mp_total
         }
         
@@ -757,7 +796,51 @@ export default function IngresosGastosPage() {
   }
 
   // Helper function to calculate grand total for a metric
-  const calculateGrandTotal = (getValue: (plant: PlantData) => number): number => {
+  const calculateGrandTotal = (getValue: (plant: PlantData) => number, metricKey?: string): number => {
+    // For percentages, ALWAYS recalculate from aggregated totals (not sum of percentages)
+    if (metricKey && getMetricType(metricKey) === 'percent') {
+      // Special handling for ebitda_con_bombeo_pct
+      if (metricKey === 'ebitda_con_bombeo_pct') {
+        const totalEbitdaConBombeo = plants.reduce((sum, p) => sum + (p.ebitda_con_bombeo || 0), 0)
+        const totalVentas = plants.reduce((sum, p) => sum + p.ventas_total, 0)
+        const totalBombeo = plants.reduce((sum, p) => sum + (p.ingresos_bombeo_total || 0), 0)
+        const totalIngresosConBombeo = totalVentas + totalBombeo
+        if (totalIngresosConBombeo === 0) return 0
+        return (totalEbitdaConBombeo / totalIngresosConBombeo) * 100
+      }
+      
+      // Special handling for ebitda_pct - denominator is only ventas_total (concreto), NOT bombeo
+      // EBITDA con bombeo uses totalIngresos (ventas + bombeo) as denominator
+      if (metricKey === 'ebitda_pct') {
+        const totalEbitda = plants.reduce((sum, p) => sum + p.ebitda, 0)
+        const totalVentas = plants.reduce((sum, p) => sum + p.ventas_total, 0)
+        // EBITDA % is calculated only on concreto sales, not bombeo income
+        if (totalVentas === 0) return 0
+        return (totalEbitda / totalVentas) * 100
+      }
+      
+      // For other percentages, recalculate from numerator/denominator
+      const percentToNumeratorMap: Record<string, (p: PlantData) => number> = {
+        'costo_cem_pct': p => p.costo_mp_total,
+        'costo_mp_pct': p => p.costo_mp_total,
+        'diesel_pct': p => p.diesel_total,
+        'mantto_pct': p => p.mantto_total,
+        'nomina_pct': p => p.nomina_total,
+        'otros_indirectos_pct': p => p.otros_indirectos_total,
+        'total_costo_op_pct': p => p.total_costo_op,
+        'spread_unitario_pct': p => p.ventas_total - p.costo_mp_total
+      }
+      
+      const getNumerator = percentToNumeratorMap[metricKey]
+      if (getNumerator) {
+        const totalNumerator = plants.reduce((sum, p) => sum + getNumerator(p), 0)
+        const totalDenominator = plants.reduce((sum, p) => sum + p.ventas_total, 0)
+        if (totalDenominator === 0) return 0
+        return (totalNumerator / totalDenominator) * 100
+      }
+    }
+    
+    // For non-percentages, sum normally
     return plants.reduce((sum, plant) => sum + getValue(plant), 0)
   }
 
@@ -1015,7 +1098,7 @@ export default function IngresosGastosPage() {
                   <tr className="border-b hover:bg-muted/30">
                     <td className="sticky left-0 z-10 bg-background p-3 border-r-2">Costo Cem %</td>
                     {renderPlantColumns(p => p.costo_cem_pct, formatPercent, 'costo_cem_pct')}
-                    {renderGrandTotalCell(calculateGrandTotal(p => p.costo_cem_pct), formatPercent)}
+                    {renderGrandTotalCell(calculateGrandTotal(p => p.costo_cem_pct, 'costo_cem_pct'), formatPercent)}
                   </tr>
                   <tr className="border-b hover:bg-muted/30 bg-orange-100/50 dark:bg-orange-900/20">
                     <td className="sticky left-0 z-10 bg-orange-100 dark:bg-orange-900/30 p-3 border-r-2 font-bold">Costo MP Total Concreto</td>
@@ -1025,7 +1108,7 @@ export default function IngresosGastosPage() {
                   <tr className="border-b hover:bg-muted/30">
                     <td className="sticky left-0 z-10 bg-background p-3 border-r-2">Costo MP %</td>
                     {renderPlantColumns(p => p.costo_mp_pct, formatPercent, 'costo_mp_pct')}
-                    {renderGrandTotalCell(calculateGrandTotal(p => p.costo_mp_pct), formatPercent)}
+                    {renderGrandTotalCell(calculateGrandTotal(p => p.costo_mp_pct, 'costo_mp_pct'), formatPercent)}
                   </tr>
 
                   {/* SPREAD SECTION */}
@@ -1042,7 +1125,7 @@ export default function IngresosGastosPage() {
                   <tr className="border-b hover:bg-muted/30">
                     <td className="sticky left-0 z-10 bg-background p-3 border-r-2">Spread Unitario %</td>
                     {renderPlantColumns(p => p.spread_unitario_pct, formatPercent, 'spread_unitario_pct')}
-                    {renderGrandTotalCell(calculateGrandTotal(p => p.spread_unitario_pct), formatPercent)}
+                    {renderGrandTotalCell(calculateGrandTotal(p => p.spread_unitario_pct, 'spread_unitario_pct'), formatPercent)}
                   </tr>
 
                   {/* COSTO OPERATIVO SECTION */}
@@ -1064,7 +1147,7 @@ export default function IngresosGastosPage() {
                   <tr className="border-b hover:bg-muted/30">
                     <td className="sticky left-0 z-10 bg-background p-3 border-r-2">Diesel %</td>
                     {renderPlantColumns(p => p.diesel_pct, formatPercent, 'diesel_pct')}
-                    {renderGrandTotalCell(calculateGrandTotal(p => p.diesel_pct), formatPercent)}
+                    {renderGrandTotalCell(calculateGrandTotal(p => p.diesel_pct, 'diesel_pct'), formatPercent)}
                   </tr>
                   <tr className="border-b hover:bg-muted/30 bg-orange-50/50 dark:bg-orange-900/10">
                     <td className="sticky left-0 z-10 bg-orange-50 dark:bg-orange-900/20 p-3 border-r-2 font-semibold">MANTTO. (Todas las Unidades)</td>
@@ -1079,7 +1162,7 @@ export default function IngresosGastosPage() {
                   <tr className="border-b hover:bg-muted/30">
                     <td className="sticky left-0 z-10 bg-background p-3 border-r-2">Mantenimiento %</td>
                     {renderPlantColumns(p => p.mantto_pct, formatPercent, 'mantto_pct')}
-                    {renderGrandTotalCell(calculateGrandTotal(p => p.mantto_pct), formatPercent)}
+                    {renderGrandTotalCell(calculateGrandTotal(p => p.mantto_pct, 'mantto_pct'), formatPercent)}
                   </tr>
                   {/* Nómina Totales - Expandable */}
                   <tr className="border-b hover:bg-muted/30 bg-amber-50/50 dark:bg-amber-900/10">
@@ -1223,7 +1306,7 @@ export default function IngresosGastosPage() {
                   <tr className="border-b hover:bg-muted/30">
                     <td className="sticky left-0 z-10 bg-background p-3 border-r-2">Nómina %</td>
                     {renderPlantColumns(p => p.nomina_pct, formatPercent, 'nomina_pct')}
-                    {renderGrandTotalCell(calculateGrandTotal(p => p.nomina_pct), formatPercent)}
+                    {renderGrandTotalCell(calculateGrandTotal(p => p.nomina_pct, 'nomina_pct'), formatPercent)}
                   </tr>
                   {/* Otros Indirectos Totales - Expandable */}
                   <tr className="border-b hover:bg-muted/30 bg-cyan-50/50 dark:bg-cyan-900/10">
@@ -1332,19 +1415,27 @@ export default function IngresosGastosPage() {
                                   const plant = plants.find(p => p.plant_id === plantId)
                                   if (!plant || entries.length === 0) return null
                                   
-                                  return entries.map(entry => (
-                                    <tr key={`${entry.id}-${plantId}`} className="bg-muted/10">
-                                      <td className="sticky left-0 z-10 bg-background pl-10 p-3 border-r-2">
-                                        {entry.description || entry.subcategory || 'Sin descripción'}
-                                      </td>
-                                      {plants.map(p => (
-                                        <td key={p.plant_id} className="text-right p-3 border-r">
-                                          {p.plant_id === plantId ? formatCurrency(entry.amount) : ''}
+                                  return entries.map(entry => {
+                                    // For otros_indirectos, prefer expense_subcategory, then description, then subcategory
+                                    const displayText = (entry as any).expense_subcategory 
+                                      || entry.description 
+                                      || entry.subcategory 
+                                      || 'Sin descripción'
+                                    
+                                    return (
+                                      <tr key={`${entry.id}-${plantId}`} className="bg-muted/10">
+                                        <td className="sticky left-0 z-10 bg-background pl-10 p-3 border-r-2">
+                                          {displayText}
                                         </td>
-                                      ))}
-                                      {renderGrandTotalCell(entry.amount, formatCurrency)}
-                                    </tr>
-                                  ))
+                                        {plants.map(p => (
+                                          <td key={p.plant_id} className="text-right p-3 border-r">
+                                            {p.plant_id === plantId ? formatCurrency(entry.amount) : ''}
+                                          </td>
+                                        ))}
+                                        {renderGrandTotalCell(entry.amount, formatCurrency)}
+                                      </tr>
+                                    )
+                                  })
                                 })}
                               </React.Fragment>
                             )
@@ -1367,7 +1458,7 @@ export default function IngresosGastosPage() {
                   <tr className="border-b hover:bg-muted/30">
                     <td className="sticky left-0 z-10 bg-background p-3 border-r-2">Otros Indirectos %</td>
                     {renderPlantColumns(p => p.otros_indirectos_pct, formatPercent, 'otros_indirectos_pct')}
-                    {renderGrandTotalCell(calculateGrandTotal(p => p.otros_indirectos_pct), formatPercent)}
+                    {renderGrandTotalCell(calculateGrandTotal(p => p.otros_indirectos_pct, 'otros_indirectos_pct'), formatPercent)}
                   </tr>
                   <tr className="border-b-2 hover:bg-muted/30 bg-purple-100/70 dark:bg-purple-900/30">
                     <td className="sticky left-0 z-10 bg-purple-100 dark:bg-purple-900/40 p-3 border-r-2 font-bold text-base">TOTAL COSTO OP</td>
@@ -1377,7 +1468,7 @@ export default function IngresosGastosPage() {
                   <tr className="border-b-2 hover:bg-muted/30">
                     <td className="sticky left-0 z-10 bg-background p-3 border-r-2 font-bold">TOTAL COSTO OP %</td>
                     {renderPlantColumns(p => p.total_costo_op_pct, formatPercent, 'total_costo_op_pct')}
-                    {renderGrandTotalCell(calculateGrandTotal(p => p.total_costo_op_pct), formatPercent)}
+                    {renderGrandTotalCell(calculateGrandTotal(p => p.total_costo_op_pct, 'total_costo_op_pct'), formatPercent)}
                   </tr>
 
                   {/* EBITDA SECTION */}
@@ -1394,12 +1485,52 @@ export default function IngresosGastosPage() {
                   <tr className="border-b-2 hover:bg-muted/30">
                     <td className="sticky left-0 z-10 bg-background p-3 border-r-2 font-bold">EBITDA %</td>
                     {renderPlantColumns(p => p.ebitda_pct, formatPercent, 'ebitda_pct')}
-                    {renderGrandTotalCell(calculateGrandTotal(p => p.ebitda_pct), formatPercent)}
+                    {renderGrandTotalCell(calculateGrandTotal(p => p.ebitda_pct, 'ebitda_pct'), formatPercent)}
                   </tr>
 
-                  {/* OPTIONAL BOMBEO SECTION */}
-                  {plants.some(p => p.ingresos_bombeo_vol && p.ingresos_bombeo_vol > 0) && (
-                    <>
+                </tbody>
+              </table>
+
+              {/* BOMBEO TABLE - Separate table below main table */}
+              {plants.some(p => p.ingresos_bombeo_vol && p.ingresos_bombeo_vol > 0) && (
+                <>
+                  {/* Visual separator */}
+                  <div className="border-t-2 border-dashed border-muted-foreground/30 my-4"></div>
+                  
+                  <table className="w-full border-collapse text-sm">
+                    <thead>
+                      <tr>
+                        <th className="sticky left-0 z-20 bg-background p-3 border-r-2 border-b-2 text-left font-semibold min-w-[200px]">
+                          Concepto
+                        </th>
+                        {groupByBusinessUnit && groupedPlants ? (
+                          // Business Unit columns
+                          Object.entries(groupedPlants).map(([buId, buPlants]) => (
+                            <th
+                              key={buId}
+                              className="p-3 border-r border-b-2 text-right font-semibold bg-muted/50 min-w-[120px]"
+                            >
+                              {businessUnitNames.get(buId) || 'Sin Unidad'}
+                            </th>
+                          ))
+                        ) : (
+                          // Plant columns
+                          plants.map(plant => (
+                            <th
+                              key={plant.plant_id}
+                              className="p-3 border-r border-b-2 text-right font-semibold bg-muted/50 min-w-[120px]"
+                            >
+                              {plant.plant_name}
+                            </th>
+                          ))
+                        )}
+                        <th className="p-3 border-b-2 text-right font-semibold bg-muted/50 min-w-[120px]">
+                          Total
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {/* Ingresos Bombeo Section */}
                       <tr className="bg-slate-50 dark:bg-slate-950/20">
                         <td colSpan={plantColumnCount + 1} className="p-2 font-semibold text-sm uppercase tracking-wide">
                           Ingresos Bombeo
@@ -1415,16 +1546,39 @@ export default function IngresosGastosPage() {
                         {renderPlantColumns(p => p.ingresos_bombeo_unit || 0, formatCurrency, 'ingresos_bombeo_unit')}
                         {renderGrandTotalCell(calculateGrandTotal(p => p.ingresos_bombeo_unit || 0), formatCurrency)}
                       </tr>
-                    </>
-                  )}
-                </tbody>
-              </table>
+                      <tr className="border-b hover:bg-muted/30">
+                        <td className="sticky left-0 z-10 bg-background p-3 border-r-2 font-semibold">Ingreso Bombeo Total</td>
+                        {renderPlantColumns(p => p.ingresos_bombeo_total || 0, formatCurrency, 'ingresos_bombeo_total')}
+                        {renderGrandTotalCell(calculateGrandTotal(p => p.ingresos_bombeo_total || 0), formatCurrency)}
+                      </tr>
+
+                      {/* EBITDA con bombeo Section */}
+                      <tr className="bg-emerald-50 dark:bg-emerald-950/20">
+                        <td colSpan={plantColumnCount + 1} className="p-2 font-semibold text-sm uppercase tracking-wide">
+                          EBITDA con bombeo
+                        </td>
+                      </tr>
+                      <tr className="border-b-2 hover:bg-muted/30 bg-emerald-100/70 dark:bg-emerald-900/30">
+                        <td className="sticky left-0 z-10 bg-emerald-100 dark:bg-emerald-900/40 p-3 border-r-2 font-bold text-base">EBITDA con bombeo</td>
+                        {renderPlantColumns(p => p.ebitda_con_bombeo || 0, formatCurrency, 'ebitda_con_bombeo', true)}
+                        {renderGrandTotalCell(calculateGrandTotal(p => p.ebitda_con_bombeo || 0), formatCurrency, true)}
+                      </tr>
+                      <tr className="border-b-2 hover:bg-muted/30">
+                        <td className="sticky left-0 z-10 bg-background p-3 border-r-2 font-bold">EBITDA con bombeo %</td>
+                        {renderPlantColumns(p => p.ebitda_con_bombeo_pct || 0, formatPercent, 'ebitda_con_bombeo_pct')}
+                        {renderGrandTotalCell(calculateGrandTotal(p => p.ebitda_con_bombeo_pct || 0, 'ebitda_con_bombeo_pct'), formatPercent)}
+                      </tr>
+                    </tbody>
+                  </table>
+                </>
+              )}
             </div>
 
             <div className="mt-6 p-4 bg-muted/30 rounded-lg text-xs text-muted-foreground space-y-2">
               <p><strong>Fuentes de datos:</strong></p>
               <ul className="list-disc list-inside space-y-1 ml-2">
                 <li><strong>Ingresos y Materia Prima:</strong> Vista <code>vw_plant_financial_analysis_unified</code></li>
+                <li><strong>Ingresos Bombeo:</strong> Vista <code>vw_pumping_analysis_unified</code></li>
                 <li><strong>Diesel y Mantenimiento:</strong> Calculado automáticamente del sistema de mantenimiento</li>
                 <li><strong>Nómina y Otros Indirectos:</strong> Ingreso manual por administradores</li>
               </ul>

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createServerSupabase } from '@/lib/supabase-server'
+import { EXPENSE_CATEGORIES, getExpenseCategoryById, isValidSubcategory, getValidCategoryIds } from '@/lib/constants/expense-categories'
 
 // GET: Fetch manual costs for a specific month
 export async function GET(req: NextRequest) {
@@ -75,6 +76,8 @@ export async function POST(req: NextRequest) {
       category,
       department,
       subcategory,
+      expenseCategory,
+      expenseSubcategory,
       description,
       amount,
       notes,
@@ -97,6 +100,39 @@ export async function POST(req: NextRequest) {
         { error: 'Category must be either nomina or otros_indirectos' },
         { status: 400 }
       )
+    }
+
+    // Validate expense category for otros_indirectos
+    if (category === 'otros_indirectos') {
+      if (!expenseCategory) {
+        return NextResponse.json(
+          { error: 'expenseCategory is required when category is otros_indirectos' },
+          { status: 400 }
+        )
+      }
+      
+      if (!getValidCategoryIds().includes(expenseCategory)) {
+        return NextResponse.json(
+          { error: `expenseCategory must be one of: ${getValidCategoryIds().join(', ')}` },
+          { status: 400 }
+        )
+      }
+
+      // Validate expense subcategory if provided
+      if (expenseSubcategory && !isValidSubcategory(expenseCategory, expenseSubcategory)) {
+        return NextResponse.json(
+          { error: `expenseSubcategory "${expenseSubcategory}" is not valid for expenseCategory "${expenseCategory}"` },
+          { status: 400 }
+        )
+      }
+    } else {
+      // For nomina, expense category fields should not be provided
+      if (expenseCategory || expenseSubcategory) {
+        return NextResponse.json(
+          { error: 'expenseCategory and expenseSubcategory are only valid for otros_indirectos category' },
+          { status: 400 }
+        )
+      }
     }
 
     // Validation logic:
@@ -166,6 +202,8 @@ export async function POST(req: NextRequest) {
       category,
       department: department || null,
       subcategory: subcategory || null,
+      expense_category: category === 'otros_indirectos' ? expenseCategory : null,
+      expense_subcategory: category === 'otros_indirectos' ? (expenseSubcategory || null) : null,
       description: description || null,
       amount: totalAmount,
       notes: notes || null,
@@ -270,6 +308,8 @@ export async function PUT(req: NextRequest) {
       id,
       department,
       subcategory,
+      expenseCategory,
+      expenseSubcategory,
       description,
       amount,
       notes,
@@ -291,15 +331,55 @@ export async function PUT(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Fetch current adjustment to check if it's distributed
+    // Fetch current adjustment to check category and if it's distributed
     const { data: currentAdjustment, error: fetchError } = await supabase
       .from('manual_financial_adjustments')
-      .select('id, is_distributed, amount')
+      .select('id, category, is_distributed, amount')
       .eq('id', id)
       .single()
 
     if (fetchError || !currentAdjustment) {
       return NextResponse.json({ error: 'Adjustment not found' }, { status: 404 })
+    }
+
+    const category = currentAdjustment.category
+
+    // Validate expense category fields if category is otros_indirectos
+    if (category === 'otros_indirectos') {
+      if (expenseCategory !== undefined) {
+        if (!expenseCategory) {
+          return NextResponse.json(
+            { error: 'expenseCategory is required when category is otros_indirectos' },
+            { status: 400 }
+          )
+        }
+        
+        if (!getValidCategoryIds().includes(expenseCategory)) {
+          return NextResponse.json(
+            { error: `expenseCategory must be one of: ${getValidCategoryIds().join(', ')}` },
+            { status: 400 }
+          )
+        }
+      }
+
+      // Validate expense subcategory if provided
+      if (expenseSubcategory !== undefined && expenseSubcategory) {
+        const categoryToValidate = expenseCategory || currentAdjustment.expense_category
+        if (categoryToValidate && !isValidSubcategory(categoryToValidate, expenseSubcategory)) {
+          return NextResponse.json(
+            { error: `expenseSubcategory "${expenseSubcategory}" is not valid for expenseCategory "${categoryToValidate}"` },
+            { status: 400 }
+          )
+        }
+      }
+    } else {
+      // For nomina, expense category fields should not be provided
+      if (expenseCategory !== undefined || expenseSubcategory !== undefined) {
+        return NextResponse.json(
+          { error: 'expenseCategory and expenseSubcategory are only valid for otros_indirectos category' },
+          { status: 400 }
+        )
+      }
     }
 
     const updateData: any = {
@@ -315,6 +395,16 @@ export async function PUT(req: NextRequest) {
     if (isBonus !== undefined) updateData.is_bonus = Boolean(isBonus)
     if (isCashPayment !== undefined) updateData.is_cash_payment = Boolean(isCashPayment)
     if (distributionMethod !== undefined) updateData.distribution_method = distributionMethod
+    
+    // Handle expense category fields
+    if (category === 'otros_indirectos') {
+      if (expenseCategory !== undefined) updateData.expense_category = expenseCategory
+      if (expenseSubcategory !== undefined) updateData.expense_subcategory = expenseSubcategory || null
+    } else {
+      // Clear expense category fields if switching from otros_indirectos to nomina (shouldn't happen, but handle it)
+      if (expenseCategory !== undefined) updateData.expense_category = null
+      if (expenseSubcategory !== undefined) updateData.expense_subcategory = null
+    }
 
     const totalAmount = amount !== undefined ? parseFloat(amount) : currentAdjustment.amount
     const isDistributed = !!(distributions && distributions.length > 0)

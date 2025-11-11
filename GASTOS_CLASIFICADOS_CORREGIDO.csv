@@ -1,0 +1,176 @@
+CONCEPTO,VALOR,PLANTA_O_BU,DEPARTAMENTO,CATEGORIA_GASTO,SUBCATEGORIA_GASTO,TIPO_ASIGNACION,NOTAS
+Urea Costo Vtas P4,360.9,4,PRODUCCION,1,Materiales de Producción (Urea, Concreto, Materiales Pétreos),DIRECTO,
+Dev y Descuentos S/ Compra P4,-781.62,4,PRODUCCION,1,Materiales de Producción (Urea, Concreto, Materiales Pétreos),DIRECTO,
+Imss CCR P4,23547.35,4,PRODUCCION,9,NOMINA - Obligaciones Patronales,DIRECTO,Cuotas patronales IMSS
+Rcv CCR P4,32238.55,4,PRODUCCION,9,NOMINA - Obligaciones Patronales,DIRECTO,Retiro Cesantía Vejez
+Infonavit CCR P4,19139.47,4,PRODUCCION,9,NOMINA - Obligaciones Patronales,DIRECTO,Aportaciones Infonavit
+Imss CC P4,18989.01,4,PRODUCCION,9,NOMINA - Obligaciones Patronales,DIRECTO,Cuotas patronales IMSS
+Rcv CC P4,25393.96,4,PRODUCCION,9,NOMINA - Obligaciones Patronales,DIRECTO,Retiro Cesantía Vejez
+Infonavit CC P4,15075.96,4,PRODUCCION,9,NOMINA - Obligaciones Patronales,DIRECTO,Aportaciones Infonavit
+Urea Costo Vtas P5,4899.61,5,PRODUCCION,1,Materiales de Producción (Urea, Concreto, Materiales Pétreos),DIRECTO,
+Urea Costo Vtas P1,1351.77,1,PRODUCCION,1,Materiales de Producción (Urea, Concreto, Materiales Pétreos),DIRECTO,
+Imss Costo Concreto P1,7687.75,1,PRODUCCION,9,NOMINA - Obligaciones Patronales,DIRECTO,Cuotas patronales IMSS
+Rcv Costos Concreto P1,14234.99,1,PRODUCCION,9,NOMINA - Obligaciones Patronales,DIRECTO,Retiro Cesantía Vejez
+Infonavit Costo Concreto P1,9196.61,1,PRODUCCION,9,NOMINA - Obligaciones Patronales,DIRECTO,Aportaciones Infonavit
+3% s/nom CCR P1,5120,1,PRODUCCION,9,NOMINA - Obligaciones Patronales,DIRECTO,3% sobre nómina
+Imss Costo Camion P1,17970.51,1,PRODUCCION,9,NOMINA - Obligaciones Patronales,DIRECTO,Cuotas patronales IMSS
+Rcv Costo Camion P1,27720.03,1,PRODUCCION,9,NOMINA - Obligaciones Patronales,DIRECTO,Retiro Cesantía Vejez
+Infonavit Costo Camion P1,17536.06,1,PRODUCCION,9,NOMINA - Obligaciones Patronales,DIRECTO,Aportaciones Infonavit
+3% S/Nom CC P1,13844,1,PRODUCCION,9,NOMINA - Obligaciones Patronales,DIRECTO,3% sobre nómina
+Imss CCR P2,23585.05,2,PRODUCCION,9,NOMINA - Obligaciones Patronales,DIRECTO,Cuotas patronales IMSS
+Rcv CCR P2,32290.17,2,PRODUCCION,9,NOMINA - Obligaciones Patronales,DIRECTO,Retiro Cesantía Vejez
+Infonavit CCR P2,19170.12,2,PRODUCCION,9,NOMINA - Obligaciones Patronales,DIRECTO,Aportaciones Infonavit
+Imss CC P2,19019.42,2,PRODUCCION,9,NOMINA - Obligaciones Patronales,DIRECTO,Cuotas patronales IMSS
+Rcv CC P2,25434.62,2,PRODUCCION,9,NOMINA - Obligaciones Patronales,DIRECTO,Retiro Cesantía Vejez
+Infonavit CC P2,15100.1,2,PRODUCCION,9,NOMINA - Obligaciones Patronales,DIRECTO,Aportaciones Infonavit
+Urea Costo Vtas P3,298,3,PRODUCCION,1,Materiales de Producción (Urea, Concreto, Materiales Pétreos),DIRECTO,
+Imss CCR P3,18583.47,3,PRODUCCION,9,NOMINA - Obligaciones Patronales,DIRECTO,Cuotas patronales IMSS
+Rcv CCR P3,24220.17,3,PRODUCCION,9,NOMINA - Obligaciones Patronales,DIRECTO,Retiro Cesantía Vejez
+Infonavit CCR P3,14379.11,3,PRODUCCION,9,NOMINA - Obligaciones Patronales,DIRECTO,Aportaciones Infonavit
+Imss CC P3,10699.1,3,PRODUCCION,9,NOMINA - Obligaciones Patronales,DIRECTO,Cuotas patronales IMSS
+Rcv CC P3,13415.39,3,PRODUCCION,9,NOMINA - Obligaciones Patronales,DIRECTO,Retiro Cesantía Vejez
+Infonavit CC P3,7964.5,3,PRODUCCION,9,NOMINA - Obligaciones Patronales,DIRECTO,Aportaciones Infonavit
+Renta de Maquinaria P1,9000,1,PRODUCCION,4,Renta de Maquinaria y Equipo,DIRECTO,
+Electricidad Planta 1,8958.4,1,PRODUCCION,3,Electricidad,DIRECTO,
+Casetas viales P1,3227.63,1,PRODUCCION,2,Casetas Viales,DIRECTO,
+Uniformes de Trabajo P1,14928.18,1,PRODUCCION,9,Uniformes de Trabajo,DIRECTO,
+Manto de Planta P1,90337.94,1,PRODUCCION,8,Reparaciones y Mantenimiento,DIRECTO,
+Renta de CR P1,285678,1,PRODUCCION,4,Renta de Maquinaria y Equipo,DIRECTO,
+Arrendamiento Leasing P1,18510.51,1,PRODUCCION,4,Renta de Vehículos (Leasing),DIRECTO,
+Renta de Maquinaria P2,398808.16,2,PRODUCCION,4,Renta de Maquinaria y Equipo,DIRECTO,
+Casetas viales P2,2149.98,2,PRODUCCION,2,Casetas Viales,DIRECTO,
+Uniformes de Trabajo P2,16392.61,2,PRODUCCION,9,Uniformes de Trabajo,DIRECTO,
+Servicio de bombeo P2,45350,2,PRODUCCION,1,Servicios de Producción (Bombeo, Grúa),DIRECTO,
+Concreto Premezclado P2,-303466.5,2,PRODUCCION,1,Materiales de Producción (Urea, Concreto, Materiales Pétreos),DIRECTO,
+Renta de Terreno P2,65000,2,PRODUCCION,4,Renta de Terrenos,DIRECTO,
+Estudio y Evaluación Geológica P2,563920,2,PRODUCCION,5,Consultoría,DIRECTO,
+Renta de Maquinaria P3,490000,3,PRODUCCION,4,Renta de Maquinaria y Equipo,DIRECTO,
+Uniformes de Trabajo P3,2167.31,4,PRODUCCION,9,Uniformes de Trabajo,DIRECTO,
+Renta de Maquinaria P4,130000,4,PRODUCCION,4,Renta de Maquinaria y Equipo,DIRECTO,
+Casetas viales P4,241.34,4,PRODUCCION,2,Casetas Viales,DIRECTO,
+Renta de Terreno P4,55002.6,4,PRODUCCION,4,Renta de Terrenos,DIRECTO,
+Renta de Maquinaria P5,134488.72,5,PRODUCCION,4,Renta de Maquinaria y Equipo,DIRECTO,
+Casetas viales P5,10428.28,5,PRODUCCION,2,Casetas Viales,DIRECTO,
+Arrendamiento Leasing P5,14875.55,5,PRODUCCION,4,Renta de Vehículos (Leasing),DIRECTO,
+Imss Admon P1,27184.23,gen,ADMINISTRACION,9,NOMINA - Obligaciones Patronales,DISTRIBUIR_VOLUMEN,Distribuir por volumen entre todas las plantas
+Rcv Admon P1,53593.64,gen,ADMINISTRACION,9,NOMINA - Obligaciones Patronales,DISTRIBUIR_VOLUMEN,Distribuir por volumen entre todas las plantas
+Infonavit Admon P1,32205.27,gen,ADMINISTRACION,9,NOMINA - Obligaciones Patronales,DISTRIBUIR_VOLUMEN,Distribuir por volumen entre todas las plantas
+3% S/nom Admon P1,23394,gen,ADMINISTRACION,9,NOMINA - Obligaciones Patronales,DISTRIBUIR_VOLUMEN,Distribuir por volumen entre todas las plantas
+Dominio Correo P1,4680,gen,GENERAL,7,Dominios y Hosting,DISTRIBUIR_VOLUMEN,Distribuir por volumen entre todas las plantas
+Comisiones Vales Despensa P1,13567.9,gen,ADMINISTRACION,9,Atención al Personal (Comidas, Almuerzo),DISTRIBUIR_VOLUMEN,Vales de despensa - beneficio al personal
+Atencion al Personal P1,24905.87,1,RECURSOS HUMANOS,9,Atención al Personal (Comidas, Almuerzo),DIRECTO,
+Licencias de Sistemas P1,13156.14,gen,ADMINISTRACION,7,Licencias de Software,DISTRIBUIR_VOLUMEN,Distribuir por volumen entre todas las plantas
+Soporte de Sistemas P1,52931.04,gen,ADMINISTRACION,5,Soporte de Sistemas,DISTRIBUIR_VOLUMEN,Distribuir por volumen entre todas las plantas
+Papeleria P1,11209.11,1,ADMINISTRACION,6,Papelería y Artículos de Oficina,DIRECTO,
+Viaticos P1,5267.02,1,ADMINISTRACION,9,Viáticos,DIRECTO,
+Telefonia e Internet P1,13787.46,gen,ADMINISTRACION,3,Telefonía e Internet,DISTRIBUIR_VOLUMEN,Distribuir por volumen entre todas las plantas
+Honorarios P1,29387.74,1,ADMINISTRACION,5,Honorarios y Asesorías,DIRECTO,
+Paqueteria y Envios P1,2470.44,1,PRODUCCION,14,Paquetería y Envíos,DIRECTO,
+Agua de Garrafon P1,1664,1,RECURSOS HUMANOS,6,Agua de Garrafón,DIRECTO,
+Impuestos y Derechos P1,690,1,ADMINISTRACION,13,Derechos,DIRECTO,
+Articulos de Limpieza P1,3731.52,1,LIMPIEZA,6,Artículos de Limpieza,DIRECTO,
+Gastos No deducibles P1,15982.94,1,GENERAL,14,Gastos No Deducibles,DIRECTO,
+Combustibles y Gasolina P1,13646.65,1,PRODUCCION,2,Combustible y Gasolina,DIRECTO,
+Seguros y Fianzas P1,19785.68,1,GENERAL,12,Seguros,DIRECTO,
+Auditoria P1,60000,gen,ADMINISTRACION,5,Auditoría,DISTRIBUIR_VOLUMEN,Distribuir por volumen entre todas las plantas
+Renta de Equipo de Impresion P1,6000,1,ADMINISTRACION,7,Renta de Equipo de Impresión,DIRECTO,
+Imss Admon P2,9633,tj,ADMINISTRACION,9,NOMINA - Obligaciones Patronales,DISTRIBUIR_BU,Distribuir por volumen en Unidad de Negocio Tijuana
+Rcv Admon P2,17623.81,tj,ADMINISTRACION,9,NOMINA - Obligaciones Patronales,DISTRIBUIR_BU,Distribuir por volumen en Unidad de Negocio Tijuana
+Infonavit Admon P2,10462.97,tj,ADMINISTRACION,9,NOMINA - Obligaciones Patronales,DISTRIBUIR_BU,Distribuir por volumen en Unidad de Negocio Tijuana
+Premio de Asistencia Admon P2,8445.51,tj,ADMINISTRACION,9,NOMINA - Obligaciones Patronales,DISTRIBUIR_BU,Distribuir por volumen en Unidad de Negocio Tijuana
+Premio de Puntualidad Admon P2,8445.51,tj,ADMINISTRACION,9,NOMINA - Obligaciones Patronales,DISTRIBUIR_BU,Distribuir por volumen en Unidad de Negocio Tijuana
+Comisiones Admon P2,95791.11,tj,ADMINISTRACION,9,NOMINA - Obligaciones Patronales,DISTRIBUIR_BU,Distribuir por volumen en Unidad de Negocio Tijuana
+Gastos Admon P2,316433.38,tj,ADMINISTRACION,14,Otros Gastos Varios,DISTRIBUIR_BU,Distribuir por volumen en Unidad de Negocio Tijuana
+Atencion al Personal P2,26446.5,tj,RECURSOS HUMANOS,9,Atención al Personal (Comidas, Almuerzo),DISTRIBUIR_BU,Distribuir por volumen en Unidad de Negocio Tijuana
+Licencias de Sistemas P2,11907,tj,ADMINISTRACION,7,Licencias de Software,DISTRIBUIR_BU,Distribuir por volumen en Unidad de Negocio Tijuana
+Papeleria P2,5984.47,tj,ADMINISTRACION,6,Papelería y Artículos de Oficina,DISTRIBUIR_BU,Distribuir por volumen en Unidad de Negocio Tijuana
+Viaticos P2,25499.27,tj,ADMINISTRACION,9,Viáticos,DISTRIBUIR_BU,Distribuir por volumen en Unidad de Negocio Tijuana
+Arrendamientos P2,44559.96,tj,ADMINISTRACION,4,Renta de Inmuebles,DISTRIBUIR_BU,Distribuir por volumen en Unidad de Negocio Tijuana
+Telefonia e Internet P2,3552.62,tj,ADMINISTRACION,3,Telefonía e Internet,DISTRIBUIR_BU,Distribuir por volumen en Unidad de Negocio Tijuana
+Paqueteria y Envios P2,25236.54,tj,ADMINISTRACION,14,Paquetería y Envíos,DISTRIBUIR_BU,Distribuir por volumen en Unidad de Negocio Tijuana
+Agua de Garrafon P2,546.5,2,RECURSOS HUMANOS,6,Agua de Garrafón,DIRECTO,
+Gastos no Deducibles P2,33849.26,2,ADMINISTRACION,14,Gastos No Deducibles,DIRECTO,
+Articulos de limpieza P2,4173.43,2,LIMPIEZA,6,Artículos de Limpieza,DIRECTO,
+Combustible y Gasolina P2,53649.34,2,ADMINISTRACION,2,Combustible y Gasolina,DIRECTO,
+Tarifa Uber P2,579.93,2,ADMINISTRACION,2,Transporte Ejecutivo (Uber, Taxis),DIRECTO,
+Renta de Baños P2,2500,2,PRODUCCION,4,Renta de Baños y Otros,DIRECTO,
+Imss Admon P3 enrique,15407.78,gen,GENERAL,9,NOMINA - Obligaciones Patronales,DISTRIBUIR_VOLUMEN,Distribuir por volumen entre todas las plantas
+Rcv Admon P3,25083.01,gen,GENERAL,9,NOMINA - Obligaciones Patronales,DISTRIBUIR_VOLUMEN,Distribuir por volumen entre todas las plantas
+Infonavit Admon P3,14937.49,gen,GENERAL,9,NOMINA - Obligaciones Patronales,DISTRIBUIR_VOLUMEN,Distribuir por volumen entre todas las plantas
+Atencion al Personal P3,14967.32,3,RECURSOS HUMANOS,9,Atención al Personal (Comidas, Almuerzo),DIRECTO,
+Licencias de Sistemas P3,11907,3,ADMINISTRACION,7,Licencias de Software,DIRECTO,
+Papeleria P3,1055.64,3,ADMINISTRACION,6,Papelería y Artículos de Oficina,DIRECTO,
+Viaticos P3,19502.61,3,ADMINISTRACION,9,Viáticos,DIRECTO,
+Arrendamientos P3,15000,3,ADMINISTRACION,4,Renta de Inmuebles,DIRECTO,
+Telefonia e Internet P3,3142.66,3,ADMINISTRACION,3,Telefonía e Internet,DIRECTO,
+Agua de Garrafon P3,704.08,3,RECURSOS HUMANOS,6,Agua de Garrafón,DIRECTO,
+Combustible y Gasolina P3,776.17,3,ADMINISTRACION,2,Combustible y Gasolina,DIRECTO,
+Gastos no deducibles P3,7192.55,3,ADMINISTRACION,14,Gastos No Deducibles,DIRECTO,
+Articulos de Limpieza P3,573.16,3,LIMPIEZA,6,Artículos de Limpieza,DIRECTO,
+Imss Admon P4,5908.73,tj,ADMINISTRACION,9,NOMINA - Obligaciones Patronales,DISTRIBUIR_BU,Distribuir por volumen en Unidad de Negocio Tijuana
+Rcv Admon P4,8535.41,tj,ADMINISTRACION,9,NOMINA - Obligaciones Patronales,DISTRIBUIR_BU,Distribuir por volumen en Unidad de Negocio Tijuana
+Infonavit Admon P4,5067.33,tj,ADMINISTRACION,9,NOMINA - Obligaciones Patronales,DISTRIBUIR_BU,Distribuir por volumen en Unidad de Negocio Tijuana
+Comisiones Admon P4,22120.15,tj,ADMINISTRACION,9,NOMINA - Obligaciones Patronales,DISTRIBUIR_BU,Distribuir por volumen en Unidad de Negocio Tijuana
+Atencion al Personal P4,5409.72,tj,RECURSOS HUMANOS,9,Atención al Personal (Comidas, Almuerzo),DISTRIBUIR_BU,Distribuir por volumen en Unidad de Negocio Tijuana
+Licencias de Sistemas P4,11907,4,ADMINISTRACION,7,Licencias de Software,DIRECTO,
+Papeleria P4,388.15,4,ADMINISTRACION,6,Papelería y Artículos de Oficina,DIRECTO,
+Viaticos P4,4242,4,ADMINISTRACION,9,Viáticos,DIRECTO,
+Arrendamientos P4,34870.05,4,ADMINISTRACION,4,Renta de Inmuebles,DIRECTO,
+Telefonia e Internet P4,2463.36,4,ADMINISTRACION,3,Telefonía e Internet,DIRECTO,
+Agua de Garrafon P4,354.5,4,RECURSOS HUMANOS,6,Agua de Garrafón,DIRECTO,
+Gastos no Deducibles P4,21715.78,4,ADMINISTRACION,14,Gastos No Deducibles,DIRECTO,
+Articulos de limpieza P4,888.89,4,LIMPIEZA,6,Artículos de Limpieza,DIRECTO,
+Combustible y Gasolina P4,115.91,4,ADMINISTRACION,2,Combustible y Gasolina,DIRECTO,
+Atencion al Personal P5,8782.78,5,RECURSOS HUMANOS,9,Atención al Personal (Comidas, Almuerzo),DIRECTO,
+Papeleria P5,1923.75,5,ADMINISTRACION,6,Papelería y Artículos de Oficina,DIRECTO,
+Viaticos P5,2664.72,5,ADMINISTRACION,9,Viáticos,DIRECTO,
+Telefonia e Internet P5,517.24,5,ADMINISTRACION,3,Telefonía e Internet,DIRECTO,
+Articulos de Limpieza P5,365.5,5,LIMPIEZA,6,Artículos de Limpieza,DIRECTO,
+Combustibles y Gasolina P5,20853.94,5,ADMINISTRACION,2,Combustible y Gasolina,DIRECTO,
+3% s/nom Vtas P1,1490,1,COMERCIAL,9,NOMINA - Obligaciones Patronales,DIRECTO,3% sobre nómina
+Publicidad P1,9848,1,COMERCIAL,10,Publicidad,DIRECTO,
+DADIVA GUARDIA NACIONAL OCT,5000,1,ADMINISTRACION,14,Otros Gastos Varios,DIRECTO,
+INVENTARIO P1 TOPOGRAFO,5000,1,PRODUCCION,1,Materiales de Producción (Urea, Concreto, Materiales Pétreos),DIRECTO,
+MANO DE OBRA LABORATORIO,6450,bj,CALIDAD,5,Honorarios y Asesorías,DISTRIBUIR_BU,Distribuir por volumen en Unidad de Negocio Baja California
+MANO DE OBRA LABORATORIO,5500,bj,CALIDAD,5,Honorarios y Asesorías,DISTRIBUIR_BU,Distribuir por volumen en Unidad de Negocio Baja California
+VIATICOS REVISION DE LUCES CR30,1000,1,MANTENIMIENTO,9,Viáticos,DIRECTO,
+RENTA DE TERRENO LAVADO DE OLLAS,4000,1,PRODUCCION,4,Renta de Terrenos,DIRECTO,
+AFINACION Y MANO DE OBRA U3,700,1,MANTENIMIENTO,8,Reparaciones y Mantenimiento,DIRECTO,
+REPOSICION DE CAJA KAREN RH,735,1,RECURSOS HUMANOS,14,Otros Gastos Varios,DIRECTO,
+TONILLOS,34.2,1,MANTENIMIENTO,6,Papelería y Artículos de Oficina,DIRECTO,
+TRABAJOS EN LABORATORIO Y ALMACEN,1600,bj,CALIDAD,5,Honorarios y Asesorías,DISTRIBUIR_BU,Distribuir por volumen en Unidad de Negocio Baja California
+COLOCACION CORECTA DE CORTINA LABORATORIO,2000,bj,CALIDAD,5,Honorarios y Asesorías,DISTRIBUIR_BU,Distribuir por volumen en Unidad de Negocio Baja California
+PAGO ASESORIAS DE CONTRATOS CONTA NUÑEZ,3000,gen,ADMINISTRACION,5,Honorarios y Asesorías,DISTRIBUIR_VOLUMEN,Distribuir por volumen entre todas las plantas
+COMPRA DE BOTANAS P1,200,1,RECURSOS HUMANOS,9,Atención al Personal (Comidas, Almuerzo),DIRECTO,
+COMIDA P3,1770,3,RECURSOS HUMANOS,9,Atención al Personal (Comidas, Almuerzo),DIRECTO,
+REP CJA TJ,3500,tj,ADMINISTRACION,14,Otros Gastos Varios,DISTRIBUIR_BU,Distribuir por volumen en Unidad de Negocio Tijuana
+REP ENRIQUE FELIX,2574,gen,ADMINISTRACION,14,Otros Gastos Varios,DISTRIBUIR_VOLUMEN,Distribuir por volumen entre todas las plantas
+REP CJA KAREN RH,1036.27,bj,RECURSOS HUMANOS,14,Otros Gastos Varios,DISTRIBUIR_BU,Distribuir por volumen en Unidad de Negocio Baja California
+REPOSICION DE BRISA RH TJ,9791.3,tj,RECURSOS HUMANOS,14,Otros Gastos Varios,DISTRIBUIR_BU,Distribuir por volumen en Unidad de Negocio Tijuana
+REP CJA KAREN RH,215,bj,RECURSOS HUMANOS,14,Otros Gastos Varios,DISTRIBUIR_BU,Distribuir por volumen en Unidad de Negocio Baja California
+REP GTOS P3,284.71,3,ADMINISTRACION,14,Otros Gastos Varios,DIRECTO,
+MANO DE OBRA LABORATORIO,3500,bj,CALIDAD,5,Honorarios y Asesorías,DISTRIBUIR_BU,Distribuir por volumen en Unidad de Negocio Baja California
+RENTA DE CAMPAMENTO EL MIRADOR,27000,3,PRODUCCION,4,Renta de Inmuebles,DIRECTO,
+MULTA DIFERENCIAS IMSS TIJUANA,10496.21,tj,PRODUCCION,13,Impuestos Locales,DISTRIBUIR_BU,Distribuir por volumen en Unidad de Negocio Tijuana - Multa fiscal
+FONDO DE CAJA DE MARIO PEREZ GONZALEZ SAN LUIS,5000,bj,ADMINISTRACION,14,Otros Gastos Varios,DISTRIBUIR_BU,Distribuir por volumen en Unidad de Negocio Baja California
+DADIVA FEDERALES CR28,500,1,PRODUCCION,14,Otros Gastos Varios,DIRECTO,
+VIATICOS SAN LUIS HECTOR Y SANTIAGO,1000,bj,ADMINISTRACION,9,Viáticos,DISTRIBUIR_BU,Distribuir por volumen en Unidad de Negocio Baja California
+TORNILLOS P1,40.87,1,MANTENIMIENTO,6,Papelería y Artículos de Oficina,DIRECTO,
+TORNULLOS P1,78,1,MANTENIMIENTO,6,Papelería y Artículos de Oficina,DIRECTO,
+PAGO RENTA ATRASADAS CASA SLP P5,6000,5,PRODUCCION,4,Renta de Inmuebles,DIRECTO,
+GASTOS TRASLADO DE CRS DE TIJUANA A P5,24000,5,PRODUCCION,2,Traslado de Equipos,DIRECTO,
+REP GASTOS DE KAREN RH P1,217,1,RECURSOS HUMANOS,14,Otros Gastos Varios,DIRECTO,
+ABONO A DUEÑAS TRABAJOS REALIZADOS EN P5 Y P1,20000,BJ,PRODUCCION,5,Honorarios y Asesorías,DISTRIBUIR_BU,Distribuir por volumen en Unidad de Negocio Baja California
+RENTA CASA-CAMPAMENTO OCT P5,5000,5,PRODUCCION,4,Renta de Inmuebles,DIRECTO,
+ABONO A DUEÑAS TRABAJOS REALIZADOS EN P5 Y P1,30000,BJ,PRODUCCION,5,Honorarios y Asesorías,DISTRIBUIR_BU,Distribuir por volumen en Unidad de Negocio Baja California
+SERV AFINACION MANO DE OBRA NP300,700,BJ,MANTENIMIENTO,8,Reparaciones y Mantenimiento,DISTRIBUIR_BU,Distribuir por volumen en Unidad de Negocio Baja California
+ESCAVACION LINEA ELECTRICA P1,1000,1,PRODUCCION,5,Honorarios y Asesorías,DIRECTO,
+COMIDA INAUGURACION LAB P1,2500,1,CALIDAD,9,Atención al Personal (Comidas, Almuerzo),DIRECTO,
+BARDA Y DEMOLICION EN LABORATORIO P1,2700,1,CALIDAD,5,Honorarios y Asesorías,DIRECTO,
+COMIDA JONATHAN TJ,130,TJ,PRODUCCION,9,Atención al Personal (Comidas, Almuerzo),DISTRIBUIR_BU,Distribuir por volumen en Unidad de Negocio Tijuana
+LIQUIDACION DE CONCRETO DE APOYO A MASA CONCRETOS P1(NOTA 269A),98560,1,PRODUCCION,1,Materiales de Producción (Urea, Concreto, Materiales Pétreos),DIRECTO,
+Reposicion de Gastos de P5,5026,5,PRODUCCION,14,Otros Gastos Varios,DIRECTO,
+LICENCIA PARA SOPORTE RAFAEL P1,2700,gen,ADMINISTRACION,7,Licencias de Software,DISTRIBUIR_VOLUMEN,Distribuir por volumen entre todas las plantas
+COMIDA SEM 28/10/2025 JOSE ANGEL OCHOA OBREGON LABORATORIO P5,1300,5,CALIDAD,9,Atención al Personal (Comidas, Almuerzo),DIRECTO,
+RENTA DEL MES OCT DEPTO ALEX DIAZ P1,20500,gen,CALIDAD,4,Renta de Inmuebles,DISTRIBUIR_VOLUMEN,Distribuir por volumen entre todas las plantas
+

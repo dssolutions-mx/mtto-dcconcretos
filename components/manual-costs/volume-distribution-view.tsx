@@ -113,8 +113,8 @@ export function VolumeDistributionView({
         
         return {
           plantId,
-          plantCode: plant.plant_code,
-          plantName: plant.plant_name,
+        plantCode: plant.plant_code,
+        plantName: plant.plant_name,
           volumeM3: currentVolume,
           percentage: 0,
           amount: 0,
@@ -139,8 +139,8 @@ export function VolumeDistributionView({
                 plantCode: plantInfo.code,
                 plantName: plantInfo.name,
                 volumeM3: 0, // No current volume
-                percentage: 0,
-                amount: 0,
+        percentage: 0,
+        amount: 0,
                 excluded: false,
                 originalVolumeM3: orig.volumeM3,
                 originalPercentage: orig.percentage,
@@ -310,12 +310,12 @@ export function VolumeDistributionView({
               key={plant.plantId} 
               className={plant.excluded ? 'opacity-50' : hasChanges ? 'border-orange-200 dark:border-orange-800' : ''}
             >
-              <CardContent className="p-4">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex-1 space-y-2">
-                    <div className="flex items-center justify-between">
+            <CardContent className="p-4">
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex-1 space-y-2">
+                  <div className="flex items-center justify-between">
                       <div className="flex-1">
-                        <div className="font-medium">{plant.plantName}</div>
+                      <div className="font-medium">{plant.plantName}</div>
                         <div className="text-sm text-muted-foreground space-y-1">
                           <div className="flex items-center gap-2">
                             <span>{plant.plantCode}</span>
@@ -352,24 +352,24 @@ export function VolumeDistributionView({
                               <span>• {formatNumber(plant.volumeM3, 2)} m³</span>
                             )}
                           </div>
-                        </div>
                       </div>
-                      <Switch
-                        checked={!plant.excluded}
-                        onCheckedChange={() => toggleExclude(plant.plantId)}
-                      />
                     </div>
-                    {!plant.excluded && maxVolume > 0 && (
-                      <Progress
-                        value={(plant.volumeM3 / maxVolume) * 100}
-                        className="h-2"
-                      />
-                    )}
-                    {!plant.excluded && (
+                    <Switch
+                      checked={!plant.excluded}
+                      onCheckedChange={() => toggleExclude(plant.plantId)}
+                    />
+                  </div>
+                  {!plant.excluded && maxVolume > 0 && (
+                    <Progress
+                      value={(plant.volumeM3 / maxVolume) * 100}
+                      className="h-2"
+                    />
+                  )}
+                  {!plant.excluded && (
                       <div className="space-y-1">
-                        <div className="flex items-center justify-between text-sm">
-                          <span className="text-muted-foreground">
-                            Porcentaje: {formatNumber(plant.percentage, 2)}%
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-muted-foreground">
+                        Porcentaje: {formatNumber(plant.percentage, 2)}%
                             {isEditing && plant.originalPercentage !== undefined && (
                               <span className="ml-2 text-xs">
                                 (Original: {formatNumber(plant.originalPercentage, 2)}%)
@@ -393,23 +393,23 @@ export function VolumeDistributionView({
                                       amountChange > 0 ? 'text-green-600' : 'text-red-600'
                                     }`}>
                                       {amountChange > 0 ? '+' : ''}{formatCurrency(Math.abs(amountChange))}
-                                    </span>
+                      </span>
                                   </>
                                 )}
                                 <span className="text-xs">→</span>
                               </>
                             )}
-                            <span className="font-semibold">
-                              {formatCurrency(plant.amount)}
-                            </span>
+                      <span className="font-semibold">
+                        {formatCurrency(plant.amount)}
+                      </span>
                           </div>
                         </div>
-                      </div>
-                    )}
-                  </div>
+                    </div>
+                  )}
                 </div>
-              </CardContent>
-            </Card>
+              </div>
+            </CardContent>
+          </Card>
           )
         })}
       </div>
@@ -417,8 +417,8 @@ export function VolumeDistributionView({
       <Card className="bg-muted/50">
         <CardContent className="p-4">
           <div className="space-y-2">
-            <div className="flex items-center justify-between text-sm">
-              <span className="font-medium">Total Distribuido</span>
+          <div className="flex items-center justify-between text-sm">
+            <span className="font-medium">Total Distribuido</span>
               <div className="flex items-center gap-2">
                 {isEditing && originalDistributions && (
                   <>
@@ -430,17 +430,17 @@ export function VolumeDistributionView({
                     <span className="text-xs">→</span>
                   </>
                 )}
-                <span className="font-bold text-lg">
-                  {formatCurrency(
-                    plantVolumes
-                      .filter(v => !v.excluded)
-                      .reduce((sum, v) => sum + v.amount, 0)
-                  )}
-                </span>
-              </div>
+            <span className="font-bold text-lg">
+              {formatCurrency(
+                plantVolumes
+                  .filter(v => !v.excluded)
+                  .reduce((sum, v) => sum + v.amount, 0)
+              )}
+            </span>
+          </div>
             </div>
             <div className="text-xs text-muted-foreground">
-              {includedVolumes.length} {includedVolumes.length === 1 ? 'planta incluida' : 'plantas incluidas'}
+            {includedVolumes.length} {includedVolumes.length === 1 ? 'planta incluida' : 'plantas incluidas'}
             </div>
           </div>
         </CardContent>

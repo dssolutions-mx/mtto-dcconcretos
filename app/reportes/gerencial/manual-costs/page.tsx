@@ -32,6 +32,7 @@ import { VolumeDistributionView } from '@/components/manual-costs/volume-distrib
 import { DistributedBatchView } from '@/components/manual-costs/distributed-batch-view'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { EXPENSE_CATEGORIES, getExpenseCategoryById, getExpenseCategoryDisplayName } from '@/lib/constants/expense-categories'
 
 type BusinessUnit = {
   id: string
@@ -64,6 +65,8 @@ type Adjustment = {
   category: 'nomina' | 'otros_indirectos'
   department: string | null
   subcategory: string | null
+  expense_category?: string | null
+  expense_subcategory?: string | null
   description: string | null
   amount: number
   notes: string | null
@@ -116,6 +119,8 @@ export default function ManualCostsAdminPage() {
   const [formCategory, setFormCategory] = useState<'nomina' | 'otros_indirectos'>('nomina')
   const [formDepartment, setFormDepartment] = useState('')
   const [formSubcategory, setFormSubcategory] = useState('')
+  const [formExpenseCategory, setFormExpenseCategory] = useState<string>('')
+  const [formExpenseSubcategory, setFormExpenseSubcategory] = useState<string>('')
   const [formDescription, setFormDescription] = useState('')
   const [formAmount, setFormAmount] = useState('')
   const [formNotes, setFormNotes] = useState('')
@@ -220,6 +225,8 @@ export default function ManualCostsAdminPage() {
     setFormCategory(adjustment.category)
     setFormDepartment(adjustment.department || '')
     setFormSubcategory(adjustment.subcategory || '')
+    setFormExpenseCategory(adjustment.expense_category || '')
+    setFormExpenseSubcategory(adjustment.expense_subcategory || '')
     setFormDescription(adjustment.description || '')
     setFormAmount(String(adjustment.amount))
     setFormNotes(adjustment.notes || '')
@@ -274,6 +281,8 @@ export default function ManualCostsAdminPage() {
     setFormCategory('nomina')
     setFormDepartment('')
     setFormSubcategory('')
+    setFormExpenseCategory('')
+    setFormExpenseSubcategory('')
     setFormDescription('')
     setFormAmount('')
     setFormNotes('')
@@ -290,6 +299,16 @@ export default function ManualCostsAdminPage() {
       toast({
         title: 'Error',
         description: 'Amount must be greater than 0',
+        variant: 'destructive'
+      })
+      return
+    }
+
+    // Validate expense category for otros_indirectos
+    if (formCategory === 'otros_indirectos' && !formExpenseCategory) {
+      toast({
+        title: 'Error',
+        description: 'Categoría de gasto es requerida para Otros Indirectos',
         variant: 'destructive'
       })
       return
@@ -349,6 +368,8 @@ export default function ManualCostsAdminPage() {
       const basePayload: any = {
         department: formDepartment || null,
         subcategory: formSubcategory || null,
+        expenseCategory: formCategory === 'otros_indirectos' ? formExpenseCategory : undefined,
+        expenseSubcategory: formCategory === 'otros_indirectos' ? (formExpenseSubcategory || null) : undefined,
         description: formDescription || null,
         amount: parseFloat(formAmount),
         notes: formNotes || null,
@@ -822,7 +843,14 @@ export default function ManualCostsAdminPage() {
                   <Label htmlFor="formCategory">Categoría</Label>
                   <Select
                     value={formCategory}
-                    onValueChange={(val) => setFormCategory(val as 'nomina' | 'otros_indirectos')}
+                    onValueChange={(val) => {
+                      setFormCategory(val as 'nomina' | 'otros_indirectos')
+                      // Reset expense category fields when switching categories
+                      if (val === 'nomina') {
+                        setFormExpenseCategory('')
+                        setFormExpenseSubcategory('')
+                      }
+                    }}
                   >
                     <SelectTrigger id="formCategory">
                       <SelectValue />
@@ -834,6 +862,53 @@ export default function ManualCostsAdminPage() {
                   </Select>
                 </div>
               </>
+            )}
+
+            {/* Expense Category Fields - Only for otros_indirectos */}
+            {formCategory === 'otros_indirectos' && (
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="formExpenseCategory">Categoría de Gasto *</Label>
+                  <Select
+                    value={formExpenseCategory}
+                    onValueChange={(val) => {
+                      setFormExpenseCategory(val)
+                      // Reset subcategory when main category changes
+                      setFormExpenseSubcategory('')
+                    }}
+                  >
+                    <SelectTrigger id="formExpenseCategory">
+                      <SelectValue placeholder="Seleccionar categoría" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {EXPENSE_CATEGORIES.map(cat => (
+                        <SelectItem key={cat.id} value={cat.id}>
+                          {getExpenseCategoryDisplayName(cat)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div>
+                  <Label htmlFor="formExpenseSubcategory">Subcategoría de Gasto (Opcional)</Label>
+                  <Select
+                    value={formExpenseSubcategory || 'none'}
+                    onValueChange={(val) => setFormExpenseSubcategory(val === 'none' ? '' : val)}
+                    disabled={!formExpenseCategory}
+                  >
+                    <SelectTrigger id="formExpenseSubcategory">
+                      <SelectValue placeholder={formExpenseCategory ? "Seleccionar subcategoría" : "Seleccione categoría primero"} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Ninguna</SelectItem>
+                      {formExpenseCategory && getExpenseCategoryById(formExpenseCategory)?.subcategories.map(subcat => (
+                        <SelectItem key={subcat} value={subcat}>{subcat}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
             )}
 
             <div className="grid grid-cols-2 gap-4">
@@ -855,15 +930,18 @@ export default function ManualCostsAdminPage() {
                 </Select>
               </div>
 
-              <div>
-                <Label htmlFor="formSubcategory">Subcategoría (Opcional)</Label>
-                <Input
-                  id="formSubcategory"
-                  value={formSubcategory}
-                  onChange={(e) => setFormSubcategory(e.target.value)}
-                  placeholder="ej: Salarios, Bonos, Servicios"
-                />
-              </div>
+              {/* Subcategory field - only show for nomina */}
+              {formCategory === 'nomina' && (
+                <div>
+                  <Label htmlFor="formSubcategory">Subcategoría (Opcional)</Label>
+                  <Input
+                    id="formSubcategory"
+                    value={formSubcategory}
+                    onChange={(e) => setFormSubcategory(e.target.value)}
+                    placeholder="ej: Salarios, Bonos, Servicios"
+                  />
+                </div>
+              )}
             </div>
 
             {/* Bonus and Cash Payment Checkboxes */}

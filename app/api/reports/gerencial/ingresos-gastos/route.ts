@@ -423,6 +423,47 @@ export async function POST(req: NextRequest) {
       }
     })
 
+    // Fetch bombeo data from vw_pumping_analysis_unified for the month
+    // The view has daily data (period_start = period_end for each day)
+    // We need to filter by date range and aggregate by plant_code
+    const plantCodes = targetPlants.map(p => p.code).filter(Boolean)
+    let pumpingData: any[] | null = null
+    
+    if (plantCodes.length > 0) {
+      try {
+        // Filter by date range (all days in the month) and selected plant codes
+        const { data: pumpingRows, error: pumpingError } = await cotizadorSupabase
+          .from('vw_pumping_analysis_unified')
+          .select('plant_code, volumen_bombeo_m3, subtotal_total')
+          .gte('period_start', dateFromStr)
+          .lte('period_start', dateToStr)
+          .in('plant_code', plantCodes)
+
+        if (pumpingError) {
+          console.error('Pumping view fetch error (cotizador):', pumpingError)
+        }
+        pumpingData = pumpingRows || []
+      } catch (err) {
+        console.error('Error querying vw_pumping_analysis_unified from cotizador:', err)
+        pumpingData = []
+      }
+    } else {
+      pumpingData = []
+    }
+
+    // Aggregate pumping data by plant_code (sum volumes and revenues for monthly totals)
+    // This handles daily data correctly by summing all days in the month
+    const pumpingDataByPlantCode = new Map<string, { volumen_bombeo_m3: number, subtotal_total: number }>()
+    ;(pumpingData || []).forEach(row => {
+      if (row.plant_code && plantCodes.includes(row.plant_code)) {
+        const existing = pumpingDataByPlantCode.get(row.plant_code) || { volumen_bombeo_m3: 0, subtotal_total: 0 }
+        pumpingDataByPlantCode.set(row.plant_code, {
+          volumen_bombeo_m3: existing.volumen_bombeo_m3 + Number(row.volumen_bombeo_m3 || 0),
+          subtotal_total: existing.subtotal_total + Number(row.subtotal_total || 0)
+        })
+      }
+    })
+
     // Fetch diesel and maintenance costs using existing gerencial logic
     // We'll call the gerencial API internally and extract plant-level data
     const host = req.headers.get('host') || ''
@@ -527,7 +568,7 @@ export async function POST(req: NextRequest) {
     ;(products || []).forEach(p => priceByProduct.set(p.id, Number(p.price_per_liter || 0)))
 
     // Calculate FIFO diesel costs for all target plants
-    const plantCodes = targetPlants.map(p => p.code).filter(Boolean) as string[]
+    // Reuse plantCodes already defined above for bombeo query
     const fifoDieselCosts = await calculateDieselCostsFIFO_IngresosGastos(
       supabase,
       dateFromStr,
@@ -883,9 +924,16 @@ export async function POST(req: NextRequest) {
       const ebitda = ventas_total - costo_mp_total - total_costo_op
       const ebitda_pct = ventas_total > 0 ? (ebitda / ventas_total) * 100 : 0
 
-      // Optional: Bombeo data (if available in view)
-      const ingresos_bombeo_vol = Number(viewRow?.ingresos_bombeo_vol || 0)
-      const ingresos_bombeo_unit = Number(viewRow?.ingresos_bombeo_unit || 0)
+      // Bombeo data from vw_pumping_analysis_unified
+      const pumpingData = pumpingDataByPlantCode.get(plant.code)
+      const ingresos_bombeo_vol = pumpingData ? pumpingData.volumen_bombeo_m3 : 0
+      const ingresos_bombeo_total = pumpingData ? pumpingData.subtotal_total : 0
+      const ingresos_bombeo_unit = ingresos_bombeo_vol > 0 ? ingresos_bombeo_total / ingresos_bombeo_vol : 0
+
+      // EBITDA con bombeo (EBITDA + bombeo total)
+      const ebitda_con_bombeo = ebitda + ingresos_bombeo_total
+      const total_ingresos_con_bombeo = ventas_total + ingresos_bombeo_total
+      const ebitda_con_bombeo_pct = total_ingresos_con_bombeo > 0 ? (ebitda_con_bombeo / total_ingresos_con_bombeo) * 100 : 0
 
       return {
         plant_id: plant.id,
@@ -932,9 +980,14 @@ export async function POST(req: NextRequest) {
         ebitda,
         ebitda_pct,
 
-        // Optional Bombeo
+        // Bombeo
         ingresos_bombeo_vol,
-        ingresos_bombeo_unit
+        ingresos_bombeo_unit,
+        ingresos_bombeo_total,
+
+        // EBITDA con bombeo
+        ebitda_con_bombeo,
+        ebitda_con_bombeo_pct
       }
     })
 
