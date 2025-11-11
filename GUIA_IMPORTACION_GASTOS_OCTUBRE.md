@@ -156,3 +156,4 @@ Necesitas identificar los IDs de las Business Units:
 - **Departamentos**: Se mantienen tal como están en el CSV
 - **Categoría vs Subcategoría**: La categoría es el número 1-14, la subcategoría es el texto descriptivo
 
+

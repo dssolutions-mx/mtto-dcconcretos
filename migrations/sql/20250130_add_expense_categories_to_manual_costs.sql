@@ -22,3 +22,4 @@ WHERE expense_category IS NOT NULL;
 COMMENT ON COLUMN manual_financial_adjustments.expense_category IS 'Expense category ID (1-14) for otros_indirectos entries. Required when category = otros_indirectos.';
 COMMENT ON COLUMN manual_financial_adjustments.expense_subcategory IS 'Optional subcategory within the expense category for otros_indirectos entries.';
 
+

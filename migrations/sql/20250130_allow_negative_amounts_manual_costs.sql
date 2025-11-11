@@ -12,3 +12,4 @@ DROP CONSTRAINT IF EXISTS manual_financial_adjustment_distributions_amount_check
 -- Add comment explaining negative amounts are allowed
 COMMENT ON COLUMN manual_financial_adjustments.amount IS 'Amount can be positive (expense) or negative (refund/credit/devolution)';
 
+
