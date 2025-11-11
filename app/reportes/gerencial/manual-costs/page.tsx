@@ -29,7 +29,9 @@ import { useToast } from '@/hooks/use-toast'
 import { DistributionMethodToggle } from '@/components/manual-costs/distribution-method-toggle'
 import { DistributionTable } from '@/components/manual-costs/distribution-table'
 import { VolumeDistributionView } from '@/components/manual-costs/volume-distribution-view'
+import { DistributedBatchView } from '@/components/manual-costs/distributed-batch-view'
 import { Checkbox } from '@/components/ui/checkbox'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 
 type BusinessUnit = {
   id: string
@@ -122,6 +124,12 @@ export default function ManualCostsAdminPage() {
   const [formDistributionMethod, setFormDistributionMethod] = useState<'percentage' | 'volume' | null>(null)
   const [formDistributions, setFormDistributions] = useState<Distribution[]>([])
   const [volumeDistributionsData, setVolumeDistributionsData] = useState<Array<{ plantId: string; volumeM3: number }>>([])
+  const [originalDistributions, setOriginalDistributions] = useState<Array<{
+    plantId: string
+    volumeM3: number
+    percentage: number
+    amount: number
+  }> | null>(null)
   const [departments, setDepartments] = useState<string[]>([])
 
   // Load filters data
@@ -237,8 +245,24 @@ export default function ManualCostsAdminPage() {
         }
       })
       setFormDistributions(formDists)
+      
+      // Store original distributions for volume-based adjustments (for comparison view)
+      if (adjustment.distribution_method === 'volume') {
+        const originalVolDistributions = adjustment.distributions
+          .filter(dist => dist.plant_id && dist.volume_m3 !== null && dist.volume_m3 !== undefined)
+          .map(dist => ({
+            plantId: dist.plant_id!,
+            volumeM3: Number(dist.volume_m3 || 0),
+            percentage: dist.percentage,
+            amount: dist.amount
+          }))
+        setOriginalDistributions(originalVolDistributions.length > 0 ? originalVolDistributions : null)
+      } else {
+        setOriginalDistributions(null)
+      }
     } else {
       setFormDistributions([])
+      setOriginalDistributions(null)
     }
     
     setDialogOpen(true)
@@ -258,6 +282,7 @@ export default function ManualCostsAdminPage() {
     setFormDistributionMethod(null)
     setFormDistributions([])
     setVolumeDistributionsData([])
+    setOriginalDistributions(null)
   }
 
   const handleSubmit = async () => {
@@ -610,15 +635,23 @@ export default function ManualCostsAdminPage() {
         </Card>
       </div>
 
-      {/* Adjustments Table */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Registros de Costos Manuales</CardTitle>
-          <CardDescription>
-            Listado de entradas para {selectedMonth}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
+      {/* Tabs for different views */}
+      <Tabs defaultValue="all" className="w-full">
+        <TabsList className="grid w-full grid-cols-2">
+          <TabsTrigger value="all">Todos los Registros</TabsTrigger>
+          <TabsTrigger value="distributed">Actualizaciones por Volumen</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="all" className="mt-4">
+          {/* Adjustments Table */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Registros de Costos Manuales</CardTitle>
+              <CardDescription>
+                Listado de entradas para {selectedMonth}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
           <Table>
             <TableHeader>
               <TableRow>
@@ -720,6 +753,12 @@ export default function ManualCostsAdminPage() {
           </Table>
         </CardContent>
       </Card>
+        </TabsContent>
+
+        <TabsContent value="distributed" className="mt-4">
+          <DistributedBatchView month={selectedMonth} />
+        </TabsContent>
+      </Tabs>
 
       {/* Create/Edit Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
@@ -885,24 +924,36 @@ export default function ManualCostsAdminPage() {
               />
             </div>
 
-            {/* Distribution Section - Show when no plant selected (allows BU-only or no assignment) */}
-            {!editingAdjustment && !formPlantId && (
+            {/* Distribution Section - Show when no plant selected OR when editing a distributed adjustment */}
+            {(!formPlantId || (editingAdjustment && editingAdjustment.is_distributed)) && (
               <div className="border-t pt-4 mt-4 space-y-4">
                 <div>
                   <Label className="text-sm font-medium mb-3 block">Distribución</Label>
                   <p className="text-xs text-muted-foreground mb-3">
-                    {formBusinessUnitId 
-                      ? 'Distribuir el costo entre las plantas de esta unidad de negocio'
-                      : 'Distribuir el costo entre plantas, unidades de negocio o departamentos'}
+                    {editingAdjustment && editingAdjustment.is_distributed
+                      ? 'Distribución actual. Los volúmenes se recalculan automáticamente si han cambiado.'
+                      : formBusinessUnitId 
+                        ? 'Distribuir el costo entre las plantas de esta unidad de negocio'
+                        : 'Distribuir el costo entre plantas, unidades de negocio o departamentos'}
                   </p>
-                  <DistributionMethodToggle
-                    value={formDistributionMethod}
-                    onChange={(val) => {
-                      setFormDistributionMethod(val)
-                      setFormDistributions([])
-                      setVolumeDistributionsData([])
-                    }}
-                  />
+                  {!editingAdjustment && (
+                    <DistributionMethodToggle
+                      value={formDistributionMethod}
+                      onChange={(val) => {
+                        setFormDistributionMethod(val)
+                        setFormDistributions([])
+                        setVolumeDistributionsData([])
+                        setOriginalDistributions(null)
+                      }}
+                    />
+                  )}
+                  {editingAdjustment && editingAdjustment.distribution_method && (
+                    <div className="mt-2">
+                      <Badge variant="outline">
+                        Método: {editingAdjustment.distribution_method === 'volume' ? 'Por Volumen' : 'Por Porcentaje'}
+                      </Badge>
+                    </div>
+                  )}
                 </div>
 
                 {formDistributionMethod === 'percentage' && (
@@ -924,6 +975,7 @@ export default function ManualCostsAdminPage() {
                     totalAmount={parseFloat(formAmount || '0')}
                     businessUnitId={formBusinessUnitId || null}
                     plants={formBusinessUnitId ? availablePlants : plants}
+                    originalDistributions={originalDistributions || undefined}
                     onDistributionsChange={handleVolumeDistributionsChange}
                   />
                 )}
