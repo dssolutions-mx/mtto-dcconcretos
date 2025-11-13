@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/checklists/auto-create-pending-work-orders",
+      "schedule": "0 * * * *"
+    }
+  ]
+}

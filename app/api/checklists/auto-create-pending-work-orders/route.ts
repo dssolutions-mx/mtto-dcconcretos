@@ -1,18 +1,28 @@
 import { createClient } from '@/lib/supabase-server'
 import { NextResponse } from 'next/server'
 
+/**
+ * Auto-create work orders for pending issues older than 1 hour
+ * This endpoint should be called periodically by a cron job
+ *
+ * Setup instructions:
+ * 1. Use Vercel Cron Jobs (add to vercel.json):
+ *    {
+ *      "crons": [{
+ *        "path": "/api/checklists/auto-create-pending-work-orders",
+ *        "schedule": "0 * * * *"  // Run every hour
+ *      }]
+ *    }
+ *
+ * 2. Or use an external cron service like cron-job.org to call this endpoint every hour
+ * 3. Or call it from your monitoring dashboard periodically
+ */
+
 export async function GET() {
   try {
     const supabase = await createClient()
-    
-    // Verify user is authenticated
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    if (authError || !user) {
-      return NextResponse.json(
-        { error: "No autorizado" },
-        { status: 401 }
-      )
-    }
+
+    console.log('🔄 Starting auto-create check for pending work orders...')
 
     // Use raw SQL to get checklists with issues but NO work orders
     const { data: unresolvedIssues, error } = await supabase
@@ -26,29 +36,41 @@ export async function GET() {
       )
     }
 
+    if (!unresolvedIssues || unresolvedIssues.length === 0) {
+      console.log('✅ No unresolved issues found')
+      return NextResponse.json({
+        success: true,
+        message: 'No unresolved issues to process',
+        auto_created_count: 0
+      })
+    }
+
     // Fetch completed checklists to get section_type information
-    const checklistIds = [...new Set((unresolvedIssues || []).map((issue: any) => issue.checklist_id))]
+    const checklistIds = [...new Set(unresolvedIssues.map((issue: any) => issue.checklist_id))]
     const { data: completedChecklists } = await supabase
       .from('completed_checklists')
-      .select('id, completed_items')
+      .select('id, completed_items, completion_date')
       .in('id', checklistIds)
 
-    // Create a map of checklist_id -> completed_items for quick lookup
-    const completedItemsMap = new Map<string, any[]>()
+    // Create a map of checklist_id -> data for quick lookup
+    const checklistDataMap = new Map<string, any>()
     if (completedChecklists) {
       for (const checklist of completedChecklists) {
-        completedItemsMap.set(checklist.id, checklist.completed_items || [])
+        checklistDataMap.set(checklist.id, checklist)
       }
     }
 
-    // Group issues by checklist and format for the component
+    // Group issues by checklist and format for processing
     const issuesByChecklist = new Map<string, any>()
 
-    for (const issue of unresolvedIssues || []) {
+    for (const issue of unresolvedIssues) {
       const checklistId = issue.checklist_id
+      const checklistData = checklistDataMap.get(checklistId)
+
+      if (!checklistData) continue
 
       // Get section_type from completed_items
-      const completedItems = completedItemsMap.get(checklistId) || []
+      const completedItems = checklistData.completed_items || []
       const completedItem = completedItems.find((item: any) => item.item_id === issue.item_id)
       const sectionType = completedItem?.section_type || 'maintenance'
       const sectionTitle = completedItem?.section_title || 'Problema detectado'
@@ -60,18 +82,12 @@ export async function GET() {
 
       if (!issuesByChecklist.has(checklistId)) {
         issuesByChecklist.set(checklistId, {
-          id: `db-${checklistId}`, // Prefix to distinguish from local storage
           checklistId: checklistId,
           assetId: issue.asset_uuid,
           assetName: issue.asset_name,
-          assetCode: issue.asset_code,
-          technician: issue.technician,
-          completionDate: issue.completion_date,
+          completionDate: checklistData.completion_date,
           issues: [],
-          issueCount: 0,
-          timestamp: new Date(issue.completion_date).getTime(),
-          synced: true, // Database issues are always "synced"
-          source: 'database'
+          timestamp: new Date(checklistData.completion_date).getTime()
         })
       }
 
@@ -85,16 +101,15 @@ export async function GET() {
         sectionTitle: sectionTitle,
         sectionType: sectionType
       })
-      groupedIssue.issueCount++
     }
 
-    // Convert map to array
     const formattedIssues = Array.from(issuesByChecklist.values())
 
     // Auto-create work orders for issues older than 1 hour
     const ONE_HOUR_MS = 60 * 60 * 1000
     const now = Date.now()
     const autoCreatedChecklistIds: string[] = []
+    const errors: string[] = []
 
     for (const issueGroup of formattedIssues) {
       const issueAge = now - issueGroup.timestamp
@@ -153,31 +168,41 @@ export async function GET() {
             autoCreatedChecklistIds.push(issueGroup.checklistId)
           } else {
             const errorText = await workOrderResponse.text()
-            console.error(`❌ Failed to auto-create work orders for checklist ${issueGroup.checklistId}:`, errorText)
+            const errorMsg = `Failed to auto-create for ${issueGroup.checklistId}: ${errorText}`
+            console.error(`❌ ${errorMsg}`)
+            errors.push(errorMsg)
           }
         } catch (error) {
-          console.error(`❌ Error auto-creating work orders for checklist ${issueGroup.checklistId}:`, error)
+          const errorMsg = `Error auto-creating for ${issueGroup.checklistId}: ${error}`
+          console.error(`❌ ${errorMsg}`)
+          errors.push(errorMsg)
         }
       }
     }
 
-    // Filter out auto-created issues from the response
-    const remainingIssues = formattedIssues.filter(
-      issue => !autoCreatedChecklistIds.includes(issue.checklistId)
-    )
-
-    return NextResponse.json({
+    const responseData = {
       success: true,
-      issues: remainingIssues,
-      count: remainingIssues.length,
-      auto_created_count: autoCreatedChecklistIds.length
-    })
+      message: `Processed ${formattedIssues.length} pending issue groups`,
+      auto_created_count: autoCreatedChecklistIds.length,
+      auto_created_checklist_ids: autoCreatedChecklistIds,
+      pending_count: formattedIssues.length - autoCreatedChecklistIds.length,
+      errors: errors.length > 0 ? errors : undefined
+    }
+
+    console.log('✅ Auto-create check completed:', responseData)
+
+    return NextResponse.json(responseData)
 
   } catch (error: any) {
-    console.error('Error in unresolved issues endpoint:', error)
+    console.error('Error in auto-create endpoint:', error)
     return NextResponse.json(
-      { error: 'Error interno del servidor' },
+      { error: 'Error interno del servidor', details: error.message },
       { status: 500 }
     )
   }
-} 
+}
+
+// Also support POST for more secure cron job calls
+export async function POST() {
+  return GET()
+}
