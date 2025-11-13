@@ -227,8 +227,16 @@ GRANT EXECUTE ON FUNCTION auto_create_pending_work_orders() TO service_role;
 -- Note: This requires the pg_cron extension and appropriate permissions
 -- Run this in the Supabase SQL Editor with elevated permissions
 
--- First, unschedule any existing job with the same name
-SELECT cron.unschedule('auto-create-pending-work-orders');
+-- First, unschedule any existing job with the same name (safely)
+DO $$
+BEGIN
+  PERFORM cron.unschedule('auto-create-pending-work-orders');
+EXCEPTION
+  WHEN OTHERS THEN
+    -- Job doesn't exist yet, that's fine
+    NULL;
+END
+$$;
 
 -- Schedule the job to run every hour at minute 0
 SELECT cron.schedule(
@@ -287,7 +295,15 @@ END;
 $$;
 
 -- Update the cron job to use the logging wrapper
-SELECT cron.unschedule('auto-create-pending-work-orders');
+DO $$
+BEGIN
+  PERFORM cron.unschedule('auto-create-pending-work-orders');
+EXCEPTION
+  WHEN OTHERS THEN
+    NULL;
+END
+$$;
+
 SELECT cron.schedule(
   'auto-create-pending-work-orders',
   '0 * * * *',
