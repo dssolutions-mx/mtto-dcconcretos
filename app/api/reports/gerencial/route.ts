@@ -16,9 +16,10 @@ export async function POST(req: NextRequest) {
     const { dateFrom, dateTo, businessUnitId, plantId, hideZeroActivity } = (await req.json()) as Body
 
     // Compute exclusive end-of-day bound to avoid timezone-related drops
-    const dateFromStart = new Date(`${dateFrom}T00:00:00`)
-    const dateToExclusive = new Date(`${dateTo}T00:00:00`)
-    dateToExclusive.setDate(dateToExclusive.getDate() + 1)
+    // Use UTC explicitly to ensure consistent behavior across environments
+    const dateFromStart = new Date(`${dateFrom}T00:00:00.000Z`)
+    const dateToExclusive = new Date(`${dateTo}T00:00:00.000Z`)
+    dateToExclusive.setUTCDate(dateToExclusive.getUTCDate() + 1)
     const dateToExclusiveStr = dateToExclusive.toISOString().slice(0, 10)
 
     const supabase = await createServerSupabase()
@@ -177,8 +178,9 @@ export async function POST(req: NextRequest) {
       workOrdersMap = new Map(workOrders?.map(wo => [wo.id, wo]) || [])
     }
 
-    // Filter purchase orders by date range (inclusive start, exclusive end)
+    // Filter purchase orders by date range (inclusive start, inclusive end)
     // Priority: purchase_date → work_order.completed_at → work_order.planned_date → work_order.created_at
+    // Compare by DATE ONLY (YYYY-MM-DD) to avoid timezone issues
     const filteredPurchaseOrders = purchaseOrders?.filter(po => {
       let dateToCheckStr: string
       
@@ -208,8 +210,24 @@ export async function POST(req: NextRequest) {
         dateToCheckStr = po.created_at
       }
       
-      const ts = new Date(dateToCheckStr).getTime()
-      return ts >= dateFromStart.getTime() && ts < dateToExclusive.getTime()
+      // Extract date-only string (YYYY-MM-DD) from timestamptz, ignoring time/timezone
+      const extractDateOnly = (dateStr: string): string => {
+        if (!dateStr) return ''
+        // Handle ISO timestamptz: "2025-10-01T00:00:00+00" -> "2025-10-01"
+        if (dateStr.includes('T')) {
+          return dateStr.split('T')[0]
+        }
+        // Handle date-only string: "2025-10-01" -> "2025-10-01"
+        return dateStr.slice(0, 10)
+      }
+      
+      const checkDateOnly = extractDateOnly(dateToCheckStr)
+      const fromDateOnly = dateFrom  // Already YYYY-MM-DD format (e.g., "2025-09-01")
+      const toDateOnly = dateTo       // Already YYYY-MM-DD format (e.g., "2025-09-30")
+      
+      // Compare as date strings (YYYY-MM-DD), ignoring time and timezone
+      // This ensures "2025-10-01" is always > "2025-09-30" regardless of server timezone
+      return checkDateOnly >= fromDateOnly && checkDateOnly <= toDateOnly
     }) || []
 
     // Get additional expenses

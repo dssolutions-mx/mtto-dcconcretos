@@ -312,13 +312,13 @@ export default function IngresosGastosPage() {
           const buValue = calculateBUValue(buPlants, getValue, metricType, metricKey)
           row.push(buValue) // Store as number for proper Excel formatting
         })
-        const grandTotal = calculateGrandTotal(getValue)
+        const grandTotal = calculateGrandTotal(getValue, metricKey)
         row.push(grandTotal)
       } else {
         plants.forEach(plant => {
           row.push(getValue(plant)) // Store as number
         })
-        const grandTotal = calculateGrandTotal(getValue)
+        const grandTotal = calculateGrandTotal(getValue, metricKey)
         row.push(grandTotal)
       }
       exportData.push(row)

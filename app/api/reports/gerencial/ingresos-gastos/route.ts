@@ -668,6 +668,17 @@ export async function POST(req: NextRequest) {
       // Aggregate maintenance by plant code
       const plantManttoFallback = new Map<string, number>()
       
+      // Extract date-only string (YYYY-MM-DD) from timestamptz, ignoring time/timezone
+      const extractDateOnly = (dateStr: string): string => {
+        if (!dateStr) return ''
+        // Handle ISO timestamptz: "2025-10-01T00:00:00+00" -> "2025-10-01"
+        if (dateStr.includes('T')) {
+          return dateStr.split('T')[0]
+        }
+        // Handle date-only string: "2025-10-01" -> "2025-10-01"
+        return dateStr.slice(0, 10)
+      }
+      
       ;(purchaseOrders || []).forEach(po => {
         let dateToCheckStr: string
         
@@ -689,8 +700,9 @@ export async function POST(req: NextRequest) {
           dateToCheckStr = po.created_at
         }
         
-        const ts = new Date(dateToCheckStr).getTime()
-        if (ts < new Date(dateFromStr).getTime() || ts > new Date(dateToStr).getTime()) return
+        // Compare by DATE ONLY (YYYY-MM-DD) to avoid timezone issues
+        const checkDateOnly = extractDateOnly(dateToCheckStr)
+        if (checkDateOnly < dateFromStr || checkDateOnly > dateToStr) return
         const finalAmount = po.actual_amount ? parseFloat(po.actual_amount) : parseFloat(po.total_amount || '0')
         const wo = po.work_order_id ? woById.get(po.work_order_id) : null
         const plantCode = (wo as any)?.assets?.plants?.code
