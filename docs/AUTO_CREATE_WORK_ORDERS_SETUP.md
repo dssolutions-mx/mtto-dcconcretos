@@ -92,9 +92,11 @@ The function runs every hour and:
 
 For each pending issue:
 - **Priority Assignment:** `fail` status → Alta, `flag` status → Media
-- **Consolidation:** Automatically consolidates with similar existing work orders using fingerprinting
+- **Fingerprint Generation:** Uses `generate_issue_fingerprint()` function (same as existing API) to create unique identifiers
+- **Consolidation:** Automatically consolidates with similar existing work orders by querying `checklist_issues.issue_fingerprint` and joining to `work_orders` via `work_order_id` (matches existing deduplication system)
 - **New Work Orders:** Creates new work orders when no similar issue exists
-- **Marking as Resolved:** Updates `checklist_issues.resolved = true`
+- **Accurate Counting:** `created_count` only increments when new work orders are actually created (not when consolidating)
+- **Marking as Resolved:** Updates `checklist_issues.resolved = true` and links `work_order_id`
 - **Incident History:** Logs all actions in `incident_history`
 
 ### 3. Logging
@@ -185,7 +187,8 @@ ORDER BY cc.completion_date ASC;
 
 ```sql
 SELECT
-  wo.work_order_id,
+  wo.order_id,
+  wo.id,
   wo.description,
   wo.priority,
   wo.status,
@@ -197,6 +200,42 @@ WHERE wo.description LIKE '[AUTO-CREADO]%'
 ORDER BY wo.created_at DESC
 LIMIT 20;
 ```
+
+### Verify Deduplication is Working
+
+Check if issues are being consolidated correctly:
+
+```sql
+SELECT
+  ci.issue_fingerprint,
+  COUNT(DISTINCT ci.id) as issue_count,
+  COUNT(DISTINCT wo.id) as work_order_count,
+  wo.order_id,
+  wo.description,
+  wo.status
+FROM checklist_issues ci
+JOIN work_orders wo ON ci.work_order_id = wo.id
+WHERE ci.issue_fingerprint IS NOT NULL
+  AND ci.resolved = true
+  AND wo.description LIKE '%Auto-consolidado%'
+GROUP BY ci.issue_fingerprint, wo.id, wo.order_id, wo.description, wo.status
+HAVING COUNT(DISTINCT ci.id) > 1
+ORDER BY issue_count DESC;
+```
+
+## Implementation Notes
+
+### Key Fixes Applied
+
+1. **Deduplication Approach**: Uses existing `checklist_issues.issue_fingerprint` column and joins to `work_orders` via `work_order_id`, matching the existing API implementation (`generate-corrective-work-order-enhanced`)
+
+2. **Type Casting**: Fixed UUID to text conversion when calling `generate_issue_fingerprint()` function (casts `asset_id::text`)
+
+3. **Counting Bug Fix**: `created_count` now only increments when new work orders are actually created (inside ELSE branch), not when consolidating with existing ones
+
+4. **Fingerprint Updates**: Automatically updates `checklist_issues.issue_fingerprint` if missing before checking for similar issues
+
+5. **Work Order Linking**: Properly links issues to work orders via `work_order_id` column in both consolidation and creation scenarios
 
 ## Troubleshooting
 
@@ -236,11 +275,30 @@ Possible reasons:
 1. Issue is less than 1 hour old
 2. Work order already exists for that checklist
 3. Issue is from cleanliness or security section
-4. Database function has an error (check `auto_create_logs`)
+4. Issue was consolidated with an existing work order (check `work_order_id` in `checklist_issues`)
+5. Database function has an error (check `auto_create_logs`)
 
 Test manually:
 ```sql
 SELECT auto_create_pending_work_orders();
+```
+
+### Verify Counting Accuracy
+
+Check that `created_count` accurately reflects new work orders:
+
+```sql
+-- Compare function result with actual auto-created work orders
+SELECT 
+  (SELECT COUNT(*) 
+   FROM work_orders 
+   WHERE description LIKE '[AUTO-CREADO]%' 
+     AND created_at > NOW() - INTERVAL '1 day') as actual_created,
+  (SELECT result->>'created_count' 
+   FROM auto_create_logs 
+   WHERE run_at > NOW() - INTERVAL '1 day' 
+   ORDER BY run_at DESC 
+   LIMIT 1)::int as reported_created;
 ```
 
 ## Configuration
