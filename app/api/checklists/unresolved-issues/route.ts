@@ -91,86 +91,84 @@ export async function GET() {
     // Convert map to array
     const formattedIssues = Array.from(issuesByChecklist.values())
 
-    // Auto-create work orders for issues older than 1 hour
-    const ONE_HOUR_MS = 60 * 60 * 1000
-    const now = Date.now()
-    const autoCreatedChecklistIds: string[] = []
+    // Trigger auto-creation for issues older than 1 hour (database handles the logic)
+    let autoCreatedCount = 0
+    try {
+      const { data: autoCreateResult } = await supabase
+        .rpc('auto_create_pending_work_orders')
 
-    for (const issueGroup of formattedIssues) {
-      const issueAge = now - issueGroup.timestamp
-
-      if (issueAge > ONE_HOUR_MS) {
-        console.log(`🔄 Auto-creating work orders for checklist ${issueGroup.checklistId} (${Math.round(issueAge / 1000 / 60)} minutes old)`)
-
-        try {
-          // Prepare items with issues
-          const itemsWithIssues = issueGroup.issues.map((item: any) => ({
-            id: item.id,
-            description: item.description,
-            notes: item.notes,
-            photo_url: item.photo,
-            status: item.status,
-            sectionTitle: item.sectionTitle,
-            sectionType: item.sectionType
-          }))
-
-          // Determine priorities based on status (fail = high, flag = medium)
-          const priorities = itemsWithIssues.map((item: any) =>
-            item.status === 'fail' ? 'Alta' : 'Media'
-          )
-
-          // Create work orders with auto-consolidation enabled (all set to 'consolidate')
-          const consolidationChoices = itemsWithIssues.reduce((acc: any, item: any) => {
-            acc[item.id] = 'consolidate'
-            return acc
-          }, {})
-
-          // Import and call the work order creation logic directly
-          const workOrderModule = await import('../generate-corrective-work-order-enhanced/route')
-
-          // Create a mock request for the work order creation
-          const workOrderBody = {
-            checklist_id: issueGroup.checklistId,
-            asset_id: issueGroup.assetId,
-            items_with_issues: itemsWithIssues,
-            priorities,
-            consolidation_choices: consolidationChoices,
-            auto_created: true
-          }
-
-          const mockRequest = new Request('http://localhost:3000/api/checklists/generate-corrective-work-order-enhanced', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(workOrderBody)
-          })
-
-          const workOrderResponse = await workOrderModule.POST(mockRequest as any)
-
-          if (workOrderResponse.ok) {
-            console.log(`✅ Auto-created work orders for checklist ${issueGroup.checklistId}`)
-            autoCreatedChecklistIds.push(issueGroup.checklistId)
-          } else {
-            const errorText = await workOrderResponse.text()
-            console.error(`❌ Failed to auto-create work orders for checklist ${issueGroup.checklistId}:`, errorText)
-          }
-        } catch (error) {
-          console.error(`❌ Error auto-creating work orders for checklist ${issueGroup.checklistId}:`, error)
+      if (autoCreateResult) {
+        autoCreatedCount = autoCreateResult.created_count || 0
+        if (autoCreatedCount > 0) {
+          console.log(`✅ Auto-created ${autoCreatedCount} work order(s)`)
         }
+      }
+    } catch (error) {
+      console.error('Error triggering auto-creation:', error)
+      // Continue even if auto-creation fails
+    }
+
+    // Re-fetch issues after auto-creation (to exclude newly created work orders)
+    let finalIssues = formattedIssues
+    if (autoCreatedCount > 0) {
+      // Re-run the query to get updated list
+      const { data: updatedIssues } = await supabase
+        .rpc('get_truly_unresolved_checklist_issues')
+
+      if (updatedIssues) {
+        // Re-process the filtered list
+        const updatedIssuesByChecklist = new Map<string, any>()
+
+        for (const issue of updatedIssues) {
+          const checklistId = issue.checklist_id
+          const completedItems = completedItemsMap.get(checklistId) || []
+          const completedItem = completedItems.find((item: any) => item.item_id === issue.item_id)
+          const sectionType = completedItem?.section_type || 'maintenance'
+          const sectionTitle = completedItem?.section_title || 'Problema detectado'
+
+          if (sectionType === 'cleanliness_bonus' || sectionType === 'security_talk') {
+            continue
+          }
+
+          if (!updatedIssuesByChecklist.has(checklistId)) {
+            updatedIssuesByChecklist.set(checklistId, {
+              id: `db-${checklistId}`,
+              checklistId: checklistId,
+              assetId: issue.asset_uuid,
+              assetName: issue.asset_name,
+              assetCode: issue.asset_code,
+              technician: issue.technician,
+              completionDate: issue.completion_date,
+              issues: [],
+              issueCount: 0,
+              timestamp: new Date(issue.completion_date).getTime(),
+              synced: true,
+              source: 'database'
+            })
+          }
+
+          const groupedIssue = updatedIssuesByChecklist.get(checklistId)!
+          groupedIssue.issues.push({
+            id: issue.item_id,
+            description: issue.description,
+            notes: issue.notes || '',
+            photo: issue.photo_url,
+            status: issue.status as "flag" | "fail",
+            sectionTitle: sectionTitle,
+            sectionType: sectionType
+          })
+          groupedIssue.issueCount++
+        }
+
+        finalIssues = Array.from(updatedIssuesByChecklist.values())
       }
     }
 
-    // Filter out auto-created issues from the response
-    const remainingIssues = formattedIssues.filter(
-      issue => !autoCreatedChecklistIds.includes(issue.checklistId)
-    )
-
     return NextResponse.json({
       success: true,
-      issues: remainingIssues,
-      count: remainingIssues.length,
-      auto_created_count: autoCreatedChecklistIds.length
+      issues: finalIssues,
+      count: finalIssues.length,
+      auto_created_count: autoCreatedCount
     })
 
   } catch (error: any) {
