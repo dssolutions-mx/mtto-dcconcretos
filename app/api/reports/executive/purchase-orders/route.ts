@@ -82,7 +82,24 @@ export async function GET(request: NextRequest) {
         dateToCheck = po.created_at
       }
       
-      return dateToCheck >= startDate! && dateToCheck <= endDate!
+      // Extract date-only string (YYYY-MM-DD) from timestamptz, ignoring time/timezone
+      const extractDateOnly = (dateStr: string): string => {
+        if (!dateStr) return ''
+        // Handle ISO timestamptz: "2025-10-01T00:00:00+00" -> "2025-10-01"
+        if (dateStr.includes('T')) {
+          return dateStr.split('T')[0]
+        }
+        // Handle date-only string: "2025-10-01" -> "2025-10-01"
+        return dateStr.slice(0, 10)
+      }
+      
+      // Ensure startDate and endDate are date-only strings
+      const startDateOnly = extractDateOnly(startDate!)
+      const endDateOnly = extractDateOnly(endDate!)
+      const checkDateOnly = extractDateOnly(dateToCheck)
+      
+      // Compare as date strings (YYYY-MM-DD), ignoring time and timezone
+      return checkDateOnly >= startDateOnly && checkDateOnly <= endDateOnly
     })
 
     // Transform the data for easier consumption

@@ -30,9 +30,10 @@ export async function POST(req: Request) {
     const dateToStr = endDate.includes('T') ? endDate.split('T')[0] : endDate
     
     // Compute exclusive end-of-day bound (same as gerencial)
-    const dateFromStart = new Date(`${dateFromStr}T00:00:00`)
-    const dateToExclusive = new Date(`${dateToStr}T00:00:00`)
-    dateToExclusive.setDate(dateToExclusive.getDate() + 1) // Add 1 day for exclusive end
+    // Use UTC explicitly to ensure consistent behavior across environments
+    const dateFromStart = new Date(`${dateFromStr}T00:00:00.000Z`)
+    const dateToExclusive = new Date(`${dateToStr}T00:00:00.000Z`)
+    dateToExclusive.setUTCDate(dateToExclusive.getUTCDate() + 1) // Add 1 day for exclusive end
     
     const supabase = await createServerSupabase()
 
@@ -185,11 +186,23 @@ export async function POST(req: Request) {
         dateToCheck = po.created_at
       }
       
-      // Check if the date falls within the selected range
-      // Use same logic as gerencial: inclusive start, exclusive end (for consistency)
-      const dateToCheckTime = new Date(dateToCheck).getTime()
+      // Extract date-only string (YYYY-MM-DD) from timestamptz, ignoring time/timezone
+      const extractDateOnly = (dateStr: string): string => {
+        if (!dateStr) return ''
+        // Handle ISO timestamptz: "2025-10-01T00:00:00+00" -> "2025-10-01"
+        if (dateStr.includes('T')) {
+          return dateStr.split('T')[0]
+        }
+        // Handle date-only string: "2025-10-01" -> "2025-10-01"
+        return dateStr.slice(0, 10)
+      }
       
-      return dateToCheckTime >= dateFromStart.getTime() && dateToCheckTime < dateToExclusive.getTime()
+      // Compare by DATE ONLY (YYYY-MM-DD) to avoid timezone issues
+      const checkDateOnly = extractDateOnly(dateToCheck)
+      
+      // Compare as date strings (YYYY-MM-DD), ignoring time and timezone
+      // This ensures "2025-10-01" is always > "2025-09-30" regardless of server timezone
+      return checkDateOnly >= dateFromStr && checkDateOnly <= dateToStr
     }) || []
 
     // Service orders are not used for cost calculations since they're always linked to work orders that have POs
