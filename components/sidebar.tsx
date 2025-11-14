@@ -1214,6 +1214,12 @@ export function SidebarWrapper({ children }: { children: React.ReactNode }) {
     "/auth/confirm",
     "/auth/callback",
   ]
+  
+  // Exclude print pages from sidebar/header layout
+  if (pathname?.includes("/imprimir")) {
+    return <>{children}</>
+  }
+  
   if (authChromeLessPaths.some((p) => pathname?.startsWith(p))) {
     return <>{children}</>
   }

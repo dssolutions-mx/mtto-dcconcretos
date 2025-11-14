@@ -589,7 +589,8 @@ export function AssetPlantAssignmentDragDrop() {
       await fetchAssets()
 
       // Show quick assignment dialog if asset was assigned to a plant
-      if (plantId && asset) {
+      // BUT skip if operators were already transferred (resolve_conflicts === 'transfer_operators')
+      if (plantId && asset && resolveConflicts !== 'transfer_operators') {
         setRecentlyAssignedAsset({
           id: asset.id,
           name: asset.name,
@@ -637,7 +638,8 @@ export function AssetPlantAssignmentDragDrop() {
     if (!recentlyAssignedAsset) return
 
     try {
-      const response = await fetch('/api/asset-operators', {
+      // First, try regular assignment
+      let response = await fetch('/api/asset-operators', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -647,6 +649,42 @@ export function AssetPlantAssignmentDragDrop() {
           start_date: new Date().toISOString().split('T')[0]
         })
       })
+
+      // Handle conflicts: 409 = primary operator exists, 400 = operator already assigned
+      if (response.status === 409 || response.status === 400) {
+        const errorData = await response.json()
+        const errorMessage = errorData.error || ''
+        
+        // Check if this is a "primary operator exists" error (409)
+        if (response.status === 409 && errorMessage.includes('primary operator')) {
+          // Use transfer API with force_transfer to replace the existing primary operator
+          response = await fetch('/api/asset-operators/transfer', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              operator_id: operatorId,
+              to_asset_id: recentlyAssignedAsset.id,
+              assignment_type: assignmentType,
+              transfer_reason: 'Replacement via quick assignment dialog',
+              force_transfer: true
+            })
+          })
+        } 
+        // Check if operator is already assigned to this asset (400)
+        else if (response.status === 400 && errorMessage.includes('already assigned')) {
+          // If operator is already assigned, check if they want to change assignment type
+          // For now, just show a friendly message that they're already assigned
+          toast({
+            title: "Información",
+            description: "Este operador ya está asignado a este activo.",
+          })
+          await fetchAssets() // Refresh to show current state
+          return // Exit early since assignment already exists
+        } else {
+          // For other conflicts, throw the original error
+          throw new Error(errorMessage || 'Error al asignar operador')
+        }
+      }
 
       if (!response.ok) {
         const error = await response.json()

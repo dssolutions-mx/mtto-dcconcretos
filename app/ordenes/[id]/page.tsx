@@ -28,6 +28,7 @@ import {
 } from "@/types"
 import { EvidenceViewer, type EvidenceItem } from "@/components/ui/evidence-viewer"
 import { WorkOrderCostDisplay } from "@/components/work-orders/work-order-cost-display"
+import { WorkOrderPrintHandler } from "@/components/work-orders/work-order-print-handler"
 
 // Extended type for work order with completed_at field
 type ExtendedWorkOrder = WorkOrderComplete & {
@@ -381,7 +382,7 @@ export default async function WorkOrderDetailsPage({
           </Badge>
         </div>
         
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-2 no-print">
           <Button variant="outline" asChild>
             <Link href={`/ordenes/${id}/editar`}>
               <Edit className="mr-2 h-4 w-4" />
@@ -431,6 +432,8 @@ export default async function WorkOrderDetailsPage({
               </Link>
             </Button>
           )}
+          
+          <WorkOrderPrintHandler workOrderId={id} />
         </div>
       </div>
       
@@ -636,7 +639,7 @@ export default async function WorkOrderDetailsPage({
                 </div>
                 
                 {(!extendedWorkOrder.purchase_order_id && (!allPurchaseOrders || allPurchaseOrders.length === 0)) && extendedWorkOrder.type === MaintenanceType.Preventive && (
-                  <div className="mt-4">
+                  <div className="mt-4 no-print">
                     <Button asChild>
                       <Link href={`/ordenes/${id}/generar-oc`}>
                         <ShoppingCart className="mr-2 h-4 w-4" />
@@ -647,7 +650,7 @@ export default async function WorkOrderDetailsPage({
                 )}
                 
                 {(extendedWorkOrder.purchase_order_id || (allPurchaseOrders && allPurchaseOrders.length > 0)) && (
-                  <div className="mt-4">
+                  <div className="mt-4 no-print">
                     <Button variant="outline" asChild>
                       <Link href={`/compras/${extendedWorkOrder.purchase_order_id || allPurchaseOrders?.[0]?.id}`}>
                         <ShoppingCart className="mr-2 h-4 w-4" />
@@ -662,7 +665,7 @@ export default async function WorkOrderDetailsPage({
           
           {/* Evidence Section */}
           {allEvidence.length > 0 && (
-            <Card>
+            <Card className="evidence-section no-print">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Camera className="h-5 w-5" />
@@ -721,7 +724,7 @@ export default async function WorkOrderDetailsPage({
         <div className="space-y-6">
           {/* Related entities quick access */}
           {extendedWorkOrder.asset && (
-            <Card>
+            <Card className="no-print">
               <CardHeader>
                 <CardTitle>Relaciones</CardTitle>
                 <CardDescription>Accesos a entidades relacionadas</CardDescription>
@@ -765,7 +768,7 @@ export default async function WorkOrderDetailsPage({
                     <p>{Number(extendedWorkOrder.asset.current_hours) || 0} hrs</p>
                   </div>
                   
-                  <Button variant="outline" asChild className="w-full mt-2">
+                  <Button variant="outline" asChild className="w-full mt-2 no-print">
                     <Link href={`/activos/${extendedWorkOrder.asset.id}`}>
                       Ver detalle completo
                     </Link>
@@ -804,7 +807,7 @@ export default async function WorkOrderDetailsPage({
                   <p className="font-medium">${Number(purchaseOrder.total_amount).toFixed(2)}</p>
                 </div>
                 
-                <Button variant="outline" asChild className="w-full mt-2">
+                <Button variant="outline" asChild className="w-full mt-2 no-print">
                   <Link href={`/compras/${purchaseOrder.id}`}>
                     Ver orden de compra
                   </Link>
@@ -814,7 +817,7 @@ export default async function WorkOrderDetailsPage({
           )}
           
           {/* Actions card */}
-          <Card>
+          <Card className="no-print">
             <CardHeader>
               <CardTitle>Acciones</CardTitle>
             </CardHeader>
@@ -876,6 +879,8 @@ export default async function WorkOrderDetailsPage({
                 
                 return null;
               })()}
+              
+              <WorkOrderPrintHandler workOrderId={id} className="w-full" />
             </CardContent>
           </Card>
           
@@ -935,7 +940,7 @@ export default async function WorkOrderDetailsPage({
                     )}
                     
                     {extendedWorkOrder.asset && (
-                      <Button variant="outline" asChild className="w-full mt-4">
+                      <Button variant="outline" asChild className="w-full mt-4 no-print">
                         <Link href={`/activos/${extendedWorkOrder.asset.id}/historial`}>
                           Ver historial completo
                         </Link>
@@ -980,7 +985,7 @@ export default async function WorkOrderDetailsPage({
                                expense.status}
                             </Badge>
                             
-                            <div className="flex gap-2">
+                            <div className="flex gap-2 no-print">
                               {expense.adjustment_po_id && (
                                 <Button variant="outline" size="sm" asChild>
                                   <Link href={`/compras/${expense.adjustment_po_id}`} className="text-xs">
@@ -1044,7 +1049,7 @@ export default async function WorkOrderDetailsPage({
                                     </div>
                                   )}
                                 </td>
-                                <td className="py-2 px-1 text-center">
+                                <td className="py-2 px-1 text-center no-print">
                                   {!expense.adjustment_po_id && expense.status === "aprobado" && (
                                     <Button variant="outline" size="sm" asChild>
                                       <Link href={`/ordenes/${id}/generar-oc-ajuste`}>
@@ -1062,7 +1067,7 @@ export default async function WorkOrderDetailsPage({
                     </div>
                     
                     {!hasAdjustmentPO && additionalExpenses.some(e => e.status === "aprobado" && !e.adjustment_po_id) && (
-                      <div className="mt-4">
+                      <div className="mt-4 no-print">
                         <Button variant="default" asChild>
                           <Link href={`/ordenes/${id}/generar-oc-ajuste`}>
                             <ShoppingCart className="h-4 w-4 mr-2" />

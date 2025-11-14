@@ -128,8 +128,8 @@ export function QuickOperatorAssignmentDialog({
                 <p className="text-sm">Asigna operadores a la planta primero</p>
               </div>
             ) : (
-              <ScrollArea className="max-h-64 border rounded-lg">
-                <div className="p-2 space-y-2">
+              <ScrollArea className="h-[300px] border rounded-lg">
+                <div className="p-2 space-y-2 pr-4">
                   {operators.map((op) => (
                     <div
                       key={op.id}
