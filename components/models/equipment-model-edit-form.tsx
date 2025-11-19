@@ -494,16 +494,19 @@ export function EquipmentModelEditForm({ modelId }: EquipmentModelEditFormProps)
     try {
       let savedPart;
       
-      if (isEditingPart && currentPart) {
+      // Check if we're editing an existing part with a valid database ID
+      const isEditingWithValidId = isEditingPart && currentPart && currentPart.id && !currentPart.id.startsWith('part-');
+      
+      if (isEditingWithValidId) {
         // Actualizar repuesto existente
-        savedPart = await modelsApi.updateTaskPart(part.id, {
+        savedPart = await modelsApi.updateTaskPart(currentPart.id, {
           name: part.name,
           part_number: part.partNumber,
           quantity: part.quantity,
           cost: part.cost || null,
         });
       } else {
-        // Crear nuevo repuesto
+        // Crear nuevo repuesto (either new part or part with temporary ID)
         savedPart = await modelsApi.createTaskPart({
           task_id: task.id,
           name: part.name,

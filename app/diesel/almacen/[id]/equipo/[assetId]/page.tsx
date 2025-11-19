@@ -122,7 +122,7 @@ export default function AssetWarehouseDetailPage() {
           .single()
 
         if (assetError) {
-          console.error('Error loading asset:', assetError)
+          console.error('Error loading asset:', assetError?.message || JSON.stringify(assetError))
         } else if (assetData) {
           setAsset({
             id: assetData.id,
@@ -169,7 +169,7 @@ export default function AssetWarehouseDetailPage() {
       const { data: transactionsData, error: transactionsError } = await transactionsQuery
 
       if (transactionsError) {
-        console.error('Error loading transactions:', transactionsError)
+        console.error('Error loading transactions:', transactionsError?.message || JSON.stringify(transactionsError))
       } else {
         // Get unique user IDs
         const userIds = [...new Set(transactionsData?.map((t: any) => t.created_by).filter(Boolean))] as string[]

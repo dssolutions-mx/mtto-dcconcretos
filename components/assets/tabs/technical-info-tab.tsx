@@ -82,7 +82,7 @@ export function TechnicalInfoTab({
               <FormItem>
                 <FormLabel>Horas Iniciales de Operación</FormLabel>
                 <FormControl>
-                  <Input type="number" min="0" {...field} />
+                  <Input type="number" min="0" {...field} value={field.value || ""} />
                 </FormControl>
                 <FormDescription>Horas de operación al momento de la adquisición</FormDescription>
                 <FormMessage />
@@ -97,7 +97,7 @@ export function TechnicalInfoTab({
               <FormItem>
                 <FormLabel>Horas Actuales de Operación</FormLabel>
                 <FormControl>
-                  <Input type="number" min="0" {...field} />
+                  <Input type="number" min="0" {...field} value={field.value || ""} />
                 </FormControl>
                 <FormDescription>Horas actuales de operación del equipo</FormDescription>
                 <FormMessage />
@@ -114,7 +114,7 @@ export function TechnicalInfoTab({
               <FormItem>
                 <FormLabel>Kilómetros Iniciales de Operación</FormLabel>
                 <FormControl>
-                  <Input type="number" min="0" {...field} />
+                  <Input type="number" min="0" {...field} value={field.value || ""} />
                 </FormControl>
                 <FormDescription>Kilómetros de operación al momento de la adquisición</FormDescription>
                 <FormMessage />
@@ -129,7 +129,7 @@ export function TechnicalInfoTab({
               <FormItem>
                 <FormLabel>Kilómetros Actuales de Operación</FormLabel>
                 <FormControl>
-                  <Input type="number" min="0" {...field} />
+                  <Input type="number" min="0" {...field} value={field.value || ""} />
                 </FormControl>
                 <FormDescription>Kilómetros actuales de operación del equipo</FormDescription>
                 <FormMessage />
