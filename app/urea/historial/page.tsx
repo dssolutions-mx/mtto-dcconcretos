@@ -74,7 +74,7 @@ export default function DieselHistoryPage() {
     try {
       setLoading(true)
 
-      // Load transactions - filter by diesel product
+      // Load transactions - filter by UREA product
       const { data: transactionsData, error: transactionsError } = await supabase
         .from('diesel_transactions')
         .select(`
@@ -91,8 +91,8 @@ export default function DieselHistoryPage() {
           diesel_products!inner(product_type),
           assets(asset_id, name)
         `)
-        .eq('diesel_warehouses.product_type', 'diesel')
-        .eq('diesel_products.product_type', 'diesel')
+        .eq('diesel_warehouses.product_type', 'urea')
+        .eq('diesel_products.product_type', 'urea')
         .order('transaction_date', { ascending: false })
         .limit(500)
 
@@ -141,7 +141,7 @@ export default function DieselHistoryPage() {
       const { data: warehousesData } = await supabase
         .from('diesel_warehouses')
         .select('id, name')
-        .eq('product_type', 'diesel')
+        .eq('product_type', 'urea')
         .order('name')
 
       setWarehouses(warehousesData || [])
@@ -249,7 +249,7 @@ export default function DieselHistoryPage() {
           </p>
         </div>
         <Button variant="outline" asChild>
-          <Link href="/diesel">
+          <Link href="/urea">
             <ChevronLeft className="h-4 w-4 mr-2" />
             Volver
           </Link>

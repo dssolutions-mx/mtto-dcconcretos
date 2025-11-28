@@ -234,7 +234,7 @@ export default function WarehouseDetailPage() {
     try {
       setLoading(true)
 
-      // Load warehouse details - verify it's a diesel warehouse
+      // Load warehouse details - verify it's a UREA warehouse
       const { data: warehouseData, error: warehouseError } = await supabase
         .from('diesel_warehouses')
         .select(`
@@ -250,7 +250,7 @@ export default function WarehouseDetailPage() {
           plants!inner(name)
         `)
         .eq('id', warehouseId)
-        .eq('product_type', 'diesel')
+        .eq('product_type', 'urea')
         .single()
 
       if (warehouseError) {
@@ -266,7 +266,7 @@ export default function WarehouseDetailPage() {
         })
       }
 
-      // Load warehouse transactions - filter by diesel product
+      // Load warehouse transactions - filter by UREA product
       const { data: transactionsData, error: transactionsError } = await supabase
         .from('diesel_transactions')
         .select(`
@@ -293,7 +293,7 @@ export default function WarehouseDetailPage() {
           assets(asset_id, name)
         `)
         .eq('warehouse_id', warehouseId)
-        .eq('diesel_products.product_type', 'diesel')
+        .eq('diesel_products.product_type', 'urea')
         .order('transaction_date', { ascending: false })
 
       if (transactionsError) {
@@ -655,7 +655,7 @@ export default function WarehouseDetailPage() {
           <CardContent className="py-8 text-center">
             <p className="text-muted-foreground">Almacén no encontrado</p>
             <Button variant="outline" className="mt-4" asChild>
-              <Link href="/diesel">
+              <Link href="/urea">
                 <ChevronLeft className="h-4 w-4 mr-2" />
                 Volver
               </Link>

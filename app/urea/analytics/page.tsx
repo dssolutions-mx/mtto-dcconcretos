@@ -106,7 +106,7 @@ export default function DieselAnalyticsPage() {
     try {
       setLoading(true)
 
-      // Build date filter - filter by diesel product
+      // Build date filter - filter by UREA product
       let consumptionQuery = supabase
         .from('diesel_transactions')
         .select(`
@@ -116,8 +116,8 @@ export default function DieselAnalyticsPage() {
           assets(asset_id, name)
         `)
         .eq('transaction_type', 'consumption')
-        .eq('diesel_warehouses.product_type', 'diesel')
-        .eq('diesel_products.product_type', 'diesel')
+        .eq('diesel_warehouses.product_type', 'urea')
+        .eq('diesel_products.product_type', 'urea')
 
       let entryQuery = supabase
         .from('diesel_transactions')
@@ -126,7 +126,7 @@ export default function DieselAnalyticsPage() {
           diesel_products!inner(product_type)
         `)
         .eq('transaction_type', 'entry')
-        .eq('diesel_products.product_type', 'diesel')
+        .eq('diesel_products.product_type', 'urea')
 
       if (dateFrom) {
         consumptionQuery = consumptionQuery.gte('transaction_date', dateFrom)
@@ -454,7 +454,7 @@ export default function DieselAnalyticsPage() {
         const { data: warehouses } = await supabase
           .from('diesel_warehouses')
           .select('id, name')
-          .eq('product_type', 'diesel')
+          .eq('product_type', 'urea')
           .in('id', warehouseIds)
 
         if (warehouses) {
@@ -508,9 +508,12 @@ export default function DieselAnalyticsPage() {
           previous_horometer,
           previous_kilometer,
           created_by,
-          diesel_warehouses(name)
+          diesel_warehouses!inner(name, product_type),
+          diesel_products!inner(product_type)
         `)
         .eq('transaction_type', 'consumption')
+        .eq('diesel_warehouses.product_type', 'urea')
+        .eq('diesel_products.product_type', 'urea')
       
       // Handle null asset_id (external assets) differently
       if (asset.asset_id === null || asset.asset_id === 'external') {
@@ -587,7 +590,7 @@ export default function DieselAnalyticsPage() {
           </p>
         </div>
         <Button variant="outline" asChild>
-          <Link href="/diesel">
+          <Link href="/urea">
             <ChevronLeft className="h-4 w-4 mr-2" />
             Volver
           </Link>

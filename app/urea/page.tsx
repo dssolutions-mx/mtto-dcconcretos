@@ -49,7 +49,7 @@ interface RecentTransaction {
   warehouse_name: string
 }
 
-export default function DieselDashboardPage() {
+export default function UreaDashboardPage() {
   const router = useRouter()
   const [loading, setLoading] = useState(true)
   const [warehouses, setWarehouses] = useState<WarehouseSummary[]>([])
@@ -83,7 +83,7 @@ export default function DieselDashboardPage() {
 
       setUserProfile(profile)
 
-      // Load warehouses with filtering - ONLY DIESEL warehouses
+      // Load warehouses with filtering - ONLY UREA warehouses
       let warehouseQuery = supabase
         .from('diesel_warehouses')
         .select(`
@@ -98,7 +98,7 @@ export default function DieselDashboardPage() {
           plant_id,
           plants!inner(name, business_unit_id)
         `)
-        .eq('product_type', 'diesel')
+        .eq('product_type', 'urea')
         .order('name')
 
       // Apply business unit filtering if user has one
@@ -122,7 +122,7 @@ export default function DieselDashboardPage() {
         setTotalInventory(total)
       }
 
-      // Load recent transactions - ONLY DIESEL product transactions
+      // Load recent transactions - ONLY UREA product transactions
       let transactionsQuery = supabase
         .from('diesel_transactions')
         .select(`
@@ -137,8 +137,8 @@ export default function DieselDashboardPage() {
           assets!left(asset_id, name),
           diesel_products!inner(product_type)
         `)
-        .eq('diesel_products.product_type', 'diesel')
-        .eq('diesel_warehouses.product_type', 'diesel')
+        .eq('diesel_products.product_type', 'urea')
+        .eq('diesel_warehouses.product_type', 'urea')
         .order('transaction_date', { ascending: false })
         .limit(10)
 
@@ -168,12 +168,6 @@ export default function DieselDashboardPage() {
               userProfiles[p.id] = `${p.nombre || ''} ${p.apellido || ''}`.trim() || 'Usuario'
             })
           }
-        }
-        
-        // Debug: log first transaction to see structure
-        if (transactionsData && transactionsData.length > 0) {
-          console.log('Transaction data sample:', transactionsData[0])
-          console.log('Assets data:', transactionsData[0].assets)
         }
         
         const formattedTransactions = transactionsData?.map((t: any) => ({
@@ -236,11 +230,11 @@ export default function DieselDashboardPage() {
       {/* Header */}
       <div>
         <h1 className="text-3xl font-bold flex items-center gap-2">
-          <Fuel className="h-8 w-8 text-blue-600" />
-          Gestión de Diesel
+          <Fuel className="h-8 w-8 text-purple-600" />
+          Gestión de UREA
         </h1>
         <p className="text-muted-foreground mt-1">
-          Control de inventario, consumos y movimientos de diesel
+          Control de inventario, consumos y movimientos de UREA
         </p>
       </div>
 
@@ -252,7 +246,7 @@ export default function DieselDashboardPage() {
         <h2 className="text-lg font-semibold mb-3">Acciones Rápidas</h2>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <Button
-            onClick={() => router.push('/diesel/consumo')}
+            onClick={() => router.push('/urea/consumo')}
             className="h-20 text-lg"
             variant="default"
           >
@@ -261,7 +255,7 @@ export default function DieselDashboardPage() {
           </Button>
           
           <Button
-            onClick={() => router.push('/diesel/entrada')}
+            onClick={() => router.push('/urea/entrada')}
             className="h-20 text-lg"
             variant="outline"
           >
@@ -270,7 +264,7 @@ export default function DieselDashboardPage() {
           </Button>
           
           <Button
-            onClick={() => router.push('/diesel/ajuste')}
+            onClick={() => router.push('/urea/ajuste')}
             className="h-20 text-lg"
             variant="outline"
           >
@@ -285,7 +279,7 @@ export default function DieselDashboardPage() {
         <h2 className="text-lg font-semibold mb-3">Reportes y Analíticas</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <Button
-            onClick={() => router.push('/diesel/historial')}
+            onClick={() => router.push('/urea/historial')}
             className="h-16"
             variant="outline"
           >
@@ -294,7 +288,7 @@ export default function DieselDashboardPage() {
           </Button>
           
           <Button
-            onClick={() => router.push('/diesel/analytics')}
+            onClick={() => router.push('/urea/analytics')}
             className="h-16"
             variant="outline"
           >
@@ -308,12 +302,12 @@ export default function DieselDashboardPage() {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <BarChart3 className="h-5 w-5 text-blue-600" />
+            <BarChart3 className="h-5 w-5 text-purple-600" />
             Inventario Total
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="text-4xl font-bold text-blue-600">
+          <div className="text-4xl font-bold text-purple-600">
             {totalInventory.toFixed(1)} <span className="text-2xl text-muted-foreground">litros</span>
           </div>
           <p className="text-sm text-muted-foreground mt-2">
@@ -340,7 +334,7 @@ export default function DieselDashboardPage() {
             const percentage = getCapacityPercentage(warehouse.current_inventory, warehouse.capacity_liters)
             
             return (
-              <Link key={warehouse.id} href={`/diesel/almacen/${warehouse.id}`}>
+              <Link key={warehouse.id} href={`/urea/almacen/${warehouse.id}`}>
                 <Card className="hover:shadow-lg transition-shadow cursor-pointer">
                   <CardHeader className="pb-3">
                     <div className="flex items-start justify-between">
@@ -416,10 +410,10 @@ export default function DieselDashboardPage() {
                 <History className="h-5 w-5" />
                 Transacciones Recientes
               </CardTitle>
-              <CardDescription>Últimos 10 movimientos de diesel</CardDescription>
+              <CardDescription>Últimos 10 movimientos de UREA</CardDescription>
             </div>
             <Button variant="outline" size="sm" asChild>
-              <Link href="/diesel/historial">
+              <Link href="/urea/historial">
                 Ver todo
               </Link>
             </Button>
@@ -494,6 +488,7 @@ export default function DieselDashboardPage() {
         onCreated={() => {
           loadDashboardData()
         }}
+        defaultProductType="urea"
       />
     </div>
   )

@@ -11,12 +11,12 @@ function ConsumptionPageContent() {
   const router = useRouter()
 
   const handleSuccess = (transactionId: string) => {
-    // Navigate to diesel dashboard
-    router.push('/diesel')
+    // Navigate to urea dashboard
+    router.push('/urea')
   }
 
   const handleCancel = () => {
-    router.push('/diesel')
+    router.push('/urea')
   }
 
   // TODO: Get warehouse_id and plant_id from user context
@@ -27,13 +27,13 @@ function ConsumptionPageContent() {
   return (
     <DashboardShell>
       <DashboardHeader
-        heading="Registrar Consumo de Diesel"
-        text="Captura el consumo de diesel con evidencia fotográfica y validación automática"
+        heading="Registrar Consumo de UREA"
+        text="Captura el consumo de UREA con evidencia fotográfica y validación automática"
       />
       
       <div className="max-w-2xl mx-auto">
         <ConsumptionEntryForm
-          productType="diesel"
+          productType="urea"
           warehouseId={defaultWarehouseId}
           plantId={defaultPlantId}
           onSuccess={handleSuccess}
@@ -49,11 +49,11 @@ export default function ConsumptionPage() {
     <Suspense fallback={
       <DashboardShell>
         <DashboardHeader
-          heading="Registrar Consumo de Diesel"
+          heading="Registrar Consumo de UREA"
           text="Cargando formulario..."
         />
         <div className="flex items-center justify-center h-64">
-          <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+          <Loader2 className="h-8 w-8 animate-spin text-purple-600" />
         </div>
       </DashboardShell>
     }>
