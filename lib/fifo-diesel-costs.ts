@@ -35,10 +35,11 @@ export async function calculateDieselCostsFIFO(
   const reportStartDateISO = `${dateFromStr}T00:00:00.000Z`
   const reportEndDateISO = `${dateToStr}T23:59:59.999Z`
   
-  // Get warehouse IDs for target plants
+  // Get warehouse IDs for target plants (only diesel warehouses)
   const { data: warehouses } = await supabase
     .from('diesel_warehouses')
     .select('id, plant_id, plants(code)')
+    .eq('product_type', 'diesel')
   
   const warehouseToPlantCode = new Map<string, string>()
   const targetWarehouseIds: string[] = []

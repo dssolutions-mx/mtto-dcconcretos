@@ -93,7 +93,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Fetch diesel transactions with asset info
+    // Fetch diesel transactions with asset info (only diesel, not urea)
     let dieselQuery = supabase
       .from('diesel_transactions')
       .select(`
@@ -105,8 +105,10 @@ export async function POST(req: NextRequest) {
         product_id,
         transaction_date,
         horometer_reading,
-        previous_horometer
+        previous_horometer,
+        diesel_warehouses!inner(product_type)
       `)
+      .eq('diesel_warehouses.product_type', 'diesel')
       .gte('transaction_date', dateFrom)
       .lt('transaction_date', dateToExclusiveStr)
 

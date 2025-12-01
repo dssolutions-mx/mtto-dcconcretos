@@ -33,10 +33,11 @@ async function calculateDieselCostsFIFO_IngresosGastos(
   const fifoStartDateISO = fifoStartDate.toISOString()
   const dateToEndISO = dateToEnd.toISOString()
   
-  // Get warehouse IDs for target plants
+  // Get warehouse IDs for target plants (only diesel warehouses)
   const { data: warehouses, error: warehousesError } = await supabase
     .from('diesel_warehouses')
     .select('id, plant_id, plants(code)')
+    .eq('product_type', 'diesel')
   
   if (warehousesError) {
     console.error('[FIFO] Error fetching warehouses:', warehousesError)
