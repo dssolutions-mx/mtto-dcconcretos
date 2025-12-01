@@ -10,6 +10,7 @@ import { Switch } from '@/components/ui/switch'
 import { RefreshCw, Download, AlertCircle, Settings, ChevronRight, ChevronDown, Loader2 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import * as XLSX from 'xlsx'
+import { useToast } from '@/hooks/use-toast'
 
 type PlantData = {
   plant_id: string
@@ -104,7 +105,9 @@ const formatPercent = (pct: number) => `${formatNumber(pct, 2)}%`
 
 export default function IngresosGastosPage() {
   const router = useRouter()
+  const { toast } = useToast()
   const [loading, setLoading] = useState(false)
+  const [refreshingView, setRefreshingView] = useState(false)
   const [data, setData] = useState<ReportData | null>(null)
   
   const [selectedMonth, setSelectedMonth] = useState(() => {
@@ -168,6 +171,49 @@ export default function IngresosGastosPage() {
 
   const handlePlantChange = (value: string) => {
     setPlantId(value === 'all' ? '' : value)
+  }
+
+  const handleRefreshView = async () => {
+    if (!selectedMonth) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Por favor seleccione un mes antes de refrescar los datos históricos.'
+      })
+      return
+    }
+
+    setRefreshingView(true)
+    try {
+      const resp = await fetch('/api/reports/gerencial/ingresos-gastos/refresh-view', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ month: selectedMonth })
+      })
+
+      const result = await resp.json()
+
+      if (!resp.ok) {
+        throw new Error(result.error || result.details || 'Failed to refresh historical data')
+      }
+
+      toast({
+        title: 'Éxito',
+        description: result.message || `Datos históricos recalculados para ${selectedMonth}. ${result.plantsBackfilled || 0} plantas actualizadas.`
+      })
+
+      // Automatically reload report data after successful refresh
+      await loadData()
+    } catch (err: any) {
+      console.error('Error refreshing view:', err)
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: err.message || 'No se pudo refrescar los datos históricos. Por favor intente nuevamente.'
+      })
+    } finally {
+      setRefreshingView(false)
+    }
   }
 
   const toggleCostExpansion = async (category: 'nomina' | 'otros_indirectos') => {
@@ -971,11 +1017,20 @@ export default function IngresosGastosPage() {
             </div>
 
             <div className="flex items-end gap-2">
-              <Button onClick={loadData} disabled={loading} className="flex-1">
+              <Button onClick={loadData} disabled={loading || refreshingView} className="flex-1">
                 <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
                 {loading ? 'Cargando...' : 'Actualizar'}
               </Button>
-              <Button variant="outline" disabled={!data || loading || plants.length === 0} onClick={exportToExcel}>
+              <Button 
+                variant="outline" 
+                disabled={!selectedMonth || loading || refreshingView}
+                onClick={handleRefreshView}
+                title="Recalcula los datos históricos del mes seleccionado usando los precios más recientes"
+              >
+                <RefreshCw className={`w-4 h-4 mr-2 ${refreshingView ? 'animate-spin' : ''}`} />
+                {refreshingView ? 'Recalculando...' : 'Refrescar Datos'}
+              </Button>
+              <Button variant="outline" disabled={!data || loading || refreshingView || plants.length === 0} onClick={exportToExcel}>
                 <Download className="w-4 h-4" />
               </Button>
             </div>
