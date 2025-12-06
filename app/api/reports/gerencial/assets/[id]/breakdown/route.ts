@@ -52,6 +52,7 @@ export async function GET(request: Request, { params }: { params: { id: string }
       `)
       .eq('asset_id', assetId)
       .eq('transaction_type', 'consumption')
+      .eq('is_transfer', false)
       .gte('transaction_date', startISO)
       .lte('transaction_date', endISOInclusive)
       .order('transaction_date', { ascending: false })

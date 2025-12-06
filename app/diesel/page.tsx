@@ -18,7 +18,8 @@ import {
   History,
   BarChart3,
   Loader2,
-  Info
+  Info,
+  ArrowRightLeft
 } from "lucide-react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
@@ -250,7 +251,7 @@ export default function DieselDashboardPage() {
       {/* Quick Actions */}
       <div>
         <h2 className="text-lg font-semibold mb-3">Acciones Rápidas</h2>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <Button
             onClick={() => router.push('/diesel/consumo')}
             className="h-20 text-lg"
@@ -267,6 +268,15 @@ export default function DieselDashboardPage() {
           >
             <TruckIcon className="h-6 w-6 mr-2" />
             Registrar Entrada
+          </Button>
+          
+          <Button
+            onClick={() => router.push('/diesel/transferir')}
+            className="h-20 text-lg"
+            variant="outline"
+          >
+            <ArrowRightLeft className="h-6 w-6 mr-2" />
+            Transferir Diesel
           </Button>
           
           <Button

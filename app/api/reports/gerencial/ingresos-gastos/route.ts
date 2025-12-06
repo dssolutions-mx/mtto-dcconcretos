@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createServerSupabase } from '@/lib/supabase-server'
 import { createClient } from '@supabase/supabase-js'
 
+// Optional debug flag to trace Plant 4 warehouse transactions
+const p004WarehouseDebug: string | undefined = process.env.P004_WAREHOUSE_DEBUG?.trim() || undefined
+
 type Body = {
   month: string // YYYY-MM format
   businessUnitId?: string | null
@@ -67,6 +70,9 @@ async function calculateDieselCostsFIFO_IngresosGastos(
   entriesStartDate.setHours(0, 0, 0, 0)
   const entriesStartDateISO = entriesStartDate.toISOString()
   
+  // UPDATED: Include BOTH regular entries AND transfer-in entries
+  // Transfer-in entries now have FIFO-calculated prices that should be used for costing
+  // This ensures diesel transferred from Plant 4 to other plants carries its cost basis
   const { data: allEntries, error: entriesError } = await supabase
     .from('diesel_transactions')
     .select(`
@@ -75,9 +81,12 @@ async function calculateDieselCostsFIFO_IngresosGastos(
       product_id, 
       quantity_liters, 
       unit_cost, 
-      transaction_date
+      transaction_date,
+      is_transfer
     `)
     .eq('transaction_type', 'entry')
+    // Include both regular entries (is_transfer = false) AND transfer-in entries (is_transfer = true)
+    // Both contribute to FIFO inventory with their unit_cost
     .gte('transaction_date', entriesStartDateISO)
     .lte('transaction_date', dateToEndISO)
     .in('warehouse_id', targetWarehouseIds)
@@ -90,6 +99,22 @@ async function calculateDieselCostsFIFO_IngresosGastos(
   }
 
   const entriesWithPrice = (allEntries || []).filter(tx => tx.unit_cost && Number(tx.unit_cost) > 0)
+  
+  // Debug: Log entries by plant
+  const entriesByPlant = new Map<string, { count: number, liters: number, hasPrice: number }>()
+  ;(allEntries || []).forEach(entry => {
+    const plantCode = warehouseToPlantCode.get(entry.warehouse_id) || 'UNKNOWN'
+    if (!entriesByPlant.has(plantCode)) {
+      entriesByPlant.set(plantCode, { count: 0, liters: 0, hasPrice: 0 })
+    }
+    const stat = entriesByPlant.get(plantCode)!
+    stat.count++
+    stat.liters += Number(entry.quantity_liters || 0)
+    if (entry.unit_cost && Number(entry.unit_cost) > 0) {
+      stat.hasPrice++
+    }
+  })
+  console.log('[FIFO] Entries by plant:', Object.fromEntries(entriesByPlant))
 
   // STEP 2: Fetch consumptions - FLEXIBLE for calculation, STRICT for cost counting
   // We fetch consumptions from the SAME date range as entries to ensure proper FIFO processing
@@ -106,26 +131,68 @@ async function calculateDieselCostsFIFO_IngresosGastos(
   consumptionQueryStart.setHours(0, 0, 0, 0)
   const consumptionQueryStartISO = consumptionQueryStart.toISOString()
   
-  const { data: allConsumptions, error: consumptionsError } = await supabase
+  // First, let's see what's actually in the database WITHOUT any is_transfer filter
+  // This helps debug whether transfers are properly marked
+  const { data: allConsumptionsUnfiltered, error: consumptionsUnfilteredError } = await supabase
     .from('diesel_transactions')
     .select(`
       id, 
       warehouse_id, 
       product_id, 
       quantity_liters, 
-      transaction_date
+      transaction_date,
+      is_transfer
     `)
     .eq('transaction_type', 'consumption')
-    .gte('transaction_date', consumptionQueryStartISO) // FLEXIBLE: Include some before period for context
+    .gte('transaction_date', consumptionQueryStartISO)
     .lte('transaction_date', reportEndDateISO)
     .in('warehouse_id', targetWarehouseIds)
     .order('transaction_date', { ascending: true })
+
+  // Debug: Count transfers vs non-transfers in raw data
+  const transferCounts = new Map<string, { total: number, isTransferTrue: number, isTransferFalse: number, isTransferNull: number, litersTransfer: number, litersNonTransfer: number }>()
+  ;(allConsumptionsUnfiltered || []).forEach(cons => {
+    const plantCode = warehouseToPlantCode.get(cons.warehouse_id) || 'UNKNOWN'
+    if (!transferCounts.has(plantCode)) {
+      transferCounts.set(plantCode, { total: 0, isTransferTrue: 0, isTransferFalse: 0, isTransferNull: 0, litersTransfer: 0, litersNonTransfer: 0 })
+    }
+    const stat = transferCounts.get(plantCode)!
+    stat.total++
+    const liters = Number(cons.quantity_liters || 0)
+    if (cons.is_transfer === true) {
+      stat.isTransferTrue++
+      stat.litersTransfer += liters
+    } else if (cons.is_transfer === false) {
+      stat.isTransferFalse++
+      stat.litersNonTransfer += liters
+    } else {
+      stat.isTransferNull++
+      stat.litersNonTransfer += liters // Treat null as non-transfer
+    }
+  })
+  console.log('[FIFO DEBUG] Raw consumption data (unfiltered) - transfer breakdown:', Object.fromEntries(transferCounts))
+
+  // Now filter to exclude transfers
+  // CRITICAL: Check for both boolean true and string "true" (PostgreSQL can return booleans as strings)
+  const allConsumptions = (allConsumptionsUnfiltered || []).filter(cons => {
+    const isTransfer = cons.is_transfer === true || cons.is_transfer === 'true' || cons.is_transfer === 1
+    return !isTransfer
+  })
+  const consumptionsError = consumptionsUnfilteredError
 
   if (consumptionsError) {
     console.error('[FIFO] Error fetching consumptions:', consumptionsError)
   }
 
   const allConsumptionsFetched = allConsumptions || []
+  const isTransferFlag = (value: unknown): boolean => {
+    if (value === true || value === 1) return true
+    if (typeof value === 'string') {
+      const normalized = value.trim().toLowerCase()
+      return normalized === 'true' || normalized === 't' || normalized === '1'
+    }
+    return false
+  }
   
   // Helper function to convert UTC timestamp to GMT-6 (local timezone) and extract date
   const getLocalDateStr = (utcTimestamp: string): string => {
@@ -147,6 +214,10 @@ async function calculateDieselCostsFIFO_IngresosGastos(
   // CRITICAL: Use transaction_date (NOT created_at) - transaction_date is when the consumption occurred
   // IMPORTANT: Convert UTC to GMT-6 before comparing dates
   const consumptionsInPeriod = allConsumptionsFetched.filter(cons => {
+    if (isTransferFlag(cons.is_transfer)) {
+      console.warn('[FIFO] Unexpected transfer row reached consumptionsInPeriod:', cons.id)
+      return false
+    }
     // Ensure we're using transaction_date, not created_at
     if (!cons.transaction_date) {
       console.warn('[FIFO] Warning: Consumption missing transaction_date:', cons.id)
@@ -155,6 +226,76 @@ async function calculateDieselCostsFIFO_IngresosGastos(
     const consDateStr = getLocalDateStr(cons.transaction_date) // Convert UTC to GMT-6 and extract date
     return consDateStr >= dateFromStr && consDateStr <= dateToStr
   })
+  
+  // Debug: Log consumptions by plant (in period)
+  const consumptionsByPlant = new Map<string, { count: number, liters: number, transfers: number }>()
+  allConsumptionsFetched.forEach(cons => {
+    const isTransfer = isTransferFlag(cons.is_transfer)
+    const plantCode = warehouseToPlantCode.get(cons.warehouse_id) || 'UNKNOWN'
+    if (!consumptionsByPlant.has(plantCode)) {
+      consumptionsByPlant.set(plantCode, { count: 0, liters: 0, transfers: 0 })
+    }
+    const stat = consumptionsByPlant.get(plantCode)!
+    if (isTransfer) {
+      stat.transfers++
+      return
+    }
+    stat.count++
+    stat.liters += Number(cons.quantity_liters || 0)
+  })
+  console.log('[FIFO] Consumptions by plant (total fetched):', Object.fromEntries(consumptionsByPlant))
+  
+  // Debug: Log in-period consumptions (also check for transfers that might be in period)
+  const consumptionsInPeriodByPlant = new Map<string, { count: number, liters: number }>()
+  
+  // Also check what's in period from the UNFILTERED data to see if transfers are in period
+  const inPeriodUnfiltered = (allConsumptionsUnfiltered || []).filter(cons => {
+    if (!cons.transaction_date) return false
+    const consDateStr = getLocalDateStr(cons.transaction_date)
+    return consDateStr >= dateFromStr && consDateStr <= dateToStr
+  })
+  
+  const inPeriodTransferCheck = new Map<string, { total: number, transfers: number, transferLiters: number, nonTransferLiters: number }>()
+  inPeriodUnfiltered.forEach(cons => {
+    const plantCode = warehouseToPlantCode.get(cons.warehouse_id) || 'UNKNOWN'
+    if (!inPeriodTransferCheck.has(plantCode)) {
+      inPeriodTransferCheck.set(plantCode, { total: 0, transfers: 0, transferLiters: 0, nonTransferLiters: 0 })
+    }
+    const stat = inPeriodTransferCheck.get(plantCode)!
+    stat.total++
+    const liters = Number(cons.quantity_liters || 0)
+    if (isTransferFlag(cons.is_transfer)) {
+      stat.transfers++
+      stat.transferLiters += liters
+    } else {
+      stat.nonTransferLiters += liters
+    }
+  })
+  console.log('[FIFO DEBUG] IN-PERIOD transfer check (from unfiltered):', Object.fromEntries(inPeriodTransferCheck))
+  
+  // CRITICAL DEBUG: Check if consumptionsInPeriod still contains transfers
+  const transfersInFilteredPeriod = consumptionsInPeriod.filter(c => isTransferFlag(c.is_transfer))
+  if (transfersInFilteredPeriod.length > 0) {
+    console.error('[FIFO ERROR] consumptionsInPeriod STILL CONTAINS TRANSFERS!', transfersInFilteredPeriod.map(c => ({
+      id: c.id,
+      date: c.transaction_date,
+      liters: c.quantity_liters,
+      is_transfer: c.is_transfer,
+      is_transfer_type: typeof c.is_transfer
+    })))
+  }
+  
+  consumptionsInPeriod.forEach(cons => {
+    if (isTransferFlag(cons.is_transfer)) return
+    const plantCode = warehouseToPlantCode.get(cons.warehouse_id) || 'UNKNOWN'
+    if (!consumptionsInPeriodByPlant.has(plantCode)) {
+      consumptionsInPeriodByPlant.set(plantCode, { count: 0, liters: 0 })
+    }
+    const stat = consumptionsInPeriodByPlant.get(plantCode)!
+    stat.count++
+    stat.liters += Number(cons.quantity_liters || 0)
+  })
+  console.log('[FIFO] Consumptions by plant (in period - filtered):', Object.fromEntries(consumptionsInPeriodByPlant))
 
 
   // STEP 3: Process entries and consumptions chronologically together for proper FIFO
@@ -195,9 +336,30 @@ async function calculateDieselCostsFIFO_IngresosGastos(
 
   // Add consumptions - use ALL fetched consumptions for processing (to maintain inventory state)
   // But we'll STRICTLY filter costs to only October consumptions later
+  // CRITICAL: Double-check to exclude transfers (defense in depth)
+  let skippedTransfersCount = 0
+  let skippedTransfersLiters = 0
+  let p004AddedToTransactions = 0
+  let p004AddedLiters = 0
   allConsumptionsFetched.forEach(consumption => {
+    // Defense in depth: skip transfers even if they passed the query filter
+    // Check for both boolean true and string "true" (PostgreSQL can return booleans as strings)
+    const isTransfer = consumption.is_transfer === true || consumption.is_transfer === 'true' || consumption.is_transfer === 1
+    if (isTransfer) {
+      skippedTransfersCount++
+      skippedTransfersLiters += Number(consumption.quantity_liters || 0)
+      console.warn(`[Ingresos-Gastos FIFO] Skipping transfer consumption: ${consumption.id} (is_transfer=${consumption.is_transfer}, liters=${consumption.quantity_liters})`)
+      return
+    }
+    
     const whId = consumption.warehouse_id
     if (!whId || !warehouseToPlantCode.has(whId)) return
+    
+    // Debug P004
+    if (p004WarehouseDebug && whId === p004WarehouseDebug) {
+      p004AddedToTransactions++
+      p004AddedLiters += Number(consumption.quantity_liters || 0)
+    }
     
     if (!transactionsByWarehouse.has(whId)) {
       transactionsByWarehouse.set(whId, [])
@@ -210,6 +372,19 @@ async function calculateDieselCostsFIFO_IngresosGastos(
       productId: consumption.product_id
     })
   })
+  
+  // Debug P004 transactions added
+  if (p004WarehouseDebug) {
+    const p004Transactions = transactionsByWarehouse.get(p004WarehouseDebug) || []
+    const p004Consumptions = p004Transactions.filter(t => t.type === 'consumption')
+    console.log(`[CRITICAL DEBUG] P004 transactions added to FIFO:`, {
+      totalTransactions: p004Transactions.length,
+      consumptions: p004Consumptions.length,
+      consumptionLiters: p004Consumptions.reduce((sum, t) => sum + t.liters, 0),
+      addedCount: p004AddedToTransactions,
+      addedLiters: p004AddedLiters
+    })
+  }
 
   // Calculate weighted average price per warehouse for fallback (from all entries)
   const warehouseWeightedAvg = new Map<string, number>()
@@ -309,14 +484,29 @@ async function calculateDieselCostsFIFO_IngresosGastos(
             const fallbackCost = remainingLiters * weightedAvgPrice
             consumptionCost += fallbackCost
           } else {
-            // Last resort: product default price
+            // Second fallback: product default price
             const fallbackPrice = tx.productId ? (priceByProduct.get(tx.productId) || 0) : 0
             if (fallbackPrice > 0) {
               const fallbackCost = remainingLiters * fallbackPrice
               consumptionCost += fallbackCost
-            } else if (remainingLiters > 0.01) {
-              // No price available at all - log error for troubleshooting
-              console.error(`[FIFO] ${plantCode}: ${remainingLiters.toFixed(2)}L could not be priced - no FIFO lots, no weighted avg, no product price`)
+            } else {
+              // Third fallback: Use global average from ALL priceByProduct entries
+              let globalAvgPrice = 0
+              if (priceByProduct.size > 0) {
+                const prices = Array.from(priceByProduct.values()).filter(p => p > 0)
+                if (prices.length > 0) {
+                  globalAvgPrice = prices.reduce((a, b) => a + b, 0) / prices.length
+                }
+              }
+              
+              if (globalAvgPrice > 0) {
+                const fallbackCost = remainingLiters * globalAvgPrice
+                consumptionCost += fallbackCost
+                console.warn(`[FIFO] ${plantCode}: ${remainingLiters.toFixed(2)}L priced with global avg $${globalAvgPrice.toFixed(2)}/L`)
+              } else if (remainingLiters > 0.01) {
+                // No price available at all - log error for troubleshooting
+                console.error(`[FIFO] ${plantCode}: ${remainingLiters.toFixed(2)}L could not be priced - no FIFO lots, no weighted avg, no product price`)
+              }
             }
           }
         }
@@ -330,7 +520,17 @@ async function calculateDieselCostsFIFO_IngresosGastos(
     })
 
     consumptionCosts.set(warehouseId, totalConsumptionCost)
+    
+    // Debug P004 costs
+    if (plantCode === 'P004') {
+      console.log(`[FIFO DEBUG P004] Total consumption cost calculated: $${totalConsumptionCost.toFixed(2)}`)
+    }
   })
+  
+  // Debug: Log skipped transfers summary
+  if (skippedTransfersCount > 0) {
+    console.log(`[FIFO] Skipped ${skippedTransfersCount} transfer consumptions totaling ${skippedTransfersLiters.toFixed(2)}L from FIFO processing`)
+  }
 
   // Aggregate costs by plant code
   consumptionCosts.forEach((cost, warehouseId) => {
