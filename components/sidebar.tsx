@@ -125,6 +125,10 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
   }
 
   const isPathActive = (path: string) => {
+    // Special handling for /suppliers to avoid matching /suppliers/analytics
+    if (path === "/suppliers") {
+      return pathname === path || (pathname.startsWith(path + "/") && !pathname.startsWith("/suppliers/analytics"))
+    }
     return pathname === path || pathname.startsWith(path + "/")
   }
 
@@ -964,6 +968,10 @@ export function CollapsedSidebar({ className, onLinkClick }: SidebarProps) {
   }
 
   const isPathActive = (path: string) => {
+    // Special handling for /suppliers to avoid matching /suppliers/analytics
+    if (path === "/suppliers") {
+      return pathname === path || (pathname.startsWith(path + "/") && !pathname.startsWith("/suppliers/analytics"))
+    }
     return pathname === path || pathname.startsWith(path + "/")
   }
 
