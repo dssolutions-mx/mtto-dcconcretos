@@ -1732,7 +1732,7 @@ export default function IngresosGastosPage() {
                         Otros Indirectos Totales
                       </button>
                     </td>
-                    {renderPlantColumns(p => p.otros_indirectos_total, formatCurrency, 'otros_indirectos_total')}
+                    {renderPlantColumns(p => p.otros_indirectos_total, formatCurrency, 'otros_indirectos_total', false, true)}
                     {renderGrandTotalCell(
                       calculateGrandTotal(p => p.otros_indirectos_total),
                       formatCurrency,
@@ -1867,13 +1867,27 @@ export default function IngresosGastosPage() {
                   })()}
                   <tr className="border-b hover:bg-muted/30">
                     <td className="sticky left-0 z-10 bg-background p-3 border-r-2">Otros Indirectos Unitario (m3)</td>
-                    {renderPlantColumns(p => p.otros_indirectos_unitario, formatCurrency, 'otros_indirectos_unitario')}
-                    {renderGrandTotalCell(calculateGrandTotal(p => p.otros_indirectos_unitario), formatCurrency)}
+                    {renderPlantColumns(p => p.otros_indirectos_unitario, formatCurrency, 'otros_indirectos_unitario', false, true)}
+                    {renderGrandTotalCell(
+                      calculateGrandTotal(p => p.otros_indirectos_unitario, 'otros_indirectos_unitario'),
+                      formatCurrency,
+                      false,
+                      true,
+                      calculateGrandTotal(p => p.otros_indirectos_unitario, 'otros_indirectos_unitario', previousPlants),
+                      'otros_indirectos_unitario'
+                    )}
                   </tr>
                   <tr className="border-b hover:bg-muted/30">
                     <td className="sticky left-0 z-10 bg-background p-3 border-r-2">Otros Indirectos %</td>
-                    {renderPlantColumns(p => p.otros_indirectos_pct, formatPercent, 'otros_indirectos_pct')}
-                    {renderGrandTotalCell(calculateGrandTotal(p => p.otros_indirectos_pct, 'otros_indirectos_pct'), formatPercent)}
+                    {renderPlantColumns(p => p.otros_indirectos_pct, formatPercent, 'otros_indirectos_pct', false, true)}
+                    {renderGrandTotalCell(
+                      calculateGrandTotal(p => p.otros_indirectos_pct, 'otros_indirectos_pct'),
+                      formatPercent,
+                      false,
+                      true,
+                      calculateGrandTotal(p => p.otros_indirectos_pct, 'otros_indirectos_pct', previousPlants),
+                      'otros_indirectos_pct'
+                    )}
                   </tr>
                   <tr className="border-b-2 hover:bg-muted/30 bg-purple-100/70 dark:bg-purple-900/30">
                     <td className="sticky left-0 z-10 bg-purple-100 dark:bg-purple-900/40 p-3 border-r-2 font-bold text-base">TOTAL COSTO OP</td>
