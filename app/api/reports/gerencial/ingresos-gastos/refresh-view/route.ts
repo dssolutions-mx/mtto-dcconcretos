@@ -2,6 +2,18 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createServerSupabase } from '@/lib/supabase-server'
 import { createClient } from '@supabase/supabase-js'
 
+/**
+ * Refresh historical financial analysis data for a specific month
+ * 
+ * This endpoint calls backfill_financial_analysis_month to recalculate and backfill
+ * historical financial data. This is different from refreshing materialized views.
+ * 
+ * Note: The views vw_pumping_analysis_unified and sales_assets_daily are now
+ * materialized views that refresh automatically every hour at :30 past the hour.
+ * If you need to refresh those materialized views immediately, use the
+ * /refresh-materialized-views endpoint instead.
+ */
+
 type Body = {
   month: string // YYYY-MM format
 }
@@ -61,6 +73,7 @@ export async function POST(req: NextRequest) {
     )
 
     // Call the backfill function via RPC
+    // This refreshes historical financial analysis data, not the materialized views
     console.log(`[Refresh View] Calling backfill_financial_analysis_month for ${year}-${monthNum}`)
     
     const { data, error } = await cotizadorSupabase.rpc('backfill_financial_analysis_month', {

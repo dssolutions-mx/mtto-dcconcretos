@@ -2060,13 +2060,17 @@ export default function IngresosGastosPage() {
               <p><strong>Fuentes de datos:</strong></p>
               <ul className="list-disc list-inside space-y-1 ml-2">
                 <li><strong>Ingresos y Materia Prima:</strong> Vista <code>vw_plant_financial_analysis_unified</code></li>
-                <li><strong>Ingresos Bombeo:</strong> Vista <code>vw_pumping_analysis_unified</code></li>
+                <li><strong>Ingresos Bombeo:</strong> Vista <code>vw_pumping_analysis_unified</code> (materializada, se actualiza cada hora)</li>
                 <li><strong>Diesel y Mantenimiento:</strong> Calculado automáticamente del sistema de mantenimiento</li>
                 <li><strong>Nómina y Otros Indirectos:</strong> Ingreso manual por administradores</li>
               </ul>
               <p className="mt-4">
                 <strong>Nota:</strong> Los datos mostrados corresponden exclusivamente al mes seleccionado. 
                 Para gestionar costos manuales (nómina y otros indirectos), use el botón "Gestionar Costos Manuales" en la parte superior.
+              </p>
+              <p className="mt-2">
+                <strong>Actualización de datos:</strong> Las vistas materializadas se actualizan automáticamente cada hora (a los :30 minutos). 
+                El botón "Refrescar Datos" recalcula los datos históricos financieros, no las vistas materializadas.
               </p>
             </div>
           </CardContent>

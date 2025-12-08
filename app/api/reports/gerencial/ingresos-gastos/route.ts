@@ -641,6 +641,10 @@ export async function POST(req: NextRequest) {
       })
 
       // Fetch bombeo data from vw_pumping_analysis_unified for the month
+      // Note: This view is now a materialized view (mv_pumping_analysis_unified) for performance.
+      // It refreshes automatically every hour at :30 past the hour, so data may be up to 1 hour old.
+      // For real-time data, call refresh_analytics_materialized_views() RPC or use the
+      // /refresh-materialized-views endpoint. The view name remains the same (aliased).
       const plantCodes = targetPlants.map(p => p.code).filter(Boolean)
       let pumpingData: any[] | null = null
       
