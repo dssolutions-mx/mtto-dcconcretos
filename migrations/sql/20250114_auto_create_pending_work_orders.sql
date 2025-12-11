@@ -24,9 +24,12 @@ DECLARE
   v_error_count integer := 0;
   v_checklist_ids text[] := ARRAY[]::text[];
   v_one_hour_ago timestamp;
+  v_recent_cutoff timestamp;
 BEGIN
   -- Calculate 1 hour ago timestamp
   v_one_hour_ago := NOW() - INTERVAL '1 hour';
+  -- Only process recently completed checklists to avoid old backlog noise
+  v_recent_cutoff := NOW() - INTERVAL '2 hours';
 
   RAISE NOTICE 'Starting auto-create check for issues older than %', v_one_hour_ago;
 
@@ -44,6 +47,7 @@ BEGIN
     JOIN assets a ON cc.asset_id = a.id
     WHERE ci.resolved = false
       AND cc.completion_date < v_one_hour_ago
+      AND cc.completion_date >= v_recent_cutoff
       AND NOT EXISTS (
         -- Check if work orders already exist for this checklist
         SELECT 1 FROM work_orders wo
@@ -83,8 +87,11 @@ BEGIN
         -- Build description
         v_description := v_issue.description || E'\n\n' || COALESCE(v_issue.notes, '');
 
-        -- Generate unique work order ID
+        -- Generate unique work order ID (retry if collision)
         v_work_order_id := (SELECT generate_unique_work_order_id());
+        WHILE EXISTS (SELECT 1 FROM work_orders WHERE order_id = v_work_order_id) LOOP
+          v_work_order_id := (SELECT generate_unique_work_order_id());
+        END LOOP;
 
         -- Check for similar existing open work orders using fingerprint
         DECLARE
@@ -143,17 +150,25 @@ BEGIN
               issue_fingerprint = v_fingerprint
             WHERE id = v_issue.id;
 
-            -- Add to incident history
+            -- Add to incident history (use required columns)
             INSERT INTO incident_history (
+              asset_id,
               work_order_id,
+              date,
+              type,
+              reported_by,
+              description,
               status,
-              notes,
-              changed_by
+              reported_by_id
             ) VALUES (
+              v_checklist.asset_id,
               v_similar_wo_id,
-              'En Progreso',
+              NOW(),
+              'auto_create',
+              'system_auto_create',
               'Problema adicional consolidado automáticamente: ' || v_issue.description,
-              'system_auto_create'
+              'En Progreso',
+              NULL
             );
 
           ELSE
@@ -194,17 +209,25 @@ BEGIN
                 issue_fingerprint = v_fingerprint
               WHERE id = v_issue.id;
 
-              -- Create incident history entry
+              -- Create incident history entry (use required columns)
               INSERT INTO incident_history (
+                asset_id,
                 work_order_id,
+                date,
+                type,
+                reported_by,
+                description,
                 status,
-                notes,
-                changed_by
+                reported_by_id
               ) VALUES (
+                v_checklist.asset_id,
                 v_new_wo_id,
-                'Pendiente',
+                NOW(),
+                'auto_create',
+                'system_auto_create',
                 'Orden de trabajo creada automáticamente después de 1 hora sin acción manual',
-                'system_auto_create'
+                'Pendiente',
+                NULL
               );
 
               -- Increment created count only when a new work order is actually created
