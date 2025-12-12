@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase-server'
+import { createAdminClient } from '@/lib/supabase-admin'
 import { NextRequest, NextResponse } from 'next/server'
 import { checkAssetOperatorConflicts } from '@/lib/utils/conflict-detection'
 
@@ -180,8 +181,10 @@ export async function PATCH(
       }
     }
 
-    // Update the asset's plant assignment
-    const { data: updatedAsset, error: updateError } = await supabase
+    // Update the asset's plant assignment using admin client to bypass RLS
+    // All permission checks have already been performed above
+    const adminClient = createAdminClient()
+    const { data: updatedAsset, error: updateError } = await adminClient
       .from('assets')
       .update({
         plant_id: plant_id || null,

@@ -499,6 +499,24 @@ export function PersonnelManagementDragDrop() {
     const operator = operators.find(op => op.id === operatorId)
     if (!operator) return
 
+    // UI Restriction: JEFE_PLANTA can only move OPERADOR and DOSIFICADOR when dealing with unassigned personnel
+    // This is simpler than complex RLS and provides better UX
+    if (profile?.role === 'JEFE_PLANTA') {
+      // Check if moving FROM unassigned (operator has no plant_id or business_unit_id)
+      const isMovingFromUnassigned = !operator.plant_id && !operator.business_unit_id
+      // Check if moving TO unassigned
+      const isMovingToUnassigned = target.type === 'unassigned'
+      
+      // If dealing with unassigned personnel (either source or destination), only allow OPERADOR and DOSIFICADOR
+      if ((isMovingFromUnassigned || isMovingToUnassigned) && !['OPERADOR', 'DOSIFICADOR'].includes(operator.role)) {
+        toast.error(
+          `Como Jefe de Planta, solo puedes mover OPERADOR y DOSIFICADOR cuando se trata de personal sin asignar. El rol ${operator.role} requiere autorización de nivel superior.`,
+          { duration: 5000 }
+        )
+        return
+      }
+    }
+
     // Aplicar cambio optimista inmediatamente para UX inmediata
     handleOptimisticUpdate(operatorId, target)
 
