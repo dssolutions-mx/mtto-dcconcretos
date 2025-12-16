@@ -377,7 +377,7 @@ export function AssetDrilldownDialog({ open, onOpenChange, asset, startDate, end
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {(data?.maintenance.purchase_orders || []).map((po: any) => (
+                          {(data?.maintenance?.purchase_orders || []).map((po: any) => (
                             <TableRow key={po.id}>
                               <TableCell className="font-mono text-xs">
                                 <a href={`/compras/${po.id}`} target="_blank" rel="noopener noreferrer" className="underline">
@@ -409,7 +409,7 @@ export function AssetDrilldownDialog({ open, onOpenChange, asset, startDate, end
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {(data?.maintenance.additional_expenses || []).map((ae: any) => (
+                          {(data?.maintenance?.additional_expenses || []).map((ae: any) => (
                             <TableRow key={ae.id}>
                               <TableCell className="font-mono text-xs">{ae.id}</TableCell>
                               <TableCell>{new Date(ae.created_at).toLocaleDateString('es-MX')}</TableCell>
