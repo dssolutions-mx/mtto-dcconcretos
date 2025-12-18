@@ -45,6 +45,7 @@ interface WarehouseDetails {
   current_cuenta_litros: number | null
   last_updated: string
   plant_name: string
+  needs_recalculation?: boolean
 }
 
 interface Transaction {
@@ -102,6 +103,11 @@ export default function WarehouseDetailPage() {
   const [balanceHistory, setBalanceHistory] = useState<Array<{date: string, balance: number}>>([])
   const [assetConsumption, setAssetConsumption] = useState<Array<{asset_id: string, asset_name: string, total_liters: number, count: number}>>([])
   
+  // Balance audit state
+  const [balanceAudit, setBalanceAudit] = useState<any>(null)
+  const [auditLoading, setAuditLoading] = useState(false)
+  const [recalculating, setRecalculating] = useState(false)
+  
   // Edit modal state
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null)
   const [isEditModalOpen, setIsEditModalOpen] = useState(false)
@@ -139,7 +145,95 @@ export default function WarehouseDetailPage() {
 
   useEffect(() => {
     loadWarehouseData()
+    loadBalanceAudit()
   }, [warehouseId])
+  
+  // Auto-recalculate if warehouse is marked
+  useEffect(() => {
+    if (warehouse?.needs_recalculation && !recalculating) {
+      console.log('⚠️ Warehouse needs recalculation, auto-fixing...')
+      toast({
+        title: "Balance desactualizado detectado",
+        description: "Recalculando automáticamente...",
+      })
+      handleRecalculateBalance()
+    }
+  }, [warehouse?.needs_recalculation])
+  
+  const loadBalanceAudit = async () => {
+    try {
+      setAuditLoading(true)
+      
+      const response = await fetch(`/api/diesel/audit-balance?warehouse_id=${warehouseId}`)
+      const data = await response.json()
+      
+      if (data.success) {
+        setBalanceAudit(data.audit)
+      } else {
+        console.error('Failed to load balance audit:', data.error)
+      }
+    } catch (error) {
+      console.error('Error loading balance audit:', error)
+    } finally {
+      setAuditLoading(false)
+    }
+  }
+  
+  const handleRecalculateBalance = async () => {
+    if (!window.confirm(
+      '¿Está seguro de recalcular todos los balances para este almacén?\n\n' +
+      'Esta operación:\n' +
+      '• Recalculará previous_balance y current_balance para todas las transacciones\n' +
+      '• Actualizará el inventario del almacén\n' +
+      '• Creará una copia de respaldo antes de los cambios\n' +
+      '• Puede tomar algunos segundos\n\n' +
+      'Se recomienda hacer esto fuera de horarios pico.'
+    )) {
+      return
+    }
+    
+    try {
+      setRecalculating(true)
+      toast({
+        title: "Recalculando...",
+        description: "Este proceso puede tomar algunos segundos"
+      })
+      
+      const response = await fetch('/api/diesel/recalculate-balance', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          warehouse_id: warehouseId
+        })
+      })
+      
+      const data = await response.json()
+      
+      if (data.success) {
+        toast({
+          title: "✅ Recalculación exitosa",
+          description: `Balance actualizado: ${data.old_balance.toFixed(1)}L → ${data.new_balance.toFixed(1)}L (${data.corrections_made} correcciones)`
+        })
+        
+        // Reload everything
+        await loadWarehouseData()
+        await loadBalanceAudit()
+      } else {
+        throw new Error(data.error || 'Error desconocido')
+      }
+    } catch (error: any) {
+      console.error('Error recalculating balance:', error)
+      toast({
+        title: "Error",
+        description: error.message || "No se pudo recalcular el balance",
+        variant: "destructive"
+      })
+    } finally {
+      setRecalculating(false)
+    }
+  }
 
   useEffect(() => {
     applyFilters()
@@ -261,6 +355,7 @@ export default function WarehouseDetailPage() {
           current_cuenta_litros,
           last_updated,
           product_type,
+          needs_recalculation,
           plants!inner(name)
         `)
         .eq('id', warehouseId)
@@ -841,7 +936,7 @@ export default function WarehouseDetailPage() {
       </div>
 
       {/* Warehouse Details */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         {/* Current Inventory */}
         <Card>
           <CardHeader className="pb-3">
@@ -912,6 +1007,117 @@ export default function WarehouseDetailPage() {
                 </div>
               </div>
             </div>
+          </CardContent>
+        </Card>
+        
+        {/* Balance Health */}
+        <Card className={
+          auditLoading ? 'opacity-50' :
+          !balanceAudit ? '' :
+          balanceAudit.status === 'OK' ? 'border-green-500' :
+          balanceAudit.status === 'MINOR' ? 'border-yellow-500' :
+          balanceAudit.status === 'MAJOR' ? 'border-orange-500' :
+          balanceAudit.status === 'CRITICAL' ? 'border-red-500' : ''
+        }>
+          <CardHeader className="pb-3">
+            <CardDescription>Estado del Balance</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {auditLoading ? (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                <span>Verificando...</span>
+              </div>
+            ) : !balanceAudit ? (
+              <div className="text-sm text-muted-foreground">
+                No disponible
+              </div>
+            ) : (
+              <>
+                {/* Status Badge */}
+                <div className="flex items-center gap-2">
+                  {balanceAudit.status === 'OK' && (
+                    <Badge className="bg-green-100 text-green-800 border-green-300">
+                      <CheckCircle2 className="h-3 w-3 mr-1" />
+                      Balance Verificado
+                    </Badge>
+                  )}
+                  {balanceAudit.status === 'MINOR' && (
+                    <Badge className="bg-yellow-100 text-yellow-800 border-yellow-300">
+                      <AlertTriangle className="h-3 w-3 mr-1" />
+                      Ajuste Menor
+                    </Badge>
+                  )}
+                  {balanceAudit.status === 'MAJOR' && (
+                    <Badge className="bg-orange-100 text-orange-800 border-orange-300">
+                      <AlertTriangle className="h-3 w-3 mr-1" />
+                      Requiere Atención
+                    </Badge>
+                  )}
+                  {balanceAudit.status === 'CRITICAL' && (
+                    <Badge className="bg-red-100 text-red-800 border-red-300">
+                      <AlertTriangle className="h-3 w-3 mr-1" />
+                      Crítico
+                    </Badge>
+                  )}
+                </div>
+                
+                {/* Discrepancy Info */}
+                {Math.abs(balanceAudit.discrepancy_stored_vs_calculated) > 0.5 && (
+                  <div className="text-xs space-y-1">
+                    <div className="text-muted-foreground">
+                      Discrepancia: <span className="font-semibold text-red-600">
+                        {balanceAudit.discrepancy_stored_vs_calculated.toFixed(1)}L
+                      </span>
+                    </div>
+                    <div className="text-muted-foreground">
+                      Balance teórico: {balanceAudit.calculated_sum.toFixed(1)}L
+                    </div>
+                  </div>
+                )}
+                
+                {balanceAudit.chain_breaks > 0 && (
+                  <div className="text-xs text-orange-600">
+                    {balanceAudit.chain_breaks} discontinuidades detectadas
+                  </div>
+                )}
+                
+                {/* Action Buttons */}
+                <div className="flex gap-2 pt-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={loadBalanceAudit}
+                    className="h-7 text-xs"
+                    disabled={auditLoading}
+                  >
+                    <RefreshCw className="h-3 w-3 mr-1" />
+                    Verificar
+                  </Button>
+                  
+                  {balanceAudit.status !== 'OK' && (
+                    <Button
+                      size="sm"
+                      onClick={handleRecalculateBalance}
+                      className="h-7 text-xs bg-blue-600 hover:bg-blue-700"
+                      disabled={recalculating}
+                    >
+                      {recalculating ? (
+                        <>
+                          <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                          Recalculando...
+                        </>
+                      ) : (
+                        <>
+                          <RefreshCw className="h-3 w-3 mr-1" />
+                          Recalcular
+                        </>
+                      )}
+                    </Button>
+                  )}
+                </div>
+              </>
+            )}
           </CardContent>
         </Card>
       </div>
