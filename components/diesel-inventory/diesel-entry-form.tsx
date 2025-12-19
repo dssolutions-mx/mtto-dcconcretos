@@ -310,26 +310,10 @@ export function DieselEntryForm({
       }
       console.log('Step 1 ✓: User:', user.id)
 
-      // Get warehouse current inventory
-      console.log('Step 2: Getting warehouse balance...')
-      const { data: warehouseData, error: warehouseError } = await supabase
-        .from('diesel_warehouses')
-        .select('current_inventory')
-        .eq('id', selectedWarehouse)
-        .single()
-
-      if (warehouseError) {
-        console.error('Error getting warehouse balance:', warehouseError)
-        toast.error("Error al obtener el balance del almacén")
-        return
-      }
-
-      const previousBalance = warehouseData?.current_inventory || 0
-      const currentBalance = previousBalance + parseFloat(quantityLiters)
-      console.log('Step 2 ✓: Previous balance:', previousBalance, 'New balance:', currentBalance)
-
       // Create entry transaction
-      console.log('Step 3: Building transaction data...')
+      // NOTE: previous_balance and current_balance are calculated by database trigger
+      // We don't calculate them client-side to avoid race conditions and backdating issues
+      console.log('Step 2: Building transaction data...')
       
       const totalCost = unitCost ? parseFloat(unitCost) * parseFloat(quantityLiters) : null
       
@@ -343,8 +327,7 @@ export function DieselEntryForm({
         quantity_liters: parseFloat(quantityLiters),
         unit_cost: unitCost ? parseFloat(unitCost) : null,
         total_cost: totalCost,
-        previous_balance: previousBalance,
-        current_balance: currentBalance,
+        // previous_balance and current_balance will be calculated by database trigger
         supplier_responsible: supplierName.trim(),
         transaction_date: new Date(deliveryDate + 'T' + deliveryTime + ':00').toISOString(),
         notes: notes || null,

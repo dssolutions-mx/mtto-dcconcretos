@@ -148,15 +148,11 @@ export default function WarehouseDetailPage() {
     loadBalanceAudit()
   }, [warehouseId])
   
-  // Auto-recalculate if warehouse is marked
+  // Auto-recalculate if warehouse is marked (only for edited/backdated transactions)
   useEffect(() => {
     if (warehouse?.needs_recalculation && !recalculating) {
-      console.log('⚠️ Warehouse needs recalculation, auto-fixing...')
-      toast({
-        title: "Balance desactualizado detectado",
-        description: "Recalculando automáticamente...",
-      })
-      handleRecalculateBalance()
+      // Silently recalculate in background - don't prompt user
+      handleRecalculateBalance(true)
     }
   }, [warehouse?.needs_recalculation])
   
@@ -179,8 +175,8 @@ export default function WarehouseDetailPage() {
     }
   }
   
-  const handleRecalculateBalance = async () => {
-    if (!window.confirm(
+  const handleRecalculateBalance = async (silent: boolean = false) => {
+    if (!silent && !window.confirm(
       '¿Está seguro de recalcular todos los balances para este almacén?\n\n' +
       'Esta operación:\n' +
       '• Recalculará previous_balance y current_balance para todas las transacciones\n' +
@@ -194,10 +190,13 @@ export default function WarehouseDetailPage() {
     
     try {
       setRecalculating(true)
-      toast({
-        title: "Recalculando...",
-        description: "Este proceso puede tomar algunos segundos"
-      })
+      
+      if (!silent) {
+        toast({
+          title: "Recalculando...",
+          description: "Este proceso puede tomar algunos segundos"
+        })
+      }
       
       const response = await fetch('/api/diesel/recalculate-balance', {
         method: 'POST',
@@ -212,10 +211,13 @@ export default function WarehouseDetailPage() {
       const data = await response.json()
       
       if (data.success) {
-        toast({
-          title: "✅ Recalculación exitosa",
-          description: `Balance actualizado: ${data.old_balance.toFixed(1)}L → ${data.new_balance.toFixed(1)}L (${data.corrections_made} correcciones)`
-        })
+        // Only show toast if corrections were made or if not silent
+        if (data.corrections_made > 0 || !silent) {
+          toast({
+            title: "✅ Recalculación exitosa",
+            description: `Balance actualizado: ${data.old_balance.toFixed(1)}L → ${data.new_balance.toFixed(1)}L${data.corrections_made > 0 ? ` (${data.corrections_made} correcciones)` : ''}`
+          })
+        }
         
         // Reload everything
         await loadWarehouseData()
@@ -225,11 +227,13 @@ export default function WarehouseDetailPage() {
       }
     } catch (error: any) {
       console.error('Error recalculating balance:', error)
-      toast({
-        title: "Error",
-        description: error.message || "No se pudo recalcular el balance",
-        variant: "destructive"
-      })
+      if (!silent) {
+        toast({
+          title: "Error",
+          description: error.message || "No se pudo recalcular el balance",
+          variant: "destructive"
+        })
+      }
     } finally {
       setRecalculating(false)
     }
@@ -1098,7 +1102,7 @@ export default function WarehouseDetailPage() {
                   {balanceAudit.status !== 'OK' && (
                     <Button
                       size="sm"
-                      onClick={handleRecalculateBalance}
+                      onClick={() => handleRecalculateBalance(false)}
                       className="h-7 text-xs bg-blue-600 hover:bg-blue-700"
                       disabled={recalculating}
                     >

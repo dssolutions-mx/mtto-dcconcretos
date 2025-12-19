@@ -457,17 +457,19 @@ export function ConsumptionEntryForm({
         return
       }
 
-      const previousBalance = warehouseData?.current_inventory || 0
-      const currentBalance = previousBalance - parseFloat(quantityLiters)
-      console.log('Step 2 ✓: Previous balance:', previousBalance, 'New balance:', currentBalance)
+      const currentWarehouseBalance = warehouseData?.current_inventory || 0
+      const estimatedBalance = currentWarehouseBalance - parseFloat(quantityLiters)
+      console.log('Step 2 ✓: Current warehouse balance:', currentWarehouseBalance, 'Estimated after:', estimatedBalance)
 
-      // Check if balance is sufficient
-      if (currentBalance < -50) { // Allow 50L safety margin
-        toast.error(`Balance insuficiente en el almacén. Balance actual: ${previousBalance.toFixed(1)}L`)
+      // Check if balance is sufficient (user validation only - actual balance calculated by DB)
+      if (estimatedBalance < -50) { // Allow 50L safety margin
+        toast.error(`Balance insuficiente en el almacén. Balance actual: ${currentWarehouseBalance.toFixed(1)}L`)
         return
       }
 
       // Create transaction (different structure for formal vs exception assets)
+      // NOTE: previous_balance and current_balance are calculated by database trigger
+      // We don't calculate them client-side to avoid race conditions and backdating issues
       console.log('Step 3: Building transaction data...')
       console.log('Selected Plant ID:', selectedPlant)
       console.log('Product ID:', productId)
@@ -480,8 +482,7 @@ export function ConsumptionEntryForm({
         asset_category: assetType,
         quantity_liters: parseFloat(quantityLiters),
         cuenta_litros: cuentaLitros ? parseFloat(cuentaLitros) : null,
-        previous_balance: previousBalance,
-        current_balance: currentBalance,
+        // previous_balance and current_balance will be calculated by database trigger
         operator_id: user.id,
         transaction_date: new Date(transactionDate + 'T' + transactionTime + ':00').toISOString(),
         notes: notes || null,
@@ -570,7 +571,7 @@ export function ConsumptionEntryForm({
         : exceptionAssetName
 
       toast.success("✅ Consumo registrado exitosamente", {
-        description: `${quantityLiters}L consumidos por ${assetName}. Nuevo balance: ${currentBalance.toFixed(1)}L`,
+        description: `${quantityLiters}L consumidos por ${assetName}`,
         duration: 4000
       })
 
