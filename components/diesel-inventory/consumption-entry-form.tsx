@@ -462,9 +462,15 @@ export function ConsumptionEntryForm({
       console.log('Step 2 ✓: Current warehouse balance:', currentWarehouseBalance, 'Estimated after:', estimatedBalance)
 
       // Check if balance is sufficient (user validation only - actual balance calculated by DB)
-      if (estimatedBalance < -50) { // Allow 50L safety margin
+      // Only warn if going from positive to very negative, not if already negative
+      if (currentWarehouseBalance > 0 && estimatedBalance < -50) {
         toast.error(`Balance insuficiente en el almacén. Balance actual: ${currentWarehouseBalance.toFixed(1)}L`)
         return
+      }
+      
+      // Warn but allow if already negative (might be correcting an error)
+      if (currentWarehouseBalance < 0 && estimatedBalance < currentWarehouseBalance - 100) {
+        toast.warning(`Advertencia: El balance ya es negativo (${currentWarehouseBalance.toFixed(1)}L). Esta transacción lo hará más negativo.`)
       }
 
       // Create transaction (different structure for formal vs exception assets)
@@ -515,6 +521,8 @@ export function ConsumptionEntryForm({
       }
 
       console.log('Step 4: Inserting transaction...')
+      console.log('Transaction data being inserted:', JSON.stringify(transactionData, null, 2))
+      
       const { data: transaction, error: transactionError } = await supabase
         .from('diesel_transactions')
         .insert([transactionData])
@@ -522,10 +530,19 @@ export function ConsumptionEntryForm({
         .single()
 
       if (transactionError) {
-        console.error('Transaction insert error:', transactionError)
-        throw transactionError
+        console.error('=== TRANSACTION INSERT ERROR ===')
+        console.error('Error code:', transactionError.code)
+        console.error('Error message:', transactionError.message)
+        console.error('Error details:', transactionError.details)
+        console.error('Error hint:', transactionError.hint)
+        console.error('Full error:', JSON.stringify(transactionError, null, 2))
+        throw new Error(`Error al insertar transacción: ${transactionError.message}${transactionError.details ? ' - ' + transactionError.details : ''}`)
       }
       console.log('Step 4 ✓: Transaction created:', transaction.id)
+      console.log('Transaction balance calculated by DB:', {
+        previous_balance: transaction.previous_balance,
+        current_balance: transaction.current_balance
+      })
 
       // Upload evidence photo (machine display only)
       console.log('Step 5: Inserting evidence...')
