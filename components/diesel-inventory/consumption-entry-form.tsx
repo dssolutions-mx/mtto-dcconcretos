@@ -72,6 +72,7 @@ export function ConsumptionEntryForm({
   // Validation state
   const [cuentaLitrosValid, setCuentaLitrosValid] = useState<boolean | null>(null)
   const [cuentaLitrosVariance, setCuentaLitrosVariance] = useState<number | null>(null)
+  const [cuentaLitrosManuallyEdited, setCuentaLitrosManuallyEdited] = useState<boolean>(false)
   const [backdatingThresholdMinutes, setBackdatingThresholdMinutes] = useState<number>(120)
 
   const supabase = createBrowserClient(
@@ -251,9 +252,14 @@ export function ConsumptionEntryForm({
   useEffect(() => {
     if (!selectedWarehouse) {
       setPreviousCuentaLitros(null)
+      setCuentaLitros("")
+      setCuentaLitrosManuallyEdited(false)
       return
     }
 
+    // Reset cuenta litros field when warehouse changes
+    setCuentaLitros("")
+    setCuentaLitrosManuallyEdited(false)
     loadWarehouseCuentaLitros()
   }, [selectedWarehouse])
 
@@ -292,17 +298,16 @@ export function ConsumptionEntryForm({
     }
   }
 
-  // Auto-fill cuenta litros when quantity changes
-  useEffect(() => {
+  // Calculate suggested value (but don't auto-fill - user must click button)
+  const getSuggestedCuentaLitros = () => {
     if (quantityLiters && previousCuentaLitros !== null) {
       const quantity = parseFloat(quantityLiters)
       if (!isNaN(quantity)) {
-        // Pre-fill as previous + quantity
-        const suggested = previousCuentaLitros + quantity
-        setCuentaLitros(suggested.toFixed(1))
+        return (previousCuentaLitros + quantity).toFixed(1)
       }
     }
-  }, [quantityLiters, previousCuentaLitros])
+    return null
+  }
 
   // Validate cuenta litros against quantity
   useEffect(() => {
@@ -420,6 +425,7 @@ export function ConsumptionEntryForm({
     }
 
     // Warning for cuenta litros variance (only if warehouse has meter)
+    // Allow submission but warn if variance is high
     if (previousCuentaLitros !== null && cuentaLitrosValid === false && cuentaLitrosVariance && cuentaLitrosVariance > 2) {
       const proceed = confirm(
         `⚠️ La diferencia entre litros y cuenta litros es de ${cuentaLitrosVariance.toFixed(1)}L.\n\n` +
@@ -427,7 +433,7 @@ export function ConsumptionEntryForm({
         `Movimiento cuenta litros: ${(parseFloat(cuentaLitros) - (previousCuentaLitros || 0)).toFixed(1)}L\n\n` +
         `¿Deseas continuar? La transacción será marcada para validación.`
       )
-      
+
       if (!proceed) return
     }
 
@@ -604,6 +610,7 @@ export function ConsumptionEntryForm({
       setExceptionAssetName("")
       setQuantityLiters("")
       setCuentaLitros("")
+      setCuentaLitrosManuallyEdited(false)
       setMachinePhoto(null)
       setNotes("")
       setReadings({})
@@ -907,13 +914,37 @@ export function ConsumptionEntryForm({
               {/* Cuenta Litros Input */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <Label htmlFor="cuenta-litros" className="text-base">
-                    6. Lectura Cuenta Litros {previousCuentaLitros === null ? "(No disponible)" : "(Auto-calculada)"}
+                  <Label htmlFor="cuenta-litros" className="text-base font-semibold">
+                    6. Lectura Cuenta Litros {previousCuentaLitros === null ? "(No disponible)" : ""}
+                    {previousCuentaLitros !== null && <span className="text-red-600 ml-1">*</span>}
                   </Label>
                   {previousCuentaLitros !== null && (
-                    <Badge variant="outline" className="text-xs">
-                      Anterior: {previousCuentaLitros.toFixed(1)}L
-                    </Badge>
+                    <div className="flex items-center gap-2">
+                      <Badge variant="outline" className="text-xs">
+                        Anterior: {previousCuentaLitros.toFixed(1)}L
+                      </Badge>
+                      {getSuggestedCuentaLitros() && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="h-6 text-xs"
+                          onClick={() => {
+                            const suggested = getSuggestedCuentaLitros()
+                            if (suggested) {
+                              setCuentaLitros(suggested)
+                              setCuentaLitrosManuallyEdited(false)
+                              toast.info("Valor sugerido aplicado", {
+                                description: "Verifica que coincida con la lectura real del medidor y corrígela si es necesario.",
+                                duration: 4000
+                              })
+                            }
+                          }}
+                        >
+                          Usar sugerido: {getSuggestedCuentaLitros()}L
+                        </Button>
+                      )}
+                    </div>
                   )}
                   {previousCuentaLitros === null && (
                     <Badge variant="secondary" className="text-xs">
@@ -922,26 +953,52 @@ export function ConsumptionEntryForm({
                   )}
                 </div>
                 
+                {/* IMPORTANCE MESSAGE */}
+                {previousCuentaLitros !== null && (
+                  <Alert className="border-blue-500 bg-blue-50">
+                    <AlertTriangle className="h-4 w-4 text-blue-600" />
+                    <AlertTitle className="text-blue-900 font-semibold">⚠️ CAMPO CRÍTICO PARA VALIDACIÓN</AlertTitle>
+                    <AlertDescription className="text-blue-800 text-sm">
+                      <strong>Este campo es esencial para validar la transacción.</strong> La lectura del cuenta litros debe coincidir con la cantidad de litros consumidos. 
+                      <strong className="block mt-1">DEBES verificar la lectura REAL del medidor físico y corregir el valor si no coincide.</strong>
+                      Sin esta validación correcta, la transacción será marcada para revisión manual.
+                    </AlertDescription>
+                  </Alert>
+                )}
+                
                 <Input
                   id="cuenta-litros"
                   type="tel"
                   pattern="[0-9]*\.?[0-9]*"
                   inputMode="decimal"
-                  placeholder={previousCuentaLitros !== null ? `Sugerido: ${(previousCuentaLitros + (parseFloat(quantityLiters) || 0)).toFixed(1)}` : "N/A - Este almacén no tiene cuenta litros"}
+                  placeholder={previousCuentaLitros !== null ? `Ingresa la lectura REAL del cuenta litros (sugerido: ${getSuggestedCuentaLitros() || 'N/A'}L)` : "N/A - Este almacén no tiene cuenta litros"}
                   value={cuentaLitros}
                   onChange={(e) => {
                     // Only allow numbers and decimal point
                     const value = e.target.value.replace(/[^0-9.]/g, '')
                     setCuentaLitros(value)
+                    // Mark as manually edited if user types something
+                    if (value && previousCuentaLitros !== null) {
+                      setCuentaLitrosManuallyEdited(true)
+                    }
                   }}
                   disabled={loading || previousCuentaLitros === null}
-                  className={`h-12 text-base ${
+                  className={`h-12 text-base font-medium ${
                     previousCuentaLitros === null ? 'bg-gray-100 text-gray-500' :
-                    cuentaLitrosValid === false ? 'border-red-500' : 
-                    cuentaLitrosValid === true ? 'border-green-500' : ''
+                    cuentaLitrosValid === false ? 'border-red-500 bg-red-50 border-2' : 
+                    cuentaLitrosValid === true ? 'border-green-500 bg-green-50 border-2' : 'border-blue-500 border-2'
                   }`}
                   required={previousCuentaLitros !== null}
                 />
+                
+                {previousCuentaLitros !== null && getSuggestedCuentaLitros() && !cuentaLitros && (
+                  <Alert className="border-yellow-500 bg-yellow-50">
+                    <AlertDescription className="text-yellow-800 text-sm">
+                      💡 <strong>Puedes usar el botón "Usar sugerido"</strong> para llenar automáticamente, pero <strong>SIEMPRE verifica con el medidor físico</strong> y corrígela si es necesario. 
+                      Esta validación es crítica para la precisión del inventario.
+                    </AlertDescription>
+                  </Alert>
+                )}
 
                 {/* Cuenta Litros Validation */}
                 {cuentaLitros && previousCuentaLitros !== null && (
@@ -961,17 +1018,27 @@ export function ConsumptionEntryForm({
                         {cuentaLitrosValid === true ? (
                           <>
                             <CheckCircle2 className="h-4 w-4 text-green-600" />
+                            <AlertTitle className="text-green-800 font-semibold">✅ Validación Correcta</AlertTitle>
                             <AlertDescription className="text-green-800 text-sm">
-                              ✅ Validación correcta (varianza: {cuentaLitrosVariance.toFixed(1)}L)
+                              La lectura del cuenta litros coincide con los litros consumidos (varianza: {cuentaLitrosVariance.toFixed(1)}L).
+                              La transacción puede proceder sin problemas.
                             </AlertDescription>
                           </>
                         ) : (
                           <>
                             <AlertTriangle className="h-4 w-4 text-red-600" />
-                            <AlertTitle className="text-red-800">Advertencia de Validación</AlertTitle>
+                            <AlertTitle className="text-red-800 font-semibold">⚠️ DISCREPANCIA DETECTADA - REQUIERE VALIDACIÓN</AlertTitle>
                             <AlertDescription className="text-red-800 text-sm">
-                              La diferencia entre litros consumidos y movimiento del cuenta litros es de {cuentaLitrosVariance.toFixed(1)}L.
-                              Esta transacción será marcada para validación manual.
+                              <strong>La diferencia entre litros consumidos y movimiento del cuenta litros es de {cuentaLitrosVariance.toFixed(1)}L.</strong>
+                              <br /><br />
+                              Esto puede indicar:
+                              <ul className="list-disc list-inside mt-1 space-y-1">
+                                <li>Error en la lectura del cuenta litros</li>
+                                <li>Error en la cantidad de litros ingresada</li>
+                                <li>Problema con el medidor</li>
+                              </ul>
+                              <strong className="block mt-2">Esta transacción será marcada para validación manual.</strong>
+                              Verifica ambos valores antes de continuar.
                             </AlertDescription>
                           </>
                         )}
@@ -1003,13 +1070,30 @@ export function ConsumptionEntryForm({
 
               {/* Evidence Photo */}
               <div className="space-y-4">
-                <Label className="text-base">{assetType === 'formal' ? '7' : '6'}. Evidencia Fotográfica (Obligatorio)</Label>
+                <Label className="text-base font-semibold">
+                  {assetType === 'formal' ? '7' : '6'}. Evidencia Fotográfica <span className="text-red-600">*</span>
+                </Label>
+
+                {/* IMPORTANCE MESSAGE FOR PHOTO */}
+                <Alert className="border-blue-500 bg-blue-50">
+                  <Camera className="h-4 w-4 text-blue-600" />
+                  <AlertTitle className="text-blue-900 font-semibold">📸 FOTO OBLIGATORIA PARA VALIDACIÓN</AlertTitle>
+                  <AlertDescription className="text-blue-800 text-sm">
+                    <strong>Esta foto es CRÍTICA para validar la transacción.</strong> Debe mostrar claramente:
+                    <ul className="list-disc list-inside mt-1 space-y-1">
+                      <li>Los <strong>litros despachados</strong> en el display</li>
+                      <li>La lectura del <strong>cuenta litros</strong> en el display</li>
+                    </ul>
+                    <strong className="block mt-2">Sin esta foto, la transacción NO puede ser validada correctamente.</strong>
+                    Asegúrate de que la foto sea clara y legible.
+                  </AlertDescription>
+                </Alert>
 
                 {/* Machine Display Photo */}
                 <div className="space-y-2">
                   <div className="flex items-center gap-2">
                     <Camera className="h-4 w-4 text-blue-600" />
-                    <Label htmlFor="machine-photo" className="text-sm">
+                    <Label htmlFor="machine-photo" className="text-sm font-semibold">
                       Foto: Display de la Máquina <span className="text-red-600">*</span>
                     </Label>
                   </div>
@@ -1021,9 +1105,18 @@ export function ConsumptionEntryForm({
                     disabled={loading}
                     category="machine_display"
                   />
-                  <p className="text-xs text-muted-foreground">
-                    Captura el display mostrando los litros despachados y el cuenta litros
-                  </p>
+                  {!machinePhoto && (
+                    <Alert className="border-yellow-500 bg-yellow-50">
+                      <AlertDescription className="text-yellow-800 text-sm">
+                        ⚠️ <strong>Foto requerida:</strong> La foto del display es obligatoria. Debe mostrar claramente los litros despachados y el cuenta litros para validar la transacción.
+                      </AlertDescription>
+                    </Alert>
+                  )}
+                  {machinePhoto && (
+                    <p className="text-xs text-green-700 font-medium">
+                      ✅ Foto capturada. Verifica que se vean claramente los litros despachados y el cuenta litros.
+                    </p>
+                  )}
                 </div>
               </div>
 
