@@ -346,7 +346,7 @@ export function DieselEntryForm({
       const { data: transaction, error: transactionError } = await supabase
         .from('diesel_transactions')
         .insert([transactionData])
-        .select()
+        .select('id, transaction_id, previous_balance, current_balance, transaction_date')
         .single()
 
       if (transactionError) {
@@ -354,6 +354,10 @@ export function DieselEntryForm({
         throw transactionError
       }
       console.log('Step 4 ✓: Transaction created:', transaction.id)
+      console.log('Balance calculated by DB:', {
+        previous_balance: transaction.previous_balance,
+        current_balance: transaction.current_balance
+      })
 
       // Upload evidence photos
       console.log('Step 5: Inserting evidence...')
@@ -406,8 +410,12 @@ export function DieselEntryForm({
       }
       console.log('Step 5 ✓: Evidence inserted')
 
+      // Get the calculated balance from the database (calculated by trigger)
+      const finalBalance = transaction.current_balance || 0
+      console.log('Step 6 ✓: Final balance from DB:', finalBalance)
+
       toast.success("✅ Entrada registrada exitosamente", {
-        description: `${quantityLiters}L recibidos. Nuevo balance: ${currentBalance.toFixed(1)}L`,
+        description: `${quantityLiters}L recibidos. Nuevo balance: ${finalBalance.toFixed(1)}L`,
         duration: 4000
       })
 
