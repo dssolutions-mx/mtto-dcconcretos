@@ -32,6 +32,9 @@ import Link from "next/link"
 import { getRoleDisplayName, type ModulePermissions } from "@/lib/auth/role-permissions"
 import { cn } from "@/lib/utils"
 import { PullToRefresh } from "@/components/ui/pull-to-refresh"
+import { RestartOnboardingButton } from "@/components/onboarding/restart-onboarding-button"
+import { GettingStartedCard } from "@/components/onboarding/GettingStartedCard"
+import { UserSanctionsWidget } from "@/components/compliance/user-sanctions-widget"
 
 function DashboardContent() {
   const { 
@@ -51,6 +54,15 @@ function DashboardContent() {
   const isMobile = useIsMobile()
   const [showAccessAlert, setShowAccessAlert] = useState(false)
   const [isRefreshing, setIsRefreshing] = useState(false)
+  const [showGettingStarted, setShowGettingStarted] = useState(false)
+
+  // Check if getting started should be shown
+  useEffect(() => {
+    if (typeof window !== 'undefined' && profile) {
+      const dismissed = localStorage.getItem('getting_started_dismissed')
+      setShowGettingStarted(!dismissed)
+    }
+  }, [profile])
 
   // Handler to refresh profile
   const handleRefreshProfile = async () => {
@@ -316,8 +328,18 @@ function DashboardContent() {
         </Alert>
       )}
 
+      {/* Getting Started Card for new users */}
+      {showGettingStarted && (
+        <div className="mb-6">
+          <GettingStartedCard 
+            userName={profile.nombre}
+            userRole={profile.role}
+          />
+        </div>
+      )}
+
       {/* User Info Header (Zustand-powered) - Mobile Optimized */}
-      <Card className={cn(isMobile && "shadow-sm")}>
+      <Card className={cn(isMobile && "shadow-sm")} id="dashboard-header">
         <CardHeader className={cn(isMobile && "pb-3")}>
           <div className={cn(
             "flex items-center justify-between",
@@ -357,26 +379,29 @@ function DashboardContent() {
                 )}>
                   Límite de Autorización
                 </div>
-                <Button
-                  size={isMobile ? "sm" : "sm"}
-                  variant="outline"
-                  onClick={handleRefreshProfile}
-                  disabled={isRefreshing}
-                  className={cn(
-                    isMobile ? "h-8 px-3 text-xs" : "h-6 px-2"
-                  )}
-                >
-                  {isRefreshing ? (
-                    <Loader2 className={cn(isMobile ? "h-3 w-3" : "h-3 w-3", "animate-spin")} />
-                  ) : (
-                    <>
-                      <RefreshCw className={cn(isMobile ? "h-3 w-3" : "h-3 w-3", "mr-1")} />
-                      <span className={cn(isMobile && "hidden sm:inline")}>
-                        Actualizar Perfil
-                      </span>
-                    </>
-                  )}
-                </Button>
+                <div className="flex items-center gap-2">
+                  <RestartOnboardingButton />
+                  <Button
+                    size={isMobile ? "sm" : "sm"}
+                    variant="outline"
+                    onClick={handleRefreshProfile}
+                    disabled={isRefreshing}
+                    className={cn(
+                      isMobile ? "h-8 px-3 text-xs" : "h-6 px-2"
+                    )}
+                  >
+                    {isRefreshing ? (
+                      <Loader2 className={cn(isMobile ? "h-3 w-3" : "h-3 w-3", "animate-spin")} />
+                    ) : (
+                      <>
+                        <RefreshCw className={cn(isMobile ? "h-3 w-3" : "h-3 w-3", "mr-1")} />
+                        <span className={cn(isMobile && "hidden sm:inline")}>
+                          Actualizar Perfil
+                        </span>
+                      </>
+                    )}
+                  </Button>
+                </div>
               </div>
               <div className={cn(
                 "font-bold text-green-600",
@@ -812,7 +837,9 @@ function DashboardContent() {
         )}>
           Módulos del Sistema
         </h2>
-        <div className={cn(
+        <div 
+        data-tour="dashboard"
+        className={cn(
           "grid gap-4",
           isMobile 
             ? "grid-cols-2 gap-3" // 2 columns on mobile for better accessibility
@@ -825,6 +852,7 @@ function DashboardContent() {
             return (
               <Card 
                 key={card.href} 
+                data-tour={card.module === 'checklists' ? 'checklists' : card.module === 'assets' ? 'assets' : undefined}
                 className={cn(
                   "relative overflow-hidden transition-all",
                   hasAccess ? 'cursor-pointer hover:shadow-md' : 'opacity-50',
@@ -1003,6 +1031,7 @@ function DashboardContent() {
               <Button 
                 asChild 
                 variant="outline" 
+                data-tour="reports"
                 className={cn(
                   "h-auto flex flex-col",
                   isMobile 
@@ -1047,6 +1076,9 @@ function DashboardContent() {
           </AlertDescription>
         </Alert>
       )}
+
+      {/* User Sanctions Widget - Show for all users */}
+      <UserSanctionsWidget maxItems={3} showOnlyActive={true} />
       </div>
     </PullToRefresh>
   )

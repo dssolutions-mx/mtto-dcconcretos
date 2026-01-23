@@ -81,6 +81,7 @@ interface PurchaseOrderWithWorkOrder extends Omit<PurchaseOrder, 'is_adjustment'
   service_provider?: string;
   actual_amount?: number | null;
   purchased_at?: string;
+  purchase_date?: string;
   requester?: {
     id: string;
     nombre?: string;
@@ -638,6 +639,22 @@ export function PurchaseOrdersList() {
     return `$${amount.toFixed(2)}`;
   };
 
+  // Format date for display
+  const formatDate = (dateString: string | null | undefined): string => {
+    if (!dateString) return "N/A";
+    try {
+      const date = new Date(dateString);
+      if (isNaN(date.getTime())) return "N/A";
+      return date.toLocaleDateString('es-MX', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric'
+      });
+    } catch {
+      return "N/A";
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Summary Cards */}
@@ -857,6 +874,7 @@ export function PurchaseOrdersList() {
                         <TableHead className="min-w-[250px]">Descripción y Activo</TableHead>
                         <TableHead className="w-[180px]">Proveedor/Solicitante</TableHead>
                         <TableHead className="w-[120px] text-right">Monto</TableHead>
+                        <TableHead className="w-[120px]">Fecha de Compra</TableHead>
                         <TableHead className="w-[100px]">Urgencia</TableHead>
                         <TableHead className="w-[120px]">Estado</TableHead>
                         <TableHead className="w-[200px] text-center">Autorización</TableHead>
@@ -866,13 +884,13 @@ export function PurchaseOrdersList() {
                     <TableBody>
                       {isLoading ? (
                         <TableRow>
-                          <TableCell colSpan={8} className="text-center py-8">
+                          <TableCell colSpan={9} className="text-center py-8">
                             Cargando órdenes de compra...
                           </TableCell>
                         </TableRow>
                       ) : filteredOrders.length === 0 ? (
                         <TableRow>
-                          <TableCell colSpan={8} className="text-center py-8">
+                          <TableCell colSpan={9} className="text-center py-8">
                             No se encontraron órdenes de compra
                           </TableCell>
                         </TableRow>
@@ -982,6 +1000,16 @@ export function PurchaseOrdersList() {
                                       Cotización
                                     </Badge>
                                   )}
+                                </div>
+                              </TableCell>
+
+                              {/* Purchase Date */}
+                              <TableCell>
+                                <div className="flex items-center space-x-1">
+                                  <CalendarIcon className="h-3 w-3 text-muted-foreground" />
+                                  <span className="text-sm">
+                                    {formatDate(order.purchase_date)}
+                                  </span>
                                 </div>
                               </TableCell>
 
@@ -1157,74 +1185,77 @@ export function PurchaseOrdersList() {
               {approvalAction === 'approve' ? 'Confirmar Aprobación' : 'Confirmar Rechazo'}
             </AlertDialogTitle>
             <AlertDialogDescription>
-              {orderToApprove && (
-                <div className="space-y-3 mt-4">
-                  <div className="p-4 bg-muted rounded-lg space-y-2">
-                    <div className="grid grid-cols-2 gap-4 text-sm">
-                      <div>
-                        <span className="font-medium">Orden:</span> {orderToApprove.order_id}
-                      </div>
-                      <div>
-                        <span className="font-medium">Monto:</span> {formatCurrency(orderToApprove.total_amount || "0")}
-                      </div>
-                      <div>
-                        <span className="font-medium">Proveedor:</span> {orderToApprove.supplier || "No especificado"}
-                      </div>
-                      <div>
-                        <span className="font-medium">Solicitado por:</span> {getTechnicianName(orderToApprove.requested_by)}
-                      </div>
-                    </div>
-                    
-                    {orderToApprove.work_orders && (
-                      <Separator />
-                    )}
-                    
-                    {orderToApprove.work_orders && (
-                      <div className="space-y-1">
-                        <div className="font-medium text-sm">Orden de Trabajo: {orderToApprove.work_orders.order_id}</div>
-                        <div className="text-sm text-muted-foreground">{orderToApprove.work_orders.description}</div>
-                        {orderToApprove.work_orders.assets && (
-                          <div className="flex items-center space-x-1 text-sm text-muted-foreground">
-                            <Building2 className="h-3 w-3" />
-                            <span>{orderToApprove.work_orders.assets.asset_id || orderToApprove.work_orders.assets.name}</span>
-                            {orderToApprove.work_orders.assets.plants && (
-                              <span className="text-xs">• {orderToApprove.work_orders.assets.plants.name}</span>
-                            )}
-                          </div>
+              {approvalAction === 'approve' 
+                ? 'Revisa los detalles de la orden antes de aprobar.'
+                : 'Revisa los detalles de la orden antes de rechazar.'}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          {orderToApprove && (
+            <div className="space-y-3 mt-4">
+              <div className="p-4 bg-muted rounded-lg space-y-2">
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <span className="font-medium">Orden:</span> {orderToApprove.order_id}
+                  </div>
+                  <div>
+                    <span className="font-medium">Monto:</span> {formatCurrency(orderToApprove.total_amount || "0")}
+                  </div>
+                  <div>
+                    <span className="font-medium">Proveedor:</span> {orderToApprove.supplier || "No especificado"}
+                  </div>
+                  <div>
+                    <span className="font-medium">Solicitado por:</span> {getTechnicianName(orderToApprove.requested_by)}
+                  </div>
+                </div>
+                
+                {orderToApprove.work_orders && (
+                  <Separator />
+                )}
+                
+                {orderToApprove.work_orders && (
+                  <div className="space-y-1">
+                    <div className="font-medium text-sm">Orden de Trabajo: {orderToApprove.work_orders.order_id}</div>
+                    <div className="text-sm text-muted-foreground">{orderToApprove.work_orders.description}</div>
+                    {orderToApprove.work_orders.assets && (
+                      <div className="flex items-center space-x-1 text-sm text-muted-foreground">
+                        <Building2 className="h-3 w-3" />
+                        <span>{orderToApprove.work_orders.assets.asset_id || orderToApprove.work_orders.assets.name}</span>
+                        {orderToApprove.work_orders.assets.plants && (
+                          <span className="text-xs">• {orderToApprove.work_orders.assets.plants.name}</span>
                         )}
                       </div>
                     )}
-                    
-                    <Separator />
-                    
-                    <div className="text-sm">
-                      <span className="font-medium">Items:</span> {orderToApprove.items_preview}
-                    </div>
                   </div>
-                  
-                  {approvalAction === 'approve' ? (
-                    <div className="flex items-center space-x-2 text-green-700 bg-green-50 p-3 rounded-lg">
-                      <Check className="h-4 w-4" />
-                      <span className="font-medium">
-                        ¿Confirmas que quieres aprobar esta orden de compra?
-                      </span>
-                    </div>
-                  ) : (
-                    <div className="flex items-center space-x-2 text-red-700 bg-red-50 p-3 rounded-lg">
-                      <X className="h-4 w-4" />
-                      <span className="font-medium">
-                        ¿Confirmas que quieres rechazar esta orden de compra?
-                      </span>
-                    </div>
-                  )}
-                  
-                  <div className="text-xs text-muted-foreground">
-                    Tu límite de autorización: {formatCurrency(userAuthLimit)}
-                  </div>
+                )}
+                
+                <Separator />
+                
+                <div className="text-sm">
+                  <span className="font-medium">Items:</span> {orderToApprove.items_preview}
+                </div>
+              </div>
+              
+              {approvalAction === 'approve' ? (
+                <div className="flex items-center space-x-2 text-green-700 bg-green-50 p-3 rounded-lg">
+                  <Check className="h-4 w-4" />
+                  <span className="font-medium">
+                    ¿Confirmas que quieres aprobar esta orden de compra?
+                  </span>
+                </div>
+              ) : (
+                <div className="flex items-center space-x-2 text-red-700 bg-red-50 p-3 rounded-lg">
+                  <X className="h-4 w-4" />
+                  <span className="font-medium">
+                    ¿Confirmas que quieres rechazar esta orden de compra?
+                  </span>
                 </div>
               )}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
+              
+              <div className="text-xs text-muted-foreground">
+                Tu límite de autorización: {formatCurrency(userAuthLimit)}
+              </div>
+            </div>
+          )}
           <AlertDialogFooter>
             <AlertDialogCancel disabled={isApproving}>Cancelar</AlertDialogCancel>
             <AlertDialogAction

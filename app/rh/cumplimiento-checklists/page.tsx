@@ -60,7 +60,7 @@ export default function ChecklistCompliancePage() {
   return (
     <div className="container mx-auto py-6 px-8">
       {/* Header */}
-      <div className="mb-6">
+      <div className="mb-6" id="checklist-compliance-header">
         <h1 className="text-3xl font-bold">Cumplimiento de Checklists</h1>
         <p className="text-muted-foreground">
           Monitoreo del cumplimiento de checklists por unidad de negocio y planta para identificar 

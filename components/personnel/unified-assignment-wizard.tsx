@@ -210,7 +210,7 @@ export function UnifiedAssignmentWizard() {
     <div className="space-y-6">
       {/* Progress Header */}
       <Card className="border-2">
-        <CardHeader className="bg-gradient-to-r from-blue-50 via-indigo-50 to-purple-50 border-b">
+        <CardHeader className="bg-gradient-to-r from-blue-50 via-indigo-50 to-purple-50 border-b" id="asignaciones-organizacionales-header">
           <div className="flex items-center justify-between mb-4">
             <div>
               <CardTitle className="text-2xl flex items-center gap-2">

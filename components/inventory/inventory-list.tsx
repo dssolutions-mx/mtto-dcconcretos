@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -15,104 +15,110 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { AlertCircle, Check, Edit, Eye, FileText, MoreHorizontal, Search, ShoppingCart, Trash } from "lucide-react"
+import { AlertCircle, Check, Edit, Eye, FileText, MoreHorizontal, Search, ShoppingCart, Trash, Package } from "lucide-react"
+import Link from "next/link"
 
-const inventoryItems = [
-  {
-    id: "INV001",
-    name: "Motor Eléctrico 5HP",
-    category: "Repuesto",
-    location: "Almacén Central - Estante A3",
-    quantity: 5,
-    minStock: 2,
-    warranty: {
-      status: "Vigente",
-      provider: "ElectroMotores S.A.",
-      expiryDate: "2023-12-15",
-    },
-    lastMovement: "2023-05-20",
-  },
-  {
-    id: "INV002",
-    name: "Filtro de Aire Industrial",
-    category: "Consumible",
-    location: "Almacén Central - Estante B2",
-    quantity: 12,
-    minStock: 5,
-    warranty: {
-      status: "No aplica",
-      provider: "FiltroPro",
-      expiryDate: "-",
-    },
-    lastMovement: "2023-06-02",
-  },
-  {
-    id: "INV003",
-    name: "Bomba Hidráulica 2000PSI",
-    category: "Repuesto",
-    location: "Almacén Central - Estante A1",
-    quantity: 2,
-    minStock: 1,
-    warranty: {
-      status: "Vigente",
-      provider: "HidroSistemas",
-      expiryDate: "2024-01-10",
-    },
-    lastMovement: "2023-04-15",
-  },
-  {
-    id: "INV004",
-    name: "Aceite Hidráulico 20L",
-    category: "Consumible",
-    location: "Almacén Central - Zona C",
-    quantity: 8,
-    minStock: 3,
-    warranty: {
-      status: "No aplica",
-      provider: "LubriTech",
-      expiryDate: "-",
-    },
-    lastMovement: "2023-05-30",
-  },
-  {
-    id: "INV005",
-    name: "Tarjeta Electrónica PLC",
-    category: "Repuesto",
-    location: "Almacén Electrónico - Gabinete 2",
-    quantity: 3,
-    minStock: 2,
-    warranty: {
-      status: "Por vencer",
-      provider: "AutoControl",
-      expiryDate: "2023-07-22",
-    },
-    lastMovement: "2023-03-18",
-  },
-  {
-    id: "INV006",
-    name: "Rodamiento Industrial 5000",
-    category: "Repuesto",
-    location: "Almacén Central - Estante D4",
-    quantity: 15,
-    minStock: 5,
-    warranty: {
-      status: "Vigente",
-      provider: "RodaTech",
-      expiryDate: "2023-11-05",
-    },
-    lastMovement: "2023-06-10",
-  },
-]
+interface StockItem {
+  id: string
+  part_id: string
+  part_number: string
+  part_name: string
+  category: string
+  warehouse_id: string
+  warehouse_name: string
+  current_quantity: number
+  reserved_quantity: number
+  available_quantity: number
+  min_stock_level: number
+  max_stock_level?: number
+  reorder_point?: number
+  average_unit_cost: number
+  total_value: number
+  last_movement_date?: string
+}
 
 export function InventoryList() {
   const [searchTerm, setSearchTerm] = useState("")
+  const [selectedCategory, setSelectedCategory] = useState<string>("all")
+  const [stockData, setStockData] = useState<StockItem[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
-  const filteredItems = inventoryItems.filter(
-    (item) =>
-      item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      item.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      item.category.toLowerCase().includes(searchTerm.toLowerCase()),
-  )
+  useEffect(() => {
+    const fetchStock = async () => {
+      try {
+        setIsLoading(true)
+        setError(null)
+        const response = await fetch('/api/inventory/stock')
+        const result = await response.json()
+        if (result.success) {
+          setStockData(result.data || [])
+        } else {
+          setError(result.error || 'Error al cargar inventario')
+        }
+      } catch (err) {
+        setError('Error al cargar inventario')
+        console.error('Error fetching stock:', err)
+      } finally {
+        setIsLoading(false)
+      }
+    }
+    fetchStock()
+  }, [])
+
+  const filteredItems = (stockData || []).filter((item) => {
+    const matchesSearch = 
+      item.part_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      item.part_number.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      item.category.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      item.warehouse_name.toLowerCase().includes(searchTerm.toLowerCase())
+    
+    const matchesCategory = 
+      selectedCategory === "all" || 
+      (selectedCategory === "repuestos" && item.category === "Repuesto") ||
+      (selectedCategory === "consumibles" && item.category === "Consumible")
+    
+    return matchesSearch && matchesCategory
+  })
+
+  const getStockStatus = (item: StockItem) => {
+    const available = item.available_quantity
+    const minLevel = item.min_stock_level || 0
+    const reorder = item.reorder_point || minLevel
+
+    if (available <= 0) {
+      return { label: "Sin Stock", variant: "destructive" as const }
+    }
+    if (available < reorder) {
+      return { label: "Bajo", variant: "destructive" as const }
+    }
+    if (available < minLevel * 2) {
+      return { label: "Adecuado", variant: "secondary" as const }
+    }
+    return { label: "Óptimo", variant: "default" as const }
+  }
+
+  if (isLoading) {
+    return (
+      <Card>
+        <CardContent className="p-6">
+          <div className="text-center">Cargando inventario...</div>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  if (error) {
+    return (
+      <Card>
+        <CardContent className="p-6">
+          <div className="text-center text-destructive">
+            Error al cargar inventario. Por favor, intenta nuevamente.
+          </div>
+        </CardContent>
+      </Card>
+    )
+  }
 
   return (
     <Card>
@@ -132,273 +138,128 @@ export function InventoryList() {
         </div>
       </CardHeader>
       <CardContent>
-        <Tabs defaultValue="all" className="w-full">
+        <Tabs value={selectedCategory} onValueChange={setSelectedCategory} className="w-full">
           <TabsList className="mb-4">
             <TabsTrigger value="all">Todos</TabsTrigger>
             <TabsTrigger value="repuestos">Repuestos</TabsTrigger>
             <TabsTrigger value="consumibles">Consumibles</TabsTrigger>
-            <TabsTrigger value="warranty">Con Garantía</TabsTrigger>
           </TabsList>
-          <TabsContent value="all">
-            <div className="rounded-md border">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>ID</TableHead>
-                    <TableHead>Nombre</TableHead>
-                    <TableHead>Categoría</TableHead>
-                    <TableHead>Ubicación</TableHead>
-                    <TableHead>Cantidad</TableHead>
-                    <TableHead>Estado Stock</TableHead>
-                    <TableHead>Garantía</TableHead>
-                    <TableHead>Último Mov.</TableHead>
-                    <TableHead className="text-right">Acciones</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredItems.map((item) => (
-                    <TableRow key={item.id}>
-                      <TableCell className="font-medium">{item.id}</TableCell>
-                      <TableCell>{item.name}</TableCell>
-                      <TableCell>{item.category}</TableCell>
-                      <TableCell>{item.location}</TableCell>
-                      <TableCell>{item.quantity}</TableCell>
-                      <TableCell>
-                        <Badge
-                          variant={
-                            item.quantity > item.minStock * 2
-                              ? "default"
-                              : item.quantity > item.minStock
-                                ? "secondary"
-                                : "destructive"
-                          }
-                        >
-                          {item.quantity > item.minStock * 2
-                            ? "Óptimo"
-                            : item.quantity > item.minStock
-                              ? "Adecuado"
-                              : "Bajo"}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          {item.warranty.status === "Por vencer" && <AlertCircle className="h-4 w-4 text-amber-500" />}
-                          {item.warranty.status === "Vigente" && <Check className="h-4 w-4 text-green-500" />}
-                          <span>{item.warranty.expiryDate}</span>
-                        </div>
-                      </TableCell>
-                      <TableCell>{item.lastMovement}</TableCell>
-                      <TableCell className="text-right">
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" className="h-8 w-8 p-0">
-                              <span className="sr-only">Abrir menú</span>
-                              <MoreHorizontal className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuLabel>Acciones</DropdownMenuLabel>
-                            <DropdownMenuItem>
-                              <Eye className="mr-2 h-4 w-4" />
-                              <span>Ver detalles</span>
-                            </DropdownMenuItem>
-                            <DropdownMenuItem>
-                              <Edit className="mr-2 h-4 w-4" />
-                              <span>Editar</span>
-                            </DropdownMenuItem>
-                            <DropdownMenuItem>
-                              <FileText className="mr-2 h-4 w-4" />
-                              <span>Ver garantía</span>
-                            </DropdownMenuItem>
-                            <DropdownMenuItem>
-                              <ShoppingCart className="mr-2 h-4 w-4" />
-                              <span>Registrar movimiento</span>
-                            </DropdownMenuItem>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem className="text-red-600">
-                              <Trash className="mr-2 h-4 w-4" />
-                              <span>Eliminar</span>
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </TableCell>
+          <TabsContent value={selectedCategory}>
+            {filteredItems.length === 0 ? (
+              <div className="text-center p-8 text-muted-foreground">
+                <Package className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                <p>No se encontraron items en el inventario</p>
+                <Link href="/inventario/catalogo">
+                  <Button className="mt-4" variant="outline">
+                    Agregar Parte al Catálogo
+                  </Button>
+                </Link>
+              </div>
+            ) : (
+              <div className="rounded-md border">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Número de Parte</TableHead>
+                      <TableHead>Nombre</TableHead>
+                      <TableHead>Categoría</TableHead>
+                      <TableHead>Almacén</TableHead>
+                      <TableHead>Cantidad</TableHead>
+                      <TableHead>Reservado</TableHead>
+                      <TableHead>Disponible</TableHead>
+                      <TableHead>Estado Stock</TableHead>
+                      <TableHead>Valor</TableHead>
+                      <TableHead className="text-right">Acciones</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          </TabsContent>
-          <TabsContent value="repuestos">
-            <div className="rounded-md border">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>ID</TableHead>
-                    <TableHead>Nombre</TableHead>
-                    <TableHead>Ubicación</TableHead>
-                    <TableHead>Cantidad</TableHead>
-                    <TableHead>Estado Stock</TableHead>
-                    <TableHead>Garantía</TableHead>
-                    <TableHead className="text-right">Acciones</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredItems
-                    .filter((item) => item.category === "Repuesto")
-                    .map((item) => (
-                      <TableRow key={item.id}>
-                        <TableCell className="font-medium">{item.id}</TableCell>
-                        <TableCell>{item.name}</TableCell>
-                        <TableCell>{item.location}</TableCell>
-                        <TableCell>{item.quantity}</TableCell>
-                        <TableCell>
-                          <Badge
-                            variant={
-                              item.quantity > item.minStock * 2
-                                ? "default"
-                                : item.quantity > item.minStock
-                                  ? "secondary"
-                                  : "destructive"
-                            }
-                          >
-                            {item.quantity > item.minStock * 2
-                              ? "Óptimo"
-                              : item.quantity > item.minStock
-                                ? "Adecuado"
-                                : "Bajo"}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-2">
-                            {item.warranty.status === "Por vencer" && (
-                              <AlertCircle className="h-4 w-4 text-amber-500" />
+                  </TableHeader>
+                  <TableBody>
+                    {filteredItems.map((item) => {
+                      const status = getStockStatus(item)
+                      return (
+                        <TableRow key={item.id}>
+                          <TableCell className="font-medium">{item.part_number}</TableCell>
+                          <TableCell>{item.part_name}</TableCell>
+                          <TableCell>
+                            <Badge variant="outline">{item.category}</Badge>
+                          </TableCell>
+                          <TableCell>{item.warehouse_name}</TableCell>
+                          <TableCell>{item.current_quantity}</TableCell>
+                          <TableCell>
+                            {item.reserved_quantity > 0 ? (
+                              <Badge variant="secondary">{item.reserved_quantity}</Badge>
+                            ) : (
+                              <span className="text-muted-foreground">-</span>
                             )}
-                            {item.warranty.status === "Vigente" && <Check className="h-4 w-4 text-green-500" />}
-                            <span>{item.warranty.expiryDate}</span>
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <Button variant="ghost" size="sm">
-                            <Eye className="h-4 w-4" />
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                </TableBody>
-              </Table>
-            </div>
-          </TabsContent>
-          <TabsContent value="consumibles">
-            <div className="rounded-md border">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>ID</TableHead>
-                    <TableHead>Nombre</TableHead>
-                    <TableHead>Ubicación</TableHead>
-                    <TableHead>Cantidad</TableHead>
-                    <TableHead>Estado Stock</TableHead>
-                    <TableHead className="text-right">Acciones</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredItems
-                    .filter((item) => item.category === "Consumible")
-                    .map((item) => (
-                      <TableRow key={item.id}>
-                        <TableCell className="font-medium">{item.id}</TableCell>
-                        <TableCell>{item.name}</TableCell>
-                        <TableCell>{item.location}</TableCell>
-                        <TableCell>{item.quantity}</TableCell>
-                        <TableCell>
-                          <Badge
-                            variant={
-                              item.quantity > item.minStock * 2
-                                ? "default"
-                                : item.quantity > item.minStock
-                                  ? "secondary"
-                                  : "destructive"
-                            }
-                          >
-                            {item.quantity > item.minStock * 2
-                              ? "Óptimo"
-                              : item.quantity > item.minStock
-                                ? "Adecuado"
-                                : "Bajo"}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <Button variant="ghost" size="sm">
-                            <Eye className="h-4 w-4" />
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                </TableBody>
-              </Table>
-            </div>
-          </TabsContent>
-          <TabsContent value="warranty">
-            <div className="rounded-md border">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>ID</TableHead>
-                    <TableHead>Nombre</TableHead>
-                    <TableHead>Categoría</TableHead>
-                    <TableHead>Proveedor</TableHead>
-                    <TableHead>Estado Garantía</TableHead>
-                    <TableHead>Vencimiento</TableHead>
-                    <TableHead className="text-right">Acciones</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredItems
-                    .filter((item) => item.warranty.status !== "No aplica")
-                    .map((item) => (
-                      <TableRow key={item.id}>
-                        <TableCell className="font-medium">{item.id}</TableCell>
-                        <TableCell>{item.name}</TableCell>
-                        <TableCell>{item.category}</TableCell>
-                        <TableCell>{item.warranty.provider}</TableCell>
-                        <TableCell>
-                          <Badge
-                            variant={
-                              item.warranty.status === "Vigente"
-                                ? "default"
-                                : item.warranty.status === "Por vencer"
-                                  ? "secondary"
-                                  : "destructive"
-                            }
-                          >
-                            {item.warranty.status}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>{item.warranty.expiryDate}</TableCell>
-                        <TableCell className="text-right">
-                          <Button variant="ghost" size="sm">
-                            <FileText className="h-4 w-4" />
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                </TableBody>
-              </Table>
-            </div>
+                          </TableCell>
+                          <TableCell>{item.available_quantity}</TableCell>
+                          <TableCell>
+                            <Badge variant={status.variant}>{status.label}</Badge>
+                          </TableCell>
+                          <TableCell>
+                            {item.total_value > 0 ? (
+                              <span className="text-sm">${item.total_value.toFixed(2)}</span>
+                            ) : (
+                              <span className="text-muted-foreground">-</span>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" className="h-8 w-8 p-0">
+                                  <span className="sr-only">Abrir menú</span>
+                                  <MoreHorizontal className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuLabel>Acciones</DropdownMenuLabel>
+                                <DropdownMenuItem asChild>
+                                  <Link href={`/inventario/catalogo?part=${item.part_id}`}>
+                                    <Eye className="mr-2 h-4 w-4" />
+                                    <span>Ver detalles</span>
+                                  </Link>
+                                </DropdownMenuItem>
+                                <DropdownMenuItem asChild>
+                                  <Link href={`/inventario/movimientos?part=${item.part_id}`}>
+                                    <FileText className="mr-2 h-4 w-4" />
+                                    <span>Ver movimientos</span>
+                                  </Link>
+                                </DropdownMenuItem>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem asChild>
+                                  <Link href="/inventario/catalogo">
+                                    <Package className="mr-2 h-4 w-4" />
+                                    <span>Gestionar Catálogo</span>
+                                  </Link>
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </TableCell>
+                        </TableRow>
+                      )
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
           </TabsContent>
         </Tabs>
       </CardContent>
       <CardFooter className="flex justify-between">
         <div className="text-sm text-muted-foreground">
-          Mostrando {filteredItems.length} de {inventoryItems.length} ítems
+          Mostrando {filteredItems.length} de {stockData?.length || 0} ítems
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" disabled>
-            Anterior
-          </Button>
-          <Button variant="outline" size="sm">
-            Siguiente
-          </Button>
+          <Link href="/inventario/catalogo">
+            <Button variant="outline" size="sm">
+              <Package className="mr-2 h-4 w-4" />
+              Gestionar Catálogo
+            </Button>
+          </Link>
+          <Link href="/inventario/movimientos">
+            <Button variant="outline" size="sm">
+              Ver Movimientos
+            </Button>
+          </Link>
         </div>
       </CardFooter>
     </Card>

@@ -19,6 +19,7 @@ export default function WorkOrdersPage() {
       <DashboardHeader
         heading="Órdenes de Trabajo"
         text="Gestiona las órdenes de trabajo para mantenimientos preventivos, correctivos y reclamos de garantía."
+        id="ordenes-header"
       >
         <Button asChild>
           <Link href="/ordenes/crear">

@@ -71,6 +71,7 @@ export default function AssetsPage() {
       <DashboardHeader
         heading="Gestión de Activos"
         text="Administra y supervisa todos los equipos de la empresa"
+        id="activos-header"
       >
         <div className="flex gap-2">
           <Button variant="outline" asChild size="default">

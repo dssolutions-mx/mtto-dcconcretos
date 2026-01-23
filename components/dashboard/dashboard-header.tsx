@@ -8,11 +8,12 @@ interface DashboardHeaderProps {
   text?: string
   children?: React.ReactNode
   className?: string
+  id?: string
 }
 
-export function DashboardHeader({ heading, text, children, className }: DashboardHeaderProps) {
+export function DashboardHeader({ heading, text, children, className, id }: DashboardHeaderProps) {
   return (
-    <div className={cn("flex items-center justify-between", className)}>
+    <div id={id} className={cn("flex items-center justify-between", className)}>
       <div className="grid gap-1">
         <h1 className="text-2xl font-bold tracking-tight">{heading}</h1>
         {text && <p className="text-muted-foreground">{text}</p>}

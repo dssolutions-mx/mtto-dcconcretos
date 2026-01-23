@@ -1,17 +1,19 @@
 'use client'
 
-import { ReactNode } from 'react'
+import { ReactNode, useState } from 'react'
 import {
   DndContext,
   DragEndEvent,
-  DragOverlay,
   DragStartEvent,
+  DragOverlay,
   PointerSensor,
   useSensor,
   useSensors,
   closestCenter,
   DragOverEvent,
 } from '@dnd-kit/core'
+import { AnimatePresence, motion } from 'framer-motion'
+import { dragOverlayVariants } from '@/lib/utils/framer-drag-animations'
 
 interface DragDropProviderProps {
   children: ReactNode
@@ -28,6 +30,7 @@ export function DragDropProvider({
   onDragEnd,
   overlay
 }: DragDropProviderProps) {
+  const [isDragging, setIsDragging] = useState(false)
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
@@ -36,17 +39,38 @@ export function DragDropProvider({
     })
   )
 
+  const handleDragStart = (event: DragStartEvent) => {
+    setIsDragging(true)
+    onDragStart?.(event)
+  }
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    setIsDragging(false)
+    onDragEnd(event)
+  }
+
   return (
     <DndContext
       sensors={sensors}
       collisionDetection={closestCenter}
-      onDragStart={onDragStart}
+      onDragStart={handleDragStart}
       onDragOver={onDragOver}
-      onDragEnd={onDragEnd}
+      onDragEnd={handleDragEnd}
     >
       {children}
       <DragOverlay>
-        {overlay}
+        <AnimatePresence>
+          {isDragging && overlay && (
+            <motion.div
+              variants={dragOverlayVariants}
+              initial="initial"
+              animate="animate"
+              exit="exit"
+            >
+              {overlay}
+            </motion.div>
+          )}
+        </AnimatePresence>
       </DragOverlay>
     </DndContext>
   )

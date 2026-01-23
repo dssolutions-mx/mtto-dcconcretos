@@ -26,12 +26,13 @@ import { Separator } from '@/components/ui/separator'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { MoveConflictDialog, ConflictData, ResolutionStrategy } from '@/components/personnel/dialogs/move-conflict-dialog'
 import { QuickOperatorAssignmentDialog } from './quick-operator-assignment-dialog'
+import { dragItemVariants, dropZoneVariants, springTransition, dragOverlayVariants } from '@/lib/utils/framer-drag-animations'
 
 import {
   DndContext,
   DragEndEvent,
-  DragOverlay,
   DragStartEvent,
+  DragOverlay,
   PointerSensor,
   useSensor,
   useSensors,
@@ -39,6 +40,7 @@ import {
   DragOverEvent,
   useDroppable,
 } from '@dnd-kit/core'
+import { motion, AnimatePresence } from 'framer-motion'
 import {
   SortableContext,
   verticalListSortingStrategy,
@@ -124,13 +126,21 @@ function AssetDraggableItem({
 
   // Ultra-compact version for better density
   return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      {...attributes}
-      {...listeners}
-      className="bg-white border border-gray-200 rounded p-1.5 cursor-grab active:cursor-grabbing hover:shadow-sm transition-all duration-200 hover:border-blue-300"
+    <motion.div
+      variants={dragItemVariants}
+      initial="idle"
+      animate={isDragging ? "dragging" : "idle"}
+      whileHover="hover"
+      layout
+      transition={springTransition}
     >
+      <div
+        ref={setNodeRef}
+        style={style}
+        {...attributes}
+        {...listeners}
+        className="bg-white border border-gray-200 rounded p-1.5 cursor-grab active:cursor-grabbing hover:shadow-sm transition-all duration-200 hover:border-blue-300"
+      >
       {/* Single line with Asset ID and Badge */}
       <div className="flex items-center justify-between mb-1">
         <div className="flex items-center gap-1">
@@ -165,7 +175,8 @@ function AssetDraggableItem({
           </span>
         )}
       </div>
-    </div>
+      </div>
+    </motion.div>
   )
 }
 
@@ -189,16 +200,21 @@ function PlantContainer({
   const plantAssets = assets.filter(asset => asset.plant_id === plant.id)
 
   return (
-    <div 
-      ref={setNodeRef} 
-      className={`
-        relative border-2 rounded-lg transition-all duration-200 min-h-[150px]
-        ${isOver 
-          ? 'border-green-400 bg-green-50 shadow-lg' 
-          : 'border-gray-200 bg-white hover:border-gray-300 hover:shadow-sm'
-        }
-      `}
+    <motion.div
+      variants={dropZoneVariants}
+      animate={isOver ? "dragOver" : "idle"}
+      transition={{ duration: 0.1 }}
     >
+      <div 
+        ref={setNodeRef} 
+        className={`
+          relative border-2 rounded-lg transition-all duration-200 min-h-[150px]
+          ${isOver 
+            ? 'border-green-400 bg-green-50 shadow-lg' 
+            : 'border-gray-200 bg-white hover:border-gray-300 hover:shadow-sm'
+          }
+        `}
+      >
       {/* Header */}
       <div className="p-3 border-b border-gray-100 bg-gray-50/50">
         <div className="flex items-center gap-2">
@@ -247,12 +263,21 @@ function PlantContainer({
               items={plantAssets.map(a => a.id)} 
               strategy={verticalListSortingStrategy}
             >
-              {plantAssets.map((asset) => (
-                <AssetDraggableItem
-                  key={asset.id}
-                  asset={asset}
-                />
-              ))}
+              <AnimatePresence mode="popLayout">
+                {plantAssets.map((asset) => (
+                  <motion.div
+                    key={asset.id}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.15 }}
+                  >
+                    <AssetDraggableItem
+                      asset={asset}
+                    />
+                  </motion.div>
+                ))}
+              </AnimatePresence>
             </SortableContext>
             
             {plantAssets.length === 0 && !isOver && (
@@ -267,7 +292,8 @@ function PlantContainer({
           </div>
         </div>
       </div>
-    </div>
+      </div>
+    </motion.div>
   )
 }
 
@@ -293,7 +319,14 @@ function BusinessUnitContainer({
   })
 
   return (
-    <div className="border border-blue-200 rounded-lg bg-white">
+    <motion.div
+      variants={dropZoneVariants}
+      initial="idle"
+      animate="idle"
+      whileHover="hover"
+      transition={{ duration: 0.2 }}
+      className="border border-blue-200 rounded-lg bg-white"
+    >
       {/* Header */}
       <div className="bg-blue-50 p-3 border-b border-blue-100">
         <div className="flex items-center justify-between">
@@ -320,15 +353,24 @@ function BusinessUnitContainer({
       <div className="p-3">
         {businessUnitPlants.length > 0 ? (
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {businessUnitPlants.map((plant) => (
-              <PlantContainer 
-                key={plant.id}
-                plant={plant}
-                assets={assets}
-                onDrop={onDrop}
-                draggedAsset={draggedAsset}
-              />
-            ))}
+            <AnimatePresence mode="popLayout">
+              {businessUnitPlants.map((plant) => (
+                <motion.div
+                  key={plant.id}
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.15 }}
+                >
+                  <PlantContainer 
+                    plant={plant}
+                    assets={assets}
+                    onDrop={onDrop}
+                    draggedAsset={draggedAsset}
+                  />
+                </motion.div>
+              ))}
+            </AnimatePresence>
           </div>
         ) : (
           <div className="text-center py-6 text-gray-400">
@@ -337,7 +379,7 @@ function BusinessUnitContainer({
           </div>
         )}
       </div>
-    </div>
+    </motion.div>
   )
 }
 
@@ -359,7 +401,14 @@ function UnassignedAssetsContainer({
   )
 
   return (
-    <div className="border-2 border-orange-200 rounded-lg bg-white">
+    <motion.div
+      variants={dropZoneVariants}
+      initial="idle"
+      animate="idle"
+      whileHover="hover"
+      transition={{ duration: 0.2 }}
+      className="border-2 border-orange-200 rounded-lg bg-white"
+    >
       {/* Header */}
       <div className="bg-orange-50 p-3 border-b border-orange-100">
         <div className="flex items-center gap-2">
@@ -385,12 +434,21 @@ function UnassignedAssetsContainer({
               items={filteredAssets.map(a => a.id)} 
               strategy={verticalListSortingStrategy}
             >
-              {filteredAssets.map((asset) => (
-                <AssetDraggableItem
-                  key={asset.id}
-                  asset={asset}
-                />
-              ))}
+              <AnimatePresence mode="popLayout">
+                {filteredAssets.map((asset) => (
+                  <motion.div
+                    key={asset.id}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.15 }}
+                  >
+                    <AssetDraggableItem
+                      asset={asset}
+                    />
+                  </motion.div>
+                ))}
+              </AnimatePresence>
             </SortableContext>
             
             {filteredAssets.length === 0 && (
@@ -412,7 +470,7 @@ function UnassignedAssetsContainer({
           </div>
         </div>
       </div>
-    </div>
+    </motion.div>
   )
 }
 
@@ -810,11 +868,18 @@ export function AssetPlantAssignmentDragDrop() {
 
         {/* Drag Overlay */}
         <DragOverlay>
-          {activeAsset ? (
-            <div className="bg-white border-2 border-blue-400 rounded-lg shadow-lg">
-              <AssetDraggableItem asset={activeAsset} />
-            </div>
-          ) : null}
+          {activeAsset && (
+            <motion.div
+              variants={dragOverlayVariants}
+              initial="initial"
+              animate="animate"
+              exit="exit"
+            >
+              <div className="bg-white border-2 border-blue-400 rounded-lg shadow-lg">
+                <AssetDraggableItem asset={activeAsset} />
+              </div>
+            </motion.div>
+          )}
         </DragOverlay>
 
         {/* Conflict Resolution Dialog */}

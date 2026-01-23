@@ -292,32 +292,79 @@ export function PlantConfigurationDragDrop() {
     if (!selectedPlant) return
 
     try {
+      // Only send updatable fields
+      const updateData = {
+        name: selectedPlant.name,
+        code: selectedPlant.code,
+        business_unit_id: selectedPlant.business_unit_id,
+        status: selectedPlant.status,
+        address: selectedPlant.address || null,
+        contact_phone: selectedPlant.contact_phone || null,
+        contact_email: selectedPlant.contact_email || null,
+      }
+
       const response = await fetch(`/api/plants/${selectedPlant.id}`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify(selectedPlant)
+        body: JSON.stringify(updateData)
       })
 
       if (response.ok) {
-        const updatedPlant = await response.json()
-        setPlants(prev => prev.map(p => p.id === updatedPlant.id ? updatedPlant : p))
-        setSelectedPlant(updatedPlant)
-        toast({
-          title: "Éxito",
-          description: "Detalles de planta actualizados",
-        })
-        setEditingPlant(false)
+        try {
+          const updatedPlant = await response.json()
+          setPlants(prev => prev.map(p => p.id === updatedPlant.id ? updatedPlant : p))
+          setSelectedPlant(updatedPlant)
+          toast({
+            title: "Éxito",
+            description: "Detalles de planta actualizados",
+          })
+          setEditingPlant(false)
+        } catch (jsonError) {
+          console.error('Error parsing success response:', jsonError)
+          throw new Error('Error al procesar la respuesta del servidor')
+        }
       } else {
-        const error = await response.json()
-        throw new Error(error.error || 'Error al actualizar planta')
+        // Safely parse error response
+        const contentType = response.headers.get('content-type')
+        let errorMessage = 'Error al actualizar planta'
+        
+        if (contentType?.includes('application/json')) {
+          try {
+            const error = await response.json()
+            errorMessage = error.error || error.details || errorMessage
+          } catch (jsonError) {
+            // If JSON parsing fails, use default message
+            console.error('Error parsing error response as JSON:', jsonError)
+            errorMessage = `Error ${response.status}: ${response.statusText}`
+          }
+        } else {
+          // Try to get text response
+          try {
+            const text = await response.text()
+            errorMessage = text || `${response.status}: ${response.statusText}`
+          } catch (textError) {
+            errorMessage = `Error ${response.status}: ${response.statusText}`
+          }
+        }
+        
+        throw new Error(errorMessage)
       }
     } catch (error) {
       console.error('Error updating plant:', error)
+      
+      // Handle network errors and other exceptions
+      let errorMessage = "No se pudieron actualizar los detalles"
+      if (error instanceof Error) {
+        errorMessage = error.message
+      } else if (typeof error === 'string') {
+        errorMessage = error
+      }
+      
       toast({
         title: "Error",
-        description: error instanceof Error ? error.message : "No se pudieron actualizar los detalles",
+        description: errorMessage,
         variant: "destructive"
       })
     }
@@ -342,23 +389,59 @@ export function PlantConfigurationDragDrop() {
       })
 
       if (response.ok) {
-        const newPlant = await response.json()
-        setPlants(prev => [newPlant, ...prev])
-        setSelectedPlant(newPlant)
-        setShowCreatePlant(false)
-        toast({
-          title: "Éxito",
-          description: "Planta creada exitosamente",
-        })
+        try {
+          const newPlant = await response.json()
+          setPlants(prev => [newPlant, ...prev])
+          setSelectedPlant(newPlant)
+          setShowCreatePlant(false)
+          toast({
+            title: "Éxito",
+            description: "Planta creada exitosamente",
+          })
+        } catch (jsonError) {
+          console.error('Error parsing success response:', jsonError)
+          throw new Error('Error al procesar la respuesta del servidor')
+        }
       } else {
-        const error = await response.json()
-        throw new Error(error.error || 'Error al crear planta')
+        // Safely parse error response
+        const contentType = response.headers.get('content-type')
+        let errorMessage = 'Error al crear planta'
+        
+        if (contentType?.includes('application/json')) {
+          try {
+            const error = await response.json()
+            errorMessage = error.error || error.details || errorMessage
+          } catch (jsonError) {
+            // If JSON parsing fails, use default message
+            console.error('Error parsing error response as JSON:', jsonError)
+            errorMessage = `Error ${response.status}: ${response.statusText}`
+          }
+        } else {
+          // Try to get text response
+          try {
+            const text = await response.text()
+            errorMessage = text || `${response.status}: ${response.statusText}`
+          } catch (textError) {
+            errorMessage = `Error ${response.status}: ${response.statusText}`
+          }
+        }
+        
+        throw new Error(errorMessage)
       }
     } catch (error) {
       console.error('Error creating plant:', error)
+      
+      // Handle network errors and other exceptions
+      let errorMessage = "No se pudo crear la planta"
+      if (error instanceof Error) {
+        errorMessage = error.message
+      } else if (typeof error === 'string') {
+        errorMessage = error
+      }
+      
       toast({
         title: "Error",
-        description: error instanceof Error ? error.message : "No se pudo crear la planta",
+        description: errorMessage,
         variant: "destructive"
       })
     }

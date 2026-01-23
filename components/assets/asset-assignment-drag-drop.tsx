@@ -25,8 +25,8 @@ import { Separator } from '@/components/ui/separator'
 import {
   DndContext,
   DragEndEvent,
-  DragOverlay,
   DragStartEvent,
+  DragOverlay,
   PointerSensor,
   useSensor,
   useSensors,
@@ -34,6 +34,7 @@ import {
   DragOverEvent,
   useDroppable,
 } from '@dnd-kit/core'
+import { motion, AnimatePresence } from 'framer-motion'
 import {
   SortableContext,
   verticalListSortingStrategy,
@@ -44,6 +45,7 @@ import { CSS } from '@dnd-kit/utilities'
 import { CreateOperatorDialog } from '@/components/personnel/create-operator-dialog'
 import { OperatorTransferDialog, TransferData } from './dialogs/operator-transfer-dialog'
 import { getAssetStatusConfig } from '@/lib/utils/asset-status'
+import { dragItemVariants, dropZoneVariants, springTransition, dragOverlayVariants } from '@/lib/utils/framer-drag-animations'
 
 interface Plant {
   id: string
@@ -117,15 +119,23 @@ function DraggableOperatorCard({ operator }: { operator: Operator }) {
   }
 
   return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      {...attributes}
-      {...listeners}
-      className={`group relative p-4 bg-white border border-gray-200 rounded-lg shadow-sm hover:shadow-md transition-all duration-200 cursor-grab active:cursor-grabbing ${
-        isDragging ? 'scale-105 rotate-1' : ''
-      }`}
+    <motion.div
+      variants={dragItemVariants}
+      initial="idle"
+      animate={isDragging ? "dragging" : "idle"}
+      whileHover="hover"
+      layout
+      transition={springTransition}
     >
+      <div
+        ref={setNodeRef}
+        style={style}
+        {...attributes}
+        {...listeners}
+        className={`group relative p-4 bg-white border border-gray-200 rounded-lg shadow-sm hover:shadow-md transition-all duration-200 cursor-grab active:cursor-grabbing ${
+          isDragging ? '' : ''
+        }`}
+      >
       <div className="flex items-center space-x-3">
         <Avatar className="h-12 w-12 flex-shrink-0">
           <AvatarImage src={`https://api.dicebear.com/7.x/initials/svg?seed=${operator.nombre} ${operator.apellido}`} />
@@ -152,7 +162,8 @@ function DraggableOperatorCard({ operator }: { operator: Operator }) {
           </div>
         </div>
       </div>
-    </div>
+      </div>
+    </motion.div>
   )
 }
 
@@ -174,14 +185,19 @@ function DroppableAssetCard({
   const secondaryOperators = assignments.filter(a => a.assignment_type === 'secondary')
 
   return (
-    <div
-      ref={setNodeRef}
-      className={`relative bg-white border-2 rounded-lg transition-all duration-200 ${
-        isOver 
-          ? 'border-blue-500 bg-blue-50 shadow-lg' 
-          : 'border-gray-200 hover:border-gray-300'
-      }`}
+    <motion.div
+      variants={dropZoneVariants}
+      animate={isOver ? "dragOver" : "idle"}
+      transition={{ duration: 0.1 }}
     >
+      <div
+        ref={setNodeRef}
+        className={`relative bg-white border-2 rounded-lg transition-all duration-200 ${
+          isOver 
+            ? 'border-blue-500 bg-blue-50 shadow-lg' 
+            : 'border-gray-200 hover:border-gray-300'
+        }`}
+      >
       {/* Asset Header - Asset ID is now the main identifier */}
       <div className="p-4 border-b border-gray-100">
         <div className="flex items-center justify-between">
@@ -296,7 +312,8 @@ function DroppableAssetCard({
           </div>
         </div>
       </div>
-    </div>
+      </div>
+    </motion.div>
   )
 }
 
@@ -797,9 +814,19 @@ export function AssetAssignmentDragDrop() {
                         items={getUnassignedOperators().map(op => op.id)}
                         strategy={verticalListSortingStrategy}
                       >
-                        {getUnassignedOperators().map((operator) => (
-                          <DraggableOperatorCard key={operator.id} operator={operator} />
-                        ))}
+                        <AnimatePresence mode="popLayout">
+                          {getUnassignedOperators().map((operator) => (
+                            <motion.div
+                              key={operator.id}
+                              initial={{ opacity: 0 }}
+                              animate={{ opacity: 1 }}
+                              exit={{ opacity: 0 }}
+                              transition={{ duration: 0.15 }}
+                            >
+                              <DraggableOperatorCard operator={operator} />
+                            </motion.div>
+                          ))}
+                        </AnimatePresence>
                       </SortableContext>
                       {getUnassignedOperators().length === 0 && (
                         <div className="text-center py-12 text-gray-500">
@@ -854,17 +881,26 @@ export function AssetAssignmentDragDrop() {
                 <CardContent className="p-0">
                   <ScrollArea className="h-[550px] px-6 pb-6">
                     <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-                      {filteredAssets.map((asset) => {
-                        const assetAssignments = getAssetAssignments(asset.id)
-                        return (
-                          <DroppableAssetCard
-                            key={asset.id}
-                            asset={asset}
-                            assignments={assetAssignments}
-                            onRemoveAssignment={handleRemoveAssignment}
-                          />
-                        )
-                      })}
+                      <AnimatePresence mode="popLayout">
+                        {filteredAssets.map((asset) => {
+                          const assetAssignments = getAssetAssignments(asset.id)
+                          return (
+                            <motion.div
+                              key={asset.id}
+                              initial={{ opacity: 0 }}
+                              animate={{ opacity: 1 }}
+                              exit={{ opacity: 0 }}
+                              transition={{ duration: 0.15 }}
+                            >
+                              <DroppableAssetCard
+                                asset={asset}
+                                assignments={assetAssignments}
+                                onRemoveAssignment={handleRemoveAssignment}
+                              />
+                            </motion.div>
+                          )
+                        })}
+                      </AnimatePresence>
                     </div>
                     {filteredAssets.length === 0 && (
                       <div className="text-center py-12 text-gray-500">
@@ -892,24 +928,31 @@ export function AssetAssignmentDragDrop() {
         {/* Drag Overlay */}
         <DragOverlay>
           {activeOperator && (
-            <div className="p-4 bg-white border-2 border-blue-500 rounded-lg shadow-xl transform rotate-3 scale-105">
-              <div className="flex items-center space-x-3">
-                <Avatar className="h-12 w-12">
-                  <AvatarImage src={`https://api.dicebear.com/7.x/initials/svg?seed=${activeOperator.nombre} ${activeOperator.apellido}`} />
-                  <AvatarFallback className="bg-blue-100 text-blue-600 font-semibold">
-                    {activeOperator.nombre?.[0]}{activeOperator.apellido?.[0]}
-                  </AvatarFallback>
-                </Avatar>
-                <div>
-                  <p className="font-semibold text-gray-900">
-                    {activeOperator.nombre} {activeOperator.apellido}
-                  </p>
-                  <Badge variant="outline" className="text-xs">
-                    {getRoleDisplayName(activeOperator.role)}
-                  </Badge>
+            <motion.div
+              variants={dragOverlayVariants}
+              initial="initial"
+              animate="animate"
+              exit="exit"
+            >
+              <div className="p-4 bg-white border-2 border-blue-500 rounded-lg shadow-xl transform rotate-3 scale-105">
+                <div className="flex items-center space-x-3">
+                  <Avatar className="h-12 w-12">
+                    <AvatarImage src={`https://api.dicebear.com/7.x/initials/svg?seed=${activeOperator.nombre} ${activeOperator.apellido}`} />
+                    <AvatarFallback className="bg-blue-100 text-blue-600 font-semibold">
+                      {activeOperator.nombre?.[0]}{activeOperator.apellido?.[0]}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div>
+                    <p className="font-semibold text-gray-900">
+                      {activeOperator.nombre} {activeOperator.apellido}
+                    </p>
+                    <Badge variant="outline" className="text-xs">
+                      {getRoleDisplayName(activeOperator.role)}
+                    </Badge>
+                  </div>
                 </div>
               </div>
-            </div>
+            </motion.div>
           )}
         </DragOverlay>
 

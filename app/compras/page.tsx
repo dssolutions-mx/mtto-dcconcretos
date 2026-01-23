@@ -157,6 +157,7 @@ function PurchaseOrdersPageContent() {
         <DashboardHeader
           heading="Órdenes de Compra"
           text="Gestiona las órdenes de compra generadas a partir de órdenes de trabajo."
+          id="compras-header"
         />
         <div className="flex flex-col sm:flex-row sm:flex-wrap gap-2 w-full md:w-auto">
           {/* ✅ Solo mostrar botón de comprobantes si tiene acceso de lectura */}

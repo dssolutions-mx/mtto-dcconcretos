@@ -1,36 +1,35 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
+import { InventoryReceiptService } from '@/lib/services/inventory-receipt-service'
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: { id: string } }
 ) {
   try {
-    const { id } = await params
     const supabase = await createClient()
-    
-    // Check if user is authenticated
     const { data: { user }, error: authError } = await supabase.auth.getUser()
+    
     if (authError || !user) {
-      return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
+      return NextResponse.json({ 
+        success: false,
+        error: 'User not authenticated' 
+      }, { status: 401 })
     }
 
-    // Get receipts for this purchase order
-    const { data: receipts, error } = await supabase
-      .from('purchase_order_receipts')
-      .select('*')
-      .eq('purchase_order_id', id)
-      .order('created_at', { ascending: false })
+    const receipts = await InventoryReceiptService.getReceiptHistory(params.id)
 
-    if (error) {
-      console.error('Error fetching receipts:', error)
-      return NextResponse.json({ error: 'Failed to fetch receipts' }, { status: 500 })
-    }
-
-    return NextResponse.json(receipts || [])
-
+    return NextResponse.json({
+      success: true,
+      receipts,
+      total: receipts.length
+    })
   } catch (error) {
-    console.error('Error in GET /api/purchase-orders/[id]/receipts:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    console.error('Error fetching receipt history:', error)
+    return NextResponse.json({ 
+      success: false,
+      error: 'Failed to fetch receipt history',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    }, { status: 500 })
   }
-} 
+}

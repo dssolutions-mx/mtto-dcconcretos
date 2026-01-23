@@ -2,10 +2,12 @@
 
 import React from 'react'
 import { useDraggable } from '@dnd-kit/core'
+import { motion } from 'framer-motion'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { User, Phone, MapPin } from 'lucide-react'
+import { dragItemVariants, springTransition } from '@/lib/utils/framer-drag-animations'
 
 interface Profile {
   id: string
@@ -93,47 +95,64 @@ export function PersonnelDraggableItem({ operator, compact = false, isDragging =
 
   if (compact) {
     return (
-      <div
-        ref={setNodeRef}
-        style={style}
-        {...listeners}
-        {...attributes}
-        className={`group relative p-2 bg-white border border-gray-200 rounded-md shadow-sm hover:shadow-md transition-all duration-200 cursor-grab active:cursor-grabbing ${
-          isDragging ? 'scale-105 rotate-1 shadow-lg' : ''
-        }`}
+      <motion.div
+        variants={dragItemVariants}
+        initial="idle"
+        animate={isDragging ? "dragging" : "idle"}
+        whileHover={isDragging ? undefined : "hover"}
+        // No layout prop during drag - conflicts with @dnd-kit transforms
+        transition={springTransition}
       >
-        <div className="flex items-center space-x-2">
-          <Avatar className="h-8 w-8 flex-shrink-0">
-            <AvatarImage src={`https://api.dicebear.com/7.x/initials/svg?seed=${operator.nombre} ${operator.apellido}`} />
-            <AvatarFallback className="bg-blue-100 text-blue-600 text-xs font-semibold">
-              {initials}
-            </AvatarFallback>
-          </Avatar>
-          <div className="flex-1 min-w-0">
-            <p className="font-medium text-sm text-gray-900 truncate">
-              {operator.nombre} {operator.apellido}
-            </p>
-            <div className="flex items-center gap-1">
-              <Badge variant={getRoleBadgeVariant(operator.role)} className="text-xs">
-                {getRoleDisplayName(operator.role)}
-              </Badge>
+        <div
+          ref={setNodeRef}
+          style={style}
+          {...listeners}
+          {...attributes}
+          className={`group relative p-2 bg-white border border-gray-200 rounded-md shadow-sm hover:shadow-md transition-all duration-200 cursor-grab active:cursor-grabbing ${
+            isDragging ? 'shadow-lg' : ''
+          }`}
+        >
+          <div className="flex items-center space-x-2">
+            <Avatar className="h-8 w-8 flex-shrink-0">
+              <AvatarImage src={`https://api.dicebear.com/7.x/initials/svg?seed=${operator.nombre} ${operator.apellido}`} />
+              <AvatarFallback className="bg-blue-100 text-blue-600 text-xs font-semibold">
+                {initials}
+              </AvatarFallback>
+            </Avatar>
+            <div className="flex-1 min-w-0">
+              <p className="font-medium text-sm text-gray-900 truncate">
+                {operator.nombre} {operator.apellido}
+              </p>
+              <div className="flex items-center gap-1">
+                <Badge variant={getRoleBadgeVariant(operator.role)} className="text-xs">
+                  {getRoleDisplayName(operator.role)}
+                </Badge>
+              </div>
             </div>
           </div>
         </div>
-      </div>
+      </motion.div>
     )
   }
 
   return (
-    <Card
-      ref={setNodeRef}
-      style={style}
-      {...listeners}
-      {...attributes}
-      className={`group relative cursor-grab active:cursor-grabbing transition-all duration-200 hover:shadow-md ${
-        isDragging ? 'scale-105 rotate-1 shadow-lg' : ''
-      }`}
+    <motion.div
+      variants={dragItemVariants}
+      initial="idle"
+      animate={isDragging ? "dragging" : "idle"}
+      whileHover={isDragging ? undefined : "hover"}
+      // No layout prop during drag - conflicts with @dnd-kit transforms
+      transition={springTransition}
     >
+      <Card
+        ref={setNodeRef}
+        style={style}
+        {...listeners}
+        {...attributes}
+        className={`group relative cursor-grab active:cursor-grabbing transition-all duration-200 hover:shadow-md ${
+          isDragging ? 'shadow-lg' : ''
+        }`}
+      >
       <CardContent className="p-4">
         <div className="flex items-center space-x-3">
           <Avatar className="h-12 w-12 flex-shrink-0">
@@ -182,5 +201,6 @@ export function PersonnelDraggableItem({ operator, compact = false, isDragging =
         </div>
       </CardContent>
     </Card>
+    </motion.div>
   )
 } 

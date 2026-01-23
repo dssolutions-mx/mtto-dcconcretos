@@ -1,7 +1,8 @@
 'use client'
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react'
-import { DndContext, DragEndEvent, DragOverlay, DragStartEvent, PointerSensor, useSensor, useSensors, useDroppable } from '@dnd-kit/core'
+import { DndContext, DragEndEvent, DragStartEvent, DragOverlay, PointerSensor, useSensor, useSensors, useDroppable } from '@dnd-kit/core'
+import { motion, AnimatePresence } from 'framer-motion'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -15,6 +16,7 @@ import { useAuthZustand } from '@/hooks/use-auth-zustand'
 import { UserRegistrationTool } from '@/components/auth/user-registration-tool'
 import { MoveConflictDialog, ConflictData, ResolutionStrategy } from './dialogs/move-conflict-dialog'
 import { BatchAssignmentDialog } from './batch-assignment-dialog'
+import { dropZoneVariants, dragOverlayVariants } from '@/lib/utils/framer-drag-animations'
 
 interface Profile {
   id: string
@@ -89,14 +91,19 @@ function BusinessUnitContainer({
   const businessUnitPlants = Array.isArray(plants) ? plants.filter(p => p.business_unit_id === businessUnit.id) : []
 
   return (
-    <Card 
-      ref={setNodeRef}
-      className={`transition-all duration-300 border-2 ${
-        isOver 
-          ? 'border-green-500 bg-green-50 shadow-xl ring-2 ring-green-200' 
-          : 'border-green-200 hover:border-green-300 hover:shadow-lg'
-      }`}
+    <motion.div
+      variants={dropZoneVariants}
+      animate={isOver ? "dragOver" : "idle"}
+      transition={{ duration: 0.1 }}
     >
+      <Card 
+        ref={setNodeRef}
+        className={`transition-all duration-300 border-2 ${
+          isOver 
+            ? 'border-green-500 bg-green-50 shadow-xl ring-2 ring-green-200' 
+            : 'border-green-200 hover:border-green-300 hover:shadow-lg'
+        }`}
+      >
       <CardHeader className="pb-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -141,13 +148,22 @@ function BusinessUnitContainer({
               Personal de Unidad ({businessUnitOperators.length})
             </h4>
             <div className="grid gap-2 max-h-32 overflow-y-auto scrollbar-thin scrollbar-thumb-green-200">
-              {businessUnitOperators.map((operator) => (
-                <PersonnelDraggableItem
-                  key={operator.id}
-                  operator={operator}
-                  compact={true}
-                />
-              ))}
+              <AnimatePresence mode="popLayout">
+                {businessUnitOperators.map((operator) => (
+                  <motion.div
+                    key={operator.id}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.15 }}
+                  >
+                    <PersonnelDraggableItem
+                      operator={operator}
+                      compact={true}
+                    />
+                  </motion.div>
+                ))}
+              </AnimatePresence>
             </div>
           </div>
         )}
@@ -172,6 +188,7 @@ function BusinessUnitContainer({
         </div>
       </CardContent>
     </Card>
+    </motion.div>
   )
 }
 
@@ -195,14 +212,19 @@ function PlantContainer({
   const plantOperators = Array.isArray(operators) ? operators.filter(op => op.plant_id === plant.id) : []
 
   return (
-    <div
-      ref={setNodeRef}
-      className={`border rounded-lg p-3 transition-all duration-300 ${
-        isOver 
-          ? 'border-blue-500 bg-blue-50 shadow-lg ring-2 ring-blue-200' 
-          : 'border-blue-200 hover:border-blue-300 bg-white hover:shadow-md'
-      }`}
+    <motion.div
+      variants={dropZoneVariants}
+      animate={isOver ? "dragOver" : "idle"}
+      transition={{ duration: 0.1 }}
     >
+      <div
+        ref={setNodeRef}
+        className={`border rounded-lg p-3 transition-all duration-300 ${
+          isOver 
+            ? 'border-blue-500 bg-blue-50 shadow-lg ring-2 ring-blue-200' 
+            : 'border-blue-200 hover:border-blue-300 bg-white hover:shadow-md'
+        }`}
+      >
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-2">
           <div className={`w-3 h-3 rounded-full ${isOver ? 'bg-blue-600 animate-ping' : 'bg-blue-500'}`}></div>
@@ -222,20 +244,30 @@ function PlantContainer({
       
       {plantOperators.length > 0 ? (
         <div className="grid gap-1 max-h-24 overflow-y-auto scrollbar-thin scrollbar-thumb-blue-200">
-          {plantOperators.map((operator) => (
-            <PersonnelDraggableItem
-              key={operator.id}
-              operator={operator}
-              compact={true}
-            />
-          ))}
+          <AnimatePresence mode="popLayout">
+            {plantOperators.map((operator) => (
+              <motion.div
+                key={operator.id}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.15 }}
+              >
+                <PersonnelDraggableItem
+                  operator={operator}
+                  compact={true}
+                />
+              </motion.div>
+            ))}
+          </AnimatePresence>
         </div>
       ) : (
         <div className="text-center py-2 text-gray-500">
           <span className="text-xs">Sin personal asignado</span>
         </div>
       )}
-    </div>
+      </div>
+    </motion.div>
   )
 }
 
@@ -259,14 +291,19 @@ function UnassignedContainer({
   const unassignedOperators = Array.isArray(operators) ? operators.filter(op => !op.plant_id && !op.business_unit_id) : []
 
   return (
-    <Card 
-      ref={setNodeRef}
-      className={`transition-all duration-300 border-2 ${
-        isOver 
-          ? 'border-gray-500 bg-gray-50 shadow-xl ring-2 ring-gray-200' 
-          : 'border-gray-200 hover:border-gray-300 hover:shadow-lg'
-      }`}
+    <motion.div
+      variants={dropZoneVariants}
+      animate={isOver ? "dragOver" : "idle"}
+      transition={{ duration: 0.1 }}
     >
+      <Card 
+        ref={setNodeRef}
+        className={`transition-all duration-300 border-2 ${
+          isOver 
+            ? 'border-gray-500 bg-gray-50 shadow-xl ring-2 ring-gray-200' 
+            : 'border-gray-200 hover:border-gray-300 hover:shadow-lg'
+        }`}
+      >
       <CardHeader className="pb-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -324,18 +361,28 @@ function UnassignedContainer({
                 </div>
               </div>
             ) : (
-              unassignedOperators.map((operator) => (
-                <PersonnelDraggableItem
-                  key={operator.id}
-                  operator={operator}
-                  compact={false}
-                />
-              ))
+              <AnimatePresence mode="popLayout">
+                {unassignedOperators.map((operator) => (
+                  <motion.div
+                    key={operator.id}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.15 }}
+                  >
+                    <PersonnelDraggableItem
+                      operator={operator}
+                      compact={false}
+                    />
+                  </motion.div>
+                ))}
+              </AnimatePresence>
             )}
           </div>
         </ScrollArea>
       </CardContent>
     </Card>
+    </motion.div>
   )
 }
 
@@ -356,11 +403,11 @@ export function PersonnelManagementDragDrop() {
   const [roleFilter, setRoleFilter] = useState<string>('all')
   const [businessUnitFilter, setBusinessUnitFilter] = useState<string>('all')
 
-  // Sensores optimizados para mejor rendimiento
+  // Sensores optimizados para mejor rendimiento y menos lag
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
-        distance: 3, // Muy sensible para respuesta inmediata
+        distance: 5, // Balance entre sensibilidad y evitar drags accidentales
       },
     })
   )
@@ -974,13 +1021,20 @@ export function PersonnelManagementDragDrop() {
 
         <DragOverlay>
           {draggedOperator && (
-            <div className="transform rotate-1 scale-90 opacity-95 shadow-lg">
-              <PersonnelDraggableItem
-                operator={draggedOperator}
-                isDragging={true}
-                compact={true}
-              />
-            </div>
+            <motion.div
+              variants={dragOverlayVariants}
+              initial="initial"
+              animate="animate"
+              exit="exit"
+            >
+              <div className="transform rotate-1 scale-90 opacity-95 shadow-lg">
+                <PersonnelDraggableItem
+                  operator={draggedOperator}
+                  isDragging={true}
+                  compact={true}
+                />
+              </div>
+            </motion.div>
           )}
         </DragOverlay>
       </DndContext>

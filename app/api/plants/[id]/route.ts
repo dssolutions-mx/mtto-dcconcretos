@@ -1,8 +1,9 @@
 import { createClient } from '@/lib/supabase-server'
 import { NextRequest, NextResponse } from 'next/server'
 
-export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {
+export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const { id: plantId } = await params
     const supabase = await createClient()
     
     // Get current user and verify permissions
@@ -27,8 +28,6 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     if (!allowedRoles.includes(currentProfile.role)) {
       return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 })
     }
-
-    const plantId = params.id
     const updateData = await request.json()
 
     // Remove fields that shouldn't be updated directly
@@ -62,7 +61,10 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
 
     if (error) {
       console.error('Error updating plant:', error)
-      return NextResponse.json({ error: 'Error updating plant' }, { status: 500 })
+      return NextResponse.json(
+        { error: 'Error updating plant', details: error.message },
+        { status: 500 }
+      )
     }
 
     if (!plant) {
@@ -71,14 +73,27 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
 
     return NextResponse.json(plant)
 
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error in plants PATCH:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    
+    // Handle JSON parsing errors
+    if (error instanceof SyntaxError || error.message?.includes('JSON')) {
+      return NextResponse.json(
+        { error: 'Invalid request body. Expected JSON.' },
+        { status: 400 }
+      )
+    }
+    
+    return NextResponse.json(
+      { error: 'Internal server error', details: error?.message },
+      { status: 500 }
+    )
   }
 }
 
-export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const { id: plantId } = await params
     const supabase = await createClient()
     
     // Get current user and verify permissions
@@ -86,8 +101,6 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
     if (authError || !user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
-
-    const plantId = params.id
 
     const { data: plant, error } = await supabase
       .from('plants')

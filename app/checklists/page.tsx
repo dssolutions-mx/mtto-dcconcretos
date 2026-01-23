@@ -292,6 +292,7 @@ function ChecklistsContent() {
       <DashboardHeader
         heading={isOperator ? "Mis Checklists" : "Checklists de Mantenimiento"}
         text={isOperator ? "Ejecuta los checklists asignados a tus activos." : "Gestiona los checklists para diferentes frecuencias de mantenimiento."}
+        id="checklists-header"
       >
         {isOperator && (
           <div className="flex items-center gap-2 mb-4">

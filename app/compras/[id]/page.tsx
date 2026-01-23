@@ -22,6 +22,7 @@ import { Suspense } from "react"
 import { EditPOButton } from "@/components/purchase-orders/EditPOButton"
 import { QuotationManager } from "@/components/purchase-orders/QuotationManager"
 import { ReportIssueButton } from "@/components/purchase-orders/ReportIssueButton"
+import { POInventoryActions } from "@/components/purchase-orders/inventory-actions"
 
 // Helper function to format currency
 function formatCurrency(amount: string | null): string {
@@ -575,6 +576,25 @@ async function PurchaseOrderDetailsContent({ id }: { id: string }) {
           </CardContent>
         </Card>
       </div>
+
+      {/* Inventory Actions - Only show for purchase orders (not services) */}
+      {order.po_type !== PurchaseOrderType.DIRECT_SERVICE && items && items.length > 0 && (
+        <Card className="mt-8">
+          <CardHeader>
+            <CardTitle>Gestión de Inventario</CardTitle>
+            <CardDescription>
+              Recibe items a inventario o cumple la orden desde inventario existente
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <POInventoryActions
+              purchaseOrderId={order.id}
+              receivedToInventory={order.received_to_inventory || false}
+              inventoryFulfilled={order.inventory_fulfilled || false}
+            />
+          </CardContent>
+        </Card>
+      )}
 
       {/* Items/Services */}
       {items && items.length > 0 && (

@@ -110,6 +110,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
   const [recordsOpen, setRecordsOpen] = useState(false)
   const [organizationOpen, setOrganizationOpen] = useState(false)
   const [hrOpen, setHrOpen] = useState(false)
+  const [complianceOpen, setComplianceOpen] = useState(false)
 
   // Auto-open procurement section for AREA_ADMINISTRATIVA
   useEffect(() => {
@@ -159,9 +160,9 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
 
   return (
     <div className={cn("pb-12", className)}>
-      <div className="space-y-4 py-4">
+      <div className="space-y-4 py-4" data-tour="sidebar" id="sidebar-nav">
         {/* Dashboard */}
-        <div className="px-4 py-2">
+        <div className="px-4 py-2" data-tour="sidebar-first-item">
           <div className="space-y-1">
             <Button
               variant={pathname === "/dashboard" ? "secondary" : "ghost"}
@@ -222,6 +223,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                     className="w-full justify-start pl-8"
                     asChild
                     onClick={handleLinkClick}
+                    data-tour="checklists-nav"
                   >
                     <Link href="/checklists">
                       <ClipboardCheck className="mr-2 h-4 w-4" />
@@ -261,7 +263,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
           <>
             {/* Procurement Section - Priority for AREA_ADMINISTRATIVA */}
             {(ui.shouldShowInNavigation('purchases') || ui.shouldShowInNavigation('inventory')) && (
-              <div className="px-4">
+              <div className="px-4" data-tour="purchases-nav">
                 <Collapsible open={procurementOpen} onOpenChange={setProcurementOpen}>
                   <CollapsibleTrigger asChild>
                     <Button
@@ -299,6 +301,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                         className="w-full justify-start pl-8"
                         asChild
                         onClick={handleLinkClick}
+                        data-tour="warehouse-nav"
                       >
                         <Link href="/inventario">
                           <Boxes className="mr-2 h-4 w-4" />
@@ -363,6 +366,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                     <Button
                       variant="ghost"
                       className="w-full justify-between p-2 h-auto font-medium"
+                      data-tour="gestion-organizacional-nav"
                     >
                       <div className="flex items-center">
                         <Building2 className="mr-2 h-4 w-4" />
@@ -381,6 +385,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                       className="w-full justify-start pl-8 font-semibold"
                       asChild
                       onClick={handleLinkClick}
+                      data-tour="asignaciones-organizacionales-nav"
                     >
                       <Link href="/gestion/asignaciones">
                         <Target className="mr-2 h-4 w-4" />
@@ -486,6 +491,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                         className="w-full justify-start pl-8"
                         asChild
                         onClick={handleLinkClick}
+                        data-tour="assets-nav"
                       >
                         <Link href="/activos">
                           <Package className="mr-2 h-4 w-4" />
@@ -541,6 +547,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                         className="w-full justify-start pl-8"
                         asChild
                         onClick={handleLinkClick}
+                        data-tour="assets-nav"
                       >
                         <Link href="/activos">
                           <Package className="mr-2 h-4 w-4" />
@@ -580,6 +587,8 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                         className="w-full justify-start pl-8"
                         asChild
                         onClick={handleLinkClick}
+                    data-tour="checklists-nav"
+                    id="checklists-nav-manager"
                       >
                         <Link href="/checklists">
                           <ClipboardCheck className="mr-2 h-4 w-4" />
@@ -606,6 +615,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                         className="w-full justify-start pl-8"
                         asChild
                         onClick={handleLinkClick}
+                        data-tour="work-orders-nav"
                       >
                         <Link href="/ordenes">
                           <Tool className="mr-2 h-4 w-4" />
@@ -789,6 +799,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                 <Button
                   variant="ghost"
                   className="w-full justify-between p-2 h-auto font-medium"
+                  data-tour="gestion-organizacional-nav"
                 >
                   <div className="flex items-center">
                     <Building2 className="mr-2 h-4 w-4" />
@@ -807,6 +818,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                   className="w-full justify-start pl-8 font-semibold"
                   asChild
                   onClick={handleLinkClick}
+                  data-tour="asignaciones-organizacionales-nav"
                 >
                   <Link href="/gestion/asignaciones">
                     <Target className="mr-2 h-4 w-4" />
@@ -899,7 +911,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
         )}
 
         {/* HR Section */}
-        <div className="px-4">
+        <div className="px-4" data-tour="rh-nav">
           <Collapsible open={hrOpen} onOpenChange={setHrOpen}>
             <CollapsibleTrigger asChild>
               <Button
@@ -943,6 +955,79 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
             </CollapsibleContent>
           </Collapsible>
         </div>
+
+        {/* Compliance Section */}
+        {['GERENCIA_GENERAL', 'JEFE_UNIDAD_NEGOCIO', 'JEFE_PLANTA', 'AREA_ADMINISTRATIVA', 'ENCARGADO_MANTENIMIENTO'].includes(profile?.role || '') && (
+          <div className="px-4" data-tour="compliance-section" id="compliance-section">
+            <Collapsible open={complianceOpen} onOpenChange={setComplianceOpen}>
+              <CollapsibleTrigger asChild>
+                <Button
+                  variant="ghost"
+                  className="w-full justify-between p-2 h-auto font-medium"
+                >
+                  <div className="flex items-center">
+                    <Shield className="mr-2 h-4 w-4" />
+                    Cumplimiento
+                  </div>
+                  {complianceOpen ? (
+                    <ChevronDown className="h-4 w-4" />
+                  ) : (
+                    <ChevronRight className="h-4 w-4" />
+                  )}
+                </Button>
+              </CollapsibleTrigger>
+              <CollapsibleContent className="space-y-1 mt-2">
+                <Button
+                  variant={isPathActive("/compliance") ? "secondary" : "ghost"}
+                  className="w-full justify-start pl-8"
+                  asChild
+                  onClick={handleLinkClick}
+                >
+                  <Link href="/compliance">
+                    <Shield className="mr-2 h-4 w-4" />
+                    Dashboard de Cumplimiento
+                  </Link>
+                </Button>
+                <Button
+                  variant={isPathActive("/compliance/activos-olvidados") ? "secondary" : "ghost"}
+                  className="w-full justify-start pl-8"
+                  asChild
+                  onClick={handleLinkClick}
+                  data-tour="forgotten-assets-link"
+                >
+                  <Link href="/compliance/activos-olvidados">
+                    <AlertTriangle className="mr-2 h-4 w-4" />
+                    Activos Olvidados
+                  </Link>
+                </Button>
+                <Button
+                  variant={isPathActive("/compliance/incidentes") ? "secondary" : "ghost"}
+                  className="w-full justify-start pl-8"
+                  asChild
+                  onClick={handleLinkClick}
+                >
+                  <Link href="/compliance/incidentes">
+                    <FileText className="mr-2 h-4 w-4" />
+                    Incidentes
+                  </Link>
+                </Button>
+                {['GERENCIA_GENERAL', 'AREA_ADMINISTRATIVA'].includes(profile?.role || '') && (
+                  <Button
+                    variant={isPathActive("/compliance/configuracion") ? "secondary" : "ghost"}
+                    className="w-full justify-start pl-8"
+                    asChild
+                    onClick={handleLinkClick}
+                  >
+                    <Link href="/compliance/configuracion">
+                      <Settings className="mr-2 h-4 w-4" />
+                      Configuración
+                    </Link>
+                  </Button>
+                )}
+              </CollapsibleContent>
+            </Collapsible>
+          </div>
+        )}
       </div>
     </div>
   )
@@ -1074,6 +1159,17 @@ export function CollapsedSidebar({ className, onLinkClick }: SidebarProps) {
       items: [
         { href: "/rh/limpieza", icon: Sparkles, label: "Reportes de Limpieza", active: isPathActive("/rh/limpieza") },
         { href: "/rh/cumplimiento-checklists", icon: ClipboardCheck, label: "Cumplimiento de Checklists", active: isPathActive("/rh/cumplimiento-checklists") }
+      ]
+    },
+    {
+      id: "compliance",
+      icon: Shield,
+      label: "Cumplimiento",
+      active: isSectionActive(["/compliance"]),
+      items: [
+        { href: "/compliance", icon: Shield, label: "Dashboard de Cumplimiento", active: isPathActive("/compliance") },
+        { href: "/compliance/activos-olvidados", icon: AlertTriangle, label: "Activos Olvidados", active: isPathActive("/compliance/activos-olvidados") },
+        { href: "/compliance/incidentes", icon: FileText, label: "Incidentes", active: isPathActive("/compliance/incidentes") }
       ]
     }
   ]
@@ -1260,10 +1356,12 @@ export function SidebarWrapper({ children }: { children: React.ReactNode }) {
     <TooltipProvider>
       <div className="min-h-screen flex">
         {/* Desktop Sidebar */}
-        <aside className={cn(
-          "hidden md:flex md:flex-col border-r bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 transition-all duration-300 ease-in-out relative z-sidebar-panel",
-          isSidebarCollapsed ? "md:w-16" : "md:w-64"
-        )}>
+        <aside 
+          id="main-sidebar"
+          className={cn(
+            "hidden md:flex md:flex-col border-r bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 transition-all duration-300 ease-in-out relative z-sidebar-panel",
+            isSidebarCollapsed ? "md:w-16" : "md:w-64"
+          )}>
           <div className="flex h-full max-h-screen flex-col">
             {/* Enhanced Header with logo as toggle */}
             <div className="flex h-16 items-center border-b px-4 lg:px-6">
@@ -1274,7 +1372,7 @@ export function SidebarWrapper({ children }: { children: React.ReactNode }) {
             </div>
             
             {/* Navigation Content */}
-            <div className="flex-1 overflow-auto">
+            <div id="sidebar-navigation-content" className="flex-1 overflow-auto">
               {isSidebarCollapsed ? (
                 <CollapsedSidebar 
                   className="px-1" 
