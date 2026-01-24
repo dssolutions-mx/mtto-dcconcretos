@@ -13,6 +13,13 @@ export enum PaymentMethod {
   CARD = "card"                          // Tarjeta
 }
 
+export enum POPurpose {
+  WORK_ORDER_CASH = "work_order_cash",           // Buy parts for WO (cash expense)
+  WORK_ORDER_INVENTORY = "work_order_inventory", // Use inventory for WO (no cash)
+  INVENTORY_RESTOCK = "inventory_restock",       // Restock inventory (deferred expense)
+  MIXED = "mixed"                                // Partial from each
+}
+
 // Enhanced status workflow for all types
 export enum EnhancedPOStatus {
   // Estados comunes
@@ -52,6 +59,7 @@ export interface EnhancedPurchaseOrder {
   
   // ✅ NUEVOS CAMPOS IMPLEMENTADOS EN STAGE 1
   po_type: PurchaseOrderType
+  po_purpose?: POPurpose                  // Purpose classification for expense tracking
   payment_method?: PaymentMethod
   requires_quote: boolean                 // Auto-calculado por trigger
   store_location?: string                 // Para compras directas
@@ -93,6 +101,7 @@ export interface CreatePurchaseOrderRequest {
   work_order_id?: string       // Optional - allows standalone purchase orders
   plant_id?: string           // Required for standalone POs (when no work_order_id)
   po_type: PurchaseOrderType
+  po_purpose?: POPurpose      // Auto-determined during creation (optional override)
   supplier: string
   items: any[]
   total_amount: number

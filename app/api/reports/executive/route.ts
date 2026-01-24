@@ -299,9 +299,22 @@ export async function POST(req: Request) {
       })
     })
 
-    // Process purchase orders - GROUP BY ASSET (using filtered list)
-    filteredPurchaseOrders.forEach(po => {
+    // Separate POs by purpose - exclude restocking from expenses
+    const workOrderPOs = filteredPurchaseOrders.filter(po => 
+      po.work_order_id && po.po_purpose !== 'inventory_restock'
+    )
+    const restockingPOs = filteredPurchaseOrders.filter(po => 
+      po.po_purpose === 'inventory_restock' || (!po.work_order_id && !po.po_purpose)
+    )
+    
+    console.log(`[Executive] Excluded ${restockingPOs.length} restocking POs from expenses`)
+    
+    // Process work order POs - GROUP BY ASSET (using filtered list)
+    workOrderPOs.forEach(po => {
       const finalAmount = po.actual_amount ? parseFloat(po.actual_amount) : parseFloat(po.total_amount || '0')
+      const isCashExpense = po.po_purpose !== 'work_order_inventory'
+      const cashAmount = isCashExpense ? finalAmount : 0
+      const inventoryAmount = !isCashExpense ? finalAmount : 0
       
       // If linked to work order -> get asset from work order
       if (po.work_order_id) {
@@ -311,6 +324,12 @@ export async function POST(req: Request) {
           if (metrics) {
             metrics.purchase_orders_cost += finalAmount
             metrics.total_cost += finalAmount
+            
+            // Track cash vs inventory separately
+            if (!metrics.cash_expenses) metrics.cash_expenses = 0
+            if (!metrics.inventory_expenses) metrics.inventory_expenses = 0
+            metrics.cash_expenses += cashAmount
+            metrics.inventory_expenses += inventoryAmount
             
             // Add detailed PO info
             metrics.purchase_orders.push({

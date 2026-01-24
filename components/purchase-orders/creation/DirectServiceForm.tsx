@@ -397,9 +397,20 @@ export function DirectServiceForm({
     }
 
     try {
+      // Determine PO purpose
+      // Services are typically not in inventory, but check for consistency
+      let po_purpose = 'work_order_cash'
+      
+      if (!workOrderId) {
+        // Services for restocking don't make sense, but handle it
+        po_purpose = 'work_order_cash' // Services are always purchased
+      }
+      // Note: Services are rarely in inventory, so we default to cash
+      
       const request: CreatePurchaseOrderRequest = {
         work_order_id: workOrderId || undefined,
         po_type: PurchaseOrderType.DIRECT_SERVICE,
+        po_purpose: po_purpose,
         supplier: selectedSupplier?.name || formData.service_provider!, // Use selected supplier name or fallback
         items: services,
         total_amount: formData.total_amount!,

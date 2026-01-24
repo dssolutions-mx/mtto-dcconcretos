@@ -148,7 +148,9 @@ export type InsertWorkOrder = DbTables['work_orders']['Insert'];
 export type UpdateWorkOrder = DbTables['work_orders']['Update'];
 
 // Tipos para órdenes de compra
-export type PurchaseOrder = DbTables['purchase_orders']['Row'];
+export type PurchaseOrder = DbTables['purchase_orders']['Row'] & {
+  po_purpose?: 'work_order_cash' | 'work_order_inventory' | 'inventory_restock' | 'mixed';
+};
 export type InsertPurchaseOrder = DbTables['purchase_orders']['Insert'];
 export type UpdatePurchaseOrder = DbTables['purchase_orders']['Update'];
 

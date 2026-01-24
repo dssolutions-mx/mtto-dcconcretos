@@ -106,7 +106,7 @@ export function PartsCatalog() {
           ...formData,
           warranty_period_months: formData.warranty_period_months ? parseInt(formData.warranty_period_months) : undefined,
           default_unit_cost: formData.default_unit_cost ? parseFloat(formData.default_unit_cost) : undefined,
-          supplier_id: formData.supplier_id || undefined,
+          supplier_id: formData.supplier_id && formData.supplier_id !== 'none' ? formData.supplier_id : undefined,
           specifications: formData.specifications ? JSON.parse(formData.specifications) : undefined
         })
       })
@@ -143,7 +143,7 @@ export function PartsCatalog() {
           ...formData,
           warranty_period_months: formData.warranty_period_months ? parseInt(formData.warranty_period_months) : undefined,
           default_unit_cost: formData.default_unit_cost ? parseFloat(formData.default_unit_cost) : undefined,
-          supplier_id: formData.supplier_id || undefined,
+          supplier_id: formData.supplier_id && formData.supplier_id !== 'none' ? formData.supplier_id : undefined,
           specifications: formData.specifications ? JSON.parse(formData.specifications) : undefined
         })
       })
@@ -452,7 +452,7 @@ export function PartsCatalog() {
                     <SelectValue placeholder="Seleccionar proveedor" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Ninguno</SelectItem>
+                    <SelectItem value="none">Ninguno</SelectItem>
                     {suppliers.map((supplier) => (
                       <SelectItem key={supplier.id} value={supplier.id}>
                         {supplier.name}
@@ -582,7 +582,7 @@ export function PartsCatalog() {
                     <SelectValue placeholder="Seleccionar proveedor" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Ninguno</SelectItem>
+                    <SelectItem value="none">Ninguno</SelectItem>
                     {suppliers.map((supplier) => (
                       <SelectItem key={supplier.id} value={supplier.id}>
                         {supplier.name}

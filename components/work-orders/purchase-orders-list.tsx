@@ -11,7 +11,7 @@ import {
   Check, CheckCircle, Edit, Eye, FileText, Search, 
   AlertTriangle, Clock, DollarSign, TrendingUp, Package, ShoppingCart,
   Wrench, Building2, Store, Receipt, ExternalLink, Trash2, X, Info, 
-  Shield, AlertCircle, Zap, FileCheck, MessageSquare, Calendar as CalendarIcon
+  Shield, AlertCircle, Zap, FileCheck, MessageSquare, Calendar as CalendarIcon, Warehouse
 } from "lucide-react"
 import { createClient } from "@/lib/supabase"
 import Link from "next/link"
@@ -75,6 +75,7 @@ interface PurchaseOrderWithWorkOrder extends Omit<PurchaseOrder, 'is_adjustment'
   is_adjustment?: boolean | null;
   original_purchase_order_id?: string;
   po_type?: string;
+  po_purpose?: string;
   payment_method?: string;
   requires_quote?: boolean;
   store_location?: string;
@@ -1192,6 +1193,54 @@ export function PurchaseOrdersList() {
           </AlertDialogHeader>
           {orderToApprove && (
             <div className="space-y-3 mt-4">
+              {/* PO Purpose Context */}
+              {orderToApprove.po_purpose && (
+                <div className={`p-3 rounded-lg border-2 ${
+                  orderToApprove.po_purpose === 'work_order_inventory' ? 'border-blue-500 bg-blue-50' :
+                  orderToApprove.po_purpose === 'inventory_restock' ? 'border-purple-500 bg-purple-50' :
+                  'border-orange-500 bg-orange-50'
+                }`}>
+                  <div className="flex items-center gap-2 mb-2">
+                    {orderToApprove.po_purpose === 'work_order_inventory' && (
+                      <Badge variant="default" className="gap-1">
+                        <Package className="h-3 w-3" />
+                        Desde Inventario
+                      </Badge>
+                    )}
+                    {orderToApprove.po_purpose === 'inventory_restock' && (
+                      <Badge variant="secondary" className="gap-1">
+                        <Warehouse className="h-3 w-3" />
+                        Reabastecimiento
+                      </Badge>
+                    )}
+                    {orderToApprove.po_purpose === 'work_order_cash' && (
+                      <Badge variant="destructive" className="gap-1">
+                        <DollarSign className="h-3 w-3" />
+                        Compra con Efectivo
+                      </Badge>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 text-sm">
+                    <div>
+                      <span className="text-muted-foreground">Impacto en Efectivo:</span>
+                      <div className={`font-bold ${
+                        orderToApprove.po_purpose === 'work_order_inventory' ? 'text-green-600' : 'text-orange-600'
+                      }`}>
+                        {orderToApprove.po_purpose === 'work_order_inventory' ? '$0' : formatCurrency(orderToApprove.total_amount || "0")}
+                      </div>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Tipo de Gasto:</span>
+                      <div className="font-medium">
+                        {orderToApprove.po_purpose === 'work_order_inventory' && 'Inventario'}
+                        {orderToApprove.po_purpose === 'inventory_restock' && 'Inversión'}
+                        {orderToApprove.po_purpose === 'work_order_cash' && 'Efectivo'}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+              
               <div className="p-4 bg-muted rounded-lg space-y-2">
                 <div className="grid grid-cols-2 gap-4 text-sm">
                   <div>

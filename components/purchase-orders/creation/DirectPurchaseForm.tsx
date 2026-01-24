@@ -385,9 +385,43 @@ export function DirectPurchaseForm({
     }
 
     try {
+      // Determine PO purpose based on work order linkage and inventory availability
+      let po_purpose = 'work_order_cash'
+      
+      if (!workOrderId) {
+        // No work order = restocking
+        po_purpose = 'inventory_restock'
+      } else if (workOrderId && items.length > 0) {
+        // Has work order - check inventory availability
+        try {
+          const checkRes = await fetch(`/api/work-orders/${workOrderId}/check-inventory`)
+          const checkData = await checkRes.json()
+          
+          if (checkData.success && checkData.parts) {
+            const allSufficient = checkData.parts.every((p: any) => p.sufficient)
+            
+            if (allSufficient) {
+              // All parts available - offer to use inventory
+              const useInventory = confirm(
+                `Todas las partes están disponibles en inventario.\n\n` +
+                `¿Deseas crear una solicitud de uso de inventario (sin efectivo) en lugar de una compra?\n\n` +
+                `Esto NO requerirá efectivo este mes, solo autorización para usar el inventario.`
+              )
+              if (useInventory) {
+                po_purpose = 'work_order_inventory'
+              }
+            }
+          }
+        } catch (err) {
+          console.log('Could not check inventory, defaulting to cash purchase:', err)
+          // Continue with cash purchase if check fails
+        }
+      }
+      
       const request: CreatePurchaseOrderRequest = {
         work_order_id: workOrderId,
         po_type: PurchaseOrderType.DIRECT_PURCHASE,
+        po_purpose: po_purpose,
         supplier: formData.supplier!,
         items: items,
         total_amount: formData.total_amount!,

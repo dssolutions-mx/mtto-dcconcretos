@@ -162,7 +162,8 @@ export async function POST(req: NextRequest) {
     const { data: purchaseOrders } = await supabase
       .from('purchase_orders')
       .select(`
-        id, order_id, total_amount, actual_amount, created_at, posting_date, purchase_date, plant_id, work_order_id, status
+        id, order_id, total_amount, actual_amount, created_at, posting_date, purchase_date, plant_id, work_order_id, status,
+        po_purpose, fulfillment_source, received_to_inventory
       `)
       .neq('status', 'pending_approval')
 
@@ -546,9 +547,31 @@ export async function POST(req: NextRequest) {
       }
     })
 
-    // Aggregate maintenance costs from purchase orders (same as executive report)
-    filteredPurchaseOrders.forEach(po => {
+    // Separate POs by purpose to track cash vs inventory expenses
+    const workOrderPOs = filteredPurchaseOrders.filter(po => 
+      po.work_order_id && po.po_purpose !== 'inventory_restock'
+    )
+    const restockingPOs = filteredPurchaseOrders.filter(po => 
+      po.po_purpose === 'inventory_restock' || (!po.work_order_id && !po.po_purpose)
+    )
+    
+    // Track restocking POs for audit (excluded from expense reports)
+    let totalRestockingExcluded = 0
+    restockingPOs.forEach(po => {
+      const amount = parseFloat(po.actual_amount || po.total_amount || '0')
+      totalRestockingExcluded += amount
+    })
+    
+    console.log(`[Gerencial] Excluded ${restockingPOs.length} restocking POs totaling $${totalRestockingExcluded.toFixed(2)} from expenses`)
+    
+    // Aggregate maintenance costs from work order POs only
+    workOrderPOs.forEach(po => {
       const finalAmount = po.actual_amount ? parseFloat(po.actual_amount) : parseFloat(po.total_amount || '0')
+      
+      // Determine cash vs inventory expense
+      const isCashExpense = po.po_purpose !== 'work_order_inventory'
+      const cashAmount = isCashExpense ? finalAmount : 0
+      const inventoryAmount = !isCashExpense ? finalAmount : 0
       
       // If linked to work order -> get asset from work order
       if (po.work_order_id) {
@@ -556,7 +579,14 @@ export async function POST(req: NextRequest) {
         if (workOrder?.asset_id) {
           const asset = assetMap.get(workOrder.asset_id)
           if (asset) {
+            // Total maintenance cost (cash + inventory)
             asset.maintenance_cost += finalAmount
+            
+            // Track cash vs inventory separately
+            if (!asset.cash_expenses) asset.cash_expenses = 0
+            if (!asset.inventory_expenses) asset.inventory_expenses = 0
+            asset.cash_expenses += cashAmount
+            asset.inventory_expenses += inventoryAmount
             
             // Classify by maintenance type
             if (workOrder.type === 'preventive') {
@@ -1000,6 +1030,15 @@ export async function POST(req: NextRequest) {
       ? assetsArrayAll.filter((a: any) => (a.hours_worked || 0) > 0 || (a.diesel_liters || 0) > 0)
       : assetsArrayAll
 
+    // Calculate cash flow summary
+    const cashFlowSummary = {
+      cash_expenses: assetsArrayAll.reduce((sum, a) => sum + (a.cash_expenses || 0), 0),
+      inventory_expenses: assetsArrayAll.reduce((sum, a) => sum + (a.inventory_expenses || 0), 0),
+      total_expenses: assetsArrayAll.reduce((sum, a) => sum + (a.maintenance_cost || 0), 0),
+      restocking_excluded: totalRestockingExcluded,
+      restocking_pos_count: restockingPOs.length
+    }
+
     return NextResponse.json({
       summary: {
         totalSales,
@@ -1020,6 +1059,7 @@ export async function POST(req: NextRequest) {
         businessUnits: businessUnits || [],
         plants: plants || []
       },
+      cash_flow_summary: cashFlowSummary,
       debug: {
         salesMatched,
         salesUnmatched,

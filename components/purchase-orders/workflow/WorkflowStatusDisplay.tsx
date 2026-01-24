@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
@@ -868,6 +868,55 @@ export function WorkflowStatusDisplay({
           </div>
         </CardContent>
       </Card>
+
+      {/* Cash Impact Indicator */}
+      {purchaseOrder?.po_purpose && (
+        <Alert className={
+          purchaseOrder.po_purpose === 'work_order_inventory' 
+            ? 'border-blue-500 bg-blue-50' 
+            : purchaseOrder.po_purpose === 'inventory_restock'
+            ? 'border-purple-500 bg-purple-50'
+            : 'border-orange-500 bg-orange-50'
+        }>
+          <Info className="h-4 w-4" />
+          <AlertTitle className="font-semibold">
+            {purchaseOrder.po_purpose === 'work_order_inventory' && 'Solicitud de Uso de Inventario'}
+            {purchaseOrder.po_purpose === 'inventory_restock' && 'Compra para Reabastecimiento'}
+            {purchaseOrder.po_purpose === 'work_order_cash' && 'Compra Directa con Efectivo'}
+            {purchaseOrder.po_purpose === 'mixed' && 'Compra Mixta (Efectivo + Inventario)'}
+          </AlertTitle>
+          <AlertDescription className="space-y-2 mt-2">
+            <div className="flex justify-between">
+              <span>Monto Total:</span>
+              <span className="font-bold">{formatCurrency(purchaseOrder.total_amount || 0)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span>Impacto en Efectivo:</span>
+              <span className={`font-bold ${
+                purchaseOrder.po_purpose === 'work_order_inventory' ? 'text-green-600' : 'text-red-600'
+              }`}>
+                {purchaseOrder.po_purpose === 'work_order_inventory' 
+                  ? '$0 (desde inventario)' 
+                  : formatCurrency(purchaseOrder.total_amount || 0)}
+              </span>
+            </div>
+            {purchaseOrder.po_purpose === 'work_order_inventory' && (
+              <div className="text-sm text-muted-foreground mt-2 p-2 bg-white rounded">
+                ✓ Las partes están disponibles en inventario. No requiere efectivo este mes.
+                <br />
+                ✓ Esta es una solicitud de AUTORIZACIÓN para usar inventario existente.
+              </div>
+            )}
+            {purchaseOrder.po_purpose === 'inventory_restock' && (
+              <div className="text-sm text-muted-foreground mt-2 p-2 bg-white rounded">
+                ⓘ Compra para reabastecimiento de inventario.
+                <br />
+                ⓘ El gasto se reconoce cuando se usen las partes, no al comprar.
+              </div>
+            )}
+          </AlertDescription>
+        </Alert>
+      )}
 
       {/* Authorization Check for Approval Actions - Now shows 2-step approval status */}
       {currentStatus === 'pending_approval' && purchaseOrderAmount > 0 && (

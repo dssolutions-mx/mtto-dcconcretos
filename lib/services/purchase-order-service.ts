@@ -66,6 +66,11 @@ export class PurchaseOrderService {
       // instead of staying in draft - this makes the workflow more intuitive
       const initialStatus = 'pending_approval'
       
+      // Determine PO purpose if not provided
+      // Default: work_order_cash if has WO, inventory_restock if standalone
+      const po_purpose = request.po_purpose || 
+        (request.work_order_id ? 'work_order_cash' : 'inventory_restock')
+      
       const { data, error } = await supabase
         .from('purchase_orders')
         .insert({
@@ -73,6 +78,7 @@ export class PurchaseOrderService {
           work_order_id: request.work_order_id,
           plant_id: request.plant_id,
           po_type: request.po_type,
+          po_purpose: po_purpose,
           supplier: request.supplier,
           total_amount: request.total_amount,
           payment_method: request.payment_method,

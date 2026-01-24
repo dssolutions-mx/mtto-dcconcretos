@@ -27,6 +27,30 @@ async function generateActionToken(poId: string, action: 'approve' | 'reject', r
 }
 
 function buildEmailHtml(po: any, recipientName: string, approveUrl: string, rejectUrl: string, viewUrl: string) {
+  // Calculate cash impact based on po_purpose
+  const totalAmount = Number(po.total_amount || 0)
+  const poPurpose = po.po_purpose || 'work_order_cash'
+  const cashImpact = (poPurpose === 'work_order_inventory' || poPurpose === 'inventory_restock') ? 0 : totalAmount
+  
+  // Determine purpose label and color
+  let purposeLabel = 'Compra con Efectivo'
+  let purposeColor = '#f97316' // orange
+  let purposeExplanation = 'Esta orden requiere efectivo para comprar las partes.'
+  
+  if (poPurpose === 'work_order_inventory') {
+    purposeLabel = 'Uso de Inventario'
+    purposeColor = '#3b82f6' // blue
+    purposeExplanation = 'Las partes están en inventario. No requiere efectivo, solo autorización para usar el inventario existente.'
+  } else if (poPurpose === 'inventory_restock') {
+    purposeLabel = 'Reabastecimiento de Inventario'
+    purposeColor = '#a855f7' // purple
+    purposeExplanation = 'Compra para reabastecer inventario. El gasto se reconoce cuando se usen las partes, no al comprar.'
+  } else if (poPurpose === 'mixed') {
+    purposeLabel = 'Compra Mixta (Efectivo + Inventario)'
+    purposeColor = '#f59e0b' // amber
+    purposeExplanation = 'Algunas partes desde inventario, otras requieren compra.'
+  }
+  
   return `<!DOCTYPE html>
 <html>
 <head><meta charset="utf-8" /><meta http-equiv="x-ua-compatible" content="ie=edge" />
@@ -42,15 +66,44 @@ function buildEmailHtml(po: any, recipientName: string, approveUrl: string, reje
   .view { background:#2563eb }
   .meta { background:#f8fafc; border:1px solid #e2e8f0; padding:12px; border-radius:6px; margin-top:10px }
   .muted { color:#64748b; font-size: 12px }
+  .purpose-badge { display:inline-block; padding:6px 12px; border-radius:4px; font-size:13px; font-weight:600; color:#fff; margin-bottom:12px }
+  .alert-box { background:#fef3c7; border-left:4px solid #f59e0b; padding:12px; margin:12px 0; border-radius:4px }
+  .cash-zero { color:#16a34a; font-weight:700 }
+  .cash-required { color:#dc2626; font-weight:700 }
   a { color: inherit }
   .link { word-break: break-all }
 </style></head>
 <body>
   <div class="container">
     <div class="title">Aprobación requerida: Orden de Compra ${po.order_id || ''}</div>
+    
+    <!-- Purpose Badge -->
+    <div class="purpose-badge" style="background:${purposeColor}">
+      ${purposeLabel}
+    </div>
+    
+    <!-- Cash Impact Alert -->
+    ${cashImpact === 0 ? `
+    <div class="alert-box" style="background:#dcfce7; border-left-color:#16a34a">
+      <div style="font-weight:700; margin-bottom:4px">✓ Sin impacto en efectivo este mes</div>
+      <div style="font-size:13px; color:#166534">${purposeExplanation}</div>
+    </div>
+    ` : `
+    <div class="alert-box">
+      <div style="font-weight:700; margin-bottom:4px">⚠️ Requiere efectivo: $${cashImpact.toLocaleString('es-MX',{minimumFractionDigits:2})}</div>
+      <div style="font-size:13px; color:#92400e">${purposeExplanation}</div>
+    </div>
+    `}
+    
     <div class="meta">
       <div class="row"><div>Proveedor</div><div><strong>${po.supplier || 'N/A'}</strong></div></div>
-      <div class="row"><div>Monto</div><div><strong>$${Number(po.total_amount || 0).toLocaleString('es-MX',{minimumFractionDigits:2})}</strong></div></div>
+      <div class="row"><div>Monto Total</div><div><strong>$${totalAmount.toLocaleString('es-MX',{minimumFractionDigits:2})}</strong></div></div>
+      <div class="row">
+        <div>Impacto en Efectivo</div>
+        <div class="${cashImpact === 0 ? 'cash-zero' : 'cash-required'}">
+          ${cashImpact === 0 ? '$0' : `$${cashImpact.toLocaleString('es-MX',{minimumFractionDigits:2})}`}
+        </div>
+      </div>
       <div class="row"><div>Tipo</div><div><strong>${po.po_type || 'N/A'}</strong></div></div>
       ${po.work_order_id_html || ''}
       ${po.quotation_html || ''}
@@ -78,7 +131,7 @@ serve(async (req) => {
 
     const { data: po, error: poErr } = await supabase
       .from('purchase_orders')
-      .select('id, order_id, total_amount, supplier, po_type, plant_id, requested_by, work_order_id, notes, quotation_url')
+      .select('id, order_id, total_amount, supplier, po_type, po_purpose, plant_id, requested_by, work_order_id, notes, quotation_url')
       .eq('id', id)
       .single()
     if (poErr || !po) return new Response(JSON.stringify({ error: poErr?.message || 'PO not found' }), { status: 404 })
@@ -286,7 +339,7 @@ serve(async (req) => {
             },
           ],
           from: { email: SENDGRID_FROM },
-          subject: `Aprobación de Orden de Compra ${po.order_id || ''}`,
+          subject: `${(po as any).po_purpose === 'work_order_inventory' ? '💰 $0 Efectivo' : '💵'} Aprobación OC ${po.order_id || ''}`,
           content: [{ type: 'text/html', value: html }],
           tracking_settings: {
             click_tracking: { enable: false, enable_text: false },
