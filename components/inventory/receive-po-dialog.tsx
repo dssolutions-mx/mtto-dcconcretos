@@ -335,3 +335,6 @@ export function ReceiveToInventoryDialog({
     </Dialog>
   )
 }
+
+// Export with alias for convenience
+export { ReceiveToInventoryDialog as ReceivePODialog }
