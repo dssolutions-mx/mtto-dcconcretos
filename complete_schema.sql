@@ -5665,7 +5665,7 @@ CREATE OR REPLACE FUNCTION "public"."requires_quotation"("p_po_type" character v
 BEGIN
   CASE p_po_type
     WHEN 'direct_purchase' THEN RETURN FALSE;
-    WHEN 'direct_service' THEN RETURN p_amount > 10000;
+    WHEN 'direct_service' THEN RETURN p_amount >= 5000;
     WHEN 'special_order' THEN RETURN TRUE;
     ELSE RETURN TRUE;
   END CASE;

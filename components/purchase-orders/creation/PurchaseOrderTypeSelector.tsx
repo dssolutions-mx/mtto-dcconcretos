@@ -55,7 +55,7 @@ export function PurchaseOrderTypeSelector({
       icon: Wrench,
       color: "bg-green-50 border-green-200 hover:border-green-400",
       iconColor: "text-green-600",
-      badge: { text: "Cotización si > $10k", variant: "outline" as const },
+      badge: { text: "Cotización si >= $5k", variant: "outline" as const },
       features: [
         "⚡ Respuesta rápida",
         "🔧 Técnicos especializados", 
@@ -65,7 +65,7 @@ export function PurchaseOrderTypeSelector({
       process: "Solicitud → [Cotización] → Aprobación → Servicio → Comprobante",
       examples: "Reparaciones eléctricas, soldadura, calibración",
       timeEstimate: "1-4 horas",
-      threshold: "Cotización requerida si > $10,000 MXN"
+      threshold: "Cotización requerida si >= $5,000 MXN"
     },
     {
       type: PurchaseOrderType.SPECIAL_ORDER,

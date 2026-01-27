@@ -26,11 +26,15 @@ async function generateActionToken(poId: string, action: 'approve' | 'reject', r
   return `${data}.${sigB64}`
 }
 
-function buildEmailHtml(po: any, recipientName: string, approveUrl: string, rejectUrl: string, viewUrl: string) {
+function buildEmailHtml(po: any, recipientName: string, approveUrl: string, rejectUrl: string, viewUrl: string, quotations: any[] = []) {
   // Calculate cash impact based on po_purpose
   const totalAmount = Number(po.total_amount || 0)
   const poPurpose = po.po_purpose || 'work_order_cash'
   const cashImpact = (poPurpose === 'work_order_inventory' || poPurpose === 'inventory_restock') ? 0 : totalAmount
+  
+  // Get selected quotation
+  const selectedQuotation = quotations.find((q: any) => q.status === 'selected')
+  const hasQuotations = quotations.length > 0
   
   // Determine purpose label and color
   let purposeLabel = 'Compra con Efectivo'
@@ -72,6 +76,11 @@ function buildEmailHtml(po: any, recipientName: string, approveUrl: string, reje
   .cash-required { color:#dc2626; font-weight:700 }
   a { color: inherit }
   .link { word-break: break-all }
+  .comparison-table { width:100%; border-collapse:collapse; margin-top:12px; font-size:13px }
+  .comparison-table th { background:#f1f5f9; padding:8px; text-align:left; border:1px solid #e2e8f0; font-weight:600 }
+  .comparison-table td { padding:8px; border:1px solid #e2e8f0 }
+  .comparison-table tr.selected { background:#dcfce7 }
+  .comparison-table tr.rejected { opacity:0.6 }
 </style></head>
 <body>
   <div class="container">
@@ -95,9 +104,44 @@ function buildEmailHtml(po: any, recipientName: string, approveUrl: string, reje
     </div>
     `}
     
+    ${hasQuotations && quotations.length > 1 ? `
+    <!-- Quotation Comparison Table -->
+    <div style="margin-top:16px; padding:12px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px">
+      <div style="font-weight:700; margin-bottom:8px">Comparación de Cotizaciones</div>
+      <table class="comparison-table">
+        <thead>
+          <tr>
+            <th>Proveedor</th>
+            <th style="text-align:right">Precio</th>
+            <th style="text-align:right">Entrega</th>
+            <th style="text-align:center">Estado</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${quotations.map((q: any) => {
+            const isSelected = q.status === 'selected'
+            return `
+            <tr class="${isSelected ? 'selected' : q.status === 'rejected' ? 'rejected' : ''}">
+              <td>${q.supplier_name}${isSelected ? ' ✓' : ''}</td>
+              <td style="text-align:right">$${Number(q.quoted_amount).toLocaleString('es-MX',{minimumFractionDigits:2})}</td>
+              <td style="text-align:right">${q.delivery_days ? q.delivery_days + ' días' : 'N/A'}</td>
+              <td style="text-align:center">${isSelected ? 'SELECCIONADO' : q.status === 'rejected' ? 'Rechazada' : 'Pendiente'}</td>
+            </tr>
+            `
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+    ` : ''}
+    
     <div class="meta">
-      <div class="row"><div>Proveedor</div><div><strong>${po.supplier || 'N/A'}</strong></div></div>
+      <div class="row"><div>Proveedor</div><div><strong>${selectedQuotation?.supplier_name || po.supplier || 'N/A'}</strong></div></div>
       <div class="row"><div>Monto Total</div><div><strong>$${totalAmount.toLocaleString('es-MX',{minimumFractionDigits:2})}</strong></div></div>
+      ${hasQuotations && selectedQuotation ? `
+      <div class="row"><div>Monto Cotizado</div><div><strong>$${Number(selectedQuotation.quoted_amount).toLocaleString('es-MX',{minimumFractionDigits:2})}</strong></div></div>
+      <div class="row"><div>Cotizaciones Comparadas</div><div><strong>${quotations.length} proveedores</strong></div></div>
+      ${selectedQuotation.selection_reason ? `<div class="row"><div>Razón de Selección</div><div>${selectedQuotation.selection_reason}</div></div>` : ''}
+      ` : ''}
       <div class="row">
         <div>Impacto en Efectivo</div>
         <div class="${cashImpact === 0 ? 'cash-zero' : 'cash-required'}">
@@ -317,9 +361,16 @@ serve(async (req) => {
         }
       }
 
+      // Fetch quotations for comparison summary
+      const { data: quotations } = await supabase
+        .from('purchase_order_quotations')
+        .select('supplier_name, quoted_amount, delivery_days, status, selection_reason')
+        .eq('purchase_order_id', po.id)
+        .order('status', { ascending: false }) // Selected first
+
       const htmlReadyPo = { ...po, work_order_id_html: workOrderHtml + assetHtml, quotation_html: quotationHtml, notes_html: notesHtml }
 
-      const html = buildEmailHtml(htmlReadyPo, r.name, approveUrl, rejectUrl, viewUrl)
+      const html = buildEmailHtml(htmlReadyPo, r.name, approveUrl, rejectUrl, viewUrl, quotations || [])
 
       // SendGrid: disable click tracking to avoid URL rewriting
       const response = await fetch('https://api.sendgrid.com/v3/mail/send', {

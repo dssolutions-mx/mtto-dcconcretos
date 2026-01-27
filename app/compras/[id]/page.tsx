@@ -20,7 +20,7 @@ import { PurchaseOrderDetailsMobile } from "@/components/purchase-orders/purchas
 import { PurchaseOrderWorkOrderLink } from "@/components/purchase-orders/purchase-order-work-order-link"
 import { Suspense } from "react"
 import { EditPOButton } from "@/components/purchase-orders/EditPOButton"
-import { QuotationManager } from "@/components/purchase-orders/QuotationManager"
+import { QuotationComparisonManager } from "@/components/purchase-orders/quotations/QuotationComparisonManager"
 import { ReportIssueButton } from "@/components/purchase-orders/ReportIssueButton"
 import { POInventoryActions } from "@/components/purchase-orders/inventory-actions"
 
@@ -528,8 +528,10 @@ async function PurchaseOrderDetailsContent({ id }: { id: string }) {
           </CardContent>
         </Card>
 
-        {/* Receipt/Comprobante Section - Always show if exists */}
-        <ReceiptDisplaySection purchaseOrderId={order.id} poType={order.po_type} />
+        {/* Receipt/Comprobante Section - Only show after approval */}
+        {order.status && ['approved', 'purchased', 'receipt_uploaded', 'completed'].includes(order.status) && (
+          <ReceiptDisplaySection purchaseOrderId={order.id} poType={order.po_type} />
+        )}
 
         {/* Quotation Section - Always show for enhanced orders */}
         {order.po_type && (
@@ -547,17 +549,19 @@ async function PurchaseOrderDetailsContent({ id }: { id: string }) {
             {order.requires_quote && (
               <CardDescription>
                 {order.po_type === PurchaseOrderType.DIRECT_SERVICE
-                  ? `Esta orden de servicio por ${formatCurrency(order.total_amount)} requiere cotización por ser mayor a $10,000 MXN`
+                  ? `Esta orden de servicio por ${formatCurrency(order.total_amount)} requiere cotización por ser mayor o igual a $5,000 MXN`
                   : "Esta orden requiere cotización antes de ser aprobada"
                 }
               </CardDescription>
             )}
             </CardHeader>
             <CardContent className="space-y-4">
-              <QuotationManager 
+              <QuotationComparisonManager 
                 purchaseOrderId={order.id}
                 workOrderId={order.work_order_id}
-                legacyUrl={order.quotation_url}
+                quotationSelectionRequired={order.quotation_selection_required || false}
+                quotationSelectionStatus={order.quotation_selection_status}
+                poPurpose={order.po_purpose}
               />
             </CardContent>
           </Card>

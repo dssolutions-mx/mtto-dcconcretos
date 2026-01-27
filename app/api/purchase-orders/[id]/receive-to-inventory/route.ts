@@ -4,9 +4,10 @@ import { InventoryReceiptService, ReceiveToInventoryRequest } from '@/lib/servic
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const resolvedParams = await params
     const supabase = await createClient()
     const { data: { user }, error: authError } = await supabase.auth.getUser()
     
@@ -32,7 +33,7 @@ export async function POST(
       if (!item.part_name || !item.warehouse_id || !item.quantity || item.unit_cost === undefined) {
         return NextResponse.json({ 
           success: false,
-          error: 'Each item must have: part_name, warehouse_id, quantity, unit_cost' 
+          error: `Item validation failed: ${JSON.stringify(item)}. Each item must have: part_name, warehouse_id, quantity, unit_cost` 
         }, { status: 400 })
       }
       
@@ -45,7 +46,7 @@ export async function POST(
     }
 
     const result = await InventoryReceiptService.receiveToInventory({
-      purchase_order_id: params.id,
+      purchase_order_id: resolvedParams.id,
       ...body
     }, user.id)
 

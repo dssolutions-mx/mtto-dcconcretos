@@ -38,13 +38,17 @@ export async function POST(request: NextRequest) {
     }
     
     // Use service to validate quote requirement (calls database function)
-    const result = await PurchaseOrderService.validateQuoteRequirement(body.po_type, body.total_amount)
+    const result = await PurchaseOrderService.validateQuoteRequirement(
+      body.po_type, 
+      body.total_amount,
+      body.po_purpose
+    )
     
     return NextResponse.json({
       ...result,
       policy_details: {
         direct_purchase: 'Las compras directas nunca requieren cotización',
-        direct_service: 'Los servicios directos requieren cotización si el monto es mayor a $10,000 MXN',
+        direct_service: 'Los servicios directos requieren cotización si el monto es mayor o igual a $5,000 MXN',
         special_order: 'Los pedidos especiales siempre requieren cotización formal'
       }[body.po_type]
     })

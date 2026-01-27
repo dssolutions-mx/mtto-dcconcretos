@@ -26,10 +26,29 @@ export async function GET(request: NextRequest) {
       search
     })
 
+    // If plant_id filter was used, we already have filtered results
+    // If not, we need to enrich with plant information
+    let enrichedWarehouses = warehouses
+    
+    if (!plant_id && warehouses.length > 0) {
+      // Fetch plant information for all warehouses
+      const plantIds = [...new Set(warehouses.map(w => w.plant_id))]
+      const { data: plants } = await supabase
+        .from('plants')
+        .select('id, name')
+        .in('id', plantIds)
+      
+      const plantsMap = new Map((plants || []).map(p => [p.id, p]))
+      enrichedWarehouses = warehouses.map(w => ({
+        ...w,
+        plant: plantsMap.get(w.plant_id)
+      }))
+    }
+
     return NextResponse.json({
       success: true,
-      warehouses,
-      total: warehouses.length
+      warehouses: enrichedWarehouses,
+      total: enrichedWarehouses.length
     })
   } catch (error) {
     console.error('Error fetching warehouses:', error)

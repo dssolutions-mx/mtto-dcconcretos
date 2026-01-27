@@ -22,15 +22,19 @@ import {
   AlertCircle,
   CheckCircle2,
   Package,
-  Building2
+  Building2,
+  FileText
 } from "lucide-react"
 import { PurchaseOrderType, PaymentMethod, CreatePurchaseOrderRequest, QuoteValidationResponse } from "@/types/purchase-orders"
 import { QuotationValidator } from "./QuotationValidator"
+import { QuotationFormForCreation } from "./QuotationFormForCreation"
 import { usePurchaseOrders } from "@/hooks/usePurchaseOrders"
 import { createClient } from "@/lib/supabase"
 import { useUserPlant } from "@/hooks/use-user-plant"
+import { toast } from "sonner"
 import { SupplierSelector } from "@/components/suppliers/SupplierSelector"
 import { Supplier } from "@/types/suppliers"
+import { PartAutocomplete, PartSuggestion } from "@/components/inventory/part-autocomplete"
 
 interface DirectPurchaseFormProps {
   workOrderId?: string
@@ -84,7 +88,7 @@ export function DirectPurchaseForm({
   const [formData, setFormData] = useState<Partial<CreatePurchaseOrderRequest>>({
     work_order_id: workOrderId || undefined,
     po_type: PurchaseOrderType.DIRECT_PURCHASE,
-    supplier: "",
+    supplier: "Por definir", // Will be set when quotation is selected (for purchases >= $5k)
     items: [],
     total_amount: 0,
     payment_method: PaymentMethod.CASH,
@@ -93,7 +97,7 @@ export function DirectPurchaseForm({
     max_payment_date: undefined
   })
 
-  // Items management
+  // Items management - NOT USED if quotation required (comes from quotations)
   const [items, setItems] = useState<PurchaseOrderItem[]>([])
   const [newItem, setNewItem] = useState<Partial<PurchaseOrderItem>>({
     name: '',
@@ -103,7 +107,8 @@ export function DirectPurchaseForm({
     total_price: 0
   })
 
-  // Supplier suggestions (loaded from recent purchase orders)
+  // Supplier - NOT SELECTED HERE if quotation required (comes from quotations)
+  // Will be auto-populated when quotation is selected for purchases >= $5k
   const [recentSuppliers, setRecentSuppliers] = useState<string[]>([])
   const [supplierSuggestions, setSupplierSuggestions] = useState<string[]>([])
   const [showSuggestions, setShowSuggestions] = useState(false)
@@ -112,6 +117,22 @@ export function DirectPurchaseForm({
   // Validation
   const [validationResult, setValidationResult] = useState<QuoteValidationResponse | null>(null)
   const [formErrors, setFormErrors] = useState<string[]>([])
+  
+  // Quotation handling - structured quotations (always available, required if >= $5k)
+  interface QuotationFormData {
+    supplier_id?: string
+    supplier_name: string
+    quoted_amount: number
+    quotation_items?: any[]
+    delivery_days?: number
+    payment_terms?: string
+    validity_date?: Date
+    notes?: string
+    file?: File
+    file_url?: string
+    file_name?: string
+  }
+  const [quotations, setQuotations] = useState<QuotationFormData[]>([])
 
   // Load work order data and recent suppliers
   useEffect(() => {
@@ -277,6 +298,39 @@ export function DirectPurchaseForm({
     })
   }
 
+  // Handle part selection from autocomplete
+  const handlePartSelect = (part: PartSuggestion | null) => {
+    if (part) {
+      setNewItem(prev => ({
+        ...prev,
+        name: part.name,
+        partNumber: part.part_number,
+        // Auto-fill unit price if available
+        unit_price: part.default_unit_cost || prev.unit_price || '',
+        // Recalculate total
+        total_price: (part.default_unit_cost || Number(prev.unit_price) || 0) * (Number(prev.quantity) || 1)
+      }))
+    } else {
+      // Clear part info if selection cleared
+      setNewItem(prev => ({
+        ...prev,
+        name: '',
+        partNumber: ''
+      }))
+    }
+  }
+
+  // Handle manual entry when part not in catalog
+  const handleManualPartEntry = (text: string) => {
+    // User is typing manually - update the name field
+    setNewItem(prev => ({
+      ...prev,
+      name: text,
+      // Keep partNumber if it was already set, otherwise clear it
+      partNumber: prev.partNumber || ''
+    }))
+  }
+
   // Add new item to list
   const addItem = () => {
     if (!newItem.name || !newItem.quantity || !newItem.unit_price) {
@@ -336,8 +390,9 @@ export function DirectPurchaseForm({
       errors.push('La planta es obligatoria')
     }
 
-    if (!formData.supplier?.trim()) {
-      errors.push('Proveedor es requerido')
+    // Supplier validation - Only required if quotation NOT required
+    if (!validationResult?.requires_quote && !formData.supplier?.trim()) {
+      errors.push('Proveedor es requerido para compras menores a $5,000')
     }
 
     if (!formData.payment_method) {
@@ -359,8 +414,14 @@ export function DirectPurchaseForm({
       }
     }
 
-    if (items.length === 0) {
+    // Items validation - Only required if quotation NOT required
+    if (!validationResult?.requires_quote && items.length === 0) {
       errors.push('Debe agregar al menos un artículo')
+    }
+    
+    // Quotation validation - Required if >= $5,000
+    if (validationResult?.requires_quote && quotations.length === 0) {
+      errors.push('Se requiere al menos una cotización con información del proveedor y precio para compras mayores o iguales a $5,000 MXN')
     }
 
     if (formData.total_amount === 0) {
@@ -418,12 +479,22 @@ export function DirectPurchaseForm({
         }
       }
       
+      // Determine supplier and items based on whether quotations are used
+      let finalSupplier = formData.supplier || "Por definir"
+      let finalItems = items
+      
+      // If quotations exist, use placeholder values (will be updated when quotation is selected)
+      if (quotations.length > 0) {
+        finalSupplier = "Por definir" // Will be set when quotation is selected
+        finalItems = [] // Will be populated from selected quotation
+      }
+
       const request: CreatePurchaseOrderRequest = {
         work_order_id: workOrderId,
         po_type: PurchaseOrderType.DIRECT_PURCHASE,
         po_purpose: po_purpose,
-        supplier: formData.supplier!,
-        items: items,
+        supplier: finalSupplier,
+        items: finalItems,
         total_amount: formData.total_amount!,
         payment_method: formData.payment_method,
         notes: formData.notes,
@@ -434,6 +505,111 @@ export function DirectPurchaseForm({
       }
 
       const result = await createPurchaseOrder(request)
+      
+      // Validate that PO was created successfully
+      if (!result || !result.id) {
+        throw new Error('No se pudo crear la orden de compra. Por favor intente nuevamente.')
+      }
+      
+      console.log('Purchase order created:', { id: result.id, order_id: result.order_id })
+      
+      // Create quotations if provided (always create if quotations exist, regardless of amount)
+      if (quotations.length > 0) {
+        try {
+          // Upload files first (if any) - this provides natural delay and ensures files are ready
+          const supabase = createClient()
+          const { data: { user } } = await supabase.auth.getUser()
+          
+          if (user) {
+            // Upload files first, then create quotations (same pattern as DirectServiceForm/SpecialOrderForm)
+            for (const quotation of quotations) {
+              let fileUrl = quotation.file_url
+              
+              // Upload file if provided
+              if (quotation.file && !fileUrl) {
+                const folderName = workOrderId || result.id
+                const sanitizedFileName = quotation.file.name.replace(/[^a-zA-Z0-9.-]/g, '_')
+                const fileName = `${folderName}/${Date.now()}_${sanitizedFileName}`
+                
+                const { data: uploadData, error: uploadError } = await supabase.storage
+                  .from('quotations')
+                  .upload(fileName, quotation.file, { cacheControl: '3600', upsert: false })
+                
+                if (!uploadError && uploadData) {
+                  const { data: signedUrlData } = await supabase.storage
+                    .from('quotations')
+                    .createSignedUrl(uploadData.path, 3600 * 24 * 7)
+                  fileUrl = signedUrlData?.signedUrl
+                }
+              }
+              
+              // Update quotation with file URL
+              quotation.file_url = fileUrl
+            }
+          }
+          
+          // Additional delay to ensure PO is fully committed to database (after file uploads)
+          await new Promise(resolve => setTimeout(resolve, 1000))
+          
+          for (const quotation of quotations) {
+            // Format validity_date if it's a Date object
+            let validityDateStr: string | undefined = undefined
+            if (quotation.validity_date) {
+              if (quotation.validity_date instanceof Date) {
+                validityDateStr = quotation.validity_date.toISOString().split('T')[0]
+              } else if (typeof quotation.validity_date === 'string') {
+                validityDateStr = quotation.validity_date
+              }
+            }
+            
+            // Ensure quotation_items is an array
+            const quotationItems = Array.isArray(quotation.quotation_items) 
+              ? quotation.quotation_items 
+              : []
+            
+            const quotationPayload = {
+              purchase_order_id: result.id,
+              supplier_id: quotation.supplier_id || undefined,
+              supplier_name: quotation.supplier_name,
+              quoted_amount: quotation.quoted_amount,
+              quotation_items: quotationItems,
+              delivery_days: quotation.delivery_days || undefined,
+              payment_terms: quotation.payment_terms || undefined,
+              validity_date: validityDateStr,
+              notes: quotation.notes || undefined,
+              file_url: quotation.file_url || undefined, // Now includes uploaded file URL if file was provided
+              file_name: quotation.file_name || undefined
+            }
+            
+            console.log('Creating quotation for PO:', result.id, 'Payload:', quotationPayload)
+            
+            const response = await fetch('/api/purchase-orders/quotations', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(quotationPayload)
+            })
+            
+            if (!response.ok) {
+              const errorData = await response.json().catch(() => ({ error: response.statusText }))
+              console.error('Quotation creation error:', {
+                status: response.status,
+                statusText: response.statusText,
+                errorData,
+                purchase_order_id: result.id,
+                quotationPayload
+              })
+              throw new Error(`Failed to create quotation: ${errorData.error || response.statusText}`)
+            }
+            
+            const quotationResult = await response.json()
+            console.log('Quotation created successfully:', quotationResult)
+          }
+          toast.success(`Compra creada con ${quotations.length} cotización${quotations.length > 1 ? 'es' : ''}`)
+        } catch (quotationError) {
+          console.error('Error creating quotations:', quotationError)
+          toast.warning('Compra creada pero hubo un error al guardar las cotizaciones. Puede agregarlas después.')
+        }
+      }
       
       if (result) {
         if (onSuccess) {
@@ -497,7 +673,7 @@ export function DirectPurchaseForm({
             <div>
               <CardTitle>Compra Directa</CardTitle>
               <CardDescription>
-                Ferretería, tienda local, refacciones básicas - Sin cotización requerida
+                Ferretería, tienda local, refacciones básicas - {formData.total_amount && formData.total_amount >= 5000 ? 'Requiere cotización por ser mayor o igual a $5,000' : 'Sin cotización requerida'}
               </CardDescription>
             </div>
           </div>
@@ -566,32 +742,17 @@ export function DirectPurchaseForm({
         </Alert>
       ) : null}
 
-      {/* Supplier Information */}
+      {/* Basic Information - ALWAYS VISIBLE (dates and payment method) */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-lg">Información del Proveedor</CardTitle>
+          <CardTitle className="text-lg">Información Básica</CardTitle>
+          <CardDescription>
+            Fechas y método de pago requeridos para todas las compras
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label>Proveedor</Label>
-              <SupplierSelector
-                value={selectedSupplier?.id}
-                onChange={(supplier) => {
-                  setSelectedSupplier(supplier)
-                  handleInputChange('supplier', supplier?.name || '')
-                }}
-                placeholder="Seleccionar proveedor"
-                showPerformance={true}
-                allowManualInput={true}
-                onManualInputChange={(name) => {
-                  handleInputChange('supplier', name)
-                }}
-                businessUnitId={userPlants?.[0]?.business_unit_id}
-              />
-            </div>
-
-            {/* Purchase Date */}
+            {/* Purchase Date - ALWAYS REQUIRED */}
             <div className="space-y-2">
               <Label htmlFor="purchase_date">Fecha de Compra *</Label>
               <Input
@@ -606,8 +767,9 @@ export function DirectPurchaseForm({
               </p>
             </div>
 
+            {/* Payment Method - ALWAYS REQUIRED */}
             <div className="space-y-2">
-              <Label htmlFor="payment_method">Método de Pago</Label>
+              <Label htmlFor="payment_method">Método de Pago *</Label>
               <Select
                 value={formData.payment_method || ""}
                 onValueChange={(value) => handleInputChange('payment_method', value)}
@@ -628,7 +790,7 @@ export function DirectPurchaseForm({
           {formData.payment_method === PaymentMethod.TRANSFER && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 border-t">
               <div className="space-y-2">
-                <Label htmlFor="max_payment_date">Fecha Máxima de Pago</Label>
+                <Label htmlFor="max_payment_date">Fecha Máxima de Pago *</Label>
                 <Input
                   id="max_payment_date"
                   type="date"
@@ -645,6 +807,51 @@ export function DirectPurchaseForm({
           )}
         </CardContent>
       </Card>
+
+      {/* Supplier Information - Only show if quotation NOT required */}
+      {!validationResult?.requires_quote && (
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg">Información del Proveedor</CardTitle>
+          <CardDescription>
+            Para compras menores a $5,000, el proveedor se define aquí
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label>Proveedor *</Label>
+              <SupplierSelector
+                value={selectedSupplier?.id}
+                onChange={(supplier) => {
+                  setSelectedSupplier(supplier)
+                  handleInputChange('supplier', supplier?.name || '')
+                }}
+                placeholder="Seleccionar proveedor"
+                showPerformance={true}
+                allowManualInput={true}
+                onManualInputChange={(name) => {
+                  handleInputChange('supplier', name)
+                }}
+                businessUnitId={userPlants?.[0]?.business_unit_id}
+              />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+      )}
+
+      {/* Show message if quotation IS required */}
+      {validationResult?.requires_quote && (
+        <Alert>
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>
+            <strong>Proveedor:</strong> Para compras mayores o iguales a $5,000, 
+            el proveedor será seleccionado de las cotizaciones comparadas. 
+            Agregue cotizaciones de diferentes proveedores más abajo.
+          </AlertDescription>
+        </Alert>
+      )}
 
       {/* Plant Selection - Only show for standalone orders */}
       {!workOrderId && (
@@ -703,27 +910,36 @@ export function DirectPurchaseForm({
         </Card>
       )}
 
-      {/* Items Section */}
+      {/* Items Section - Only show if quotation NOT required */}
+      {!validationResult?.requires_quote && (
       <Card>
         <CardHeader>
           <CardTitle className="text-lg">Artículos a Comprar</CardTitle>
+          <CardDescription>
+            Agregue los artículos que necesita comprar
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           {/* Add New Item */}
           <div className="p-4 border rounded-lg bg-muted/30">
             <h4 className="font-medium mb-3">Agregar Artículo</h4>
             <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
-              <div>
-                <Label htmlFor="item_name">Descripción</Label>
-                <Input
-                  id="item_name"
-                  placeholder="Nombre del artículo"
+              <div className="md:col-span-2">
+                <Label htmlFor="item_name">Buscar Parte del Catálogo</Label>
+                <PartAutocomplete
                   value={newItem.name || ""}
-                  onChange={(e) => handleNewItemChange('name', e.target.value)}
+                  onSelect={handlePartSelect}
+                  onManualEntry={handleManualPartEntry}
+                  placeholder="Buscar por nombre o número de parte..."
+                  showPartNumber={true}
+                  allowManualEntry={true}
                 />
+                <p className="text-xs text-muted-foreground mt-1">
+                  Busca en el catálogo o escribe manualmente si no está en el catálogo
+                </p>
               </div>
 
-              <div>
+              <div className="hidden">
                 <Label htmlFor="part_number">Número de Parte</Label>
                 <Input
                   id="part_number"
@@ -860,6 +1076,66 @@ export function DirectPurchaseForm({
           ) : null}
         </CardContent>
       </Card>
+      )}
+
+      {/* Show message if quotation IS required for items */}
+      {validationResult?.requires_quote && (
+        <Alert>
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>
+            <strong>Artículos:</strong> Para compras mayores o iguales a $5,000, 
+            los artículos se definen en cada cotización de proveedor. 
+            Agregue cotizaciones más abajo con los artículos y precios de cada proveedor.
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {/* Quotations Section - ALWAYS VISIBLE, required if >= $5k */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-2">
+              <FileText className="h-5 w-5" />
+              <CardTitle className="text-lg">Cotizaciones de Proveedores</CardTitle>
+            </div>
+            {validationResult?.requires_quote && (
+              <Badge variant="destructive">Obligatorio</Badge>
+            )}
+            {!validationResult?.requires_quote && (
+              <Badge variant="secondary">Opcional</Badge>
+            )}
+          </div>
+          <CardDescription>
+            {validationResult?.requires_quote ? (
+              <>
+                Esta compra por ${(formData.total_amount || 0).toLocaleString('es-MX')} requiere cotización 
+                por ser mayor o igual a $5,000 MXN. Agregue al menos una cotización con proveedor y precios.
+              </>
+            ) : (
+              <>
+                Opcional: Puede agregar cotizaciones para comparar proveedores, incluso para compras menores a $5,000.
+                Si agrega cotizaciones, el proveedor y artículos se tomarán de la cotización seleccionada.
+              </>
+            )}
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <QuotationFormForCreation
+            quotations={quotations}
+            onQuotationsChange={(newQuotations) => {
+              setQuotations(newQuotations)
+              setFormErrors(prev => prev.filter(error => !error.includes('cotización')))
+              
+              // Update total amount if quotations exist (for display)
+              if (newQuotations.length > 0 && validationResult?.requires_quote) {
+                const avgTotal = newQuotations.reduce((sum, q) => sum + q.quoted_amount, 0) / newQuotations.length
+                setFormData(prev => ({ ...prev, total_amount: avgTotal }))
+              }
+            }}
+            workOrderId={workOrderId}
+          />
+        </CardContent>
+      </Card>
 
       {/* Notes */}
       <Card>
@@ -886,7 +1162,11 @@ export function DirectPurchaseForm({
         
         <Button 
           type="submit" 
-          disabled={isCreating || items.length === 0}
+          disabled={
+            isCreating || 
+            (!validationResult?.requires_quote && items.length === 0) ||
+            (validationResult?.requires_quote && quotations.length === 0)
+          }
           className="min-w-[150px]"
         >
           {isCreating ? (

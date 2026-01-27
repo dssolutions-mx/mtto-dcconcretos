@@ -24,6 +24,7 @@ import { Separator } from "@/components/ui/separator"
 import { Badge } from "@/components/ui/badge"
 import { toast } from "@/components/ui/use-toast"
 import Link from "next/link"
+import { PartAutocomplete, PartSuggestion } from "@/components/inventory/part-autocomplete"
 
 // Simpler types for select dropdowns
 interface AssetForSelect {
@@ -249,6 +250,39 @@ export function WorkOrderEditForm({ workOrder }: WorkOrderEditFormProps) {
       return updated;
     });
   };
+
+  // Handle part selection from autocomplete
+  const handlePartSelect = (part: PartSuggestion | null) => {
+    if (part) {
+      setNewPart(prev => ({
+        ...prev,
+        name: part.name,
+        partNumber: part.part_number,
+        // Auto-fill unit price if available
+        unit_price: part.default_unit_cost || prev.unit_price || 0,
+        // Recalculate total
+        total_price: (part.default_unit_cost || Number(prev.unit_price) || 0) * (Number(prev.quantity) || 1)
+      }))
+    } else {
+      // Clear part info if selection cleared
+      setNewPart(prev => ({
+        ...prev,
+        name: '',
+        partNumber: ''
+      }))
+    }
+  }
+
+  // Handle manual entry when part not in catalog
+  const handleManualPartEntry = (text: string) => {
+    // User is typing manually - update the name field
+    setNewPart(prev => ({
+      ...prev,
+      name: text,
+      // Keep partNumber if it was already set, otherwise clear it
+      partNumber: prev.partNumber || ''
+    }))
+  }
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
@@ -538,15 +572,20 @@ export function WorkOrderEditForm({ workOrder }: WorkOrderEditFormProps) {
           <CardContent className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="partName">Nombre del Repuesto</Label>
-                <Input 
-                  id="partName" 
-                  placeholder="Ej: Filtro de aceite" 
-                  value={newPart.name}
-                  onChange={(e) => handlePartInputChange('name', e.target.value)}
+                <Label htmlFor="partName">Buscar Parte del Catálogo</Label>
+                <PartAutocomplete
+                  value={newPart.name || ""}
+                  onSelect={handlePartSelect}
+                  onManualEntry={handleManualPartEntry}
+                  placeholder="Buscar por nombre o número de parte..."
+                  showPartNumber={true}
+                  allowManualEntry={true}
                 />
+                <p className="text-xs text-muted-foreground mt-1">
+                  Busca en el catálogo de inventario o escribe manualmente
+                </p>
               </div>
-            <div className="space-y-2">
+          <div className="hidden">
                 <Label htmlFor="partNumber">Número de Parte</Label>
                 <Input 
                   id="partNumber" 
@@ -554,7 +593,7 @@ export function WorkOrderEditForm({ workOrder }: WorkOrderEditFormProps) {
                   value={newPart.partNumber || ''}
                   onChange={(e) => handlePartInputChange('partNumber', e.target.value)} 
                 />
-            </div>
+          </div>
             <div className="space-y-2">
                 <Label htmlFor="quantity">Cantidad</Label>
                 <Input 

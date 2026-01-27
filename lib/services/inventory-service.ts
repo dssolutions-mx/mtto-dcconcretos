@@ -129,7 +129,7 @@ export class InventoryService {
   }
   
   /**
-   * Search parts by part number (fuzzy matching)
+   * Search parts by part number or name (fuzzy matching)
    */
   static async searchPartsByNumber(part_number: string): Promise<InventoryPart[]> {
     const supabase = await createClient()
@@ -137,13 +137,16 @@ export class InventoryService {
     try {
       // Normalize part number for fuzzy matching
       const normalized = part_number.toUpperCase().replace(/[^A-Z0-9]/g, '')
+      const searchTerm = part_number.trim()
       
+      // Search by part number, normalized part number, or name
       const { data, error } = await supabase
         .from('inventory_parts')
         .select('*')
         .eq('is_active', true)
-        .or(`part_number.ilike.%${part_number}%,part_number_normalized.eq.${normalized}`)
-        .limit(10)
+        .or(`part_number.ilike.%${searchTerm}%,part_number_normalized.eq.${normalized},name.ilike.%${searchTerm}%,description.ilike.%${searchTerm}%`)
+        .limit(20)
+        .order('name', { ascending: true })
       
       if (error) throw error
       

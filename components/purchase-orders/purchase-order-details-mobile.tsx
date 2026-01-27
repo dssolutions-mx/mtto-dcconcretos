@@ -288,7 +288,7 @@ export function PurchaseOrderDetailsMobile({
             {order.requires_quote && (
               <CardDescription className="text-sm">
                 {order.po_type === PurchaseOrderType.DIRECT_SERVICE
-                  ? `Esta orden de servicio por ${formatCurrency(order.total_amount)} requiere cotización por ser mayor a $10,000 MXN`
+                  ? `Esta orden de servicio por ${formatCurrency(order.total_amount)} requiere cotización por ser mayor o igual a $5,000 MXN`
                   : "Esta orden requiere cotización antes de ser aprobada"
                 }
               </CardDescription>

@@ -21,7 +21,8 @@ export class PurchaseOrderService {
    */
   static async validateQuoteRequirement(
     po_type: PurchaseOrderType, 
-    amount: number
+    amount: number,
+    po_purpose?: string
   ): Promise<QuoteValidationResponse> {
     const supabase = await createClient()
     
@@ -29,7 +30,8 @@ export class PurchaseOrderService {
       const { data, error } = await supabase
         .rpc('requires_quotation', { 
           p_po_type: po_type, 
-          p_amount: amount 
+          p_amount: amount,
+          p_po_purpose: po_purpose ?? null
         })
       
       if (error) throw error
@@ -40,7 +42,7 @@ export class PurchaseOrderService {
       return { 
         requires_quote: data,
         reason,
-        threshold_amount: po_type === PurchaseOrderType.DIRECT_SERVICE ? 10000 : undefined,
+        threshold_amount: po_type === PurchaseOrderType.DIRECT_SERVICE ? 5000 : undefined,
         recommendation
       }
     } catch (error) {
@@ -115,6 +117,7 @@ export class PurchaseOrderService {
   /**
    * Advances the workflow status using the database function
    * Uses advance_purchase_order_workflow() from Stage 1
+   * Now includes quotation selection validation
    */
   static async advanceWorkflow(
     id: string, 
@@ -125,6 +128,39 @@ export class PurchaseOrderService {
     const supabase = await createClient()
     
     try {
+      // Check quotation selection requirement and items existence before advancing to pending_approval
+      if (new_status === 'pending_approval') {
+        const { data: po, error: poError } = await supabase
+          .from('purchase_orders')
+          .select('quotation_selection_required, quotation_selection_status, po_purpose, items')
+          .eq('id', id)
+          .single()
+        
+        if (!poError && po) {
+          // Skip check if using inventory (no purchase needed)
+          if (po.po_purpose !== 'work_order_inventory' && po.quotation_selection_required) {
+            if (po.quotation_selection_status !== 'selected') {
+              throw new Error(
+                po.quotation_selection_status === 'pending_quotations'
+                  ? 'Se requieren al menos 2 cotizaciones antes de solicitar aprobación'
+                  : po.quotation_selection_status === 'pending_selection'
+                  ? 'Debe seleccionar un proveedor de las cotizaciones antes de solicitar aprobación'
+                  : 'La selección de cotización es requerida antes de solicitar aprobación'
+              )
+            }
+            
+            // Ensure PO items exist after quotation selection
+            // Items should be populated automatically when quotation is selected
+            const items = po.items as any[]
+            if (!items || !Array.isArray(items) || items.length === 0) {
+              throw new Error(
+                'La orden de compra no tiene artículos. Los artículos deben ser agregados desde la cotización seleccionada.'
+              )
+            }
+          }
+        }
+      }
+      
       const { data, error } = await supabase
         .rpc('advance_purchase_order_workflow', {
           p_purchase_order_id: id,
@@ -389,8 +425,8 @@ export class PurchaseOrderService {
     
     if (po_type === PurchaseOrderType.DIRECT_SERVICE) {
       return requires ? 
-        `Servicio directo por $${amount.toLocaleString()} requiere cotización (>$10,000)` :
-        `Servicio directo por $${amount.toLocaleString()} no requiere cotización (<$10,000)`
+        `Servicio directo por $${amount.toLocaleString()} requiere cotización (>= $5,000)` :
+        `Servicio directo por $${amount.toLocaleString()} no requiere cotización (< $5,000)`
     }
     
     if (po_type === PurchaseOrderType.SPECIAL_ORDER) {
@@ -562,17 +598,17 @@ export class PurchaseOrderService {
       .sort((a, b) => b.total_amount - a.total_amount)
       .slice(0, 10)
     
-    const below10k = orders.filter(order => parseFloat(order.total_amount || 0) <= 10000)
-    const above10k = orders.filter(order => parseFloat(order.total_amount || 0) > 10000)
+    const below5k = orders.filter(order => parseFloat(order.total_amount || 0) < 5000)
+    const above5k = orders.filter(order => parseFloat(order.total_amount || 0) >= 5000)
     
     const thresholdAnalysis = {
-      below_10k: {
-        count: below10k.length,
-        total: below10k.reduce((sum, order) => sum + parseFloat(order.total_amount || 0), 0)
+      below_5k: {
+        count: below5k.length,
+        total: below5k.reduce((sum, order) => sum + parseFloat(order.total_amount || 0), 0)
       },
-      above_10k: {
-        count: above10k.length,
-        total: above10k.reduce((sum, order) => sum + parseFloat(order.total_amount || 0), 0)
+      above_5k: {
+        count: above5k.length,
+        total: above5k.reduce((sum, order) => sum + parseFloat(order.total_amount || 0), 0)
       }
     }
     

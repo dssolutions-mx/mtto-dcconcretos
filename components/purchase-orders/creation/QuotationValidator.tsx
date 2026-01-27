@@ -17,13 +17,15 @@ import { PurchaseOrderType, QuoteValidationResponse } from "@/types/purchase-ord
 interface QuotationValidatorProps {
   poType: PurchaseOrderType
   amount: number
+  poPurpose?: string
   onValidationResult: (result: QuoteValidationResponse) => void
   className?: string
 }
 
 export function QuotationValidator({ 
   poType, 
-  amount, 
+  amount,
+  poPurpose,
   onValidationResult,
   className = ""
 }: QuotationValidatorProps) {
@@ -50,7 +52,8 @@ export function QuotationValidator({
           },
           body: JSON.stringify({
             po_type: poType,
-            total_amount: amount
+            total_amount: amount,
+            po_purpose: poPurpose
           })
         })
 
@@ -79,7 +82,7 @@ export function QuotationValidator({
     const debounceTimer = setTimeout(validateQuotationRequirement, 300)
     return () => clearTimeout(debounceTimer)
     
-  }, [poType, amount, onValidationResult])
+  }, [poType, amount, poPurpose, onValidationResult])
 
   // Fallback validation when API is not available
   const getFallbackValidation = (poType: PurchaseOrderType, amount: number): QuoteValidationResponse => {
@@ -92,13 +95,13 @@ export function QuotationValidator({
         }
       
       case PurchaseOrderType.DIRECT_SERVICE:
-        const requiresQuote = amount > 10000
+        const requiresQuote = amount >= 5000
         return {
           requires_quote: requiresQuote,
           reason: requiresQuote 
-            ? `Servicio por $${amount.toLocaleString()} requiere cotización por ser mayor a $10,000`
+            ? `Servicio por $${amount.toLocaleString()} requiere cotización por ser mayor o igual a $5,000`
             : `Servicio por $${amount.toLocaleString()} puede proceder sin cotización`,
-          threshold_amount: 10000,
+          threshold_amount: 5000,
           recommendation: requiresQuote 
             ? "Solicite cotización formal antes de proceder."
             : "Puede proceder directamente una vez aprobado."

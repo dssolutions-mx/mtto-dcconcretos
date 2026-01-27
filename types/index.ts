@@ -385,6 +385,7 @@ export interface PurchaseOrderItem {
   quantity: number;
   unit_price: number;
   total_price: number;
+  quoted_unit_price?: number;  // Price from selected quotation (set when quotation is selected)
   supplier?: string;
   estimated_delivery?: string;
 }

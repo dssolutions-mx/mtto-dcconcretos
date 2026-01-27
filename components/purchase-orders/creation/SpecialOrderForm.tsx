@@ -26,12 +26,15 @@ import {
 } from "lucide-react"
 import { PurchaseOrderType, PaymentMethod, CreatePurchaseOrderRequest, QuoteValidationResponse } from "@/types/purchase-orders"
 import { QuotationValidator } from "./QuotationValidator"
-import { QuotationUploader } from "./QuotationUploader"
+import { QuotationFormForCreation } from "./QuotationFormForCreation"
 import { usePurchaseOrders } from "@/hooks/usePurchaseOrders"
 import { createClient } from "@/lib/supabase"
 import { SupplierSelector } from "@/components/suppliers/SupplierSelector"
 import { Supplier } from "@/types/suppliers"
+import { PartAutocomplete, PartSuggestion } from "@/components/inventory/part-autocomplete"
 import { useUserPlant } from "@/hooks/use-user-plant"
+import { format } from "date-fns"
+import { toast } from "sonner"
 
 interface SpecialOrderFormProps {
   workOrderId?: string
@@ -103,7 +106,7 @@ export function SpecialOrderForm({
   const [formData, setFormData] = useState<Partial<CreatePurchaseOrderRequest>>({
     work_order_id: workOrderId || undefined,
     po_type: PurchaseOrderType.SPECIAL_ORDER,
-    supplier: "",
+    supplier: "Por definir", // Will be set when quotation is selected
     items: [],
     total_amount: 0,
     payment_method: PaymentMethod.TRANSFER,
@@ -112,7 +115,8 @@ export function SpecialOrderForm({
     max_payment_date: undefined
   })
 
-  // Items management
+  // Items management - NOT USED for Special Orders (comes from quotations)
+  // Keeping for compatibility with existing code, but will be empty
   const [items, setItems] = useState<OrderItem[]>([])
   const [newItem, setNewItem] = useState<Partial<OrderItem>>({
     part_number: '',
@@ -125,19 +129,31 @@ export function SpecialOrderForm({
     is_special_order: true
   })
 
-  // Supplier suggestions
-  const [recentSuppliers, setRecentSuppliers] = useState<string[]>([])
-  const [supplierSuggestions, setSupplierSuggestions] = useState<string[]>([])
-  const [showSupplierSuggestions, setShowSupplierSuggestions] = useState(false)
+  // Supplier - NOT SELECTED HERE for Special Orders (comes from quotations)
+  // Will be auto-populated when quotation is selected
   const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(null)
 
   // Validation
   const [validationResult, setValidationResult] = useState<QuoteValidationResponse | null>(null)
   const [formErrors, setFormErrors] = useState<string[]>([])
   
-  // Quotation handling - support for multiple files
+  // Quotation handling - structured quotations with supplier info
+  interface QuotationFormData {
+    supplier_id?: string
+    supplier_name: string
+    quoted_amount: number
+    delivery_days?: number
+    payment_terms?: string
+    validity_date?: Date
+    notes?: string
+    file?: File
+    file_url?: string
+    file_name?: string
+  }
+  const [quotations, setQuotations] = useState<QuotationFormData[]>([])
+  // Legacy support
   const [quotationUrls, setQuotationUrls] = useState<string[]>([])
-  const [quotationUrl, setQuotationUrl] = useState<string | null>(null) // Legacy support
+  const [quotationUrl, setQuotationUrl] = useState<string | null>(null)
 
   // Load work order data and recent suppliers
   useEffect(() => {
@@ -315,6 +331,39 @@ export function SpecialOrderForm({
     })
   }
 
+  // Handle part selection from autocomplete
+  const handlePartSelect = (part: PartSuggestion | null) => {
+    if (part) {
+      setNewItem(prev => ({
+        ...prev,
+        description: part.name,
+        part_number: part.part_number,
+        // Auto-fill unit price if available
+        unit_price: part.default_unit_cost || prev.unit_price || '',
+        // Recalculate total
+        total_price: (part.default_unit_cost || Number(prev.unit_price) || 0) * (Number(prev.quantity) || 1)
+      }))
+    } else {
+      // Clear part info if selection cleared
+      setNewItem(prev => ({
+        ...prev,
+        description: '',
+        part_number: ''
+      }))
+    }
+  }
+
+  // Handle manual entry when part not in catalog
+  const handleManualPartEntry = (text: string) => {
+    // User is typing manually - update the description field
+    setNewItem(prev => ({
+      ...prev,
+      description: text,
+      // Keep part_number if it was already set, otherwise clear it
+      part_number: prev.part_number || ''
+    }))
+  }
+
   // Add new item to list
   const addItem = () => {
     if (!newItem.description || !newItem.quantity || !newItem.unit_price) {
@@ -376,9 +425,8 @@ export function SpecialOrderForm({
       errors.push('La planta es obligatoria')
     }
 
-    if (!formData.supplier?.trim()) {
-      errors.push('Proveedor/Agencia es requerido')
-    }
+    // Supplier is NOT required here - it comes from selected quotation
+    // Validation removed
 
     if (!formData.payment_method) {
       errors.push('Método de pago es requerido')
@@ -399,12 +447,18 @@ export function SpecialOrderForm({
       }
     }
 
-    if (items.length === 0) {
-      errors.push('Debe agregar al menos un artículo')
-    }
-
-    if (formData.total_amount === 0) {
+    // Items are optional - they will come from selected quotation
+    // But we still validate total amount if items are provided
+    if (items.length > 0 && formData.total_amount === 0) {
       errors.push('El monto total debe ser mayor a cero')
+    }
+    
+    // If no items, ensure quotations have items
+    if (items.length === 0 && quotations.length > 0) {
+      const quotationsWithItems = quotations.filter(q => q.quotation_items && q.quotation_items.length > 0)
+      if (quotationsWithItems.length === 0) {
+        errors.push('Las cotizaciones deben incluir al menos un artículo')
+      }
     }
 
     // Validate purchase_date is required
@@ -414,8 +468,8 @@ export function SpecialOrderForm({
 
     // Part number is now optional - removed the requirement
     // Special orders always require quotation
-    if (quotationUrls.length === 0 && !quotationUrl) {
-      errors.push('Se requiere al menos una cotización formal del proveedor para pedidos especiales')
+    if (quotations.length === 0) {
+      errors.push('Se requiere al menos una cotización con información del proveedor y precio para pedidos especiales')
     }
 
     setFormErrors(errors)
@@ -488,6 +542,63 @@ export function SpecialOrderForm({
       const result = await createPurchaseOrder(request)
       
       if (result) {
+        // Create quotations after PO is created
+        if (quotations.length > 0) {
+          try {
+            const supabase = createClient()
+            const { data: { user } } = await supabase.auth.getUser()
+            
+            if (user) {
+              // Upload files first, then create quotations
+              for (const quotation of quotations) {
+                let fileUrl = quotation.file_url
+                
+                // Upload file if provided
+                if (quotation.file && !fileUrl) {
+                  const folderName = workOrderId || result.id
+                  const sanitizedFileName = quotation.file.name.replace(/[^a-zA-Z0-9.-]/g, '_')
+                  const fileName = `${folderName}/${Date.now()}_${sanitizedFileName}`
+                  
+                  const { data: uploadData, error: uploadError } = await supabase.storage
+                    .from('quotations')
+                    .upload(fileName, quotation.file, { cacheControl: '3600', upsert: false })
+                  
+                  if (!uploadError && uploadData) {
+                    const { data: signedUrlData } = await supabase.storage
+                      .from('quotations')
+                      .createSignedUrl(uploadData.path, 3600 * 24 * 7)
+                    fileUrl = signedUrlData?.signedUrl
+                  }
+                }
+                
+                // Create quotation via API
+                const quotationRequest: any = {
+                  purchase_order_id: result.id,
+                  supplier_id: quotation.supplier_id,
+                  supplier_name: quotation.supplier_name,
+                  quoted_amount: quotation.quoted_amount,
+                  quotation_items: quotation.quotation_items || undefined, // Include item-level pricing
+                  delivery_days: quotation.delivery_days,
+                  payment_terms: quotation.payment_terms,
+                  validity_date: quotation.validity_date ? format(quotation.validity_date, 'yyyy-MM-dd') : undefined,
+                  notes: quotation.notes,
+                  file_url: fileUrl,
+                  file_name: quotation.file_name
+                }
+                
+                await fetch('/api/purchase-orders/quotations', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify(quotationRequest)
+                })
+              }
+            }
+          } catch (error) {
+            console.error('Error creating quotations:', error)
+            toast.error('PO creada pero hubo error al guardar cotizaciones. Puede agregarlas manualmente.')
+          }
+        }
+        
         if (onSuccess) {
           onSuccess(result.id)
         } else {
@@ -553,9 +664,9 @@ export function SpecialOrderForm({
             </div>
             <div>
               <CardTitle>Pedido Especial</CardTitle>
-              <CardDescription>
-                Agencia, proveedor formal, partes especiales - Siempre requiere cotización
-              </CardDescription>
+          <CardDescription>
+            Información básica de la orden de compra. Los proveedores y artículos se agregarán en las cotizaciones.
+          </CardDescription>
             </div>
           </div>
         </CardHeader>
@@ -575,33 +686,23 @@ export function SpecialOrderForm({
         </AlertDescription>
       </Alert>
 
-      {/* Quotation Upload - Always required for special orders */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg flex items-center space-x-2">
-            <FileText className="h-5 w-5" />
-            <span>Cotización del Proveedor</span>
-            <Badge variant="destructive">Obligatorio</Badge>
-          </CardTitle>
-          <CardDescription>
-            Suba la cotización formal recibida del proveedor con precios, disponibilidad y tiempos de entrega
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <QuotationUploader
-            workOrderId={workOrderId}
-            isRequired={true}
-            allowMultiple={true}
-            onFilesUploaded={(urls) => {
-              setQuotationUrls(urls)
-              setFormErrors(prev => prev.filter(error => !error.includes('cotización')))
-            }}
-            onFileRemoved={() => {
-              setQuotationUrls([])
-            }}
-          />
-        </CardContent>
-      </Card>
+      {/* Quotation Form - Always required for special orders */}
+      {/* Items and supplier come from quotations - NOT from main form */}
+      <QuotationFormForCreation
+        quotations={quotations}
+        onQuotationsChange={(newQuotations) => {
+          setQuotations(newQuotations)
+          setFormErrors(prev => prev.filter(error => !error.includes('cotización')))
+          
+          // Calculate total from all quotations (for display purposes)
+          // Actual total will come from selected quotation
+          if (newQuotations.length > 0) {
+            const avgTotal = newQuotations.reduce((sum, q) => sum + q.quoted_amount, 0) / newQuotations.length
+            setFormData(prev => ({ ...prev, total_amount: avgTotal }))
+          }
+        }}
+        workOrderId={workOrderId}
+      />
 
       {/* Work Order Information */}
       {workOrder && (
@@ -639,6 +740,7 @@ export function SpecialOrderForm({
         <QuotationValidator
           poType={PurchaseOrderType.SPECIAL_ORDER}
           amount={formData.total_amount}
+          poPurpose={formData.po_purpose}
           onValidationResult={setValidationResult}
         />
       ) : null}
@@ -665,34 +767,32 @@ export function SpecialOrderForm({
         </Alert>
       ) : null}
 
-      {/* Supplier Information */}
+      {/* Basic Information Card */}
       <Card>
         <CardHeader>
           <CardTitle className="text-lg flex items-center space-x-2">
-            <Building2 className="h-5 w-5" />
-            <span>Información del Proveedor/Agencia</span>
+            <FileText className="h-5 w-5" />
+            <span>Información Básica</span>
           </CardTitle>
+          <CardDescription>
+            Configure fechas y método de pago. El proveedor y artículos se agregarán en las cotizaciones.
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          <Alert>
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>
+              <strong>Flujo de Pedido Especial:</strong>
+              <ol className="list-decimal list-inside mt-2 space-y-1">
+                <li>Configure la información básica (fechas, método de pago, notas)</li>
+                <li>Agregue cotizaciones de diferentes proveedores (cada una con sus artículos y precios)</li>
+                <li>Compare las cotizaciones y seleccione la mejor opción</li>
+                <li>El sistema actualizará automáticamente el proveedor y artículos seleccionados</li>
+              </ol>
+            </AlertDescription>
+          </Alert>
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label>Proveedor/Agencia *</Label>
-              <SupplierSelector
-                value={selectedSupplier?.id}
-                onChange={(supplier) => {
-                  setSelectedSupplier(supplier)
-                  handleInputChange('supplier', supplier?.name || '')
-                }}
-                placeholder="Seleccionar proveedor/agencia"
-                showPerformance={true}
-                allowManualInput={true}
-                onManualInputChange={(name) => {
-                  handleInputChange('supplier', name)
-                }}
-                businessUnitId={userPlants?.[0]?.business_unit_id}
-              />
-            </div>
-            
             {/* Purchase Date */}
             <div className="space-y-2">
               <Label htmlFor="purchase_date">Fecha de Compra *</Label>
@@ -741,6 +841,18 @@ export function SpecialOrderForm({
                 </p>
               </div>
             )}
+
+            {/* Notes */}
+            <div className="space-y-2 md:col-span-2">
+              <Label htmlFor="notes">Notas Adicionales</Label>
+              <Textarea
+                id="notes"
+                placeholder="Notas adicionales sobre el pedido especial"
+                value={formData.notes || ''}
+                onChange={(e) => handleInputChange('notes', e.target.value)}
+                rows={3}
+              />
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -802,13 +914,18 @@ export function SpecialOrderForm({
         </Card>
       )}
 
-      {/* Items List */}
-      <Card>
+      {/* Items List - HIDDEN: Items will come from selected quotation */}
+      <Card className="hidden">
         <CardHeader>
-          <CardTitle className="text-lg flex items-center space-x-2">
-            <Calculator className="h-5 w-5" />
-            <span>Artículos a Solicitar</span>
-          </CardTitle>
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-lg flex items-center space-x-2">
+              <Calculator className="h-5 w-5" />
+              <span>Artículos a Solicitar</span>
+            </CardTitle>
+          </div>
+          <CardDescription>
+            Los artículos serán definidos en cada cotización de proveedor
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           {/* Add New Item */}
@@ -821,22 +938,27 @@ export function SpecialOrderForm({
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-3">
-                <div>
+                <div className="lg:col-span-3">
+                  <Label htmlFor="new-item-description">Buscar Parte del Catálogo *</Label>
+                  <PartAutocomplete
+                    value={newItem.description || ""}
+                    onSelect={handlePartSelect}
+                    onManualEntry={handleManualPartEntry}
+                    placeholder="Buscar por nombre o número de parte..."
+                    showPartNumber={true}
+                    allowManualEntry={true}
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Busca en el catálogo de inventario o escribe manualmente
+                  </p>
+                </div>
+                <div className="hidden">
                   <Label htmlFor="new-item-part-number">Número de Parte</Label>
                   <Input
                     id="new-item-part-number"
                     placeholder="P/N"
                     value={newItem.part_number || ""}
                     onChange={(e) => handleNewItemChange('part_number', e.target.value)}
-                  />
-                </div>
-                <div className="lg:col-span-2">
-                  <Label htmlFor="new-item-description">Descripción *</Label>
-                  <Input
-                    id="new-item-description"
-                    placeholder="Descripción del artículo"
-                    value={newItem.description || ""}
-                    onChange={(e) => handleNewItemChange('description', e.target.value)}
                   />
                 </div>
                 <div>
@@ -1085,7 +1207,7 @@ export function SpecialOrderForm({
         
         <Button 
           type="submit" 
-          disabled={isCreating || items.length === 0}
+          disabled={isCreating || (items.length === 0 && quotations.length === 0)}
           className="min-w-[150px]"
         >
           {isCreating ? (

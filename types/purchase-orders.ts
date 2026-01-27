@@ -76,6 +76,11 @@ export interface EnhancedPurchaseOrder {
   payment_reference?: string              // Número de transferencia, cheque o referencia
   payment_notes?: string                  // Notas adicionales del pago
   paid_by?: string                        // Usuario que marcó como pagado
+  
+  // ✅ QUOTATION COMPARISON FIELDS
+  selected_quotation_id?: string          // Reference to selected quotation
+  quotation_selection_required?: boolean  // Whether selection is required before approval
+  quotation_selection_status?: QuotationSelectionStatus // Current selection workflow status
 }
 
 // Interfaces específicas por tipo
@@ -150,6 +155,7 @@ export interface AdvanceWorkflowRequest {
 export interface QuoteValidationRequest {
   po_type: PurchaseOrderType
   total_amount: number
+  po_purpose?: POPurpose
 }
 
 export interface QuoteValidationResponse {
@@ -290,4 +296,99 @@ export interface AccountsPayableResponse {
     payment_method?: PaymentMethod
     days_filter?: 'overdue' | 'today' | 'week' | 'month'
   }
+}
+
+// =====================================================
+// Quotation Comparison Types
+// =====================================================
+
+export enum QuotationStatus {
+  PENDING = 'pending',
+  SELECTED = 'selected', 
+  REJECTED = 'rejected'
+}
+
+export enum QuotationSelectionStatus {
+  NOT_REQUIRED = 'not_required',
+  PENDING_QUOTATIONS = 'pending_quotations',
+  PENDING_SELECTION = 'pending_selection',
+  SELECTED = 'selected'
+}
+
+export interface QuotationItem {
+  item_index?: number              // Index in PO items array
+  part_number?: string             // Match by part number
+  description?: string             // Item description
+  quantity: number                 // Quantity quoted
+  unit_price: number               // Unit price from quotation
+  total_price: number              // Total price (quantity * unit_price)
+}
+
+export interface PurchaseOrderQuotation {
+  id: string
+  purchase_order_id: string
+  supplier_id?: string
+  supplier_name: string
+  quoted_amount: number
+  quotation_items?: QuotationItem[]  // Item-level pricing from quotation
+  delivery_days?: number
+  payment_terms?: string
+  validity_date?: string
+  notes?: string
+  file_url?: string
+  file_name?: string
+  status: QuotationStatus
+  selected_at?: string
+  selected_by?: string
+  selection_reason?: string
+  rejection_reason?: string
+  created_at: string
+  created_by?: string
+  updated_at?: string
+  
+  // Joined data
+  supplier?: import('./suppliers').Supplier
+  selected_by_user?: { nombre: string; apellido: string }
+}
+
+export interface CreateQuotationRequest {
+  purchase_order_id: string
+  supplier_id?: string
+  supplier_name: string
+  quoted_amount: number
+  quotation_items?: QuotationItem[]  // Item-level pricing (optional but recommended)
+  delivery_days?: number
+  payment_terms?: string
+  validity_date?: string
+  notes?: string
+  file_url?: string
+  file_name?: string
+}
+
+export interface SelectQuotationRequest {
+  quotation_id: string
+  selection_reason: string
+}
+
+export interface QuotationComparison {
+  quotations: PurchaseOrderQuotation[]
+  selected_quotation?: PurchaseOrderQuotation
+  recommendation?: {
+    quotation_id: string
+    score: number
+    reasoning: string[]
+  }
+  summary: {
+    total_quotations: number
+    lowest_price: number
+    fastest_delivery: number
+    average_price: number
+  }
+}
+
+export interface QuotationComparisonResponse {
+  comparison: QuotationComparison
+  can_select: boolean
+  selection_required: boolean
+  min_quotations_met: boolean
 } 

@@ -75,6 +75,8 @@ export function WorkflowStatusDisplay({
   const [effectiveAuthLimit, setEffectiveAuthLimit] = useState<number>(0)
   const [isLoadingAuth, setIsLoadingAuth] = useState(true)
   const [showPaymentDateFix, setShowPaymentDateFix] = useState(false)
+  const [hasSelectedQuotation, setHasSelectedQuotation] = useState<boolean>(false)
+  const [isLoadingQuotations, setIsLoadingQuotations] = useState<boolean>(false)
   
   // Get PO amount from workflowStatus (always fresh)
   const purchaseOrderAmount = parseFloat(workflowStatus?.purchase_order?.total_amount || '0')
@@ -94,15 +96,17 @@ export function WorkflowStatusDisplay({
           if (orderData.actual_amount) {
             setActualAmount(orderData.actual_amount.toString())
           }
-        }
-
-        // Load receipts data separately
-        const receiptsResponse = await fetch(`/api/purchase-orders/${purchaseOrderId}/receipts`)
-        if (receiptsResponse.ok) {
-          const receipts = await receiptsResponse.json()
-          if (receipts.length > 0) {
-            // Use the most recent receipt
-            setReceiptUrl(receipts[0].file_url)
+          
+          // Load receipts data separately - only if PO is approved or later
+          if (orderData && ['approved', 'purchased', 'receipt_uploaded', 'validated', 'completed'].includes(orderData.status)) {
+            const receiptsResponse = await fetch(`/api/purchase-orders/${purchaseOrderId}/receipts`)
+            if (receiptsResponse.ok) {
+              const receipts = await receiptsResponse.json()
+              if (receipts.length > 0) {
+                // Use the most recent receipt
+                setReceiptUrl(receipts[0].file_url)
+              }
+            }
           }
         }
       } catch (error) {
@@ -112,6 +116,62 @@ export function WorkflowStatusDisplay({
     
     loadPurchaseOrderData()
   }, [loadWorkflowStatus, purchaseOrderId])
+
+  // Load quotations to check if one is selected
+  useEffect(() => {
+    const loadQuotationStatus = async () => {
+      if (!workflowStatus?.requires_quote) {
+        setHasSelectedQuotation(true) // Not required, so consider it as "ok"
+        return
+      }
+
+      setIsLoadingQuotations(true)
+      try {
+        const response = await fetch(`/api/purchase-orders/quotations?purchase_order_id=${purchaseOrderId}`, {
+          cache: 'no-store',
+          headers: {
+            'Cache-Control': 'no-cache'
+          }
+        })
+        if (response.ok) {
+          const result = await response.json()
+          const quotations = result.data || []
+          console.log('Quotations loaded:', quotations)
+          const hasSelected = quotations.some((q: any) => q.status === 'selected')
+          console.log('Has selected quotation:', hasSelected)
+          setHasSelectedQuotation(hasSelected)
+        } else {
+          console.error('Failed to fetch quotations:', response.status)
+          setHasSelectedQuotation(false)
+        }
+      } catch (error) {
+        console.error('Error loading quotation status:', error)
+        setHasSelectedQuotation(false)
+      } finally {
+        setIsLoadingQuotations(false)
+      }
+    }
+
+    if (workflowStatus) {
+      loadQuotationStatus()
+    }
+    
+    // Listen for quotation selection events
+    const handleQuotationSelected = (event: CustomEvent) => {
+      if (event.detail.purchaseOrderId === purchaseOrderId) {
+        console.log('Quotation selected event received, reloading status...')
+        setTimeout(() => {
+          loadQuotationStatus()
+        }, 500) // Small delay to ensure DB update is complete
+      }
+    }
+    
+    window.addEventListener('quotationSelected', handleQuotationSelected as EventListener)
+    
+    return () => {
+      window.removeEventListener('quotationSelected', handleQuotationSelected as EventListener)
+    }
+  }, [workflowStatus, purchaseOrderId])
 
   // Load effective authorization limit - same logic as compras page
   useEffect(() => {
@@ -870,44 +930,44 @@ export function WorkflowStatusDisplay({
       </Card>
 
       {/* Cash Impact Indicator */}
-      {purchaseOrder?.po_purpose && (
+      {workflowStatus?.purchase_order?.po_purpose && (
         <Alert className={
-          purchaseOrder.po_purpose === 'work_order_inventory' 
+          workflowStatus.purchase_order.po_purpose === 'work_order_inventory' 
             ? 'border-blue-500 bg-blue-50' 
-            : purchaseOrder.po_purpose === 'inventory_restock'
+            : workflowStatus.purchase_order.po_purpose === 'inventory_restock'
             ? 'border-purple-500 bg-purple-50'
             : 'border-orange-500 bg-orange-50'
         }>
           <Info className="h-4 w-4" />
           <AlertTitle className="font-semibold">
-            {purchaseOrder.po_purpose === 'work_order_inventory' && 'Solicitud de Uso de Inventario'}
-            {purchaseOrder.po_purpose === 'inventory_restock' && 'Compra para Reabastecimiento'}
-            {purchaseOrder.po_purpose === 'work_order_cash' && 'Compra Directa con Efectivo'}
-            {purchaseOrder.po_purpose === 'mixed' && 'Compra Mixta (Efectivo + Inventario)'}
+            {workflowStatus.purchase_order.po_purpose === 'work_order_inventory' && 'Solicitud de Uso de Inventario'}
+            {workflowStatus.purchase_order.po_purpose === 'inventory_restock' && 'Compra para Reabastecimiento'}
+            {workflowStatus.purchase_order.po_purpose === 'work_order_cash' && 'Compra Directa con Efectivo'}
+            {workflowStatus.purchase_order.po_purpose === 'mixed' && 'Compra Mixta (Efectivo + Inventario)'}
           </AlertTitle>
           <AlertDescription className="space-y-2 mt-2">
             <div className="flex justify-between">
               <span>Monto Total:</span>
-              <span className="font-bold">{formatCurrency(purchaseOrder.total_amount || 0)}</span>
+              <span className="font-bold">{formatCurrency(workflowStatus.purchase_order.total_amount || 0)}</span>
             </div>
             <div className="flex justify-between">
               <span>Impacto en Efectivo:</span>
               <span className={`font-bold ${
-                purchaseOrder.po_purpose === 'work_order_inventory' ? 'text-green-600' : 'text-red-600'
+                workflowStatus.purchase_order.po_purpose === 'work_order_inventory' ? 'text-green-600' : 'text-red-600'
               }`}>
-                {purchaseOrder.po_purpose === 'work_order_inventory' 
+                {workflowStatus.purchase_order.po_purpose === 'work_order_inventory' 
                   ? '$0 (desde inventario)' 
-                  : formatCurrency(purchaseOrder.total_amount || 0)}
+                  : formatCurrency(workflowStatus.purchase_order.total_amount || 0)}
               </span>
             </div>
-            {purchaseOrder.po_purpose === 'work_order_inventory' && (
+            {workflowStatus.purchase_order.po_purpose === 'work_order_inventory' && (
               <div className="text-sm text-muted-foreground mt-2 p-2 bg-white rounded">
                 ✓ Las partes están disponibles en inventario. No requiere efectivo este mes.
                 <br />
                 ✓ Esta es una solicitud de AUTORIZACIÓN para usar inventario existente.
               </div>
             )}
-            {purchaseOrder.po_purpose === 'inventory_restock' && (
+            {workflowStatus.purchase_order.po_purpose === 'inventory_restock' && (
               <div className="text-sm text-muted-foreground mt-2 p-2 bg-white rounded">
                 ⓘ Compra para reabastecimiento de inventario.
                 <br />
@@ -1066,9 +1126,10 @@ export function WorkflowStatusDisplay({
                 const hasValidLimit = effectiveAuthLimit > 0
                 const canAuthorizeAmount = hasValidAmount && hasValidLimit && purchaseOrderAmount <= effectiveAuthLimit
                 
-
+                // If quotation is required, check that one is selected
+                const quotationRequirementMet = !workflowStatus?.requires_quote || hasSelectedQuotation
                 
-                canPerformAction = !isLoadingAuth && hasValidAmount && hasValidLimit && canAuthorizeAmount
+                canPerformAction = !isLoadingAuth && !isLoadingQuotations && hasValidAmount && hasValidLimit && canAuthorizeAmount && quotationRequirementMet
               } else if (isValidationAction) {
                 canPerformAction = canValidateReceipts
               }
@@ -1100,8 +1161,34 @@ export function WorkflowStatusDisplay({
                         </Alert>
                       )}
                       
+                      {/* Loading quotation status */}
+                      {isApprovalAction && isLoadingQuotations && (
+                        <Alert className="border-blue-200 bg-blue-50">
+                          <Clock className="h-4 w-4 text-blue-600" />
+                          <AlertDescription className="text-blue-700">
+                            Verificando estado de cotizaciones...
+                          </AlertDescription>
+                        </Alert>
+                      )}
+                      
+                      {/* Show quotation selection required warning */}
+                      {isApprovalAction && !isLoadingQuotations && workflowStatus?.requires_quote && !hasSelectedQuotation && (
+                        <Alert className="border-orange-200 bg-orange-50">
+                          <FileText className="h-4 w-4 text-orange-600" />
+                          <AlertDescription className="text-orange-700">
+                            <div className="space-y-2">
+                              <strong>Selección de cotización requerida</strong>
+                              <p className="text-sm">
+                                Debes seleccionar una cotización ganadora antes de aprobar esta orden de compra. 
+                                Revisa la sección de "Cotizaciones" arriba para comparar y seleccionar.
+                              </p>
+                            </div>
+                          </AlertDescription>
+                        </Alert>
+                      )}
+                      
                       {/* Show authorization warning if applicable - solo cuando no esté cargando */}
-                      {isApprovalAction && !canPerformAction && !isLoadingAuth && effectiveAuthLimit > 0 && (
+                      {isApprovalAction && !canPerformAction && !isLoadingAuth && !isLoadingQuotations && effectiveAuthLimit > 0 && hasSelectedQuotation && (
                         <Alert className="border-orange-200 bg-orange-50">
                           <Shield className="h-4 w-4 text-orange-600" />
                           <AlertDescription className="text-orange-700">
