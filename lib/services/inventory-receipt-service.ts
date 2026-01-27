@@ -230,15 +230,35 @@ export class InventoryReceiptService {
         .from('po_inventory_receipts')
         .select(`
           *,
-          warehouse:inventory_warehouses(id, name, warehouse_code),
-          received_by_user:profiles!po_inventory_receipts_received_by_fkey(id, nombre, apellido)
+          warehouse:inventory_warehouses(id, name, warehouse_code)
         `)
         .eq('purchase_order_id', purchase_order_id)
         .order('receipt_date', { ascending: false })
       
       if (error) throw error
       
-      return data || []
+      const receipts = data || []
+      
+      // Fetch user profiles separately
+      const userIds = [...new Set(receipts.map(r => r.received_by).filter(Boolean))]
+      let profilesMap = new Map()
+      
+      if (userIds.length > 0) {
+        const { data: profiles } = await supabase
+          .from('profiles')
+          .select('id, nombre, apellido')
+          .in('id', userIds)
+        
+        if (profiles) {
+          profilesMap = new Map(profiles.map(p => [p.id, p]))
+        }
+      }
+      
+      // Enrich receipts with profile data
+      return receipts.map(receipt => ({
+        ...receipt,
+        received_by_user: receipt.received_by ? profilesMap.get(receipt.received_by) : null
+      }))
     } catch (error) {
       console.error('Error fetching receipt history:', error)
       throw new Error('Failed to fetch receipt history')

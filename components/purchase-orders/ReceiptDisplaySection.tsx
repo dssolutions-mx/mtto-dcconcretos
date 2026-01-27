@@ -72,7 +72,8 @@ export function ReceiptDisplaySection({ purchaseOrderId, poType }: ReceiptDispla
         const response = await fetch(`/api/purchase-orders/${purchaseOrderId}/receipts`)
         if (response.ok) {
           const data = await response.json()
-          setReceipts(data)
+          // API returns { success: true, receipts: [...] }
+          setReceipts(data.receipts || [])
         } else {
           setError('Error al cargar comprobantes')
         }

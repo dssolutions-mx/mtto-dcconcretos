@@ -30,6 +30,7 @@ interface QuotationItem {
   total_price: number
   brand?: string
   notes?: string
+  part_id?: string  // Link to inventory catalog
 }
 
 interface QuotationFormData {
@@ -83,7 +84,8 @@ export function QuotationFormForCreation({
     quantity: 1,
     unit_price: 0,
     total_price: 0,
-    brand: ""
+    brand: "",
+    part_id: undefined  // Link to inventory catalog
   })
 
   // Item management functions
@@ -94,7 +96,14 @@ export function QuotationFormForCreation({
         description: part.name,
         part_number: part.part_number,
         unit_price: part.default_unit_cost || prev.unit_price || 0,
-        total_price: (part.default_unit_cost || prev.unit_price || 0) * (prev.quantity || 1)
+        total_price: (part.default_unit_cost || prev.unit_price || 0) * (prev.quantity || 1),
+        part_id: part.id  // ✅ Save link to inventory catalog
+      }))
+    } else {
+      // Clear part_id if selection is cleared
+      setNewQuotationItem(prev => ({
+        ...prev,
+        part_id: undefined
       }))
     }
   }

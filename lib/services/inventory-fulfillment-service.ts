@@ -194,13 +194,16 @@ export class InventoryFulfillmentService {
       const results = []
       
       for (const item of items) {
-        // Try to match part
-        let part_id: string | undefined
-        if (item.partNumber) {
-          const parts = await (await createClient())
+        // Try to match part - check both part_id directly and part_number
+        let part_id: string | undefined = item.part_id
+        let part_number = item.part_number || item.partNumber
+        
+        // If no part_id but has part_number, look it up
+        if (!part_id && part_number) {
+          const parts = await supabase
             .from('inventory_parts')
             .select('id, part_number, name')
-            .eq('part_number', item.partNumber)
+            .eq('part_number', part_number)
             .eq('is_active', true)
             .limit(1)
           
@@ -209,25 +212,38 @@ export class InventoryFulfillmentService {
           }
         }
         
-        if (part_id && po.plant_id) {
-          // Check availability
-          const availability = await StockService.checkAvailability(
-            part_id,
-            po.plant_id,
-            item.quantity || 0
-          )
+        if (part_id) {
+          // Check availability - if plant_id is null, check all plants
+          let availability
+          if (po.plant_id) {
+            availability = await StockService.checkAvailability(part_id, po.plant_id, item.quantity || 0)
+          } else {
+            // No plant_id, fetch stock from all warehouses
+            const stocks = await StockService.getStock({ part_id })
+            console.log('Stock fetched for part_id:', part_id, 'stocks:', stocks)
+            // StockService.getStock returns FlattenedStockItem[] with warehouse_name directly
+            availability = stocks.map(s => ({
+              warehouse_id: s.warehouse_id,
+              warehouse_name: s.warehouse_name || 'Unknown',
+              warehouse_code: s.warehouse_code || '',
+              available_quantity: s.available_quantity,
+              current_quantity: s.current_quantity,
+              reserved_quantity: s.reserved_quantity,
+              sufficient: s.available_quantity >= (item.quantity || 0)
+            }))
+          }
           
           const total_available = availability.reduce((sum, a) => sum + a.available_quantity, 0)
           
           results.push({
-            po_item_id: item.id || item.partNumber,
+            po_item_id: item.id || part_number || item.name,
             part_id,
-            part_number: item.partNumber,
+            part_number: part_number,
             part_name: item.name,
             required_quantity: item.quantity || 0,
             availability: {
               part_id,
-              part_number: item.partNumber || '',
+              part_number: part_number || '',
               part_name: item.name,
               required_quantity: item.quantity || 0,
               available_by_warehouse: availability.map(a => ({
@@ -244,12 +260,12 @@ export class InventoryFulfillmentService {
         } else {
           // Part not in catalog
           results.push({
-            po_item_id: item.id || item.partNumber,
+            po_item_id: item.id || part_number || item.name,
             part_name: item.name,
             required_quantity: item.quantity || 0,
             availability: {
               part_id: '',
-              part_number: item.partNumber || '',
+              part_number: part_number || '',
               part_name: item.name,
               required_quantity: item.quantity || 0,
               available_by_warehouse: [],

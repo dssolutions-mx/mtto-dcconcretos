@@ -581,24 +581,27 @@ async function PurchaseOrderDetailsContent({ id }: { id: string }) {
         </Card>
       </div>
 
-      {/* Inventory Actions - Only show for purchase orders (not services) */}
-      {order.po_type !== PurchaseOrderType.DIRECT_SERVICE && items && items.length > 0 && (
-        <Card className="mt-8">
-          <CardHeader>
-            <CardTitle>Gestión de Inventario</CardTitle>
-            <CardDescription>
-              Recibe items a inventario o cumple la orden desde inventario existente
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <POInventoryActions
-              purchaseOrderId={order.id}
-              receivedToInventory={order.received_to_inventory || false}
-              inventoryFulfilled={order.inventory_fulfilled || false}
-            />
-          </CardContent>
-        </Card>
-      )}
+      {/* Inventory Actions - Show if PO has any catalog items with part_id */}
+      {(() => {
+        const hasCatalogItems = items && items.some((item: any) => item.part_id || item.partNumber)
+        return hasCatalogItems && (
+          <Card className="mt-8">
+            <CardHeader>
+              <CardTitle>Gestión de Inventario</CardTitle>
+              <CardDescription>
+                Recibe items a inventario o cumple la orden desde inventario existente
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <POInventoryActions
+                purchaseOrderId={order.id}
+                receivedToInventory={order.received_to_inventory || false}
+                inventoryFulfilled={order.inventory_fulfilled || false}
+              />
+            </CardContent>
+          </Card>
+        )
+      })()}
 
       {/* Items/Services */}
       {items && items.length > 0 && (

@@ -7,8 +7,9 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Plus, Trash2, Save, Loader2 } from "lucide-react"
+import { Plus, Trash2, Save, Loader2, Package } from "lucide-react"
 import { toast } from "@/components/ui/use-toast"
+import { PartAutocomplete, PartSuggestion } from "@/components/inventory/part-autocomplete"
 
 type PurchaseOrderEditable = {
   supplier?: string | null
@@ -68,7 +69,14 @@ export function PurchaseOrderEditDialog({ open, onOpenChange, purchaseOrderId, i
   }
 
   const addItem = () => {
-    setItems(prev => [...prev, { description: "", part_number: "", quantity: 1, unit_price: 0, total_price: 0 }])
+    setItems(prev => [...prev, { 
+      description: "", 
+      part_number: "", 
+      quantity: 1, 
+      unit_price: 0, 
+      total_price: 0,
+      part_id: null // Link to inventory catalog
+    }])
   }
 
   const updateItem = (index: number, key: string, value: any) => {
@@ -79,6 +87,53 @@ export function PurchaseOrderEditDialog({ open, onOpenChange, purchaseOrderId, i
       const unit = Number(item.unit_price) || 0
       item.total_price = Number((quantity * unit).toFixed(2))
       next[index] = item
+      return next
+    })
+  }
+
+  // Handle part selection from inventory catalog
+  const handlePartSelect = (index: number, part: PartSuggestion | null) => {
+    if (part) {
+      setItems(prev => {
+        const next = [...prev]
+        const item = next[index]
+        const quantity = Number(item.quantity) || 1
+        const unitPrice = part.default_unit_cost || Number(item.unit_price) || 0
+        
+        next[index] = {
+          ...item,
+          description: part.name,
+          part_number: part.part_number,
+          unit_price: unitPrice,
+          total_price: Number((quantity * unitPrice).toFixed(2)),
+          part_id: part.id // ✅ Save link to inventory catalog
+        }
+        return next
+      })
+    } else {
+      // Clear part_id if selection is cleared
+      setItems(prev => {
+        const next = [...prev]
+        next[index] = {
+          ...next[index],
+          part_id: null
+        }
+        return next
+      })
+    }
+  }
+
+  // Handle manual part entry (typing instead of selecting from catalog)
+  const handleManualPartEntry = (index: number, text: string) => {
+    setItems(prev => {
+      const next = [...prev]
+      next[index] = {
+        ...next[index],
+        description: text,
+        // Keep part_id if it was already set, otherwise clear it
+        // (manual entry may be editing existing catalog item)
+        part_id: next[index].part_id || null
+      }
       return next
     })
   }
@@ -185,38 +240,76 @@ export function PurchaseOrderEditDialog({ open, onOpenChange, purchaseOrderId, i
 
           <div className="mt-4">
             <div className="flex items-center justify-between mb-2">
-              <Label className="text-base">Artículos/Servicios</Label>
+              <div className="flex items-center gap-2">
+                <Package className="h-5 w-5 text-muted-foreground" />
+                <Label className="text-base">Artículos/Servicios</Label>
+              </div>
               <Button size="sm" variant="outline" onClick={addItem}><Plus className="h-4 w-4 mr-1" />Agregar</Button>
             </div>
             <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Descripción</TableHead>
-                    <TableHead>Parte/Código</TableHead>
-                    <TableHead className="text-right">Cantidad</TableHead>
-                    <TableHead className="text-right">Precio Unitario</TableHead>
-                    <TableHead className="text-right">Total</TableHead>
-                    <TableHead></TableHead>
+                    <TableHead className="min-w-[250px]">Descripción</TableHead>
+                    <TableHead className="min-w-[150px]">Parte/Código</TableHead>
+                    <TableHead className="text-right w-[100px]">Cantidad</TableHead>
+                    <TableHead className="text-right w-[120px]">Precio Unit.</TableHead>
+                    <TableHead className="text-right w-[100px]">Total</TableHead>
+                    <TableHead className="w-[50px]"></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {items.map((it, idx) => (
                     <TableRow key={idx}>
                       <TableCell>
-                        <Input value={it.description || it.name || ''} onChange={e => updateItem(idx, 'description', e.target.value)} />
+                        <div className="space-y-1">
+                          <PartAutocomplete
+                            value={it.description || it.name || ''}
+                            onSelect={(part) => handlePartSelect(idx, part)}
+                            onManualEntry={(text) => handleManualPartEntry(idx, text)}
+                            placeholder="Buscar en catálogo o escribir..."
+                            showPartNumber={true}
+                            allowManualEntry={true}
+                          />
+                          <div className="flex items-center justify-between">
+                            <p className="text-xs text-muted-foreground">
+                              💡 Busca en el catálogo o escribe manualmente
+                            </p>
+                            {it.part_id && (
+                              <span className="text-xs text-green-600 font-medium flex items-center gap-1">
+                                <Package className="h-3 w-3" />
+                                En catálogo
+                              </span>
+                            )}
+                          </div>
+                        </div>
                       </TableCell>
                       <TableCell>
-                        <Input value={it.part_number || it.partNumber || ''} onChange={e => updateItem(idx, 'part_number', e.target.value)} />
+                        <Input 
+                          value={it.part_number || it.partNumber || ''} 
+                          onChange={e => updateItem(idx, 'part_number', e.target.value)}
+                          placeholder="Cód/Modelo"
+                        />
                       </TableCell>
                       <TableCell className="text-right">
-                        <Input type="number" value={it.quantity ?? 1} onChange={e => updateItem(idx, 'quantity', Number(e.target.value))} />
+                        <Input 
+                          type="number" 
+                          value={it.quantity ?? 1} 
+                          onChange={e => updateItem(idx, 'quantity', Number(e.target.value))}
+                          className="text-right"
+                        />
                       </TableCell>
                       <TableCell className="text-right">
-                        <Input type="number" value={it.unit_price ?? 0} onChange={e => updateItem(idx, 'unit_price', Number(e.target.value))} />
+                        <Input 
+                          type="number" 
+                          step="0.01"
+                          value={it.unit_price ?? 0} 
+                          onChange={e => updateItem(idx, 'unit_price', Number(e.target.value))}
+                          className="text-right"
+                        />
                       </TableCell>
-                      <TableCell className="text-right">
-                        {Number(it.total_price || 0).toFixed(2)}
+                      <TableCell className="text-right font-medium">
+                        ${Number(it.total_price || 0).toFixed(2)}
                       </TableCell>
                       <TableCell className="text-right">
                         <Button variant="ghost" size="icon" onClick={() => removeItem(idx)}>
@@ -225,10 +318,19 @@ export function PurchaseOrderEditDialog({ open, onOpenChange, purchaseOrderId, i
                       </TableCell>
                     </TableRow>
                   ))}
+                  {items.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
+                        No hay artículos. Haz clic en "Agregar" para comenzar.
+                      </TableCell>
+                    </TableRow>
+                  )}
                 </TableBody>
               </Table>
             </div>
-            <div className="text-right mt-2 font-medium">Total calculado: ${totalCalculated.toFixed(2)}</div>
+            <div className="text-right mt-2 font-medium text-lg">
+              Total calculado: ${totalCalculated.toFixed(2)}
+            </div>
           </div>
         </div>
 

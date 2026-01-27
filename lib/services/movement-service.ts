@@ -106,7 +106,8 @@ export class MovementService {
         .select(`
           *,
           part:inventory_parts(id, part_number, name),
-          warehouse:inventory_warehouses(id, name, warehouse_code)
+          warehouse:inventory_warehouses!inventory_movements_warehouse_id_fkey(id, name, warehouse_code),
+          transfer_warehouse:inventory_warehouses!inventory_movements_transfer_to_warehouse_id_fkey(id, name, warehouse_code)
         `, { count: 'exact' })
       
       if (part_id) {

@@ -4,9 +4,10 @@ import { InventoryFulfillmentService } from '@/lib/services/inventory-fulfillmen
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const resolvedParams = await params
     const supabase = await createClient()
     const { data: { user }, error: authError } = await supabase.auth.getUser()
     
@@ -17,7 +18,7 @@ export async function GET(
       }, { status: 401 })
     }
 
-    const availability = await InventoryFulfillmentService.checkPOAvailability(params.id)
+    const availability = await InventoryFulfillmentService.checkPOAvailability(resolvedParams.id)
 
     return NextResponse.json({
       success: true,

@@ -4,9 +4,10 @@ import { InventoryFulfillmentService, FulfillFromInventoryRequest } from '@/lib/
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const resolvedParams = await params
     const supabase = await createClient()
     const { data: { user }, error: authError } = await supabase.auth.getUser()
     
@@ -45,7 +46,7 @@ export async function POST(
     }
 
     const result = await InventoryFulfillmentService.fulfillFromInventory({
-      purchase_order_id: params.id,
+      purchase_order_id: resolvedParams.id,
       ...body
     }, user.id)
 
