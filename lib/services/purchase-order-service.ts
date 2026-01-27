@@ -64,9 +64,8 @@ export class PurchaseOrderService {
       // Generate unique order ID
       const order_id = await this.generateOrderId()
       
-      // For enhanced purchase orders, automatically advance to pending_approval
-      // instead of staying in draft - this makes the workflow more intuitive
-      const initialStatus = 'pending_approval'
+      // Start in draft status - will advance to pending_approval after quotation selection
+      const initialStatus = 'draft'
       
       // Determine PO purpose if not provided
       // Default: work_order_cash if has WO, inventory_restock if standalone
