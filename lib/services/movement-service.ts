@@ -106,8 +106,7 @@ export class MovementService {
         .select(`
           *,
           part:inventory_parts(id, part_number, name),
-          warehouse:inventory_warehouses(id, name, warehouse_code),
-          performed_by_user:profiles!inventory_movements_performed_by_fkey(id, nombre, apellido)
+          warehouse:inventory_warehouses(id, name, warehouse_code)
         `, { count: 'exact' })
       
       if (part_id) {
@@ -147,8 +146,30 @@ export class MovementService {
       
       if (error) throw error
       
+      // Fetch user profiles separately if needed
+      const movements = (data || []) as any[]
+      const userIds = [...new Set(movements.map(m => m.performed_by).filter(Boolean))]
+      
+      let profilesMap = new Map()
+      if (userIds.length > 0) {
+        const { data: profiles } = await supabase
+          .from('profiles')
+          .select('id, nombre, apellido')
+          .in('id', userIds)
+        
+        if (profiles) {
+          profilesMap = new Map(profiles.map(p => [p.id, p]))
+        }
+      }
+      
+      // Enrich movements with profile data
+      const enrichedMovements = movements.map(movement => ({
+        ...movement,
+        performed_by_user: movement.performed_by ? profilesMap.get(movement.performed_by) : null
+      }))
+      
       return {
-        movements: (data || []) as MovementWithDetails[],
+        movements: enrichedMovements as MovementWithDetails[],
         total: count || 0,
         page,
         limit
