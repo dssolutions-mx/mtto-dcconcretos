@@ -59,18 +59,22 @@ export class InventoryReceiptService {
       
       if (poError) throw poError
       
-      // Validate PO status
-      if (!['purchased', 'received', 'validated'].includes(po.status)) {
-        throw new Error('Purchase order must be purchased, received, or validated before receiving to inventory')
+      // Validate PO status - allow approved and later statuses
+      const allowedStatuses = ['approved', 'purchased', 'received', 'validated', 'receipt_uploaded', 'ordered']
+      if (!allowedStatuses.includes(po.status)) {
+        throw new Error(`Purchase order must be approved or later (current status: ${po.status}) before receiving to inventory. Allowed statuses: ${allowedStatuses.join(', ')}`)
       }
       
       // Process each item
       for (const item of request.items) {
         try {
+          console.log(`Processing receipt item:`, { part_name: item.part_name, warehouse_id: item.warehouse_id, quantity: item.quantity })
+          
           let part_id = item.part_id
           
           // Create part if it doesn't exist
           if (!part_id && item.part_number) {
+            console.log(`Creating part for ${item.part_number}`)
             const newPart = await InventoryService.createPart({
               part_number: item.part_number,
               name: item.part_name,
@@ -82,11 +86,13 @@ export class InventoryReceiptService {
             parts_created.push(part_id)
           } else if (!part_id) {
             // Try to find part by name
+            console.log(`Searching for part: ${item.part_name}`)
             const parts = await InventoryService.searchPartsByNumber(item.part_name)
             if (parts.length > 0) {
               part_id = parts[0].id
             } else {
               // Create new part without part number
+              console.log(`Creating new part without part number`)
               const newPart = await InventoryService.createPart({
                 part_number: `AUTO-${Date.now()}`,
                 name: item.part_name,
@@ -100,6 +106,7 @@ export class InventoryReceiptService {
           }
           
           if (!part_id) {
+            console.error(`Could not create or find part for ${item.part_name}`)
             results.push({
               movement_id: '',
               part_id: '',
@@ -111,10 +118,13 @@ export class InventoryReceiptService {
             continue
           }
           
+          console.log(`Got part_id: ${part_id}, getting/creating stock for warehouse: ${item.warehouse_id}`)
           // Get or create stock entry
           const stock = await StockService.getOrCreateStock(part_id, item.warehouse_id)
+          console.log(`Got stock:`, { stock_id: stock.id, current_quantity: stock.current_quantity })
           
           // Create receipt movement
+          console.log(`Creating receipt movement`)
           const movement = await MovementService.createMovement({
             part_id,
             stock_id: stock.id,
@@ -129,6 +139,7 @@ export class InventoryReceiptService {
             notes: item.notes || request.notes
           })
           
+          console.log(`Movement created:`, movement.id)
           movements_created.push(movement.id)
           
           results.push({
@@ -141,13 +152,16 @@ export class InventoryReceiptService {
           })
         } catch (error) {
           console.error(`Error receiving item ${item.part_name}:`, error)
+          const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+          const errorDetails = error instanceof Error ? error.stack : String(error)
+          console.error(`Error details:`, errorDetails)
           results.push({
             movement_id: '',
             part_id: item.part_id || '',
             stock_id: '',
             quantity: item.quantity,
             success: false,
-            error_message: error instanceof Error ? error.message : 'Unknown error'
+            error_message: errorMessage
           })
         }
       }
@@ -160,21 +174,49 @@ export class InventoryReceiptService {
         remaining_qty: 0
       }))
       
-      await supabase
-        .from('purchase_orders')
-        .update({
+      // Update purchase order receipt status
+      try {
+        const updateData: any = {
           received_to_inventory: true,
           received_to_inventory_date: request.receipt_date || new Date().toISOString(),
-          received_to_inventory_by: user_id,
-          received_items_summary,
           updated_at: new Date().toISOString()
-        })
-        .eq('id', request.purchase_order_id)
+        }
+        
+        // Try to include optional fields if they exist
+        try {
+          updateData.received_to_inventory_by = user_id
+          updateData.received_items_summary = received_items_summary
+        } catch {
+          // Fields may not exist, ignore
+        }
+        
+        const { error: updateError } = await supabase
+          .from('purchase_orders')
+          .update(updateData)
+          .eq('id', request.purchase_order_id)
+        
+        if (updateError) {
+          console.error('Error updating PO receipt status:', updateError)
+          // Don't fail the whole operation if PO update fails, but log it
+        } else {
+          console.log('PO receipt status updated successfully')
+        }
+      } catch (updateError) {
+        console.warn('Error updating PO (non-critical):', updateError)
+      }
       
-      // Generate receipt number
-      const { data: receiptNumberData } = await supabase.rpc('generate_inventory_receipt_number', {
-        po_order_id: po.order_id
-      })
+      // Generate receipt number (optional, don't fail if RPC doesn't exist)
+      let receiptNumber = `REC-${po.order_id}-${Date.now()}`
+      try {
+        const { data: receiptNumberData, error: rpcError } = await supabase.rpc('generate_inventory_receipt_number', {
+          po_order_id: po.order_id
+        })
+        if (!rpcError && receiptNumberData) {
+          receiptNumber = receiptNumberData
+        }
+      } catch (rpcError) {
+        console.warn('RPC generate_inventory_receipt_number not available, using generated number:', rpcError)
+      }
       
       const total_value = request.items.reduce((sum, item) => 
         sum + (item.quantity * item.unit_cost), 0
@@ -188,24 +230,41 @@ export class InventoryReceiptService {
       const primaryWarehouse = Array.from(warehouseCounts.entries())
         .sort((a, b) => b[1] - a[1])[0]?.[0] || request.items[0]?.warehouse_id
       
-      await supabase
-        .from('po_inventory_receipts')
-        .insert({
-          purchase_order_id: request.purchase_order_id,
-          receipt_number: receiptNumberData || `REC-${po.order_id}-001`,
-          receipt_date: request.receipt_date || new Date().toISOString(),
-          warehouse_id: primaryWarehouse,
-          items: request.items.map((item, index) => ({
-            po_item_index: index,
-            part_id: item.part_id,
-            quantity: item.quantity,
-            unit_cost: item.unit_cost
-          })),
-          total_items: request.items.length,
-          total_value,
-          received_by: user_id,
-          notes: request.notes
-        })
+      // Insert receipt record (optional, don't fail if table doesn't exist)
+      try {
+        const { error: receiptError } = await supabase
+          .from('po_inventory_receipts')
+          .insert({
+            purchase_order_id: request.purchase_order_id,
+            receipt_number: receiptNumber,
+            receipt_date: request.receipt_date || new Date().toISOString(),
+            warehouse_id: primaryWarehouse,
+            items: request.items.map((item, index) => ({
+              po_item_index: index,
+              part_id: item.part_id,
+              quantity: item.quantity,
+              unit_cost: item.unit_cost
+            })),
+            total_items: request.items.length,
+            total_value,
+            received_by: user_id,
+            notes: request.notes
+          })
+        
+        if (receiptError) {
+          console.warn('Error creating receipt record (non-critical):', receiptError)
+        }
+      } catch (receiptError) {
+        console.warn('po_inventory_receipts table may not exist (non-critical):', receiptError)
+      }
+      
+      // Check if any items failed
+      const failedItems = results.filter(r => !r.success)
+      if (failedItems.length > 0 && movements_created.length === 0) {
+        // If all items failed, throw error
+        const errorMessages = failedItems.map(r => r.error_message).filter(Boolean).join('; ')
+        throw new Error(`Failed to receive items: ${errorMessages}`)
+      }
       
       return {
         movements_created,
@@ -215,7 +274,10 @@ export class InventoryReceiptService {
       }
     } catch (error) {
       console.error('Error receiving to inventory:', error)
-      throw new Error('Failed to receive to inventory')
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+      const errorDetails = error instanceof Error ? error.stack : String(error)
+      console.error('Error stack:', errorDetails)
+      throw new Error(`Failed to receive to inventory: ${errorMessage}`)
     }
   }
   

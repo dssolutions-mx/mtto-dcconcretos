@@ -327,7 +327,17 @@ export function ReceiveToInventoryDialog({
 
     if (invalidItems.length > 0) {
       console.error('Invalid items:', invalidItems)
-      toast.error('Todos los items deben tener almacén seleccionado y cantidad mayor a 0')
+      const missingWarehouse = invalidItems.filter(item => !item.warehouse_id)
+      const invalidQuantity = invalidItems.filter(item => item.quantity <= 0)
+      
+      if (missingWarehouse.length > 0) {
+        const itemNames = missingWarehouse.map(item => item.part_name).join(', ')
+        toast.error(`Debes seleccionar un almacén para: ${itemNames}`)
+      } else if (invalidQuantity.length > 0) {
+        toast.error('La cantidad debe ser mayor a 0 para todos los items')
+      } else {
+        toast.error('Todos los items deben tener almacén seleccionado y cantidad mayor a 0')
+      }
       return
     }
 
@@ -601,11 +611,11 @@ export function ReceiveToInventoryDialog({
                           </div>
                         ) : (
                           <Select
-                            value={item.warehouse_id}
+                            value={item.warehouse_id || undefined}
                             onValueChange={(value) => updateReceiptItem(index, { warehouse_id: value })}
                           >
-                            <SelectTrigger className="w-[200px]">
-                              <SelectValue placeholder="Seleccionar almacén" />
+                            <SelectTrigger className={`w-[200px] ${!item.warehouse_id ? 'border-red-500' : ''}`}>
+                              <SelectValue placeholder="Seleccionar almacén *" />
                             </SelectTrigger>
                             <SelectContent>
                               {warehouses.map((warehouse) => (
@@ -625,6 +635,9 @@ export function ReceiveToInventoryDialog({
                               ))}
                             </SelectContent>
                           </Select>
+                        )}
+                        {!item.warehouse_id && warehouses.length > 0 && (
+                          <p className="text-xs text-red-500 mt-1">Selecciona un almacén</p>
                         )}
                       </TableCell>
                       <TableCell>
