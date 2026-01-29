@@ -149,6 +149,11 @@ export function SpecialOrderForm({
   // Supplier - NOT SELECTED HERE for Special Orders (comes from quotations)
   // Will be auto-populated when quotation is selected
   const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(null)
+  
+  // Supplier suggestions and recent suppliers
+  const [recentSuppliers, setRecentSuppliers] = useState<string[]>([])
+  const [supplierSuggestions, setSupplierSuggestions] = useState<string[]>([])
+  const [showSupplierSuggestions, setShowSupplierSuggestions] = useState(false)
 
   // Validation
   const [validationResult, setValidationResult] = useState<QuoteValidationResponse | null>(null)
