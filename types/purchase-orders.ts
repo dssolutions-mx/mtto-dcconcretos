@@ -145,6 +145,7 @@ export interface WorkflowStatusResponse {
     authorized_by?: string | null
     authorization_date?: string | null
     total_amount?: string | null
+    po_purpose?: POPurpose
   }
 }
 

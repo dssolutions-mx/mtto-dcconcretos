@@ -273,7 +273,7 @@ export class PurchaseOrderService {
       // Get current PO with authorization info for 2-step approval display
       const { data: po, error: poError } = await supabase
         .from('purchase_orders')
-        .select('id, status, po_type, requires_quote, authorized_by, authorization_date, total_amount')
+        .select('id, status, po_type, po_purpose, requires_quote, authorized_by, authorization_date, total_amount')
         .eq('id', id)
         .single()
       
@@ -282,10 +282,12 @@ export class PurchaseOrderService {
       }
       
       // Get valid next statuses based on current status using the new function
+      // Now includes po_purpose to support inventory-only workflow
       const { data: nextStatuses, error: statusError } = await supabase
         .rpc('get_valid_next_statuses', { 
           p_current_status: po.status, 
-          p_po_type: po.po_type 
+          p_po_type: po.po_type,
+          p_po_purpose: po.po_purpose || null
         })
       
       if (statusError) {
@@ -305,7 +307,8 @@ export class PurchaseOrderService {
         purchase_order: {
           authorized_by: po.authorized_by,
           authorization_date: po.authorization_date,
-          total_amount: po.total_amount
+          total_amount: po.total_amount,
+          po_purpose: po.po_purpose || undefined
         }
       }
     } catch (error) {
