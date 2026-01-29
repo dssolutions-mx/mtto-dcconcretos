@@ -382,6 +382,7 @@ export interface PurchaseOrderItem {
   id?: string;
   name: string;
   partNumber?: string;
+  part_id?: string;  // Link to inventory catalog (when part is selected from catalog)
   quantity: number;
   unit_price: number;
   total_price: number;

@@ -91,6 +91,7 @@ export function WorkOrderEditForm({ workOrder }: WorkOrderEditFormProps) {
   const [newPart, setNewPart] = useState<PurchaseOrderItem>({
     name: '',
     partNumber: '',
+    part_id: undefined,
     quantity: 1,
     unit_price: 0,
     total_price: 0
@@ -226,6 +227,7 @@ export function WorkOrderEditForm({ workOrder }: WorkOrderEditFormProps) {
     setNewPart({
       name: '',
       partNumber: '',
+      part_id: undefined,
       quantity: 1,
       unit_price: 0,
       total_price: 0
@@ -258,6 +260,7 @@ export function WorkOrderEditForm({ workOrder }: WorkOrderEditFormProps) {
         ...prev,
         name: part.name,
         partNumber: part.part_number,
+        part_id: part.id,  // Save link to inventory catalog
         // Auto-fill unit price if available
         unit_price: part.default_unit_cost || prev.unit_price || 0,
         // Recalculate total
@@ -268,7 +271,8 @@ export function WorkOrderEditForm({ workOrder }: WorkOrderEditFormProps) {
       setNewPart(prev => ({
         ...prev,
         name: '',
-        partNumber: ''
+        partNumber: '',
+        part_id: undefined
       }))
     }
   }
@@ -280,7 +284,9 @@ export function WorkOrderEditForm({ workOrder }: WorkOrderEditFormProps) {
       ...prev,
       name: text,
       // Keep partNumber if it was already set, otherwise clear it
-      partNumber: prev.partNumber || ''
+      partNumber: prev.partNumber || '',
+      // Clear part_id for manual entries (not from catalog)
+      part_id: undefined
     }))
   }
 

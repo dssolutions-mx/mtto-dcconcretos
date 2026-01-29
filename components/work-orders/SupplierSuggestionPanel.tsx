@@ -59,8 +59,18 @@ export function SupplierSuggestionPanel({
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    loadSuggestions()
-  }, [workOrderId, assetId, problemDescription, requiredServices, urgency, budgetRange])
+    // Only load suggestions if we have minimum required data
+    // Don't load on initial mount if creating new work order (no workOrderId)
+    if (assetId && problemDescription && problemDescription.length > 10) {
+      // Debounce the API call to avoid conflicts with other concurrent requests
+      const timer = setTimeout(() => {
+        loadSuggestions()
+      }, 1500) // Wait 1.5 seconds after form data changes
+      
+      return () => clearTimeout(timer)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [assetId, problemDescription]) // Only depend on essential fields to prevent loops
 
   const loadSuggestions = async () => {
     setLoading(true)

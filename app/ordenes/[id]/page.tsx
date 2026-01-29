@@ -29,7 +29,6 @@ import {
 import { EvidenceViewer, type EvidenceItem } from "@/components/ui/evidence-viewer"
 import { WorkOrderCostDisplay } from "@/components/work-orders/work-order-cost-display"
 import { WorkOrderPrintHandler } from "@/components/work-orders/work-order-print-handler"
-import { WOInventoryActions } from "@/components/work-orders/inventory-actions"
 
 // Extended type for work order with completed_at field
 type ExtendedWorkOrder = WorkOrderComplete & {
@@ -562,14 +561,7 @@ export default async function WorkOrderDetailsPage({
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                {/* Inventory Actions */}
-                <div className="mb-4 pb-4 border-b">
-                  <WOInventoryActions
-                    workOrderId={extendedWorkOrder.id}
-                    inventoryReserved={extendedWorkOrder.inventory_reserved || false}
-                    status={extendedWorkOrder.status}
-                  />
-                </div>
+                {/* Note: Inventory consumption is handled through Purchase Orders, not directly from Work Orders */}
                 {/* Mobile/Compact View */}
                 <div className="space-y-3 md:hidden">
                   {requiredParts.map((part: any, index: number) => (

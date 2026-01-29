@@ -14,7 +14,7 @@ import { Calendar } from "@/components/ui/calendar"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
-import { CalendarIcon, Save, Plus, Trash2, Camera, FileText, CheckCircle } from "lucide-react"
+import { CalendarIcon, Save, Plus, Trash2, Camera, FileText, CheckCircle, Package, AlertCircle, Loader2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { createClient } from "@/lib/supabase"
 import { InsertWorkOrder, MaintenanceType, ServiceOrderPriority, WorkOrderStatus, Profile, PurchaseOrderItem } from "@/types"
@@ -22,6 +22,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { EvidenceUpload, type EvidencePhoto } from "@/components/ui/evidence-upload"
 import { Separator } from "@/components/ui/separator"
 import { Badge } from "@/components/ui/badge"
+import { Alert, AlertDescription } from "@/components/ui/alert"
 import { SupplierSuggestionPanel } from "./SupplierSuggestionPanel"
 import { SupplierSuggestionPanelMobile } from "./SupplierSuggestionPanelMobile"
 import { Supplier } from "@/types/suppliers"
@@ -70,10 +71,24 @@ export function WorkOrderForm() {
   const [newPart, setNewPart] = useState<PurchaseOrderItem>({
     name: '',
     partNumber: '',
+    part_id: undefined,
     quantity: 1,
     unit_price: 0,
     total_price: 0
   })
+
+  // Add state for inventory availability
+  const [partsAvailability, setPartsAvailability] = useState<Map<string, {
+    total_available: number
+    sufficient: boolean
+    available_by_warehouse: Array<{
+      warehouse_id: string
+      warehouse_name: string
+      available_quantity: number
+    }>
+  }>>(new Map())
+  const [checkingInventory, setCheckingInventory] = useState(false)
+  const [selectedAssetPlantId, setSelectedAssetPlantId] = useState<string | null>(null)
 
   // Add state for evidence
   const [creationEvidence, setCreationEvidence] = useState<EvidencePhoto[]>([])
@@ -104,7 +119,7 @@ export function WorkOrderForm() {
 
       const { data: assetsData, error: assetsError } = await supabase
         .from("assets")
-        .select("id, name, asset_id")
+        .select("id, name, asset_id, plant_id")
         .order("name")
       if (assetsError) {
         console.error("Error fetching assets:", assetsError)
@@ -143,9 +158,23 @@ export function WorkOrderForm() {
       const assetExists = assets.find(asset => asset.id === assetIdParam)
       if (assetExists) {
         setFormData(prev => ({ ...prev, asset_id: assetIdParam }))
+        if (assetExists.plant_id) {
+          setSelectedAssetPlantId(assetExists.plant_id)
+        }
       }
     }
   }, [searchParams, assets])
+  
+  // Check inventory when asset changes (but not on every parts change to avoid infinite loops)
+  useEffect(() => {
+    if (selectedAssetPlantId && requiredParts.length > 0) {
+      const partsWithIds = requiredParts.filter(p => p.part_id)
+      if (partsWithIds.length > 0) {
+        checkPartsInventory(partsWithIds, selectedAssetPlantId)
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedAssetPlantId])
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { id, value } = e.target
@@ -165,10 +194,64 @@ export function WorkOrderForm() {
     setFormData(prev => ({ ...prev, planned_date: date ? date.toISOString() : null }))
   }
 
-  const handleAssetChange = (assetId: string | null) => {
+  // Function to check inventory availability for parts
+  const checkPartsInventory = async (parts: PurchaseOrderItem[], plantId: string) => {
+    if (!plantId || parts.length === 0) return
+    
+    setCheckingInventory(true)
+    const availabilityMap = new Map()
+    
+    try {
+      // Check each part with part_id
+      for (const part of parts) {
+        if (part.part_id) {
+          const response = await fetch(`/api/inventory/parts/${part.part_id}/availability?plant_id=${plantId}&quantity=${part.quantity}`)
+          if (response.ok) {
+            const data = await response.json()
+            if (data.success) {
+              availabilityMap.set(part.id, {
+                total_available: data.total_available || 0,
+                sufficient: data.sufficient || false,
+                available_by_warehouse: data.available_by_warehouse || []
+              })
+            }
+          }
+        }
+      }
+      
+      setPartsAvailability(availabilityMap)
+    } catch (error) {
+      console.error('Error checking inventory:', error)
+    } finally {
+      setCheckingInventory(false)
+    }
+  }
+
+  const handleAssetChange = async (assetId: string | null) => {
     handleSelectChange('asset_id', assetId)
     if (!isFromChecklist) {
         setFormData(prev => ({ ...prev, checklist_id: null }));
+    }
+    
+    // Fetch plant_id from asset
+    if (assetId) {
+      const { data: assetData } = await supabase
+        .from('assets')
+        .select('plant_id')
+        .eq('id', assetId)
+        .single()
+      
+      if (assetData?.plant_id) {
+        setSelectedAssetPlantId(assetData.plant_id)
+        // Check inventory for existing parts
+        if (requiredParts.length > 0) {
+          checkPartsInventory(requiredParts, assetData.plant_id)
+        }
+      } else {
+        setSelectedAssetPlantId(null)
+      }
+    } else {
+      setSelectedAssetPlantId(null)
     }
   }
   
@@ -180,7 +263,7 @@ export function WorkOrderForm() {
   }
 
   // Add function to handle adding a new part
-  const handleAddPart = () => {
+  const handleAddPart = async () => {
     if (!newPart.name) {
       setError("Por favor, ingresa el nombre del repuesto.");
       return;
@@ -189,20 +272,38 @@ export function WorkOrderForm() {
     // Calculate total price
     const totalPrice = newPart.quantity * newPart.unit_price;
     
-    // Add new part to the list
-    setRequiredParts([
-      ...requiredParts,
-      { 
-        ...newPart, 
-        id: crypto.randomUUID(),
-        total_price: totalPrice
+    const newPartWithId = {
+      ...newPart,
+      id: crypto.randomUUID(),
+      total_price: totalPrice
+    }
+    
+    // Transfer temporary availability to the new part's ID
+    if (newPart.part_id) {
+      const tempKey = `temp-${newPart.part_id}`
+      const tempAvailability = partsAvailability.get(tempKey)
+      if (tempAvailability) {
+        setPartsAvailability(prev => {
+          const newMap = new Map(prev)
+          newMap.delete(tempKey) // Remove temp
+          newMap.set(newPartWithId.id!, tempAvailability) // Set with part ID
+          return newMap
+        })
+      } else if (selectedAssetPlantId) {
+        // If no temp availability, check now
+        await checkPartsInventory([newPartWithId], selectedAssetPlantId)
       }
-    ]);
+    }
+    
+    // Add new part to the list
+    const updatedParts = [...requiredParts, newPartWithId]
+    setRequiredParts(updatedParts)
     
     // Reset new part form
     setNewPart({
       name: '',
       partNumber: '',
+      part_id: undefined,
       quantity: 1,
       unit_price: 0,
       total_price: 0
@@ -229,23 +330,71 @@ export function WorkOrderForm() {
   };
 
   // Handle part selection from autocomplete
-  const handlePartSelect = (part: PartSuggestion | null) => {
+  const handlePartSelect = async (part: PartSuggestion | null) => {
     if (part) {
-      setNewPart(prev => ({
-        ...prev,
-        name: part.name,
-        partNumber: part.part_number,
-        // Auto-fill unit price if available
-        unit_price: part.default_unit_cost || prev.unit_price || 0,
-        // Recalculate total
-        total_price: (part.default_unit_cost || Number(prev.unit_price) || 0) * (Number(prev.quantity) || 1)
-      }))
+      // Use functional update to ensure we get the latest state
+      setNewPart(prev => {
+        const currentQuantity = prev.quantity || 1
+        // Use default_unit_cost if available, otherwise keep existing price or 0
+        // Convert to number and handle null/undefined cases
+        const unitPrice = (part.default_unit_cost !== undefined && part.default_unit_cost !== null && part.default_unit_cost !== 0) 
+          ? Number(part.default_unit_cost) 
+          : (prev.unit_price || 0)
+        const totalPrice = unitPrice * currentQuantity
+        
+        console.log('handlePartSelect - part:', part)
+        console.log('handlePartSelect - default_unit_cost:', part.default_unit_cost)
+        console.log('handlePartSelect - calculated unitPrice:', unitPrice)
+        console.log('handlePartSelect - totalPrice:', totalPrice)
+        
+        const updated = {
+          name: part.name,
+          partNumber: part.part_number,
+          part_id: part.id,  // Save link to inventory catalog
+          quantity: currentQuantity,  // Keep existing quantity
+          unit_price: unitPrice,  // Auto-fill unit price if available
+          total_price: totalPrice
+        }
+        console.log('handlePartSelect - updated state:', updated)
+        return updated
+      })
+      
+      // Check inventory availability after state update (outside setState)
+      if (selectedAssetPlantId && part.id) {
+        // Capture quantity from current state
+        const qtyToCheck = newPart.quantity || 1
+        // Use setTimeout to ensure state is updated before checking
+        setTimeout(async () => {
+          try {
+            const response = await fetch(`/api/inventory/parts/${part.id}/availability?plant_id=${selectedAssetPlantId}&quantity=${qtyToCheck}`)
+            if (response.ok) {
+              const data = await response.json()
+              if (data.success) {
+                // Store availability for this part (we'll use a temp key since part isn't added yet)
+                const tempKey = `temp-${part.id}`
+                setPartsAvailability(prev => {
+                  const newMap = new Map(prev)
+                  newMap.set(tempKey, {
+                    total_available: data.total_available || 0,
+                    sufficient: data.sufficient || false,
+                    available_by_warehouse: data.available_by_warehouse || []
+                  })
+                  return newMap
+                })
+              }
+            }
+          } catch (error) {
+            console.error('Error checking inventory for selected part:', error)
+          }
+        }, 100)
+      }
     } else {
       // Clear part info if selection cleared
       setNewPart(prev => ({
         ...prev,
         name: '',
-        partNumber: ''
+        partNumber: '',
+        part_id: undefined
       }))
     }
   }
@@ -257,7 +406,9 @@ export function WorkOrderForm() {
       ...prev,
       name: text,
       // Keep partNumber if it was already set, otherwise clear it
-      partNumber: prev.partNumber || ''
+      partNumber: prev.partNumber || '',
+      // Clear part_id for manual entries (not from catalog)
+      part_id: undefined
     }))
   }
 
@@ -611,6 +762,31 @@ export function WorkOrderForm() {
               <p className="text-xs text-muted-foreground">
                 Busca en el catálogo de inventario o escribe manualmente
               </p>
+              {/* Show inventory status for selected part before adding */}
+              {newPart.part_id && selectedAssetPlantId && (() => {
+                const tempKey = `temp-${newPart.part_id}`
+                const availability = partsAvailability.get(tempKey)
+                return availability ? (
+                  <div className="mt-1">
+                    {availability.sufficient ? (
+                      <Badge variant="default" className="bg-green-500 text-xs">
+                        <Package className="h-3 w-3 mr-1" />
+                        Disponible ({availability.total_available} unidades)
+                      </Badge>
+                    ) : (
+                      <Badge variant="destructive" className="text-xs">
+                        <AlertCircle className="h-3 w-3 mr-1" />
+                        Insuficiente ({availability.total_available} disponibles)
+                      </Badge>
+                    )}
+                  </div>
+                ) : checkingInventory ? (
+                  <Badge variant="outline" className="text-xs mt-1">
+                    <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                    Verificando inventario...
+                  </Badge>
+                ) : null
+              })()}
             </div>
           <div className="hidden">
               <Label htmlFor="partNumber">Número de Parte</Label>
@@ -638,7 +814,7 @@ export function WorkOrderForm() {
                 type="number" 
                 min="0" 
                 step="0.01" 
-                value={newPart.unit_price}
+                value={newPart.unit_price || 0}
                 onChange={(e) => handlePartInputChange('unit_price', parseFloat(e.target.value) || 0)} 
               />
             </div>
@@ -655,38 +831,82 @@ export function WorkOrderForm() {
           </div>
 
           {requiredParts.length > 0 && (
-            <div className="mt-4">
+            <div className="mt-4 space-y-2">
+              {requiredParts.some(p => {
+                const avail = partsAvailability.get(p.id || '')
+                return p.part_id && avail && !avail.sufficient
+              }) && (
+                <Alert className="bg-yellow-50 border-yellow-200">
+                  <AlertCircle className="h-4 w-4 text-yellow-600" />
+                  <AlertDescription className="text-yellow-800">
+                    Algunos repuestos no tienen suficiente inventario. Necesitarás crear una Orden de Compra para obtenerlos.
+                  </AlertDescription>
+                </Alert>
+              )}
               <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead>Nombre</TableHead>
                     <TableHead>Número de Parte</TableHead>
                     <TableHead>Cantidad</TableHead>
+                    <TableHead>Inventario</TableHead>
                     <TableHead className="text-right">Precio Unit.</TableHead>
                     <TableHead className="text-right">Total</TableHead>
                     <TableHead className="w-[50px]"></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {requiredParts.map((part) => (
-                    <TableRow key={part.id}>
-                      <TableCell>{part.name}</TableCell>
-                      <TableCell>{part.partNumber || 'N/A'}</TableCell>
-                      <TableCell>{part.quantity}</TableCell>
-                      <TableCell className="text-right">${part.unit_price.toFixed(2)}</TableCell>
-                      <TableCell className="text-right">${part.total_price.toFixed(2)}</TableCell>
-                      <TableCell>
-                        <Button 
-                          type="button" 
-                          variant="ghost" 
-                          size="icon"
-                          onClick={() => handleRemovePart(part.id!)}
-                        >
-                          <Trash2 className="h-4 w-4 text-red-500" />
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                  {requiredParts.map((part) => {
+                    const availability = partsAvailability.get(part.id || '')
+                    const hasPartId = !!part.part_id
+                    const isChecking = checkingInventory && hasPartId && !availability
+                    
+                    return (
+                      <TableRow key={part.id}>
+                        <TableCell>{part.name}</TableCell>
+                        <TableCell>{part.partNumber || 'N/A'}</TableCell>
+                        <TableCell>{part.quantity}</TableCell>
+                        <TableCell>
+                          {!hasPartId ? (
+                            <Badge variant="outline" className="text-xs">No en catálogo</Badge>
+                          ) : isChecking ? (
+                            <Badge variant="outline" className="text-xs">
+                              <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                              Verificando...
+                            </Badge>
+                          ) : availability ? (
+                            availability.sufficient ? (
+                              <Badge variant="default" className="bg-green-500 text-xs">
+                                <Package className="h-3 w-3 mr-1" />
+                                Disponible ({availability.total_available})
+                              </Badge>
+                            ) : (
+                              <Badge variant="destructive" className="text-xs">
+                                <AlertCircle className="h-3 w-3 mr-1" />
+                                Insuficiente ({availability.total_available} disp.)
+                              </Badge>
+                            )
+                          ) : selectedAssetPlantId ? (
+                            <Badge variant="outline" className="text-xs">Sin verificar</Badge>
+                          ) : (
+                            <Badge variant="outline" className="text-xs">Selecciona activo</Badge>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-right">${part.unit_price.toFixed(2)}</TableCell>
+                        <TableCell className="text-right">${part.total_price.toFixed(2)}</TableCell>
+                        <TableCell>
+                          <Button 
+                            type="button" 
+                            variant="ghost" 
+                            size="icon"
+                            onClick={() => handleRemovePart(part.id!)}
+                          >
+                            <Trash2 className="h-4 w-4 text-red-500" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    )
+                  })}
                   <TableRow>
                     <TableCell colSpan={4} className="text-right font-medium">Total Estimado:</TableCell>
                     <TableCell className="text-right font-bold">
@@ -796,31 +1016,35 @@ export function WorkOrderForm() {
         description="Suba fotografías del problema identificado, estado del equipo y cualquier documentación relevante"
       />
 
-      {/* Supplier Suggestions */}
-      <div className="hidden md:block">
-        <SupplierSuggestionPanel
-          workOrderId={formData.id}
-          assetId={formData.asset_id}
-          problemDescription={formData.description}
-          urgency={formData.priority}
-          onSupplierAssign={(supplier) => {
-            setAssignedSupplier(supplier)
-            setSupplierNotes(`Proveedor asignado automáticamente basado en recomendaciones del sistema`)
-          }}
-        />
-      </div>
-      <div className="md:hidden">
-        <SupplierSuggestionPanelMobile
-          workOrderId={formData.id}
-          assetId={formData.asset_id}
-          problemDescription={formData.description}
-          urgency={formData.priority}
-          onSupplierAssign={(supplier) => {
-            setAssignedSupplier(supplier)
-            setSupplierNotes(`Proveedor asignado automáticamente basado en recomendaciones del sistema`)
-          }}
-        />
-      </div>
+      {/* Supplier Suggestions - Only show when form has enough data and is not initial load */}
+      {formData.asset_id && formData.description && formData.description.length > 10 && !isLoading && (
+        <>
+          <div className="hidden md:block">
+            <SupplierSuggestionPanel
+              workOrderId={formData.id}
+              assetId={formData.asset_id}
+              problemDescription={formData.description}
+              urgency={formData.priority}
+              onSupplierAssign={(supplier) => {
+                setAssignedSupplier(supplier)
+                setSupplierNotes(`Proveedor asignado automáticamente basado en recomendaciones del sistema`)
+              }}
+            />
+          </div>
+          <div className="md:hidden">
+            <SupplierSuggestionPanelMobile
+              workOrderId={formData.id}
+              assetId={formData.asset_id}
+              problemDescription={formData.description}
+              urgency={formData.priority}
+              onSupplierAssign={(supplier) => {
+                setAssignedSupplier(supplier)
+                setSupplierNotes(`Proveedor asignado automáticamente basado en recomendaciones del sistema`)
+              }}
+            />
+          </div>
+        </>
+      )}
 
       {/* Assigned Supplier Display */}
       {assignedSupplier && (
