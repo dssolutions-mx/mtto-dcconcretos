@@ -389,6 +389,18 @@ export interface PurchaseOrderItem {
   quoted_unit_price?: number;  // Price from selected quotation (set when quotation is selected)
   supplier?: string;
   estimated_delivery?: string;
+  fulfill_from?: 'inventory' | 'purchase';  // Source selection per item
+  availability?: {
+    sufficient: boolean;
+    total_available: number;
+    available_by_warehouse: Array<{
+      warehouse_id: string;
+      warehouse_name: string;
+      available_quantity: number;
+      current_quantity: number;
+      reserved_quantity: number;
+    }>;
+  };
 }
 
 // Interfaz extendida para modelos con sus intervalos de mantenimiento

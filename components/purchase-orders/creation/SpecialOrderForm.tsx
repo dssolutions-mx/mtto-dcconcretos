@@ -22,7 +22,9 @@ import {
   CheckCircle2,
   Package,
   Clock,
-  Quote
+  Quote,
+  ShoppingCart,
+  XCircle
 } from "lucide-react"
 import { PurchaseOrderType, PaymentMethod, CreatePurchaseOrderRequest, QuoteValidationResponse } from "@/types/purchase-orders"
 import { QuotationValidator } from "./QuotationValidator"
@@ -53,6 +55,19 @@ interface OrderItem {
   total_price: number
   lead_time_days?: number
   is_special_order?: boolean
+  part_id?: string  // Link to inventory catalog
+  fulfill_from?: 'inventory' | 'purchase'  // Source selection per item
+  availability?: {
+    sufficient: boolean
+    total_available: number
+    available_by_warehouse: Array<{
+      warehouse_id: string
+      warehouse_name: string
+      available_quantity: number
+      current_quantity: number
+      reserved_quantity: number
+    }>
+  }
 }
 
 interface WorkOrderData {
@@ -61,10 +76,12 @@ interface WorkOrderData {
   description: string
   required_parts?: any
   estimated_cost?: string
+  plant_id?: string
   asset?: {
     id: string
     name: string
     asset_id: string
+    plant_id?: string
   }
 }
 
@@ -195,6 +212,18 @@ export function SpecialOrderForm({
           `)
           .eq("id", workOrderId)
           .single()
+        
+        // Also fetch plant_id if not in work order directly
+        if (workOrderData && !workOrderData.plant_id && workOrderData.asset?.id) {
+          const { data: assetData } = await supabase
+            .from('assets')
+            .select('plant_id')
+            .eq('id', workOrderData.asset.id)
+            .single()
+          if (assetData?.plant_id) {
+            workOrderData.plant_id = assetData.plant_id
+          }
+        }
           
         if (workOrderError) {
           setWorkOrderError("Error al cargar la orden de trabajo")
@@ -331,24 +360,89 @@ export function SpecialOrderForm({
     })
   }
 
+  // Check availability for an item
+  const checkItemAvailability = async (item: OrderItem) => {
+    if (!item.part_id) return
+    
+    // Get plant_id from work order
+    const plantId = workOrder?.plant_id || workOrder?.asset?.plant_id
+    if (!plantId) return
+    
+    try {
+      const res = await fetch(
+        `/api/inventory/parts/${item.part_id}/availability?plant_id=${plantId}&quantity=${item.quantity || 0}`
+      )
+      const data = await res.json()
+      if (data.success) {
+        // Update item with availability
+        setItems(prev => prev.map(i => {
+          if (i.id !== item.id) return i
+          const updated = {
+            ...i,
+            availability: {
+              sufficient: data.sufficient,
+              total_available: data.total_available,
+              available_by_warehouse: data.available_by_warehouse || []
+            }
+          }
+          // Auto-suggest inventory if available and not already set
+          if (data.sufficient && !updated.fulfill_from) {
+            updated.fulfill_from = 'inventory'
+          }
+          return updated
+        }))
+      }
+    } catch (err) {
+      console.error('Availability check failed:', err)
+    }
+  }
+
   // Handle part selection from autocomplete
   const handlePartSelect = (part: PartSuggestion | null) => {
     if (part) {
-      setNewItem(prev => ({
-        ...prev,
+      const updatedItem = {
         description: part.name,
         part_number: part.part_number,
+        part_id: part.id,  // Store part_id for availability checking
         // Auto-fill unit price if available
-        unit_price: part.default_unit_cost || prev.unit_price || '',
+        unit_price: part.default_unit_cost || '',
         // Recalculate total
-        total_price: (part.default_unit_cost || Number(prev.unit_price) || 0) * (Number(prev.quantity) || 1)
+        total_price: (part.default_unit_cost || 0) * (Number(newItem.quantity) || 1)
+      }
+      setNewItem(prev => ({
+        ...prev,
+        ...updatedItem
       }))
+      
+      // Check availability if we have plant_id
+      const plantId = workOrder?.plant_id || workOrder?.asset?.plant_id
+      if (plantId && part.id) {
+        setTimeout(async () => {
+          try {
+            const res = await fetch(
+              `/api/inventory/parts/${part.id}/availability?plant_id=${plantId}&quantity=${Number(newItem.quantity) || 1}`
+            )
+            const data = await res.json()
+            if (data.success && data.sufficient) {
+              // Suggest inventory if available
+              setNewItem(prev => ({
+                ...prev,
+                fulfill_from: 'inventory'
+              }))
+            }
+          } catch (err) {
+            console.error('Availability check failed:', err)
+          }
+        }, 100)
+      }
     } else {
       // Clear part info if selection cleared
       setNewItem(prev => ({
         ...prev,
         description: '',
-        part_number: ''
+        part_number: '',
+        part_id: undefined,
+        fulfill_from: undefined
       }))
     }
   }
@@ -365,7 +459,7 @@ export function SpecialOrderForm({
   }
 
   // Add new item to list
-  const addItem = () => {
+  const addItem = async () => {
     if (!newItem.description || !newItem.quantity || !newItem.unit_price) {
       setFormErrors(['Descripción, cantidad y precio unitario son requeridos'])
       return
@@ -376,11 +470,18 @@ export function SpecialOrderForm({
       part_number: newItem.part_number || '',
       description: newItem.description || '',
       brand: newItem.brand || '',
+      part_id: newItem.part_id,
       quantity: Number(newItem.quantity) || 0,
+      fulfill_from: newItem.fulfill_from || 'purchase',  // Default to purchase
       unit_price: Number(newItem.unit_price) || 0,
       total_price: Number(newItem.total_price) || 0,
       lead_time_days: Number(newItem.lead_time_days) || 15,
       is_special_order: true
+    }
+
+    // Check availability if part_id exists
+    if (item.part_id) {
+      await checkItemAvailability(item)
     }
 
     setItems(prev => [...prev, item])
@@ -388,11 +489,13 @@ export function SpecialOrderForm({
       part_number: '',
       description: '',
       brand: '',
+      part_id: undefined,
       quantity: '',
       unit_price: '',
       total_price: 0,
       lead_time_days: 15,
-      is_special_order: true
+      is_special_order: true,
+      fulfill_from: undefined
     })
     setFormErrors([])
   }
@@ -412,8 +515,26 @@ export function SpecialOrderForm({
         const unitPrice = field === 'unit_price' ? Number(value) || 0 : Number(item.unit_price) || 0
         updated.total_price = quantity * unitPrice
       }
+      
+      // Re-check availability if quantity or part_id changes
+      if ((field === 'quantity' || field === 'part_id') && updated.part_id) {
+        setTimeout(() => checkItemAvailability(updated), 100)
+      }
+      
       return updated
     }))
+  }
+
+  // Calculate PO purpose based on item selections
+  const calculatePOPurpose = (items: OrderItem[]): string => {
+    if (items.length === 0) return 'work_order_cash'
+    
+    const inventoryCount = items.filter(i => i.fulfill_from === 'inventory').length
+    const purchaseCount = items.filter(i => i.fulfill_from === 'purchase' || !i.fulfill_from).length
+    
+    if (inventoryCount === items.length) return 'work_order_inventory'
+    if (purchaseCount === items.length) return 'work_order_cash'
+    return 'mixed'
   }
 
   // Validate form
@@ -485,37 +606,23 @@ export function SpecialOrderForm({
     }
 
     try {
-      // Determine PO purpose based on work order linkage and inventory availability
+      // Determine PO purpose based on work order linkage and item selections
       let po_purpose = 'work_order_cash'
       
       if (!workOrderId) {
         // No work order = restocking
         po_purpose = 'inventory_restock'
       } else if (workOrderId && items.length > 0) {
-        // Has work order - check inventory availability
-        try {
-          const checkRes = await fetch(`/api/work-orders/${workOrderId}/check-inventory`)
-          const checkData = await checkRes.json()
-          
-          if (checkData.success && checkData.parts) {
-            const allSufficient = checkData.parts.every((p: any) => p.sufficient)
-            
-            if (allSufficient) {
-              // All parts available - offer to use inventory
-              const useInventory = confirm(
-                `Todas las partes están disponibles en inventario.\n\n` +
-                `¿Deseas crear una solicitud de uso de inventario (sin efectivo) en lugar de una compra?\n\n` +
-                `Esto NO requerirá efectivo este mes, solo autorización para usar el inventario.`
-              )
-              if (useInventory) {
-                po_purpose = 'work_order_inventory'
-              }
-            }
-          }
-        } catch (err) {
-          console.log('Could not check inventory, defaulting to cash purchase:', err)
-          // Continue with cash purchase if check fails
-        }
+        // Calculate po_purpose from item fulfill_from selections
+        po_purpose = calculatePOPurpose(items)
+      }
+      
+      // Determine supplier based on po_purpose
+      let finalSupplier = formData.supplier || "Por definir"
+      
+      // Auto-set supplier to "Inventario Interno" if all items are from inventory
+      if (po_purpose === 'work_order_inventory') {
+        finalSupplier = 'Inventario Interno'
       }
       
       // Create the base request object
@@ -523,7 +630,7 @@ export function SpecialOrderForm({
         work_order_id: workOrderId || undefined,
         po_type: PurchaseOrderType.SPECIAL_ORDER,
         po_purpose: po_purpose,
-        supplier: formData.supplier!,
+        supplier: finalSupplier,
         items: items,
         total_amount: formData.total_amount!,
         payment_method: formData.payment_method,

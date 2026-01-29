@@ -23,7 +23,8 @@ import {
   CheckCircle2,
   Package,
   Building2,
-  FileText
+  FileText,
+  XCircle
 } from "lucide-react"
 import { PurchaseOrderType, PaymentMethod, CreatePurchaseOrderRequest, QuoteValidationResponse } from "@/types/purchase-orders"
 import { QuotationValidator } from "./QuotationValidator"
@@ -47,10 +48,23 @@ interface PurchaseOrderItem {
   id: string
   name: string
   partNumber: string
+  part_id?: string  // Link to inventory catalog
   quantity: number | string
   unit_price: number | string
   total_price: number
   supplier?: string
+  fulfill_from?: 'inventory' | 'purchase'  // Source selection per item
+  availability?: {
+    sufficient: boolean
+    total_available: number
+    available_by_warehouse: Array<{
+      warehouse_id: string
+      warehouse_name: string
+      available_quantity: number
+      current_quantity: number
+      reserved_quantity: number
+    }>
+  }
 }
 
 interface WorkOrderData {
@@ -59,10 +73,12 @@ interface WorkOrderData {
   description: string
   required_parts?: any
   estimated_cost?: string
+  plant_id?: string
   asset?: {
     id: string
     name: string
     asset_id: string
+    plant_id?: string
   }
 }
 
@@ -173,6 +189,18 @@ export function DirectPurchaseForm({
           `)
           .eq("id", workOrderId)
           .single()
+        
+        // Also fetch plant_id if not in work order directly
+        if (workOrderData && !workOrderData.plant_id && workOrderData.asset?.id) {
+          const { data: assetData } = await supabase
+            .from('assets')
+            .select('plant_id')
+            .eq('id', workOrderData.asset.id)
+            .single()
+          if (assetData?.plant_id) {
+            workOrderData.plant_id = assetData.plant_id
+          }
+        }
           
         if (workOrderError) {
           setWorkOrderError("Error al cargar la orden de trabajo")
@@ -253,6 +281,20 @@ export function DirectPurchaseForm({
     setFormData(prev => ({ ...prev, total_amount: total, items }))
   }, [items])
 
+  // Auto-set supplier to "Inventario Interno" when all items are from inventory
+  useEffect(() => {
+    if (workOrderId && items.length > 0 && !validationResult?.requires_quote) {
+      const poPurpose = calculatePOPurpose(items)
+      if (poPurpose === 'work_order_inventory') {
+        setFormData(prev => ({ ...prev, supplier: 'Inventario Interno' }))
+        setSelectedSupplier(null) // Clear selected supplier
+      } else if (poPurpose !== 'work_order_inventory' && formData.supplier === 'Inventario Interno') {
+        // Reset to default if not all inventory
+        setFormData(prev => ({ ...prev, supplier: prev.supplier === 'Inventario Interno' ? 'Por definir' : prev.supplier }))
+      }
+    }
+  }, [items, workOrderId, validationResult?.requires_quote])
+
   // Handle form input changes
   const handleInputChange = (field: string, value: any) => {
     setFormData(prev => ({ ...prev, [field]: value }))
@@ -301,21 +343,49 @@ export function DirectPurchaseForm({
   // Handle part selection from autocomplete
   const handlePartSelect = (part: PartSuggestion | null) => {
     if (part) {
-      setNewItem(prev => ({
-        ...prev,
+      const updatedItem = {
         name: part.name,
         partNumber: part.part_number,
+        part_id: part.id,  // Store part_id for availability checking
         // Auto-fill unit price if available
-        unit_price: part.default_unit_cost || prev.unit_price || '',
+        unit_price: part.default_unit_cost || '',
         // Recalculate total
-        total_price: (part.default_unit_cost || Number(prev.unit_price) || 0) * (Number(prev.quantity) || 1)
+        total_price: (part.default_unit_cost || 0) * (Number(newItem.quantity) || 1)
+      }
+      setNewItem(prev => ({
+        ...prev,
+        ...updatedItem
       }))
+      
+      // Check availability if we have plant_id
+      const plantId = workOrder?.plant_id || workOrder?.asset?.plant_id
+      if (plantId && part.id) {
+        setTimeout(async () => {
+          try {
+            const res = await fetch(
+              `/api/inventory/parts/${part.id}/availability?plant_id=${plantId}&quantity=${Number(newItem.quantity) || 1}`
+            )
+            const data = await res.json()
+            if (data.success && data.sufficient) {
+              // Suggest inventory if available
+              setNewItem(prev => ({
+                ...prev,
+                fulfill_from: 'inventory'
+              }))
+            }
+          } catch (err) {
+            console.error('Availability check failed:', err)
+          }
+        }, 100)
+      }
     } else {
       // Clear part info if selection cleared
       setNewItem(prev => ({
         ...prev,
         name: '',
-        partNumber: ''
+        partNumber: '',
+        part_id: undefined,
+        fulfill_from: undefined
       }))
     }
   }
@@ -332,7 +402,7 @@ export function DirectPurchaseForm({
   }
 
   // Add new item to list
-  const addItem = () => {
+  const addItem = async () => {
     if (!newItem.name || !newItem.quantity || !newItem.unit_price) {
       setFormErrors(['Nombre, cantidad y precio unitario son requeridos'])
       return
@@ -342,18 +412,27 @@ export function DirectPurchaseForm({
       id: `item-${Date.now()}`,
       name: newItem.name || '',
       partNumber: newItem.partNumber || '',
+      part_id: newItem.part_id,
       quantity: Number(newItem.quantity) || 0,
       unit_price: Number(newItem.unit_price) || 0,
-      total_price: Number(newItem.total_price) || 0
+      total_price: Number(newItem.total_price) || 0,
+      fulfill_from: newItem.fulfill_from || 'purchase'  // Default to purchase
+    }
+
+    // Check availability if part_id exists
+    if (item.part_id) {
+      await checkItemAvailability(item)
     }
 
     setItems(prev => [...prev, item])
     setNewItem({
       name: '',
       partNumber: '',
+      part_id: undefined,
       quantity: '',
       unit_price: '',
-      total_price: 0
+      total_price: 0,
+      fulfill_from: undefined
     })
     setFormErrors([])
   }
@@ -361,6 +440,43 @@ export function DirectPurchaseForm({
   // Remove item from list
   const removeItem = (itemId: string) => {
     setItems(prev => prev.filter(item => item.id !== itemId))
+  }
+
+  // Check availability for an item
+  const checkItemAvailability = async (item: PurchaseOrderItem) => {
+    if (!item.part_id) return
+    
+    // Get plant_id from work order
+    const plantId = workOrder?.plant_id || workOrder?.asset?.plant_id
+    if (!plantId) return
+    
+    try {
+      const res = await fetch(
+        `/api/inventory/parts/${item.part_id}/availability?plant_id=${plantId}&quantity=${item.quantity || 0}`
+      )
+      const data = await res.json()
+      if (data.success) {
+        // Update item with availability
+        setItems(prev => prev.map(i => {
+          if (i.id !== item.id) return i
+          const updated = {
+            ...i,
+            availability: {
+              sufficient: data.sufficient,
+              total_available: data.total_available,
+              available_by_warehouse: data.available_by_warehouse || []
+            }
+          }
+          // Auto-suggest inventory if available and not already set
+          if (data.sufficient && !updated.fulfill_from) {
+            updated.fulfill_from = 'inventory'
+          }
+          return updated
+        }))
+      }
+    } catch (err) {
+      console.error('Availability check failed:', err)
+    }
   }
 
   // Update existing item
@@ -377,8 +493,26 @@ export function DirectPurchaseForm({
         updated.total_price = quantity * unitPrice
       }
       
+      // Re-check availability if quantity or part_id changes
+      if ((field === 'quantity' || field === 'part_id') && updated.part_id) {
+        // Use setTimeout to avoid race conditions
+        setTimeout(() => checkItemAvailability(updated), 100)
+      }
+      
       return updated
     }))
+  }
+
+  // Calculate PO purpose based on item selections
+  const calculatePOPurpose = (items: PurchaseOrderItem[]): string => {
+    if (items.length === 0) return 'work_order_cash'
+    
+    const inventoryCount = items.filter(i => i.fulfill_from === 'inventory').length
+    const purchaseCount = items.filter(i => i.fulfill_from === 'purchase' || !i.fulfill_from).length
+    
+    if (inventoryCount === items.length) return 'work_order_inventory'
+    if (purchaseCount === items.length) return 'work_order_cash'
+    return 'mixed'
   }
 
   // Validate form
@@ -446,42 +580,25 @@ export function DirectPurchaseForm({
     }
 
     try {
-      // Determine PO purpose based on work order linkage and inventory availability
+      // Determine PO purpose based on work order linkage and item selections
       let po_purpose = 'work_order_cash'
       
       if (!workOrderId) {
         // No work order = restocking
         po_purpose = 'inventory_restock'
       } else if (workOrderId && items.length > 0) {
-        // Has work order - check inventory availability
-        try {
-          const checkRes = await fetch(`/api/work-orders/${workOrderId}/check-inventory`)
-          const checkData = await checkRes.json()
-          
-          if (checkData.success && checkData.parts) {
-            const allSufficient = checkData.parts.every((p: any) => p.sufficient)
-            
-            if (allSufficient) {
-              // All parts available - offer to use inventory
-              const useInventory = confirm(
-                `Todas las partes están disponibles en inventario.\n\n` +
-                `¿Deseas crear una solicitud de uso de inventario (sin efectivo) en lugar de una compra?\n\n` +
-                `Esto NO requerirá efectivo este mes, solo autorización para usar el inventario.`
-              )
-              if (useInventory) {
-                po_purpose = 'work_order_inventory'
-              }
-            }
-          }
-        } catch (err) {
-          console.log('Could not check inventory, defaulting to cash purchase:', err)
-          // Continue with cash purchase if check fails
-        }
+        // Calculate po_purpose from item fulfill_from selections
+        po_purpose = calculatePOPurpose(items)
       }
       
-      // Determine supplier and items based on whether quotations are used
+      // Determine supplier based on po_purpose and whether quotations are used
       let finalSupplier = formData.supplier || "Por definir"
       let finalItems = items
+      
+      // Auto-set supplier to "Inventario Interno" if all items are from inventory
+      if (po_purpose === 'work_order_inventory') {
+        finalSupplier = 'Inventario Interno'
+      }
       
       // If quotations exist, use placeholder values (will be updated when quotation is selected)
       if (quotations.length > 0) {
@@ -821,20 +938,37 @@ export function DirectPurchaseForm({
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label>Proveedor *</Label>
-              <SupplierSelector
-                value={selectedSupplier?.id}
-                onChange={(supplier) => {
-                  setSelectedSupplier(supplier)
-                  handleInputChange('supplier', supplier?.name || '')
-                }}
-                placeholder="Seleccionar proveedor"
-                showPerformance={true}
-                allowManualInput={true}
-                onManualInputChange={(name) => {
-                  handleInputChange('supplier', name)
-                }}
-                businessUnitId={userPlants?.[0]?.business_unit_id}
-              />
+              {(() => {
+                const poPurpose = calculatePOPurpose(items)
+                const isInventoryOnly = poPurpose === 'work_order_inventory' && workOrderId
+                
+                if (isInventoryOnly) {
+                  return (
+                    <div className="flex items-center gap-2 p-2 border rounded-md bg-muted">
+                      <Package className="h-4 w-4 text-green-600" />
+                      <span className="font-medium">Inventario Interno</span>
+                      <Badge variant="outline" className="ml-auto">Automático</Badge>
+                    </div>
+                  )
+                }
+                
+                return (
+                  <SupplierSelector
+                    value={selectedSupplier?.id}
+                    onChange={(supplier) => {
+                      setSelectedSupplier(supplier)
+                      handleInputChange('supplier', supplier?.name || '')
+                    }}
+                    placeholder="Seleccionar proveedor"
+                    showPerformance={true}
+                    allowManualInput={true}
+                    onManualInputChange={(name) => {
+                      handleInputChange('supplier', name)
+                    }}
+                    businessUnitId={userPlants?.[0]?.business_unit_id}
+                  />
+                )
+              })()}
             </div>
           </div>
         </CardContent>
@@ -910,13 +1044,52 @@ export function DirectPurchaseForm({
         </Card>
       )}
 
+      {/* Informative Alerts - Show inventory vs purchase summary */}
+      {!validationResult?.requires_quote && items.length > 0 && workOrderId && (() => {
+        const poPurpose = calculatePOPurpose(items)
+        const inventoryItems = items.filter(i => i.fulfill_from === 'inventory')
+        const purchaseItems = items.filter(i => i.fulfill_from === 'purchase' || !i.fulfill_from)
+        const inventoryTotal = inventoryItems.reduce((sum, item) => sum + (item.total_price || 0), 0)
+        const purchaseTotal = purchaseItems.reduce((sum, item) => sum + (item.total_price || 0), 0)
+        
+        if (poPurpose === 'work_order_inventory') {
+          return (
+            <Alert className="border-green-500 bg-green-50">
+              <CheckCircle2 className="h-4 w-4 text-green-600" />
+              <AlertDescription className="text-green-800">
+                <strong>Esta orden utilizará solo inventario interno.</strong> No requiere efectivo este mes, solo autorización para usar el inventario.
+              </AlertDescription>
+            </Alert>
+          )
+        } else if (poPurpose === 'mixed') {
+          return (
+            <Alert className="border-yellow-500 bg-yellow-50">
+              <AlertCircle className="h-4 w-4 text-yellow-600" />
+              <AlertDescription className="text-yellow-800">
+                <strong>Esta orden incluye items de inventario y compras.</strong> Items de inventario: ${inventoryTotal.toFixed(2)} (sin efectivo). Items a comprar: ${purchaseTotal.toFixed(2)}. Impacto en efectivo: ${purchaseTotal.toFixed(2)}
+              </AlertDescription>
+            </Alert>
+          )
+        } else if (poPurpose === 'work_order_cash') {
+          return (
+            <Alert className="border-blue-500 bg-blue-50">
+              <ShoppingCart className="h-4 w-4 text-blue-600" />
+              <AlertDescription className="text-blue-800">
+                <strong>Esta orden requiere efectivo:</strong> ${purchaseTotal.toFixed(2)}
+              </AlertDescription>
+            </Alert>
+          )
+        }
+        return null
+      })()}
+
       {/* Items Section - Only show if quotation NOT required */}
       {!validationResult?.requires_quote && (
       <Card>
         <CardHeader>
           <CardTitle className="text-lg">Artículos a Comprar</CardTitle>
           <CardDescription>
-            Agregue los artículos que necesita comprar
+            Agregue los artículos que necesita comprar. Seleccione la fuente (inventario o compra) para cada item.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -999,78 +1172,177 @@ export function DirectPurchaseForm({
                     <TableHead>Parte/Código</TableHead>
                     <TableHead>Cantidad</TableHead>
                     <TableHead>Precio Unit.</TableHead>
+                    <TableHead>Disponibilidad</TableHead>
+                    <TableHead>Fuente</TableHead>
                     <TableHead>Total</TableHead>
                     <TableHead>Acciones</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {items.map((item) => (
-                    <TableRow key={item.id}>
-                      <TableCell>
-                        <Input
-                          value={item.name}
-                          onChange={(e) => updateItem(item.id, 'name', e.target.value)}
-                          className="border-0 p-0 h-auto"
-                          placeholder="Nombre del artículo"
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <Input
-                          value={item.partNumber}
-                          onChange={(e) => updateItem(item.id, 'partNumber', e.target.value)}
-                          className="border-0 p-0 h-auto"
-                          placeholder="Código"
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <Input
-                          type="number"
-                          min="1"
-                          value={item.quantity || ""}
-                          onChange={(e) => updateItem(item.id, 'quantity', e.target.value)}
-                          className="border-0 p-0 h-auto w-20"
-                          placeholder="1"
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <Input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          value={item.unit_price || ""}
-                          onChange={(e) => updateItem(item.id, 'unit_price', e.target.value)}
-                          className="border-0 p-0 h-auto w-24"
-                          placeholder="0.00"
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <span className="font-medium">
-                          ${item.total_price.toFixed(2)}
-                        </span>
-                      </TableCell>
-                      <TableCell>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => removeItem(item.id)}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                  {items.map((item) => {
+                    const availability = item.availability
+                    const hasPartId = !!item.part_id
+                    
+                    return (
+                      <TableRow key={item.id}>
+                        <TableCell>
+                          <Input
+                            value={item.name}
+                            onChange={(e) => updateItem(item.id, 'name', e.target.value)}
+                            className="border-0 p-0 h-auto"
+                            placeholder="Nombre del artículo"
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <Input
+                            value={item.partNumber}
+                            onChange={(e) => updateItem(item.id, 'partNumber', e.target.value)}
+                            className="border-0 p-0 h-auto"
+                            placeholder="Código"
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <Input
+                            type="number"
+                            min="1"
+                            value={item.quantity || ""}
+                            onChange={(e) => updateItem(item.id, 'quantity', e.target.value)}
+                            className="border-0 p-0 h-auto w-20"
+                            placeholder="1"
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <Input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={item.unit_price || ""}
+                            onChange={(e) => updateItem(item.id, 'unit_price', e.target.value)}
+                            className="border-0 p-0 h-auto w-24"
+                            placeholder="0.00"
+                          />
+                        </TableCell>
+                        <TableCell>
+                          {hasPartId && availability ? (
+                            availability.sufficient ? (
+                              <Badge variant="default" className="gap-1">
+                                <CheckCircle2 className="h-3 w-3" />
+                                Disponible ({availability.total_available})
+                              </Badge>
+                            ) : availability.total_available > 0 ? (
+                              <Badge variant="secondary" className="gap-1">
+                                <AlertCircle className="h-3 w-3" />
+                                Parcial ({availability.total_available}/{item.quantity})
+                              </Badge>
+                            ) : (
+                              <Badge variant="destructive" className="gap-1">
+                                <XCircle className="h-3 w-3" />
+                                Sin Stock
+                              </Badge>
+                            )
+                          ) : hasPartId ? (
+                            <Badge variant="outline" className="gap-1">
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                              Verificando...
+                            </Badge>
+                          ) : (
+                            <Badge variant="outline" className="gap-1">
+                              No en catálogo
+                            </Badge>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <Select
+                            value={item.fulfill_from || 'purchase'}
+                            onValueChange={(value: 'inventory' | 'purchase') => updateItem(item.id, 'fulfill_from', value)}
+                          >
+                            <SelectTrigger className="w-[140px]">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="inventory">
+                                <div className="flex items-center gap-2">
+                                  <Package className="h-4 w-4" />
+                                  De Inventario
+                                </div>
+                              </SelectItem>
+                              <SelectItem value="purchase">
+                                <div className="flex items-center gap-2">
+                                  <ShoppingCart className="h-4 w-4" />
+                                  A Comprar
+                                </div>
+                              </SelectItem>
+                            </SelectContent>
+                          </Select>
+                          {item.availability?.sufficient && !item.fulfill_from && (
+                            <p className="text-xs text-muted-foreground mt-1">
+                              Disponible - sugerido
+                            </p>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <span className="font-medium">
+                            ${item.total_price.toFixed(2)}
+                          </span>
+                        </TableCell>
+                        <TableCell>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => removeItem(item.id)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    )
+                  })}
                 </TableBody>
               </Table>
 
-              {/* Total Summary */}
-              <div className="p-4 border-t bg-muted/30">
-                <div className="flex justify-between items-center">
-                  <span className="font-medium">Total de la Compra:</span>
-                  <span className="text-lg font-bold">
-                    ${formData.total_amount?.toFixed(2) || '0.00'}
-                  </span>
-                </div>
+              {/* Enhanced Total Summary */}
+              <div className="p-4 border-t bg-muted/30 space-y-2">
+                {(() => {
+                  const inventoryItems = items.filter(i => i.fulfill_from === 'inventory')
+                  const purchaseItems = items.filter(i => i.fulfill_from === 'purchase' || !i.fulfill_from)
+                  const inventoryTotal = inventoryItems.reduce((sum, item) => sum + (item.total_price || 0), 0)
+                  const purchaseTotal = purchaseItems.reduce((sum, item) => sum + (item.total_price || 0), 0)
+                  const poPurpose = calculatePOPurpose(items)
+                  
+                  return (
+                    <>
+                      {inventoryItems.length > 0 && (
+                        <div className="flex justify-between items-center text-sm">
+                          <span className="text-muted-foreground flex items-center gap-2">
+                            <Package className="h-4 w-4" />
+                            Total Items de Inventario:
+                          </span>
+                          <span className="font-medium text-green-600">
+                            ${inventoryTotal.toFixed(2)} (sin impacto en efectivo)
+                          </span>
+                        </div>
+                      )}
+                      {purchaseItems.length > 0 && (
+                        <div className="flex justify-between items-center text-sm">
+                          <span className="text-muted-foreground flex items-center gap-2">
+                            <ShoppingCart className="h-4 w-4" />
+                            Total Items a Comprar:
+                          </span>
+                          <span className="font-medium text-orange-600">
+                            ${purchaseTotal.toFixed(2)} (requiere efectivo)
+                          </span>
+                        </div>
+                      )}
+                      <div className="flex justify-between items-center pt-2 border-t">
+                        <span className="font-medium">Total General:</span>
+                        <span className="text-lg font-bold">
+                          ${formData.total_amount?.toFixed(2) || '0.00'}
+                        </span>
+                      </div>
+                    </>
+                  )
+                })()}
               </div>
             </div>
           ) : null}
