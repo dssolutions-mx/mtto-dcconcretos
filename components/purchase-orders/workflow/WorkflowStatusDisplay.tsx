@@ -98,7 +98,7 @@ export function WorkflowStatusDisplay({
           }
           
           // Load receipts data separately - only if PO is approved or later
-          if (orderData && ['approved', 'purchased', 'receipt_uploaded', 'validated', 'completed'].includes(orderData.status)) {
+          if (orderData && ['approved', 'purchased', 'fulfilled', 'receipt_uploaded', 'validated', 'completed'].includes(orderData.status)) {
             const receiptsResponse = await fetch(`/api/purchase-orders/${purchaseOrderId}/receipts`)
             if (receiptsResponse.ok) {
               const receipts = await receiptsResponse.json()
@@ -290,19 +290,35 @@ export function WorkflowStatusDisplay({
   }
 
   // Helper function to get primary next action
-  const getPrimaryNextAction = (currentStatus: string, allowedStatuses: string[], poType: PurchaseOrderType): string | null => {
+  const getPrimaryNextAction = (currentStatus: string, allowedStatuses: string[], poType: PurchaseOrderType, poPurpose?: string): string | null => {
     if (!allowedStatuses.length) return null
 
-    // Define the logical progression for each type
+    // Special progression for inventory-only POs
+    if (poPurpose === 'work_order_inventory') {
+      const inventoryProgression: Record<string, string> = {
+        'pending_approval': 'approved',
+        'approved': 'fulfilled',  // Fulfilled instead of purchased
+        'fulfilled': 'validated'
+      }
+      const expectedNext = inventoryProgression[currentStatus]
+      if (expectedNext && allowedStatuses.includes(expectedNext)) {
+        return expectedNext
+      }
+      return allowedStatuses[0]
+    }
+
+    // Define the logical progression for each type (cash purchases)
     const progressionMap: Record<string, Record<string, string>> = {
       [PurchaseOrderType.DIRECT_PURCHASE]: {
         'pending_approval': 'approved',
-        'approved': 'receipt_uploaded',
+        'approved': 'purchased',  // For cash purchases, go to purchased
+        'purchased': 'receipt_uploaded',
         'receipt_uploaded': 'validated'
       },
       [PurchaseOrderType.DIRECT_SERVICE]: {
         'pending_approval': 'approved',
-        'approved': 'receipt_uploaded',
+        'approved': 'purchased',  // For cash purchases, go to purchased
+        'purchased': 'receipt_uploaded',
         'receipt_uploaded': 'validated'
       },
       [PurchaseOrderType.SPECIAL_ORDER]: {
@@ -310,7 +326,8 @@ export function WorkflowStatusDisplay({
         'pending_approval': 'approved',
         'approved': 'ordered',
         'ordered': 'received',
-        'received': 'invoiced'
+        'received': 'receipt_uploaded',
+        'receipt_uploaded': 'validated'
       }
     }
 
@@ -326,17 +343,30 @@ export function WorkflowStatusDisplay({
   }
 
   // Helper function to get action description
-  const getWorkflowActionDescription = (currentStatus: string, poType: PurchaseOrderType): string => {
+  const getWorkflowActionDescription = (currentStatus: string, poType: PurchaseOrderType, poPurpose?: string): string => {
+    // Special descriptions for inventory-only POs
+    if (poPurpose === 'work_order_inventory') {
+      const inventoryDescriptions: Record<string, string> = {
+        'pending_approval': 'Esta solicitud de uso de inventario está esperando aprobación.',
+        'approved': 'Solicitud aprobada. Puedes proceder a entregar el inventario a la orden de trabajo.',
+        'fulfilled': 'Inventario entregado. Esperando validación administrativa.',
+        'validated': 'Proceso completado'
+      }
+      return inventoryDescriptions[currentStatus] || 'Continúa con el siguiente paso del proceso.'
+    }
+
     const descriptions: Record<string, Record<string, string>> = {
       [PurchaseOrderType.DIRECT_PURCHASE]: {
         'pending_approval': 'Esta compra directa está esperando aprobación para proceder.',
         'approved': 'Compra aprobada. Puedes proceder a realizar la compra en la tienda especificada.',
+        'purchased': 'Compra realizada. Sube el comprobante para continuar.',
         'receipt_uploaded': 'Comprobante subido. Esperando validación administrativa.',
         'validated': 'Proceso completado'
       },
       [PurchaseOrderType.DIRECT_SERVICE]: {
         'pending_approval': 'Este servicio directo está esperando aprobación para proceder.',
         'approved': 'Servicio aprobado. Puedes proceder a contratar el servicio con el proveedor especificado.',
+        'purchased': 'Servicio contratado. Sube el comprobante para continuar.',
         'receipt_uploaded': 'Comprobante del servicio subido. Esperando validación administrativa.',
         'validated': 'Proceso completado'
       },
@@ -355,16 +385,29 @@ export function WorkflowStatusDisplay({
   }
 
   // Helper function to get action button text
-  const getActionButtonText = (action: string, poType: PurchaseOrderType): string => {
+  const getActionButtonText = (action: string, poType: PurchaseOrderType, poPurpose?: string): string => {
+    // Special button texts for inventory-only POs
+    if (poPurpose === 'work_order_inventory') {
+      const inventoryButtons: Record<string, string> = {
+        'approved': 'Aprobar Solicitud',
+        'fulfilled': 'Marcar como Cumplida',
+        'validated': 'Validar Cumplimiento',
+        'rejected': 'Rechazar Solicitud'
+      }
+      return inventoryButtons[action] || `Avanzar a ${action}`
+    }
+
     const buttonTexts: Record<string, Record<string, string>> = {
       [PurchaseOrderType.DIRECT_PURCHASE]: {
         'approved': 'Aprobar Compra',
+        'purchased': 'Marcar como Comprada',
         'receipt_uploaded': 'Subir Comprobante',
         'validated': 'Validar Comprobante',
         'rejected': 'Rechazar Compra'
       },
       [PurchaseOrderType.DIRECT_SERVICE]: {
-        'approved': 'Aprobar Servicio', 
+        'approved': 'Aprobar Servicio',
+        'purchased': 'Marcar como Contratado',
         'receipt_uploaded': 'Subir Comprobante de Servicio',
         'validated': 'Validar Comprobante de Servicio',
         'rejected': 'Rechazar Servicio'
@@ -394,7 +437,43 @@ export function WorkflowStatusDisplay({
   }
 
   // Helper function to get action display information (not status)
-  const getActionDisplayInfo = (action: string, poType: PurchaseOrderType) => {
+  const getActionDisplayInfo = (action: string, poType: PurchaseOrderType, poPurpose?: string) => {
+    // Special action info for inventory-only POs
+    if (poPurpose === 'work_order_inventory') {
+      const inventoryActions: Record<string, { label: string; description: string; icon: any; color: string }> = {
+        'approved': {
+          label: 'Aprobar Solicitud',
+          description: 'Autorizar el uso de inventario para la orden de trabajo',
+          icon: CheckCircle,
+          color: 'bg-green-100 text-green-700'
+        },
+        'fulfilled': {
+          label: 'Marcar como Cumplida',
+          description: 'Confirmar que el inventario fue entregado a la orden de trabajo',
+          icon: Package,
+          color: 'bg-blue-100 text-blue-700'
+        },
+        'validated': {
+          label: 'Validar Cumplimiento',
+          description: 'Validar que el inventario fue correctamente entregado',
+          icon: CheckCircle,
+          color: 'bg-green-100 text-green-700'
+        },
+        'rejected': {
+          label: 'Rechazar Solicitud',
+          description: 'Rechazar la solicitud de uso de inventario',
+          icon: AlertTriangle,
+          color: 'bg-red-100 text-red-700'
+        }
+      }
+      return inventoryActions[action] || {
+        label: `Avanzar a ${action}`,
+        description: 'Continuar con el siguiente paso',
+        icon: ArrowRight,
+        color: 'bg-gray-100 text-gray-700'
+      }
+    }
+
     const actionInfo: Record<string, Record<string, { label: string; description: string; icon: any; color: string }>> = {
       [PurchaseOrderType.DIRECT_PURCHASE]: {
         'approved': {
@@ -402,6 +481,12 @@ export function WorkflowStatusDisplay({
           description: 'Autorizar la compra directa para proceder',
           icon: CheckCircle,
           color: 'bg-green-100 text-green-700'
+        },
+        'purchased': {
+          label: 'Marcar como Comprada',
+          description: 'Confirmar que la compra fue realizada',
+          icon: ShoppingCart,
+          color: 'bg-cyan-100 text-cyan-700'
         },
         'receipt_uploaded': {
           label: 'Subir Comprobante',
@@ -428,6 +513,12 @@ export function WorkflowStatusDisplay({
           description: 'Autorizar la contratación del servicio directo',
           icon: CheckCircle,
           color: 'bg-green-100 text-green-700'
+        },
+        'purchased': {
+          label: 'Marcar como Contratado',
+          description: 'Confirmar que el servicio fue contratado',
+          icon: ShoppingCart,
+          color: 'bg-cyan-100 text-cyan-700'
         },
         'receipt_uploaded': {
           label: 'Subir Comprobante de Servicio',
@@ -504,8 +595,10 @@ export function WorkflowStatusDisplay({
 
   // Simplified advance handler with file upload and amount update integration
   const handleAdvanceWithUpload = async (newStatus: string) => {
-    const requiresNotes = ['rejected', 'receipt_uploaded'].includes(newStatus)
-    const requiresFile = newStatus === 'receipt_uploaded'
+    const poPurpose = workflowStatus?.purchase_order?.po_purpose
+    // Inventory POs don't need receipts
+    const requiresNotes = ['rejected', 'receipt_uploaded'].includes(newStatus) && poPurpose !== 'work_order_inventory'
+    const requiresFile = newStatus === 'receipt_uploaded' && poPurpose !== 'work_order_inventory'
     
     // Validate required fields
     if (requiresNotes && !notes.trim()) {
@@ -772,6 +865,18 @@ export function WorkflowStatusDisplay({
         color: "bg-indigo-100 text-indigo-700",
         icon: FileText,
         description: "Cotización recibida"
+      },
+      [EnhancedPOStatus.FULFILLED]: {
+        label: "Cumplida",
+        color: "bg-blue-100 text-blue-700",
+        icon: Package,
+        description: "Inventario entregado a la orden de trabajo"
+      },
+      [EnhancedPOStatus.PURCHASED]: {
+        label: "Comprada",
+        color: "bg-cyan-100 text-cyan-700",
+        icon: ShoppingCart,
+        description: "Compra realizada"
       }
     }
 
@@ -829,12 +934,26 @@ export function WorkflowStatusDisplay({
     }
   }
 
-  const getWorkflowProgress = (currentStatus: string, type: PurchaseOrderType): number => {
+  const getWorkflowProgress = (currentStatus: string, type: PurchaseOrderType, poPurpose?: string): number => {
+    // Special progress map for inventory-only POs
+    if (poPurpose === 'work_order_inventory') {
+      const inventoryProgress: Record<string, number> = {
+        'draft': 10,
+        'pending_approval': 25,
+        'approved': 50,
+        'fulfilled': 75,
+        'validated': 100,
+        'rejected': 0
+      }
+      return inventoryProgress[currentStatus] || 0
+    }
+
     const progressMap: Record<PurchaseOrderType, Record<string, number>> = {
       [PurchaseOrderType.DIRECT_PURCHASE]: {
         'draft': 10,
         'pending_approval': 25,
         'approved': 50,
+        'purchased': 65,
         'receipt_uploaded': 75,
         'validated': 100,
         'rejected': 0
@@ -843,6 +962,7 @@ export function WorkflowStatusDisplay({
         'draft': 10,
         'pending_approval': 25,
         'approved': 50,
+        'purchased': 65,
         'receipt_uploaded': 75,
         'validated': 100,
         'rejected': 0
@@ -891,9 +1011,10 @@ export function WorkflowStatusDisplay({
     )
   }
 
+  const poPurpose = workflowStatus?.purchase_order?.po_purpose
   const statusConfig = getStatusConfig(currentStatus, poType)
   const Icon = statusConfig.icon
-  const progress = getWorkflowProgress(currentStatus, poType)
+  const progress = getWorkflowProgress(currentStatus, poType, poPurpose)
 
   return (
     <div className={`space-y-6 ${className}`}>
@@ -1087,13 +1208,13 @@ export function WorkflowStatusDisplay({
           <CardHeader>
             <CardTitle className="text-lg">Siguiente Acción</CardTitle>
             <CardDescription>
-              {getWorkflowActionDescription(currentStatus, poType)}
+              {getWorkflowActionDescription(currentStatus, poType, poPurpose)}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             {(() => {
               // Get the primary next action (most logical next step)
-              const primaryAction = getPrimaryNextAction(currentStatus, workflowStatus.allowed_next_statuses, poType)
+              const primaryAction = getPrimaryNextAction(currentStatus, workflowStatus.allowed_next_statuses, poType, poPurpose)
               
               // Check authorization for approval actions
               const isApprovalAction = primaryAction === 'approved'
@@ -1145,9 +1266,10 @@ export function WorkflowStatusDisplay({
                 )
               }
 
-              const actionConfig = getActionDisplayInfo(primaryAction, poType)
+              const actionConfig = getActionDisplayInfo(primaryAction, poType, poPurpose)
               const ActionIcon = actionConfig.icon
-              const requiresNotes = ['rejected', 'receipt_uploaded'].includes(primaryAction)
+              // Inventory POs don't need receipts
+              const requiresNotes = ['rejected', 'receipt_uploaded'].includes(primaryAction) && poPurpose !== 'work_order_inventory'
 
                                 return (
                     <div className="space-y-4">
@@ -1255,8 +1377,8 @@ export function WorkflowStatusDisplay({
                         </CardContent>
                       </Card>
 
-                  {/* File upload and amount update section for receipt */}
-                  {primaryAction === 'receipt_uploaded' && (
+                  {/* File upload and amount update section for receipt (not for inventory POs) */}
+                  {primaryAction === 'receipt_uploaded' && poPurpose !== 'work_order_inventory' && (
                     <div className="space-y-4">
                       {/* Actual amount input */}
                       <div className="space-y-2">
@@ -1323,8 +1445,8 @@ export function WorkflowStatusDisplay({
                     </div>
                   )}
 
-                  {/* Show receipt for validation when status is receipt_uploaded */}
-                  {currentStatus === 'receipt_uploaded' && receiptUrl && primaryAction === 'validated' && (
+                  {/* Show receipt for validation when status is receipt_uploaded (not for inventory POs) */}
+                  {currentStatus === 'receipt_uploaded' && receiptUrl && primaryAction === 'validated' && poPurpose !== 'work_order_inventory' && (
                     <div className="space-y-4">
                       <div className="space-y-2">
                         <Label>Comprobante a Validar</Label>
@@ -1395,7 +1517,7 @@ export function WorkflowStatusDisplay({
                           </>
                         ) : (
                           <>
-                            {getActionButtonText(primaryAction, poType)}
+                            {getActionButtonText(primaryAction, poType, poPurpose)}
                             <ArrowRight className="ml-2 h-4 w-4" />
                           </>
                         )}
@@ -1435,7 +1557,7 @@ export function WorkflowStatusDisplay({
                         {workflowStatus.allowed_next_statuses
                           .filter(status => status !== primaryAction)
                           .map((status) => {
-                            const config = getActionDisplayInfo(status, poType)
+                            const config = getActionDisplayInfo(status, poType, poPurpose)
                             const SecondaryIcon = config.icon
                             
                             return (

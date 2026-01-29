@@ -53,6 +53,9 @@ export class InventoryFulfillmentService {
       
       if (poError) throw poError
       
+      // Get purchase order items to extract unit prices
+      const poItems = (po.items as any[]) || []
+      
       // Process each fulfillment
       for (const fulfillment of request.fulfillments) {
         try {
@@ -76,8 +79,81 @@ export class InventoryFulfillmentService {
             continue
           }
           
-          // Use provided cost or inventory average cost
-          const unit_cost = fulfillment.unit_cost || stock.average_unit_cost || 0
+          // Determine unit cost priority:
+          // 1. Explicitly provided unit_cost in fulfillment
+          // 2. unit_price from purchase order item (matching by po_item_id, part_id, partNumber, or name)
+          // 3. unit_price from work order required_parts (if work_order_id exists)
+          // 4. inventory average_unit_cost (last resort)
+          let unit_cost = fulfillment.unit_cost
+          
+          if (!unit_cost) {
+            // Try to find matching PO item by multiple criteria
+            // po_item_id might be item.id, item.partNumber, or item.name depending on how it was generated
+            const poItem = poItems.find((item: any) => {
+              // Match by explicit id
+              if (item.id && item.id === fulfillment.po_item_id) return true
+              // Match by part_id
+              if (item.part_id && item.part_id === fulfillment.part_id) return true
+              // Match by partNumber (po_item_id might be partNumber)
+              if (item.partNumber && item.partNumber === fulfillment.po_item_id) return true
+              // Match by partNumber vs part_id
+              if (item.partNumber && fulfillment.part_id) {
+                // Try to match by looking up part_number from part_id
+                return false // Will handle separately if needed
+              }
+              // Match by name (po_item_id might be name)
+              if (item.name && item.name === fulfillment.po_item_id) return true
+              return false
+            })
+            
+            if (poItem && poItem.unit_price) {
+              unit_cost = Number(poItem.unit_price) || 0
+            } else {
+              // If no match by po_item_id, try matching by part_id directly
+              const poItemByPartId = poItems.find((item: any) => 
+                item.part_id === fulfillment.part_id
+              )
+              if (poItemByPartId && poItemByPartId.unit_price) {
+                unit_cost = Number(poItemByPartId.unit_price) || 0
+              }
+            }
+          }
+          
+          // If still no cost, try work order required_parts
+          if (!unit_cost && po.work_order_id) {
+            try {
+              const { data: workOrder } = await supabase
+                .from('work_orders')
+                .select('required_parts')
+                .eq('id', po.work_order_id)
+                .single()
+              
+              if (workOrder?.required_parts) {
+                const requiredParts = typeof workOrder.required_parts === 'string'
+                  ? JSON.parse(workOrder.required_parts)
+                  : workOrder.required_parts
+                
+                if (Array.isArray(requiredParts)) {
+                  const workOrderPart = requiredParts.find((part: any) => 
+                    part.part_id === fulfillment.part_id ||
+                    part.partNumber === fulfillment.part_id ||
+                    (part.part_id && part.part_id === fulfillment.part_id)
+                  )
+                  
+                  if (workOrderPart && workOrderPart.unit_price) {
+                    unit_cost = Number(workOrderPart.unit_price) || 0
+                  }
+                }
+              }
+            } catch (error) {
+              console.warn('Could not fetch work order cost:', error)
+            }
+          }
+          
+          // Last resort: use inventory average cost
+          if (!unit_cost || unit_cost === 0) {
+            unit_cost = stock.average_unit_cost || 0
+          }
           
           // Create issue movement (negative quantity)
           const movement = await MovementService.createMovement({

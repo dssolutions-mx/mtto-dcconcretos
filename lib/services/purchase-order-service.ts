@@ -64,13 +64,26 @@ export class PurchaseOrderService {
       // Generate unique order ID
       const order_id = await this.generateOrderId()
       
-      // Start in draft status - will advance to pending_approval after quotation selection
-      const initialStatus = 'draft'
-      
       // Determine PO purpose if not provided
       // Default: work_order_cash if has WO, inventory_restock if standalone
       const po_purpose = request.po_purpose || 
         (request.work_order_id ? 'work_order_cash' : 'inventory_restock')
+      
+      // Check if quotation is required
+      // Note: requires_quote will be set by trigger, but we need to check it to determine initial status
+      const { data: quoteCheck } = await supabase
+        .rpc('requires_quotation', {
+          p_po_type: request.po_type,
+          p_amount: request.total_amount || 0
+        })
+      
+      const requiresQuote = quoteCheck || false
+      
+      // Determine initial status:
+      // - If requires quote: start in 'draft' (will advance after quotation selection)
+      // - If doesn't require quote: go directly to 'pending_approval'
+      // - Exception: inventory-only POs don't need approval, but still go to pending_approval for workflow
+      const initialStatus = requiresQuote ? 'draft' : 'pending_approval'
       
       const { data, error } = await supabase
         .from('purchase_orders')
@@ -93,7 +106,7 @@ export class PurchaseOrderService {
           purchase_date: request.purchase_date,
           max_payment_date: request.max_payment_date,
           requested_by: user_id,
-          status: initialStatus, // Auto-advance to pending approval
+          status: initialStatus,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
         })

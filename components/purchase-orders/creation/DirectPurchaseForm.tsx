@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { useRouter } from "next/navigation"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -224,14 +224,47 @@ export function DirectPurchaseForm({
               ? workOrderData.required_parts 
               : JSON.parse(workOrderData.required_parts)
             
-            partsToLoad = requiredParts.map((part: any, index: number) => ({
-              id: `wo-part-${index}`,
-              name: part.name || part.item || 'Artículo',
-              partNumber: part.partNumber || part.part_number || '',
-              quantity: Number(part.quantity) || 1,
-              unit_price: Number(part.unit_price) || Number(part.price) || 0,
-              total_price: Number(part.total_price) || (Number(part.quantity) || 1) * (Number(part.unit_price) || Number(part.price) || 0)
-            }))
+            // Load parts and try to match with catalog
+            const partsWithIds = await Promise.all(
+              requiredParts.map(async (part: any, index: number) => {
+                const partNumber = part.partNumber || part.part_number || ''
+                let part_id: string | undefined = part.part_id || part.id
+                
+                // If no part_id but has part_number, look it up in catalog
+                if (!part_id && partNumber) {
+                  try {
+                    const { data: foundParts } = await supabase
+                      .from('inventory_parts')
+                      .select('id, part_number, name')
+                      .eq('part_number', partNumber)
+                      .eq('is_active', true)
+                      .limit(1)
+                      .maybeSingle()
+                    
+                    if (foundParts) {
+                      part_id = foundParts.id
+                    }
+                  } catch (err) {
+                    console.error(`Error looking up part ${partNumber}:`, err)
+                  }
+                }
+                
+                const item: PurchaseOrderItem = {
+                  id: `wo-part-${index}`,
+                  name: part.name || part.item || 'Artículo',
+                  partNumber: partNumber,
+                  part_id: part_id,
+                  quantity: Number(part.quantity) || 1,
+                  unit_price: Number(part.unit_price) || Number(part.price) || 0,
+                  total_price: Number(part.total_price) || (Number(part.quantity) || 1) * (Number(part.unit_price) || Number(part.price) || 0),
+                  fulfill_from: 'purchase'  // Default to purchase, will be checked later
+                }
+                
+                return item
+              })
+            )
+            
+            partsToLoad = partsWithIds
           } catch (e) {
             console.error('Error parsing required parts:', e)
           }
@@ -275,11 +308,66 @@ export function DirectPurchaseForm({
     }
   }, [workOrderId])
 
+  // Check availability for an item
+  const checkItemAvailability = useCallback(async (item: PurchaseOrderItem) => {
+    if (!item.part_id) return
+    
+    // Get plant_id from work order
+    const plantId = workOrder?.plant_id || workOrder?.asset?.plant_id
+    if (!plantId) return
+    
+    try {
+      const res = await fetch(
+        `/api/inventory/parts/${item.part_id}/availability?plant_id=${plantId}&quantity=${item.quantity || 0}`
+      )
+      const data = await res.json()
+      if (data.success) {
+        // Update item with availability
+        setItems(prev => prev.map(i => {
+          if (i.id !== item.id) return i
+          const updated = {
+            ...i,
+            availability: {
+              sufficient: data.sufficient,
+              total_available: data.total_available,
+              available_by_warehouse: data.available_by_warehouse || []
+            }
+          }
+          // Auto-suggest inventory if available and not already set
+          if (data.sufficient && !updated.fulfill_from) {
+            updated.fulfill_from = 'inventory'
+          }
+          return updated
+        }))
+      }
+    } catch (err) {
+      console.error('Availability check failed:', err)
+    }
+  }, [workOrder])
+
   // Calculate total amount whenever items change
   useEffect(() => {
     const total = items.reduce((sum, item) => sum + (item.total_price || 0), 0)
     setFormData(prev => ({ ...prev, total_amount: total, items }))
   }, [items])
+
+  // Check availability for items loaded from work order that have part_id but no availability yet
+  useEffect(() => {
+    if (!workOrderId || items.length === 0) return
+    
+    const plantId = workOrder?.plant_id || workOrder?.asset?.plant_id
+    if (!plantId) return
+    
+    // Check availability for items that have part_id but no availability data yet
+    items.forEach((item) => {
+      if (item.part_id && !item.availability) {
+        // Use a small delay to avoid race conditions
+        setTimeout(() => {
+          checkItemAvailability(item)
+        }, 100)
+      }
+    })
+  }, [items, workOrder, workOrderId, checkItemAvailability])
 
   // Auto-set supplier to "Inventario Interno" when all items are from inventory
   useEffect(() => {
@@ -440,43 +528,6 @@ export function DirectPurchaseForm({
   // Remove item from list
   const removeItem = (itemId: string) => {
     setItems(prev => prev.filter(item => item.id !== itemId))
-  }
-
-  // Check availability for an item
-  const checkItemAvailability = async (item: PurchaseOrderItem) => {
-    if (!item.part_id) return
-    
-    // Get plant_id from work order
-    const plantId = workOrder?.plant_id || workOrder?.asset?.plant_id
-    if (!plantId) return
-    
-    try {
-      const res = await fetch(
-        `/api/inventory/parts/${item.part_id}/availability?plant_id=${plantId}&quantity=${item.quantity || 0}`
-      )
-      const data = await res.json()
-      if (data.success) {
-        // Update item with availability
-        setItems(prev => prev.map(i => {
-          if (i.id !== item.id) return i
-          const updated = {
-            ...i,
-            availability: {
-              sufficient: data.sufficient,
-              total_available: data.total_available,
-              available_by_warehouse: data.available_by_warehouse || []
-            }
-          }
-          // Auto-suggest inventory if available and not already set
-          if (data.sufficient && !updated.fulfill_from) {
-            updated.fulfill_from = 'inventory'
-          }
-          return updated
-        }))
-      }
-    } catch (err) {
-      console.error('Availability check failed:', err)
-    }
   }
 
   // Update existing item

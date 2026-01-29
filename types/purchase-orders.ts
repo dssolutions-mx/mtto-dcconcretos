@@ -33,6 +33,9 @@ export enum EnhancedPOStatus {
   RECEIPT_UPLOADED = "receipt_uploaded",  // Comprobante subido
   VALIDATED = "validated",                // Validado por admin
   
+  // Para órdenes de inventario (work_order_inventory)
+  FULFILLED = "fulfilled",                // Inventario cumplido/entregado (en lugar de purchased)
+  
   // Para SPECIAL_ORDER (estados adicionales)
   QUOTED = "quoted",                      // Cotizado
   ORDERED = "ordered",                    // Pedido realizado
