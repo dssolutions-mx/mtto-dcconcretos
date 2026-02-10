@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createServerSupabase } from '@/lib/supabase-server'
+import { buildAssignmentHistoryMap, resolveAssetPlantAtTimestamp } from '@/lib/reporting/asset-plant-attribution'
 
 type Body = {
   dateFrom: string
@@ -12,18 +13,22 @@ export async function POST(req: NextRequest) {
   console.log('[SUMMARY API] ========== API CALLED ==========')
   try {
     const { dateFrom, dateTo, businessUnitId, plantId } = (await req.json()) as Body
-    console.log('[SUMMARY API] Request params:', { dateFrom, dateTo, businessUnitId, plantId })
 
-    // Compute exclusive end-of-day bound
-    const dateFromStart = new Date(`${dateFrom}T00:00:00`)
-    const dateToExclusive = new Date(`${dateTo}T00:00:00`)
-    dateToExclusive.setDate(dateToExclusive.getDate() + 1)
+    // Normalize dates to YYYY-MM-DD for consistency
+    const dateFromStr = typeof dateFrom === 'string' && dateFrom.includes('T') ? dateFrom.split('T')[0] : dateFrom
+    const dateToStr = typeof dateTo === 'string' && dateTo.includes('T') ? dateTo.split('T')[0] : dateTo
+    console.log('[SUMMARY API] Request params:', { dateFrom: dateFromStr, dateTo: dateToStr, businessUnitId, plantId })
+
+    // Compute exclusive end-of-day bound in UTC for consistency with other report APIs
+    const dateFromStart = new Date(`${dateFromStr}T00:00:00.000Z`)
+    const dateToExclusive = new Date(`${dateToStr}T00:00:00.000Z`)
+    dateToExclusive.setUTCDate(dateToExclusive.getUTCDate() + 1)
     const dateToExclusiveStr = dateToExclusive.toISOString().slice(0, 10)
 
     const supabase = await createServerSupabase()
 
     // Get organizational structure with assets
-    let buQuery = supabase
+    const buQuery = supabase
       .from('business_units')
       .select(`
         id, name, code,
@@ -40,31 +45,38 @@ export async function POST(req: NextRequest) {
       `)
       .order('name')
 
-    if (businessUnitId) {
-      buQuery = buQuery.eq('id', businessUnitId)
-    }
-
     const { data: businessUnitsRaw, error: buError } = await buQuery
     if (buError) {
       console.error('Business units error:', buError)
       throw buError
     }
 
-    // Build flat asset list
-    const assets: any[] = []
+    // Build full org maps and raw asset list first.
+    // Apply BU/plant filters only after historical attribution to avoid
+    // using current asset location for past periods.
+    const plantById = new Map<string, { id: string; name: string; code: string; business_unit_id: string; business_unit_name: string }>()
+    const rawAssets: any[] = []
     const allBusinessUnits = businessUnitsRaw || []
     
     for (const bu of allBusinessUnits) {
       for (const plant of (bu.plants || [])) {
-        if (plantId && plant.id !== plantId) continue
+        plantById.set(plant.id, {
+          id: plant.id,
+          name: plant.name,
+          code: plant.code,
+          business_unit_id: bu.id,
+          business_unit_name: bu.name,
+        })
         
         for (const asset of (plant.assets || [])) {
-          assets.push({
+          rawAssets.push({
             id: asset.id,
             asset_code: asset.asset_id,
             asset_name: asset.name,
-            plant_id: asset.plant_id,
-            plant_name: plant.name,
+            current_plant_id: plant.id,
+            current_plant_name: plant.name,
+            current_business_unit_id: bu.id,
+            current_business_unit_name: bu.name,
             model_id: asset.model_id,
             current_hours: asset.current_hours || 0,
             current_kilometers: asset.current_kilometers || 0,
@@ -73,6 +85,46 @@ export async function POST(req: NextRequest) {
         }
       }
     }
+
+    const rawAssetIds = rawAssets.map((a) => a.id)
+    const attributionDate = `${dateToStr}T23:59:59.999Z`
+    let assignmentRows: any[] = []
+    if (rawAssetIds.length > 0) {
+      const { data, error: assignmentError } = await supabase
+        .from('asset_assignment_history')
+        .select('asset_id, previous_plant_id, new_plant_id, created_at')
+        .in('asset_id', rawAssetIds)
+        .order('created_at', { ascending: true })
+      if (assignmentError) throw assignmentError
+      assignmentRows = data || []
+    }
+    const assignmentHistoryMap = buildAssignmentHistoryMap(assignmentRows)
+
+    const assets: any[] = rawAssets
+      .map((asset) => {
+        const attributedPlantId = resolveAssetPlantAtTimestamp({
+          assetId: asset.id,
+          eventDate: attributionDate,
+          currentPlantId: asset.current_plant_id,
+          historyByAsset: assignmentHistoryMap,
+        })
+        const attributedPlant = attributedPlantId ? plantById.get(attributedPlantId) : null
+        if (!attributedPlant) return null
+
+        return {
+          ...asset,
+          plant_id: attributedPlant.id,
+          plant_name: attributedPlant.name,
+          business_unit_id: attributedPlant.business_unit_id,
+          business_unit_name: attributedPlant.business_unit_name,
+        }
+      })
+      .filter((asset): asset is any => {
+        if (!asset) return false
+        if (businessUnitId && asset.business_unit_id !== businessUnitId) return false
+        if (plantId && asset.plant_id !== plantId) return false
+        return true
+      })
 
     if (assets.length === 0) {
       return NextResponse.json({ assets: [] })
@@ -152,7 +204,7 @@ export async function POST(req: NextRequest) {
     // This ensures consistency and avoids internal HTTP call issues
     // Note: dateFromStart, dateToExclusive, and dateToExclusiveStr are already defined above
 
-    // Fetch diesel transactions
+    // Fetch diesel transactions (only diesel, not urea; exclude transfers - same as gerencial)
     const { data: dieselTxs } = await supabase
       .from('diesel_transactions')
       .select(`
@@ -164,10 +216,12 @@ export async function POST(req: NextRequest) {
         product_id,
         transaction_date,
         horometer_reading,
-        previous_horometer
+        previous_horometer,
+        diesel_warehouses!inner(product_type)
       `)
-      .eq('is_transfer', false)
-      .gte('transaction_date', dateFrom)
+      .eq('diesel_warehouses.product_type', 'diesel')
+      .neq('is_transfer', true)
+      .gte('transaction_date', dateFromStr)
       .lt('transaction_date', dateToExclusiveStr)
 
     // Fetch checklist equipment hours (extend window to capture progression)
@@ -299,8 +353,8 @@ export async function POST(req: NextRequest) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          dateFrom,
-          dateTo,
+          dateFrom: dateFromStr,
+          dateTo: dateToStr,
           businessUnitId: businessUnitId || null,
           plantId: plantId || null,
           hideZeroActivity: false

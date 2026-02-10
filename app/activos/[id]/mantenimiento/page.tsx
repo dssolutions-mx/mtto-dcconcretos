@@ -320,6 +320,93 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
                 });
               });
 
+              // Check for uncompleted services from previous cycles for each component
+              Object.entries(intervalsByModel).forEach(([modelId, modelIntervals]) => {
+                const component = componentByModel[modelId];
+                if (!component) return;
+
+                const componentUnit = getMaintenanceUnit(component);
+                const componentValue = getCurrentValue(component, componentUnit);
+                const componentHistory = (json?.data?.maintenance_history || []).filter(
+                  (m: any) => m.asset_id === component.id
+                );
+
+                const componentPreventiveHistory = componentHistory.filter((m: any) => {
+                  if (m?.type !== 'Preventivo' || !m?.maintenance_plan_id) return false
+                  return intervals.some((interval: any) => interval.id === m.maintenance_plan_id)
+                });
+
+                for (let pastCycle = 1; pastCycle < currentCycleNum; pastCycle++) {
+                  const pastCycleStartValue = (pastCycle - 1) * maxInterval;
+                  const pastCycleEndValue = pastCycle * maxInterval;
+
+                  const pastCycleMaintenances = componentPreventiveHistory.filter((m: any) => {
+                    const mValue = getMaintenanceValue(m, componentUnit);
+                    return mValue > pastCycleStartValue && mValue < pastCycleEndValue;
+                  });
+
+                  modelIntervals.forEach(interval => {
+                    const isRecurring = (interval as any).is_recurring !== false;
+                    const isFirstCycleOnly = (interval as any).is_first_cycle_only === true;
+                    const category = (interval as any).maintenance_category || 'standard';
+
+                    if (isFirstCycleOnly && pastCycle > 1) return;
+
+                    const expectedDueValue = pastCycleStartValue + interval.interval_value;
+
+                    const wasCompletedInPastCycle = pastCycleMaintenances.some((m: any) => {
+                      const mValue = getMaintenanceValue(m, componentUnit);
+                      const tolerance = 200;
+                      return m.maintenance_plan_id === interval.id &&
+                             Math.abs(mValue - expectedDueValue) <= tolerance;
+                    });
+
+                    if (!wasCompletedInPastCycle) {
+                      // Check if covered by current cycle maintenance
+                      const currentCycleStartValue = (currentCycleNum - 1) * maxInterval;
+                      const currentCycleEndValue = currentCycleNum * maxInterval;
+                      const currentCycleMaintenances = componentPreventiveHistory.filter((m: any) => {
+                        const mValue = getMaintenanceValue(m, componentUnit);
+                        return mValue > currentCycleStartValue && mValue < currentCycleEndValue;
+                      });
+
+                      const isCoveredByCurrentCycle = currentCycleMaintenances.some((m: any) => {
+                        const performedInterval = (intervals as any[]).find((i: any) => i.id === m.maintenance_plan_id);
+                        if (!performedInterval) return false;
+                        const sameUnit = performedInterval.type === interval.type;
+                        const sameCategory = (performedInterval as any).maintenance_category === (interval as any).maintenance_category;
+                        const categoryOk = (performedInterval as any).maintenance_category && (interval as any).maintenance_category ? sameCategory : true;
+                        const higherOrEqual = Number(performedInterval.interval_value) >= Number(interval.interval_value);
+                        return sameUnit && categoryOk && higherOrEqual;
+                      });
+
+                      if (!isCoveredByCurrentCycle) {
+                        processedIntervals.push({
+                          interval_id: interval.id,
+                          interval_value: interval.interval_value,
+                          name: interval.name,
+                          description: interval.description || '',
+                          type: interval.type,
+                          maintenance_category: category,
+                          is_recurring: isRecurring,
+                          is_first_cycle_only: isFirstCycleOnly,
+                          current_cycle: pastCycle,
+                          next_due_hour: expectedDueValue,
+                          next_due_value: expectedDueValue,
+                          status: 'overdue',
+                          cycle_length: maxInterval,
+                          component_id: component.id,
+                          component_name: component.name,
+                          component_hours: componentValue,
+                          component_value: componentValue,
+                          component_unit: componentUnit
+                        });
+                      }
+                    }
+                  });
+                }
+              });
+
               // Filter and sort - show relevant intervals for current cycle and near future
               const filtered = processedIntervals.filter(i => {
                 // Show: overdue, upcoming, scheduled, covered
@@ -328,17 +415,19 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
               });
 
               const sorted = filtered.sort((a, b) => {
-                // First sort by cycle
-                if (a.current_cycle !== b.current_cycle) {
-                  return a.current_cycle - b.current_cycle;
-                }
-
-                // Then by status priority
+                // First sort by status priority (overdue first)
                 const statusOrder = { 'overdue': 4, 'upcoming': 3, 'scheduled': 2, 'covered': 1 };
                 const statusA = statusOrder[a.status as keyof typeof statusOrder] || 0;
                 const statusB = statusOrder[b.status as keyof typeof statusOrder] || 0;
 
                 if (statusA !== statusB) return statusB - statusA;
+                
+                // Then by cycle (older cycles first for overdue items)
+                if (a.current_cycle !== b.current_cycle) {
+                  return a.current_cycle - b.current_cycle;
+                }
+
+                // Finally by interval value
                 return a.interval_value - b.interval_value;
               });
 
@@ -486,7 +575,10 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
                     status = 'completed';
                   } else {
                     // Plan-aware coverage: higher/equal interval (same unit/category) covers lower ones
-                    // CRITICAL: Coverage requires BOTH interval value comparison AND timing check
+                    // CRITICAL: Coverage based SOLELY on interval value comparison
+                    // If a higher interval service is performed, it covers ALL lower interval services
+                    // Example: If 2700h service performed, it covers 300h, 600h, 900h, 1200h, 1500h, 1800h, 2100h, 2400h
+                    // NO timing/position verification needed - purely interval value comparison
                     // CRITICAL: maintenance_plan_id IS the interval ID
                     const isCoveredByHigher = currentCycleMaintenances.some(m => {
                       const performedInterval = intervals.find((i: any) => i.id === m.maintenance_plan_id);
@@ -496,15 +588,11 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
                       const sameCategory = (performedInterval as any).maintenance_category === (dueInterval as any).maintenance_category;
                       const categoryOk = (performedInterval as any).maintenance_category && (dueInterval as any).maintenance_category ? sameCategory : true;
                       
-                      // CRITICAL: Coverage requires interval value >= due interval value
+                      // CRITICAL: Coverage based SOLELY on interval value comparison
+                      // If performed interval value >= due interval value, it covers it
                       const higherOrEqual = Number(performedInterval.interval_value) >= Number(dueInterval.interval_value);
                       
-                      // CRITICAL: Also check timing - the performed service must be done AFTER the due value
-                      // This prevents a 1500km service at 5145km from covering a 1800km interval due at 5400km
-                      const performedAtValue = getMaintenanceValue(m, maintenanceUnit);
-                      const performedAfterDue = performedAtValue >= Number(nextDueValue);
-                      
-                      return sameUnit && categoryOk && higherOrEqual && performedAfterDue;
+                      return sameUnit && categoryOk && higherOrEqual;
                     });
 
                     if (isCoveredByHigher) {
@@ -537,25 +625,114 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
               };
             });
 
+            // Check for uncompleted services from previous cycles
+            // Add them to processedIntervals if they are not covered by services in current cycle
+            const pastCycleIntervals: CyclicMaintenanceInterval[] = [];
+            
+            for (let pastCycle = 1; pastCycle < currentCycleNum; pastCycle++) {
+              const pastCycleStartValue = (pastCycle - 1) * maxInterval;
+              const pastCycleEndValue = pastCycle * maxInterval;
+              
+              // Get all preventive maintenances from this past cycle
+              const pastCycleMaintenances = preventiveHistory.filter(m => {
+                const mValue = getMaintenanceValue(m, maintenanceUnit);
+                return mValue > pastCycleStartValue && mValue < pastCycleEndValue;
+              });
+              
+              intervals.forEach(interval => {
+                const isRecurring = (interval as any).is_recurring !== false;
+                const isFirstCycleOnly = (interval as any).is_first_cycle_only === true;
+                const category = (interval as any).maintenance_category || 'standard';
+                
+                // Skip if first cycle only and we're past first cycle
+                if (isFirstCycleOnly && pastCycle > 1) return;
+                
+                // Calculate expected due value for this past cycle
+                const expectedDueValue = pastCycleStartValue + interval.interval_value;
+                
+                // Check if this service was completed in that past cycle
+                const wasCompletedInPastCycle = pastCycleMaintenances.some(m => {
+                  const mValue = getMaintenanceValue(m, maintenanceUnit);
+                  const tolerance = 200;
+                  
+                  return m.maintenance_plan_id === interval.id &&
+                         Math.abs(mValue - expectedDueValue) <= tolerance;
+                });
+                
+                // If not completed, check if it's covered by a higher service
+                if (!wasCompletedInPastCycle) {
+                  // Check if covered by higher service in SAME past cycle
+                  const isCoveredInSameCycle = pastCycleMaintenances.some(m => {
+                    const performedInterval = intervals.find((i: any) => i.id === m.maintenance_plan_id);
+                    if (!performedInterval) return false;
+                    
+                    const sameUnit = performedInterval.type === interval.type;
+                    const sameCategory = (performedInterval as any).maintenance_category === (interval as any).maintenance_category;
+                    const categoryOk = (performedInterval as any).maintenance_category && (interval as any).maintenance_category ? sameCategory : true;
+                    const higherOrEqual = Number(performedInterval.interval_value) >= Number(interval.interval_value);
+                    
+                    return sameUnit && categoryOk && higherOrEqual;
+                  });
+                  
+                  // Check if covered by service in current cycle
+                  const isCoveredByCurrentCycle = currentCycleMaintenances.some(m => {
+                    const performedInterval = intervals.find((i: any) => i.id === m.maintenance_plan_id);
+                    if (!performedInterval) return false;
+                    
+                    const sameUnit = performedInterval.type === interval.type;
+                    const sameCategory = (performedInterval as any).maintenance_category === (interval as any).maintenance_category;
+                    const categoryOk = (performedInterval as any).maintenance_category && (interval as any).maintenance_category ? sameCategory : true;
+                    const higherOrEqual = Number(performedInterval.interval_value) >= Number(interval.interval_value);
+                    
+                    return sameUnit && categoryOk && higherOrEqual;
+                  });
+                  
+                  // Only add if NOT covered by same cycle OR current cycle
+                  if (!isCoveredInSameCycle && !isCoveredByCurrentCycle) {
+                    pastCycleIntervals.push({
+                      interval_id: interval.id,
+                      interval_value: interval.interval_value,
+                      name: interval.name,
+                      description: interval.description || '',
+                      type: interval.type,
+                      maintenance_category: category,
+                      is_recurring: isRecurring,
+                      is_first_cycle_only: isFirstCycleOnly,
+                      current_cycle: pastCycle,
+                      next_due_hour: expectedDueValue,
+                      next_due_value: expectedDueValue,
+                      status: 'overdue', // Always overdue for past cycles
+                      cycle_length: maxInterval
+                    });
+                  }
+                }
+              });
+            }
+            
+            // Merge past cycle intervals with current cycle intervals
+            const allIntervals = [...pastCycleIntervals, ...processedIntervals];
+
             // Filter and sort - show relevant intervals for current cycle and near future
-            const filtered = processedIntervals.filter(i => {
+            const filtered = allIntervals.filter(i => {
               // Show: overdue, upcoming, scheduled, covered
               // Don't show: not_applicable, completed (already done)
               return ['overdue', 'upcoming', 'scheduled', 'covered'].includes(i.status);
             });
 
             const sorted = filtered.sort((a, b) => {
-              // First sort by cycle
-              if (a.current_cycle !== b.current_cycle) {
-                return a.current_cycle - b.current_cycle;
-              }
-
-              // Then by status priority
+              // First sort by status priority (overdue first)
               const statusOrder = { 'overdue': 4, 'upcoming': 3, 'scheduled': 2, 'covered': 1 };
               const statusA = statusOrder[a.status as keyof typeof statusOrder] || 0;
               const statusB = statusOrder[b.status as keyof typeof statusOrder] || 0;
 
               if (statusA !== statusB) return statusB - statusA;
+              
+              // Then by cycle (older cycles first for overdue items)
+              if (a.current_cycle !== b.current_cycle) {
+                return a.current_cycle - b.current_cycle;
+              }
+
+              // Finally by interval value
               return a.interval_value - b.interval_value;
             });
 
@@ -842,8 +1019,8 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
                    será a las {cycleLength + (cyclicIntervals[0]?.interval_value || 0)}{getUnitLabel(maintenanceUnit)}.
                  </p>
                  <p className="mt-1">
-                   <span className="font-medium">Lógica de Cobertura:</span> Un mantenimiento mayor puede "cubrir" mantenimientos menores
-                   dentro del mismo ciclo. Por ejemplo, si se realiza el servicio de 600{getUnitLabel(maintenanceUnit)}, este cubre automáticamente el servicio de 300{getUnitLabel(maintenanceUnit)} en el mismo ciclo.
+                   <span className="font-medium">Lógica de Cobertura:</span> Un mantenimiento mayor cubre automáticamente todos los mantenimientos menores
+                   del mismo tipo y categoría. Por ejemplo, si se realiza el servicio de 2700{getUnitLabel(maintenanceUnit)}, este cubre automáticamente todos los servicios menores (300{getUnitLabel(maintenanceUnit)}, 600{getUnitLabel(maintenanceUnit)}, etc.) tanto del ciclo actual como de ciclos anteriores no completados.
                  </p>
                  {isComposite && (
                    <p className="mt-1">
@@ -904,7 +1081,7 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
                        
                        return (
                          <TableRow 
-                           key={interval.interval_id} 
+                           key={`${interval.interval_id}-cycle-${interval.current_cycle}`} 
                            className={
                              isOverdue ? "bg-red-50" : 
                              isUpcoming ? "bg-amber-50" : 
@@ -923,6 +1100,11 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
                               <div className="text-xs font-medium">
                                 Categoría: {interval.maintenance_category}
                               </div>
+                              {interval.current_cycle < currentCycle && (
+                                <Badge variant="destructive" className="text-xs mt-1">
+                                  Ciclo {interval.current_cycle} - ¡ATRASADO!
+                                </Badge>
+                              )}
                               {interval.is_first_cycle_only && (
                                 <div className="text-xs text-orange-600">
                                   Solo primer ciclo

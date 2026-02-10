@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { z } from "zod"
 import { createClient as createServerSupabase } from "@/lib/supabase-server"
+import { buildAssignmentHistoryMap, resolveAssetPlantAtTimestamp } from "@/lib/reporting/asset-plant-attribution"
 
 const RequestSchema = z.object({
   startDate: z.string().datetime(),
@@ -54,38 +55,84 @@ export async function POST(req: Request) {
 
     if (buError) throw buError
 
-    // Build asset lookup and apply filters
-    let allAssets: any[] = []
-    let filteredPlants: any[] = []
+    // Build full org maps and raw asset list first.
+    // We apply BU/plant filters only after historical attribution to avoid
+    // misclassifying moved assets based on their current location.
+    const plantById = new Map<string, { id: string; name: string; business_unit_id: string; business_unit_name: string }>()
+    const rawAssets: any[] = []
+    const filteredPlants: any[] = []
 
     for (const bu of businessUnits || []) {
-      if (businessUnitId && bu.id !== businessUnitId) continue
-      
       for (const plant of bu.plants || []) {
-        if (plantId && plant.id !== plantId) continue
-        
-        filteredPlants.push({
-          ...plant,
+        const plantInfo = {
+          id: plant.id,
+          name: plant.name,
+          code: plant.code,
           business_unit_id: bu.id,
-          business_unit_name: bu.name
-        })
-        
+          business_unit_name: bu.name,
+        }
+        plantById.set(plant.id, plantInfo)
+        if (!businessUnitId || bu.id === businessUnitId) {
+          filteredPlants.push(plantInfo)
+        }
+
         for (const asset of plant.assets || []) {
-          allAssets.push({
+          rawAssets.push({
             ...asset,
-            plant_id: plant.id,
-            plant_name: plant.name,
-            business_unit_id: bu.id,
-            business_unit_name: bu.name,
-            model_name: asset.equipment_models?.name || 'Sin modelo',
-            model_manufacturer: asset.equipment_models?.manufacturer || '',
+            current_plant_id: plant.id,
+            current_plant_name: plant.name,
+            current_business_unit_id: bu.id,
+            current_business_unit_name: bu.name,
+            model_name: asset.equipment_models?.name || "Sin modelo",
+            model_manufacturer: asset.equipment_models?.manufacturer || "",
           })
         }
       }
     }
 
+    const rawAssetIds = rawAssets.map((a) => a.id)
+    const attributionDate = `${dateToStr}T23:59:59.999Z`
+    let assignmentRows: any[] = []
+    if (rawAssetIds.length > 0) {
+      const { data, error: assignmentError } = await supabase
+        .from("asset_assignment_history")
+        .select("asset_id, previous_plant_id, new_plant_id, created_at")
+        .in("asset_id", rawAssetIds)
+        .order("created_at", { ascending: true })
+      if (assignmentError) throw assignmentError
+      assignmentRows = data || []
+    }
+    const assignmentHistoryMap = buildAssignmentHistoryMap(assignmentRows)
+
+    const allAssets = rawAssets
+      .map((asset) => {
+        const attributedPlantId = resolveAssetPlantAtTimestamp({
+          assetId: asset.id,
+          eventDate: attributionDate,
+          currentPlantId: asset.current_plant_id,
+          historyByAsset: assignmentHistoryMap,
+        })
+
+        const attributedPlant = attributedPlantId ? plantById.get(attributedPlantId) : null
+        if (!attributedPlant) return null
+
+        return {
+          ...asset,
+          plant_id: attributedPlant.id,
+          plant_name: attributedPlant.name,
+          business_unit_id: attributedPlant.business_unit_id,
+          business_unit_name: attributedPlant.business_unit_name,
+        }
+      })
+      .filter((asset): asset is any => {
+        if (!asset) return false
+        if (businessUnitId && asset.business_unit_id !== businessUnitId) return false
+        if (plantId && asset.plant_id !== plantId) return false
+        return true
+      })
+
     const assetIds = allAssets.map(a => a.id)
-    const plantIds = filteredPlants.map(p => p.id)
+    const attributedAssetPlantById = new Map(allAssets.map((a) => [a.id, a.plant_id]))
 
     if (assetIds.length === 0) {
       return NextResponse.json({
@@ -99,7 +146,7 @@ export async function POST(req: Request) {
     const { data: purchaseOrders, error: poError } = await supabase
       .from("purchase_orders")
       .select(`
-        id, order_id, total_amount, actual_amount, created_at, purchase_date, plant_id, work_order_id, status, supplier, items, is_adjustment
+        id, order_id, total_amount, actual_amount, created_at, purchase_date, plant_id, work_order_id, status, supplier, items, is_adjustment, po_purpose
       `)
       .neq("status", "pending_approval")
 
@@ -108,27 +155,25 @@ export async function POST(req: Request) {
     // Get work orders for the purchase orders (to get asset_id, type, planned_date, and completed_at)
     const poWorkOrderIds = purchaseOrders?.map(po => po.work_order_id).filter(Boolean) || []
     let workOrdersMap = new Map()
-    let assetToPlantMap = new Map()
+    const assetToPlantMap = new Map<string, string>()
     
     if (poWorkOrderIds.length > 0) {
       const { data: workOrders, error: woError } = await supabase
         .from("work_orders")
-        .select(`
-          id, type, asset_id, planned_date, completed_at, created_at,
-          assets (
-            id, plant_id
-          )
-        `)
+        .select("id, type, asset_id, planned_date, completed_at, created_at, plant_id")
         .in("id", poWorkOrderIds)
       
       if (woError) throw woError
       
       workOrdersMap = new Map(workOrders?.map(wo => [wo.id, wo]) || [])
       
-      // Build asset to plant mapping for filtering
+      // Build asset to plant mapping for filtering using attributed asset plant as of report end.
       workOrders?.forEach(wo => {
-        if (wo.assets && wo.asset_id) {
-          assetToPlantMap.set(wo.asset_id, wo.assets.plant_id)
+        if (wo.asset_id) {
+          const attributedPlantId = attributedAssetPlantById.get(wo.asset_id)
+          if (attributedPlantId) {
+            assetToPlantMap.set(wo.asset_id, attributedPlantId)
+          }
         }
       })
     }
@@ -358,19 +403,18 @@ export async function POST(req: Request) {
     // Service orders are only used for additional details about the purchase orders
     // We'll fetch service order details when needed for the breakdown display
 
-    // Process additional expenses (only linked ones)
-    // Include all AEs with adjustment_po_id = null, same as gerencial report
-    // Note: This includes AEs that have been converted to adjustment POs but where
-    // the adjustment_po_id wasn't set in the database. Both the AE and the PO will be counted.
+    // Process additional expenses - for DISPLAY only, NOT for cost totals
+    // Los gastos adicionales al convertirse son ÓC de ajuste (is_adjustment=true).
+    // Esas ÓC ya están en purchase_orders_cost. Sumarlos aquí causaría doble conteo.
+    // Regla: solo se cuenta en purchase_orders. additional_expenses no se suma a total_cost.
     linkedAdditionalExpenses.forEach(ae => {
       const metrics = assetMetrics.get(ae.asset_id)
       if (metrics) {
         const amount = parseFloat(ae.amount || '0')
-        metrics.additional_expenses += amount
-        metrics.total_cost += amount
-        metrics.corrective_cost += amount
+        metrics.additional_expenses += amount  // Display/breakdown only
+        // NO: metrics.total_cost += amount
+        // NO: metrics.corrective_cost += amount
         
-        // Add to additional expenses array
         metrics.additional_expenses_list.push({
           id: ae.id,
           amount: amount,
@@ -444,29 +488,45 @@ export async function POST(req: Request) {
       buTotal.asset_count += 1
     })
 
-    // Add unlinked purchase orders to plant totals only (using filtered list)
+    // Add unlinked purchase orders to plant totals (standalone POs, WO without asset)
+    // Exclude inventory_restock - those are not maintenance expense
+    // Match Gerencial: create plant entry if not exists (plants with no assets but standalone POs)
     filteredPurchaseOrders.forEach(po => {
+      if (po.po_purpose === 'inventory_restock') return
       const workOrder = po.work_order_id ? workOrdersMap.get(po.work_order_id) : null
       if (!workOrder?.asset_id) {
-        // For POs without work order assets, determine plant_id
         let purchaseOrderPlantId = po.plant_id
-        
-        // If PO doesn't have plant_id but has work order, get plant from work order asset
-        if (!purchaseOrderPlantId && po.work_order_id) {
-          const workOrder = workOrdersMap.get(po.work_order_id)
-          if (workOrder?.asset_id) {
-            purchaseOrderPlantId = assetToPlantMap.get(workOrder.asset_id)
-          }
-        }
-        
         if (purchaseOrderPlantId && plantTotals.has(purchaseOrderPlantId)) {
           const finalAmount = po.actual_amount ? parseFloat(po.actual_amount) : parseFloat(po.total_amount || '0')
           const plantTotal = plantTotals.get(purchaseOrderPlantId)
           plantTotal.purchase_orders_cost += finalAmount
           plantTotal.total_cost += finalAmount
-
           const buTotal = buTotals.get(plantTotal.business_unit_id)
           if (buTotal) {
+            buTotal.purchase_orders_cost += finalAmount
+            buTotal.total_cost += finalAmount
+          }
+        } else if (purchaseOrderPlantId) {
+          // Plant with no assets but has standalone PO - create plant total (same as Gerencial)
+          const plantInfo = filteredPlants.find((p: { id: string }) => p.id === purchaseOrderPlantId)
+          if (plantInfo) {
+            if (!plantTotals.has(purchaseOrderPlantId)) {
+              plantTotals.set(purchaseOrderPlantId, {
+                id: plantInfo.id, name: plantInfo.name, business_unit_id: plantInfo.business_unit_id, business_unit_name: plantInfo.business_unit_name,
+                total_cost: 0, purchase_orders_cost: 0, service_orders_cost: 0, labor_cost: 0, parts_cost: 0, additional_expenses: 0, hours_worked: 0, preventive_cost: 0, corrective_cost: 0, asset_count: 0
+              })
+            }
+            const finalAmount = po.actual_amount ? parseFloat(po.actual_amount) : parseFloat(po.total_amount || '0')
+            const plantTotal = plantTotals.get(purchaseOrderPlantId)
+            plantTotal.purchase_orders_cost += finalAmount
+            plantTotal.total_cost += finalAmount
+            if (!buTotals.has(plantInfo.business_unit_id)) {
+              buTotals.set(plantInfo.business_unit_id, {
+                id: plantInfo.business_unit_id, name: plantInfo.business_unit_name,
+                total_cost: 0, purchase_orders_cost: 0, service_orders_cost: 0, labor_cost: 0, parts_cost: 0, additional_expenses: 0, hours_worked: 0, preventive_cost: 0, corrective_cost: 0, asset_count: 0
+              })
+            }
+            const buTotal = buTotals.get(plantInfo.business_unit_id)
             buTotal.purchase_orders_cost += finalAmount
             buTotal.total_cost += finalAmount
           }
@@ -480,8 +540,8 @@ export async function POST(req: Request) {
     const paginatedAssets = assetList.slice((page - 1) * pageSize, page * pageSize)
 
     // Calculate summary
-    // Note: totalCost should equal purchaseOrdersCost + serviceOrdersCost + laborCost + partsCost + additionalExpenses
-    // This ensures all cost components are included in the total
+    // totalCost = purchaseOrdersCost + serviceOrdersCost + laborCost + partsCost
+    // Los gastos adicionales NO se suman al total (al convertirse son ÓC de ajuste, ya incluidas en POs)
     const summary = {
       totalCost: Array.from(buTotals.values()).reduce((sum, bu) => sum + bu.total_cost, 0),
       purchaseOrdersCost: Array.from(buTotals.values()).reduce((sum, bu) => sum + bu.purchase_orders_cost, 0),
@@ -495,9 +555,9 @@ export async function POST(req: Request) {
       correctiveCost: Array.from(buTotals.values()).reduce((sum, bu) => sum + bu.corrective_cost, 0)
     }
     
-    // Validation: Log if there's a mismatch (for debugging)
+    // Validation: totalCost = PO + service + labor + parts (additionalExpenses no se suma)
     const calculatedComponentsTotal = summary.purchaseOrdersCost + summary.serviceOrdersCost + 
-                                     summary.laborCost + summary.partsCost + summary.additionalExpenses
+                                     summary.laborCost + summary.partsCost
     if (Math.abs(summary.totalCost - calculatedComponentsTotal) > 0.01) {
       console.warn('Executive Report Summary Mismatch:', {
         totalCost: summary.totalCost,

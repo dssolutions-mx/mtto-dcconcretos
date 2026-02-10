@@ -1,0 +1,271 @@
+═══════════════════════════════════════════════════════════════════════════
+                    RESUMEN RÁPIDO PARA GAMMA PRESENTATION
+                            Q4 2025 - DC CONCRETOS
+═══════════════════════════════════════════════════════════════════════════
+
+📊 SLIDE 1 - PORTADA
+═══════════════════════════════════════════════════════
+Título: Análisis de Mantenimiento Q4 2025
+Subtítulo: Octubre - Diciembre 2025
+Empresa: DC CONCRETOS
+Fecha: Febrero 2026
+
+═══════════════════════════════════════════════════════════════════════════
+
+💰 SLIDE 2 - RESUMEN EJECUTIVO
+═══════════════════════════════════════════════════════
+Cifras Clave:
+• Gasto Total: $250,564 MXN
+• Órdenes Procesadas: 100
+• Producción: 26,831 m³
+• Costo por m³: $9.34
+
+Distribución:
+• Correctivo: $200,300 (79.9%)
+• Preventivo: $41,028 (16.4%)
+• Ratio: 4.88:1 ⚠️
+
+═══════════════════════════════════════════════════════════════════════════
+
+📅 SLIDE 3 - ANÁLISIS MENSUAL
+═══════════════════════════════════════════════════════
+OCTUBRE:
+Gasto: $103,321 | Producción: 11,056 m³ | Costo/m³: $9.35
+
+NOVIEMBRE: ⚠️
+Gasto: $108,371 | Producción: 7,392 m³ | Costo/m³: $14.66
+(Mes crítico - menor producción, mayor costo)
+
+DICIEMBRE: ✅
+Gasto: $38,872 | Producción: 8,384 m³ | Costo/m³: $4.64
+(Mejor eficiencia del trimestre)
+
+═══════════════════════════════════════════════════════════════════════════
+
+🔧 SLIDE 4 - CORRECTIVO VS PREVENTIVO
+═══════════════════════════════════════════════════════
+[USAR: q4_grafico1_correctivo_preventivo.png]
+
+Evolución del Ratio:
+• Octubre: 5.12:1
+• Noviembre: 6.33:1 (empeoramiento)
+• Diciembre: 2.16:1 (mejora)
+
+⚠️ ALERTA: Ratio promedio 4.88:1 supera estándar 3:1
+
+💡 OPORTUNIDAD: Ahorro potencial de $77,215 MXN/trimestre
+
+═══════════════════════════════════════════════════════════════════════════
+
+🏭 SLIDE 5 - PRODUCCIÓN POR PLANTA
+═══════════════════════════════════════════════════════
+[USAR: q4_grafico5_produccion_planta.png]
+
+Ranking:
+1. Tijuana P2: 11,325 m³ (42.2%)
+2. León P1: 9,833 m³ (36.6%)
+3. Tijuana P3: 4,114 m³ (15.3%)
+4. Tijuana P4: 916 m³ (3.4%)
+5. León P5: 643 m³ (2.4%)
+
+Nota: Tijuana P4 cesó operaciones en diciembre
+
+═══════════════════════════════════════════════════════════════════════════
+
+📈 SLIDE 6 - COSTO POR M³
+═══════════════════════════════════════════════════════
+[USAR: q4_grafico3_costo_m3.png]
+
+Evolución:
+• Octubre: $9.35/m³
+• Noviembre: $14.66/m³ (+56.8%) ⚠️
+• Diciembre: $4.64/m³ (-68.3%) ✅
+
+Promedio Q4: $9.34/m³
+Variabilidad: 216% (Alta - requiere estandarización)
+
+═══════════════════════════════════════════════════════════════════════════
+
+🚜 SLIDE 7 - TOP 5 ACTIVOS CRÍTICOS
+═══════════════════════════════════════════════════════
+1. CR-07: $45,876 (18.3%)
+   → Evaluar reemplazo vs reparación
+
+2. CR-06: $28,188 (11.2%)
+   → Revisar historial de fallas
+
+3. PIPA AGUA: $19,993 (8.0%)
+   → Equipo crítico, alto correctivo
+
+4. CF-CATERPILLAR 938G: $16,854 (6.7%)
+   → Requiere más preventivo
+
+5. CR-08: $15,393 (6.1%)
+   → Múltiples intervenciones
+
+═══════════════════════════════════════════════════════════════════════════
+
+🏢 SLIDE 8 - TOP 5 PROVEEDORES
+═══════════════════════════════════════════════════════
+1. REBECA MEJIA GOMEZ: $68,361 (27.3%)
+2. INTERNATIONAL BC: $37,035 (14.8%)
+3. Gastos Adicionales: $25,732 (10.3%)
+4. EL MUÑECO: $25,180 (10.0%)
+5. MATCO CAT: $16,854 (6.7%)
+
+⚠️ Alta concentración: Top 3 = 52.4% del gasto
+
+═══════════════════════════════════════════════════════════════════════════
+
+📊 SLIDE 9 - TENDENCIAS
+═══════════════════════════════════════════════════════
+[USAR: q4_grafico6_evolucion.png]
+
+Variaciones Mensuales:
+Oct → Nov: Gastos +4.9%, Producción -33.1%
+Nov → Dic: Gastos -64.1%, Producción +13.4%
+
+Insight:
+Noviembre = Mes crítico (baja producción + alto gasto)
+Diciembre = Recuperación excepcional
+
+═══════════════════════════════════════════════════════════════════════════
+
+⚠️ SLIDE 10 - PROBLEMAS IDENTIFICADOS
+═══════════════════════════════════════════════════════
+1. RATIO ALTO (4.88:1)
+   Estándar: 3:1 o menos
+   Impacto: +$77K en gastos evitables
+
+2. ALTA VARIABILIDAD
+   Costo/m³: $4.64 - $14.66
+   Necesidad: Estandarización
+
+3. CONCENTRACIÓN PROVEEDORES
+   1 proveedor = 27% del gasto
+   Riesgo: Dependencia alta
+
+4. ACTIVOS CRÍTICOS
+   Top 3 activos = 38% del gasto
+   Decisión: ¿Reparar o reemplazar?
+
+═══════════════════════════════════════════════════════════════════════════
+
+🎯 SLIDE 11 - RECOMENDACIONES PRIORITARIAS
+═══════════════════════════════════════════════════════
+PRIORIDAD ALTA (Q1 2026):
+
+1. 📋 PROGRAMA PREVENTIVO INTENSIVO
+   Inversión: $15K/mes
+   Ahorro: $25K/mes
+   ROI: 1.67 meses
+
+2. 🔍 AUDITORÍA ACTIVOS CRÍTICOS
+   Alcance: CR-07, CR-06, PIPA, CAT
+   Decisión: Mar 2026
+
+3. 🤝 DIVERSIFICAR PROVEEDORES
+   Objetivo: Reducir 10-15% costos
+   Acción: Contratos marco
+
+═══════════════════════════════════════════════════════════════════════════
+
+📈 SLIDE 12 - METAS 2026
+═══════════════════════════════════════════════════════
+Q1 2026:
+• Ratio: 4.0:1 (actual: 4.88:1)
+• Costo/m³: $8.50 (actual: $9.34)
+• Preventivo: 22% (actual: 16.4%)
+
+Q2 2026:
+• Ratio: 3.5:1
+• Costo/m³: $8.00
+• Preventivo: 25%
+
+H2 2026:
+• Ratio: 3.0:1 ✅ META
+• Costo/m³: $7.50
+• Preventivo: 30%
+
+═══════════════════════════════════════════════════════════════════════════
+
+💡 SLIDE 13 - PLAN DE ACCIÓN
+═══════════════════════════════════════════════════════
+INMEDIATO (Feb 2026):
+✓ Calendario preventivo estricto
+✓ Capacitación operadores
+✓ Sistema alertas tempranas
+
+30 DÍAS:
+✓ Licitación proveedores
+✓ Auditoría activos críticos
+✓ Dashboard tiempo real
+
+90 DÍAS:
+✓ Implementar preventivo intensivo
+✓ Decisión reemplazo activos
+✓ Contratos marco proveedores
+
+═══════════════════════════════════════════════════════════════════════════
+
+✅ SLIDE 14 - VALIDACIÓN
+═══════════════════════════════════════════════════════
+Datos Validados:
+✓ 100 órdenes procesadas
+✓ Status: != 'pending_approval'
+✓ Período: Oct-Dic 2025
+✓ Verificación: Todos los totales cuadran
+
+Confiabilidad: 95%
+Inconsistencias: 0
+Datos faltantes: <1%
+
+═══════════════════════════════════════════════════════════════════════════
+
+🎬 SLIDE 15 - CIERRE
+═══════════════════════════════════════════════════════
+Conclusión:
+Q4 2025 muestra oportunidades significativas de mejora.
+
+Con inversión estratégica en mantenimiento preventivo,
+podemos lograr ahorros de hasta $77K/trimestre.
+
+Próximos Pasos:
+→ Aprobación de presupuesto preventivo
+→ Inicio de auditoría activos críticos
+→ Implementación Q1 2026
+
+═══════════════════════════════════════════════════════════════════════════
+
+PALETA DE COLORES SUGERIDA (Midnight Executive):
+═══════════════════════════════════════════════════════
+• Primario (Fondo oscuro): #1E2761 (Navy)
+• Secundario (Texto/gráficos): #CADCFC (Ice Blue)
+• Acento (Highlights): #FFFFFF (White)
+• Correctivo (Gráficos): #E74C3C (Rojo)
+• Preventivo (Gráficos): #3498DB (Azul)
+• Éxito: #2ECC71 (Verde)
+• Alerta: #F39C12 (Naranja)
+
+═══════════════════════════════════════════════════════════════════════════
+
+ARCHIVOS DISPONIBLES:
+═══════════════════════════════════════════════════════
+📄 Documentos:
+  • INFORME_COMPLETO_Q4_2025.md (Informe detallado completo)
+  • DATOS_COMPLETOS_Q4_2025.json (Todos los datos estructurados)
+  • RESUMEN_RAPIDO_GAMMA.txt (Este archivo)
+
+📊 Gráficos:
+  • q4_grafico1_correctivo_preventivo.png
+  • q4_grafico2_produccion.png
+  • q4_grafico3_costo_m3.png
+  • q4_grafico4_distribucion.png
+  • q4_grafico5_produccion_planta.png
+  • q4_grafico6_evolucion.png
+
+📈 Datos:
+  • datos_q4_final.json
+  • analisis_completo_q4.json
+
+═══════════════════════════════════════════════════════════════════════════

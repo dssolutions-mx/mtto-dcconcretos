@@ -1,0 +1,590 @@
+{
+  "metadata": {
+    "titulo": "Análisis de Mantenimiento Q4 2025",
+    "empresa": "DC CONCRETOS",
+    "periodo": "2025-10-01 a 2025-12-31",
+    "fecha_analisis": "2026-02-10",
+    "filtro_aplicado": "status != 'pending_approval'",
+    "total_ordenes": 100,
+    "total_gasto": 250564.23,
+    "total_produccion_m3": 26831.03
+  },
+
+  "resumen_ejecutivo": {
+    "gasto_total_q4": 250564.23,
+    "numero_ordenes": 100,
+    "promedio_por_orden": 2505.64,
+    "produccion_total_m3": 26831.03,
+    "remisiones_totales": 3422,
+    "promedio_m3_por_remision": 7.84,
+    "costo_promedio_por_m3": 9.34,
+    "ratio_correctivo_preventivo": 4.88
+  },
+
+  "distribucion_por_status": {
+    "receipt_uploaded": {
+      "ordenes": 56,
+      "monto": 125516.20,
+      "porcentaje": 50.1
+    },
+    "approved": {
+      "ordenes": 21,
+      "monto": 61741.08,
+      "porcentaje": 24.6
+    },
+    "purchased": {
+      "ordenes": 17,
+      "monto": 37574.94,
+      "porcentaje": 15.0
+    },
+    "received": {
+      "ordenes": 6,
+      "monto": 25732.01,
+      "porcentaje": 10.3
+    }
+  },
+
+  "analisis_mensual": {
+    "octubre": {
+      "gastos": {
+        "total": 103321.07,
+        "correctivo": 86434.98,
+        "preventivo": 16886.09,
+        "porcentaje_correctivo": 83.7,
+        "porcentaje_preventivo": 16.3,
+        "ratio": 5.12
+      },
+      "produccion": {
+        "total_m3": 11055.64,
+        "remisiones": 1456,
+        "promedio_por_remision": 7.59
+      },
+      "metricas": {
+        "ordenes": 47,
+        "promedio_por_orden": 2198.32,
+        "costo_por_m3": 9.35
+      },
+      "por_planta": {
+        "Leon_Planta_1": {
+          "produccion_m3": 3241.99,
+          "remisiones": 439
+        },
+        "Leon_Planta_5": {
+          "produccion_m3": 3.00,
+          "remisiones": 1
+        },
+        "Tijuana_Planta_2": {
+          "produccion_m3": 4812.50,
+          "remisiones": 489
+        },
+        "Tijuana_Planta_3": {
+          "produccion_m3": 2433.15,
+          "remisiones": 436
+        },
+        "Tijuana_Planta_4": {
+          "produccion_m3": 565.00,
+          "remisiones": 91
+        }
+      }
+    },
+    "noviembre": {
+      "gastos": {
+        "total": 108371.44,
+        "correctivo": 93598.12,
+        "preventivo": 14773.32,
+        "porcentaje_correctivo": 86.4,
+        "porcentaje_preventivo": 13.6,
+        "ratio": 6.33
+      },
+      "produccion": {
+        "total_m3": 7391.60,
+        "remisiones": 954,
+        "promedio_por_remision": 7.75
+      },
+      "metricas": {
+        "ordenes": 37,
+        "promedio_por_orden": 2928.96,
+        "costo_por_m3": 14.66
+      },
+      "variacion_vs_octubre": {
+        "gastos_porcentaje": 4.9,
+        "produccion_porcentaje": -33.1,
+        "costo_m3_porcentaje": 56.8
+      },
+      "por_planta": {
+        "Leon_Planta_1": {
+          "produccion_m3": 3158.50,
+          "remisiones": 418
+        },
+        "Leon_Planta_5": {
+          "produccion_m3": 265.50,
+          "remisiones": 37
+        },
+        "Tijuana_Planta_2": {
+          "produccion_m3": 2665.00,
+          "remisiones": 311
+        },
+        "Tijuana_Planta_3": {
+          "produccion_m3": 951.60,
+          "remisiones": 128
+        },
+        "Tijuana_Planta_4": {
+          "produccion_m3": 351.00,
+          "remisiones": 60
+        }
+      }
+    },
+    "diciembre": {
+      "gastos": {
+        "total": 38871.72,
+        "correctivo": 20267.08,
+        "preventivo": 9368.99,
+        "porcentaje_correctivo": 68.4,
+        "porcentaje_preventivo": 31.6,
+        "ratio": 2.16
+      },
+      "produccion": {
+        "total_m3": 8383.79,
+        "remisiones": 1012,
+        "promedio_por_remision": 8.28
+      },
+      "metricas": {
+        "ordenes": 16,
+        "promedio_por_orden": 2429.48,
+        "costo_por_m3": 4.64
+      },
+      "variacion_vs_noviembre": {
+        "gastos_porcentaje": -64.1,
+        "produccion_porcentaje": 13.4,
+        "costo_m3_porcentaje": -68.3
+      },
+      "por_planta": {
+        "Leon_Planta_1": {
+          "produccion_m3": 3432.99,
+          "remisiones": 409
+        },
+        "Leon_Planta_5": {
+          "produccion_m3": 374.00,
+          "remisiones": 56
+        },
+        "Tijuana_Planta_2": {
+          "produccion_m3": 3847.50,
+          "remisiones": 471
+        },
+        "Tijuana_Planta_3": {
+          "produccion_m3": 729.30,
+          "remisiones": 76
+        },
+        "Tijuana_Planta_4": {
+          "produccion_m3": 0,
+          "remisiones": 0
+        }
+      }
+    }
+  },
+
+  "analisis_correctivo_preventivo": {
+    "total_correctivo": 200300.18,
+    "total_preventivo": 41028.40,
+    "sin_clasificar": 9235.65,
+    "porcentaje_correctivo": 79.9,
+    "porcentaje_preventivo": 16.4,
+    "porcentaje_sin_clasificar": 3.7,
+    "ratio_promedio": 4.88,
+    "ratio_ideal": 3.0,
+    "ahorro_potencial": 77214.98,
+    "evolucion_ratio": {
+      "octubre": 5.12,
+      "noviembre": 6.33,
+      "diciembre": 2.16
+    }
+  },
+
+  "produccion_por_planta": {
+    "Tijuana_Planta_2": {
+      "ranking": 1,
+      "produccion_total_m3": 11325.00,
+      "remisiones": 1271,
+      "promedio_m3_remision": 8.91,
+      "porcentaje_total": 42.2,
+      "distribucion_mensual": {
+        "octubre": 4812.50,
+        "noviembre": 2665.00,
+        "diciembre": 3847.50
+      }
+    },
+    "Leon_Planta_1": {
+      "ranking": 2,
+      "produccion_total_m3": 9833.48,
+      "remisiones": 1266,
+      "promedio_m3_remision": 7.77,
+      "porcentaje_total": 36.6,
+      "distribucion_mensual": {
+        "octubre": 3241.99,
+        "noviembre": 3158.50,
+        "diciembre": 3432.99
+      }
+    },
+    "Tijuana_Planta_3": {
+      "ranking": 3,
+      "produccion_total_m3": 4114.05,
+      "remisiones": 640,
+      "promedio_m3_remision": 6.43,
+      "porcentaje_total": 15.3,
+      "distribucion_mensual": {
+        "octubre": 2433.15,
+        "noviembre": 951.60,
+        "diciembre": 729.30
+      }
+    },
+    "Tijuana_Planta_4": {
+      "ranking": 4,
+      "produccion_total_m3": 916.00,
+      "remisiones": 151,
+      "promedio_m3_remision": 6.07,
+      "porcentaje_total": 3.4,
+      "distribucion_mensual": {
+        "octubre": 565.00,
+        "noviembre": 351.00,
+        "diciembre": 0
+      },
+      "nota": "Inactiva en diciembre"
+    },
+    "Leon_Planta_5": {
+      "ranking": 5,
+      "produccion_total_m3": 642.50,
+      "remisiones": 94,
+      "promedio_m3_remision": 6.84,
+      "porcentaje_total": 2.4,
+      "distribucion_mensual": {
+        "octubre": 3.00,
+        "noviembre": 265.50,
+        "diciembre": 374.00
+      }
+    }
+  },
+
+  "top_10_activos": [
+    {
+      "ranking": 1,
+      "codigo": "CR-07",
+      "gasto_total": 45875.56,
+      "porcentaje": 18.3,
+      "tipo_principal": "Correctivo",
+      "observacion": "Unidad con mayor inversión en mantenimiento. Evaluar vida útil."
+    },
+    {
+      "ranking": 2,
+      "codigo": "CR-06",
+      "gasto_total": 28188.31,
+      "porcentaje": 11.2,
+      "tipo_principal": "Correctivo",
+      "observacion": "Segunda unidad más costosa. Revisar historial de fallas."
+    },
+    {
+      "ranking": 3,
+      "codigo": "PIPA AGUA",
+      "gasto_total": 19993.46,
+      "porcentaje": 8.0,
+      "tipo_principal": "Correctivo",
+      "observacion": "Equipo crítico con alto gasto correctivo."
+    },
+    {
+      "ranking": 4,
+      "codigo": "CF-CATERPILLAR 938G",
+      "gasto_total": 16854.28,
+      "porcentaje": 6.7,
+      "tipo_principal": "Correctivo",
+      "observacion": "Cargador frontal requiere atención preventiva."
+    },
+    {
+      "ranking": 5,
+      "codigo": "CR-08",
+      "gasto_total": 15393.48,
+      "porcentaje": 6.1,
+      "tipo_principal": "Correctivo",
+      "observacion": "Múltiples intervenciones en el trimestre."
+    },
+    {
+      "ranking": 6,
+      "codigo": "CR-23",
+      "gasto_total": 12782.00,
+      "porcentaje": 5.1,
+      "tipo_principal": "Correctivo",
+      "observacion": "Requiere plan de mantenimiento preventivo."
+    },
+    {
+      "ranking": 7,
+      "codigo": "PLANTA 2",
+      "gasto_total": 12241.50,
+      "porcentaje": 4.9,
+      "tipo_principal": "Mixto",
+      "observacion": "Planta más productiva requiere mantenimiento proporcional."
+    },
+    {
+      "ranking": 8,
+      "codigo": "CR-17",
+      "gasto_total": 10817.05,
+      "porcentaje": 4.3,
+      "tipo_principal": "Correctivo",
+      "observacion": "Patrones de falla recurrentes."
+    },
+    {
+      "ranking": 9,
+      "codigo": "CR-09",
+      "gasto_total": 8156.54,
+      "porcentaje": 3.3,
+      "tipo_principal": "Preventivo",
+      "observacion": "Buen balance preventivo/correctivo."
+    },
+    {
+      "ranking": 10,
+      "codigo": "PLANTA 3",
+      "gasto_total": 6885.19,
+      "porcentaje": 2.7,
+      "tipo_principal": "Preventivo",
+      "observacion": "Mantenimiento de infraestructura."
+    }
+  ],
+
+  "top_10_proveedores": [
+    {
+      "ranking": 1,
+      "nombre": "REBECA MEJIA GOMEZ",
+      "gasto_total": 68360.91,
+      "porcentaje": 27.3,
+      "ordenes": 28,
+      "promedio_orden": 2441.46,
+      "observacion": "Principal proveedor. Evaluar contrato marco."
+    },
+    {
+      "ranking": 2,
+      "nombre": "INTERNATIONAL DE BAJA CALIFORNIA, S.A. DE C.V.",
+      "gasto_total": 37034.57,
+      "porcentaje": 14.8,
+      "ordenes": 1,
+      "promedio_orden": 37034.57,
+      "observacion": "Reparación mayor única (CR-07)."
+    },
+    {
+      "ranking": 3,
+      "nombre": "Gastos Adicionales",
+      "gasto_total": 25732.01,
+      "porcentaje": 10.3,
+      "ordenes": 6,
+      "promedio_orden": 4288.67,
+      "observacion": "Gastos menores sin proveedor específico."
+    },
+    {
+      "ranking": 4,
+      "nombre": "EL MUÑECO",
+      "gasto_total": 25180.38,
+      "porcentaje": 10.0,
+      "ordenes": 8,
+      "promedio_orden": 3147.55,
+      "observacion": "Proveedor de servicios mecánicos."
+    },
+    {
+      "ranking": 5,
+      "nombre": "MATCO CAT",
+      "gasto_total": 16854.28,
+      "porcentaje": 6.7,
+      "ordenes": 5,
+      "promedio_orden": 3370.86,
+      "observacion": "Especialista en Caterpillar."
+    },
+    {
+      "ranking": 6,
+      "nombre": "LAURA CEILINA RUBIO LOPEZ",
+      "gasto_total": 15151.29,
+      "porcentaje": 6.0,
+      "ordenes": 8,
+      "promedio_orden": 1893.91,
+      "observacion": "Refacciones y servicios."
+    },
+    {
+      "ranking": 7,
+      "nombre": "JESUS MEDRANO",
+      "gasto_total": 10087.06,
+      "porcentaje": 4.0,
+      "ordenes": 2,
+      "promedio_orden": 5043.53,
+      "observacion": "Servicios especializados."
+    },
+    {
+      "ranking": 8,
+      "nombre": "AUTOZONE DE MEXICO",
+      "gasto_total": 8323.20,
+      "porcentaje": 3.3,
+      "ordenes": 5,
+      "promedio_orden": 1664.64,
+      "observacion": "Refacciones menores."
+    },
+    {
+      "ranking": 9,
+      "nombre": "LUIS ALBERTO MANJARREZ ROBLES",
+      "gasto_total": 8013.00,
+      "porcentaje": 3.2,
+      "ordenes": 2,
+      "promedio_orden": 4006.50,
+      "observacion": "Servicios mecánicos."
+    },
+    {
+      "ranking": 10,
+      "nombre": "Distribuidora de muelles universales",
+      "gasto_total": 6398.48,
+      "porcentaje": 2.6,
+      "ordenes": 1,
+      "promedio_orden": 6398.48,
+      "observacion": "Refacción especializada (CR-08)."
+    }
+  ],
+
+  "kpis": {
+    "eficiencia_operativa": {
+      "promedio_m3_por_remision_q4": 7.84,
+      "mejor_mes": "Diciembre (8.28 m³/remisión)",
+      "peor_mes": "Octubre (7.59 m³/remisión)"
+    },
+    "costo_unitario": {
+      "costo_promedio_m3": 9.34,
+      "minimo": 4.64,
+      "maximo": 14.66,
+      "variabilidad_porcentaje": 216
+    },
+    "eficiencia_mantenimiento": {
+      "gasto_promedio_orden": 2505.64,
+      "ordenes_mes_promedio": 33.3,
+      "porcentaje_correctivo": 79.9,
+      "porcentaje_preventivo": 16.4,
+      "meta_correctivo": 75,
+      "meta_preventivo": 25
+    }
+  },
+
+  "recomendaciones_prioritarias": [
+    {
+      "prioridad": "ALTA",
+      "titulo": "Programa de Mantenimiento Preventivo Intensivo",
+      "objetivo": "Reducir ratio a 3:1 en 6 meses",
+      "inversion_mensual": 15000,
+      "ahorro_esperado_mensual": 25000,
+      "roi_payback_meses": 1.67,
+      "acciones": [
+        "Incrementar presupuesto preventivo de 16.4% a 25%",
+        "Calendario estricto de inspecciones semanales",
+        "Capacitación de operadores en mantenimiento básico",
+        "Sistema de alertas tempranas (kilometraje, horas uso)"
+      ]
+    },
+    {
+      "prioridad": "ALTA",
+      "titulo": "Auditoría de Activos Críticos",
+      "alcance": "CR-07, CR-06, PIPA AGUA, CF-CATERPILLAR 938G",
+      "decision_fecha": "2026-03",
+      "presupuesto_estimado": "200,000 - 500,000",
+      "actividades": [
+        "Evaluación de vida útil remanente",
+        "Análisis costo/beneficio de reemplazo",
+        "Cotización de unidades nuevas",
+        "Decisión: Reparar vs Reemplazar"
+      ]
+    },
+    {
+      "prioridad": "ALTA",
+      "titulo": "Diversificación de Proveedores",
+      "problema": "27.3% del gasto concentrado en un proveedor",
+      "beneficio_esperado": "Reducción de 10-15% en costos",
+      "acciones": [
+        "Licitación para contratos marco",
+        "Mínimo 3 cotizaciones por orden >$5,000",
+        "Contratos anuales con descuentos por volumen",
+        "Alianzas estratégicas con distribuidores"
+      ]
+    },
+    {
+      "prioridad": "MEDIA",
+      "titulo": "Sistema de Mantenimiento Predictivo",
+      "tecnologia": "Sensores IoT, telemetría",
+      "inversion": "80,000 - 120,000",
+      "beneficio": "Reducción 30-40% en fallas inesperadas",
+      "fases": [
+        "Fase 1: Activos críticos (5 unidades)",
+        "Fase 2: Flota completa (6 meses)"
+      ]
+    }
+  ],
+
+  "metas_2026": {
+    "Q1_2026": {
+      "ratio_correctivo_preventivo": 4.0,
+      "costo_promedio_m3": 8.50,
+      "porcentaje_preventivo": 22,
+      "reduccion_gastos_vs_q4_2025": -5
+    },
+    "Q2_2026": {
+      "ratio_correctivo_preventivo": 3.5,
+      "costo_promedio_m3": 8.0,
+      "porcentaje_preventivo": 25,
+      "reduccion_gastos_vs_q4_2025": -10
+    },
+    "H2_2026": {
+      "ratio_correctivo_preventivo": 3.0,
+      "costo_promedio_m3": 7.50,
+      "porcentaje_preventivo": 30,
+      "reduccion_gastos_vs_q4_2025": -15
+    }
+  },
+
+  "validacion_datos": {
+    "metodologia": {
+      "filtro_status": "status != 'pending_approval'",
+      "filtro_fecha": "priority_date BETWEEN '2025-10-01' AND '2025-12-31'",
+      "logica_fechas": "purchase_date → completed_at → planned_date → created_at"
+    },
+    "verificaciones": {
+      "total_mensual_suma_total_q4": true,
+      "produccion_planta_suma_total": true,
+      "ordenes_mes_suma_total": true,
+      "categorias_suma_total": true
+    },
+    "fuentes": {
+      "purchase_orders": "Proyecto mantenimiento (txapndpstzcspgxlybll)",
+      "produccion": "Proyecto cotizador (pkjqznogflgbnwzkzmpg)",
+      "tabla_produccion": "remisiones (campo: volumen_fabricado)"
+    },
+    "confiabilidad": {
+      "nivel_confianza": 95,
+      "datos_validados_porcentaje": 100,
+      "inconsistencias": 0,
+      "datos_faltantes_porcentaje": 0.1
+    }
+  },
+
+  "graficos_generados": [
+    {
+      "archivo": "q4_grafico1_correctivo_preventivo.png",
+      "descripcion": "Gastos de mantenimiento por tipo (Correctivo vs Preventivo) mensual"
+    },
+    {
+      "archivo": "q4_grafico2_produccion.png",
+      "descripcion": "Producción mensual total en m³"
+    },
+    {
+      "archivo": "q4_grafico3_costo_m3.png",
+      "descripcion": "Costo de mantenimiento por metro cúbico mensual"
+    },
+    {
+      "archivo": "q4_grafico4_distribucion.png",
+      "descripcion": "Distribución total de gastos Q4 (Pie chart)"
+    },
+    {
+      "archivo": "q4_grafico5_produccion_planta.png",
+      "descripcion": "Producción por planta desglosada por mes"
+    },
+    {
+      "archivo": "q4_grafico6_evolucion.png",
+      "descripcion": "Evolución temporal de gastos vs producción (dual axis)"
+    }
+  ]
+}

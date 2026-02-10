@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createServerSupabase } from '@/lib/supabase-server'
 import { createClient } from '@supabase/supabase-js'
 import { calculateDieselCostsFIFO } from '@/lib/fifo-diesel-costs'
+import { buildAssignmentHistoryMap, resolveAssetPlantAtTimestamp } from '@/lib/reporting/asset-plant-attribution'
 
 type Body = {
   dateFrom: string
@@ -15,10 +16,14 @@ export async function POST(req: NextRequest) {
   try {
     const { dateFrom, dateTo, businessUnitId, plantId, hideZeroActivity } = (await req.json()) as Body
 
+    // Normalize dates to YYYY-MM-DD to avoid malformed timestamps when dateTo is full ISO
+    const dateFromStr = typeof dateFrom === 'string' && dateFrom.includes('T') ? dateFrom.split('T')[0] : dateFrom
+    const dateToStr = typeof dateTo === 'string' && dateTo.includes('T') ? dateTo.split('T')[0] : dateTo
+
     // Compute exclusive end-of-day bound to avoid timezone-related drops
     // Use UTC explicitly to ensure consistent behavior across environments
-    const dateFromStart = new Date(`${dateFrom}T00:00:00.000Z`)
-    const dateToExclusive = new Date(`${dateTo}T00:00:00.000Z`)
+    const dateFromStart = new Date(`${dateFromStr}T00:00:00.000Z`)
+    const dateToExclusive = new Date(`${dateToStr}T00:00:00.000Z`)
     dateToExclusive.setUTCDate(dateToExclusive.getUTCDate() + 1)
     const dateToExclusiveStr = dateToExclusive.toISOString().slice(0, 10)
 
@@ -36,10 +41,11 @@ export async function POST(req: NextRequest) {
       .order('name')
     
     if (businessUnitId) plantsQuery = plantsQuery.eq('business_unit_id', businessUnitId)
+    if (plantId) plantsQuery = plantsQuery.eq('id', plantId)
     const { data: plants } = await plantsQuery
 
     // Get organizational structure with assets
-    let buQuery = supabase
+    const buQuery = supabase
       .from('business_units')
       .select(`
         id, name, code,
@@ -59,33 +65,39 @@ export async function POST(req: NextRequest) {
       throw buError
     }
 
-    // Build flat asset list with hierarchy info
-    const assets: any[] = []
+    // Build full org maps and raw asset list first.
+    // Apply plant/BU filters only after historical attribution to avoid
+    // using current asset location for past periods.
+    const plantById = new Map<string, { id: string; name: string; code: string; business_unit_id: string; business_unit_name: string }>()
+    const rawAssets: any[] = []
     const allBusinessUnits = businessUnitsRaw || []
     
     for (const bu of allBusinessUnits) {
-      if (businessUnitId && bu.id !== businessUnitId) continue
-      
       for (const plant of (bu.plants || [])) {
-        if (plantId && plant.id !== plantId) continue
-        
+        plantById.set(plant.id, {
+          id: plant.id,
+          name: plant.name,
+          code: plant.code,
+          business_unit_id: bu.id,
+          business_unit_name: bu.name,
+        })
+
         for (const asset of (plant.assets || [])) {
-          // Determine equipment type: 1.b) By assets.asset_id starting with BP (bombas)
           const assetCode: string | undefined = asset.asset_id || undefined
           const modelCategory: string | undefined = (asset as any).equipment_models?.category || undefined
           const equipmentType = (assetCode && assetCode.toUpperCase().startsWith('BP'))
             ? 'Bomba'
             : (modelCategory || 'Sin categoría')
 
-          assets.push({
+          rawAssets.push({
             id: asset.id,
             asset_code: asset.asset_id,
             name: asset.name,
-            plant_id: asset.plant_id,
-            plant_name: plant.name,
-            plant_code: plant.code,
-            business_unit_id: bu.id,
-            business_unit_name: bu.name,
+            current_plant_id: plant.id,
+            current_plant_name: plant.name,
+            current_plant_code: plant.code,
+            current_business_unit_id: bu.id,
+            current_business_unit_name: bu.name,
             model_category: modelCategory || null,
             equipment_type: equipmentType
           })
@@ -93,10 +105,51 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    const rawAssetIds = rawAssets.map((a) => a.id)
+    const attributionDate = `${dateToStr}T23:59:59.999Z`
+    let assignmentRows: any[] = []
+    if (rawAssetIds.length > 0) {
+      const { data, error: assignmentError } = await supabase
+        .from('asset_assignment_history')
+        .select('asset_id, previous_plant_id, new_plant_id, created_at')
+        .in('asset_id', rawAssetIds)
+        .order('created_at', { ascending: true })
+      if (assignmentError) throw assignmentError
+      assignmentRows = data || []
+    }
+    const assignmentHistoryMap = buildAssignmentHistoryMap(assignmentRows)
+
+    const assets: any[] = rawAssets
+      .map((asset) => {
+        const attributedPlantId = resolveAssetPlantAtTimestamp({
+          assetId: asset.id,
+          eventDate: attributionDate,
+          currentPlantId: asset.current_plant_id,
+          historyByAsset: assignmentHistoryMap,
+        })
+        const attributedPlant = attributedPlantId ? plantById.get(attributedPlantId) : null
+        if (!attributedPlant) return null
+
+        return {
+          ...asset,
+          plant_id: attributedPlant.id,
+          plant_name: attributedPlant.name,
+          plant_code: attributedPlant.code,
+          business_unit_id: attributedPlant.business_unit_id,
+          business_unit_name: attributedPlant.business_unit_name,
+        }
+      })
+      .filter((asset): asset is any => {
+        if (!asset) return false
+        if (businessUnitId && asset.business_unit_id !== businessUnitId) return false
+        if (plantId && asset.plant_id !== plantId) return false
+        return true
+      })
+
     // Fetch diesel transactions with asset info (only diesel, not urea, exclude transfers)
     // CRITICAL: Exclude transfers (is_transfer = true) from consumption reports
     // Transfers are inventory movements between plants, not actual consumption
-    let dieselQuery = supabase
+    const dieselQuery = supabase
       .from('diesel_transactions')
       .select(`
         id,
@@ -113,7 +166,7 @@ export async function POST(req: NextRequest) {
       `)
       .eq('diesel_warehouses.product_type', 'diesel')
       .neq('is_transfer', true) // Explicitly exclude transfers (is_transfer = true)
-      .gte('transaction_date', dateFrom)
+      .gte('transaction_date', dateFromStr)
       .lt('transaction_date', dateToExclusiveStr)
 
     const { data: dieselTxs } = await dieselQuery
@@ -151,8 +204,8 @@ export async function POST(req: NextRequest) {
     // Calculate FIFO costs before processing diesel transactions
     const fifoResult = plantCodes.length > 0 ? await calculateDieselCostsFIFO(
       supabase,
-      dateFrom,
-      dateTo,
+      dateFromStr,
+      dateToStr,
       plantCodes,
       priceByProduct
     ) : { plantCosts: new Map(), transactionCosts: new Map() }
@@ -229,8 +282,8 @@ export async function POST(req: NextRequest) {
       }
       
       const checkDateOnly = extractDateOnly(dateToCheckStr)
-      const fromDateOnly = dateFrom  // Already YYYY-MM-DD format (e.g., "2025-09-01")
-      const toDateOnly = dateTo       // Already YYYY-MM-DD format (e.g., "2025-09-30")
+      const fromDateOnly = dateFromStr
+      const toDateOnly = dateToStr
       
       // Compare as date strings (YYYY-MM-DD), ignoring time and timezone
       // This ensures "2025-10-01" is always > "2025-09-30" regardless of server timezone
@@ -243,7 +296,7 @@ export async function POST(req: NextRequest) {
     const { data: additionalExpenses } = await supabase
       .from('additional_expenses')
       .select('id, asset_id, amount, created_at, adjustment_po_id, status')
-      .gte('created_at', dateFrom)
+      .gte('created_at', dateFromStr)
       .lt('created_at', dateToExclusiveStr)
       .in('asset_id', assetIds)
       .is('adjustment_po_id', null)
@@ -317,8 +370,8 @@ export async function POST(req: NextRequest) {
     
     const salesApiUrl = `${base}/api/integrations/cotizador/sales/assets/weekly`
     const salesRequestPayload = { 
-      dateFrom, 
-      dateTo, 
+      dateFrom: dateFromStr, 
+      dateTo: dateToStr, 
       plantIds: undefined // Always fetch ALL plants - remisiones should not be filtered by plant
     }
     
@@ -599,18 +652,12 @@ export async function POST(req: NextRequest) {
       }
     })
 
-    // Aggregate additional expenses into maintenance costs
-    // These are expenses that haven't been converted to purchase orders yet (adjustment_po_id is null)
-    // and are not rejected
-    additionalExpenses?.forEach(ae => {
-      const asset = assetMap.get(ae.asset_id)
-      if (asset) {
-        const amount = parseFloat(ae.amount || '0')
-        asset.maintenance_cost += amount
-        // Additional expenses are typically corrective maintenance
-        asset.corrective_cost += amount
-      }
-    })
+    // Additional expenses: DO NOT add to maintenance_cost
+    // Los gastos adicionales al convertirse son ÓC de ajuste (is_adjustment=true).
+    // Esas ÓC ya están contadas en workOrderPOs. Si sumáramos AEs con adjustment_po_id=null
+    // y hubiera datos inconsistentes (adjustment_po_id no seteado), contaremos el costo dos veces.
+    // Regla: solo se cuenta en purchase_orders. Los gastos adicionales NO se suman al costo total.
+    // (Se siguen trayendo para auditoría/desglose si se necesitan en el futuro.)
 
     // Aggregate sales by asset using name mapping and plant matching
     let salesMatched = 0
@@ -866,6 +913,12 @@ export async function POST(req: NextRequest) {
       }
     })
 
+    // Aggregate standalone POs (no work order) - exclude inventory_restock
+    // These go to plant totals by po.plant_id
+    const standalonePOs = filteredPurchaseOrders.filter(po =>
+      !po.work_order_id && po.po_purpose !== 'inventory_restock' && po.plant_id
+    )
+
     // Aggregate by plant
     const plantMap = new Map<string, any>()
     assetMap.forEach(asset => {
@@ -902,6 +955,39 @@ export async function POST(req: NextRequest) {
       plant.sales_with_vat += asset.sales_with_vat
       plant.concrete_m3 += asset.concrete_m3
       plant.total_m3 += asset.total_m3
+    })
+
+    // Add standalone POs to plant totals
+    standalonePOs.forEach(po => {
+      const plantId = po.plant_id
+      if (!plantId) return
+      let plant = plantMap.get(plantId)
+      if (!plant) {
+        const plantInfo = (plants || []).find((p: { id: string }) => p.id === plantId)
+        if (!plantInfo) return
+        plant = {
+          id: plantId,
+          name: (plantInfo as any).name,
+          business_unit_id: (plantInfo as any).business_unit_id,
+          business_unit_name: (businessUnits || []).find((bu: { id: string }) => bu.id === (plantInfo as any).business_unit_id)?.name || '',
+          asset_count: 0,
+          diesel_liters: 0,
+          diesel_cost: 0,
+          hours_worked: 0,
+          liters_per_hour: 0,
+          maintenance_cost: 0,
+          preventive_cost: 0,
+          corrective_cost: 0,
+          sales_subtotal: 0,
+          sales_with_vat: 0,
+          concrete_m3: 0,
+          total_m3: 0
+        }
+        plantMap.set(plantId, plant)
+      }
+      const amount = parseFloat(po.actual_amount || po.total_amount || '0')
+      plant.maintenance_cost += amount
+      plant.corrective_cost += amount
     })
 
     // Compute plant liters_per_hour
