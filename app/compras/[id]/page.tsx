@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
-import { ArrowLeft, FileCheck, Package, ShoppingCart, Truck, FileText, Download, ExternalLink, Store, Wrench, Building2, Receipt, AlertCircle, DollarSign, Calendar, User } from "lucide-react"
+import { ArrowLeft, FileCheck, Package, ShoppingCart, Truck, FileText, Download, ExternalLink, Store, Wrench, Building2, Receipt, AlertCircle, DollarSign, Calendar, User, Warehouse } from "lucide-react"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import Link from "next/link"
 import { notFound } from "next/navigation"
@@ -189,9 +189,47 @@ async function PurchaseOrderDetailsContent({ id }: { id: string }) {
   }
   
   // Parse JSON items if it's a string
-  const items = typeof order.items === 'string' 
+  const rawItems = typeof order.items === 'string' 
     ? JSON.parse(order.items) 
     : order.items
+  const poItems = Array.isArray(rawItems) ? rawItems : []
+  
+  // Fetch selected quotation items when PO has quotations (purchase items may come from quotation)
+  let quotationItems: any[] = []
+  if (order.selected_quotation_id) {
+    const { data: quotation } = await supabase
+      .from("purchase_order_quotations")
+      .select("quotation_items")
+      .eq("id", order.selected_quotation_id)
+      .single()
+    if (quotation?.quotation_items) {
+      quotationItems = Array.isArray(quotation.quotation_items) 
+        ? quotation.quotation_items 
+        : typeof quotation.quotation_items === 'string' 
+          ? JSON.parse(quotation.quotation_items) 
+          : []
+    }
+  }
+  
+  // Build unified display: PO items (inventory + any purchase) with source, plus quotation items as purchase
+  const hasInventoryItems = poItems.some((i: any) => i.fulfill_from === 'inventory')
+  const hasQuotationItems = quotationItems.length > 0
+  const inventoryItems = poItems.filter((i: any) => i.fulfill_from === 'inventory')
+  const purchaseItemsFromPO = poItems.filter((i: any) => i.fulfill_from !== 'inventory')
+  // When we have quotation items, purchase comes from quotation; otherwise from PO items
+  const purchaseItems = hasQuotationItems 
+    ? quotationItems.map((q: any) => ({
+        name: q.description,
+        description: q.description,
+        part_number: q.part_number,
+        quantity: q.quantity,
+        unit_price: q.unit_price,
+        total_price: q.total_price,
+        _source: 'quotation' as const
+      }))
+    : purchaseItemsFromPO.map((i: any) => ({ ...i, _source: 'po' as const }))
+  
+  const items = [...inventoryItems.map((i: any) => ({ ...i, _source: 'inventory' as const })), ...purchaseItems]
   
   // Get requestor information
   let requesterName = "No especificado"
@@ -351,7 +389,7 @@ async function PurchaseOrderDetailsContent({ id }: { id: string }) {
                 quotation_url: order.quotation_url,
                 purchase_date: order.purchase_date,
                 max_payment_date: order.max_payment_date,
-                items: items
+                items: poItems
               }}
             />
           )}
@@ -658,29 +696,83 @@ async function PurchaseOrderDetailsContent({ id }: { id: string }) {
                   </tbody>
                 </table>
               ) : (
-                /* Generic Items Display for other types */
-                <table className="w-full border-collapse">
-                  <thead>
-                    <tr className="border-b">
-                      <th className="text-left p-2">Descripción</th>
-                      <th className="text-left p-2">Parte/Código</th>
-                      <th className="text-right p-2">Cantidad</th>
-                      <th className="text-right p-2">Precio Unitario</th>
-                      <th className="text-right p-2">Total</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {items.map((item: any, index: number) => (
-                      <tr key={index} className="border-b">
-                        <td className="p-2">{item.description || item.item || item.name || "Sin descripción"}</td>
-                        <td className="p-2">{item.part_number || item.code || "N/A"}</td>
-                        <td className="p-2 text-right">{item.quantity || 1}</td>
-                        <td className="p-2 text-right">{formatCurrency(item.unit_price?.toString() || item.price?.toString() || "0")}</td>
-                        <td className="p-2 text-right">{formatCurrency(item.total_price?.toString() || (item.quantity * (item.unit_price || item.price || 0)).toString())}</td>
+                /* Generic Items Display - with Fuente (Inventario vs A Comprar) when mixed */
+                <>
+                  {(hasInventoryItems || hasQuotationItems) && (
+                    <div className="mb-4 p-3 rounded-lg bg-muted/50 text-sm">
+                      {inventoryItems.length > 0 && (
+                        <p className="flex items-center gap-2">
+                          <Warehouse className="h-4 w-4 text-green-600" />
+                          <strong>{inventoryItems.length} artículo(s) de inventario</strong> — no se compran, se cumplen desde almacén
+                        </p>
+                      )}
+                      {purchaseItems.length > 0 && (
+                        <p className="flex items-center gap-2 mt-1">
+                          <ShoppingCart className="h-4 w-4 text-orange-600" />
+                          <strong>{purchaseItems.length} artículo(s) a comprar</strong> — requieren compra a proveedor
+                        </p>
+                      )}
+                    </div>
+                  )}
+                  <table className="w-full border-collapse">
+                    <thead>
+                      <tr className="border-b">
+                        <th className="text-left p-2">Descripción</th>
+                        <th className="text-left p-2">Parte/Código</th>
+                        {inventoryItems.length > 0 ? (
+                          <th className="text-left p-2">Fuente</th>
+                        ) : null}
+                        <th className="text-right p-2">Cantidad</th>
+                        <th className="text-right p-2">Precio Unitario</th>
+                        <th className="text-right p-2">Total</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {items.map((item: any, index: number) => {
+                        const isInventory = item._source === 'inventory' || item.fulfill_from === 'inventory'
+                        return (
+                          <tr key={index} className={cn("border-b", isInventory && "bg-green-50/50")}>
+                            <td className="p-2">{item.description || item.item || item.name || "Sin descripción"}</td>
+                            <td className="p-2">{item.part_number || item.partNumber || item.code || "N/A"}</td>
+                            {inventoryItems.length > 0 ? (
+                              <td className="p-2">
+                                {isInventory ? (
+                                  <Badge variant="secondary" className="gap-1 bg-green-100 text-green-800 border-green-200">
+                                    <Warehouse className="h-3 w-3" />
+                                    De Inventario
+                                  </Badge>
+                                ) : (
+                                  <Badge variant="outline" className="gap-1 text-orange-700 border-orange-200">
+                                    <ShoppingCart className="h-3 w-3" />
+                                    A Comprar
+                                  </Badge>
+                                )}
+                              </td>
+                            ) : null}
+                            <td className="p-2 text-right">{item.quantity || 1}</td>
+                            <td className="p-2 text-right">
+                              {isInventory ? (
+                                <span className="text-muted-foreground text-sm">N/A</span>
+                              ) : (
+                                formatCurrency(item.unit_price?.toString() || item.price?.toString() || "0")
+                              )}
+                            </td>
+                            <td className="p-2 text-right">
+                              {isInventory ? (
+                                <span className="text-green-700 font-medium">
+                                  {formatCurrency(item.total_price?.toString() || (item.quantity * (item.unit_price || item.price || 0)).toString())}
+                                  <span className="text-xs text-muted-foreground ml-1">(sin impacto efectivo)</span>
+                                </span>
+                              ) : (
+                                formatCurrency(item.total_price?.toString() || (item.quantity * (item.unit_price || item.price || 0)).toString())
+                              )}
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </>
               )}
             </div>
           </CardContent>

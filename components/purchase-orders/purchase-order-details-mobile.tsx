@@ -406,30 +406,43 @@ export function PurchaseOrderDetailsMobile({
                   </div>
                 ))
               ) : (
-                /* Generic Items Display for other types */
-                items.map((item: any, index: number) => (
-                  <div key={index} className="p-3 border rounded-lg space-y-2">
-                    <p className="font-medium text-sm">{item.description || item.item || item.name || "Sin descripción"}</p>
-                    <div className="grid grid-cols-2 gap-4 text-xs">
-                      <div>
-                        <p className="text-muted-foreground">Código</p>
-                        <p>{item.part_number || item.code || "N/A"}</p>
+                /* Generic Items Display - with Fuente badge when inventory/purchase mix */
+                items.map((item: any, index: number) => {
+                  const isInventory = item._source === 'inventory' || item.fulfill_from === 'inventory'
+                  return (
+                    <div key={index} className={`p-3 border rounded-lg space-y-2 ${isInventory ? 'bg-green-50/50 border-green-200' : ''}`}>
+                      <div className="flex items-start justify-between gap-2">
+                        <p className="font-medium text-sm">{item.description || item.item || item.name || "Sin descripción"}</p>
+                        {isInventory ? (
+                          <Badge variant="secondary" className="text-xs bg-green-100 text-green-800 shrink-0">De Inventario</Badge>
+                        ) : (
+                          <Badge variant="outline" className="text-xs text-orange-700 shrink-0">A Comprar</Badge>
+                        )}
                       </div>
-                      <div>
-                        <p className="text-muted-foreground">Cantidad</p>
-                        <p>{item.quantity || 1}</p>
-                      </div>
-                      <div>
-                        <p className="text-muted-foreground">Precio Unit.</p>
-                        <p>{formatCurrency(item.unit_price?.toString() || item.price?.toString() || "0")}</p>
-                      </div>
-                      <div>
-                        <p className="text-muted-foreground">Total</p>
-                        <p className="font-semibold">{formatCurrency(item.total_price?.toString() || (item.quantity * (item.unit_price || item.price || 0)).toString())}</p>
+                      <div className="grid grid-cols-2 gap-4 text-xs">
+                        <div>
+                          <p className="text-muted-foreground">Código</p>
+                          <p>{item.part_number || item.partNumber || item.code || "N/A"}</p>
+                        </div>
+                        <div>
+                          <p className="text-muted-foreground">Cantidad</p>
+                          <p>{item.quantity || 1}</p>
+                        </div>
+                        <div>
+                          <p className="text-muted-foreground">Precio Unit.</p>
+                          <p>{isInventory ? 'N/A' : formatCurrency(item.unit_price?.toString() || item.price?.toString() || "0")}</p>
+                        </div>
+                        <div>
+                          <p className="text-muted-foreground">Total</p>
+                          <p className={`font-semibold ${isInventory ? 'text-green-700' : ''}`}>
+                            {formatCurrency(item.total_price?.toString() || (item.quantity * (item.unit_price || item.price || 0)).toString())}
+                            {isInventory && <span className="text-muted-foreground font-normal ml-1">(sin impacto efectivo)</span>}
+                          </p>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))
+                  )
+                })
               )}
             </div>
           </CardContent>

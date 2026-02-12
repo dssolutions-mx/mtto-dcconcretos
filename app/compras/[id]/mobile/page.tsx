@@ -99,10 +99,28 @@ async function PurchaseOrderDetailsMobileContent({ id }: { id: string }) {
     }
   }
   
-  // Parse JSON items if it's a string
-  const items = typeof order.items === 'string' 
-    ? JSON.parse(order.items) 
-    : order.items
+  // Parse JSON items and merge with quotation items when applicable
+  const rawItems = typeof order.items === 'string' ? JSON.parse(order.items) : order.items
+  const poItems = Array.isArray(rawItems) ? rawItems : []
+  let quotationItems: any[] = []
+  if (order.selected_quotation_id) {
+    const { data: quotation } = await supabase
+      .from("purchase_order_quotations")
+      .select("quotation_items")
+      .eq("id", order.selected_quotation_id)
+      .single()
+    if (quotation?.quotation_items) {
+      quotationItems = Array.isArray(quotation.quotation_items) 
+        ? quotation.quotation_items 
+        : typeof quotation.quotation_items === 'string' ? JSON.parse(quotation.quotation_items) : []
+    }
+  }
+  const inventoryItems = poItems.filter((i: any) => i.fulfill_from === 'inventory')
+  const purchaseItemsFromPO = poItems.filter((i: any) => i.fulfill_from !== 'inventory')
+  const purchaseItems = quotationItems.length > 0
+    ? quotationItems.map((q: any) => ({ name: q.description, description: q.description, part_number: q.part_number, quantity: q.quantity, unit_price: q.unit_price, total_price: q.total_price, _source: 'quotation' }))
+    : purchaseItemsFromPO.map((i: any) => ({ ...i, _source: 'po' }))
+  const items = [...inventoryItems.map((i: any) => ({ ...i, _source: 'inventory' })), ...purchaseItems]
   
   // Get requestor information
   let requesterName = "No especificado"
