@@ -13,7 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import { Badge } from "@/components/ui/badge";
-import { CalendarIcon, ArrowLeft, PlusCircle, Minus, Check, Loader2, Wrench, Clock, AlertTriangle, Camera, FileText, ClipboardList, DollarSign, Calendar as CalendarPlanIcon, AlertCircle } from "lucide-react";
+import { CalendarIcon, ArrowLeft, PlusCircle, Minus, Check, Loader2, Wrench, Clock, AlertTriangle, Camera, FileText, ClipboardList, DollarSign, Calendar as CalendarPlanIcon, AlertCircle, Link2 } from "lucide-react";
 import { format, differenceInDays } from "date-fns";
 import { es } from "date-fns/locale";
 import { cn } from "@/lib/utils";
@@ -31,6 +31,7 @@ import {
   getUnitDisplayName,
   type MaintenanceUnit 
 } from "@/lib/utils/maintenance-units";
+import { PartAutocomplete, type PartSuggestion } from "@/components/inventory/part-autocomplete";
 
 interface MaintenancePart {
   name: string;
@@ -38,6 +39,8 @@ interface MaintenancePart {
   quantity: number;
   estimatedCost?: string;
   source?: string;
+  part_id?: string;
+  catalogStatus?: 'matched' | 'unmatched' | 'manual';
 }
 
 // Add this interface to properly type the maintenance plan data
@@ -101,11 +104,22 @@ export default function NewMaintenancePage({ params }: NewMaintenancePageProps) 
   const [priority, setPriority] = useState<string>("Media");
   const [requiredParts, setRequiredParts] = useState<MaintenancePart[]>([]);
   
-  // New part form state
-  const [newPartName, setNewPartName] = useState<string>("");
-  const [newPartNumber, setNewPartNumber] = useState<string>("");
-  const [newPartQuantity, setNewPartQuantity] = useState<string>("1");
-  const [newPartEstimatedCost, setNewPartEstimatedCost] = useState<string>("");
+  // New part form state (for PartAutocomplete add flow)
+  const [newPart, setNewPart] = useState<{
+    name: string;
+    partNumber: string;
+    part_id?: string;
+    quantity: number;
+    estimatedCost: string;
+  }>({
+    name: '',
+    partNumber: '',
+    part_id: undefined,
+    quantity: 1,
+    estimatedCost: ''
+  });
+  // Row being edited for "Vincular al catálogo"
+  const [editingPartIndex, setEditingPartIndex] = useState<number | null>(null);
   
   const [maintenancePlan, setMaintenancePlan] = useState<any>(null);
   const [maintenanceStatus, setMaintenanceStatus] = useState<{
@@ -228,14 +242,13 @@ export default function NewMaintenancePage({ params }: NewMaintenancePageProps) 
             setEstimatedDuration(planData.estimated_duration.toString());
           }
           
-          // Cargar los repuestos requeridos de las tareas de mantenimiento
+          // Cargar los repuestos requeridos de las tareas de mantenimiento + match al catálogo
           if (planData.maintenance_tasks && planData.maintenance_tasks.length > 0) {
-            const taskParts: MaintenancePart[] = [];
-            
+            const taskPartsRaw: MaintenancePart[] = [];
             planData.maintenance_tasks.forEach((task: MaintenanceTask) => {
               if (task.task_parts && task.task_parts.length > 0) {
                 task.task_parts.forEach((part: TaskPart) => {
-                  taskParts.push({
+                  taskPartsRaw.push({
                     name: part.name,
                     partNumber: part.part_number || undefined,
                     quantity: part.quantity,
@@ -245,9 +258,39 @@ export default function NewMaintenancePage({ params }: NewMaintenancePageProps) 
                 });
               }
             });
-            
-            if (taskParts.length > 0) {
-              setRequiredParts(taskParts);
+
+            // Match each task part to catalog
+            const taskPartsWithMatch = await Promise.all(
+              taskPartsRaw.map(async (part): Promise<MaintenancePart> => {
+                const searchTerm = part.partNumber || part.name;
+                if (!searchTerm) {
+                  return { ...part, catalogStatus: 'manual' as const };
+                }
+                try {
+                  const params = new URLSearchParams();
+                  if (part.partNumber) params.set('part_number', part.partNumber);
+                  if (part.name) params.set('name', part.name);
+                  const res = await fetch(`/api/inventory/parts/match?${params}`);
+                  const data = await res.json();
+                  if (data.success && data.matched) {
+                    return {
+                      ...part,
+                      part_id: data.matched.id,
+                      partNumber: data.matched.part_number || part.partNumber,
+                      name: data.matched.name || part.name,
+                      estimatedCost: part.estimatedCost || (data.matched.default_unit_cost != null ? String(data.matched.default_unit_cost) : undefined),
+                      catalogStatus: 'matched' as const
+                    };
+                  }
+                  return { ...part, catalogStatus: 'unmatched' as const };
+                } catch {
+                  return { ...part, catalogStatus: 'unmatched' as const };
+                }
+              })
+            );
+
+            if (taskPartsWithMatch.length > 0) {
+              setRequiredParts(taskPartsWithMatch);
             }
           }
         }
@@ -264,27 +307,59 @@ export default function NewMaintenancePage({ params }: NewMaintenancePageProps) 
     }
   }, [planId, asset, assetId]);
   
+  const handlePartSelect = (part: PartSuggestion | null) => {
+    if (part) {
+      setNewPart(prev => ({
+        ...prev,
+        name: part.name,
+        partNumber: part.part_number || '',
+        part_id: part.id,
+        estimatedCost: part.default_unit_cost != null ? String(part.default_unit_cost) : prev.estimatedCost
+      }));
+    } else {
+      setNewPart(prev => ({ ...prev, name: '', partNumber: '', part_id: undefined }));
+    }
+  };
+
+  const handleManualPartEntry = (text: string) => {
+    setNewPart(prev => ({ ...prev, name: text, part_id: undefined }));
+  };
+
   const addPart = () => {
-    if (!newPartName || !newPartQuantity) return;
-    
-    const quantity = parseInt(newPartQuantity);
-    if (isNaN(quantity) || quantity <= 0) return;
-    
+    if (!newPart.name || !newPart.quantity) return;
+    const quantity = Number(newPart.quantity) || 1;
+    if (quantity <= 0) return;
+
     setRequiredParts([
       ...requiredParts,
       {
-        name: newPartName,
-        partNumber: newPartNumber || undefined,
+        name: newPart.name,
+        partNumber: newPart.partNumber || undefined,
         quantity,
-        estimatedCost: newPartEstimatedCost || undefined
+        estimatedCost: newPart.estimatedCost || undefined,
+        part_id: newPart.part_id,
+        catalogStatus: newPart.part_id ? ('matched' as const) : ('manual' as const)
       }
     ]);
-    
-    // Limpiar los campos
-    setNewPartName("");
-    setNewPartNumber("");
-    setNewPartQuantity("1");
-    setNewPartEstimatedCost("");
+    setNewPart({ name: '', partNumber: '', part_id: undefined, quantity: 1, estimatedCost: '' });
+  };
+
+  const handleLinkPartSelect = (index: number, part: PartSuggestion | null) => {
+    if (part) {
+      setRequiredParts(prev => prev.map((p, i) =>
+        i === index
+          ? {
+              ...p,
+              name: part.name,
+              partNumber: part.part_number || p.partNumber,
+              part_id: part.id,
+              estimatedCost: p.estimatedCost || (part.default_unit_cost != null ? String(part.default_unit_cost) : undefined),
+              catalogStatus: 'matched' as const
+            }
+          : p
+      ));
+    }
+    setEditingPartIndex(null);
   };
   
   const removePart = (index: number) => {
@@ -362,14 +437,15 @@ export default function NewMaintenancePage({ params }: NewMaintenancePageProps) 
       
       if (workOrderError) throw workOrderError;
 
-      // Agregar repuestos requeridos a la orden de trabajo
+      // Agregar repuestos requeridos a la orden de trabajo (incluye part_id para catálogo)
       if (requiredParts.length > 0) {
         const partsData = requiredParts.map(part => ({
           name: part.name,
           part_number: part.partNumber || '',
           quantity: part.quantity,
           unit_price: part.estimatedCost ? Number(part.estimatedCost) : 0,
-          total_price: part.estimatedCost ? Number(part.estimatedCost) * part.quantity : 0
+          total_price: part.estimatedCost ? Number(part.estimatedCost) * part.quantity : 0,
+          ...(part.part_id && { part_id: part.part_id })
         }));
 
         const { error: updateError } = await supabase
@@ -758,6 +834,7 @@ export default function NewMaintenancePage({ params }: NewMaintenancePageProps) 
                         <th className="text-left py-3 px-4 font-medium">Número de Parte</th>
                         <th className="text-left py-3 px-4 font-medium">Cantidad</th>
                         <th className="text-left py-3 px-4 font-medium">Costo Estimado</th>
+                        <th className="text-left py-3 px-4 font-medium">Catálogo</th>
                         <th className="text-left py-3 px-4 font-medium">Origen</th>
                         <th className="text-left py-3 px-4 font-medium">Acciones</th>
                       </tr>
@@ -770,6 +847,60 @@ export default function NewMaintenancePage({ params }: NewMaintenancePageProps) 
                           <td className="py-3 px-4">{part.quantity}</td>
                           <td className="py-3 px-4">{part.estimatedCost ? `$${part.estimatedCost}` : "-"}</td>
                           <td className="py-3 px-4">
+                            {part.part_id ? (
+                              <div className="flex items-center gap-1 flex-wrap">
+                                <Badge variant="default" className="text-xs bg-green-600">Vinculado</Badge>
+                                {editingPartIndex === index ? (
+                                  <div className="min-w-[200px]">
+                                    <PartAutocomplete
+                                      value=""
+                                      onSelect={(p) => handleLinkPartSelect(index, p)}
+                                      placeholder="Buscar para cambiar..."
+                                      showPartNumber={true}
+                                      allowManualEntry={false}
+                                    />
+                                  </div>
+                                ) : (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    type="button"
+                                    onClick={() => setEditingPartIndex(index)}
+                                    className="h-7 px-2 text-xs"
+                                  >
+                                    Cambiar
+                                  </Button>
+                                )}
+                              </div>
+                            ) : editingPartIndex === index ? (
+                              <div className="min-w-[200px]">
+                                <PartAutocomplete
+                                  value=""
+                                  onSelect={(p) => handleLinkPartSelect(index, p)}
+                                  placeholder="Buscar en catálogo..."
+                                  showPartNumber={true}
+                                  allowManualEntry={false}
+                                />
+                              </div>
+                            ) : (
+                              <div className="flex items-center gap-1">
+                                <Badge variant="secondary" className="text-xs">
+                                  {part.catalogStatus === 'unmatched' ? 'No encontrado' : 'Manual'}
+                                </Badge>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  type="button"
+                                  onClick={() => setEditingPartIndex(index)}
+                                  className="h-7 px-2 text-xs"
+                                >
+                                  <Link2 className="h-3 w-3 mr-1" />
+                                  Vincular
+                                </Button>
+                              </div>
+                            )}
+                          </td>
+                          <td className="py-3 px-4">
                             {part.source ? (
                               <Badge variant="outline" className="text-xs">
                                 {part.source}
@@ -779,15 +910,27 @@ export default function NewMaintenancePage({ params }: NewMaintenancePageProps) 
                             )}
                           </td>
                           <td className="py-3 px-4">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              type="button"
-                              onClick={() => removePart(index)}
-                              className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                            >
-                              <Minus className="h-4 w-4" />
-                            </Button>
+                            <div className="flex items-center gap-1">
+                              {editingPartIndex === index && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  type="button"
+                                  onClick={() => setEditingPartIndex(null)}
+                                >
+                                  Cancelar
+                                </Button>
+                              )}
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                type="button"
+                                onClick={() => removePart(index)}
+                                className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                              >
+                                <Minus className="h-4 w-4" />
+                              </Button>
+                            </div>
                           </td>
                         </tr>
                       ))}
@@ -805,57 +948,52 @@ export default function NewMaintenancePage({ params }: NewMaintenancePageProps) 
             
             <div className="mt-6 p-4 border rounded-lg bg-blue-50">
               <h4 className="font-medium mb-4 text-blue-900">Agregar Nuevo Repuesto</h4>
-              <div className="grid grid-cols-1 sm:grid-cols-6 gap-4 items-end">
-                <div className="sm:col-span-2">
-                  <Label htmlFor="newPartName">Nombre del Repuesto *</Label>
-                  <Input
-                    id="newPartName"
-                    value={newPartName}
-                    onChange={(e) => setNewPartName(e.target.value)}
-                    placeholder="ej: Filtro de aceite"
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+                <div className="md:col-span-2 space-y-2">
+                  <Label htmlFor="partSearch">Buscar Parte del Catálogo</Label>
+                  <PartAutocomplete
+                    value={newPart.name || ""}
+                    onSelect={handlePartSelect}
+                    onManualEntry={handleManualPartEntry}
+                    placeholder="Buscar por nombre o número de parte..."
+                    showPartNumber={true}
+                    allowManualEntry={true}
                   />
+                  <p className="text-xs text-muted-foreground">
+                    Busca en el catálogo de inventario o escribe manualmente
+                  </p>
                 </div>
-                <div>
-                  <Label htmlFor="newPartNumber">Número de Parte</Label>
-                  <Input
-                    id="newPartNumber"
-                    value={newPartNumber}
-                    onChange={(e) => setNewPartNumber(e.target.value)}
-                    placeholder="ej: ABC123"
-                  />
-                </div>
-                <div>
+                <div className="space-y-2">
                   <Label htmlFor="newPartQuantity">Cantidad *</Label>
                   <Input
                     id="newPartQuantity"
                     type="number"
                     min="1"
-                    value={newPartQuantity}
-                    onChange={(e) => setNewPartQuantity(e.target.value)}
+                    value={newPart.quantity}
+                    onChange={(e) => setNewPart(prev => ({ ...prev, quantity: parseInt(e.target.value) || 1 }))}
                   />
                 </div>
-                <div>
+                <div className="space-y-2">
                   <Label htmlFor="newPartEstimatedCost">Costo Estimado ($)</Label>
                   <Input
                     id="newPartEstimatedCost"
                     type="number"
                     step="0.01"
-                    value={newPartEstimatedCost}
-                    onChange={(e) => setNewPartEstimatedCost(e.target.value)}
+                    value={newPart.estimatedCost}
+                    onChange={(e) => setNewPart(prev => ({ ...prev, estimatedCost: e.target.value }))}
                     placeholder="0.00"
                   />
                 </div>
-                <div>
-                  <Button
-                    type="button"
-                    onClick={addPart}
-                    disabled={!newPartName || !newPartQuantity}
-                    className="w-full"
-                  >
-                    <PlusCircle className="mr-2 h-4 w-4" /> 
-                    Agregar
-                  </Button>
-                </div>
+              </div>
+              <div className="mt-4">
+                <Button
+                  type="button"
+                  onClick={addPart}
+                  disabled={!newPart.name || !newPart.quantity}
+                >
+                  <PlusCircle className="mr-2 h-4 w-4" />
+                  Agregar
+                </Button>
               </div>
             </div>
           </CardContent>

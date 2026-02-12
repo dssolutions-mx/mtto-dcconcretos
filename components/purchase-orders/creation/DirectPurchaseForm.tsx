@@ -346,9 +346,13 @@ export function DirectPurchaseForm({
   }, [workOrder])
 
   // Calculate total amount whenever items change
+  // Purchase total = items to buy (for quote validation); full total for display
+  const purchaseItems = items.filter(i => i.fulfill_from === 'purchase' || !i.fulfill_from)
+  const purchaseTotal = purchaseItems.reduce((sum, item) => sum + (item.total_price || 0), 0)
+  const fullTotal = items.reduce((sum, item) => sum + (item.total_price || 0), 0)
+
   useEffect(() => {
-    const total = items.reduce((sum, item) => sum + (item.total_price || 0), 0)
-    setFormData(prev => ({ ...prev, total_amount: total, items }))
+    setFormData(prev => ({ ...prev, total_amount: fullTotal, items }))
   }, [items])
 
   // Check availability for items loaded from work order that have part_id but no availability yet
@@ -657,13 +661,19 @@ export function DirectPurchaseForm({
         finalItems = [] // Will be populated from selected quotation
       }
 
+      // Total amount: when quotations exist use first quoted amount; when WO use purchase total (or full if all inventory)
+      const requestTotalAmount = quotations.length > 0 && quotations[0]?.quoted_amount
+        ? quotations[0].quoted_amount
+        : workOrderId && items.length > 0
+          ? (purchaseTotal > 0 ? purchaseTotal : fullTotal)
+          : (formData.total_amount || 0)
       const request: CreatePurchaseOrderRequest = {
         work_order_id: workOrderId,
         po_type: PurchaseOrderType.DIRECT_PURCHASE,
         po_purpose: po_purpose,
         supplier: finalSupplier,
         items: finalItems,
-        total_amount: formData.total_amount!,
+        total_amount: requestTotalAmount,
         payment_method: formData.payment_method,
         notes: formData.notes,
         purchase_date: formData.purchase_date,
@@ -879,11 +889,11 @@ export function DirectPurchaseForm({
         </Card>
       )}
 
-      {/* Validation Results */}
-      {(formData.total_amount && formData.total_amount > 0) ? (
+      {/* Validation Results - use purchase-only total for quote decision when from work order */}
+      {((workOrderId && items.length > 0) ? purchaseTotal : (formData.total_amount || 0)) > 0 ? (
         <QuotationValidator
           poType={PurchaseOrderType.DIRECT_PURCHASE}
-          amount={formData.total_amount}
+          amount={workOrderId && items.length > 0 ? purchaseTotal : (formData.total_amount || 0)}
           onValidationResult={setValidationResult}
         />
       ) : null}
@@ -1095,8 +1105,8 @@ export function DirectPurchaseForm({
         </Card>
       )}
 
-      {/* Informative Alerts - Show inventory vs purchase summary */}
-      {!validationResult?.requires_quote && items.length > 0 && workOrderId && (() => {
+      {/* Informative Alerts - Show inventory vs purchase summary (always when WO has items) */}
+      {items.length > 0 && workOrderId && (() => {
         const poPurpose = calculatePOPurpose(items)
         const inventoryItems = items.filter(i => i.fulfill_from === 'inventory')
         const purchaseItems = items.filter(i => i.fulfill_from === 'purchase' || !i.fulfill_from)
@@ -1134,8 +1144,7 @@ export function DirectPurchaseForm({
         return null
       })()}
 
-      {/* Items Section - Only show if quotation NOT required */}
-      {!validationResult?.requires_quote && (
+      {/* Items Section - Always show (items pre-loaded from WO; user decides inventory vs purchase per item) */}
       <Card>
         <CardHeader>
           <CardTitle className="text-lg">Artículos a Comprar</CardTitle>
@@ -1399,7 +1408,6 @@ export function DirectPurchaseForm({
           ) : null}
         </CardContent>
       </Card>
-      )}
 
       {/* Show message if quotation IS required for items */}
       {validationResult?.requires_quote && (
@@ -1456,6 +1464,17 @@ export function DirectPurchaseForm({
               }
             }}
             workOrderId={workOrderId}
+            prefillItems={validationResult?.requires_quote && purchaseItems.length > 0
+              ? purchaseItems.map((p) => ({
+                  description: p.name,
+                  part_number: p.partNumber,
+                  quantity: Number(p.quantity) || 1,
+                  unit_price: Number(p.unit_price) || 0,
+                  total_price: p.total_price || 0,
+                  part_id: p.part_id
+                }))
+              : undefined
+            }
           />
         </CardContent>
       </Card>

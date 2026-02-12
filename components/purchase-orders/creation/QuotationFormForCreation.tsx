@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -52,16 +52,43 @@ interface QuotationFormForCreationProps {
   onQuotationsChange: (quotations: QuotationFormData[]) => void
   workOrderId?: string
   className?: string
+  /** Pre-filled items from work order (purchase items) - used when opening new quotation form */
+  prefillItems?: QuotationItem[]
 }
 
 export function QuotationFormForCreation({
   quotations,
   onQuotationsChange,
   workOrderId,
-  className = ""
+  className = "",
+  prefillItems = []
 }: QuotationFormForCreationProps) {
   const [showForm, setShowForm] = useState(false)
+  const [hasAppliedPrefill, setHasAppliedPrefill] = useState(false)
   const [formErrors, setFormErrors] = useState<string[]>([])
+
+  // Apply prefill items when opening form (only when no quotations yet - first quote gets pre-filled)
+  useEffect(() => {
+    if (showForm && prefillItems.length > 0 && quotations.length === 0 && !hasAppliedPrefill) {
+      const items: QuotationItem[] = prefillItems.map((p) => ({
+        description: p.description,
+        part_number: p.part_number,
+        quantity: p.quantity,
+        unit_price: p.unit_price,
+        total_price: p.total_price,
+        brand: p.brand,
+        notes: p.notes,
+        part_id: p.part_id
+      }))
+      setQuotationItems(items)
+      const total = items.reduce((sum, i) => sum + i.total_price, 0)
+      setFormData((prev) => ({ ...prev, quoted_amount: total }))
+      setHasAppliedPrefill(true)
+    }
+    if (!showForm) {
+      setHasAppliedPrefill(false)
+    }
+  }, [showForm, prefillItems, quotations.length, hasAppliedPrefill])
   
   const [formData, setFormData] = useState<QuotationFormData>({
     supplier_name: "",

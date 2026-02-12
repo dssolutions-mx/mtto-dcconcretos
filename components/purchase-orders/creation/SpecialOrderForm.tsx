@@ -252,16 +252,36 @@ export function SpecialOrderForm({
               ? workOrderData.required_parts 
               : JSON.parse(workOrderData.required_parts)
             
-            partsToLoad = requiredParts.map((part: any, index: number) => ({
-              id: `wo-part-${index}`,
-              part_number: part.partNumber || part.part_number || '',
-              description: part.name || part.item || part.description || 'Artículo',
-              brand: part.brand || '',
-              quantity: Number(part.quantity) || 1,
-              unit_price: Number(part.unit_price) || Number(part.price) || 0,
-              total_price: Number(part.total_price) || (Number(part.quantity) || 1) * (Number(part.unit_price) || Number(part.price) || 0),
-              lead_time_days: part.lead_time_days || 15,
-              is_special_order: true
+            partsToLoad = await Promise.all(requiredParts.map(async (part: any, index: number) => {
+              const partNumber = part.partNumber || part.part_number || ''
+              let part_id: string | undefined = part.part_id || part.id
+              if (!part_id && partNumber) {
+                try {
+                  const { data: foundParts } = await supabase
+                    .from('inventory_parts')
+                    .select('id')
+                    .eq('part_number', partNumber)
+                    .eq('is_active', true)
+                    .limit(1)
+                    .maybeSingle()
+                  if (foundParts) part_id = foundParts.id
+                } catch {
+                  /* ignore */
+                }
+              }
+              return {
+                id: `wo-part-${index}`,
+                part_number: partNumber,
+                description: part.name || part.item || part.description || 'Artículo',
+                brand: part.brand || '',
+                quantity: Number(part.quantity) || 1,
+                unit_price: Number(part.unit_price) || Number(part.price) || 0,
+                total_price: Number(part.total_price) || (Number(part.quantity) || 1) * (Number(part.unit_price) || Number(part.price) || 0),
+                lead_time_days: part.lead_time_days || 15,
+                is_special_order: true,
+                part_id,
+                fulfill_from: 'purchase' as const
+              }
             }))
           } catch (e) {
             console.error('Error parsing required parts:', e)
@@ -727,6 +747,18 @@ export function SpecialOrderForm({
     ? Math.max(...items.map(item => item.lead_time_days || 15))
     : 15
 
+  // Purchase items (for prefill and quote) - items marked for purchase, not inventory
+  const purchaseItems = items.filter(i => i.fulfill_from !== 'inventory')
+  const prefillItems = purchaseItems.map(i => ({
+    description: i.description,
+    part_number: i.part_number,
+    quantity: Number(i.quantity) || 1,
+    unit_price: Number(i.unit_price) || 0,
+    total_price: Number(i.total_price) || 0,
+    brand: i.brand,
+    part_id: i.part_id
+  }))
+
   // Loading state
   if (isLoadingWorkOrder) {
     return (
@@ -798,8 +830,335 @@ export function SpecialOrderForm({
         </AlertDescription>
       </Alert>
 
+      {/* Items from work order - shown first so user can set fulfill_from, then quotations get pre-filled */}
+      {workOrderId && items.length > 0 ? (
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-lg flex items-center space-x-2">
+              <Package className="h-5 w-5" />
+              <span>Artículos de la Orden de Trabajo</span>
+            </CardTitle>
+          </div>
+          <CardDescription>
+            Seleccione el origen por artículo (Inventario o Compra). Los artículos a comprar se usarán para pre-llenar las cotizaciones.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {/* Add New Item */}
+          <Card className="border-dashed border-2">
+            <CardHeader>
+              <CardTitle className="text-sm flex items-center space-x-2">
+                <Plus className="h-4 w-4" />
+                <span>Agregar Artículo</span>
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-3">
+                <div className="lg:col-span-3">
+                  <Label htmlFor="new-item-description">Buscar Parte del Catálogo *</Label>
+                  <PartAutocomplete
+                    value={newItem.description || ""}
+                    onSelect={handlePartSelect}
+                    onManualEntry={handleManualPartEntry}
+                    placeholder="Buscar por nombre o número de parte..."
+                    showPartNumber={true}
+                    allowManualEntry={true}
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Busca en el catálogo de inventario o escribe manualmente
+                  </p>
+                </div>
+                <div className="hidden">
+                  <Label htmlFor="new-item-part-number">Número de Parte</Label>
+                  <Input
+                    id="new-item-part-number"
+                    placeholder="P/N"
+                    value={newItem.part_number || ""}
+                    onChange={(e) => handleNewItemChange('part_number', e.target.value)}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="new-item-brand">Marca</Label>
+                  <Input
+                    id="new-item-brand"
+                    placeholder="Marca"
+                    value={newItem.brand || ""}
+                    onChange={(e) => handleNewItemChange('brand', e.target.value)}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="new-item-quantity">Cantidad *</Label>
+                  <Input
+                    id="new-item-quantity"
+                    type="number"
+                    step="1"
+                    min="1"
+                    placeholder="1"
+                    value={newItem.quantity}
+                    onChange={(e) => handleNewItemChange('quantity', e.target.value)}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="new-item-price">Precio Unit. *</Label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-sm text-muted-foreground">$</span>
+                    <Input
+                      id="new-item-price"
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      placeholder="0.00"
+                      className="pl-8"
+                      value={newItem.unit_price}
+                      onChange={(e) => handleNewItemChange('unit_price', e.target.value)}
+                    />
+                  </div>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
+                <div>
+                  <Label htmlFor="new-item-lead-time">Tiempo de Entrega (días)</Label>
+                  <Input
+                    id="new-item-lead-time"
+                    type="number"
+                    step="1"
+                    min="1"
+                    placeholder="15"
+                    value={newItem.lead_time_days}
+                    onChange={(e) => handleNewItemChange('lead_time_days', e.target.value)}
+                  />
+                </div>
+                <div className="flex items-end">
+                  <div className="flex items-center space-x-2 mb-2">
+                    <input
+                      type="checkbox"
+                      id="is-special-order"
+                      checked={newItem.is_special_order}
+                      onChange={(e) => handleNewItemChange('is_special_order', e.target.checked)}
+                      className="rounded"
+                    />
+                    <Label htmlFor="is-special-order" className="text-sm">Pedido especial</Label>
+                  </div>
+                </div>
+              </div>
+              <div className="flex justify-between items-center mt-4">
+                <div className="text-sm">
+                  <span className="text-muted-foreground">Total: </span>
+                  <span className="font-medium">
+                    ${(newItem.total_price || 0).toLocaleString('es-MX', { 
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2 
+                    })}
+                  </span>
+                </div>
+                <Button type="button" onClick={addItem} size="sm">
+                  <Plus className="h-4 w-4 mr-2" />
+                  Agregar
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Items Table */}
+          {items.length > 0 && (
+            <div className="border rounded-lg">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Artículo/Parte</TableHead>
+                    <TableHead>Marca</TableHead>
+                    <TableHead>Cant.</TableHead>
+                    <TableHead>Precio Unit.</TableHead>
+                    <TableHead>Total</TableHead>
+                    {workOrderId ? (
+                      <TableHead>Origen</TableHead>
+                    ) : null}
+                    <TableHead>Entrega</TableHead>
+                    <TableHead className="w-[100px]">Acciones</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {items.map((item) => (
+                    <TableRow key={item.id}>
+                      <TableCell>
+                        <div className="space-y-1">
+                          <Input
+                            value={item.description}
+                            onChange={(e) => handleItemChange(item.id, 'description', e.target.value)}
+                            placeholder="Descripción del artículo"
+                          />
+                          <div className="grid grid-cols-2 gap-2">
+                            <Input
+                              value={item.part_number}
+                              onChange={(e) => handleItemChange(item.id, 'part_number', e.target.value)}
+                              placeholder="P/N"
+                            />
+                            {item.is_special_order && (
+                              <Badge variant="secondary" className="justify-self-start text-xs mt-1">
+                                <FileText className="h-3 w-3 mr-1" />
+                                Especial
+                              </Badge>
+                            )}
+                          </div>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <Input
+                          value={item.brand}
+                          onChange={(e) => handleItemChange(item.id, 'brand', e.target.value)}
+                          placeholder="Marca"
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <Input
+                          type="number"
+                          min={1}
+                          value={item.quantity}
+                          onChange={(e) => handleItemChange(item.id, 'quantity', e.target.value)}
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <div className="relative">
+                          <span className="absolute left-2 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">$</span>
+                          <Input
+                            className="pl-6"
+                            type="number"
+                            step="0.01"
+                            min={0}
+                            value={item.unit_price}
+                            onChange={(e) => handleItemChange(item.id, 'unit_price', e.target.value)}
+                          />
+                        </div>
+                      </TableCell>
+                      <TableCell className="font-medium">
+                        ${item.total_price.toLocaleString('es-MX', {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2
+                        })}
+                      </TableCell>
+                      {workOrderId ? (
+                        <TableCell>
+                          <Select
+                            value={item.fulfill_from || 'purchase'}
+                            onValueChange={(value: 'inventory' | 'purchase') => handleItemChange(item.id, 'fulfill_from', value)}
+                          >
+                            <SelectTrigger className="w-[120px]">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="inventory">Inventario</SelectItem>
+                              <SelectItem value="purchase">Compra</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </TableCell>
+                      ) : null}
+                      <TableCell>
+                        <div className="flex items-center space-x-2">
+                          <Clock className="h-4 w-4 text-muted-foreground" />
+                          <Input
+                            type="number"
+                            min={1}
+                            value={item.lead_time_days || 15}
+                            onChange={(e) => handleItemChange(item.id, 'lead_time_days', Number(e.target.value))}
+                          />
+                          <span className="text-sm">d</span>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => removeItem(item.id)}
+                          className="text-red-600 hover:text-red-700"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+
+          {/* Order Summary */}
+          {items.length > 0 && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <Card>
+                <CardContent className="p-4">
+                  <div className="space-y-2">
+                    <div className="flex justify-between">
+                      <span>Total de Artículos:</span>
+                      <span className="font-medium">{items.length}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Tiempo Estimado de Entrega:</span>
+                      <span className="font-medium">{estimatedDeliveryDays} días</span>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="p-4">
+                  <div className="flex justify-between items-center">
+                    <span className="font-medium">Total del Pedido:</span>
+                    <span className="text-xl font-bold">
+                      ${(formData.total_amount || 0).toLocaleString('es-MX', { 
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2 
+                      })}
+                    </span>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          )}
+
+          {/* Inventory vs purchase summary - same as DirectPurchaseForm */}
+          {items.length > 0 && workOrderId && (() => {
+            const poPurpose = calculatePOPurpose(items)
+            const inventoryItemsList = items.filter(i => i.fulfill_from === 'inventory')
+            const purchaseItemsList = items.filter(i => i.fulfill_from === 'purchase' || !i.fulfill_from)
+            const inventoryTotalSum = inventoryItemsList.reduce((sum, item) => sum + (item.total_price || 0), 0)
+            const purchaseTotalSum = purchaseItemsList.reduce((sum, item) => sum + (item.total_price || 0), 0)
+            if (poPurpose === 'work_order_inventory') {
+              return (
+                <Alert className="border-green-500 bg-green-50">
+                  <CheckCircle2 className="h-4 w-4 text-green-600" />
+                  <AlertDescription className="text-green-800">
+                    <strong>Esta orden utilizará solo inventario interno.</strong> No requiere efectivo este mes, solo autorización para usar el inventario.
+                  </AlertDescription>
+                </Alert>
+              )
+            } else if (poPurpose === 'mixed') {
+              return (
+                <Alert className="border-yellow-500 bg-yellow-50">
+                  <AlertCircle className="h-4 w-4 text-yellow-600" />
+                  <AlertDescription className="text-yellow-800">
+                    <strong>Esta orden incluye items de inventario y compras.</strong> Items de inventario: ${inventoryTotalSum.toFixed(2)} (sin efectivo). Items a comprar: ${purchaseTotalSum.toFixed(2)}. Las cotizaciones se pre-llenarán con los items a comprar.
+                  </AlertDescription>
+                </Alert>
+              )
+            } else if (poPurpose === 'work_order_cash') {
+              return (
+                <Alert className="border-blue-500 bg-blue-50">
+                  <ShoppingCart className="h-4 w-4 text-blue-600" />
+                  <AlertDescription className="text-blue-800">
+                    <strong>Esta orden requiere efectivo:</strong> ${purchaseTotalSum.toFixed(2)}. Las cotizaciones se pre-llenarán con estos items.
+                  </AlertDescription>
+                </Alert>
+              )
+            }
+            return null
+          })()}
+        </CardContent>
+      </Card>
+      ) : null}
+
       {/* Quotation Form - Always required for special orders */}
-      {/* Items and supplier come from quotations - NOT from main form */}
+      {/* Pre-fill with purchase items from work order when adding first quotation */}
       <QuotationFormForCreation
         quotations={quotations}
         onQuotationsChange={(newQuotations) => {
@@ -814,6 +1173,7 @@ export function SpecialOrderForm({
           }
         }}
         workOrderId={workOrderId}
+        prefillItems={prefillItems.length > 0 ? prefillItems : undefined}
       />
 
       {/* Work Order Information */}
@@ -1025,274 +1385,6 @@ export function SpecialOrderForm({
           </CardContent>
         </Card>
       )}
-
-      {/* Items List - HIDDEN: Items will come from selected quotation */}
-      <Card className="hidden">
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle className="text-lg flex items-center space-x-2">
-              <Calculator className="h-5 w-5" />
-              <span>Artículos a Solicitar</span>
-            </CardTitle>
-          </div>
-          <CardDescription>
-            Los artículos serán definidos en cada cotización de proveedor
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {/* Add New Item */}
-          <Card className="border-dashed border-2">
-            <CardHeader>
-              <CardTitle className="text-sm flex items-center space-x-2">
-                <Plus className="h-4 w-4" />
-                <span>Agregar Artículo</span>
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-3">
-                <div className="lg:col-span-3">
-                  <Label htmlFor="new-item-description">Buscar Parte del Catálogo *</Label>
-                  <PartAutocomplete
-                    value={newItem.description || ""}
-                    onSelect={handlePartSelect}
-                    onManualEntry={handleManualPartEntry}
-                    placeholder="Buscar por nombre o número de parte..."
-                    showPartNumber={true}
-                    allowManualEntry={true}
-                  />
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Busca en el catálogo de inventario o escribe manualmente
-                  </p>
-                </div>
-                <div className="hidden">
-                  <Label htmlFor="new-item-part-number">Número de Parte</Label>
-                  <Input
-                    id="new-item-part-number"
-                    placeholder="P/N"
-                    value={newItem.part_number || ""}
-                    onChange={(e) => handleNewItemChange('part_number', e.target.value)}
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="new-item-brand">Marca</Label>
-                  <Input
-                    id="new-item-brand"
-                    placeholder="Marca"
-                    value={newItem.brand || ""}
-                    onChange={(e) => handleNewItemChange('brand', e.target.value)}
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="new-item-quantity">Cantidad *</Label>
-                  <Input
-                    id="new-item-quantity"
-                    type="number"
-                    step="1"
-                    min="1"
-                    placeholder="1"
-                    value={newItem.quantity}
-                    onChange={(e) => handleNewItemChange('quantity', e.target.value)}
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="new-item-price">Precio Unit. *</Label>
-                  <div className="relative">
-                    <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-sm text-muted-foreground">$</span>
-                    <Input
-                      id="new-item-price"
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      placeholder="0.00"
-                      className="pl-8"
-                      value={newItem.unit_price}
-                      onChange={(e) => handleNewItemChange('unit_price', e.target.value)}
-                    />
-                  </div>
-                </div>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
-                <div>
-                  <Label htmlFor="new-item-lead-time">Tiempo de Entrega (días)</Label>
-                  <Input
-                    id="new-item-lead-time"
-                    type="number"
-                    step="1"
-                    min="1"
-                    placeholder="15"
-                    value={newItem.lead_time_days}
-                    onChange={(e) => handleNewItemChange('lead_time_days', e.target.value)}
-                  />
-                </div>
-                <div className="flex items-end">
-                  <div className="flex items-center space-x-2 mb-2">
-                    <input
-                      type="checkbox"
-                      id="is-special-order"
-                      checked={newItem.is_special_order}
-                      onChange={(e) => handleNewItemChange('is_special_order', e.target.checked)}
-                      className="rounded"
-                    />
-                    <Label htmlFor="is-special-order" className="text-sm">Pedido especial</Label>
-                  </div>
-                </div>
-              </div>
-              <div className="flex justify-between items-center mt-4">
-                <div className="text-sm">
-                  <span className="text-muted-foreground">Total: </span>
-                  <span className="font-medium">
-                    ${(newItem.total_price || 0).toLocaleString('es-MX', { 
-                      minimumFractionDigits: 2, 
-                      maximumFractionDigits: 2 
-                    })}
-                  </span>
-                </div>
-                <Button type="button" onClick={addItem} size="sm">
-                  <Plus className="h-4 w-4 mr-2" />
-                  Agregar
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Items Table */}
-          {items.length > 0 && (
-            <div className="border rounded-lg">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Artículo/Parte</TableHead>
-                    <TableHead>Marca</TableHead>
-                    <TableHead>Cant.</TableHead>
-                    <TableHead>Precio Unit.</TableHead>
-                    <TableHead>Total</TableHead>
-                    <TableHead>Entrega</TableHead>
-                    <TableHead className="w-[100px]">Acciones</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {items.map((item) => (
-                    <TableRow key={item.id}>
-                      <TableCell>
-                        <div className="space-y-1">
-                          <Input
-                            value={item.description}
-                            onChange={(e) => handleItemChange(item.id, 'description', e.target.value)}
-                            placeholder="Descripción del artículo"
-                          />
-                          <div className="grid grid-cols-2 gap-2">
-                            <Input
-                              value={item.part_number}
-                              onChange={(e) => handleItemChange(item.id, 'part_number', e.target.value)}
-                              placeholder="P/N"
-                            />
-                            {item.is_special_order && (
-                              <Badge variant="secondary" className="justify-self-start text-xs mt-1">
-                                <FileText className="h-3 w-3 mr-1" />
-                                Especial
-                              </Badge>
-                            )}
-                          </div>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <Input
-                          value={item.brand}
-                          onChange={(e) => handleItemChange(item.id, 'brand', e.target.value)}
-                          placeholder="Marca"
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <Input
-                          type="number"
-                          min={1}
-                          value={item.quantity}
-                          onChange={(e) => handleItemChange(item.id, 'quantity', e.target.value)}
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <div className="relative">
-                          <span className="absolute left-2 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">$</span>
-                          <Input
-                            className="pl-6"
-                            type="number"
-                            step="0.01"
-                            min={0}
-                            value={item.unit_price}
-                            onChange={(e) => handleItemChange(item.id, 'unit_price', e.target.value)}
-                          />
-                        </div>
-                      </TableCell>
-                      <TableCell className="font-medium">
-                        ${item.total_price.toLocaleString('es-MX', {
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2
-                        })}
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center space-x-2">
-                          <Clock className="h-4 w-4 text-muted-foreground" />
-                          <Input
-                            type="number"
-                            min={1}
-                            value={item.lead_time_days || 15}
-                            onChange={(e) => handleItemChange(item.id, 'lead_time_days', Number(e.target.value))}
-                          />
-                          <span className="text-sm">d</span>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => removeItem(item.id)}
-                          className="text-red-600 hover:text-red-700"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          )}
-
-          {/* Order Summary */}
-          {items.length > 0 && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <Card>
-                <CardContent className="p-4">
-                  <div className="space-y-2">
-                    <div className="flex justify-between">
-                      <span>Total de Artículos:</span>
-                      <span className="font-medium">{items.length}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>Tiempo Estimado de Entrega:</span>
-                      <span className="font-medium">{estimatedDeliveryDays} días</span>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardContent className="p-4">
-                  <div className="flex justify-between items-center">
-                    <span className="font-medium">Total del Pedido:</span>
-                    <span className="text-xl font-bold">
-                      ${(formData.total_amount || 0).toLocaleString('es-MX', { 
-                        minimumFractionDigits: 2, 
-                        maximumFractionDigits: 2 
-                      })}
-                    </span>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-          )}
-        </CardContent>
-      </Card>
 
       {/* Notes */}
       <Card>
