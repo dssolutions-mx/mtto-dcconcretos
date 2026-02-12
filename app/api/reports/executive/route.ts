@@ -90,6 +90,8 @@ export async function POST(req: Request) {
       }
     }
 
+    // Use asset_assignment_history for plant attribution at period end (best practice).
+    // Snapshot at period end aligns with ERP/financial reporting conventions.
     const rawAssetIds = rawAssets.map((a) => a.id)
     const attributionDate = `${dateToStr}T23:59:59.999Z`
     let assignmentRows: any[] = []
@@ -112,10 +114,8 @@ export async function POST(req: Request) {
           currentPlantId: asset.current_plant_id,
           historyByAsset: assignmentHistoryMap,
         })
-
         const attributedPlant = attributedPlantId ? plantById.get(attributedPlantId) : null
         if (!attributedPlant) return null
-
         return {
           ...asset,
           plant_id: attributedPlant.id,
@@ -279,29 +279,65 @@ export async function POST(req: Request) {
       : []
     const unlinkedAdditionalExpenses = (additionalExpenses || []).filter(ae => !ae.asset_id || (assetIds.length > 0 && !assetIds.includes(ae.asset_id)))
 
-    // Get equipment hours
-    // For hours calculation, we need a flexible window:
-    // - Extended start (30 days before) to get baseline readings
-    // - Extended end (inclusive of the end date) to include readings on the last day
-    // This allows us to calculate hours worked within the period even if readings
-    // fall just before the start or on the last day
+    // Get equipment hours - SAME LOGIC AS GERENCIAL (diesel + checklist with filtering)
     const extendedStart = new Date(dateFromStart)
     extendedStart.setDate(extendedStart.getDate() - 30)
-    
-    // For hours, we want to include readings through the end date (inclusive)
-    // Add a small buffer to include all of the last day
-    const extendedEnd = new Date(dateToExclusive)
-    extendedEnd.setMilliseconds(extendedEnd.getMilliseconds() - 1) // Include the last millisecond before exclusive end
+    const dateToExclusiveStr = dateToExclusive.toISOString().slice(0, 10)
     
     const { data: hoursData, error: hoursError } = await supabase
       .from("completed_checklists")
-      .select("asset_id, equipment_hours_reading, reading_timestamp")
+      .select("asset_id, equipment_hours_reading, reading_timestamp, completion_date")
       .gte("reading_timestamp", extendedStart.toISOString())
-      .lte("reading_timestamp", extendedEnd.toISOString()) // Inclusive end for hours calculation
+      .lt("reading_timestamp", dateToExclusive.toISOString())
       .in("asset_id", assetIds)
       .not("equipment_hours_reading", "is", null)
 
     if (hoursError) throw hoursError
+
+    // Fetch diesel transactions (only diesel, exclude transfers) - extended period
+    const { data: dieselTxsForHours, error: dieselHoursError } = await supabase
+      .from("diesel_transactions")
+      .select(`
+        asset_id, transaction_date, horometer_reading, transaction_type,
+        diesel_warehouses!inner(product_type)
+      `)
+      .eq("diesel_warehouses.product_type", "diesel")
+      .eq("transaction_type", "consumption")
+      .neq("is_transfer", true)
+      .gte("transaction_date", extendedStart.toISOString().slice(0, 10))
+      .lt("transaction_date", dateToExclusiveStr)
+      .in("asset_id", assetIds)
+      .not("horometer_reading", "is", null)
+
+    if (dieselHoursError) throw dieselHoursError
+
+    // Build diesel validation map (filter unrealistic jumps)
+    type ReadingEvent = { ts: number; val: number }
+    const dieselValidationByAsset = new Map<string, number[]>()
+    const dieselValidationRaw = new Map<string, Array<{ val: number; date: string }>>()
+    ;(dieselTxsForHours || []).forEach((t: any) => {
+      if (!t.asset_id || !t.horometer_reading) return
+      const val = Number(t.horometer_reading)
+      if (!Number.isNaN(val)) {
+        if (!dieselValidationRaw.has(t.asset_id)) dieselValidationRaw.set(t.asset_id, [])
+        dieselValidationRaw.get(t.asset_id)!.push({ val, date: t.transaction_date })
+      }
+    })
+    dieselValidationRaw.forEach((readings, aid) => {
+      if (readings.length === 0) return
+      readings.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+      const valid: number[] = []
+      const MAX = 24
+      for (let i = 0; i < readings.length; i++) {
+        if (i === 0) { valid.push(readings[i].val); continue }
+        const curr = readings[i], prev = readings[i - 1]
+        const days = (new Date(curr.date).getTime() - new Date(prev.date).getTime()) / (1000 * 60 * 60 * 24)
+        const delta = curr.val - prev.val
+        const hpd = days > 0 ? delta / days : 0
+        if (delta >= 0 && (days >= 60 || hpd <= MAX)) valid.push(curr.val)
+      }
+      if (valid.length > 0) dieselValidationByAsset.set(aid, valid)
+    })
 
     // Initialize asset metrics
     const assetMetrics = new Map()
@@ -426,22 +462,106 @@ export async function POST(req: Request) {
       }
     })
 
-    // Calculate hours worked
-    const assetHours = new Map()
-    hoursData?.forEach(reading => {
-      if (!assetHours.has(reading.asset_id)) {
-        assetHours.set(reading.asset_id, [])
-      }
-      assetHours.get(reading.asset_id).push(parseFloat(reading.equipment_hours_reading))
+    // Calculate hours worked - SAME LOGIC AS GERENCIAL (diesel + checklist, incremental deltas)
+    const dieselByAssetForHours = new Map<string, any[]>()
+    ;(dieselTxsForHours || []).forEach((t: any) => {
+      if (t.transaction_type !== "consumption" || !t.asset_id) return
+      if (!dieselByAssetForHours.has(t.asset_id)) dieselByAssetForHours.set(t.asset_id, [])
+      dieselByAssetForHours.get(t.asset_id)!.push(t)
+    })
+    const checklistEventsByAsset = new Map<string, ReadingEvent[]>()
+    ;(hoursData || []).forEach((h: any) => {
+      if (!h.asset_id) return
+      const val = Number(h.equipment_hours_reading)
+      const ts = new Date(h.reading_timestamp || h.completion_date).getTime()
+      if (Number.isNaN(val) || Number.isNaN(ts)) return
+      if (!checklistEventsByAsset.has(h.asset_id)) checklistEventsByAsset.set(h.asset_id, [])
+      checklistEventsByAsset.get(h.asset_id)!.push({ ts, val })
     })
 
-    assetHours.forEach((readings, assetId) => {
+    const allAssetIdsWithReadings = new Set<string>()
+    checklistEventsByAsset.forEach((_, aid) => allAssetIdsWithReadings.add(aid))
+    dieselByAssetForHours.forEach((_, aid) => allAssetIdsWithReadings.add(aid))
+    const startMs = dateFromStart.getTime()
+    const endMs = dateToExclusive.getTime()
+    const MAX_HOURS_PER_DAY = 24
+
+    allAssetIdsWithReadings.forEach(assetId => {
       const metrics = assetMetrics.get(assetId)
-      if (metrics && readings.length >= 2) {
-        const min = Math.min(...readings)
-        const max = Math.max(...readings)
-        metrics.hours_worked = Math.max(0, max - min)
+      if (!metrics) return
+      const events: ReadingEvent[] = []
+      // Diesel readings (only horometer_reading, filter unrealistic jumps)
+      const txs = dieselByAssetForHours.get(assetId) || []
+      const dieselReadingsRaw: Array<{ ts: number; val: number }> = []
+      txs.forEach((t: any) => {
+        const tts = new Date(t.transaction_date).getTime()
+        if (!Number.isNaN(tts) && t.horometer_reading != null) {
+          const v = Number(t.horometer_reading)
+          if (!Number.isNaN(v)) dieselReadingsRaw.push({ ts: tts, val: v })
+        }
+      })
+      const dieselReadings: ReadingEvent[] = []
+      if (dieselReadingsRaw.length > 0) {
+        dieselReadingsRaw.sort((a, b) => a.ts - b.ts)
+        for (let i = 0; i < dieselReadingsRaw.length; i++) {
+          const cur = dieselReadingsRaw[i]
+          if (i === 0) { dieselReadings.push({ ts: cur.ts, val: cur.val }); continue }
+          const prev = dieselReadingsRaw[i - 1]
+          const days = (cur.ts - prev.ts) / (1000 * 60 * 60 * 24)
+          const d = cur.val - prev.val
+          const hpd = days > 0 ? d / days : 0
+          if (d >= 0 && (days >= 60 || hpd <= MAX_HOURS_PER_DAY))
+            dieselReadings.push({ ts: cur.ts, val: cur.val })
+        }
       }
+      events.push(...dieselReadings)
+      // Checklist events - filter by diesel validation range
+      const chkEvents = checklistEventsByAsset.get(assetId) || []
+      const validationValues = dieselValidationByAsset.get(assetId) || []
+      if (validationValues.length > 0 || dieselReadings.length > 0) {
+        const vals = validationValues.length > 0 ? validationValues : dieselReadings.map(e => e.val)
+        const min = Math.min(...vals), max = Math.max(...vals), rng = max - min
+        const allowedMin = min - rng * 2, allowedMax = max + rng * 2
+        chkEvents.forEach(e => {
+          if (e.val >= allowedMin && e.val <= allowedMax) events.push(e)
+        })
+      } else {
+        events.push(...chkEvents)
+      }
+      if (events.length < 2) return
+      events.sort((a, b) => a.ts - b.ts)
+      const uniqueEvents: ReadingEvent[] = []
+      events.forEach((e, idx) => {
+        if (idx === 0 || e.ts !== events[idx - 1].ts || e.val !== events[idx - 1].val)
+          uniqueEvents.push(e)
+      })
+      if (uniqueEvents.length < 2) return
+      let baselineIdx = 0
+      for (let i = 0; i < uniqueEvents.length; i++) {
+        if (uniqueEvents[i].ts >= startMs) {
+          baselineIdx = Math.max(0, i - 1)
+          break
+        }
+      }
+      let totalHours = 0
+      for (let i = baselineIdx; i < uniqueEvents.length - 1; i++) {
+        const cur = uniqueEvents[i], nxt = uniqueEvents[i + 1]
+        if (nxt.ts < startMs) continue
+        if (cur.ts >= endMs) break
+        const delta = nxt.val - cur.val
+        if (delta < 0) continue
+        const days = (nxt.ts - cur.ts) / (1000 * 60 * 60 * 24)
+        if (days < 1 / 24) continue
+        const hpd = days > 0 ? delta / days : 0
+        if (hpd > MAX_HOURS_PER_DAY && days < 60) continue
+        let capped = delta
+        if (days > 0) {
+          const maxDelta = MAX_HOURS_PER_DAY * days
+          if (delta > maxDelta) capped = maxDelta
+        }
+        totalHours += capped
+      }
+      metrics.hours_worked = totalHours
     })
 
     // Calculate plant and business unit totals

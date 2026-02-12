@@ -44,6 +44,41 @@ export async function PUT(
         error: 'new_status is required' 
       }, { status: 400 })
     }
+
+    // When approving with 2+ quotations and none selected, require quotation_id and select first
+    if (body.new_status === 'approved') {
+      const { data: poForQuotes } = await supabase
+        .from('purchase_orders')
+        .select('id, selected_quotation_id')
+        .eq('id', id)
+        .single()
+      if (poForQuotes) {
+        const { count } = await supabase
+          .from('purchase_order_quotations')
+          .select('*', { count: 'exact', head: true })
+          .eq('purchase_order_id', id)
+        if ((count ?? 0) >= 2 && !poForQuotes.selected_quotation_id) {
+          if (!body.quotation_id) {
+            return NextResponse.json({
+              error: 'Selección de cotización requerida',
+              details: 'Esta orden tiene múltiples cotizaciones. Debes seleccionar una cotización al aprobar.',
+              requires_fix: true,
+              fix_type: 'quotation'
+            }, { status: 400 })
+          }
+          const { data: selResult, error: selErr } = await supabase.rpc('select_quotation', {
+            p_quotation_id: body.quotation_id,
+            p_user_id: user.id,
+            p_selection_reason: 'Selección al aprobar por Jefe de Unidad'
+          })
+          if (selErr || !(selResult as any)?.success) {
+            return NextResponse.json({
+              error: (selResult as any)?.error || selErr?.message || 'Error al seleccionar cotización'
+            }, { status: 400 })
+          }
+        }
+      }
+    }
     
     // ✅ NUEVO SISTEMA (Paso 1 de 2): Aprobación BU primero, escalamiento a Gerencia si excede límite
     if (body.new_status === 'approved') {

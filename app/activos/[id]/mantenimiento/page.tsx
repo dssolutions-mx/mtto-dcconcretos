@@ -362,6 +362,17 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
                     });
 
                     if (!wasCompletedInPastCycle) {
+                      // Check if covered by higher service in SAME past cycle
+                      const isCoveredInSameCycle = pastCycleMaintenances.some((m: any) => {
+                        const performedInterval = (intervals as any[]).find((i: any) => i.id === m.maintenance_plan_id);
+                        if (!performedInterval) return false;
+                        const sameUnit = performedInterval.type === interval.type;
+                        const sameCategory = (performedInterval as any).maintenance_category === (interval as any).maintenance_category;
+                        const categoryOk = (performedInterval as any).maintenance_category && (interval as any).maintenance_category ? sameCategory : true;
+                        const higherOrEqual = Number(performedInterval.interval_value) >= Number(interval.interval_value);
+                        return sameUnit && categoryOk && higherOrEqual;
+                      });
+                      
                       // Check if covered by current cycle maintenance
                       const currentCycleStartValue = (currentCycleNum - 1) * maxInterval;
                       const currentCycleEndValue = currentCycleNum * maxInterval;
@@ -380,7 +391,8 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
                         return sameUnit && categoryOk && higherOrEqual;
                       });
 
-                      if (!isCoveredByCurrentCycle) {
+                      // Only add if NOT covered by same cycle OR current cycle
+                      if (!isCoveredInSameCycle && !isCoveredByCurrentCycle) {
                         processedIntervals.push({
                           interval_id: interval.id,
                           interval_value: interval.interval_value,

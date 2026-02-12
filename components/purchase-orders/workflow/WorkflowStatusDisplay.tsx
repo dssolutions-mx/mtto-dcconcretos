@@ -77,6 +77,8 @@ export function WorkflowStatusDisplay({
   const [showPaymentDateFix, setShowPaymentDateFix] = useState(false)
   const [hasSelectedQuotation, setHasSelectedQuotation] = useState<boolean>(false)
   const [isLoadingQuotations, setIsLoadingQuotations] = useState<boolean>(false)
+  const [pendingApprovalQuotations, setPendingApprovalQuotations] = useState<any[]>([])
+  const [selectedQuotationForApproval, setSelectedQuotationForApproval] = useState<string | null>(null)
   
   // Get PO amount from workflowStatus (always fresh)
   const purchaseOrderAmount = parseFloat(workflowStatus?.purchase_order?.total_amount || '0')
@@ -117,11 +119,12 @@ export function WorkflowStatusDisplay({
     loadPurchaseOrderData()
   }, [loadWorkflowStatus, purchaseOrderId])
 
-  // Load quotations to check if one is selected
+  // Load quotations to check if one is selected (and for BU approve+select flow)
   useEffect(() => {
     const loadQuotationStatus = async () => {
       if (!workflowStatus?.requires_quote) {
         setHasSelectedQuotation(true) // Not required, so consider it as "ok"
+        setPendingApprovalQuotations([])
         return
       }
 
@@ -136,17 +139,19 @@ export function WorkflowStatusDisplay({
         if (response.ok) {
           const result = await response.json()
           const quotations = result.data || []
-          console.log('Quotations loaded:', quotations)
           const hasSelected = quotations.some((q: any) => q.status === 'selected')
-          console.log('Has selected quotation:', hasSelected)
           setHasSelectedQuotation(hasSelected)
+          const pending = quotations.filter((q: any) => q.status === 'pending')
+          setPendingApprovalQuotations(hasSelected ? [] : pending)
+          if (hasSelected) setSelectedQuotationForApproval(null)
         } else {
-          console.error('Failed to fetch quotations:', response.status)
           setHasSelectedQuotation(false)
+          setPendingApprovalQuotations([])
         }
       } catch (error) {
         console.error('Error loading quotation status:', error)
         setHasSelectedQuotation(false)
+        setPendingApprovalQuotations([])
       } finally {
         setIsLoadingQuotations(false)
       }
@@ -687,10 +692,11 @@ export function WorkflowStatusDisplay({
         : `Monto real: $${actualAmount}`
     }
     
-    // Try workflow advance with error handling for payment date issues
+    // Pass quotation_id when BU approves with 2+ quotes (select-as-part-of-approval)
+    const quotationId = newStatus === 'approved' ? selectedQuotationForApproval || undefined : undefined
     let success = false
     try {
-      success = await advanceWorkflow(purchaseOrderId, newStatus, workflowNotes || undefined)
+      success = await advanceWorkflow(purchaseOrderId, newStatus, workflowNotes || undefined, quotationId)
     } catch (error) {
       console.log('Workflow advance failed, checking if it\'s a payment date issue...')
       
@@ -701,7 +707,7 @@ export function WorkflowStatusDisplay({
           headers: {
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({ new_status: newStatus, notes: workflowNotes })
+          body: JSON.stringify({ new_status: newStatus, notes: workflowNotes, quotation_id: quotationId })
         })
         
         if (!response.ok && response.status === 400) {
@@ -723,7 +729,7 @@ export function WorkflowStatusDisplay({
                 title: "Fecha corregida",
                 description: "Reintentando operación...",
               })
-              success = await advanceWorkflow(purchaseOrderId, newStatus, workflowNotes || undefined)
+              success = await advanceWorkflow(purchaseOrderId, newStatus, workflowNotes || undefined, quotationId)
             } else {
               setShowPaymentDateFix(true)
               toast({
@@ -1247,8 +1253,9 @@ export function WorkflowStatusDisplay({
                 const hasValidLimit = effectiveAuthLimit > 0
                 const canAuthorizeAmount = hasValidAmount && hasValidLimit && purchaseOrderAmount <= effectiveAuthLimit
                 
-                // If quotation is required, check that one is selected
-                const quotationRequirementMet = !workflowStatus?.requires_quote || hasSelectedQuotation
+                // If quotation required: selected already, OR BU selecting as part of approval
+                const quotationRequirementMet = !workflowStatus?.requires_quote || hasSelectedQuotation || 
+                  (pendingApprovalQuotations.length >= 2 && !!selectedQuotationForApproval)
                 
                 canPerformAction = !isLoadingAuth && !isLoadingQuotations && hasValidAmount && hasValidLimit && canAuthorizeAmount && quotationRequirementMet
               } else if (isValidationAction) {
@@ -1293,16 +1300,46 @@ export function WorkflowStatusDisplay({
                         </Alert>
                       )}
                       
-                      {/* Show quotation selection required warning */}
-                      {isApprovalAction && !isLoadingQuotations && workflowStatus?.requires_quote && !hasSelectedQuotation && (
+                      {/* Show quotation picker when 2+ quotes with none selected - BU can select as part of approval */}
+                      {isApprovalAction && !isLoadingQuotations && workflowStatus?.requires_quote && !hasSelectedQuotation && pendingApprovalQuotations.length >= 2 && (
+                        <Alert className="border-orange-200 bg-orange-50">
+                          <FileText className="h-4 w-4 text-orange-600" />
+                          <AlertDescription className="text-orange-700">
+                            <div className="space-y-2">
+                              <strong>Selecciona la cotización al aprobar</strong>
+                              <p className="text-sm">
+                                Esta orden tiene múltiples cotizaciones. Selecciona la que autorizas:
+                              </p>
+                              <div className="mt-2 space-y-2">
+                                {pendingApprovalQuotations.map((q: any) => (
+                                  <label key={q.id} className="flex items-center gap-2 cursor-pointer p-2 rounded border border-orange-200 hover:bg-orange-100">
+                                    <input
+                                      type="radio"
+                                      name="quotation_for_approval"
+                                      value={q.id}
+                                      checked={selectedQuotationForApproval === q.id}
+                                      onChange={() => setSelectedQuotationForApproval(q.id)}
+                                    />
+                                    <span className="font-medium">{q.supplier_name}</span>
+                                    <span className="text-sm text-muted-foreground">
+                                      ${Number(q.quoted_amount).toLocaleString('es-MX', { minimumFractionDigits: 2 })}
+                                    </span>
+                                  </label>
+                                ))}
+                              </div>
+                            </div>
+                          </AlertDescription>
+                        </Alert>
+                      )}
+                      {/* Single quote case - still need to select above or different flow */}
+                      {isApprovalAction && !isLoadingQuotations && workflowStatus?.requires_quote && !hasSelectedQuotation && pendingApprovalQuotations.length < 2 && (
                         <Alert className="border-orange-200 bg-orange-50">
                           <FileText className="h-4 w-4 text-orange-600" />
                           <AlertDescription className="text-orange-700">
                             <div className="space-y-2">
                               <strong>Selección de cotización requerida</strong>
                               <p className="text-sm">
-                                Debes seleccionar una cotización ganadora antes de aprobar esta orden de compra. 
-                                Revisa la sección de "Cotizaciones" arriba para comparar y seleccionar.
+                                Revisa la sección de "Cotizaciones" arriba para comparar y seleccionar una cotización ganadora.
                               </p>
                             </div>
                           </AlertDescription>

@@ -151,23 +151,21 @@ export class PurchaseOrderService {
         if (!poError && po) {
           // Skip check if using inventory (no purchase needed)
           if (po.po_purpose !== 'work_order_inventory' && po.quotation_selection_required) {
-            if (po.quotation_selection_status !== 'selected') {
-              throw new Error(
-                po.quotation_selection_status === 'pending_quotations'
-                  ? 'Se requieren al menos 2 cotizaciones antes de solicitar aprobación'
-                  : po.quotation_selection_status === 'pending_selection'
-                  ? 'Debe seleccionar un proveedor de las cotizaciones antes de solicitar aprobación'
-                  : 'La selección de cotización es requerida antes de solicitar aprobación'
-              )
+            // Allow pending_selection: BU can approve+select in one step (plan Phase 3)
+            if (po.quotation_selection_status === 'pending_quotations') {
+              throw new Error('Se requieren al menos 2 cotizaciones antes de solicitar aprobación')
             }
-            
-            // Ensure PO items exist after quotation selection
-            // Items should be populated automatically when quotation is selected
-            const items = po.items as any[]
-            if (!items || !Array.isArray(items) || items.length === 0) {
-              throw new Error(
-                'La orden de compra no tiene artículos. Los artículos deben ser agregados desde la cotización seleccionada.'
-              )
+            if (po.quotation_selection_status !== 'selected' && po.quotation_selection_status !== 'pending_selection') {
+              throw new Error('La selección de cotización es requerida antes de solicitar aprobación')
+            }
+            // Only check items when already selected (items come from selection)
+            if (po.quotation_selection_status === 'selected') {
+              const items = po.items as any[]
+              if (!items || !Array.isArray(items) || items.length === 0) {
+                throw new Error(
+                  'La orden de compra no tiene artículos. Los artículos deben ser agregados desde la cotización seleccionada.'
+                )
+              }
             }
           }
         }

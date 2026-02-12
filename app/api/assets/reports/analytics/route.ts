@@ -56,12 +56,21 @@ export async function POST(request: NextRequest) {
     if (assetsError) throw assetsError
 
     // 2. Fetch completed checklists data for trend analysis
-    const { data: checklistsData, error: checklistsError } = await supabase
+    // Extended window: 30 days before period start to get baseline readings
+    const extendedStart = dateFrom ? new Date(dateFrom) : new Date('1900-01-01')
+    extendedStart.setDate(extendedStart.getDate() - 30)
+    const dateToExclusive = dateTo ? new Date(dateTo) : new Date('2100-12-31')
+    dateToExclusive.setUTCDate(dateToExclusive.getUTCDate() + 1)
+    
+    // Fetch checklists - use reading_timestamp if available, otherwise completion_date
+    // We'll filter in memory to handle cases where reading_timestamp might be null
+    const { data: checklistsDataRaw, error: checklistsError } = await supabase
       .from('completed_checklists')
       .select(`
         id,
         asset_id,
         completion_date,
+        reading_timestamp,
         equipment_hours_reading,
         equipment_kilometers_reading,
         previous_hours,
@@ -71,11 +80,92 @@ export async function POST(request: NextRequest) {
         checklists(name, frequency)
       `)
       .in('asset_id', assetIds)
-      .gte('completion_date', dateFrom || '1900-01-01')
-      .lte('completion_date', dateTo || '2100-12-31')
+      .gte('completion_date', extendedStart.toISOString().slice(0, 10))
+      .lte('completion_date', dateToExclusive.toISOString().slice(0, 10))
       .order('completion_date', { ascending: true })
+    
+    if (checklistsError) throw checklistsError
+    
+    // Filter in memory to include extended period for readings with reading_timestamp
+    const checklistsData = (checklistsDataRaw || []).filter((c: any) => {
+      const timestamp = c.reading_timestamp || c.completion_date
+      if (!timestamp) return false
+      const ts = new Date(timestamp).getTime()
+      return ts >= extendedStart.getTime() && ts < dateToExclusive.getTime()
+    })
 
     if (checklistsError) throw checklistsError
+
+    // 2b. Fetch diesel transactions for hours calculation (same logic as gerencial/asset-maintenance-summary)
+    const { data: dieselTxs, error: dieselError } = await supabase
+      .from('diesel_transactions')
+      .select(`
+        id,
+        asset_id,
+        transaction_date,
+        horometer_reading,
+        diesel_warehouses!inner(product_type)
+      `)
+      .eq('diesel_warehouses.product_type', 'diesel')
+      .neq('is_transfer', true)
+      .in('asset_id', assetIds)
+      .gte('transaction_date', extendedStart.toISOString().slice(0, 10))
+      .lte('transaction_date', dateTo || '2100-12-31')
+      .not('horometer_reading', 'is', null)
+      .order('transaction_date', { ascending: true })
+
+    if (dieselError) throw dieselError
+
+    // 2c. Build validation map from diesel readings (for filtering incorrect checklist readings)
+    type ReadingEvent = { ts: number, val: number }
+    const dieselValidationByAsset = new Map<string, number[]>()
+    const dieselValidationByAssetRaw = new Map<string, Array<{ val: number, date: string }>>()
+    
+    ;(dieselTxs || []).forEach((t: any) => {
+      if (!t.asset_id || !t.horometer_reading) return
+      const val = Number(t.horometer_reading)
+      if (!Number.isNaN(val)) {
+        if (!dieselValidationByAssetRaw.has(t.asset_id)) {
+          dieselValidationByAssetRaw.set(t.asset_id, [])
+        }
+        dieselValidationByAssetRaw.get(t.asset_id)!.push({ val, date: t.transaction_date })
+      }
+    })
+    
+    // Filter diesel readings: keep only those in logical sequence (no unrealistic jumps)
+    dieselValidationByAssetRaw.forEach((readings, assetId) => {
+      if (readings.length === 0) return
+      
+      // Sort by date
+      readings.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+      
+      const validReadings: number[] = []
+      const MAX_HOURS_PER_DAY = 24
+      
+      for (let i = 0; i < readings.length; i++) {
+        const current = readings[i]
+        
+        if (i === 0) {
+          // First reading - always include
+          validReadings.push(current.val)
+          continue
+        }
+        
+        const previous = readings[i - 1]
+        const timeDeltaDays = (new Date(current.date).getTime() - new Date(previous.date).getTime()) / (1000 * 60 * 60 * 24)
+        const delta = current.val - previous.val
+        const hoursPerDay = timeDeltaDays > 0 ? delta / timeDeltaDays : 0
+        
+        // Include if delta is reasonable (positive and <= 24h/day)
+        if (delta >= 0 && (timeDeltaDays >= 60 || hoursPerDay <= MAX_HOURS_PER_DAY)) {
+          validReadings.push(current.val)
+        }
+      }
+      
+      if (validReadings.length > 0) {
+        dieselValidationByAsset.set(assetId, validReadings)
+      }
+    })
 
     // 3. Fetch maintenance history
     const { data: maintenanceData, error: maintenanceError } = await supabase
@@ -116,11 +206,11 @@ export async function POST(request: NextRequest) {
         const assetChecklists = checklistsData.filter((c: any) => c.asset_id === asset.id)
         const assetMaintenance = maintenanceData.filter((m: any) => m.asset_id === asset.id)
         
-        // Calculate usage trends
+        // Calculate usage trends (for display)
         const hoursReadings = assetChecklists
           .filter((c: any) => c.equipment_hours_reading)
           .map((c: any) => ({
-            date: c.completion_date,
+            date: c.completion_date || c.reading_timestamp,
             hours: c.equipment_hours_reading
           }))
           .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
@@ -128,10 +218,171 @@ export async function POST(request: NextRequest) {
         const kilometersReadings = assetChecklists
           .filter((c: any) => c.equipment_kilometers_reading)
           .map((c: any) => ({
-            date: c.completion_date,
+            date: c.completion_date || c.reading_timestamp,
             kilometers: c.equipment_kilometers_reading
           }))
           .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+
+        // Calculate operational hours using advanced incremental delta logic (same as gerencial/asset-maintenance-summary)
+        const dateFromStart = dateFrom ? new Date(dateFrom) : new Date('1900-01-01')
+        const dateToExclusive = dateTo ? new Date(dateTo) : new Date('2100-12-31')
+        dateToExclusive.setUTCDate(dateToExclusive.getUTCDate() + 1)
+        const startMs = dateFromStart.getTime()
+        const endMs = dateToExclusive.getTime()
+
+        // Collect all readings (diesel + checklist) for this asset
+        const events: ReadingEvent[] = []
+        
+        // Diesel transaction events (only use horometer_reading, filter unrealistic jumps)
+        const assetDieselTxs = (dieselTxs || []).filter((t: any) => t.asset_id === asset.id)
+        const dieselReadingsRaw: Array<{ ts: number, val: number }> = []
+        assetDieselTxs.forEach((t: any) => {
+          const tts = new Date(t.transaction_date).getTime()
+          if (!Number.isNaN(tts) && t.horometer_reading != null) {
+            const v = Number(t.horometer_reading)
+            if (!Number.isNaN(v)) dieselReadingsRaw.push({ ts: tts, val: v })
+          }
+        })
+        
+        // Filter diesel readings: keep only those in logical sequence
+        const dieselReadings: ReadingEvent[] = []
+        if (dieselReadingsRaw.length > 0) {
+          dieselReadingsRaw.sort((a, b) => a.ts - b.ts)
+          const MAX_HOURS_PER_DAY = 24
+          
+          for (let i = 0; i < dieselReadingsRaw.length; i++) {
+            const current = dieselReadingsRaw[i]
+            
+            if (i === 0) {
+              dieselReadings.push({ ts: current.ts, val: current.val })
+              continue
+            }
+            
+            const previous = dieselReadingsRaw[i - 1]
+            const timeDeltaDays = (current.ts - previous.ts) / (1000 * 60 * 60 * 24)
+            const delta = current.val - previous.val
+            const hoursPerDay = timeDeltaDays > 0 ? delta / timeDeltaDays : 0
+            
+            // Include if delta is reasonable (positive and <= 24h/day, or gap >60 days)
+            if (delta >= 0 && (timeDeltaDays >= 60 || hoursPerDay <= MAX_HOURS_PER_DAY)) {
+              dieselReadings.push({ ts: current.ts, val: current.val })
+            }
+          }
+        }
+        events.push(...dieselReadings)
+        
+        // Checklist events - filter out clearly incorrect readings
+        // Use extended diesel readings for validation (includes readings before period start)
+        // Use reading_timestamp if available, otherwise fallback to completion_date
+        const chkEvents: ReadingEvent[] = assetChecklists
+          .filter((c: any) => c.equipment_hours_reading && (c.reading_timestamp || c.completion_date))
+          .map((c: any) => {
+            const timestamp = c.reading_timestamp || c.completion_date
+            return {
+              ts: new Date(timestamp).getTime(),
+              val: Number(c.equipment_hours_reading)
+            }
+          })
+          .filter((e: ReadingEvent) => !Number.isNaN(e.ts) && !Number.isNaN(e.val))
+        
+        const validationDieselValues = dieselValidationByAsset.get(asset.id) || []
+        
+        if (validationDieselValues.length > 0 || dieselReadings.length > 0) {
+          // Use extended diesel readings if available, otherwise use period diesel readings
+          const dieselValues = validationDieselValues.length > 0 ? validationDieselValues : dieselReadings.map(e => e.val)
+          const dieselMin = Math.min(...dieselValues)
+          const dieselMax = Math.max(...dieselValues)
+          const dieselRange = dieselMax - dieselMin
+          // Allow checklist readings within 2x the diesel range
+          const allowedMin = dieselMin - dieselRange * 2
+          const allowedMax = dieselMax + dieselRange * 2
+          
+          chkEvents.forEach(e => {
+            // Only include if within reasonable range of diesel readings
+            if (e.val >= allowedMin && e.val <= allowedMax) {
+              events.push(e)
+            }
+          })
+        } else {
+          // No diesel readings - use all checklist readings (fallback)
+          events.push(...chkEvents)
+        }
+
+        // Calculate operational hours using incremental deltas
+        let operationalHours = 0
+        if (events.length >= 2) {
+          // Sort all events chronologically
+          events.sort((a, b) => a.ts - b.ts)
+          
+          // Remove duplicates (same timestamp and value)
+          const uniqueEvents: ReadingEvent[] = []
+          events.forEach((e, idx) => {
+            if (idx === 0 || e.ts !== events[idx - 1].ts || e.val !== events[idx - 1].val) {
+              uniqueEvents.push(e)
+            }
+          })
+          
+          // Find baseline: last reading before period start, or first reading in period
+          let baselineIdx = 0
+          for (let i = 0; i < uniqueEvents.length; i++) {
+            if (uniqueEvents[i].ts >= startMs) {
+              baselineIdx = Math.max(0, i - 1)
+              break
+            }
+          }
+          
+          // Debug log for asset with ID matching CR-16
+          if (asset.id === '6be57c11-a350-4e96-bbca-f3772483ee22') {
+            console.log(`[Analytics] Asset ${asset.asset_id}: Total events: ${events.length}, Unique: ${uniqueEvents.length}, Baseline idx: ${baselineIdx}`)
+            console.log(`[Analytics] Period: ${new Date(startMs).toISOString()} to ${new Date(endMs).toISOString()}`)
+            console.log(`[Analytics] Diesel readings: ${dieselReadings.length}, Checklist events: ${chkEvents.length}`)
+            console.log(`[Analytics] Validation diesel values: ${validationDieselValues.length}`)
+          }
+          
+          // Calculate incremental deltas
+          const MAX_HOURS_PER_DAY = 24
+          for (let i = baselineIdx; i < uniqueEvents.length - 1; i++) {
+            const current = uniqueEvents[i]
+            const next = uniqueEvents[i + 1]
+            
+            // Only count deltas within the report period
+            if (next.ts < startMs) continue
+            if (current.ts >= endMs) break
+            
+            const delta = next.val - current.val
+            
+            // Skip negative deltas (resets)
+            if (delta < 0) continue
+            
+            const timeDeltaDays = (next.ts - current.ts) / (1000 * 60 * 60 * 24)
+            
+            // Skip if time delta is too small (< 1 hour) - likely duplicate
+            if (timeDeltaDays < 1/24) continue
+            
+            const hoursPerDay = timeDeltaDays > 0 ? delta / timeDeltaDays : 0
+            
+            // Skip unrealistic jumps (>24h/day and gap <60 days)
+            if (hoursPerDay > MAX_HOURS_PER_DAY && timeDeltaDays < 60) continue
+            
+            // For very large time gaps, cap at reasonable rate (24h/day max)
+            let cappedDelta = delta
+            if (timeDeltaDays > 0) {
+              const maxReasonableDelta = MAX_HOURS_PER_DAY * timeDeltaDays
+              if (delta > maxReasonableDelta) {
+                cappedDelta = maxReasonableDelta
+              }
+            }
+            
+            operationalHours += cappedDelta
+          }
+          
+          // Debug log for CR-16
+          if (asset.id === '6be57c11-a350-4e96-bbca-f3772483ee22') {
+            console.log(`[Analytics] Asset ${asset.asset_id}: Calculated operationalHours: ${operationalHours}`)
+          }
+        } else if (events.length > 0 && asset.id === '6be57c11-a350-4e96-bbca-f3772483ee22') {
+          console.warn(`[Analytics] Asset ${asset.asset_id}: Only ${events.length} event(s), need at least 2 for calculation`)
+        }
 
         // Calculate efficiency metrics
         const totalHours = asset.current_hours || 0
@@ -159,11 +410,6 @@ export async function POST(request: NextRequest) {
         const production = parseFloat(productionParam?.value || '0')
         const fuelConsumption = parseFloat(fuelParam?.value || '0')
         const materialProcessed = parseFloat(materialParam?.value || '0')
-
-        // Calculate operational hours (hours difference in the period)
-        const operationalHours = hoursReadings.length > 1 
-          ? (hoursReadings[hoursReadings.length - 1].hours - hoursReadings[0].hours) 
-          : 0
 
         // Operational efficiency calculations
         const productionPerHour = operationalHours > 0 && production > 0 ? production / operationalHours : 0

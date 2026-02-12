@@ -153,6 +153,8 @@ export interface WorkflowStatusResponse {
 export interface AdvanceWorkflowRequest {
   new_status: string
   notes?: string
+  /** Required when approving with 2+ quotations and none selected; BU selects as part of approval */
+  quotation_id?: string
 }
 
 // Quotation Validation

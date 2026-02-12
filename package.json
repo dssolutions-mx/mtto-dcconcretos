@@ -10,6 +10,9 @@
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --headed",
     "test:e2e:install": "playwright install --with-deps",
+    "detect:plant-changes": "npx tsx scripts/detect-asset-plant-changes-from-diesel.ts",
+    "add:plant5-history": "npx tsx scripts/add-asset-assignment-history-from-plant5-evidence.ts",
+    "verify:plant5": "npx tsx scripts/verify-plant5-assets-executive-logic.ts",
     "sync:dry": "node -r dotenv/config scripts/sync_missing_employees.mjs --dry-run",
     "sync:run": "node -r dotenv/config scripts/sync_missing_employees.mjs"
   },

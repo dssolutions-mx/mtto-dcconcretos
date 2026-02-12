@@ -8,8 +8,8 @@ import { DashboardShell } from "@/components/dashboard/dashboard-shell";
 import { DashboardHeader } from "@/components/dashboard/dashboard-header";
 import { BreadcrumbSetter } from "@/components/navigation/breadcrumb-setter";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { ArrowLeft, Loader2, Edit, Trash2 } from "lucide-react";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { ArrowLeft, Loader2, Edit, Trash2, FileText, ShoppingCart } from "lucide-react";
 import Link from "next/link";
 import {
   AlertDialog,
@@ -43,6 +43,7 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
   const [saving, setSaving] = useState<boolean>(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState<boolean>(false);
   const [deleting, setDeleting] = useState<boolean>(false);
+  const [purchaseOrders, setPurchaseOrders] = useState<Array<{ id: string; order_id: string }>>([]);
   const router = useRouter();
 
   // Fetch maintenance data on the client side
@@ -100,6 +101,23 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
           } else {
             setMaintenancePlan(planData);
           }
+        }
+
+        // If maintenance has work_order_id, fetch related purchase orders
+        if (maintenanceData.work_order_id) {
+          const { data: poData, error: poError } = await supabase
+            .from("purchase_orders")
+            .select("id, order_id")
+            .eq("work_order_id", maintenanceData.work_order_id)
+            .order("created_at", { ascending: true });
+
+          if (poError) {
+            console.error("Error al cargar órdenes de compra:", poError);
+          } else {
+            setPurchaseOrders(poData || []);
+          }
+        } else {
+          setPurchaseOrders([]);
         }
         
       } catch (err) {
@@ -287,6 +305,35 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
           )}
         </div>
       </DashboardHeader>
+      {(maintenance?.work_order_id || purchaseOrders.length > 0) && (
+        <Card className="mb-6">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">Documentos relacionados</CardTitle>
+            <CardDescription>
+              Orden de trabajo y órdenes de compra asociadas a este mantenimiento
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-wrap gap-3">
+            {maintenance?.work_order_id && (
+              <Button variant="outline" asChild size="sm">
+                <Link href={`/ordenes/${maintenance.work_order_id}`}>
+                  <FileText className="mr-2 h-4 w-4" />
+                  Orden de Trabajo
+                </Link>
+              </Button>
+            )}
+            {purchaseOrders.map((po) => (
+              <Button key={po.id} variant="outline" asChild size="sm">
+                <Link href={`/compras/${po.id}`}>
+                  <ShoppingCart className="mr-2 h-4 w-4" />
+                  Orden de Compra {po.order_id ? `(${po.order_id})` : ""}
+                </Link>
+              </Button>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+
       {maintenancePlan && (
         <div className="mb-6 px-1">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-2">

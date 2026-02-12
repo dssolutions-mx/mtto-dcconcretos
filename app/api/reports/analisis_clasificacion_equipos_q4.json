@@ -1,0 +1,784 @@
+{
+  "resumen_general": {
+    "gasto_total": 866662.5,
+    "num_ordenes": 133,
+    "produccion_m3": 26831.029999999995,
+    "costo_por_m3": 32.300754015034094,
+    "ratio_correctivo_preventivo": 1.3969472168160124
+  },
+  "por_categoria": {
+    "Ollas Revolvedoras": {
+      "amount": 377312.35000000003,
+      "num_ordenes": 70,
+      "ordenes_correctivas": 55,
+      "gasto_promedio": 5390.176428571429,
+      "pct_correctivo": 78.57142857142857
+    },
+    "Bombeo": {
+      "amount": 166973.25,
+      "num_ordenes": 22,
+      "ordenes_correctivas": 15,
+      "gasto_promedio": 7589.693181818182,
+      "pct_correctivo": 68.18181818181817
+    },
+    "Cargadores Frontales": {
+      "amount": 160387.51,
+      "num_ordenes": 15,
+      "ordenes_correctivas": 8,
+      "gasto_promedio": 10692.500666666667,
+      "pct_correctivo": 53.333333333333336
+    },
+    "Plantas": {
+      "amount": 115215.79000000001,
+      "num_ordenes": 17,
+      "ordenes_correctivas": 10,
+      "gasto_promedio": 6777.399411764706,
+      "pct_correctivo": 58.82352941176471
+    },
+    "Generadores": {
+      "amount": 24790.239999999998,
+      "num_ordenes": 3,
+      "ordenes_correctivas": 0,
+      "gasto_promedio": 8263.413333333332,
+      "pct_correctivo": 0.0
+    },
+    "Sin Clasificar": {
+      "amount": 9235.65,
+      "num_ordenes": 3,
+      "ordenes_correctivas": 0,
+      "gasto_promedio": 3078.5499999999997,
+      "pct_correctivo": 0.0
+    },
+    "Otros Equipos": {
+      "amount": 7932.9,
+      "num_ordenes": 2,
+      "ordenes_correctivas": 2,
+      "gasto_promedio": 3966.45,
+      "pct_correctivo": 100.0
+    },
+    "Vehículos": {
+      "amount": 4814.81,
+      "num_ordenes": 1,
+      "ordenes_correctivas": 1,
+      "gasto_promedio": 4814.81,
+      "pct_correctivo": 100.0
+    }
+  },
+  "top_equipos": {
+    "CF-CATERPILLAR 938G": {
+      "amount": 76547.39,
+      "categoria_equipo": "Cargadores Frontales",
+      "initial_hours": 0.0,
+      "current_hours": 30037.0,
+      "initial_kilometers": NaN,
+      "current_kilometers": NaN,
+      "num_ordenes": 7
+    },
+    "CR-08": {
+      "amount": 73481.04000000001,
+      "categoria_equipo": "Ollas Revolvedoras",
+      "initial_hours": 0.0,
+      "current_hours": 11543.0,
+      "initial_kilometers": NaN,
+      "current_kilometers": 103550.0,
+      "num_ordenes": 11
+    },
+    "PLANTA 2": {
+      "amount": 68609.5,
+      "categoria_equipo": "Plantas",
+      "initial_hours": 0.0,
+      "current_hours": 0.0,
+      "initial_kilometers": NaN,
+      "current_kilometers": NaN,
+      "num_ordenes": 11
+    },
+    "CF-03": {
+      "amount": 52433.4,
+      "categoria_equipo": "Cargadores Frontales",
+      "initial_hours": 0.0,
+      "current_hours": 2557.0,
+      "initial_kilometers": NaN,
+      "current_kilometers": 1.0,
+      "num_ordenes": 2
+    },
+    "CR-07": {
+      "amount": 45875.56,
+      "categoria_equipo": "Ollas Revolvedoras",
+      "initial_hours": 0.0,
+      "current_hours": 13469.0,
+      "initial_kilometers": NaN,
+      "current_kilometers": 215402.0,
+      "num_ordenes": 7
+    },
+    "PLANTA 3 ": {
+      "amount": 45129.19,
+      "categoria_equipo": "Plantas",
+      "initial_hours": 0.0,
+      "current_hours": 0.0,
+      "initial_kilometers": NaN,
+      "current_kilometers": NaN,
+      "num_ordenes": 2
+    },
+    "BOMBA PUTZMEISTER BP-02": {
+      "amount": 40901.69,
+      "categoria_equipo": "Bombeo",
+      "initial_hours": 0.0,
+      "current_hours": 6014.0,
+      "initial_kilometers": NaN,
+      "current_kilometers": 32405.0,
+      "num_ordenes": 3
+    },
+    "CAMION SITRAK BP-03": {
+      "amount": 35500.0,
+      "categoria_equipo": "Bombeo",
+      "initial_hours": 0.0,
+      "current_hours": 1987.0,
+      "initial_kilometers": NaN,
+      "current_kilometers": 16815.0,
+      "num_ordenes": 2
+    },
+    "PIPA AGUA": {
+      "amount": 33341.42,
+      "categoria_equipo": "Bombeo",
+      "initial_hours": 0.0,
+      "current_hours": 617.0,
+      "initial_kilometers": NaN,
+      "current_kilometers": 5000.0,
+      "num_ordenes": 6
+    },
+    "CR-26": {
+      "amount": 30731.31,
+      "categoria_equipo": "Ollas Revolvedoras",
+      "initial_hours": 0.0,
+      "current_hours": 2657.0,
+      "initial_kilometers": 0.0,
+      "current_kilometers": 50107.0,
+      "num_ordenes": 3
+    },
+    "BP-04": {
+      "amount": 30369.37,
+      "categoria_equipo": "Bombeo",
+      "initial_hours": 0.0,
+      "current_hours": 1075.0,
+      "initial_kilometers": NaN,
+      "current_kilometers": 16866.0,
+      "num_ordenes": 2
+    },
+    "CR-29": {
+      "amount": 29235.33,
+      "categoria_equipo": "Ollas Revolvedoras",
+      "initial_hours": 0.0,
+      "current_hours": 2640.0,
+      "initial_kilometers": NaN,
+      "current_kilometers": 122353.0,
+      "num_ordenes": 2
+    },
+    "CR-06": {
+      "amount": 28188.31,
+      "categoria_equipo": "Ollas Revolvedoras",
+      "initial_hours": 0.0,
+      "current_hours": 13451.0,
+      "initial_kilometers": NaN,
+      "current_kilometers": 183803.0,
+      "num_ordenes": 6
+    },
+    "CR-28": {
+      "amount": 28121.33,
+      "categoria_equipo": "Ollas Revolvedoras",
+      "initial_hours": 0.0,
+      "current_hours": 2530.0,
+      "initial_kilometers": NaN,
+      "current_kilometers": 39350.0,
+      "num_ordenes": 2
+    },
+    "CF-JOHN DEER 524K-II ": {
+      "amount": 25239.14,
+      "categoria_equipo": "Cargadores Frontales",
+      "initial_hours": 0.0,
+      "current_hours": 2732.0,
+      "initial_kilometers": NaN,
+      "current_kilometers": 2330.0,
+      "num_ordenes": 5
+    },
+    "CR-04": {
+      "amount": 22878.0,
+      "categoria_equipo": "Ollas Revolvedoras",
+      "initial_hours": 0.0,
+      "current_hours": 14438.0,
+      "initial_kilometers": NaN,
+      "current_kilometers": 233370.0,
+      "num_ordenes": 2
+    },
+    "CR-16": {
+      "amount": 22120.0,
+      "categoria_equipo": "Ollas Revolvedoras",
+      "initial_hours": 0.0,
+      "current_hours": 4753.0,
+      "initial_kilometers": NaN,
+      "current_kilometers": 64403.0,
+      "num_ordenes": 2
+    },
+    "CR-19": {
+      "amount": 19960.83,
+      "categoria_equipo": "Ollas Revolvedoras",
+      "initial_hours": 0.0,
+      "current_hours": 3396.0,
+      "initial_kilometers": 0.0,
+      "current_kilometers": 69427.0,
+      "num_ordenes": 2
+    },
+    "CR-23": {
+      "amount": 19063.3,
+      "categoria_equipo": "Ollas Revolvedoras",
+      "initial_hours": 0.0,
+      "current_hours": 3351.0,
+      "initial_kilometers": NaN,
+      "current_kilometers": 25354.0,
+      "num_ordenes": 7
+    },
+    "GENERADORA P#2": {
+      "amount": 16636.92,
+      "categoria_equipo": "Generadores",
+      "initial_hours": 0.0,
+      "current_hours": 5985.0,
+      "initial_kilometers": NaN,
+      "current_kilometers": 56475.0,
+      "num_ordenes": 2
+    },
+    "CR-01": {
+      "amount": 13579.25,
+      "categoria_equipo": "Ollas Revolvedoras",
+      "initial_hours": 0.0,
+      "current_hours": 15977.0,
+      "initial_kilometers": NaN,
+      "current_kilometers": 230021.0,
+      "num_ordenes": 4
+    },
+    "CAMION INTERNATIONAL BP-02 ": {
+      "amount": 11065.95,
+      "categoria_equipo": "Bombeo",
+      "initial_hours": 0.0,
+      "current_hours": 5971.0,
+      "initial_kilometers": NaN,
+      "current_kilometers": 32540.0,
+      "num_ordenes": 1
+    },
+    "CR-17": {
+      "amount": 10817.05,
+      "categoria_equipo": "Ollas Revolvedoras",
+      "initial_hours": 0.0,
+      "current_hours": 4237.0,
+      "initial_kilometers": NaN,
+      "current_kilometers": 61421.0,
+      "num_ordenes": 8
+    },
+    "CR-30": {
+      "amount": 8432.65,
+      "categoria_equipo": "Ollas Revolvedoras",
+      "initial_hours": 0.0,
+      "current_hours": 1280.0,
+      "initial_kilometers": 0.0,
+      "current_kilometers": 32012.0,
+      "num_ordenes": 1
+    },
+    "CR-09": {
+      "amount": 8156.54,
+      "categoria_equipo": "Ollas Revolvedoras",
+      "initial_hours": 0.0,
+      "current_hours": 5512.0,
+      "initial_kilometers": NaN,
+      "current_kilometers": 52572.0,
+      "num_ordenes": 2
+    },
+    "GENERADORA P#3": {
+      "amount": 8153.32,
+      "categoria_equipo": "Generadores",
+      "initial_hours": 0.0,
+      "current_hours": 4875.0,
+      "initial_kilometers": NaN,
+      "current_kilometers": NaN,
+      "num_ordenes": 1
+    },
+    "PIPA AGUA P03": {
+      "amount": 6848.08,
+      "categoria_equipo": "Bombeo",
+      "initial_hours": 0.0,
+      "current_hours": 3305.0,
+      "initial_kilometers": NaN,
+      "current_kilometers": 221611.0,
+      "num_ordenes": 2
+    },
+    "CF-950H CATERPILLAR": {
+      "amount": 6167.58,
+      "categoria_equipo": "Cargadores Frontales",
+      "initial_hours": 0.0,
+      "current_hours": 9307.0,
+      "initial_kilometers": NaN,
+      "current_kilometers": 41270.0,
+      "num_ordenes": 1
+    },
+    "FORD TRANSIT UT-01": {
+      "amount": 5637.9,
+      "categoria_equipo": "Otros Equipos",
+      "initial_hours": 0.0,
+      "current_hours": 0.0,
+      "initial_kilometers": NaN,
+      "current_kilometers": 9879.0,
+      "num_ordenes": 1
+    },
+    "SAVEIRO CABINA SENCILLA": {
+      "amount": 4814.81,
+      "categoria_equipo": "Vehículos",
+      "initial_hours": 0.0,
+      "current_hours": 0.0,
+      "initial_kilometers": NaN,
+      "current_kilometers": NaN,
+      "num_ordenes": 1
+    }
+  },
+  "equipos_por_horas": {
+    "BOMBA PUTZMEISTER BP-02": {
+      "amount": 40901.69,
+      "horas_trabajadas": 6014.0,
+      "categoria_equipo": "Bombeo",
+      "costo_por_hora": 6.801079148653143
+    },
+    "BP-04": {
+      "amount": 30369.37,
+      "horas_trabajadas": 1075.0,
+      "categoria_equipo": "Bombeo",
+      "costo_por_hora": 28.250576744186045
+    },
+    "CAMION INTERNATIONAL BP-02 ": {
+      "amount": 11065.95,
+      "horas_trabajadas": 5971.0,
+      "categoria_equipo": "Bombeo",
+      "costo_por_hora": 1.853282532239156
+    },
+    "CAMION SITRAK BP-01": {
+      "amount": 4400.0,
+      "horas_trabajadas": 4170.0,
+      "categoria_equipo": "Bombeo",
+      "costo_por_hora": 1.0551558752997603
+    },
+    "CAMION SITRAK BP-03": {
+      "amount": 35500.0,
+      "horas_trabajadas": 1987.0,
+      "categoria_equipo": "Bombeo",
+      "costo_por_hora": 17.86612984398591
+    },
+    "CF-03": {
+      "amount": 52433.4,
+      "horas_trabajadas": 2557.0,
+      "categoria_equipo": "Cargadores Frontales",
+      "costo_por_hora": 20.505827141181072
+    },
+    "CF-950H CATERPILLAR": {
+      "amount": 6167.58,
+      "horas_trabajadas": 9307.0,
+      "categoria_equipo": "Cargadores Frontales",
+      "costo_por_hora": 0.6626818523691845
+    },
+    "CF-CATERPILLAR 938G": {
+      "amount": 76547.39,
+      "horas_trabajadas": 30037.0,
+      "categoria_equipo": "Cargadores Frontales",
+      "costo_por_hora": 2.5484365948663315
+    },
+    "CF-JOHN DEER 524K-II ": {
+      "amount": 25239.14,
+      "horas_trabajadas": 2732.0,
+      "categoria_equipo": "Cargadores Frontales",
+      "costo_por_hora": 9.23833821376281
+    },
+    "CR-01": {
+      "amount": 13579.25,
+      "horas_trabajadas": 15977.0,
+      "categoria_equipo": "Ollas Revolvedoras",
+      "costo_por_hora": 0.8499248920322964
+    },
+    "CR-04": {
+      "amount": 22878.0,
+      "horas_trabajadas": 14438.0,
+      "categoria_equipo": "Ollas Revolvedoras",
+      "costo_por_hora": 1.584568499792215
+    },
+    "CR-06": {
+      "amount": 28188.31,
+      "horas_trabajadas": 13451.0,
+      "categoria_equipo": "Ollas Revolvedoras",
+      "costo_por_hora": 2.0956293212400565
+    },
+    "CR-07": {
+      "amount": 45875.56,
+      "horas_trabajadas": 13469.0,
+      "categoria_equipo": "Ollas Revolvedoras",
+      "costo_por_hora": 3.406010839705991
+    },
+    "CR-08": {
+      "amount": 73481.04000000001,
+      "horas_trabajadas": 11543.0,
+      "categoria_equipo": "Ollas Revolvedoras",
+      "costo_por_hora": 6.365852897860176
+    },
+    "CR-09": {
+      "amount": 8156.54,
+      "horas_trabajadas": 5512.0,
+      "categoria_equipo": "Ollas Revolvedoras",
+      "costo_por_hora": 1.479778664731495
+    },
+    "CR-11": {
+      "amount": 3700.0,
+      "horas_trabajadas": 4634.0,
+      "categoria_equipo": "Ollas Revolvedoras",
+      "costo_por_hora": 0.7984462667242124
+    },
+    "CR-12": {
+      "amount": 2800.0,
+      "horas_trabajadas": 4407.0,
+      "categoria_equipo": "Ollas Revolvedoras",
+      "costo_por_hora": 0.6353528477422282
+    },
+    "CR-13": {
+      "amount": 1170.0,
+      "horas_trabajadas": 2605.0,
+      "categoria_equipo": "Ollas Revolvedoras",
+      "costo_por_hora": 0.4491362763915547
+    },
+    "CR-16": {
+      "amount": 22120.0,
+      "horas_trabajadas": 4753.0,
+      "categoria_equipo": "Ollas Revolvedoras",
+      "costo_por_hora": 4.6539027982326955
+    },
+    "CR-17": {
+      "amount": 10817.05,
+      "horas_trabajadas": 4237.0,
+      "categoria_equipo": "Ollas Revolvedoras",
+      "costo_por_hora": 2.55299740382346
+    },
+    "CR-19": {
+      "amount": 19960.83,
+      "horas_trabajadas": 3396.0,
+      "categoria_equipo": "Ollas Revolvedoras",
+      "costo_por_hora": 5.877747349823322
+    },
+    "CR-21": {
+      "amount": 1100.0,
+      "horas_trabajadas": 3210.0,
+      "categoria_equipo": "Ollas Revolvedoras",
+      "costo_por_hora": 0.3426791277258567
+    },
+    "CR-22": {
+      "amount": 1401.8600000000001,
+      "horas_trabajadas": 3598.0,
+      "categoria_equipo": "Ollas Revolvedoras",
+      "costo_por_hora": 0.38962201222901616
+    },
+    "CR-23": {
+      "amount": 19063.3,
+      "horas_trabajadas": 3351.0,
+      "categoria_equipo": "Ollas Revolvedoras",
+      "costo_por_hora": 5.688839152491793
+    },
+    "CR-24": {
+      "amount": 2699.99,
+      "horas_trabajadas": 3058.0,
+      "categoria_equipo": "Ollas Revolvedoras",
+      "costo_por_hora": 0.8829267495094832
+    },
+    "CR-25": {
+      "amount": 3800.0,
+      "horas_trabajadas": 3298.0,
+      "categoria_equipo": "Ollas Revolvedoras",
+      "costo_por_hora": 1.1522134627046694
+    },
+    "CR-26": {
+      "amount": 30731.31,
+      "horas_trabajadas": 2657.0,
+      "categoria_equipo": "Ollas Revolvedoras",
+      "costo_por_hora": 11.566168611215657
+    },
+    "CR-28": {
+      "amount": 28121.33,
+      "horas_trabajadas": 2530.0,
+      "categoria_equipo": "Ollas Revolvedoras",
+      "costo_por_hora": 11.11515019762846
+    },
+    "CR-29": {
+      "amount": 29235.33,
+      "horas_trabajadas": 2640.0,
+      "categoria_equipo": "Ollas Revolvedoras",
+      "costo_por_hora": 11.073988636363637
+    },
+    "CR-30": {
+      "amount": 8432.65,
+      "horas_trabajadas": 1280.0,
+      "categoria_equipo": "Ollas Revolvedoras",
+      "costo_por_hora": 6.5880078125
+    },
+    "GENERADORA P#2": {
+      "amount": 16636.92,
+      "horas_trabajadas": 5985.0,
+      "categoria_equipo": "Generadores",
+      "costo_por_hora": 2.779769423558897
+    },
+    "GENERADORA P#3": {
+      "amount": 8153.32,
+      "horas_trabajadas": 4875.0,
+      "categoria_equipo": "Generadores",
+      "costo_por_hora": 1.6724758974358973
+    },
+    "PIPA AGUA": {
+      "amount": 33341.42,
+      "horas_trabajadas": 617.0,
+      "categoria_equipo": "Bombeo",
+      "costo_por_hora": 54.03795786061588
+    },
+    "PIPA AGUA P03": {
+      "amount": 6848.08,
+      "horas_trabajadas": 3305.0,
+      "categoria_equipo": "Bombeo",
+      "costo_por_hora": 2.072036308623298
+    },
+    "PIPA TC-01": {
+      "amount": 4546.74,
+      "horas_trabajadas": 1343.0,
+      "categoria_equipo": "Bombeo",
+      "costo_por_hora": 3.3855100521221146
+    }
+  },
+  "equipos_por_km": {
+    "CR-19": {
+      "amount": 19960.83,
+      "km_trabajados": 69427.0,
+      "categoria_equipo": "Ollas Revolvedoras",
+      "costo_por_km": 0.28750817405332224
+    },
+    "CR-26": {
+      "amount": 30731.31,
+      "km_trabajados": 50107.0,
+      "categoria_equipo": "Ollas Revolvedoras",
+      "costo_por_km": 0.6133137086634602
+    },
+    "CR-30": {
+      "amount": 8432.65,
+      "km_trabajados": 32012.0,
+      "categoria_equipo": "Ollas Revolvedoras",
+      "costo_por_km": 0.2634215294264651
+    },
+    "PICKUP L200  MANUAL 6 VEL ": {
+      "amount": 2295.0,
+      "km_trabajados": 4678.0,
+      "categoria_equipo": "Otros Equipos",
+      "costo_por_km": 0.49059427105600684
+    }
+  },
+  "clasificacion_completa": {
+    "BOMBA PUTZMEISTER BP-02": {
+      "categoria_equipo": "Bombeo",
+      "amount": 40901.69,
+      "order_id": 3
+    },
+    "BP-04": {
+      "categoria_equipo": "Bombeo",
+      "amount": 30369.37,
+      "order_id": 2
+    },
+    "CAMION INTERNATIONAL BP-02 ": {
+      "categoria_equipo": "Bombeo",
+      "amount": 11065.95,
+      "order_id": 1
+    },
+    "CAMION SITRAK BP-01": {
+      "categoria_equipo": "Bombeo",
+      "amount": 4400.0,
+      "order_id": 2
+    },
+    "CAMION SITRAK BP-03": {
+      "categoria_equipo": "Bombeo",
+      "amount": 35500.0,
+      "order_id": 2
+    },
+    "CF-03": {
+      "categoria_equipo": "Cargadores Frontales",
+      "amount": 52433.4,
+      "order_id": 2
+    },
+    "CF-950H CATERPILLAR": {
+      "categoria_equipo": "Cargadores Frontales",
+      "amount": 6167.58,
+      "order_id": 1
+    },
+    "CF-CATERPILLAR 938G": {
+      "categoria_equipo": "Cargadores Frontales",
+      "amount": 76547.39,
+      "order_id": 7
+    },
+    "CF-JOHN DEER 524K-II ": {
+      "categoria_equipo": "Cargadores Frontales",
+      "amount": 25239.14,
+      "order_id": 5
+    },
+    "CR-01": {
+      "categoria_equipo": "Ollas Revolvedoras",
+      "amount": 13579.25,
+      "order_id": 4
+    },
+    "CR-04": {
+      "categoria_equipo": "Ollas Revolvedoras",
+      "amount": 22878.0,
+      "order_id": 2
+    },
+    "CR-06": {
+      "categoria_equipo": "Ollas Revolvedoras",
+      "amount": 28188.31,
+      "order_id": 6
+    },
+    "CR-07": {
+      "categoria_equipo": "Ollas Revolvedoras",
+      "amount": 45875.56,
+      "order_id": 7
+    },
+    "CR-08": {
+      "categoria_equipo": "Ollas Revolvedoras",
+      "amount": 73481.04000000001,
+      "order_id": 11
+    },
+    "CR-09": {
+      "categoria_equipo": "Ollas Revolvedoras",
+      "amount": 8156.54,
+      "order_id": 2
+    },
+    "CR-11": {
+      "categoria_equipo": "Ollas Revolvedoras",
+      "amount": 3700.0,
+      "order_id": 2
+    },
+    "CR-12": {
+      "categoria_equipo": "Ollas Revolvedoras",
+      "amount": 2800.0,
+      "order_id": 2
+    },
+    "CR-13": {
+      "categoria_equipo": "Ollas Revolvedoras",
+      "amount": 1170.0,
+      "order_id": 1
+    },
+    "CR-16": {
+      "categoria_equipo": "Ollas Revolvedoras",
+      "amount": 22120.0,
+      "order_id": 2
+    },
+    "CR-17": {
+      "categoria_equipo": "Ollas Revolvedoras",
+      "amount": 10817.05,
+      "order_id": 8
+    },
+    "CR-19": {
+      "categoria_equipo": "Ollas Revolvedoras",
+      "amount": 19960.83,
+      "order_id": 2
+    },
+    "CR-21": {
+      "categoria_equipo": "Ollas Revolvedoras",
+      "amount": 1100.0,
+      "order_id": 1
+    },
+    "CR-22": {
+      "categoria_equipo": "Ollas Revolvedoras",
+      "amount": 1401.8600000000001,
+      "order_id": 3
+    },
+    "CR-23": {
+      "categoria_equipo": "Ollas Revolvedoras",
+      "amount": 19063.3,
+      "order_id": 7
+    },
+    "CR-24": {
+      "categoria_equipo": "Ollas Revolvedoras",
+      "amount": 2699.99,
+      "order_id": 1
+    },
+    "CR-25": {
+      "categoria_equipo": "Ollas Revolvedoras",
+      "amount": 3800.0,
+      "order_id": 1
+    },
+    "CR-26": {
+      "categoria_equipo": "Ollas Revolvedoras",
+      "amount": 30731.31,
+      "order_id": 3
+    },
+    "CR-28": {
+      "categoria_equipo": "Ollas Revolvedoras",
+      "amount": 28121.33,
+      "order_id": 2
+    },
+    "CR-29": {
+      "categoria_equipo": "Ollas Revolvedoras",
+      "amount": 29235.33,
+      "order_id": 2
+    },
+    "CR-30": {
+      "categoria_equipo": "Ollas Revolvedoras",
+      "amount": 8432.65,
+      "order_id": 1
+    },
+    "FORD TRANSIT UT-01": {
+      "categoria_equipo": "Otros Equipos",
+      "amount": 5637.9,
+      "order_id": 1
+    },
+    "GENERADORA P#2": {
+      "categoria_equipo": "Generadores",
+      "amount": 16636.92,
+      "order_id": 2
+    },
+    "GENERADORA P#3": {
+      "categoria_equipo": "Generadores",
+      "amount": 8153.32,
+      "order_id": 1
+    },
+    "PICKUP L200  MANUAL 6 VEL ": {
+      "categoria_equipo": "Otros Equipos",
+      "amount": 2295.0,
+      "order_id": 1
+    },
+    "PIPA AGUA": {
+      "categoria_equipo": "Bombeo",
+      "amount": 33341.42,
+      "order_id": 6
+    },
+    "PIPA AGUA P03": {
+      "categoria_equipo": "Bombeo",
+      "amount": 6848.08,
+      "order_id": 2
+    },
+    "PIPA TC-01": {
+      "categoria_equipo": "Bombeo",
+      "amount": 4546.74,
+      "order_id": 4
+    },
+    "PLANTA 2": {
+      "categoria_equipo": "Plantas",
+      "amount": 68609.5,
+      "order_id": 11
+    },
+    "PLANTA 3 ": {
+      "categoria_equipo": "Plantas",
+      "amount": 45129.19,
+      "order_id": 2
+    },
+    "PLANTA 4": {
+      "categoria_equipo": "Plantas",
+      "amount": 1477.1,
+      "order_id": 4
+    },
+    "SAVEIRO CABINA SENCILLA": {
+      "categoria_equipo": "Vehículos",
+      "amount": 4814.81,
+      "order_id": 1
+    }
+  }
+}

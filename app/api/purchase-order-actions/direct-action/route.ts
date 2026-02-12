@@ -7,6 +7,7 @@ export async function GET(request: NextRequest) {
     const po = url.searchParams.get('po')
     const action = url.searchParams.get('action')
     const email = url.searchParams.get('email')
+    const quotation = url.searchParams.get('quotation')
 
     if (!po || !action || !email) {
       const fallback = new URL('/compras/accion-po', url.origin)
@@ -21,6 +22,7 @@ export async function GET(request: NextRequest) {
       p_po_id: po,
       p_action: action,
       p_recipient_email: email,
+      p_quotation_id: quotation || null,
     })
 
     if (error || !token) {

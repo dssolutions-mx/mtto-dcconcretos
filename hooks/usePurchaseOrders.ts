@@ -42,7 +42,7 @@ interface UsePurchaseOrdersReturn extends UsePurchaseOrdersState {
   
   // Workflow operations
   loadWorkflowStatus: (id: string) => Promise<void>
-  advanceWorkflow: (id: string, newStatus: string, notes?: string) => Promise<boolean>
+  advanceWorkflow: (id: string, newStatus: string, notes?: string, quotationId?: string) => Promise<boolean>
   
   // Validation
   validateQuotationRequirement: (poType: PurchaseOrderType, amount: number) => Promise<QuoteValidationResponse | null>
@@ -247,16 +247,19 @@ export function usePurchaseOrders(): UsePurchaseOrdersReturn {
   const advanceWorkflow = useCallback(async (
     id: string, 
     newStatus: string, 
-    notes?: string
+    notes?: string,
+    quotationId?: string
   ): Promise<boolean> => {
     setState(prev => ({ ...prev, isUpdating: true, error: null }))
 
     try {
+      const body: Record<string, unknown> = { new_status: newStatus, notes }
+      if (quotationId) body.quotation_id = quotationId
       const response = await apiCall<{ success: boolean, message: string }>(
         `/api/purchase-orders/advance-workflow/${id}`,
         {
           method: 'PUT',
-          body: JSON.stringify({ new_status: newStatus, notes })
+          body: JSON.stringify(body)
         }
       )
 
