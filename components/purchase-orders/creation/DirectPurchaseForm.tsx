@@ -1242,9 +1242,10 @@ export function DirectPurchaseForm({
                   {items.map((item) => {
                     const availability = item.availability
                     const hasPartId = !!item.part_id
+                    const isInventory = item.fulfill_from === 'inventory'
                     
                     return (
-                      <TableRow key={item.id}>
+                      <TableRow key={item.id} className={isInventory ? 'bg-green-50/70' : ''}>
                         <TableCell>
                           <Input
                             value={item.name}
@@ -1278,8 +1279,10 @@ export function DirectPurchaseForm({
                             step="0.01"
                             value={item.unit_price || ""}
                             onChange={(e) => updateItem(item.id, 'unit_price', e.target.value)}
-                            className="border-0 p-0 h-auto w-24"
+                            className={`border-0 p-0 h-auto w-24 ${isInventory ? 'bg-muted cursor-not-allowed' : ''}`}
                             placeholder="0.00"
+                            disabled={isInventory}
+                            title={isInventory ? 'No aplica: viene de inventario' : undefined}
                           />
                         </TableCell>
                         <TableCell>

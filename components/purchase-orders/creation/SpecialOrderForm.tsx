@@ -742,13 +742,12 @@ export function SpecialOrderForm({
     }
   }
 
-  // Calculate estimated delivery time
-  const estimatedDeliveryDays = items.length > 0 
-    ? Math.max(...items.map(item => item.lead_time_days || 15))
-    : 15
-
   // Purchase items (for prefill and quote) - items marked for purchase, not inventory
   const purchaseItems = items.filter(i => i.fulfill_from !== 'inventory')
+  // Estimated delivery - only from items to purchase (inventory items are already in stock)
+  const estimatedDeliveryDays = purchaseItems.length > 0 
+    ? Math.max(...purchaseItems.map(item => item.lead_time_days || 15))
+    : 15
   const prefillItems = purchaseItems.map(i => ({
     description: i.description,
     part_number: i.part_number,
@@ -979,8 +978,10 @@ export function SpecialOrderForm({
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {items.map((item) => (
-                    <TableRow key={item.id}>
+                  {items.map((item) => {
+                    const isInventory = item.fulfill_from === 'inventory'
+                    return (
+                    <TableRow key={item.id} className={isInventory ? 'bg-green-50/70' : ''}>
                       <TableCell>
                         <div className="space-y-1">
                           <Input
@@ -1022,12 +1023,14 @@ export function SpecialOrderForm({
                         <div className="relative">
                           <span className="absolute left-2 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">$</span>
                           <Input
-                            className="pl-6"
+                            className={`pl-6 ${isInventory ? 'bg-muted cursor-not-allowed' : ''}`}
                             type="number"
                             step="0.01"
                             min={0}
                             value={item.unit_price}
                             onChange={(e) => handleItemChange(item.id, 'unit_price', e.target.value)}
+                            disabled={isInventory}
+                            title={isInventory ? 'No aplica: viene de inventario' : undefined}
                           />
                         </div>
                       </TableCell>
@@ -1055,14 +1058,20 @@ export function SpecialOrderForm({
                       ) : null}
                       <TableCell>
                         <div className="flex items-center space-x-2">
-                          <Clock className="h-4 w-4 text-muted-foreground" />
-                          <Input
-                            type="number"
-                            min={1}
-                            value={item.lead_time_days || 15}
-                            onChange={(e) => handleItemChange(item.id, 'lead_time_days', Number(e.target.value))}
-                          />
-                          <span className="text-sm">d</span>
+                          {isInventory ? (
+                            <span className="text-sm text-muted-foreground">N/A</span>
+                          ) : (
+                            <>
+                              <Clock className="h-4 w-4 text-muted-foreground" />
+                              <Input
+                                type="number"
+                                min={1}
+                                value={item.lead_time_days || 15}
+                                onChange={(e) => handleItemChange(item.id, 'lead_time_days', Number(e.target.value))}
+                              />
+                              <span className="text-sm">d</span>
+                            </>
+                          )}
                         </div>
                       </TableCell>
                       <TableCell>
@@ -1077,7 +1086,7 @@ export function SpecialOrderForm({
                         </Button>
                       </TableCell>
                     </TableRow>
-                  ))}
+                  )})}
                 </TableBody>
               </Table>
             </div>
@@ -1095,7 +1104,9 @@ export function SpecialOrderForm({
                     </div>
                     <div className="flex justify-between">
                       <span>Tiempo Estimado de Entrega:</span>
-                      <span className="font-medium">{estimatedDeliveryDays} días</span>
+                      <span className="font-medium">
+                        {purchaseItems.length > 0 ? `${estimatedDeliveryDays} días` : 'N/A (todo inventario)'}
+                      </span>
                     </div>
                   </div>
                 </CardContent>
