@@ -57,6 +57,7 @@ interface OrderItem {
   is_special_order?: boolean
   part_id?: string  // Link to inventory catalog
   fulfill_from?: 'inventory' | 'purchase'  // Source selection per item
+  warehouse_id?: string  // Selected warehouse when fulfill_from=inventory
   availability?: {
     sufficient: boolean
     total_available: number
@@ -598,6 +599,12 @@ export function SpecialOrderForm({
     if (items.length > 0 && formData.total_amount === 0) {
       errors.push('El monto total debe ser mayor a cero')
     }
+
+    // Inventory items must have warehouse selected
+    const inventoryWithoutWarehouse = items.filter(i => i.fulfill_from === 'inventory' && !i.warehouse_id)
+    if (inventoryWithoutWarehouse.length > 0) {
+      errors.push(`Seleccione el almacén de origen para los items de inventario`)
+    }
     
     // If no items, ensure quotations have items
     if (items.length === 0 && quotations.length > 0) {
@@ -666,9 +673,11 @@ export function SpecialOrderForm({
         ...(formData.max_payment_date && { max_payment_date: formData.max_payment_date })
       }
 
-      // Include plant_id for standalone orders
+      // Include plant_id: from work order for WO-based, or selected for standalone
       if (selectedPlantId) {
         request.plant_id = selectedPlantId as string
+      } else if (workOrderId && workOrder && (workOrder.plant_id || workOrder.asset?.plant_id)) {
+        request.plant_id = workOrder.plant_id || workOrder.asset!.plant_id
       }
 
       const result = await createPurchaseOrder(request)
@@ -973,6 +982,9 @@ export function SpecialOrderForm({
                     {workOrderId ? (
                       <TableHead>Origen</TableHead>
                     ) : null}
+                    {workOrderId ? (
+                      <TableHead>Almacén</TableHead>
+                    ) : null}
                     <TableHead>Entrega</TableHead>
                     <TableHead className="w-[100px]">Acciones</TableHead>
                   </TableRow>
@@ -1044,7 +1056,21 @@ export function SpecialOrderForm({
                         <TableCell>
                           <Select
                             value={item.fulfill_from || 'purchase'}
-                            onValueChange={(value: 'inventory' | 'purchase') => handleItemChange(item.id, 'fulfill_from', value)}
+                            onValueChange={(value: 'inventory' | 'purchase') => {
+                              setItems(prev => prev.map(i => {
+                                if (i.id !== item.id) return i
+                                const updates: Partial<OrderItem> = { fulfill_from: value }
+                                if (value === 'purchase') {
+                                  updates.warehouse_id = undefined
+                                } else if (value === 'inventory' && i.availability?.available_by_warehouse?.length) {
+                                  const wh = i.availability.available_by_warehouse
+                                  const best = wh.filter(w => w.available_quantity >= (Number(i.quantity) || 0))
+                                    .sort((a, b) => b.available_quantity - a.available_quantity)[0]
+                                  updates.warehouse_id = best?.warehouse_id || wh[0].warehouse_id
+                                }
+                                return { ...i, ...updates }
+                              }))
+                            }}
                           >
                             <SelectTrigger className="w-[120px]">
                               <SelectValue />
@@ -1054,6 +1080,33 @@ export function SpecialOrderForm({
                               <SelectItem value="purchase">Compra</SelectItem>
                             </SelectContent>
                           </Select>
+                        </TableCell>
+                      ) : null}
+                      {workOrderId ? (
+                        <TableCell>
+                          {isInventory && item.availability?.available_by_warehouse?.length ? (
+                            <Select
+                              value={item.warehouse_id || ''}
+                              onValueChange={(v) => handleItemChange(item.id, 'warehouse_id', v)}
+                            >
+                              <SelectTrigger className="w-[160px]">
+                                <SelectValue placeholder="Seleccionar almacén" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {item.availability.available_by_warehouse.map((w) => (
+                                  <SelectItem key={w.warehouse_id} value={w.warehouse_id}>
+                                    {w.warehouse_name} ({w.available_quantity} disp.)
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          ) : isInventory && item.part_id ? (
+                            <span className="text-xs text-amber-600">
+                              {item.availability ? 'Sin stock' : 'Verificando...'}
+                            </span>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
                         </TableCell>
                       ) : null}
                       <TableCell>

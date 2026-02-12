@@ -54,6 +54,7 @@ interface PurchaseOrderItem {
   total_price: number
   supplier?: string
   fulfill_from?: 'inventory' | 'purchase'  // Source selection per item
+  warehouse_id?: string  // Selected warehouse when fulfill_from=inventory
   availability?: {
     sufficient: boolean
     total_available: number
@@ -607,6 +608,12 @@ export function DirectPurchaseForm({
     if (!validationResult?.requires_quote && items.length === 0) {
       errors.push('Debe agregar al menos un artículo')
     }
+
+    // Inventory items must have warehouse selected
+    const inventoryWithoutWarehouse = items.filter(i => i.fulfill_from === 'inventory' && !i.warehouse_id)
+    if (inventoryWithoutWarehouse.length > 0) {
+      errors.push(`Seleccione el almacén de origen para los items de inventario (${inventoryWithoutWarehouse.map(i => i.name || i.partNumber).join(', ')})`)
+    }
     
     // Quotation validation - Required if >= $5,000
     if (validationResult?.requires_quote && quotations.length === 0) {
@@ -655,10 +662,12 @@ export function DirectPurchaseForm({
         finalSupplier = 'Inventario Interno'
       }
       
-      // If quotations exist, use placeholder values (will be updated when quotation is selected)
+      // If quotations exist: supplier/total come from selected quotation.
+      // IMPORTANT: Always include inventory items so "Cumplir desde Inventario" works.
+      // Purchase items will come from the selected quotation.
       if (quotations.length > 0) {
         finalSupplier = "Por definir" // Will be set when quotation is selected
-        finalItems = [] // Will be populated from selected quotation
+        finalItems = items.filter(i => i.fulfill_from === 'inventory') // Keep inventory items for fulfill flow
       }
 
       // Total amount: when quotations exist use first quoted amount; when WO use purchase total (or full if all inventory)
@@ -678,8 +687,11 @@ export function DirectPurchaseForm({
         notes: formData.notes,
         purchase_date: formData.purchase_date,
         max_payment_date: formData.payment_method === PaymentMethod.TRANSFER ? formData.max_payment_date : undefined,
-        // Include plant_id for standalone orders
-        ...(selectedPlantId && { plant_id: selectedPlantId })
+        // Include plant_id: from work order for WO-based, or selected for standalone
+        ...(selectedPlantId && { plant_id: selectedPlantId }),
+        ...(workOrderId && workOrder && !selectedPlantId && (workOrder.plant_id || workOrder.asset?.plant_id) && {
+          plant_id: workOrder.plant_id || workOrder.asset!.plant_id
+        })
       }
 
       const result = await createPurchaseOrder(request)
@@ -1234,6 +1246,7 @@ export function DirectPurchaseForm({
                     <TableHead>Precio Unit.</TableHead>
                     <TableHead>Disponibilidad</TableHead>
                     <TableHead>Fuente</TableHead>
+                    <TableHead>Almacén</TableHead>
                     <TableHead>Total</TableHead>
                     <TableHead>Acciones</TableHead>
                   </TableRow>
@@ -1317,7 +1330,21 @@ export function DirectPurchaseForm({
                         <TableCell>
                           <Select
                             value={item.fulfill_from || 'purchase'}
-                            onValueChange={(value: 'inventory' | 'purchase') => updateItem(item.id, 'fulfill_from', value)}
+                            onValueChange={(value: 'inventory' | 'purchase') => {
+                            setItems(prev => prev.map(i => {
+                              if (i.id !== item.id) return i
+                              const updates: Partial<PurchaseOrderItem> = { fulfill_from: value }
+                              if (value === 'purchase') {
+                                updates.warehouse_id = undefined
+                              } else if (value === 'inventory' && i.availability?.available_by_warehouse?.length) {
+                                const wh = i.availability.available_by_warehouse
+                                const best = wh.filter(w => w.available_quantity >= (Number(i.quantity) || 0))
+                                  .sort((a, b) => b.available_quantity - a.available_quantity)[0]
+                                updates.warehouse_id = best?.warehouse_id || wh[0].warehouse_id
+                              }
+                              return { ...i, ...updates }
+                            }))
+                          }}
                           >
                             <SelectTrigger className="w-[140px]">
                               <SelectValue />
@@ -1341,6 +1368,31 @@ export function DirectPurchaseForm({
                             <p className="text-xs text-muted-foreground mt-1">
                               Disponible - sugerido
                             </p>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {isInventory && availability?.available_by_warehouse?.length ? (
+                            <Select
+                              value={item.warehouse_id || ''}
+                              onValueChange={(v) => updateItem(item.id, 'warehouse_id', v)}
+                            >
+                              <SelectTrigger className="w-[180px]">
+                                <SelectValue placeholder="Seleccionar almacén" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {availability.available_by_warehouse.map((w) => (
+                                  <SelectItem key={w.warehouse_id} value={w.warehouse_id}>
+                                    {w.warehouse_name} ({w.available_quantity} disp.)
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          ) : isInventory && hasPartId ? (
+                            <span className="text-xs text-amber-600">
+                              {availability ? 'Sin stock o no verificado' : 'Verificando...'}
+                            </span>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
                           )}
                         </TableCell>
                         <TableCell>

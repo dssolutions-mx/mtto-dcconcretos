@@ -312,11 +312,12 @@ export class InventoryFulfillmentService {
           const total_available = availability.reduce((sum, a) => sum + a.available_quantity, 0)
           
           results.push({
-            po_item_id: item.id || part_number || item.name,
+            po_item_id: item.id || part_number || item.name || item.description,
             part_id,
             part_number: part_number,
-            part_name: item.name,
+            part_name: item.name || item.description || '',
             required_quantity: item.quantity || 0,
+            preferred_warehouse_id: item.warehouse_id || undefined,
             availability: {
               part_id,
               part_number: part_number || '',

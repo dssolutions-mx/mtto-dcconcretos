@@ -36,6 +36,7 @@ interface POItemAvailability {
   part_number?: string
   part_name: string
   required_quantity: number
+  preferred_warehouse_id?: string
   availability: {
     part_id: string
     part_number: string
@@ -106,8 +107,11 @@ export function FulfillFromInventoryDialog({
         const initialFulfillments: FulfillmentItem[] = []
         result.items.forEach((item: POItemAvailability) => {
           if (item.availability.sufficient && item.availability.available_by_warehouse.length > 0) {
-            // Use warehouse with most stock
-            const bestWarehouse = item.availability.available_by_warehouse
+            // Use pre-selected warehouse from PO creation, or warehouse with most stock
+            const preferredWh = item.preferred_warehouse_id
+              ? item.availability.available_by_warehouse.find(w => w.warehouse_id === item.preferred_warehouse_id)
+              : null
+            const bestWarehouse = preferredWh || item.availability.available_by_warehouse
               .sort((a, b) => b.available_quantity - a.available_quantity)[0]
             
             initialFulfillments.push({
