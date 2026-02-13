@@ -1,0 +1,388 @@
+# DC CONCRETOS, S.A. DE C.V.
+
+**Código:** POL-OPE-002 | **Versión:** 1.0
+**Fecha de emisión:** Febrero 2026
+**Aprobado por:** Gerencia General
+
+---
+
+# POLÍTICA DE GESTIÓN DE INVENTARIO
+
+## OBJETO
+
+Establecer los lineamientos para el control, registro y administración del inventario de repuestos, refacciones y consumibles de DC Concretos, garantizando disponibilidad, trazabilidad, uso eficiente de recursos y prevención de pérdidas mediante un sistema de autorización basado en órdenes de compra aprobadas.
+
+---
+
+## 1. ALCANCE
+
+Esta política aplica a:
+
+- **Plantas y proyectos:** León, Tijuana, Silao, Bajío y demás unidades activas de DC Concretos
+- **Personal involucrado:** Gerencia General, Jefes de Unidad de Negocio, Jefes de Planta, Encargado de Almacén, Encargado de Mantenimiento, Operadores, Auxiliar de Compras y cualquier personal que requiera inventario
+- **Tipos de inventario:**
+  - Repuestos y refacciones
+  - Consumibles (aceites, filtros, lubricantes, etc.)
+  - Insumos de mantenimiento
+  - Materiales de operación
+
+---
+
+## 2. PRINCIPIOS RECTORES
+
+- **Control:** Todo movimiento de inventario requiere orden de compra aprobada
+- **Trazabilidad:** Cada artículo debe estar codificado y registrado en sistema
+- **Responsabilidad:** Almacén es el único autorizado para entregar inventario
+- **Transparencia:** Todo el inventario es propiedad de la empresa y debe estar documentado
+- **Disciplina:** No se permite ninguna excepción a las autorizaciones requeridas
+- **No reconocimiento:** Si se consume inventario sin orden de compra aprobada, la empresa NO reconoce ese movimiento y el Encargado de Almacén deberá cubrir el costo del inventario faltante
+
+---
+
+## 3. DISPOSICIONES GENERALES
+
+### 3.1 Estructura Organizacional
+
+#### Nuevos Roles Definidos:
+
+**ENCARGADO DE ALMACÉN (Obligatorio por planta)**
+- Responsable único de custodia física del inventario
+- Autorizado para entregar materiales únicamente con orden de compra aprobada
+- Responsable de conteos cíclicos y reporte de diferencias
+- **Responsable financiero de cualquier faltante por movimiento sin orden de compra**
+- Reporta a: Jefe de Unidad de Negocio
+
+#### Roles existentes con responsabilidades de inventario:
+
+- **Gerente General:** Autoriza compras >$5,000 MXN
+- **Jefe de Unidad de Negocio:** Autoriza compras $1,000-$5,000 MXN, supervisa almacén
+- **Jefe de Planta:** Solicita materiales mediante orden de compra
+- **Encargado de Mantenimiento:** Solicita materiales mediante orden de compra
+- **Auxiliar de Compras:** Procesa órdenes de compra y gestiona proveedores
+- **Operadores:** Reciben materiales autorizados
+
+#### Coordinación interdepartamental:
+
+- **Administración:** Control de presupuesto, autorización de fondos
+- **Mantenimiento:** Planeación de consumos y necesidades
+- **Producción:** Coordinación de materiales de operación
+
+---
+
+### 3.2 Plataforma Digital
+
+**Sistema oficial de registro:**
+https://dcmantenimiento.app/
+
+**Módulos obligatorios:**
+- Catálogo de partes
+- Almacenes por planta
+- Movimientos de inventario (entradas/salidas)
+- Órdenes de compra
+- Órdenes de trabajo
+- Reportes de inventario
+
+Toda transacción de inventario debe quedar registrada en la plataforma en tiempo real.
+
+---
+
+### 3.3 Política de Órdenes de Compra
+
+#### **REGLA FUNDAMENTAL:**
+**No se libera inventario sin orden de compra aprobada.**
+**No se liberan fondos sin orden de compra aprobada.**
+
+#### Proceso obligatorio:
+
+1. **CREACIÓN:** Solicitante crea orden de compra en plataforma especificando:
+   - Código de parte o descripción exacta
+   - Cantidad requerida
+   - **Justificación:**
+     - **Para consumo en equipos:** Debe venir respaldada por una **Orden de Trabajo** (mantenimiento preventivo, correctivo o incidente) que justifique la inversión
+     - **Para reabastecimiento de inventario:** Justificación clara (reposición de stock, previsión de consumo, etc.) **sin necesidad de orden de trabajo**
+   - Fecha requerida
+   - Centro de costo
+
+2. **AUTORIZACIÓN según monto:**
+
+| Monto | Autorizador | Tiempo máximo |
+|-------|-------------|---------------|
+| < $1,000 MXN | Automática | Inmediato |
+| $1,000 - $5,000 MXN | Jefe de Unidad de Negocio | 24 horas |
+| > $5,000 MXN | Gerencia General | 48 horas |
+
+3. **LIBERACIÓN:**
+   - Encargado de Almacén recibe notificación en sistema
+   - Verifica código de orden de compra aprobada
+   - **Verifica que tenga Orden de Trabajo asociada (si es para consumo en equipos)**
+   - Entrega material
+   - Registra salida en plataforma con firma digital del receptor
+
+4. **CIERRE:**
+   - Orden se cierra automáticamente al entregar material
+   - Sistema actualiza inventario en tiempo real
+   - Si hay Orden de Trabajo asociada, se vincula el consumo a la misma
+
+#### **EXCEPCIONES:**
+**No existen excepciones.** Emergencias requieren autorización verbal + orden de compra inmediata en plataforma.
+
+---
+
+### 3.4 Política de Administración de Almacén
+
+#### OBLIGATORIO:
+
+- **Código único:** Todo artículo debe tener código único registrado en catálogo
+- **Ubicación física:** Cada artículo debe tener ubicación definida en almacén
+- **Conteo cíclico:** Mínimo 20% del inventario revisado mensualmente
+- **Inventario físico:** Inventario completo al cierre de cada trimestre
+- **Documentación:** Toda entrada debe tener remisión o factura digital
+- **Fotografía:** Artículos de alto valor (>$2,000 MXN) deben tener fotografía en sistema
+
+#### Responsabilidades del Encargado de Almacén:
+
+✅ Recibir materiales únicamente con orden de compra y remisión
+✅ Verificar cantidad y calidad al recibir
+✅ Registrar entradas en sistema dentro de 2 horas de recepción
+✅ **Entregar materiales ÚNICAMENTE con orden de compra aprobada (con Orden de Trabajo si es para consumo)**
+✅ Mantener almacén ordenado, limpio y seguro
+✅ Reportar faltantes, sobrantes o daños inmediatamente
+✅ Ejecutar conteos cíclicos según programa
+✅ Rechazar entregas sin documentación adecuada
+
+#### Sanciones por incumplimiento:
+
+| Falta | Sanción |
+|-------|---------|
+| **Entrega sin orden de compra** | **100% del costo del material (la empresa NO reconoce el movimiento)** |
+| Entrega sin orden de compra (reincidencia) | 100% del costo + baja inmediata |
+| No registrar movimiento en <2 horas | Descuento 20% de bono mensual |
+| Faltante en inventario físico sin justificación | 100% del costo del faltante |
+| 2 faltantes en un trimestre | Baja inmediata |
+
+---
+
+### 3.5 Política de Inventario Obsoleto y Descontinuado
+
+#### Criterios de obsolescencia:
+
+- **Sin movimiento en 12 meses:** Revisar trimestral, marcar como "lento"
+- **Sin movimiento en 24 meses:** Clasificar como "obsoleto"
+- **Descontinuado por fabricante:** Marcar en sistema, evaluar sustituto
+- **Dañado o vencido:** Registrar como "baja" con evidencia fotográfica
+
+#### Proceso de baja:
+
+1. Encargado de Almacén identifica material obsoleto
+2. Genera reporte con fotografías y justificación
+3. Jefe de Unidad de Negocio evalúa opciones:
+   - Transferir a otra planta
+   - Vender como scrap
+   - Donar (con factura)
+   - Disposición final
+4. Gerencia General autoriza baja >$5,000 MXN
+5. Se registra baja en sistema con evidencia y autorización
+6. Se ajusta inventario físico y contable
+
+#### Responsabilidad financiera:
+
+- **Obsolescencia natural (>24 meses sin uso):** Sin responsabilidad
+- **Daño por mal almacenamiento:** Encargado de Almacén asume 50% del costo
+
+---
+
+### 3.6 Política de Inventario en Garantía
+
+#### Registro obligatorio:
+
+Todo material con garantía debe registrar:
+- Fecha de compra
+- Proveedor
+- Número de factura
+- Periodo de garantía (días)
+- Fecha de instalación (si aplica)
+- Equipo donde se instaló
+
+#### Proceso de garantía:
+
+1. **Falla detectada:** Operador o mecánico reporta en plataforma
+2. **Verificación:** Encargado de Mantenimiento valida si está en garantía
+3. **Remoción:** Se retira pieza fallada y se guarda con etiqueta
+4. **Reclamo:** Auxiliar de Compras gestiona con proveedor
+5. **Reemplazo:** Nueva pieza se entrega con orden de compra de garantía
+6. **Registro:** Sistema actualiza historial del equipo
+
+#### Sanciones:
+
+- **Pérdida de pieza en garantía:** Responsable paga 100% del costo
+- **No documentar instalación:** Pierde derecho a garantía, responsable paga reemplazo
+- **Instalación incorrecta que anula garantía:** Responsable paga 50% del costo
+
+---
+
+### 3.7 Política de Auditorías y Transparencia
+
+#### Auditorías programadas:
+
+- **Mensual:** Conteo cíclico 20% inventario (Encargado de Almacén + Jefe de Planta)
+- **Trimestral:** Inventario físico completo (equipo externo o de otra planta)
+- **Anual:** Auditoría externa completa por contador certificado
+
+#### Diferencias de inventario:
+
+| Variación | Acción |
+|-----------|--------|
+| ±2% del valor total | Tolerancia normal, registrar ajuste |
+| 2%-5% del valor total | Investigación interna, reporte a Gerencia |
+| >5% del valor total | Auditoría extraordinaria + medidas disciplinarias |
+
+#### Acceso al sistema:
+
+- **Consulta:** Todo el personal puede consultar disponibilidad
+- **Movimientos:** Solo Encargado de Almacén registra entradas/salidas
+- **Autorizaciones:** Según tabla de POL-OPE-002 sección 3.3
+- **Reportes:** Gerencia tiene acceso total en tiempo real
+
+---
+
+## 4. RESPONSABILIDADES DETALLADAS
+
+### ENCARGADO DE ALMACÉN
+
+**Responsabilidades principales:**
+1. Custodiar inventario físico de la planta
+2. **Verificar que toda entrega tenga orden de compra aprobada (y Orden de Trabajo si aplica)**
+3. Registrar movimientos en sistema <2 horas
+4. Ejecutar conteos cíclicos según programa
+5. Reportar diferencias, faltantes o daños inmediatamente
+6. Mantener almacén ordenado (5S)
+7. Rechazar entregas sin documentación
+8. Proponer mejoras de proceso
+9. **Asumir 100% del costo de cualquier entrega sin orden de compra**
+
+**Reporta a:** Jefe de Unidad de Negocio
+**Coordina con:** Auxiliar de Compras, Encargado de Mantenimiento, Jefes de Planta
+
+---
+
+### JEFE DE UNIDAD DE NEGOCIO
+
+**Responsabilidades:**
+1. Supervisar operación de almacén
+2. Autorizar órdenes de compra $1,000-$5,000 MXN
+3. Revisar reportes de inventario mensual
+4. Aprobar bajas de inventario <$5,000 MXN
+5. Investigar diferencias de inventario >2%
+6. Evaluar desempeño del Encargado de Almacén
+
+---
+
+### GERENCIA GENERAL
+
+**Responsabilidades:**
+1. Autorizar órdenes de compra >$5,000 MXN
+2. Aprobar bajas de inventario >$5,000 MXN
+3. Revisar auditorías trimestrales
+4. Aprobar cambios a la política
+5. Decidir sobre sanciones por faltantes graves
+
+---
+
+## 5. INDICADORES DE DESEMPEÑO (KPIs)
+
+### Indicadores obligatorios mensuales:
+
+| KPI | Fórmula | Meta |
+|-----|---------|------|
+| **Exactitud de inventario** | (Valor correcto / Valor en sistema) × 100 | ≥98% |
+| **Días de inventario** | (Inventario / Consumo mensual) × 30 | 30-60 días |
+| **Órdenes sin aprobar** | Salidas sin orden aprobada / Total salidas | 0% |
+
+---
+
+## 6. SANCIONES ECONÓMICAS CONSOLIDADAS
+
+### Tabla de responsabilidad financiera:
+
+| Infracción | Responsable | % del costo |
+|------------|-------------|-------------|
+| **Entrega sin orden de compra** | **Encargado de Almacén** | **100% (empresa NO reconoce movimiento)** |
+| Entrega sin orden de compra (reincidencia) | Encargado de Almacén | 100% + baja inmediata |
+| Uso sin autorización | Usuario que tomó material | 100% |
+| Faltante sin justificación | Encargado de Almacén | 100% |
+| Pérdida de material en garantía | Quien lo reportó instalado | 100% |
+| Daño por mal almacenamiento | Encargado de Almacén | 50% |
+
+**Nota:** Las sanciones son acumulativas. Dos infracciones del mismo tipo = baja inmediata.
+
+---
+
+## 7. IMPLEMENTACIÓN Y VIGENCIA
+
+### Fase de implementación:
+
+**Mes 1:**
+- Designar Encargados de Almacén por planta
+- Capacitación en sistema y política
+- Levantamiento de inventario físico inicial
+
+**Mes 2:**
+- Codificación completa de inventario
+- Inicio de conteos cíclicos
+- Vinculación de órdenes de compra con órdenes de trabajo
+
+**Mes 3:**
+- Auditoría de cumplimiento
+- Ajustes al proceso
+- Versión 1.1 si es necesario
+
+### Vigencia:
+
+Esta política entra en vigor **de forma inmediata** tras su publicación oficial y es de **cumplimiento obligatorio** para todas las áreas involucradas.
+
+### Revisión:
+
+- **Trimestral:** Revisión de indicadores
+- **Semestral:** Revisión de la política completa
+- **Anual:** Auditoría externa y actualización de versión
+
+---
+
+## 8. FIRMA DE COMPROMISO
+
+Declaro haber leído, comprendido y aceptado en su totalidad el contenido de la presente política. Me comprometo a cumplir con cada uno de los lineamientos establecidos y a asumir las consecuencias derivadas del incumplimiento, incluyendo las sanciones económicas y, en su caso, la aplicación de medidas disciplinarias conforme al Reglamento Interno de Trabajo.
+
+Entiendo que:
+- **Ningún inventario puede ser liberado sin orden de compra aprobada**
+- **Si el consumo es para equipos, debe existir una Orden de Trabajo asociada**
+- **Si entrego inventario sin orden de compra, la empresa NO reconoce ese movimiento y yo asumo el 100% del costo**
+
+---
+
+**Nombre:** _______________________________________________
+
+**Puesto:** _______________________________________________
+
+**Planta:** _______________________________________________
+
+**Fecha:** _______________________________________________
+
+**Firma:** _______________________________________________
+
+---
+
+## ANEXOS
+
+### ANEXO A: Formato de Orden de Compra
+### ANEXO B: Checklist de Recepción de Materiales
+### ANEXO C: Formato de Conteo Cíclico
+### ANEXO D: Formato de Baja de Inventario
+### ANEXO E: Códigos de Clasificación de Inventario
+
+---
+
+**DC Concretos, S.A. de C.V.**
+📧 rh@dcconcretos.com.mx
+🌐 www.dcconcretos.com.mx
+
+*"Ayudando a concretar ideas"*

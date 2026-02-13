@@ -26,6 +26,7 @@ import {
 } from "lucide-react"
 import { useAuthZustand } from "@/hooks/use-auth-zustand"
 import { useIsMobile } from "@/hooks/use-mobile"
+import { useSystemSettings } from "@/hooks/use-system-settings"
 import { RoleGuard, AdminOnlyGuard, AuthorizedOnlyGuard } from "@/components/auth/role-guard"
 import { useRouter, useSearchParams } from "next/navigation"
 import Link from "next/link"
@@ -48,6 +49,7 @@ function DashboardContent() {
     error,
     refreshProfile
   } = useAuthZustand()
+  const { isComplianceSystemEnabled } = useSystemSettings()
   
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -1077,8 +1079,8 @@ function DashboardContent() {
         </Alert>
       )}
 
-      {/* User Sanctions Widget - Show for all users */}
-      <UserSanctionsWidget maxItems={3} showOnlyActive={true} />
+      {/* User Sanctions Widget - Show when compliance system is enabled */}
+      {isComplianceSystemEnabled && <UserSanctionsWidget maxItems={3} showOnlyActive={true} />}
       </div>
     </PullToRefresh>
   )

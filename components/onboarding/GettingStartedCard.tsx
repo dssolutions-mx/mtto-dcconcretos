@@ -14,13 +14,18 @@ import {
   Users
 } from 'lucide-react'
 import Link from 'next/link'
+import { useSystemSettings } from '@/hooks/use-system-settings'
 
 interface GettingStartedCardProps {
   userRole?: string
   userName?: string
 }
 
+const COMPLIANCE_PATHS = ['/compliance', '/compliance/activos-olvidados', '/compliance/incidentes', '/compliance/configuracion']
+
 export function GettingStartedCard({ userRole, userName }: GettingStartedCardProps) {
+  const { isComplianceSystemEnabled } = useSystemSettings()
+
   const getRoleDisplayName = (role?: string) => {
     const roleNames: Record<string, string> = {
       'OPERADOR': 'Operador',
@@ -54,7 +59,11 @@ export function GettingStartedCard({ userRole, userName }: GettingStartedCardPro
       ]
     }
 
-    return guides[role as keyof typeof guides] || guides['OPERADOR']
+    const roleGuides = guides[role as keyof typeof guides] || guides['OPERADOR']
+    if (!isComplianceSystemEnabled) {
+      return roleGuides.filter((g) => !COMPLIANCE_PATHS.includes(g.href))
+    }
+    return roleGuides
   }
 
   const roleGuides = getRoleGuides(userRole)
@@ -131,12 +140,14 @@ export function GettingStartedCard({ userRole, userName }: GettingStartedCardPro
               <HelpCircle className="h-4 w-4 mr-2" />
               Iniciar Tour Interactivo
             </Button>
-            <Button variant="ghost" className="justify-start" asChild>
-              <Link href="/compliance">
-                <Shield className="h-4 w-4 mr-2" />
-                Ver Políticas
-              </Link>
-            </Button>
+            {isComplianceSystemEnabled && (
+              <Button variant="ghost" className="justify-start" asChild>
+                <Link href="/compliance">
+                  <Shield className="h-4 w-4 mr-2" />
+                  Ver Políticas
+                </Link>
+              </Button>
+            )}
           </div>
         </div>
 

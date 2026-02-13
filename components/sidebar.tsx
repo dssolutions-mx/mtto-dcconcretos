@@ -8,6 +8,7 @@ import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { useAuthZustand } from "@/hooks/use-auth-zustand"
+import { useSystemSettings } from "@/hooks/use-system-settings"
 import {
   BarChart3,
   Boxes,
@@ -104,6 +105,7 @@ function AppLogo({
 export function Sidebar({ className, onLinkClick }: SidebarProps) {
   const pathname = usePathname()
   const { profile, ui } = useAuthZustand()
+  const { isComplianceSystemEnabled } = useSystemSettings()
   const [equipmentOpen, setEquipmentOpen] = useState(false)
   const [operationsOpen, setOperationsOpen] = useState(false)
   const [procurementOpen, setProcurementOpen] = useState(profile?.role === 'AREA_ADMINISTRATIVA')
@@ -905,6 +907,19 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                     </Link>
                   </Button>
                 )}
+                {!isComplianceSystemEnabled && ['GERENCIA_GENERAL', 'AREA_ADMINISTRATIVA'].includes(profile?.role || '') && (
+                  <Button
+                    variant={isPathActive("/compliance/configuracion") ? "secondary" : "ghost"}
+                    className="w-full justify-start pl-8"
+                    asChild
+                    onClick={handleLinkClick}
+                  >
+                    <Link href="/compliance/configuracion">
+                      <Settings className="mr-2 h-4 w-4" />
+                      Configuración del Sistema
+                    </Link>
+                  </Button>
+                )}
               </CollapsibleContent>
             </Collapsible>
           </div>
@@ -957,7 +972,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
         </div>
 
         {/* Compliance Section */}
-        {['GERENCIA_GENERAL', 'JEFE_UNIDAD_NEGOCIO', 'JEFE_PLANTA', 'AREA_ADMINISTRATIVA', 'ENCARGADO_MANTENIMIENTO'].includes(profile?.role || '') && (
+        {isComplianceSystemEnabled && ['GERENCIA_GENERAL', 'JEFE_UNIDAD_NEGOCIO', 'JEFE_PLANTA', 'AREA_ADMINISTRATIVA', 'ENCARGADO_MANTENIMIENTO'].includes(profile?.role || '') && (
           <div className="px-4" data-tour="compliance-section" id="compliance-section">
             <Collapsible open={complianceOpen} onOpenChange={setComplianceOpen}>
               <CollapsibleTrigger asChild>
@@ -1037,6 +1052,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
 export function CollapsedSidebar({ className, onLinkClick }: SidebarProps) {
   const pathname = usePathname()
   const { profile } = useAuthZustand()
+  const { isComplianceSystemEnabled } = useSystemSettings()
   const [openTooltips, setOpenTooltips] = useState<Record<string, boolean>>({})
 
   const handleLinkClick = () => {
@@ -1176,6 +1192,7 @@ export function CollapsedSidebar({ className, onLinkClick }: SidebarProps) {
 
   // Filter and reorder sections based on user role
   let navigationSections = baseNavigationSections
+    .filter(section => isComplianceSystemEnabled || section.id !== 'compliance')
   
   // Check if user is an operator
   const isOperator = profile.role && ['OPERADOR', 'DOSIFICADOR'].includes(profile.role)
@@ -1194,7 +1211,7 @@ export function CollapsedSidebar({ className, onLinkClick }: SidebarProps) {
   } else if (profile.role === 'AREA_ADMINISTRATIVA') {
     // Remove operations section and reorder to prioritize procurement
     navigationSections = baseNavigationSections
-      .filter(section => section.id !== 'operations')
+      .filter(section => section.id !== 'operations' && (isComplianceSystemEnabled || section.id !== 'compliance'))
       .sort((a, b) => {
         // Dashboard always first
         if (a.id === 'dashboard') return -1
@@ -1208,6 +1225,24 @@ export function CollapsedSidebar({ className, onLinkClick }: SidebarProps) {
         // Everything else maintains order
         return 0
       })
+  }
+
+  // Add Configuración del Sistema to Organization when compliance is hidden (for admins)
+  const isAdmin = ['GERENCIA_GENERAL', 'AREA_ADMINISTRATIVA'].includes(profile?.role || '')
+  if (!isComplianceSystemEnabled && isAdmin) {
+    navigationSections = navigationSections.map((section) => {
+      if (section.id === 'organization' && section.items) {
+        return {
+          ...section,
+          active: section.active || isPathActive('/compliance/configuracion'),
+          items: [
+            ...section.items,
+            { href: '/compliance/configuracion', icon: Settings, label: 'Configuración del Sistema', active: isPathActive('/compliance/configuracion') }
+          ]
+        }
+      }
+      return section
+    })
   }
 
   return (
