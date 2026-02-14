@@ -284,23 +284,15 @@ Para efectos de esta política, se consideran **ACTIVOS** (diferente de inventar
 
 **Responsable:** Encargado de Mantenimiento (planta origen)
 
-**El sistema genera checklist digital que incluye:**
-- Código de activo
-- Planta origen y destino
-- Motivo del movimiento (necesidad operativa)
-- Duración estimada (temporal/permanente)
-- Estado general del equipo (Excelente/Bueno/Regular/Malo)
-- Odómetro/horómetro actual
-- Nivel de combustible
-- Condición de llantas/bandas
-- Fugas (hidráulicas, aceite, combustible)
-- Funcionamiento de sistemas (luces, frenos, controles)
-- Daños visibles existentes (con fotos)
-- Fecha/hora de generación
-- **Firma digital del Encargado de Mantenimiento**
-- **Notificación automática a Gerencia General** (solo informativa)
+**Actividad:**
+- Genera checklist de salida en plataforma dcmantenimiento.app
+- Registra estado del activo antes del movimiento
+- Incluye evidencia fotográfica
+- Firma digital en sistema
 
-**Sistema registra:** Movimiento iniciado, ubicación actualizada a "En tránsito"
+**Sistema registra:**
+- Movimiento iniciado, ubicación actualizada a "En tránsito"
+- **Notificación automática a Gerencia General** (solo en este momento)
 
 ---
 
@@ -322,19 +314,12 @@ Para efectos de esta política, se consideran **ACTIVOS** (diferente de inventar
 
 **Responsable:** Encargado de Mantenimiento (planta destino)
 
-**El sistema genera checklist digital de recepción que incluye:**
-- Verificación del checklist de salida (comparación)
-- Estado general al recibir
-- Odómetro/horómetro de llegada
-- Nivel de combustible
-- Condición de llantas/bandas
-- Fugas detectadas
-- Funcionamiento de sistemas
-- **Daños nuevos detectados durante traslado** (con fotos)
-- Observaciones adicionales
-- Fecha/hora de recepción
-- **Firma digital del Encargado de Mantenimiento que recibe**
-- **Firma digital del Encargado de Mantenimiento que entregó** (confirmación)
+**Actividad:**
+- Genera checklist de recepción en plataforma dcmantenimiento.app
+- Compara vs checklist de salida
+- Registra estado del activo al recibir
+- Incluye evidencia fotográfica
+- Firmas digitales de ambos Encargados de Mantenimiento
 
 **Sistema registra:** Movimiento completado, ubicación actualizada a planta destino
 
@@ -344,8 +329,7 @@ Para efectos de esta política, se consideran **ACTIVOS** (diferente de inventar
 
 El sistema compara checklist de salida vs checklist de recepción:
 - ✅ Si coinciden → Movimiento exitoso
-- ⚠️ Si hay daños nuevos → Alerta a ambos Encargados + Gerencia General
-- 🔴 Si discrepancia grave → Alerta prioritaria + solicitud de investigación
+- ⚠️ **Si NO coinciden → Se levanta incidencia en sistema para determinar qué sucedió (daño en origen, daño durante traslado, o error de registro)**
 
 ---
 
@@ -394,29 +378,22 @@ El sistema debe mantener **historial completo** de cada activo:
 
 **El sistema enviará notificación informativa (no requiere acción) cuando:**
 
-1. **Se genere checklist de salida** para movimiento de activo entre plantas
-2. **Se genere checklist de recepción** para movimiento completado
-3. **Se detecten daños nuevos** durante el traslado
-4. Activo de alto valor (>$100,000 MXN) cambie de operador
-5. Activo esté fuera de servicio >7 días
-6. Activo no tenga operador asignado >48 horas
-7. Activo tenga más de 3 cambios de operador en 1 mes (bandera roja)
+1. **Se genere checklist de salida** (inicio de movimiento de activo entre plantas)
+2. Activo de alto valor (>$100,000 MXN) cambie de operador
+3. Activo esté fuera de servicio >7 días
+4. Activo esté en estado "Inactividad" (sin operador asignado) >48 horas
+5. Activo tenga más de 3 cambios de operador en 1 mes (bandera roja)
 
-**Propósito:** Visibilidad total sin frenar operaciones
+**Propósito:** Visibilidad de inicio de movimientos sin frenar operaciones
 
 ---
 
-#### Movimientos temporales (préstamos entre plantas):
+#### Registro de movimientos:
 
-**Para préstamos temporales (<30 días):**
-- Encargado de Mantenimiento especifica duración en checklist de salida
-- **Obligatorio:** Fecha de retorno programada en sistema
-- Sistema enviará alertas 48 horas antes de vencimiento
-- Si no regresa en fecha: Alerta a Gerencia General
+**FUNDAMENTAL:** Todo movimiento de activo entre plantas debe registrarse en sistema, sea temporal o permanente.
 
-**Para préstamos >30 días:**
-- Se considera transferencia permanente
-- Requiere ajuste contable (Gerencia aprueba)
+- **Movimiento temporal:** Encargado de Mantenimiento especifica duración y fecha de retorno en checklist
+- **Movimiento permanente:** Se registra como transferencia definitiva, requiere ajuste contable (Gerencia aprueba >30 días)
 
 ---
 
@@ -442,14 +419,11 @@ El sistema debe mantener **historial completo** de cada activo:
 - Se registra en sistema como "baja definitiva"
 - Se documenta con factura de venta o acta de disposición
 
-**2. Activo sin operador (disponible):**
-- Puede estar máximo 48 horas sin asignación
+**2. Activo sin operador asignado:**
+- El activo se marca en sistema con estado **"Inactividad"**
+- Puede estar máximo 48 horas en este estado
 - Después de 48 horas: Jefe de Planta debe justificar o liberar para otra planta
 
-**3. Equipo rentado o en comodato:**
-- Se registra en sistema con bandera especial
-- Se vincula contrato de renta/comodato
-- Movimientos requieren autorización de proveedor (si aplica por contrato)
 
 ---
 
@@ -592,15 +566,11 @@ El sistema debe mantener **historial completo** de cada activo:
 
 **Mes 1:**
 - Designar Encargados de Almacén por planta
-- Capacitación en sistema y política
 - Levantamiento de inventario físico inicial
+- Capacitación en sistema y política (inventario y activos)
+- Vinculación de órdenes de compra con órdenes de trabajo (ya existe en sistema)
 
 **Mes 2:**
-- Codificación completa de inventario
-- Inicio de conteos cíclicos
-- Vinculación de órdenes de compra con órdenes de trabajo
-
-**Mes 3:**
 - Auditoría de cumplimiento
 - Ajustes al proceso
 - Versión 1.1 si es necesario
