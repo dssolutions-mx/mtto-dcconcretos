@@ -10,7 +10,7 @@
 
 ## OBJETO
 
-Establecer los lineamientos para el control, registro y administración del inventario de repuestos, refacciones y consumibles de DC Concretos, garantizando disponibilidad, trazabilidad, uso eficiente de recursos y prevención de pérdidas mediante un sistema de autorización basado en órdenes de compra aprobadas.
+Establecer los lineamientos para el control, registro y administración del inventario de repuestos, refacciones, consumibles y activos de DC Concretos, garantizando disponibilidad, trazabilidad, uso eficiente de recursos y prevención de pérdidas mediante un sistema de autorización basado en órdenes de compra aprobadas y movimientos de activos controlados.
 
 ---
 
@@ -25,6 +25,10 @@ Esta política aplica a:
   - Consumibles (aceites, filtros, lubricantes, etc.)
   - Insumos de mantenimiento
   - Materiales de operación
+- **Activos:**
+  - Equipos de producción, vehículos, maquinaria pesada
+  - Movimientos de activos entre plantas
+  - Asignación de personal a activos
 
 ---
 
@@ -54,10 +58,10 @@ Esta política aplica a:
 
 #### Roles existentes con responsabilidades de inventario:
 
-- **Gerente General:** Autoriza compras >$5,000 MXN
-- **Jefe de Unidad de Negocio:** Autoriza compras $1,000-$5,000 MXN, supervisa almacén
-- **Jefe de Planta:** Solicita materiales mediante orden de compra
-- **Encargado de Mantenimiento:** Solicita materiales mediante orden de compra
+- **Gerente General:** Autoriza compras >$5,000 MXN, **recibe notificación informativa de todos los movimientos de activos (checklists de salida y recepción)**
+- **Jefe de Unidad de Negocio:** Autoriza compras $1,000-$5,000 MXN, supervisa almacén, **responsable de registrar asignación de personal a activos**
+- **Jefe de Planta:** Solicita materiales mediante orden de compra, **responsable de registrar asignación de personal a activos**
+- **Encargado de Mantenimiento:** Solicita materiales mediante orden de compra, **ejecuta movimientos físicos de activos entre plantas**
 - **Auxiliar de Compras:** Procesa órdenes de compra y gestiona proveedores
 - **Operadores:** Reciben materiales autorizados
 
@@ -245,6 +249,210 @@ Todo material con garantía debe registrar:
 
 ---
 
+### 3.8 Política de Asignación y Movimientos de Activos
+
+#### Definición de Activos:
+
+Para efectos de esta política, se consideran **ACTIVOS** (diferente de inventario de consumibles):
+- Equipos de producción (plantas, mezcladoras, bombas)
+- Vehículos (camiones mezcladores, camionetas, utilitarios)
+- Maquinaria pesada
+- Herramienta mayor (>$10,000 MXN)
+- Cualquier bien registrado como activo fijo en contabilidad
+
+**NO incluye:** Repuestos, consumibles, refacciones o materiales de inventario (cubiertos en secciones anteriores).
+
+---
+
+#### **REGLA FUNDAMENTAL:**
+**El Encargado de Mantenimiento tiene control operativo de los movimientos de activos entre plantas según necesidades operativas. Gerencia General recibe notificación para visibilidad.**
+
+---
+
+#### Tipos de movimientos de activos:
+
+1. **Movimiento físico entre plantas:** Traslado de equipo de una planta a otra
+2. **Asignación de personal:** Operador asignado a un equipo específico
+3. **Reasignación de operador:** Cambio de operador responsable de un equipo
+4. **Transferencia temporal:** Préstamo de equipo entre plantas (con fecha de retorno)
+
+---
+
+#### Proceso obligatorio para movimiento físico de activos:
+
+**PASO 1: GENERACIÓN DE CHECKLIST DE SALIDA**
+
+**Responsable:** Encargado de Mantenimiento (planta origen)
+
+**El sistema genera checklist digital que incluye:**
+- Código de activo
+- Planta origen y destino
+- Motivo del movimiento (necesidad operativa)
+- Duración estimada (temporal/permanente)
+- Estado general del equipo (Excelente/Bueno/Regular/Malo)
+- Odómetro/horómetro actual
+- Nivel de combustible
+- Condición de llantas/bandas
+- Fugas (hidráulicas, aceite, combustible)
+- Funcionamiento de sistemas (luces, frenos, controles)
+- Daños visibles existentes (con fotos)
+- Fecha/hora de generación
+- **Firma digital del Encargado de Mantenimiento**
+- **Notificación automática a Gerencia General** (solo informativa)
+
+**Sistema registra:** Movimiento iniciado, ubicación actualizada a "En tránsito"
+
+---
+
+**PASO 2: EJECUCIÓN DEL TRASLADO**
+
+**Responsable:** Encargado de Mantenimiento (planta origen)
+
+**Actividades:**
+- Coordina logística del traslado
+- Asigna operador o transportista
+- Ejecuta el movimiento físico
+- Entrega equipo en planta destino
+
+**Sin necesidad de autorización previa - responde a necesidades operativas**
+
+---
+
+**PASO 3: GENERACIÓN DE CHECKLIST DE RECEPCIÓN**
+
+**Responsable:** Encargado de Mantenimiento (planta destino)
+
+**El sistema genera checklist digital de recepción que incluye:**
+- Verificación del checklist de salida (comparación)
+- Estado general al recibir
+- Odómetro/horómetro de llegada
+- Nivel de combustible
+- Condición de llantas/bandas
+- Fugas detectadas
+- Funcionamiento de sistemas
+- **Daños nuevos detectados durante traslado** (con fotos)
+- Observaciones adicionales
+- Fecha/hora de recepción
+- **Firma digital del Encargado de Mantenimiento que recibe**
+- **Firma digital del Encargado de Mantenimiento que entregó** (confirmación)
+
+**Sistema registra:** Movimiento completado, ubicación actualizada a planta destino
+
+---
+
+**CONTROL AUTOMÁTICO:**
+
+El sistema compara checklist de salida vs checklist de recepción:
+- ✅ Si coinciden → Movimiento exitoso
+- ⚠️ Si hay daños nuevos → Alerta a ambos Encargados + Gerencia General
+- 🔴 Si discrepancia grave → Alerta prioritaria + solicitud de investigación
+
+---
+
+#### Proceso obligatorio para asignación de personal a activos:
+
+**RESPONSABLE:** Jefe de Planta o Jefe de Unidad de Negocio
+
+**OBLIGATORIO registrar en sistema:**
+
+1. **Asignación inicial de operador:**
+   - Código de equipo
+   - Nombre completo del operador
+   - Número de empleado
+   - Fecha de asignación
+   - Turno asignado (si aplica)
+
+2. **Cambio de operador (reasignación):**
+   - Razón del cambio (rotación, baja, renuncia, cambio de turno, etc.)
+   - Fecha efectiva del cambio
+   - Operador saliente y entrante
+   - Evidencia de entrega-recepción del equipo
+
+3. **Baja de asignación:**
+   - Motivo (baja de empleado, equipo fuera de servicio, fin de proyecto, etc.)
+   - Fecha de baja
+   - Estado final del equipo
+
+---
+
+#### Trazabilidad de activos en sistema:
+
+El sistema debe mantener **historial completo** de cada activo:
+
+**Pestaña de activo debe mostrar:**
+- Ubicación actual (planta)
+- Operador actual asignado
+- Historial de movimientos entre plantas
+- Historial de operadores asignados
+- Historial de mantenimientos
+- Historial de consumos (órdenes de compra asociadas)
+- Documentación (facturas, pólizas, garantías)
+
+---
+
+#### Notificaciones automáticas a Gerencia General:
+
+**El sistema enviará notificación informativa (no requiere acción) cuando:**
+
+1. **Se genere checklist de salida** para movimiento de activo entre plantas
+2. **Se genere checklist de recepción** para movimiento completado
+3. **Se detecten daños nuevos** durante el traslado
+4. Activo de alto valor (>$100,000 MXN) cambie de operador
+5. Activo esté fuera de servicio >7 días
+6. Activo no tenga operador asignado >48 horas
+7. Activo tenga más de 3 cambios de operador en 1 mes (bandera roja)
+
+**Propósito:** Visibilidad total sin frenar operaciones
+
+---
+
+#### Movimientos temporales (préstamos entre plantas):
+
+**Para préstamos temporales (<30 días):**
+- Encargado de Mantenimiento especifica duración en checklist de salida
+- **Obligatorio:** Fecha de retorno programada en sistema
+- Sistema enviará alertas 48 horas antes de vencimiento
+- Si no regresa en fecha: Alerta a Gerencia General
+
+**Para préstamos >30 días:**
+- Se considera transferencia permanente
+- Requiere ajuste contable (Gerencia aprueba)
+
+---
+
+#### Sanciones por incumplimiento:
+
+| Infracción | Responsable | Sanción |
+|------------|-------------|---------|
+| **No generar checklist de salida antes de mover activo** | **Encargado de Mantenimiento origen** | **Descuento 30% bono mensual** |
+| **No generar checklist de recepción al recibir activo** | **Encargado de Mantenimiento destino** | **Descuento 30% bono mensual** |
+| **Daño en traslado documentado en checklist** | Encargado de Mantenimiento que trasladó | Hasta 30% del costo de reparación |
+| **Daño no documentado en checklist de salida que aparece en recepción** | Encargado de Mantenimiento origen | 50% del costo de reparación |
+| **Discrepancia entre checklists sin justificación** | Ambos Encargados de Mantenimiento | Investigación + hasta 20% bono |
+| No registrar asignación de operador en <24 horas | Jefe de Planta / Jefe UN | Descuento 10% bono mensual |
+| Operador no asignado operando equipo | Jefe de Planta | 50% del costo si hay incidente |
+| Préstamo temporal no devuelto a tiempo | Encargado de Mantenimiento destino | Alerta a Gerencia |
+
+---
+
+#### Casos especiales:
+
+**1. Venta o baja de activo:**
+- Requiere autorización de Gerencia General
+- Se registra en sistema como "baja definitiva"
+- Se documenta con factura de venta o acta de disposición
+
+**2. Activo sin operador (disponible):**
+- Puede estar máximo 48 horas sin asignación
+- Después de 48 horas: Jefe de Planta debe justificar o liberar para otra planta
+
+**3. Equipo rentado o en comodato:**
+- Se registra en sistema con bandera especial
+- Se vincula contrato de renta/comodato
+- Movimientos requieren autorización de proveedor (si aplica por contrato)
+
+---
+
 ## 4. RESPONSABILIDADES DETALLADAS
 
 ### ENCARGADO DE ALMACÉN
@@ -265,6 +473,44 @@ Todo material con garantía debe registrar:
 
 ---
 
+### ENCARGADO DE MANTENIMIENTO
+
+**Responsabilidades principales:**
+1. Solicitar materiales mediante órdenes de compra vinculadas a órdenes de trabajo
+2. **Tiene control operativo de movimientos de activos entre plantas según necesidades**
+3. **OBLIGATORIO: Generar checklist de salida en sistema antes de CADA movimiento**
+4. **OBLIGATORIO: Generar checklist de recepción en sistema al recibir CADA activo**
+5. **Coordinar logística de traslado de activos**
+6. **Tomar evidencia fotográfica obligatoria en ambos checklists**
+7. **Comparar estado de salida vs recepción y reportar discrepancias**
+8. **Documentar daños nuevos detectados durante traslado**
+9. Ejecutar mantenimientos preventivos y correctivos
+10. **Responder a necesidades operativas de manera ágil**
+
+**Reporta a:** Jefe de Unidad de Negocio
+**Coordina con:** Encargados de Mantenimiento de otras plantas, Jefes de Planta
+
+**Autoridad:** Puede mover activos sin autorización previa basado en criterio operativo
+
+---
+
+### JEFE DE PLANTA
+
+**Responsabilidades principales:**
+1. Supervisar operaciones de la planta
+2. Solicitar materiales mediante órdenes de compra
+3. **Coordinar con Encargado de Mantenimiento necesidades de activos**
+4. **OBLIGATORIO: Registrar asignación de personal a activos en sistema <24 horas**
+5. **OBLIGATORIO: Registrar cambios de operadores en sistema**
+6. **OBLIGATORIO: Registrar bajas de asignación de personal**
+7. **Justificar activos sin operador asignado >48 horas**
+8. Supervisar cumplimiento de checklists diarios
+
+**Reporta a:** Jefe de Unidad de Negocio
+**Coordina con:** Encargado de Mantenimiento, Operadores, RH
+
+---
+
 ### JEFE DE UNIDAD DE NEGOCIO
 
 **Responsabilidades:**
@@ -274,6 +520,10 @@ Todo material con garantía debe registrar:
 4. Aprobar bajas de inventario <$5,000 MXN
 5. Investigar diferencias de inventario >2%
 6. Evaluar desempeño del Encargado de Almacén
+7. **OBLIGATORIO: Registrar asignación de personal a activos (responsabilidad compartida con Jefe de Planta)**
+8. **Supervisar que todos los activos tengan operador asignado**
+9. **Revisar historial de movimientos de activos mensualmente**
+10. **Supervisar que Encargado de Mantenimiento genere checklists en todos los movimientos**
 
 ---
 
@@ -285,6 +535,13 @@ Todo material con garantía debe registrar:
 3. Revisar auditorías trimestrales
 4. Aprobar cambios a la política
 5. Decidir sobre sanciones por faltantes graves
+6. **Recibir notificación informativa de TODOS los movimientos de activos (checklists generados)**
+7. **Recibir alertas de daños detectados durante traslados**
+8. **Autorizar venta o baja definitiva de activos**
+9. **Autorizar transferencias permanentes (>30 días)**
+10. **Revisar dashboard de utilización de activos mensualmente**
+
+**Nota:** No autoriza movimientos operativos, solo recibe visibilidad total
 
 ---
 
@@ -292,11 +549,23 @@ Todo material con garantía debe registrar:
 
 ### Indicadores obligatorios mensuales:
 
+**Inventario:**
+
 | KPI | Fórmula | Meta |
 |-----|---------|------|
 | **Exactitud de inventario** | (Valor correcto / Valor en sistema) × 100 | ≥98% |
 | **Días de inventario** | (Inventario / Consumo mensual) × 30 | 30-60 días |
 | **Órdenes sin aprobar** | Salidas sin orden aprobada / Total salidas | 0% |
+
+**Activos:**
+
+| KPI | Fórmula | Meta |
+|-----|---------|------|
+| **Activos con operador asignado** | (Activos con operador / Total activos activos) × 100 | 100% |
+| **Tiempo de registro de asignación** | Horas promedio entre asignación real y registro en sistema | <24 horas |
+| **Movimientos con checklists completos** | Movimientos con checklist salida Y recepción / Total movimientos | 100% |
+| **Tasa de utilización de activos** | Días con operación / Total días del mes | ≥85% |
+| **Cumplimiento de devolución** | Préstamos devueltos a tiempo / Total préstamos | 100% |
 
 ---
 

@@ -98,7 +98,7 @@ async function calculateDieselCostsFIFO_IngresosGastos(
     console.error('[FIFO] Error fetching entries:', entriesError)
   }
 
-  const entriesWithPrice = (allEntries || []).filter(tx => tx.unit_cost && Number(tx.unit_cost) > 0)
+  let entriesWithPrice = (allEntries || []).filter(tx => tx.unit_cost && Number(tx.unit_cost) > 0)
   
   // Debug: Log entries by plant
   const entriesByPlant = new Map<string, { count: number, liters: number, hasPrice: number }>()
@@ -297,6 +297,42 @@ async function calculateDieselCostsFIFO_IngresosGastos(
   })
   console.log('[FIFO] Consumptions by plant (in period - filtered):', Object.fromEntries(consumptionsInPeriodByPlant))
 
+  // CONDITIONAL 90-DAY EXTENSION: If a warehouse has consumptions but no entries in the 45-day
+  // window (e.g. Plant 5 with a single older entry), extend the entries window to 90 days for
+  // that warehouse only. Avoids always fetching 90 days for every plant.
+  const warehousesWithEntries = new Set(entriesWithPrice.map((e) => e.warehouse_id))
+  const warehousesWithConsumptions = new Set(
+    allConsumptionsFetched.map((c) => c.warehouse_id).filter((id) => targetWarehouseIds.includes(id))
+  )
+  const orphanWarehouseIds = targetWarehouseIds.filter(
+    (whId) => warehousesWithConsumptions.has(whId) && !warehousesWithEntries.has(whId)
+  )
+  if (orphanWarehouseIds.length > 0) {
+    const entriesStartDate90 = new Date(dateFromStr)
+    entriesStartDate90.setDate(entriesStartDate90.getDate() - 90)
+    entriesStartDate90.setHours(0, 0, 0, 0)
+    const { data: extendedEntries, error: extendedErr } = await supabase
+      .from('diesel_transactions')
+      .select('id, warehouse_id, product_id, quantity_liters, unit_cost, transaction_date, is_transfer')
+      .eq('transaction_type', 'entry')
+      .gte('transaction_date', entriesStartDate90.toISOString())
+      .lte('transaction_date', dateToEndISO)
+      .in('warehouse_id', orphanWarehouseIds)
+      .not('unit_cost', 'is', null)
+      .gt('unit_cost', 0)
+      .order('transaction_date', { ascending: true })
+    if (extendedErr) {
+      console.error('[FIFO] Error fetching extended entries for orphan warehouses:', extendedErr)
+    } else if (extendedEntries?.length) {
+      const extendedWithPrice = extendedEntries.filter((tx) => tx.unit_cost && Number(tx.unit_cost) > 0)
+      entriesWithPrice = [...entriesWithPrice, ...extendedWithPrice]
+      console.log(
+        '[FIFO] Extended to 90-day window for orphan warehouses:',
+        orphanWarehouseIds.map((id) => warehouseToPlantCode.get(id) || id),
+        `(+${extendedWithPrice.length} entries)`
+      )
+    }
+  }
 
   // STEP 3: Process entries and consumptions chronologically together for proper FIFO
   // This ensures entries during the period add to inventory, and consumptions use oldest inventory first

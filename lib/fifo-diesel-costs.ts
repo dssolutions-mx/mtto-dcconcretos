@@ -72,7 +72,7 @@ export async function calculateDieselCostsFIFO(
 
   // Include both regular entries (is_transfer = false/null) and transfer-in entries (is_transfer = true)
   // Both types add to FIFO inventory lots with their unit_cost
-  const entriesWithPrice = (allEntries || []).filter(tx => 
+  let entriesWithPrice = (allEntries || []).filter(tx =>
     tx.unit_cost && Number(tx.unit_cost) > 0
   )
 
@@ -95,7 +95,39 @@ export async function calculateDieselCostsFIFO(
     .order('transaction_date', { ascending: true })
 
   const allConsumptionsFetched = allConsumptions || []
-  
+
+  // CONDITIONAL 90-DAY EXTENSION: If a warehouse has consumptions but no entries in the 45-day
+  // window (e.g. Plant 5 with a single older entry), extend the entries window to 90 days for
+  // that warehouse only. Avoids always fetching 90 days for every plant.
+  const warehousesWithEntries = new Set(entriesWithPrice.map((e) => e.warehouse_id))
+  const warehousesWithConsumptions = new Set(
+    allConsumptionsFetched.map((c) => c.warehouse_id).filter((id) => targetWarehouseIds.includes(id))
+  )
+  const orphanWarehouseIds = targetWarehouseIds.filter(
+    (whId) => warehousesWithConsumptions.has(whId) && !warehousesWithEntries.has(whId)
+  )
+  if (orphanWarehouseIds.length > 0) {
+    const entriesStartDate90 = new Date(dateFromStr)
+    entriesStartDate90.setDate(entriesStartDate90.getDate() - 90)
+    entriesStartDate90.setHours(0, 0, 0, 0)
+    const { data: extendedEntries } = await supabase
+      .from('diesel_transactions')
+      .select('id, warehouse_id, product_id, quantity_liters, unit_cost, transaction_date, is_transfer')
+      .eq('transaction_type', 'entry')
+      .gte('transaction_date', entriesStartDate90.toISOString())
+      .lte('transaction_date', dateToEndISO)
+      .in('warehouse_id', orphanWarehouseIds)
+      .not('unit_cost', 'is', null)
+      .gt('unit_cost', 0)
+      .order('transaction_date', { ascending: true })
+    const extendedWithPrice = (extendedEntries || []).filter(
+      (tx) => tx.unit_cost && Number(tx.unit_cost) > 0
+    )
+    if (extendedWithPrice.length > 0) {
+      entriesWithPrice = [...entriesWithPrice, ...extendedWithPrice]
+    }
+  }
+
   // Helper function to convert UTC timestamp to GMT-6
   const getLocalDateStr = (utcTimestamp: string): string => {
     const utcDate = new Date(utcTimestamp)
