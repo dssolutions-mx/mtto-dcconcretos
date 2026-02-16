@@ -1393,18 +1393,39 @@ export default function IngresosGastosPage() {
                   </tr>
                   <tr className="border-b hover:bg-muted/30">
                     <td className="sticky left-0 z-10 bg-background p-3 border-r-2">f'c Ponderada (kg/cm²)</td>
-                    {renderPlantColumns(p => p.fc_ponderada, (val) => formatNumber(val, 2), 'fc_ponderada')}
-                    {renderGrandTotalCell(calculateGrandTotal(p => p.fc_ponderada, 'fc_ponderada'), (val) => formatNumber(val, 2))}
+                    {renderPlantColumns(p => p.fc_ponderada, (val) => formatNumber(val, 2), 'fc_ponderada', false, true)}
+                    {renderGrandTotalCell(
+                      calculateGrandTotal(p => p.fc_ponderada, 'fc_ponderada'),
+                      (val) => formatNumber(val, 2),
+                      false,
+                      true,
+                      calculateGrandTotal(p => p.fc_ponderada, 'fc_ponderada', previousPlants),
+                      'fc_ponderada'
+                    )}
                   </tr>
                   <tr className="border-b hover:bg-muted/30">
                     <td className="sticky left-0 z-10 bg-background p-3 border-r-2">Edad Ponderada (días)</td>
-                    {renderPlantColumns(p => p.edad_ponderada, (val) => formatNumber(val, 2), 'edad_ponderada')}
-                    {renderGrandTotalCell(calculateGrandTotal(p => p.edad_ponderada, 'edad_ponderada'), (val) => formatNumber(val, 2))}
+                    {renderPlantColumns(p => p.edad_ponderada, (val) => formatNumber(val, 2), 'edad_ponderada', false, true)}
+                    {renderGrandTotalCell(
+                      calculateGrandTotal(p => p.edad_ponderada, 'edad_ponderada'),
+                      (val) => formatNumber(val, 2),
+                      false,
+                      true,
+                      calculateGrandTotal(p => p.edad_ponderada, 'edad_ponderada', previousPlants),
+                      'edad_ponderada'
+                    )}
                   </tr>
                   <tr className="border-b hover:bg-muted/30">
                     <td className="sticky left-0 z-10 bg-background p-3 border-r-2">PV Unitario</td>
-                    {renderPlantColumns(p => p.pv_unitario, formatCurrency, 'pv_unitario')}
-                    {renderGrandTotalCell(calculateGrandTotal(p => p.pv_unitario, 'pv_unitario'), formatCurrency)}
+                    {renderPlantColumns(p => p.pv_unitario, formatCurrency, 'pv_unitario', false, true)}
+                    {renderGrandTotalCell(
+                      calculateGrandTotal(p => p.pv_unitario, 'pv_unitario'),
+                      formatCurrency,
+                      false,
+                      true,
+                      calculateGrandTotal(p => p.pv_unitario, 'pv_unitario', previousPlants),
+                      'pv_unitario'
+                    )}
                   </tr>
                   <tr className="border-b hover:bg-muted/30 bg-blue-100/50 dark:bg-blue-900/20">
                     <td className="sticky left-0 z-10 bg-blue-100 dark:bg-blue-900/30 p-3 border-r-2 font-bold">Ventas Total Concreto</td>
@@ -1427,23 +1448,51 @@ export default function IngresosGastosPage() {
                   </tr>
                   <tr className="border-b hover:bg-muted/30">
                     <td className="sticky left-0 z-10 bg-background p-3 border-r-2">Costo MP Unitario</td>
-                    {renderPlantColumns(p => p.costo_mp_unitario, formatCurrency, 'costo_mp_unitario')}
-                    {renderGrandTotalCell(calculateGrandTotal(p => p.costo_mp_unitario, 'costo_mp_unitario'), formatCurrency)}
+                    {renderPlantColumns(p => p.costo_mp_unitario, formatCurrency, 'costo_mp_unitario', false, true)}
+                    {renderGrandTotalCell(
+                      calculateGrandTotal(p => p.costo_mp_unitario, 'costo_mp_unitario'),
+                      formatCurrency,
+                      false,
+                      true,
+                      calculateGrandTotal(p => p.costo_mp_unitario, 'costo_mp_unitario', previousPlants),
+                      'costo_mp_unitario'
+                    )}
                   </tr>
                   <tr className="border-b hover:bg-muted/30">
                     <td className="sticky left-0 z-10 bg-background p-3 border-r-2">Consumo Cem / m3 (kg)</td>
-                    {renderPlantColumns(p => p.consumo_cem_m3, (val) => formatNumber(val, 2), 'consumo_cem_m3')}
-                    {renderGrandTotalCell(calculateGrandTotal(p => p.consumo_cem_m3, 'consumo_cem_m3'), (val) => formatNumber(val, 2))}
+                    {renderPlantColumns(p => p.consumo_cem_m3, (val) => formatNumber(val, 2), 'consumo_cem_m3', false, true)}
+                    {renderGrandTotalCell(
+                      calculateGrandTotal(p => p.consumo_cem_m3, 'consumo_cem_m3'),
+                      (val) => formatNumber(val, 2),
+                      false,
+                      true,
+                      calculateGrandTotal(p => p.consumo_cem_m3, 'consumo_cem_m3', previousPlants),
+                      'consumo_cem_m3'
+                    )}
                   </tr>
                   <tr className="border-b hover:bg-muted/30">
                     <td className="sticky left-0 z-10 bg-background p-3 border-r-2">Costo Cem / m3 ($ Unitario)</td>
-                    {renderPlantColumns(p => p.costo_cem_m3, formatCurrency, 'costo_cem_m3')}
-                    {renderGrandTotalCell(calculateGrandTotal(p => p.costo_cem_m3, 'costo_cem_m3'), formatCurrency)}
+                    {renderPlantColumns(p => p.costo_cem_m3, formatCurrency, 'costo_cem_m3', false, true)}
+                    {renderGrandTotalCell(
+                      calculateGrandTotal(p => p.costo_cem_m3, 'costo_cem_m3'),
+                      formatCurrency,
+                      false,
+                      true,
+                      calculateGrandTotal(p => p.costo_cem_m3, 'costo_cem_m3', previousPlants),
+                      'costo_cem_m3'
+                    )}
                   </tr>
                   <tr className="border-b hover:bg-muted/30">
                     <td className="sticky left-0 z-10 bg-background p-3 border-r-2">Costo Cem %</td>
-                    {renderPlantColumns(p => p.costo_cem_pct, formatPercent, 'costo_cem_pct')}
-                    {renderGrandTotalCell(calculateGrandTotal(p => p.costo_cem_pct, 'costo_cem_pct'), formatPercent)}
+                    {renderPlantColumns(p => p.costo_cem_pct, formatPercent, 'costo_cem_pct', false, true)}
+                    {renderGrandTotalCell(
+                      calculateGrandTotal(p => p.costo_cem_pct, 'costo_cem_pct'),
+                      formatPercent,
+                      false,
+                      true,
+                      calculateGrandTotal(p => p.costo_cem_pct, 'costo_cem_pct', previousPlants),
+                      'costo_cem_pct'
+                    )}
                   </tr>
                   <tr className="border-b hover:bg-muted/30 bg-orange-100/50 dark:bg-orange-900/20">
                     <td className="sticky left-0 z-10 bg-orange-100 dark:bg-orange-900/30 p-3 border-r-2 font-bold">Costo MP Total Concreto</td>
@@ -1459,8 +1508,15 @@ export default function IngresosGastosPage() {
                   </tr>
                   <tr className="border-b hover:bg-muted/30">
                     <td className="sticky left-0 z-10 bg-background p-3 border-r-2">Costo MP %</td>
-                    {renderPlantColumns(p => p.costo_mp_pct, formatPercent, 'costo_mp_pct')}
-                    {renderGrandTotalCell(calculateGrandTotal(p => p.costo_mp_pct, 'costo_mp_pct'), formatPercent)}
+                    {renderPlantColumns(p => p.costo_mp_pct, formatPercent, 'costo_mp_pct', false, true)}
+                    {renderGrandTotalCell(
+                      calculateGrandTotal(p => p.costo_mp_pct, 'costo_mp_pct'),
+                      formatPercent,
+                      false,
+                      true,
+                      calculateGrandTotal(p => p.costo_mp_pct, 'costo_mp_pct', previousPlants),
+                      'costo_mp_pct'
+                    )}
                   </tr>
 
                   {/* SPREAD SECTION */}
@@ -1550,13 +1606,27 @@ export default function IngresosGastosPage() {
                   </tr>
                   <tr className="border-b hover:bg-muted/30">
                     <td className="sticky left-0 z-10 bg-background p-3 border-r-2">Mantto. Unitario (m3)</td>
-                    {renderPlantColumns(p => p.mantto_unitario, formatCurrency, 'mantto_unitario')}
-                    {renderGrandTotalCell(calculateGrandTotal(p => p.mantto_unitario, 'mantto_unitario'), formatCurrency)}
+                    {renderPlantColumns(p => p.mantto_unitario, formatCurrency, 'mantto_unitario', false, true)}
+                    {renderGrandTotalCell(
+                      calculateGrandTotal(p => p.mantto_unitario, 'mantto_unitario'),
+                      formatCurrency,
+                      false,
+                      true,
+                      calculateGrandTotal(p => p.mantto_unitario, 'mantto_unitario', previousPlants),
+                      'mantto_unitario'
+                    )}
                   </tr>
                   <tr className="border-b hover:bg-muted/30">
                     <td className="sticky left-0 z-10 bg-background p-3 border-r-2">Mantenimiento %</td>
-                    {renderPlantColumns(p => p.mantto_pct, formatPercent, 'mantto_pct')}
-                    {renderGrandTotalCell(calculateGrandTotal(p => p.mantto_pct, 'mantto_pct'), formatPercent)}
+                    {renderPlantColumns(p => p.mantto_pct, formatPercent, 'mantto_pct', false, true)}
+                    {renderGrandTotalCell(
+                      calculateGrandTotal(p => p.mantto_pct, 'mantto_pct'),
+                      formatPercent,
+                      false,
+                      true,
+                      calculateGrandTotal(p => p.mantto_pct, 'mantto_pct', previousPlants),
+                      'mantto_pct'
+                    )}
                   </tr>
                   {/* Nómina Totales - Expandable */}
                   <tr className="border-b hover:bg-muted/30 bg-amber-50/50 dark:bg-amber-900/10">
@@ -1910,8 +1980,15 @@ export default function IngresosGastosPage() {
                   </tr>
                   <tr className="border-b-2 hover:bg-muted/30">
                     <td className="sticky left-0 z-10 bg-background p-3 border-r-2 font-bold">TOTAL COSTO OP %</td>
-                    {renderPlantColumns(p => p.total_costo_op_pct, formatPercent, 'total_costo_op_pct')}
-                    {renderGrandTotalCell(calculateGrandTotal(p => p.total_costo_op_pct, 'total_costo_op_pct'), formatPercent)}
+                    {renderPlantColumns(p => p.total_costo_op_pct, formatPercent, 'total_costo_op_pct', false, true)}
+                    {renderGrandTotalCell(
+                      calculateGrandTotal(p => p.total_costo_op_pct, 'total_costo_op_pct'),
+                      formatPercent,
+                      false,
+                      true,
+                      calculateGrandTotal(p => p.total_costo_op_pct, 'total_costo_op_pct', previousPlants),
+                      'total_costo_op_pct'
+                    )}
                   </tr>
 
                   {/* EBITDA SECTION */}
@@ -1934,8 +2011,15 @@ export default function IngresosGastosPage() {
                   </tr>
                   <tr className="border-b-2 hover:bg-muted/30">
                     <td className="sticky left-0 z-10 bg-background p-3 border-r-2 font-bold">EBITDA %</td>
-                    {renderPlantColumns(p => p.ebitda_pct, formatPercent, 'ebitda_pct')}
-                    {renderGrandTotalCell(calculateGrandTotal(p => p.ebitda_pct, 'ebitda_pct'), formatPercent)}
+                    {renderPlantColumns(p => p.ebitda_pct, formatPercent, 'ebitda_pct', false, true)}
+                    {renderGrandTotalCell(
+                      calculateGrandTotal(p => p.ebitda_pct, 'ebitda_pct'),
+                      formatPercent,
+                      false,
+                      true,
+                      calculateGrandTotal(p => p.ebitda_pct, 'ebitda_pct', previousPlants),
+                      'ebitda_pct'
+                    )}
                   </tr>
 
                 </tbody>
@@ -2002,7 +2086,7 @@ export default function IngresosGastosPage() {
                         <td className="sticky left-0 z-10 bg-background p-3 border-r-2">Ingresos Bombeo $ Unit</td>
                         {renderPlantColumns(p => p.ingresos_bombeo_unit || 0, formatCurrency, 'ingresos_bombeo_unit', false, true)}
                         {renderGrandTotalCell(
-                          calculateGrandTotal(p => p.ingresos_bombeo_unit || 0),
+                          calculateGrandTotal(p => p.ingresos_bombeo_unit || 0, 'ingresos_bombeo_unit'),
                           formatCurrency,
                           false,
                           true,
