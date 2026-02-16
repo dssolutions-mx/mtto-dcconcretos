@@ -32,9 +32,11 @@ serve(async (req) => {
       ? `${(userRes.data as any).nombre || ''} ${(userRes.data as any).apellido || ''}`.trim() || 'Usuario'
       : 'Usuario'
 
+    // Use profiles.email directly — auth.admin.listUsers() is paginated (50/users) and with 100+ users
+    // our GMs may not be in the first page, causing gmEmails to be empty and no email sent
     const { data: gms } = await supabase
       .from('profiles')
-      .select('id')
+      .select('id, email')
       .eq('role', 'GERENCIA_GENERAL')
       .eq('status', 'active')
 
@@ -44,11 +46,18 @@ serve(async (req) => {
       })
     }
 
-    const { data: users } = await supabase.auth.admin.listUsers()
-    const usersById = new Map((users?.users || []).map((u: any) => [u.id, u]))
-    const gmEmails = gms
-      .map((p: any) => usersById.get(p.id)?.email)
+    let gmEmails = (gms as { id: string; email: string | null }[])
+      .map((p) => (p.email && p.email.trim() ? p.email.trim() : null))
       .filter(Boolean) as string[]
+
+    // Fallback: if no emails from profiles, try auth (for older setups)
+    if (gmEmails.length === 0) {
+      const { data: usersData } = await supabase.auth.admin.listUsers({ perPage: 500 })
+      const usersById = new Map((usersData?.users || []).map((u: any) => [u.id, u]))
+      gmEmails = gms
+        .map((p: any) => usersById.get(p.id)?.email)
+        .filter(Boolean) as string[]
+    }
 
     const recipientEmails = test_recipient ? [test_recipient] : gmEmails
     if (recipientEmails.length === 0) {

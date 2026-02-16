@@ -11,7 +11,8 @@ export async function GET(req: NextRequest) {
   const sendBoth = searchParams.get('send_both') === 'true' || searchParams.get('send_both') === '1'
   const poIdParam = searchParams.get('po_id') // Optional: force a specific PO for testing (e.g. one with 2 quotations)
   const recipientParam = searchParams.get('recipient') || searchParams.get('to') // Optional: override test recipient
-  const testRecipient = recipientParam || TEST_EMAIL
+  const realSend = searchParams.get('real') === 'true' || searchParams.get('real') === '1' // Send to actual GMs, no test recipient
+  const testRecipient = realSend ? undefined : (recipientParam || TEST_EMAIL)
 
   if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
     return NextResponse.json(
@@ -74,7 +75,7 @@ export async function GET(req: NextRequest) {
 
     if (type === 'asset') {
       const histRes = await fetch(
-        `${base}/rest/v1/asset_assignment_history?previous_plant_id=not.is.null&new_plant_id=not.is.null&select=asset_id,previous_plant_id,new_plant_id,changed_by&limit=1`,
+        `${base}/rest/v1/asset_assignment_history?previous_plant_id=not.is.null&new_plant_id=not.is.null&select=asset_id,previous_plant_id,new_plant_id,changed_by&order=created_at.desc&limit=1`,
         {
           headers: {
             apikey: dataKey,
@@ -97,26 +98,32 @@ export async function GET(req: NextRequest) {
         )
       }
 
+      const body: Record<string, unknown> = {
+        asset_id: h.asset_id,
+        previous_plant_id: h.previous_plant_id,
+        new_plant_id: h.new_plant_id,
+        changed_by: h.changed_by,
+      }
+      if (testRecipient) body.test_recipient = testRecipient
+
       const fnRes = await fetch(`${fnBase}/asset-movement-notification`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
         },
-        body: JSON.stringify({
-          asset_id: h.asset_id,
-          previous_plant_id: h.previous_plant_id,
-          new_plant_id: h.new_plant_id,
-          changed_by: h.changed_by,
-          test_recipient: testRecipient,
-        }),
+        body: JSON.stringify(body),
       })
 
       const data = await fnRes.json().catch(() => ({}))
       if (!fnRes.ok) {
         return NextResponse.json({ error: 'Edge function failed', details: data }, { status: fnRes.status })
       }
-      return NextResponse.json({ success: true, message: `Asset movement test sent to ${testRecipient}`, data })
+      return NextResponse.json({
+        success: true,
+        message: testRecipient ? `Asset movement test sent to ${testRecipient}` : 'Asset movement notification sent to GM recipients',
+        data,
+      })
     }
 
     return NextResponse.json({ error: 'Invalid type. Use ?type=po or ?type=asset' }, { status: 400 })
