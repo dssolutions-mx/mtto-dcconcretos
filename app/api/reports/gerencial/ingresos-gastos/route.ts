@@ -1107,7 +1107,7 @@ export async function POST(req: NextRequest) {
         const costo_mp_unitario = Number(viewRow?.costo_mp_unitario || 0)
         const consumo_cem_m3 = Number(viewRow?.consumo_cem_per_m3_kg || 0)
         const costo_cem_m3 = Number(viewRow?.costo_cem_per_m3 || 0)
-        const costo_cem_pct = costo_mp_unitario > 0 ? (costo_cem_m3 / costo_mp_unitario) * 100 : 0
+        const costo_cem_pct = pv_unitario > 0 ? (costo_cem_m3 / pv_unitario) * 100 : 0
         const costo_mp_total = viewRow?.costo_mp_total_concreto != null
           ? Number(viewRow.costo_mp_total_concreto)
           : (costo_mp_unitario * volumen_concreto)
