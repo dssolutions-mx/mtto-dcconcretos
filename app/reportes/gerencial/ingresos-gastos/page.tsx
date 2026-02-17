@@ -1238,62 +1238,64 @@ export default function IngresosGastosPage() {
       {/* Filters */}
       <Card>
         <CardContent className="pt-6">
-          <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-            <div>
-              <Label htmlFor="month">Mes</Label>
-              <Input
-                id="month"
-                type="month"
-                value={selectedMonth}
-                onChange={(e) => setSelectedMonth(e.target.value)}
-              />
-            </div>
-
-            <div>
-              <Label>Unidad de Negocio</Label>
-              <Select value={businessUnitId || 'all'} onValueChange={handleBusinessUnitChange}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Todas" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Todas las unidades</SelectItem>
-                  {data?.filters.businessUnits.map(bu => (
-                    <SelectItem key={bu.id} value={bu.id}>{bu.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div>
-              <Label>Planta</Label>
-              <Select value={plantId || 'all'} onValueChange={handlePlantChange}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Todas" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Todas las plantas</SelectItem>
-                  {availablePlants.map(plant => (
-                    <SelectItem key={plant.id} value={plant.id}>{plant.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="flex items-center gap-3">
-              <div className="flex items-center gap-2">
-                <Switch
-                  id="group-by-bu"
-                  checked={groupByBusinessUnit}
-                  onCheckedChange={setGroupByBusinessUnit}
+          <div className="flex flex-col gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div>
+                <Label htmlFor="month">Mes</Label>
+                <Input
+                  id="month"
+                  type="month"
+                  value={selectedMonth}
+                  onChange={(e) => setSelectedMonth(e.target.value)}
                 />
-                <Label htmlFor="group-by-bu" className="cursor-pointer">
-                  Agrupar por Unidad de Negocio
-                </Label>
+              </div>
+
+              <div>
+                <Label>Unidad de Negocio</Label>
+                <Select value={businessUnitId || 'all'} onValueChange={handleBusinessUnitChange}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Todas" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todas las unidades</SelectItem>
+                    {data?.filters.businessUnits.map(bu => (
+                      <SelectItem key={bu.id} value={bu.id}>{bu.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div>
+                <Label>Planta</Label>
+                <Select value={plantId || 'all'} onValueChange={handlePlantChange}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Todas" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todas las plantas</SelectItem>
+                    {availablePlants.map(plant => (
+                      <SelectItem key={plant.id} value={plant.id}>{plant.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="flex items-end sm:items-center">
+                <div className="flex items-center gap-2">
+                  <Switch
+                    id="group-by-bu"
+                    checked={groupByBusinessUnit}
+                    onCheckedChange={setGroupByBusinessUnit}
+                  />
+                  <Label htmlFor="group-by-bu" className="cursor-pointer whitespace-nowrap">
+                    Agrupar por Unidad de Negocio
+                  </Label>
+                </div>
               </div>
             </div>
 
-            <div className="flex items-end gap-2">
-              <Button onClick={loadData} disabled={loading || refreshingView} className="flex-1">
+            <div className="flex flex-wrap items-center gap-2 border-t pt-4">
+              <Button onClick={loadData} disabled={loading || refreshingView}>
                 <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
                 {loading ? 'Cargando...' : 'Actualizar'}
               </Button>
@@ -1307,7 +1309,8 @@ export default function IngresosGastosPage() {
                 {refreshingView ? 'Recalculando...' : 'Refrescar Datos'}
               </Button>
               <Button variant="outline" disabled={!data || loading || refreshingView || plants.length === 0} onClick={exportToExcel}>
-                <Download className="w-4 h-4" />
+                <Download className="w-4 h-4 mr-2" />
+                Exportar a Excel
               </Button>
             </div>
           </div>

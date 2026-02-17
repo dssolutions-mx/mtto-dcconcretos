@@ -321,23 +321,31 @@ serve(async (req) => {
     }
 
     // Get Gerencia General (unlimited authorization)
+    // Use profiles.email directly — auth.admin.listUsers() is paginated (50/users); with 100+ users
+    // our GMs may not be in the first page, causing empty recipients and no email sent
     const { data: gms } = await supabase
       .from('profiles')
-      .select('id, nombre, apellido')
+      .select('id, nombre, apellido, email')
       .eq('role', 'GERENCIA_GENERAL')
       .eq('status', 'active')
 
     let gmRecipients: Array<{ userId: string; email: string; name: string }> = []
     if (gms && gms.length) {
-      const ids = gms.map((p: any) => p.id).filter(Boolean)
-      if (ids.length) {
-        const { data: users } = await supabase.auth.admin.listUsers()
-        const usersById = new Map<string, any>()
-        ;(users?.users || []).forEach((u: any) => usersById.set(u.id, u))
+      gmRecipients = (gms as { id: string; nombre: string; apellido: string; email: string | null }[])
+        .map((p) => {
+          const email = (p.email && p.email.trim()) || null
+          if (!email) return null
+          return { userId: p.id, email, name: `${p.nombre || ''} ${p.apellido || ''}`.trim() }
+        })
+        .filter(Boolean) as any
+      // Fallback: if no emails from profiles, try auth (perPage to avoid pagination miss)
+      if (gmRecipients.length === 0) {
+        const { data: usersData } = await supabase.auth.admin.listUsers({ perPage: 500 })
+        const usersById = new Map((usersData?.users || []).map((u: any) => [u.id, u]))
         gmRecipients = gms
           .map((p: any) => {
             const u = usersById.get(p.id)
-            return u?.email ? { userId: p.id as string, email: u.email as string, name: `${p.nombre || ''} ${p.apellido || ''}`.trim() } : null
+            return u?.email ? { userId: p.id, email: u.email, name: `${p.nombre || ''} ${p.apellido || ''}`.trim() } : null
           })
           .filter(Boolean) as any
       }
@@ -369,16 +377,10 @@ serve(async (req) => {
     } else {
       // No first approval yet → always notify BU Manager first
       if (businessUnitManagerEmail) {
-        // Resolve BU manager real auth email
-        let buManagerAuthEmail = businessUnitManagerEmail
-        const { data: buMgrProfile } = await supabase.from('profiles').select('id').eq('email', businessUnitManagerEmail).maybeSingle()
-        if (buMgrProfile?.id) {
-          const { data: users } = await supabase.auth.admin.listUsers()
-          const found = (users?.users || []).find((u: any) => u.id === buMgrProfile.id)
-          if (found?.email) buManagerAuthEmail = found.email
-        }
-        const buUserId = buMgrProfile?.id
-        recipients = [{ email: buManagerAuthEmail, name: businessUnitManagerName || '', userId: buUserId }]
+        // Use email from profiles (already resolved above) — avoid listUsers() pagination
+        const { data: buMgrProfile } = await supabase.from('profiles').select('id, email').eq('email', businessUnitManagerEmail).maybeSingle()
+        const buEmail = (buMgrProfile?.email && buMgrProfile.email.trim()) || businessUnitManagerEmail
+        recipients = [{ email: buEmail, name: businessUnitManagerName || '', userId: buMgrProfile?.id }]
       } else {
         // Fallback to GM if BU manager not found
         recipients = gmRecipients

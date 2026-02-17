@@ -136,13 +136,10 @@ serve(async (req) => {
         .maybeSingle()
       
       if (requester?.email) {
-        requesterEmail = requester.email
+        // Use profiles.email directly — auth.admin.listUsers() is paginated (50/users);
+        // with 100+ users the requester may not be in the first page
+        requesterEmail = requester.email.trim() || null
         requesterName = `${requester.nombre || ''} ${requester.apellido || ''}`.trim()
-        
-        // Get auth email
-        const { data: users } = await supabase.auth.admin.listUsers()
-        const found = users?.users?.find((u: any) => u.id === po.requested_by)
-        if (found?.email) requesterEmail = found.email
       }
     }
 
