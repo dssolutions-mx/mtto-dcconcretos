@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
 import { createClient as createServerSupabase } from '@/lib/supabase-server'
 import { getExpenseCategoryById, getExpenseCategoryDisplayName } from '@/lib/constants/expense-categories'
 
@@ -261,6 +262,45 @@ export async function GET(req: NextRequest) {
           }
         })
       })
+
+      // Add autoconsumo (Instalación / Autoconsumo) from plant_indirect_material_costs - appears when expanded
+      if (plant.code && process.env.COTIZADOR_SUPABASE_URL && process.env.COTIZADOR_SUPABASE_SERVICE_ROLE_KEY) {
+        try {
+          const cotizadorSupabase = createClient(
+            process.env.COTIZADOR_SUPABASE_URL,
+            process.env.COTIZADOR_SUPABASE_SERVICE_ROLE_KEY,
+            { auth: { persistSession: false } }
+          )
+          const { data: indirectRows } = await cotizadorSupabase
+            .from('plant_indirect_material_costs')
+            .select('amount')
+            .eq('period_start', periodMonth)
+            .eq('plant_code', plant.code)
+
+          const autoconsumoTotal = (indirectRows || []).reduce((sum, row) => sum + Number(row.amount || 0), 0)
+          if (autoconsumoTotal > 0) {
+            const autoconsumoDept = {
+              department: '1. OPERACIÓN DE PLANTA - General - Instalación / Autoconsumo',
+              expense_category: '1',
+              expense_subcategory: 'Instalación / Autoconsumo',
+              total: autoconsumoTotal,
+              entries: [{
+                id: 'autoconsumo-plant_indirect_material_costs',
+                description: 'Concreto sin ingresos (autoconsumo, pruebas industriales, consumo interno)',
+                subcategory: 'Instalación / Autoconsumo',
+                expense_category: '1',
+                expense_subcategory: 'Instalación / Autoconsumo',
+                amount: autoconsumoTotal,
+                is_distributed: false,
+                distribution_method: null
+              }]
+            }
+            departments.unshift(autoconsumoDept)
+          }
+        } catch (err) {
+          console.error('Error fetching autoconsumo for details:', err)
+        }
+      }
 
       return NextResponse.json({ departments })
     } else {

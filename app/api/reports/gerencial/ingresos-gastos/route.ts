@@ -716,6 +716,31 @@ export async function POST(req: NextRequest) {
         }
       })
 
+      // Fetch indirect material costs (Instalación/Autoconsumo) from plant_indirect_material_costs
+      // Uses plant_code for join - table has plant_code column; avoids plant_id mismatch across projects
+      const autoconsumoByPlantCode = new Map<string, number>()
+      if (plantCodes.length > 0) {
+        try {
+          const { data: indirectRows, error: indirectError } = await cotizadorSupabase
+            .from('plant_indirect_material_costs')
+            .select('plant_code, amount')
+            .eq('period_start', periodMonth)
+            .in('plant_code', plantCodes)
+
+          if (indirectError) {
+            console.error('plant_indirect_material_costs fetch error (cotizador):', indirectError)
+          }
+          ;(indirectRows || []).forEach(row => {
+            if (row.plant_code && plantCodes.includes(row.plant_code)) {
+              const prev = autoconsumoByPlantCode.get(row.plant_code) || 0
+              autoconsumoByPlantCode.set(row.plant_code, prev + Number(row.amount || 0))
+            }
+          })
+        } catch (err) {
+          console.error('Error querying plant_indirect_material_costs from cotizador:', err)
+        }
+      }
+
       // Fetch diesel and maintenance costs using existing gerencial logic
       const host = req.headers.get('host') || ''
       const envBaseUrl = process.env.NEXT_PUBLIC_BASE_URL
@@ -1109,7 +1134,9 @@ export async function POST(req: NextRequest) {
         const nomina_unitario = volumen_concreto > 0 ? nomina_total / volumen_concreto : 0
         const nomina_pct = ventas_total > 0 ? (nomina_total / ventas_total) * 100 : 0
 
-        const otros_indirectos_total = manual.otros_indirectos
+        // Otros Indirectos = manual entries + autoconsumo (Instalación/Autoconsumo from plant_indirect_material_costs)
+        const autoconsumo = autoconsumoByPlantCode.get(plant.code) ?? 0
+        const otros_indirectos_total = manual.otros_indirectos + autoconsumo
         const otros_indirectos_unitario = volumen_concreto > 0 ? otros_indirectos_total / volumen_concreto : 0
         const otros_indirectos_pct = ventas_total > 0 ? (otros_indirectos_total / ventas_total) * 100 : 0
 
