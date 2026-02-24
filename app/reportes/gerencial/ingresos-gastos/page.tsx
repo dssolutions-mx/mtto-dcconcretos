@@ -1018,6 +1018,18 @@ export default function IngresosGastosPage() {
         return (totalNumerator / totalDenominator) * 100
       }
     }
+
+    // For weighted averages (volume-weighted: fc_ponderada, edad_ponderada)
+    if (metricKey && getMetricType(metricKey) === 'weighted_avg') {
+      const totalVolume = sourcePlants.reduce((sum, p) => sum + p.volumen_concreto, 0)
+      if (totalVolume === 0) return 0
+      const weightedSum = sourcePlants.reduce((sum, p) => {
+        const value = getValue(p)
+        const volume = p.volumen_concreto
+        return sum + (value * volume)
+      }, 0)
+      return weightedSum / totalVolume
+    }
     
     // For non-percentages, sum normally
     return sourcePlants.reduce((sum, plant) => sum + getValue(plant), 0)
@@ -1532,7 +1544,7 @@ export default function IngresosGastosPage() {
                     <td className="sticky left-0 z-10 bg-background p-3 border-r-2">Spread Unitario</td>
                     {renderPlantColumns(p => p.spread_unitario, formatCurrency, 'spread_unitario', false, true)}
                     {renderGrandTotalCell(
-                      calculateGrandTotal(p => p.spread_unitario),
+                      calculateGrandTotal(p => p.spread_unitario, 'spread_unitario'),
                       formatCurrency,
                       false,
                       true,
@@ -1575,7 +1587,7 @@ export default function IngresosGastosPage() {
                     <td className="sticky left-0 z-10 bg-background p-3 border-r-2">Diesel Unitario (m3)</td>
                     {renderPlantColumns(p => p.diesel_unitario, formatCurrency, 'diesel_unitario', false, true)}
                     {renderGrandTotalCell(
-                      calculateGrandTotal(p => p.diesel_unitario),
+                      calculateGrandTotal(p => p.diesel_unitario, 'diesel_unitario'),
                       formatCurrency,
                       false,
                       true,
