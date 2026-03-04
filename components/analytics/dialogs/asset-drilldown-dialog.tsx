@@ -24,7 +24,13 @@ export function AssetDrilldownDialog({ open, onOpenChange, asset, startDate, end
     asset: AssetBasic,
     diesel: any[],
     remisionesDaily: any[],
-    maintenance: { purchase_orders: any[], additional_expenses: any[] }
+    maintenance: { purchase_orders: any[], additional_expenses: any[] },
+    efficiency?: {
+      hours_worked: number | null
+      liters_per_hour: number | null
+      kilometers_worked: number | null
+      liters_per_km: number | null
+    }
   } | null>(null)
 
   // Format a plain ISO date (YYYY-MM-DD) without timezone conversion
@@ -158,6 +164,70 @@ export function AssetDrilldownDialog({ open, onOpenChange, asset, startDate, end
                       <div className="text-2xl font-bold text-amber-700 dark:text-amber-400">{formatCurrency(dieselKPIs.totalCost)}</div>
                       <DollarSign className="h-8 w-8 text-amber-500 opacity-50" />
                     </div>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Efficiency metrics */}
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardDescription className="text-xs">Horas Trabajadas</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="flex items-center justify-between">
+                      <div className="text-2xl font-bold">
+                        {data?.efficiency?.hours_worked != null
+                          ? formatNumber(data.efficiency.hours_worked)
+                          : '-'}
+                      </div>
+                      <Clock className="h-8 w-8 text-muted-foreground opacity-50" />
+                    </div>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardDescription className="text-xs">Eficiencia L/H</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="flex items-center justify-between">
+                      <div className="text-2xl font-bold">
+                        {data?.efficiency?.liters_per_hour != null && data.efficiency.liters_per_hour > 0
+                          ? data.efficiency.liters_per_hour.toFixed(2)
+                          : '-'}
+                      </div>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1">litros por hora</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardDescription className="text-xs">Km Recorridos</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="flex items-center justify-between">
+                      <div className="text-2xl font-bold">
+                        {data?.efficiency?.kilometers_worked != null
+                          ? formatNumber(data.efficiency.kilometers_worked)
+                          : '-'}
+                      </div>
+                      <MapPin className="h-8 w-8 text-green-500 opacity-50" />
+                    </div>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardDescription className="text-xs">Eficiencia L/Km</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="flex items-center justify-between">
+                      <div className="text-2xl font-bold">
+                        {data?.efficiency?.liters_per_km != null && data.efficiency.liters_per_km > 0
+                          ? data.efficiency.liters_per_km.toFixed(2)
+                          : '-'}
+                      </div>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1">litros por km</p>
                   </CardContent>
                 </Card>
               </div>

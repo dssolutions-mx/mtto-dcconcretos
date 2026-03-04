@@ -117,6 +117,18 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       remisionesDaily = []
     }
 
+    // Checklist readings for hours/km progression (extended window for baseline)
+    const extendedStart = new Date(startISO)
+    extendedStart.setDate(extendedStart.getDate() - 30)
+    const checklistPromise = supabase
+      .from('completed_checklists')
+      .select('completion_date, equipment_hours_reading, equipment_kilometers_reading')
+      .eq('asset_id', assetId)
+      .gte('completion_date', extendedStart.toISOString().slice(0, 10))
+      .lte('completion_date', endDate)
+      .or('equipment_hours_reading.not.is.null,equipment_kilometers_reading.not.is.null')
+      .order('completion_date', { ascending: true })
+
     // Additional expenses for the asset in the window
     const additionalExpensesPromise = supabase
       .from('additional_expenses')
@@ -126,8 +138,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       .lte('created_at', endISOInclusive)
       .order('created_at', { ascending: false })
 
-    const [dieselRes, poRes, additionalExpensesRes] = await Promise.all([
-      dieselPromise, poPromise, additionalExpensesPromise
+    const [dieselRes, poRes, additionalExpensesRes, checklistRes] = await Promise.all([
+      dieselPromise, poPromise, additionalExpensesPromise, checklistPromise
     ])
 
     const diesel = dieselRes.data || []
@@ -145,6 +157,65 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     // Only show additional expenses that are pending conversion (no adjustment_po_id)
     const additional_expenses = (additionalExpensesRes.data || []).filter((ae: any) => !ae.adjustment_po_id)
 
+    // Compute efficiency metrics (hours_worked, liters_per_hour, kilometers_worked, liters_per_km)
+    const totalLiters = diesel.reduce((sum: number, t: any) => sum + Number(t.quantity_liters || 0), 0)
+    type Reading = { ts: number; hours: number | null; km: number | null }
+    const allReadings: Reading[] = []
+    diesel.forEach((t: any) => {
+      const ts = new Date(t.transaction_date).getTime()
+      if (t.previous_horometer != null || t.previous_kilometer != null) {
+        allReadings.push({
+          ts: ts - 1,
+          hours: t.previous_horometer != null ? Number(t.previous_horometer) : null,
+          km: t.previous_kilometer != null ? Number(t.previous_kilometer) : null
+        })
+      }
+      if (t.horometer_reading != null || t.kilometer_reading != null) {
+        allReadings.push({
+          ts,
+          hours: t.horometer_reading != null ? Number(t.horometer_reading) : null,
+          km: t.kilometer_reading != null ? Number(t.kilometer_reading) : null
+        })
+      }
+    })
+    ;(checklistRes.data || []).forEach((c: any) => {
+      const ts = new Date(c.completion_date).getTime()
+      if (c.equipment_hours_reading != null || c.equipment_kilometers_reading != null) {
+        allReadings.push({
+          ts,
+          hours: c.equipment_hours_reading != null ? Number(c.equipment_hours_reading) : null,
+          km: c.equipment_kilometers_reading != null ? Number(c.equipment_kilometers_reading) : null
+        })
+      }
+    })
+    allReadings.sort((a, b) => a.ts - b.ts)
+
+    let hours_worked: number | null = null
+    let liters_per_hour: number | null = null
+    const readingsWithHours = allReadings.filter(r => r.hours != null)
+    if (readingsWithHours.length >= 2) {
+      const first = readingsWithHours[0]
+      const last = readingsWithHours[readingsWithHours.length - 1]
+      const prog = (last.hours ?? 0) - (first.hours ?? 0)
+      if (prog > 0) {
+        hours_worked = prog
+        liters_per_hour = totalLiters / prog
+      }
+    }
+
+    let kilometers_worked: number | null = null
+    let liters_per_km: number | null = null
+    const readingsWithKm = allReadings.filter(r => r.km != null)
+    if (readingsWithKm.length >= 2) {
+      const first = readingsWithKm[0]
+      const last = readingsWithKm[readingsWithKm.length - 1]
+      const prog = (last.km ?? 0) - (first.km ?? 0)
+      if (prog > 0) {
+        kilometers_worked = prog
+        liters_per_km = totalLiters / prog
+      }
+    }
+
     return NextResponse.json({
       asset: {
         id: asset.id,
@@ -157,6 +228,12 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       maintenance: {
         purchase_orders: purchaseOrders,
         additional_expenses
+      },
+      efficiency: {
+        hours_worked,
+        liters_per_hour,
+        kilometers_worked,
+        liters_per_km
       }
     })
   } catch (error: any) {

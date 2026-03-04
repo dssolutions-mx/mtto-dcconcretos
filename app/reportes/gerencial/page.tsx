@@ -93,6 +93,8 @@ type ReportData = {
     diesel_liters: number
     hours_worked?: number
     liters_per_hour?: number
+    kilometers_worked?: number
+    liters_per_km?: number
     asset_count: number
   }>
   plants: Array<{
@@ -109,6 +111,8 @@ type ReportData = {
     diesel_liters: number
     hours_worked?: number
     liters_per_hour?: number
+    kilometers_worked?: number
+    liters_per_km?: number
     asset_count: number
   }>
   assets: Array<{
@@ -122,6 +126,8 @@ type ReportData = {
     diesel_liters: number
     hours_worked?: number
     liters_per_hour?: number
+    kilometers_worked?: number
+    liters_per_km?: number
     maintenance_cost: number
     preventive_cost: number
     corrective_cost: number
@@ -214,7 +220,11 @@ export default function GerencialReportPage() {
   const assetsFiltered = useMemo(() => {
     const list = data?.assets || []
     if (!hideZero) return list
-    return list.filter(a => (a.hours_worked || 0) > 0 || (a.diesel_liters || 0) > 0)
+    return list.filter(a =>
+      (a.hours_worked || 0) > 0 ||
+      (a.kilometers_worked || 0) > 0 ||
+      (a.diesel_liters || 0) > 0
+    )
   }, [data?.assets, hideZero])
 
   // Helper function to classify assets into 3 main groups
@@ -246,6 +256,7 @@ export default function GerencialReportPage() {
           diesel_liters: 0,
           diesel_cost: 0,
           hours_worked: 0,
+          kilometers_worked: 0,
           maintenance_cost: 0,
           concrete_m3: 0,
           pumping_m3: 0, // For volume in pumping
@@ -259,6 +270,7 @@ export default function GerencialReportPage() {
       g.diesel_liters += a.diesel_liters || 0
       g.diesel_cost += a.diesel_cost || 0
       g.hours_worked += a.hours_worked || 0
+      g.kilometers_worked += a.kilometers_worked || 0
       g.maintenance_cost += a.maintenance_cost || 0
       g.concrete_m3 += a.concrete_m3 || 0
       // For pumping, track volume separately (from total_m3 if available)
@@ -290,6 +302,7 @@ export default function GerencialReportPage() {
           diesel_liters: 0,
           diesel_cost: 0,
           hours_worked: 0,
+          kilometers_worked: 0,
           maintenance_cost: 0,
           concrete_m3: 0,
           pumping_m3: 0,
@@ -303,6 +316,7 @@ export default function GerencialReportPage() {
       g.diesel_liters += a.diesel_liters || 0
       g.diesel_cost += a.diesel_cost || 0
       g.hours_worked += a.hours_worked || 0
+      g.kilometers_worked += a.kilometers_worked || 0
       g.maintenance_cost += a.maintenance_cost || 0
       g.concrete_m3 += a.concrete_m3 || 0
       if (key === 'Bombeo') {
@@ -614,6 +628,8 @@ export default function GerencialReportPage() {
                       <th className="text-right p-3 font-medium">Litros</th>
                       <th className="text-right p-3 font-medium">Horas</th>
                       <th className="text-right p-3 font-medium">L/H</th>
+                      <th className="text-right p-3 font-medium">Km</th>
+                      <th className="text-right p-3 font-medium">L/Km</th>
                       <th className="text-right p-3 font-medium">Mantenimiento</th>
                       <th className="text-right p-3 font-medium">Costo Total</th>
                       <th className="text-right p-3 font-medium">Ratio</th>
@@ -638,6 +654,16 @@ export default function GerencialReportPage() {
                             {(bu.liters_per_hour || 0) > 0 ? (
                               <Badge variant={(bu.liters_per_hour as number) < 10 ? "default" : "secondary"}>
                                 {(bu.liters_per_hour as number).toFixed(2)}
+                              </Badge>
+                            ) : (
+                              <span className="text-muted-foreground">-</span>
+                            )}
+                          </td>
+                          <td className="p-3 text-right text-muted-foreground">{formatNumber(bu.kilometers_worked || 0)}</td>
+                          <td className="p-3 text-right">
+                            {(bu.liters_per_km || 0) > 0 ? (
+                              <Badge variant="outline" className="font-mono">
+                                {(bu.liters_per_km as number).toFixed(2)}
                               </Badge>
                             ) : (
                               <span className="text-muted-foreground">-</span>
@@ -682,6 +708,7 @@ export default function GerencialReportPage() {
                             {orderedKeys.map((key, idx) => {
                               const g = groups[key]
                               const lph = (g.hours_worked || 0) > 0 ? (g.diesel_liters / g.hours_worked) : 0
+                              const lpk = (g.kilometers_worked || 0) > 0 ? (g.diesel_liters / g.kilometers_worked) : 0
                               const lpm3 = (g.concrete_m3 || 0) > 0 ? (g.diesel_liters / g.concrete_m3) : 0
                               const totalCost = g.diesel_cost + g.maintenance_cost
                               const costRevenueRatio = g.sales_subtotal > 0 ? ((totalCost / g.sales_subtotal) * 100) : 0
@@ -754,6 +781,16 @@ export default function GerencialReportPage() {
                                       {lph > 0 ? (
                                         <Badge variant={lph < 10 ? 'default' : lph < 15 ? 'secondary' : 'destructive'} className="font-mono">
                                           {lph.toFixed(2)}
+                                        </Badge>
+                                      ) : (
+                                        <span className="text-xs text-muted-foreground">-</span>
+                                      )}
+                                    </div>
+                                    <div className="flex items-center justify-between">
+                                      <span className="text-xs text-muted-foreground">Eficiencia L/Km</span>
+                                      {lpk > 0 ? (
+                                        <Badge variant="outline" className="font-mono">
+                                          {lpk.toFixed(2)}
                                         </Badge>
                                       ) : (
                                         <span className="text-xs text-muted-foreground">-</span>
@@ -825,6 +862,8 @@ export default function GerencialReportPage() {
                       <th className="text-right p-3 font-medium">Litros</th>
                       <th className="text-right p-3 font-medium">Horas</th>
                       <th className="text-right p-3 font-medium">L/H</th>
+                      <th className="text-right p-3 font-medium">Km</th>
+                      <th className="text-right p-3 font-medium">L/Km</th>
                       <th className="text-right p-3 font-medium">Mantenimiento</th>
                       <th className="text-right p-3 font-medium">Total Costos</th>
                       <th className="text-right p-3 font-medium">Costo/m³</th>
@@ -850,6 +889,16 @@ export default function GerencialReportPage() {
                             {(plant.liters_per_hour || 0) > 0 ? (
                               <Badge variant={(plant.liters_per_hour as number) < 10 ? "default" : "secondary"}>
                                 {(plant.liters_per_hour as number).toFixed(2)}
+                              </Badge>
+                            ) : (
+                              <span className="text-muted-foreground">-</span>
+                            )}
+                          </td>
+                          <td className="p-3 text-right text-muted-foreground">{formatNumber(plant.kilometers_worked || 0)}</td>
+                          <td className="p-3 text-right">
+                            {(plant.liters_per_km || 0) > 0 ? (
+                              <Badge variant="outline" className="font-mono">
+                                {(plant.liters_per_km as number).toFixed(2)}
                               </Badge>
                             ) : (
                               <span className="text-muted-foreground">-</span>
@@ -890,6 +939,7 @@ export default function GerencialReportPage() {
                             {orderedKeys.map((key, idx) => {
                               const g = groups[key]
                               const lph = (g.hours_worked || 0) > 0 ? (g.diesel_liters / g.hours_worked) : 0
+                              const lpk = (g.kilometers_worked || 0) > 0 ? (g.diesel_liters / g.kilometers_worked) : 0
                               const lpm3 = (g.concrete_m3 || 0) > 0 ? (g.diesel_liters / g.concrete_m3) : 0
                               const totalCost = g.diesel_cost + g.maintenance_cost
                               const costRevenueRatio = g.sales_subtotal > 0 ? ((totalCost / g.sales_subtotal) * 100) : 0
@@ -962,6 +1012,16 @@ export default function GerencialReportPage() {
                                       {lph > 0 ? (
                                         <Badge variant={lph < 10 ? 'default' : lph < 15 ? 'secondary' : 'destructive'} className="font-mono">
                                           {lph.toFixed(2)}
+                                        </Badge>
+                                      ) : (
+                                        <span className="text-xs text-muted-foreground">-</span>
+                                      )}
+                                    </div>
+                                    <div className="flex items-center justify-between">
+                                      <span className="text-xs text-muted-foreground">Eficiencia L/Km</span>
+                                      {lpk > 0 ? (
+                                        <Badge variant="outline" className="font-mono">
+                                          {lpk.toFixed(2)}
                                         </Badge>
                                       ) : (
                                         <span className="text-xs text-muted-foreground">-</span>
@@ -1034,6 +1094,8 @@ export default function GerencialReportPage() {
                       <th className="text-right p-3 font-medium">Mantenimiento</th>
                       <th className="text-right p-3 font-medium">Horas</th>
                       <th className="text-right p-3 font-medium">L/H</th>
+                      <th className="text-right p-3 font-medium">Km</th>
+                      <th className="text-right p-3 font-medium">L/Km</th>
                       <th className="text-right p-3 font-medium">L/m³</th>
                       <th className="text-right p-3 font-medium">Acciones</th>
                     </tr>
@@ -1080,6 +1142,16 @@ export default function GerencialReportPage() {
                             {(asset.liters_per_hour || 0) > 0 ? (
                               <Badge variant={(asset.liters_per_hour as number) < 10 ? "default" : "secondary"}>
                                 {(asset.liters_per_hour as number).toFixed(2)}
+                              </Badge>
+                            ) : (
+                              <span className="text-muted-foreground">-</span>
+                            )}
+                          </td>
+                          <td className="p-3 text-right text-muted-foreground">{formatNumber(asset.kilometers_worked || 0)}</td>
+                          <td className="p-3 text-right">
+                            {(asset.liters_per_km || 0) > 0 ? (
+                              <Badge variant="outline" className="font-mono">
+                                {(asset.liters_per_km as number).toFixed(2)}
                               </Badge>
                             ) : (
                               <span className="text-muted-foreground">-</span>

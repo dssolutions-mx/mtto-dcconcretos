@@ -171,6 +171,8 @@ export async function POST(req: NextRequest) {
         transaction_date,
         horometer_reading,
         previous_horometer,
+        kilometer_reading,
+        previous_kilometer,
         is_transfer,
         diesel_warehouses!inner(product_type)
       `)
@@ -188,11 +190,11 @@ export async function POST(req: NextRequest) {
     extendedStart.setDate(extendedStart.getDate() - 30)
     const { data: hoursData } = await supabase
       .from('completed_checklists')
-      .select('asset_id, equipment_hours_reading, reading_timestamp')
+      .select('asset_id, equipment_hours_reading, equipment_kilometers_reading, reading_timestamp')
       .gte('reading_timestamp', extendedStart.toISOString())
       .lt('reading_timestamp', dateToExclusive.toISOString())
       .in('asset_id', assetIdsForHours)
-      .not('equipment_hours_reading', 'is', null)
+      .or('equipment_hours_reading.not.is.null,equipment_kilometers_reading.not.is.null')
     
     // Also fetch diesel readings from extended period to validate checklist readings
     // This helps filter out incorrect checklist readings by comparing with diesel data
@@ -529,6 +531,8 @@ export async function POST(req: NextRequest) {
         diesel_cost: 0,
         hours_worked: 0,
         liters_per_hour: 0,
+        kilometers_worked: 0,
+        liters_per_km: 0,
         maintenance_cost: 0,
         preventive_cost: 0,
         corrective_cost: 0,
@@ -605,6 +609,15 @@ export async function POST(req: NextRequest) {
       if (Number.isNaN(val) || Number.isNaN(ts)) return
       if (!checklistEventsByAsset.has(h.asset_id)) checklistEventsByAsset.set(h.asset_id, [])
       checklistEventsByAsset.get(h.asset_id)!.push({ ts, val })
+    })
+    const checklistKmEventsByAsset = new Map<string, ReadingEvent[]>()
+    ;(hoursData || []).forEach((h: any) => {
+      if (!h.asset_id || h.equipment_kilometers_reading == null) return
+      const val = Number(h.equipment_kilometers_reading)
+      const ts = new Date(h.reading_timestamp).getTime()
+      if (Number.isNaN(val) || Number.isNaN(ts)) return
+      if (!checklistKmEventsByAsset.has(h.asset_id)) checklistKmEventsByAsset.set(h.asset_id, [])
+      checklistKmEventsByAsset.get(h.asset_id)!.push({ ts, val })
     })
     ;(dieselTxs || []).forEach(tx => {
       // CRITICAL: Double-check to exclude transfers (defense in depth)
@@ -829,6 +842,98 @@ export async function POST(req: NextRequest) {
           if (events.length >= 2 && totalHours === 0) {
             console.warn(`[Gerencial] Asset ${assetId}: Has ${events.length} readings but calculated 0 hours. Baseline idx: ${baselineIdx}, events: ${uniqueEvents.length}`)
           }
+    })
+
+    // Compute kilometers_worked and liters_per_km per asset (mirror of hours logic)
+    const allAssetIdsWithKmReadings = new Set<string>()
+    checklistKmEventsByAsset.forEach((_, assetId) => allAssetIdsWithKmReadings.add(assetId))
+    dieselByAsset.forEach((_, assetId) => {
+      const txs = dieselByAsset.get(assetId) || []
+      if (txs.some((t: any) => t.kilometer_reading != null)) allAssetIdsWithKmReadings.add(assetId)
+    })
+    allAssetIdsWithKmReadings.forEach(assetId => {
+      const asset = assetMap.get(assetId)
+      if (!asset) return
+      const kmEvents: ReadingEvent[] = []
+      const txs = dieselByAsset.get(assetId) || []
+      const dieselKmReadingsRaw: Array<{ ts: number, val: number }> = []
+      txs.forEach((t: any) => {
+        const tts = new Date(t.transaction_date).getTime()
+        if (!Number.isNaN(tts) && t.kilometer_reading != null) {
+          const v = Number(t.kilometer_reading)
+          if (!Number.isNaN(v)) dieselKmReadingsRaw.push({ ts: tts, val: v })
+        }
+      })
+      const dieselKmReadings: ReadingEvent[] = []
+      if (dieselKmReadingsRaw.length > 0) {
+        dieselKmReadingsRaw.sort((a, b) => a.ts - b.ts)
+        const MAX_KM_PER_DAY = 1000
+        for (let i = 0; i < dieselKmReadingsRaw.length; i++) {
+          const current = dieselKmReadingsRaw[i]
+          if (i === 0) {
+            dieselKmReadings.push({ ts: current.ts, val: current.val })
+            continue
+          }
+          const previous = dieselKmReadingsRaw[i - 1]
+          const timeDeltaDays = (current.ts - previous.ts) / (1000 * 60 * 60 * 24)
+          const delta = current.val - previous.val
+          const kmPerDay = timeDeltaDays > 0 ? delta / timeDeltaDays : 0
+          if (delta >= 0 && (timeDeltaDays >= 60 || kmPerDay <= MAX_KM_PER_DAY)) {
+            dieselKmReadings.push({ ts: current.ts, val: current.val })
+          }
+        }
+      }
+      kmEvents.push(...dieselKmReadings)
+      const chkKmEvents = checklistKmEventsByAsset.get(assetId) || []
+      kmEvents.push(...chkKmEvents)
+      if (kmEvents.length === 0) return
+      kmEvents.sort((a, b) => a.ts - b.ts)
+      const uniqueKmEvents: ReadingEvent[] = []
+      kmEvents.forEach(e => {
+        const last = uniqueKmEvents[uniqueKmEvents.length - 1]
+        if (!last || last.ts !== e.ts || last.val !== e.val) uniqueKmEvents.push(e)
+      })
+      if (uniqueKmEvents.length < 2) return
+      const startMs = dateFromStart.getTime()
+      const endMs = dateToExclusive.getTime()
+      let baselineIdx = -1
+      for (let i = uniqueKmEvents.length - 1; i >= 0; i--) {
+        if (uniqueKmEvents[i].ts < startMs) {
+          baselineIdx = i
+          break
+        }
+      }
+      if (baselineIdx === -1) {
+        for (let i = 0; i < uniqueKmEvents.length; i++) {
+          if (uniqueKmEvents[i].ts >= startMs) {
+            baselineIdx = i
+            break
+          }
+        }
+      }
+      if (baselineIdx === -1 || baselineIdx >= uniqueKmEvents.length - 1) return
+      let totalKm = 0
+      const MAX_KM_PER_DAY_CAP = 1000
+      for (let i = baselineIdx; i < uniqueKmEvents.length - 1; i++) {
+        const current = uniqueKmEvents[i]
+        const next = uniqueKmEvents[i + 1]
+        if (next.ts < startMs) continue
+        if (current.ts >= endMs) break
+        const delta = next.val - current.val
+        if (delta < 0) continue
+        const timeDeltaDays = (next.ts - current.ts) / (1000 * 60 * 60 * 24)
+        if (timeDeltaDays < 1 / 24) continue
+        const kmPerDay = timeDeltaDays > 0 ? delta / timeDeltaDays : 0
+        if (kmPerDay > MAX_KM_PER_DAY_CAP && timeDeltaDays < 60) continue
+        let cappedDelta = delta
+        if (timeDeltaDays > 0) {
+          const maxReasonable = MAX_KM_PER_DAY_CAP * timeDeltaDays
+          if (delta > maxReasonable) cappedDelta = maxReasonable
+        }
+        totalKm += cappedDelta
+      }
+      asset.kilometers_worked = totalKm
+      asset.liters_per_km = totalKm > 0 && asset.diesel_liters > 0 ? asset.diesel_liters / totalKm : 0
     })
 
     // Separate POs by purpose to track cash vs inventory expenses
@@ -1165,6 +1270,8 @@ export async function POST(req: NextRequest) {
           diesel_cost: 0,
           hours_worked: 0,
           liters_per_hour: 0,
+          kilometers_worked: 0,
+          liters_per_km: 0,
           maintenance_cost: 0,
           preventive_cost: 0,
           corrective_cost: 0,
@@ -1179,6 +1286,7 @@ export async function POST(req: NextRequest) {
       plant.diesel_liters += asset.diesel_liters
       plant.diesel_cost += asset.diesel_cost
       plant.hours_worked += asset.hours_worked || 0
+      plant.kilometers_worked += asset.kilometers_worked || 0
       plant.maintenance_cost += asset.maintenance_cost
       plant.preventive_cost += asset.preventive_cost || 0
       plant.corrective_cost += asset.corrective_cost || 0
@@ -1206,6 +1314,8 @@ export async function POST(req: NextRequest) {
           diesel_cost: 0,
           hours_worked: 0,
           liters_per_hour: 0,
+          kilometers_worked: 0,
+          liters_per_km: 0,
           maintenance_cost: 0,
           preventive_cost: 0,
           corrective_cost: 0,
@@ -1221,10 +1331,13 @@ export async function POST(req: NextRequest) {
       plant.corrective_cost += amount
     })
 
-    // Compute plant liters_per_hour
+    // Compute plant liters_per_hour and liters_per_km
     plantMap.forEach(plant => {
       if ((plant.hours_worked || 0) > 0) {
         plant.liters_per_hour = plant.diesel_liters / plant.hours_worked
+      }
+      if ((plant.kilometers_worked || 0) > 0) {
+        plant.liters_per_km = plant.diesel_liters / plant.kilometers_worked
       }
     })
 
@@ -1241,6 +1354,8 @@ export async function POST(req: NextRequest) {
           diesel_cost: 0,
           hours_worked: 0,
           liters_per_hour: 0,
+          kilometers_worked: 0,
+          liters_per_km: 0,
           maintenance_cost: 0,
           preventive_cost: 0,
           corrective_cost: 0,
@@ -1255,6 +1370,7 @@ export async function POST(req: NextRequest) {
       bu.diesel_liters += plant.diesel_liters
       bu.diesel_cost += plant.diesel_cost
       bu.hours_worked += plant.hours_worked || 0
+      bu.kilometers_worked += plant.kilometers_worked || 0
       bu.maintenance_cost += plant.maintenance_cost
       bu.preventive_cost += plant.preventive_cost
       bu.corrective_cost += plant.corrective_cost
@@ -1264,10 +1380,13 @@ export async function POST(req: NextRequest) {
       bu.total_m3 += plant.total_m3
     })
 
-    // Compute BU liters_per_hour
+    // Compute BU liters_per_hour and liters_per_km
     buMap.forEach(bu => {
       if ((bu.hours_worked || 0) > 0) {
         bu.liters_per_hour = bu.diesel_liters / bu.hours_worked
+      }
+      if ((bu.kilometers_worked || 0) > 0) {
+        bu.liters_per_km = bu.diesel_liters / bu.kilometers_worked
       }
     })
 
