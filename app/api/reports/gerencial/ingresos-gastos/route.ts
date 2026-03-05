@@ -62,6 +62,8 @@ async function calculateDieselCostsFIFO_IngresosGastos(
     return new Map<string, number>()
   }
 
+  console.log('[FIFO] plantCodes requested:', plantCodes, '| plants with warehouses:', [...new Set(warehouseToPlantCode.values())])
+
   // STEP 1: Fetch entries from last 45 days (when prices were added) to build FIFO inventory
   // FLEXIBLE APPROACH: We need entries from before AND during the period to build accurate inventory
   // However, only entries from last 45 days have prices, so we limit to that window
@@ -138,6 +140,7 @@ async function calculateDieselCostsFIFO_IngresosGastos(
     .select(`
       id, 
       warehouse_id, 
+      asset_id,
       product_id, 
       quantity_liters, 
       transaction_date,
@@ -171,6 +174,18 @@ async function calculateDieselCostsFIFO_IngresosGastos(
     }
   })
   console.log('[FIFO DEBUG] Raw consumption data (unfiltered) - transfer breakdown:', Object.fromEntries(transferCounts))
+
+  // Diagnose: which warehouses returned consumptions (P004P missing = 0 rows for its warehouse)
+  const consumptionsPerWarehouse = new Map<string, number>()
+  ;(allConsumptionsUnfiltered || []).forEach(cons => {
+    consumptionsPerWarehouse.set(cons.warehouse_id, (consumptionsPerWarehouse.get(cons.warehouse_id) || 0) + 1)
+  })
+  const whSummary = Array.from(warehouseToPlantCode.entries()).map(([whId, code]) => ({
+    plant: code,
+    warehouseId: whId.slice(0, 8) + '...',
+    rowCount: consumptionsPerWarehouse.get(whId) ?? 0
+  }))
+  console.log('[FIFO] Consumptions per warehouse:', whSummary)
 
   // Now filter to exclude transfers
   // CRITICAL: Check for both boolean true and string "true" (PostgreSQL can return booleans as strings)
@@ -296,6 +311,26 @@ async function calculateDieselCostsFIFO_IngresosGastos(
     stat.liters += Number(cons.quantity_liters || 0)
   })
   console.log('[FIFO] Consumptions by plant (in period - filtered):', Object.fromEntries(consumptionsInPeriodByPlant))
+
+  // Unified diesel liter breakdown: total vs asset-only (gerencial report only counts asset-only)
+  const litersByPlantTotal = new Map<string, number>()
+  const litersByPlantAssetOnly = new Map<string, number>()
+  consumptionsInPeriod.forEach(cons => {
+    if (isTransferFlag(cons.is_transfer)) return
+    const plantCode = warehouseToPlantCode.get(cons.warehouse_id) || 'UNKNOWN'
+    const liters = Number(cons.quantity_liters || 0)
+    litersByPlantTotal.set(plantCode, (litersByPlantTotal.get(plantCode) || 0) + liters)
+    if (cons.asset_id) {
+      litersByPlantAssetOnly.set(plantCode, (litersByPlantAssetOnly.get(plantCode) || 0) + liters)
+    }
+  })
+  const literBreakdown: Record<string, { total: number; asset_only: number; general: number }> = {}
+  litersByPlantTotal.forEach((total, code) => {
+    const assetOnly = litersByPlantAssetOnly.get(code) || 0
+    literBreakdown[code] = { total, asset_only: assetOnly, general: total - assetOnly }
+  })
+  console.log('[FIFO] Diesel liters by plant (in period, GMT-6, excl transfers):', JSON.stringify(literBreakdown, null, 0))
+  console.log('[FIFO] Note: Gerencial report shows asset_only. Audit script raw=total.')
 
   // CONDITIONAL 90-DAY EXTENSION: If a warehouse has consumptions but no entries in the 45-day
   // window (e.g. Plant 5 with a single older entry), extend the entries window to 90 days for
@@ -557,9 +592,10 @@ async function calculateDieselCostsFIFO_IngresosGastos(
 
     consumptionCosts.set(warehouseId, totalConsumptionCost)
     
-    // Debug P004 costs
-    if (plantCode === 'P004') {
-      console.log(`[FIFO DEBUG P004] Total consumption cost calculated: $${totalConsumptionCost.toFixed(2)}`)
+    // Debug P004 / P004P costs (both plants of interest for diesel validation)
+    if (plantCode === 'P004' || plantCode === 'P004P') {
+      const lit = literBreakdown[plantCode]
+      console.log(`[FIFO DEBUG ${plantCode}] Cost: $${totalConsumptionCost.toFixed(2)} | Liters: total=${lit?.total ?? 0}, asset-only=${lit?.asset_only ?? 0} (gerencial uses asset-only)`)
     }
   })
   

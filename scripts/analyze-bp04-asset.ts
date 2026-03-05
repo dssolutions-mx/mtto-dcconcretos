@@ -47,6 +47,7 @@ async function analyze() {
       id, transaction_date, quantity_liters,
       horometer_reading, previous_horometer,
       kilometer_reading, previous_kilometer,
+      hours_consumed, kilometers_consumed,
       diesel_warehouses!inner(product_type, name)
     `)
     .eq('asset_id', assetId)
@@ -54,7 +55,7 @@ async function analyze() {
     .eq('transaction_type', 'consumption')
     .neq('is_transfer', true)
     .gte('transaction_date', '2026-01-01')
-    .lte('transaction_date', '2026-12-31')
+    .lte('transaction_date', '2026-03-31')
     .order('transaction_date', { ascending: true })
 
   if (dieselErr) {
@@ -62,7 +63,7 @@ async function analyze() {
     process.exit(1)
   }
 
-  console.log('\n📊 Diesel transactions (2026, diesel only):', diesel?.length ?? 0)
+  console.log('\n📊 Diesel transactions (Jan 1 - Mar 31 2026, diesel only):', diesel?.length ?? 0)
   const totalLiters = diesel?.reduce((s, t) => s + Number(t.quantity_liters || 0), 0) ?? 0
   console.log('   Total liters:', totalLiters)
 
@@ -84,12 +85,19 @@ async function analyze() {
       console.log(`      ${i + 1}. ${d}  prev=${prev} → curr=${curr}  delta=${delta}`)
     })
 
-    const firstPrev = sorted[0]?.previous_kilometer
-    const lastCurr = sorted[sorted.length - 1]?.kilometer_reading
-    if (firstPrev != null && lastCurr != null) {
-      const simpleProg = lastCurr - firstPrev
-      console.log('\n   Simple progression (last.curr - first.prev):', simpleProg, 'km')
+    // Using only kilometer_reading per tx (matches gerencial/breakdown logic)
+    const kmOnly = sorted.map((t: any) => t.kilometer_reading).filter((v: any) => v != null)
+    const firstKm = kmOnly[0]
+    const lastKm = kmOnly[kmOnly.length - 1]
+    if (firstKm != null && lastKm != null) {
+      const simpleProg = lastKm - firstKm
+      console.log('\n   Simple progression (last - first by date, diesel only):', simpleProg, 'km')
     }
+
+    const sumKmConsumed = diesel?.reduce((s, t) => s + Number(t.kilometers_consumed || 0), 0) ?? 0
+    const sumHoursConsumed = diesel?.reduce((s, t) => s + Number(t.hours_consumed || 0), 0) ?? 0
+    console.log('\n   SUM(kilometers_consumed) - breakdown API uses:', sumKmConsumed, 'km')
+    console.log('   SUM(hours_consumed) - breakdown API uses:', sumHoursConsumed, 'h')
   }
 
   // 3. Checklist km readings

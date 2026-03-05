@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server'
 import { createClient as createServerSupabase } from '@/lib/supabase-server'
 import { createClient } from '@supabase/supabase-js'
 
+export const dynamic = 'force-dynamic'
+
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const supabase = await createServerSupabase()
@@ -48,6 +50,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
         id, transaction_date, quantity_liters, transaction_type, unit_cost,
         diesel_warehouses!inner(name, product_type),
         horometer_reading, kilometer_reading, previous_horometer, previous_kilometer,
+        hours_consumed, kilometers_consumed,
         notes
       `)
       .eq('diesel_warehouses.product_type', 'diesel')
@@ -118,18 +121,6 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       remisionesDaily = []
     }
 
-    // Checklist readings for hours/km progression (extended window for baseline)
-    const extendedStart = new Date(startISO)
-    extendedStart.setDate(extendedStart.getDate() - 30)
-    const checklistPromise = supabase
-      .from('completed_checklists')
-      .select('completion_date, equipment_hours_reading, equipment_kilometers_reading')
-      .eq('asset_id', assetId)
-      .gte('completion_date', extendedStart.toISOString().slice(0, 10))
-      .lte('completion_date', endDate)
-      .or('equipment_hours_reading.not.is.null,equipment_kilometers_reading.not.is.null')
-      .order('completion_date', { ascending: true })
-
     // Additional expenses for the asset in the window
     const additionalExpensesPromise = supabase
       .from('additional_expenses')
@@ -139,8 +130,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       .lte('created_at', endISOInclusive)
       .order('created_at', { ascending: false })
 
-    const [dieselRes, poRes, additionalExpensesRes, checklistRes] = await Promise.all([
-      dieselPromise, poPromise, additionalExpensesPromise, checklistPromise
+    const [dieselRes, poRes, additionalExpensesRes] = await Promise.all([
+      dieselPromise, poPromise, additionalExpensesPromise
     ])
 
     const diesel = dieselRes.data || []
@@ -158,86 +149,11 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     // Only show additional expenses that are pending conversion (no adjustment_po_id)
     const additional_expenses = (additionalExpensesRes.data || []).filter((ae: any) => !ae.adjustment_po_id)
 
-    // Compute efficiency metrics (hours_worked, liters_per_hour, kilometers_worked, liters_per_km)
-    // Use incremental deltas WITHIN the report period only (same logic as gerencial report)
-    // This prevents inflating km by including checklist readings from 30 days before the period
+    // Efficiency: use diesel-only SUM of generated columns (authoritative, matches "from diesel" calculation)
     const totalLiters = diesel.reduce((sum: number, t: any) => sum + Number(t.quantity_liters || 0), 0)
-    type ReadingEvent = { ts: number; val: number }
-    const startMs = new Date(startISO).getTime()
-    const endMs = new Date(endISOInclusive).getTime()
-
-    const buildProgression = (
-      readings: { ts: number; val: number }[],
-      maxPerDay: number
-    ): number => {
-      if (readings.length < 2) return 0
-      readings.sort((a, b) => a.ts - b.ts)
-      let baselineIdx = -1
-      for (let i = readings.length - 1; i >= 0; i--) {
-        if (readings[i].ts < startMs) {
-          baselineIdx = i
-          break
-        }
-      }
-      if (baselineIdx === -1) {
-        for (let i = 0; i < readings.length; i++) {
-          if (readings[i].ts >= startMs) {
-            baselineIdx = i
-            break
-          }
-        }
-      }
-      if (baselineIdx === -1 || baselineIdx >= readings.length - 1) return 0
-      let total = 0
-      for (let i = baselineIdx; i < readings.length - 1; i++) {
-        const current = readings[i]
-        const next = readings[i + 1]
-        if (next.ts < startMs) continue
-        if (current.ts >= endMs) break
-        const delta = next.val - current.val
-        if (delta < 0) continue
-        const timeDeltaDays = (next.ts - current.ts) / (1000 * 60 * 60 * 24)
-        if (timeDeltaDays < 1 / 24) continue
-        const rate = timeDeltaDays > 0 ? delta / timeDeltaDays : 0
-        if (rate > maxPerDay && timeDeltaDays < 60) continue
-        let capped = delta
-        if (timeDeltaDays > 0) {
-          const maxReasonable = maxPerDay * timeDeltaDays
-          if (delta > maxReasonable) capped = maxReasonable
-        }
-        total += capped
-      }
-      return total
-    }
-
-    // Hours: diesel + checklist (include previous_horometer for baseline)
-    const hoursEvents: ReadingEvent[] = []
-    diesel.forEach((t: any) => {
-      const ts = new Date(t.transaction_date).getTime()
-      if (t.previous_horometer != null) hoursEvents.push({ ts: ts - 1, val: Number(t.previous_horometer) })
-      if (t.horometer_reading != null) hoursEvents.push({ ts, val: Number(t.horometer_reading) })
-    })
-    ;(checklistRes.data || []).forEach((c: any) => {
-      if (c.equipment_hours_reading != null) {
-        hoursEvents.push({ ts: new Date(c.completion_date).getTime(), val: Number(c.equipment_hours_reading) })
-      }
-    })
-    const hours_worked = buildProgression(hoursEvents, 24) // max 24 hours/day
+    const hours_worked = diesel.reduce((sum: number, t: any) => sum + Number(t.hours_consumed || 0), 0)
+    const kilometers_worked = diesel.reduce((sum: number, t: any) => sum + Number(t.kilometers_consumed || 0), 0)
     const liters_per_hour = hours_worked > 0 && totalLiters > 0 ? totalLiters / hours_worked : null
-
-    // Km: diesel + checklist (incremental deltas within period)
-    const kmEvents: ReadingEvent[] = []
-    diesel.forEach((t: any) => {
-      const ts = new Date(t.transaction_date).getTime()
-      if (t.previous_kilometer != null) kmEvents.push({ ts: ts - 1, val: Number(t.previous_kilometer) })
-      if (t.kilometer_reading != null) kmEvents.push({ ts, val: Number(t.kilometer_reading) })
-    })
-    ;(checklistRes.data || []).forEach((c: any) => {
-      if (c.equipment_kilometers_reading != null) {
-        kmEvents.push({ ts: new Date(c.completion_date).getTime(), val: Number(c.equipment_kilometers_reading) })
-      }
-    })
-    const kilometers_worked = buildProgression(kmEvents, 1000) // max 1000 km/day
     const liters_per_km = kilometers_worked > 0 && totalLiters > 0 ? totalLiters / kilometers_worked : null
 
     return NextResponse.json({

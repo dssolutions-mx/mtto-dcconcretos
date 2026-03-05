@@ -173,6 +173,8 @@ export async function POST(req: NextRequest) {
         previous_horometer,
         kilometer_reading,
         previous_kilometer,
+        hours_consumed,
+        kilometers_consumed,
         is_transfer,
         diesel_warehouses!inner(product_type)
       `)
@@ -182,36 +184,6 @@ export async function POST(req: NextRequest) {
       .lt('transaction_date', dateToExclusiveStr)
 
     const { data: dieselTxs } = await dieselQuery
-
-    // Fetch checklist equipment hours (extend window to capture progression)
-    // Extended window: 30 days before period start to get baseline readings
-    const assetIdsForHours = assets.map(a => a.id)
-    const extendedStart = new Date(dateFromStart)
-    extendedStart.setDate(extendedStart.getDate() - 30)
-    const { data: hoursData } = await supabase
-      .from('completed_checklists')
-      .select('asset_id, equipment_hours_reading, equipment_kilometers_reading, reading_timestamp')
-      .gte('reading_timestamp', extendedStart.toISOString())
-      .lt('reading_timestamp', dateToExclusive.toISOString())
-      .in('asset_id', assetIdsForHours)
-      .or('equipment_hours_reading.not.is.null,equipment_kilometers_reading.not.is.null')
-    
-    // Also fetch diesel readings from extended period to validate checklist readings
-    // This helps filter out incorrect checklist readings by comparing with diesel data
-    const { data: dieselTxsForValidation } = await supabase
-      .from('diesel_transactions')
-      .select(`
-        asset_id,
-        transaction_date,
-        horometer_reading,
-        diesel_warehouses!inner(product_type)
-      `)
-      .eq('diesel_warehouses.product_type', 'diesel')
-      .neq('is_transfer', true)
-      .gte('transaction_date', extendedStart.toISOString().slice(0, 10))
-      .lt('transaction_date', dateToExclusiveStr)
-      .in('asset_id', assetIdsForHours)
-      .not('horometer_reading', 'is', null)
 
     // Fetch diesel products for pricing
     const productIds = Array.from(new Set((dieselTxs || []).map(t => t.product_id).filter(Boolean)))
@@ -469,10 +441,17 @@ export async function POST(req: NextRequest) {
     // Helper function for fuzzy matching asset codes
     const normalizeAssetCode = (code: string): string => {
       let normalized = code.toUpperCase().trim()
-      
-      // Step 1: Remove dash-separated suffixes (CR-17-B → CR-17, CR-17-1 → CR-17, CR-14-B → CR-14)
-      // This matches patterns like "-B", "-1", "-A", etc. at the end
-      normalized = normalized.replace(/[-\s]+[0-9A-Z]+$/i, '')
+
+      // Step 0: Insert dash between letters and trailing digits (BP01 → BP-01, CR03 → CR-03)
+      // Cotizador uses "BP01"/"BP02" while Maintenance uses "BP-01"/"BP-02"
+      normalized = normalized.replace(/^([A-Z]{2,})(\d+)$/i, '$1-$2')
+
+      // Step 0b: Normalize CR-EXT NN → CR-EXT-NN (space to dash for external units)
+      normalized = normalized.replace(/^CR-EXT\s+(\d{1,2})$/i, 'CR-EXT-$1')
+
+      // Step 1: Remove single-char variant suffixes only (CR-17-B → CR-17, CR-17-1 → CR-17)
+      // Must NOT strip multi-digit numbers (CR-03, CR-14) - only -B, -1, -A style suffixes
+      normalized = normalized.replace(/^([A-Z]{2,}-\d+)[-\s]+[0-9A-Z]$/i, '$1')
       
       // Step 2: Remove single letter directly after number (no dash) (CR-17B → CR-17, CR-15A → CR-15)
       // Only matches if letter comes directly after a digit without a dash
@@ -502,8 +481,11 @@ export async function POST(req: NextRequest) {
     assets.forEach(asset => {
       if (!asset.asset_code) return
       
-      // Exact match
+      // Exact match (BP-01, CR-03, etc.)
       assetNameToIdMap.set(asset.asset_code.toUpperCase(), asset.id)
+      // Dashless canonical form (BP01 → BP-01, CR03 → CR-03) for Cotizador codes
+      const dashless = asset.asset_code.replace(/([A-Z]{2,})-(\d+)/i, '$1$2').toUpperCase()
+      if (dashless !== asset.asset_code.toUpperCase()) assetNameToIdMap.set(dashless, asset.id)
       
       // Fuzzy match
       const normalized = normalizeAssetCode(asset.asset_code)
@@ -544,81 +526,8 @@ export async function POST(req: NextRequest) {
       })
     })
 
-    // Aggregate diesel by asset and compute hours (LPH)
+    // Aggregate diesel by asset
     const dieselByAsset = new Map<string, any[]>()
-    type ReadingEvent = { ts: number, val: number }
-    const checklistEventsByAsset = new Map<string, ReadingEvent[]>()
-    
-    // Build validation map from extended diesel readings (for filtering incorrect checklist readings)
-    // Filter out diesel readings with unrealistic jumps to get clean validation set
-    const dieselValidationByAsset = new Map<string, number[]>()
-    const dieselValidationByAssetRaw = new Map<string, Array<{ val: number, date: string }>>()
-    
-    ;(dieselTxsForValidation || []).forEach((t: any) => {
-      if (!t.asset_id || !t.horometer_reading) return
-      const val = Number(t.horometer_reading)
-      if (!Number.isNaN(val)) {
-        if (!dieselValidationByAssetRaw.has(t.asset_id)) {
-          dieselValidationByAssetRaw.set(t.asset_id, [])
-        }
-        dieselValidationByAssetRaw.get(t.asset_id)!.push({ val, date: t.transaction_date })
-      }
-    })
-    
-    // Filter diesel readings: keep only those in logical sequence (no unrealistic jumps)
-    dieselValidationByAssetRaw.forEach((readings, assetId) => {
-      if (readings.length === 0) return
-      
-      // Sort by date
-      readings.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
-      
-      const validReadings: number[] = []
-      const MAX_HOURS_PER_DAY = 24
-      
-      for (let i = 0; i < readings.length; i++) {
-        const current = readings[i]
-        
-        if (i === 0) {
-          // First reading - always include
-          validReadings.push(current.val)
-          continue
-        }
-        
-        const previous = readings[i - 1]
-        const timeDeltaDays = (new Date(current.date).getTime() - new Date(previous.date).getTime()) / (1000 * 60 * 60 * 24)
-        const delta = current.val - previous.val
-        const hoursPerDay = timeDeltaDays > 0 ? delta / timeDeltaDays : 0
-        
-        // Include if delta is reasonable (positive and <= 24h/day)
-        if (delta >= 0 && (timeDeltaDays >= 60 || hoursPerDay <= MAX_HOURS_PER_DAY)) {
-          validReadings.push(current.val)
-        } else {
-          console.warn(`[Gerencial] Asset ${assetId}: Filtering out diesel reading ${current.val}h (delta: ${delta}h in ${timeDeltaDays.toFixed(1)} days = ${hoursPerDay.toFixed(1)}h/day)`)
-        }
-      }
-      
-      if (validReadings.length > 0) {
-        dieselValidationByAsset.set(assetId, validReadings)
-      }
-    })
-    
-    ;(hoursData || []).forEach((h: any) => {
-      if (!h.asset_id) return
-      const val = Number(h.equipment_hours_reading)
-      const ts = new Date(h.reading_timestamp).getTime()
-      if (Number.isNaN(val) || Number.isNaN(ts)) return
-      if (!checklistEventsByAsset.has(h.asset_id)) checklistEventsByAsset.set(h.asset_id, [])
-      checklistEventsByAsset.get(h.asset_id)!.push({ ts, val })
-    })
-    const checklistKmEventsByAsset = new Map<string, ReadingEvent[]>()
-    ;(hoursData || []).forEach((h: any) => {
-      if (!h.asset_id || h.equipment_kilometers_reading == null) return
-      const val = Number(h.equipment_kilometers_reading)
-      const ts = new Date(h.reading_timestamp).getTime()
-      if (Number.isNaN(val) || Number.isNaN(ts)) return
-      if (!checklistKmEventsByAsset.has(h.asset_id)) checklistKmEventsByAsset.set(h.asset_id, [])
-      checklistKmEventsByAsset.get(h.asset_id)!.push({ ts, val })
-    })
     ;(dieselTxs || []).forEach(tx => {
       // CRITICAL: Double-check to exclude transfers (defense in depth)
       if (tx.is_transfer === true) {
@@ -649,291 +558,16 @@ export async function POST(req: NextRequest) {
       asset.diesel_cost += cost
     })
 
-    // Compute hours_worked and liters_per_hour per asset based on combined readings
-    // FIX: Use incremental deltas instead of simple subtraction to handle resets and detect errors
-    // Process ALL assets that have readings (checklist OR diesel), not just those with diesel transactions
-    const allAssetIdsWithReadings = new Set<string>()
-    checklistEventsByAsset.forEach((_, assetId) => allAssetIdsWithReadings.add(assetId))
-    dieselByAsset.forEach((_, assetId) => allAssetIdsWithReadings.add(assetId))
-    
-    allAssetIdsWithReadings.forEach(assetId => {
+    // Efficiency: use diesel-only SUM of generated columns (matches breakdown modal)
+    dieselByAsset.forEach((assetId, txs) => {
       const asset = assetMap.get(assetId)
       if (!asset) return
-      const events: ReadingEvent[] = []
-      // Diesel transaction events (use transaction_date timestamp)
-      // Only use horometer_reading, not previous_horometer (prevents 0-time deltas)
-      // Filter out diesel readings with unrealistic jumps
-      const txs = dieselByAsset.get(assetId) || []
-      const dieselReadingsRaw: Array<{ ts: number, val: number }> = []
-      txs.forEach((t: any) => {
-        const tts = new Date(t.transaction_date).getTime()
-        if (!Number.isNaN(tts) && t.horometer_reading != null) {
-          const v = Number(t.horometer_reading)
-          if (!Number.isNaN(v)) dieselReadingsRaw.push({ ts: tts, val: v })
-        }
-      })
-      
-      // Filter diesel readings: keep only those in logical sequence
-      const dieselReadings: ReadingEvent[] = []
-      if (dieselReadingsRaw.length > 0) {
-        dieselReadingsRaw.sort((a, b) => a.ts - b.ts)
-        const MAX_HOURS_PER_DAY = 24
-        
-        for (let i = 0; i < dieselReadingsRaw.length; i++) {
-          const current = dieselReadingsRaw[i]
-          
-          if (i === 0) {
-            dieselReadings.push({ ts: current.ts, val: current.val })
-            continue
-          }
-          
-          const previous = dieselReadingsRaw[i - 1]
-          const timeDeltaDays = (current.ts - previous.ts) / (1000 * 60 * 60 * 24)
-          const delta = current.val - previous.val
-          const hoursPerDay = timeDeltaDays > 0 ? delta / timeDeltaDays : 0
-          
-          // Include if delta is reasonable (positive and <= 24h/day, or gap >60 days)
-          if (delta >= 0 && (timeDeltaDays >= 60 || hoursPerDay <= MAX_HOURS_PER_DAY)) {
-            dieselReadings.push({ ts: current.ts, val: current.val })
-          } else {
-            console.warn(`[Gerencial] Asset ${assetId}: Filtering out diesel reading ${current.val}h (delta: ${delta}h in ${timeDeltaDays.toFixed(1)} days = ${hoursPerDay.toFixed(1)}h/day)`)
-          }
-        }
-      }
-      events.push(...dieselReadings)
-      
-      // Checklist events - filter out clearly incorrect readings
-      // Use extended diesel readings for validation (includes readings before period start)
-      const chkEvents = checklistEventsByAsset.get(assetId) || []
-      const validationDieselValues = dieselValidationByAsset.get(assetId) || []
-      
-      if (validationDieselValues.length > 0 || dieselReadings.length > 0) {
-        // Use extended diesel readings if available, otherwise use period diesel readings
-        const dieselValues = validationDieselValues.length > 0 ? validationDieselValues : dieselReadings.map(e => e.val)
-        const dieselMin = Math.min(...dieselValues)
-        const dieselMax = Math.max(...dieselValues)
-        const dieselRange = dieselMax - dieselMin
-        // Allow checklist readings within 2x the diesel range (to account for readings before/after period)
-        const allowedMin = dieselMin - dieselRange * 2
-        const allowedMax = dieselMax + dieselRange * 2
-        
-        chkEvents.forEach(e => {
-          // Only include if within reasonable range of diesel readings
-          if (e.val >= allowedMin && e.val <= allowedMax) {
-            events.push(e)
-          } else {
-            console.warn(`[Gerencial] Asset ${assetId}: Filtering out checklist reading ${e.val}h (outside diesel range ${dieselMin}-${dieselMax}h, allowed: ${allowedMin.toFixed(0)}-${allowedMax.toFixed(0)}h)`)
-          }
-        })
-      } else {
-        // No diesel readings at all - use all checklist readings (fallback)
-        events.push(...chkEvents)
-      }
-
-      if (events.length === 0) return
-      
-      // Sort all events chronologically
-      events.sort((a, b) => a.ts - b.ts)
-      
-      // Remove duplicates (same timestamp and value)
-      const uniqueEvents: ReadingEvent[] = []
-      events.forEach(e => {
-        const last = uniqueEvents[uniqueEvents.length - 1]
-        if (!last || last.ts !== e.ts || last.val !== e.val) {
-          uniqueEvents.push(e)
-        }
-      })
-      
-      if (uniqueEvents.length < 2) return // Need at least 2 readings
-      
-      const startMs = dateFromStart.getTime()
-      const endMs = dateToExclusive.getTime()
-      
-      // Find baseline: last reading before period start, or first reading in period
-      let baselineIdx = -1
-      for (let i = uniqueEvents.length - 1; i >= 0; i--) {
-        if (uniqueEvents[i].ts < startMs) {
-          baselineIdx = i
-          break
-        }
-      }
-      // If no reading before start, use first reading in period
-      if (baselineIdx === -1) {
-        for (let i = 0; i < uniqueEvents.length; i++) {
-          if (uniqueEvents[i].ts >= startMs) {
-            baselineIdx = i
-            break
-          }
-        }
-      }
-      if (baselineIdx === -1 || baselineIdx >= uniqueEvents.length - 1) return
-      
-      // Calculate incremental deltas between consecutive readings within the period
-      // This handles resets (negative deltas) and detects unrealistic jumps
-      let totalHours = 0
-      const MAX_HOURS_PER_DAY = 24 // Maximum reasonable hours per day
-      const MAX_HOURS_PER_MONTH = MAX_HOURS_PER_DAY * 31 // ~744 hours/month max
-      
-      for (let i = baselineIdx; i < uniqueEvents.length - 1; i++) {
-        const current = uniqueEvents[i]
-        const next = uniqueEvents[i + 1]
-        
-        // Only count deltas within the report period
-        if (next.ts < startMs) continue
-        if (current.ts >= endMs) break
-        
-        const delta = next.val - current.val
-        
-        // Skip negative deltas (resets) - they don't represent hours worked
-        if (delta < 0) {
-          console.warn(`[Gerencial] Asset ${assetId}: Reading reset detected at ${new Date(next.ts).toISOString()}: ${current.val} → ${next.val} (delta: ${delta})`)
-          continue
-        }
-        
-        // Calculate time delta in days
-        const timeDeltaDays = (next.ts - current.ts) / (1000 * 60 * 60 * 24)
-        
-        // Skip if time delta is too small (< 1 hour) - likely duplicate or same-event readings
-        if (timeDeltaDays < 1/24) {
-          console.warn(`[Gerencial] Asset ${assetId}: Skipping delta with <1h gap at ${new Date(next.ts).toISOString()}: ${current.val} → ${next.val} (${timeDeltaDays.toFixed(4)} days)`)
-          continue
-        }
-        
-        const hoursPerDay = timeDeltaDays > 0 ? delta / timeDeltaDays : 0
-        
-        // Validate: skip unrealistic jumps (>24 hours/day)
-        // Only reject if it's clearly impossible (>24h/day) AND the time gap is reasonable (not months apart)
-        if (hoursPerDay > MAX_HOURS_PER_DAY && timeDeltaDays < 60) {
-          // Only reject if it's >24h/day AND the gap is less than 60 days
-          // If readings are months apart, the average might be valid even if a single jump looks large
-          console.warn(`[Gerencial] Asset ${assetId}: Unrealistic jump detected at ${new Date(next.ts).toISOString()}: ${current.val} → ${next.val} (${delta}h in ${timeDeltaDays.toFixed(1)} days = ${hoursPerDay.toFixed(1)}h/day)`)
-          continue
-        }
-        
-        // For very large time gaps (>60 days), cap at reasonable rate (24h/day max)
-        // This handles cases where readings are months apart but the total is reasonable
-        let cappedDelta = delta
-        if (timeDeltaDays > 0) {
-          const maxReasonableDelta = MAX_HOURS_PER_DAY * timeDeltaDays
-          if (delta > maxReasonableDelta) {
-            console.warn(`[Gerencial] Asset ${assetId}: Capping large delta at ${new Date(next.ts).toISOString()}: ${delta}h → ${maxReasonableDelta.toFixed(0)}h (${timeDeltaDays.toFixed(1)} days)`)
-            cappedDelta = maxReasonableDelta
-          }
-        }
-        totalHours += cappedDelta
-      }
-      
-          // Always set hours_worked (even if 0) to ensure it's initialized
-          asset.hours_worked = totalHours
-          if (totalHours > 0) {
-            asset.liters_per_hour = asset.diesel_liters > 0 ? asset.diesel_liters / totalHours : 0
-          } else {
-            asset.liters_per_hour = 0
-          }
-          
-          // Debug log for CR-16
-          if (assetId === '6be57c11-a350-4e96-bbca-f3772483ee22') {
-            console.log(`[Gerencial] Asset CR-16 hours calculation: events=${events.length}, unique=${uniqueEvents.length}, baselineIdx=${baselineIdx}, totalHours=${totalHours}`)
-            console.log(`[Gerencial] Asset CR-16: dieselReadings=${dieselReadings.length}, chkEvents=${chkEvents.length}, validationDieselValues=${validationDieselValues.length}`)
-            console.log(`[Gerencial] Asset CR-16: plant_id=${asset.plant_id}, plant_name=${asset.plant_name}`)
-          }
-          
-          // Debug log for assets with readings but 0 hours (might indicate filtering issues)
-          if (events.length >= 2 && totalHours === 0) {
-            console.warn(`[Gerencial] Asset ${assetId}: Has ${events.length} readings but calculated 0 hours. Baseline idx: ${baselineIdx}, events: ${uniqueEvents.length}`)
-          }
-    })
-
-    // Compute kilometers_worked and liters_per_km per asset (mirror of hours logic)
-    const allAssetIdsWithKmReadings = new Set<string>()
-    checklistKmEventsByAsset.forEach((_, assetId) => allAssetIdsWithKmReadings.add(assetId))
-    dieselByAsset.forEach((_, assetId) => {
-      const txs = dieselByAsset.get(assetId) || []
-      if (txs.some((t: any) => t.kilometer_reading != null)) allAssetIdsWithKmReadings.add(assetId)
-    })
-    allAssetIdsWithKmReadings.forEach(assetId => {
-      const asset = assetMap.get(assetId)
-      if (!asset) return
-      const kmEvents: ReadingEvent[] = []
-      const txs = dieselByAsset.get(assetId) || []
-      const dieselKmReadingsRaw: Array<{ ts: number, val: number }> = []
-      txs.forEach((t: any) => {
-        const tts = new Date(t.transaction_date).getTime()
-        if (!Number.isNaN(tts) && t.kilometer_reading != null) {
-          const v = Number(t.kilometer_reading)
-          if (!Number.isNaN(v)) dieselKmReadingsRaw.push({ ts: tts, val: v })
-        }
-      })
-      const dieselKmReadings: ReadingEvent[] = []
-      if (dieselKmReadingsRaw.length > 0) {
-        dieselKmReadingsRaw.sort((a, b) => a.ts - b.ts)
-        const MAX_KM_PER_DAY = 1000
-        for (let i = 0; i < dieselKmReadingsRaw.length; i++) {
-          const current = dieselKmReadingsRaw[i]
-          if (i === 0) {
-            dieselKmReadings.push({ ts: current.ts, val: current.val })
-            continue
-          }
-          const previous = dieselKmReadingsRaw[i - 1]
-          const timeDeltaDays = (current.ts - previous.ts) / (1000 * 60 * 60 * 24)
-          const delta = current.val - previous.val
-          const kmPerDay = timeDeltaDays > 0 ? delta / timeDeltaDays : 0
-          if (delta >= 0 && (timeDeltaDays >= 60 || kmPerDay <= MAX_KM_PER_DAY)) {
-            dieselKmReadings.push({ ts: current.ts, val: current.val })
-          }
-        }
-      }
-      kmEvents.push(...dieselKmReadings)
-      const chkKmEvents = checklistKmEventsByAsset.get(assetId) || []
-      kmEvents.push(...chkKmEvents)
-      if (kmEvents.length === 0) return
-      kmEvents.sort((a, b) => a.ts - b.ts)
-      const uniqueKmEvents: ReadingEvent[] = []
-      kmEvents.forEach(e => {
-        const last = uniqueKmEvents[uniqueKmEvents.length - 1]
-        if (!last || last.ts !== e.ts || last.val !== e.val) uniqueKmEvents.push(e)
-      })
-      if (uniqueKmEvents.length < 2) return
-      const startMs = dateFromStart.getTime()
-      const endMs = dateToExclusive.getTime()
-      let baselineIdx = -1
-      for (let i = uniqueKmEvents.length - 1; i >= 0; i--) {
-        if (uniqueKmEvents[i].ts < startMs) {
-          baselineIdx = i
-          break
-        }
-      }
-      if (baselineIdx === -1) {
-        for (let i = 0; i < uniqueKmEvents.length; i++) {
-          if (uniqueKmEvents[i].ts >= startMs) {
-            baselineIdx = i
-            break
-          }
-        }
-      }
-      if (baselineIdx === -1 || baselineIdx >= uniqueKmEvents.length - 1) return
-      let totalKm = 0
-      const MAX_KM_PER_DAY_CAP = 1000
-      for (let i = baselineIdx; i < uniqueKmEvents.length - 1; i++) {
-        const current = uniqueKmEvents[i]
-        const next = uniqueKmEvents[i + 1]
-        if (next.ts < startMs) continue
-        if (current.ts >= endMs) break
-        const delta = next.val - current.val
-        if (delta < 0) continue
-        const timeDeltaDays = (next.ts - current.ts) / (1000 * 60 * 60 * 24)
-        if (timeDeltaDays < 1 / 24) continue
-        const kmPerDay = timeDeltaDays > 0 ? delta / timeDeltaDays : 0
-        if (kmPerDay > MAX_KM_PER_DAY_CAP && timeDeltaDays < 60) continue
-        let cappedDelta = delta
-        if (timeDeltaDays > 0) {
-          const maxReasonable = MAX_KM_PER_DAY_CAP * timeDeltaDays
-          if (delta > maxReasonable) cappedDelta = maxReasonable
-        }
-        totalKm += cappedDelta
-      }
-      asset.kilometers_worked = totalKm
-      asset.liters_per_km = totalKm > 0 && asset.diesel_liters > 0 ? asset.diesel_liters / totalKm : 0
+      const hours_worked = txs.reduce((sum: number, t: any) => sum + Number(t.hours_consumed || 0), 0)
+      const kilometers_worked = txs.reduce((sum: number, t: any) => sum + Number(t.kilometers_consumed || 0), 0)
+      asset.hours_worked = hours_worked
+      asset.kilometers_worked = kilometers_worked
+      asset.liters_per_hour = hours_worked > 0 && asset.diesel_liters > 0 ? asset.diesel_liters / hours_worked : 0
+      asset.liters_per_km = kilometers_worked > 0 && asset.diesel_liters > 0 ? asset.diesel_liters / kilometers_worked : 0
     })
 
     // Separate POs by purpose to track cash vs inventory expenses
@@ -1035,22 +669,24 @@ export async function POST(req: NextRequest) {
       // CRITICAL: Match by asset code/name first, prefer current plant but allow any plant
       // This preserves remisiones when assets move between plants
       if (!assetId) {
-        // First try current plant (preferred)
-        let matchingAsset = Array.from(assetMap.values()).find(a => 
-          a.plant_id === maintenancePlantId && 
-          a.asset_code && 
-          a.asset_code.toUpperCase() === assetName
-        )
-        // If not found in current plant, try any plant (for moved assets)
-        if (!matchingAsset) {
-          matchingAsset = Array.from(assetMap.values()).find(a => 
+        const namesToTry = [assetName, normalizeAssetCode(assetName)].filter((v, i, a) => a.indexOf(v) === i)
+        for (const tryName of namesToTry) {
+          let matchingAsset = Array.from(assetMap.values()).find(a => 
+            a.plant_id === maintenancePlantId && 
             a.asset_code && 
-            a.asset_code.toUpperCase() === assetName
+            a.asset_code.toUpperCase() === tryName
           )
-        }
-        if (matchingAsset) {
-          assetId = matchingAsset.id
-          matchMethod = 'exact_code'
+          if (!matchingAsset) {
+            matchingAsset = Array.from(assetMap.values()).find(a => 
+              a.asset_code && 
+              a.asset_code.toUpperCase() === tryName
+            )
+          }
+          if (matchingAsset) {
+            assetId = matchingAsset.id
+            matchMethod = 'exact_code'
+            break
+          }
         }
       }
 
@@ -1118,7 +754,7 @@ export async function POST(req: NextRequest) {
           // Step 3b: Iteratively remove trailing characters
           // Example: "CR-17B" → try "CR-17" → try "CR-1" → try "CR"
           let testName = assetName
-          while (testName.length > 2 && !assetId) {
+          while (testName.length > 5 && !assetId) {
             // Remove last character
             testName = testName.slice(0, -1)
             

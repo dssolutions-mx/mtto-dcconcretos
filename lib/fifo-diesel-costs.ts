@@ -55,6 +55,8 @@ export async function calculateDieselCostsFIFO(
     return { plantCosts: new Map(), transactionCosts: new Map() }
   }
 
+  console.log('[FIFO] plantCodes:', plantCodes, '| plants with warehouses:', [...new Set(warehouseToPlantCode.values())])
+
   // Fetch entries from last 45 days
   // Include both regular entries AND transfer-in entries (they carry forward cost basis)
   // Transfer-in entries preserve the cost basis from the source plant (e.g., Plant 4)
@@ -86,7 +88,7 @@ export async function calculateDieselCostsFIFO(
 
   const { data: allConsumptions } = await supabase
     .from('diesel_transactions')
-    .select(`id, warehouse_id, product_id, quantity_liters, transaction_date`)
+    .select(`id, warehouse_id, asset_id, product_id, quantity_liters, transaction_date`)
     .eq('transaction_type', 'consumption')
     .eq('is_transfer', false) // Exclude transfer-out consumptions from FIFO
     .gte('transaction_date', consumptionQueryStartISO)
@@ -95,6 +97,13 @@ export async function calculateDieselCostsFIFO(
     .order('transaction_date', { ascending: true })
 
   const allConsumptionsFetched = allConsumptions || []
+
+  const consByPlant = new Map<string, number>()
+  allConsumptionsFetched.forEach((c: any) => {
+    const code = warehouseToPlantCode.get(c.warehouse_id)
+    if (code) consByPlant.set(code, (consByPlant.get(code) || 0) + 1)
+  })
+  console.log('[FIFO] Consumptions fetched per plant:', Object.fromEntries(consByPlant))
 
   // CONDITIONAL 90-DAY EXTENSION: If a warehouse has consumptions but no entries in the 45-day
   // window (e.g. Plant 5 with a single older entry), extend the entries window to 90 days for
@@ -145,6 +154,27 @@ export async function calculateDieselCostsFIFO(
     const consDateStr = getLocalDateStr(cons.transaction_date)
     return consDateStr >= dateFromStr && consDateStr <= dateToStr
   })
+
+  // Diesel liter breakdown (FIFO uses GMT-6; gerencial route liters use UTC - can differ at boundaries)
+  const litersByPlantTotal = new Map<string, number>()
+  const litersByPlantAssetOnly = new Map<string, number>()
+  consumptionsInPeriod.forEach(cons => {
+    const plantCode = warehouseToPlantCode.get(cons.warehouse_id)
+    if (!plantCode) return
+    const liters = Number(cons.quantity_liters || 0)
+    litersByPlantTotal.set(plantCode, (litersByPlantTotal.get(plantCode) || 0) + liters)
+    if ((cons as any).asset_id) {
+      litersByPlantAssetOnly.set(plantCode, (litersByPlantAssetOnly.get(plantCode) || 0) + liters)
+    }
+  })
+  const literBreakdown: Record<string, { total: number; asset_only: number }> = {}
+  litersByPlantTotal.forEach((total, code) => {
+    literBreakdown[code] = { total, asset_only: litersByPlantAssetOnly.get(code) || 0 }
+  })
+  if (Object.keys(literBreakdown).length > 0) {
+    console.log('[FIFO] Diesel liters by plant (in period, GMT-6):', JSON.stringify(literBreakdown))
+    console.log('[FIFO] Gerencial report plant.diesel_liters = asset_only (excludes general consumptions)')
+  }
 
   // Group transactions by warehouse
   const transactionsByWarehouse = new Map<string, Array<{
