@@ -128,14 +128,8 @@ export function SupplierAnalyticsDashboard({
 
   return (
     <div className={`space-y-6 ${className}`}>
-      {/* Header with Controls */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div>
-          <h2 className="text-3xl font-bold tracking-tight">Análisis de Proveedores</h2>
-          <p className="text-muted-foreground">
-            Métricas de rendimiento y análisis de proveedores
-          </p>
-        </div>
+      {/* Controls */}
+      <div className="flex justify-end">
         <div className="flex gap-2">
           <Select value={selectedTimeRange} onValueChange={setSelectedTimeRange}>
             <SelectTrigger className="w-[120px]">
