@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
+import { canUserReleaseInventory } from '@/lib/inventory/warehouse-authority'
 import { InventoryFulfillmentService, FulfillFromInventoryRequest } from '@/lib/services/inventory-fulfillment-service'
 
 export async function POST(
@@ -43,6 +44,11 @@ export async function POST(
           error: 'Quantity must be greater than 0' 
         }, { status: 400 })
       }
+    }
+
+    const canRelease = await canUserReleaseInventory(user.id)
+    if (!canRelease) {
+      return NextResponse.json({ success: false, error: 'You do not have permission to fulfill from inventory' }, { status: 403 })
     }
 
     const result = await InventoryFulfillmentService.fulfillFromInventory({

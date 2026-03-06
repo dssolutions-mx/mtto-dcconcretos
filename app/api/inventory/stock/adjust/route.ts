@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import { StockService, AdjustStockRequest } from '@/lib/services/stock-service'
+import { canUserAdjustInventory } from '@/lib/inventory/warehouse-authority'
 
 export async function POST(request: NextRequest) {
   try {
@@ -32,16 +33,24 @@ export async function POST(request: NextRequest) {
       }, { status: 400 })
     }
 
-    const updatedStock = await StockService.adjustStock(body, user.id)
-
-    // Calculate adjustment amount
-    const { data: oldStock } = await supabase
+    // Resolve warehouse for authority check and pre-mutation quantity
+    const { data: stock, error: stockError } = await supabase
       .from('inventory_stock')
-      .select('current_quantity')
+      .select('warehouse_id, current_quantity')
       .eq('id', body.stock_id)
       .single()
 
-    const adjustment_amount = body.physical_count - (oldStock?.current_quantity || 0)
+    if (stockError || !stock) {
+      return NextResponse.json({ success: false, error: 'Stock not found' }, { status: 404 })
+    }
+
+    const canAdjust = await canUserAdjustInventory(user.id, stock.warehouse_id ?? undefined, undefined)
+    if (!canAdjust) {
+      return NextResponse.json({ success: false, error: 'You do not have permission to adjust inventory for this warehouse' }, { status: 403 })
+    }
+
+    const updatedStock = await StockService.adjustStock(body, user.id)
+    const adjustment_amount = body.physical_count - (stock.current_quantity ?? 0)
 
     return NextResponse.json({
       success: true,

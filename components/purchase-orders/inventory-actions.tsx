@@ -6,6 +6,7 @@ import { Package, Warehouse } from "lucide-react"
 import { ReceivePODialog } from "@/components/inventory/receive-po-dialog"
 import { FulfillFromInventoryDialog } from "@/components/inventory/fulfill-po-dialog"
 import { Badge } from "@/components/ui/badge"
+import { useAuthZustand } from "@/hooks/use-auth-zustand"
 
 interface POInventoryActionsProps {
   purchaseOrderId: string
@@ -20,6 +21,8 @@ export function POInventoryActions({
   inventoryFulfilled = false,
   onSuccess
 }: POInventoryActionsProps) {
+  const { organizationalContext } = useAuthZustand()
+  const wr = organizationalContext?.warehouseResponsibility
   const [receiveDialogOpen, setReceiveDialogOpen] = useState(false)
   const [fulfillDialogOpen, setFulfillDialogOpen] = useState(false)
 
@@ -38,7 +41,7 @@ export function POInventoryActions({
             Cumplido desde Inventario
           </Badge>
         )}
-        {!receivedToInventory && (
+        {!receivedToInventory && wr?.canReceiveInventory && (
           <Button
             variant="outline"
             onClick={() => setReceiveDialogOpen(true)}
@@ -47,7 +50,7 @@ export function POInventoryActions({
             Recibir a Inventario
           </Button>
         )}
-        {!inventoryFulfilled && (
+        {!inventoryFulfilled && wr?.canReleaseInventory && (
           <Button
             variant="outline"
             onClick={() => setFulfillDialogOpen(true)}

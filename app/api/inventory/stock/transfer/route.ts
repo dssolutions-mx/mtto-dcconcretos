@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
+import { canUserReleaseInventory, canUserReceiveInventory } from '@/lib/inventory/warehouse-authority'
 import { MovementService } from '@/lib/services/movement-service'
 import { StockService } from '@/lib/services/stock-service'
 
@@ -40,6 +41,14 @@ export async function POST(request: NextRequest) {
         success: false,
         error: 'Cannot transfer to the same warehouse' 
       }, { status: 400 })
+    }
+
+    const [canRelease, canReceive] = await Promise.all([
+      canUserReleaseInventory(user.id, from_warehouse_id, undefined),
+      canUserReceiveInventory(user.id, to_warehouse_id, undefined),
+    ])
+    if (!canRelease || !canReceive) {
+      return NextResponse.json({ success: false, error: 'You do not have permission to transfer inventory between these warehouses' }, { status: 403 })
     }
 
     // Get source stock

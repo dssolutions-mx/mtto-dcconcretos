@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
+import { canUserReceiveInventory } from '@/lib/inventory/warehouse-authority'
 import { InventoryReceiptService, ReceiveToInventoryRequest } from '@/lib/services/inventory-receipt-service'
 
 export async function POST(
@@ -43,6 +44,11 @@ export async function POST(
           error: 'Quantity must be greater than 0' 
         }, { status: 400 })
       }
+    }
+
+    const canReceive = await canUserReceiveInventory(user.id)
+    if (!canReceive) {
+      return NextResponse.json({ success: false, error: 'You do not have permission to receive inventory' }, { status: 403 })
     }
 
     const result = await InventoryReceiptService.receiveToInventory({
