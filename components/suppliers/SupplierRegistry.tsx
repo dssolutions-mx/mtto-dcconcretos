@@ -323,7 +323,7 @@ export function SupplierRegistry({
   }
 
   const renderRowActions = (supplier: Supplier) => (
-    <div className="flex items-center gap-1">
+    <div className="flex items-center justify-end gap-1">
       <Button
         variant="ghost"
         size="sm"
@@ -524,7 +524,7 @@ export function SupplierRegistry({
                       <TableHead className="cursor-pointer select-none" onClick={() => toggleSort("total_orders")}>
                         Órdenes <SortIndicator field="total_orders" />
                       </TableHead>
-                      <TableHead className="text-right">Acciones</TableHead>
+                      <TableHead className="w-[100px] text-right">Acciones</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
