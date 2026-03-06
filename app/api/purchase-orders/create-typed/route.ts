@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { PurchaseOrderService, PurchaseOrderValidationService } from '@/lib/services/purchase-order-service'
 import { CreatePurchaseOrderRequest } from '@/types/purchase-orders'
 import { createClient } from '@/lib/supabase-server'
+import { notifyNextApprover } from '@/lib/purchase-orders/notify-approver'
 
 export async function POST(request: NextRequest) {
   try {
@@ -33,6 +34,12 @@ export async function POST(request: NextRequest) {
     // Create purchase order with tipo específico
     const purchaseOrder = await PurchaseOrderService.createTypedPurchaseOrder(normalizedRequest, user.id)
     
+    // If PO was created directly in pending_approval state (no draft/quote needed),
+    // notify the technical approver (GERENTE_MANTENIMIENTO) immediately.
+    if (purchaseOrder.status === 'pending_approval' && purchaseOrder.id) {
+      void notifyNextApprover(purchaseOrder.id)
+    }
+
     return NextResponse.json({
       success: true,
       data: purchaseOrder,

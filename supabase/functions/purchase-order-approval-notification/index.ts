@@ -267,7 +267,7 @@ serve(async (req) => {
 
     const { data: po, error: poErr } = await supabase
       .from('purchase_orders')
-      .select('id, order_id, total_amount, approval_amount, supplier, po_type, po_purpose, work_order_type, plant_id, requested_by, work_order_id, notes, quotation_url')
+      .select('id, order_id, total_amount, approval_amount, supplier, po_type, po_purpose, work_order_type, plant_id, requested_by, work_order_id, notes, quotation_url, viability_state')
       .eq('id', id)
       .single()
     if (poErr || !po) return new Response(JSON.stringify({ error: poErr?.message || 'PO not found' }), { status: 404 })
@@ -283,6 +283,12 @@ serve(async (req) => {
     const skipGM = (purpose === 'work_order_inventory' && woType === 'preventive') ||
       ((purpose === 'work_order_cash' || purpose === 'mixed') && woType === 'preventive')
     const requiresGMEscalation = !skipGM && aboveThreshold
+
+    // Paths that require Administration viability review before GM can approve
+    // (inventory_restock = Via 3; work_order_cash/mixed = Via 4 — both preventive and corrective)
+    const requiresViability = purpose === 'inventory_restock' ||
+      purpose === 'work_order_cash' ||
+      purpose === 'mixed'
 
     // Resolve plant id from PO directly or via work order / asset
     let resolvedPlantId: string | null = po.plant_id || null
@@ -360,9 +366,25 @@ serve(async (req) => {
       }
     }
 
-    // NEW: BU-first with escalation logic
-    // If PO has been authorized_by (BU approved), check if escalation to GM is needed
-    const { data: poFull } = await supabase.from('purchase_orders').select('authorized_by').eq('id', po.id).maybeSingle()
+    // Fetch Administration profiles for viability notification (Via 3 and Via 4)
+    const { data: adminProfiles } = await supabase
+      .from('profiles')
+      .select('id, nombre, apellido, email')
+      .eq('role', 'AREA_ADMINISTRATIVA')
+      .eq('status', 'active')
+    let adminRecipients: Array<{ userId: string; email: string; name: string }> = []
+    if (adminProfiles && adminProfiles.length) {
+      adminRecipients = (adminProfiles as { id: string; nombre: string; apellido: string; email: string | null }[])
+        .map((p) => {
+          const email = (p.email && p.email.trim()) || null
+          if (!email) return null
+          return { userId: p.id, email, name: `${p.nombre || ''} ${p.apellido || ''}`.trim() || 'Área Administrativa' }
+        })
+        .filter(Boolean) as any
+    }
+
+    // Workflow stage detection: determine who to notify next
+    const { data: poFull } = await supabase.from('purchase_orders').select('authorized_by, viability_state').eq('id', po.id).maybeSingle()
     const hasFirstApproval = !!poFull?.authorized_by
 
     // Resolve approver name for GM email (replace "Auto-seleccionada" with "Hector Morales la seleccionó")
@@ -373,26 +395,34 @@ serve(async (req) => {
     }
 
     let recipients: Array<{ userId?: string; email: string; name: string }> = []
-    
-    if (hasFirstApproval) {
-      // BU already approved; escalate to GM only when path requires it and amount >= 7000 (Task 5)
-      if (requiresGMEscalation) {
-        recipients = gmRecipients
-      } else {
-        // Path skips GM or amount < 7000; no further escalation needed
-        recipients = []
-      }
-    } else {
-      // No first approval yet → always notify BU Manager first
+
+    if (!hasFirstApproval) {
+      // ─── Stage 1: Technical approval pending ───────────────────────────────
+      // Only GERENTE_MANTENIMIENTO can approve POs. JUN/JEFE_PLANTA do NOT authorize OCs.
+      // If no GERENTE_MANTENIMIENTO is configured, escalate to GERENCIA_GENERAL directly.
       if (technicalApproverEmail) {
-        // Use email from profiles (already resolved above) — avoid listUsers() pagination
         const { data: buMgrProfile } = await supabase.from('profiles').select('id, email').eq('email', technicalApproverEmail).maybeSingle()
         const buEmail = (buMgrProfile?.email && buMgrProfile.email.trim()) || technicalApproverEmail
         recipients = [{ email: buEmail, name: technicalApproverName || '', userId: buMgrProfile?.id }]
       } else {
-        // Fallback to GM if BU manager not found
+        // No GERENTE_MANTENIMIENTO found → escalate directly to GM (Gerente General)
         recipients = gmRecipients
       }
+    } else if (requiresViability && poFull?.viability_state !== 'viable') {
+      // ─── Stage 2a: Viability review needed (Via 3 & Via 4) ────────────────
+      // GERENTE_MANTENIMIENTO approved; Administration must confirm financial viability
+      if (adminRecipients.length > 0) {
+        recipients = adminRecipients
+      } else {
+        // Fallback: if no Administration configured, skip to GM (or done)
+        recipients = requiresGMEscalation ? gmRecipients : []
+      }
+    } else if (requiresGMEscalation) {
+      // ─── Stage 2b / 3: GM escalation needed (corrective ≥ $7,000) ────────
+      recipients = gmRecipients
+    } else {
+      // ─── All approvals satisfied — no further notification needed ──────────
+      recipients = []
     }
 
     if (recipients.length === 0 && !test_recipient) {

@@ -14,6 +14,7 @@ import {
   resolveWorkflowPath,
   GM_ESCALATION_THRESHOLD_MXN,
 } from '@/lib/purchase-orders/workflow-policy'
+import { notifyNextApprover } from '@/lib/purchase-orders/notify-approver'
 
 export async function PUT(
   request: NextRequest,
@@ -170,6 +171,9 @@ export async function PUT(
               return NextResponse.json({ error: 'No se pudo registrar la autorización escalada' }, { status: 500 })
             }
 
+            // Notify next approver (Admin for viability paths, GM for non-viability paths)
+            void notifyNextApprover(id)
+
             return NextResponse.json({
               success: true,
               message: 'Autorización registrada. Se ha escalado a Gerencia General para aprobación final.',
@@ -238,6 +242,9 @@ export async function PUT(
         if (viabilityError) {
           return NextResponse.json({ error: 'No se pudo registrar la viabilidad administrativa' }, { status: 500 })
         }
+
+        // Notify GM to do final approval if path requires escalation
+        void notifyNextApprover(id)
 
         return NextResponse.json({
           success: true,
