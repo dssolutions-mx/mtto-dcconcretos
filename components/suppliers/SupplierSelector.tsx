@@ -24,16 +24,13 @@ import {
   Search,
   Star,
   MapPin,
-  Phone,
-  Mail,
-  Building,
   Plus,
   Check,
   TrendingUp,
-  Users
+  AlertTriangle,
+  ShieldCheck,
 } from "lucide-react"
 import { Supplier, SupplierType } from "@/types/suppliers"
-import { Separator } from "@/components/ui/separator"
 import { SupplierForm } from "@/components/suppliers/SupplierForm"
 
 interface SupplierSelectorProps {
@@ -85,9 +82,10 @@ export function SupplierSelector({
   const loadSuppliers = async () => {
     setLoading(true)
     try {
+      // Load all non-suspended suppliers — filter to active/certified client-side
       const params = new URLSearchParams({
-        status: 'active',
-        limit: '100'
+        status: 'all',
+        limit: '200'
       })
 
       if (filterByType) {
@@ -101,7 +99,16 @@ export function SupplierSelector({
       const data = await response.json()
 
       if (response.ok) {
-        setSuppliers(data.suppliers || [])
+        // Only show active and certified suppliers; sort certified first
+        const eligible = (data.suppliers || []).filter(
+          (s: Supplier) => s.status === 'active' || s.status === 'active_certified'
+        )
+        eligible.sort((a: Supplier, b: Supplier) => {
+          if (a.status === 'active_certified' && b.status !== 'active_certified') return -1
+          if (b.status === 'active_certified' && a.status !== 'active_certified') return 1
+          return 0
+        })
+        setSuppliers(eligible)
       } else {
         console.error('Error loading suppliers:', data.error)
       }
@@ -181,6 +188,8 @@ export function SupplierSelector({
     )
   }
 
+  const isCertified = (supplier: Supplier) => supplier.status === 'active_certified'
+
   const handleSupplierSelect = (supplier: Supplier) => {
     setSelectedSupplier(supplier)
     onChange(supplier)
@@ -192,86 +201,107 @@ export function SupplierSelector({
     onChange(null)
   }
 
-  const SupplierCard = ({ supplier, suggestion }: { supplier: Supplier; suggestion?: SupplierSuggestion }) => (
-    <Card
-      key={supplier.id}
-      className={`cursor-pointer transition-all hover:shadow-md ${
-        selectedSupplier?.id === supplier.id ? 'ring-2 ring-primary' : ''
-      }`}
-      onClick={() => handleSupplierSelect(supplier)}
-    >
-      <CardContent className="p-4">
-        <div className="flex items-start justify-between">
-          <div className="flex-1">
-            <div className="flex items-center gap-2 mb-2">
-              <h4 className="font-semibold">{supplier.name}</h4>
-              {getTypeBadge(supplier.supplier_type)}
-            </div>
-            {supplier.business_name && (
-              <p className="text-sm text-muted-foreground mb-2">
-                {supplier.business_name}
-              </p>
-            )}
-
-            <div className="flex items-center gap-4 text-sm text-muted-foreground mb-2">
-              {supplier.city && supplier.state && (
-                <div className="flex items-center gap-1">
-                  <MapPin className="w-3 h-3" />
-                  {supplier.city}, {supplier.state}
-                </div>
-              )}
-              {supplier.rating && (
-                <div className="flex items-center gap-1">
-                  <Star className="w-3 h-3 fill-yellow-400 text-yellow-400" />
-                  {supplier.rating.toFixed(1)}
-                </div>
-              )}
-              {supplier.reliability_score && (
-                <div className="flex items-center gap-1">
-                  <TrendingUp className="w-3 h-3" />
-                  {supplier.reliability_score}%
-                </div>
-              )}
-            </div>
-
-            {supplier.specialties && supplier.specialties.length > 0 && (
-              <div className="flex flex-wrap gap-1">
-                {supplier.specialties.slice(0, 3).map((specialty, index) => (
-                  <Badge key={index} variant="outline" className="text-xs">
-                    {specialty}
+  const SupplierCard = ({ supplier, suggestion }: { supplier: Supplier; suggestion?: SupplierSuggestion }) => {
+    const certified = isCertified(supplier)
+    return (
+      <Card
+        key={supplier.id}
+        className={`transition-all ${
+          certified
+            ? 'cursor-pointer hover:shadow-md'
+            : 'opacity-60 cursor-not-allowed'
+        } ${selectedSupplier?.id === supplier.id ? 'ring-2 ring-primary' : ''}`}
+        onClick={() => certified && handleSupplierSelect(supplier)}
+        title={!certified ? 'Este proveedor no está certificado. Completa su RFC y datos bancarios para certificarlo.' : undefined}
+      >
+        <CardContent className="p-4">
+          <div className="flex items-start justify-between">
+            <div className="flex-1">
+              <div className="flex items-center gap-2 mb-2 flex-wrap">
+                <h4 className="font-semibold">{supplier.name}</h4>
+                {getTypeBadge(supplier.supplier_type)}
+                {certified ? (
+                  <Badge className="bg-green-50 text-green-700 border border-green-300 text-xs flex items-center gap-1">
+                    <ShieldCheck className="w-3 h-3" />
+                    Certificado
                   </Badge>
-                ))}
-                {supplier.specialties.length > 3 && (
-                  <Badge variant="outline" className="text-xs">
-                    +{supplier.specialties.length - 3}
+                ) : (
+                  <Badge className="bg-yellow-50 text-yellow-700 border border-yellow-300 text-xs flex items-center gap-1">
+                    <AlertTriangle className="w-3 h-3" />
+                    Sin Certificar
                   </Badge>
                 )}
               </div>
-            )}
+              {supplier.business_name && (
+                <p className="text-sm text-muted-foreground mb-2">{supplier.business_name}</p>
+              )}
 
-            {showPerformance && suggestion && (
-              <div className="mt-2 p-2 bg-muted/50 rounded text-xs">
-                <p className="font-medium">Puntuación: {suggestion.score.toFixed(0)}/100</p>
-                <div className="flex flex-wrap gap-1 mt-1">
-                  {suggestion.reasoning.slice(0, 2).map((reason, index) => (
-                    <Badge key={index} variant="secondary" className="text-xs">
-                      {reason}
+              <div className="flex items-center gap-4 text-sm text-muted-foreground mb-2">
+                {supplier.city && supplier.state && (
+                  <div className="flex items-center gap-1">
+                    <MapPin className="w-3 h-3" />
+                    {supplier.city}, {supplier.state}
+                  </div>
+                )}
+                {supplier.rating && (
+                  <div className="flex items-center gap-1">
+                    <Star className="w-3 h-3 fill-yellow-400 text-yellow-400" />
+                    {supplier.rating.toFixed(1)}
+                  </div>
+                )}
+                {supplier.reliability_score && (
+                  <div className="flex items-center gap-1">
+                    <TrendingUp className="w-3 h-3" />
+                    {supplier.reliability_score}%
+                  </div>
+                )}
+              </div>
+
+              {!certified && (
+                <p className="text-xs text-yellow-700 bg-yellow-50 rounded px-2 py-1 mt-1">
+                  Requiere RFC y datos bancarios para ser seleccionable en OCs
+                </p>
+              )}
+
+              {supplier.specialties && supplier.specialties.length > 0 && (
+                <div className="flex flex-wrap gap-1 mt-2">
+                  {supplier.specialties.slice(0, 3).map((specialty, index) => (
+                    <Badge key={index} variant="outline" className="text-xs">
+                      {String(specialty).replace(/_/g, ' ')}
                     </Badge>
                   ))}
+                  {supplier.specialties.length > 3 && (
+                    <Badge variant="outline" className="text-xs">
+                      +{supplier.specialties.length - 3}
+                    </Badge>
+                  )}
                 </div>
+              )}
+
+              {showPerformance && suggestion && (
+                <div className="mt-2 p-2 bg-muted/50 rounded text-xs">
+                  <p className="font-medium">Puntuación: {suggestion.score.toFixed(0)}/100</p>
+                  <div className="flex flex-wrap gap-1 mt-1">
+                    {suggestion.reasoning.slice(0, 2).map((reason, index) => (
+                      <Badge key={index} variant="secondary" className="text-xs">
+                        {reason}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {selectedSupplier?.id === supplier.id && (
+              <div className="flex items-center">
+                <Check className="w-5 h-5 text-primary" />
               </div>
             )}
           </div>
-
-          {selectedSupplier?.id === supplier.id && (
-            <div className="flex items-center">
-              <Check className="w-5 h-5 text-primary" />
-            </div>
-          )}
-        </div>
-      </CardContent>
-    </Card>
-  )
+        </CardContent>
+      </Card>
+    )
+  }
 
   return (
     <div className={className}>
@@ -438,7 +468,12 @@ export function SupplierSelector({
 
             {/* All Suppliers */}
             <div className="space-y-2">
-              <h4 className="font-medium text-sm">Todos los Proveedores</h4>
+              <h4 className="font-medium text-sm">
+                Proveedores Disponibles
+                <span className="text-xs font-normal text-muted-foreground ml-2">
+                  (solo certificados son seleccionables)
+                </span>
+              </h4>
               {loading ? (
                 <div className="flex items-center justify-center py-8">
                   <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>

@@ -40,7 +40,7 @@ export async function GET(request: NextRequest) {
         supplier_performance_history(*),
         supplier_work_history(*)
       `)
-      .eq('status', 'active')
+      .in('status', ['active', 'active_certified', 'pending'])
 
     if (supplierType !== 'all') {
       suppliersQuery = suppliersQuery.eq('supplier_type', supplierType)
@@ -128,19 +128,22 @@ async function calculateSupplierAnalytics(suppliers: any[], purchaseOrders: any[
     .filter(po => new Date(po.created_at).getFullYear() === new Date().getFullYear())
     .reduce((sum, po) => sum + (po.total_amount || 0), 0)
 
-  const averageRating = suppliers.length > 0
-    ? suppliers.reduce((sum, s) => sum + (s.rating || 0), 0) / suppliers.length
+  const ratedSuppliers = suppliers.filter(s => s.rating != null && s.rating > 0)
+  const averageRating = ratedSuppliers.length > 0
+    ? ratedSuppliers.reduce((sum, s) => sum + s.rating, 0) / ratedSuppliers.length
     : 0
 
-  const averageReliability = suppliers.length > 0
-    ? suppliers.reduce((sum, s) => sum + (s.reliability_score || 0), 0) / suppliers.length
+  const reliableSuppliers = suppliers.filter(s => s.reliability_score != null && s.reliability_score > 0)
+  const averageReliability = reliableSuppliers.length > 0
+    ? reliableSuppliers.reduce((sum, s) => sum + s.reliability_score, 0) / reliableSuppliers.length
     : 0
 
-  // Performance distribution
-  const excellent = suppliers.filter(s => (s.rating || 0) >= 4.5).length
-  const good = suppliers.filter(s => (s.rating || 0) >= 3.5 && (s.rating || 0) < 4.5).length
-  const average = suppliers.filter(s => (s.rating || 0) >= 2.5 && (s.rating || 0) < 3.5).length
-  const poor = suppliers.filter(s => (s.rating || 0) < 2.5).length
+  // Performance distribution — only classify suppliers that actually have a rating
+  const unrated = suppliers.filter(s => s.rating == null || s.rating === 0).length
+  const excellent = suppliers.filter(s => s.rating != null && s.rating > 0 && s.rating >= 4.5).length
+  const good = suppliers.filter(s => s.rating != null && s.rating > 0 && s.rating >= 3.5 && s.rating < 4.5).length
+  const average = suppliers.filter(s => s.rating != null && s.rating > 0 && s.rating >= 2.5 && s.rating < 3.5).length
+  const poor = suppliers.filter(s => s.rating != null && s.rating > 0 && s.rating < 2.5).length
 
   // Top performers (by rating and reliability)
   const topPerformers = suppliers
@@ -228,7 +231,8 @@ async function calculateSupplierAnalytics(suppliers: any[], purchaseOrders: any[
       excellent,
       good,
       average,
-      poor
+      poor,
+      unrated
     },
     top_performers: topPerformers,
     cost_analysis: costAnalysis,
