@@ -338,6 +338,7 @@ export interface SupplierAnalytics {
     good: number        // 3.5 <= rating < 4.5
     average: number     // 2.5 <= rating < 3.5
     poor: number        // rating < 2.5
+    unrated: number     // rating is null/not yet evaluated
   }
   top_performers: Supplier[]
   cost_analysis: {

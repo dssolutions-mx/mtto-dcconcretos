@@ -34,8 +34,6 @@ import {
   MoreHorizontal,
   Edit,
   Eye,
-  Star,
-  TrendingUp,
   AlertTriangle,
   CheckCircle,
   Clock,
@@ -60,7 +58,7 @@ interface SupplierRegistryProps {
   filterByType?: string
 }
 
-type SortField = 'name' | 'rating' | 'total_orders' | 'reliability_score' | 'created_at'
+type SortField = 'name' | 'total_orders' | 'created_at'
 type SortDirection = 'asc' | 'desc'
 
 const TYPE_COLORS: Record<string, string> = {
@@ -95,29 +93,6 @@ function SupplierAvatar({ supplier }: { supplier: Supplier }) {
   )
 }
 
-function RatingDisplay({ rating }: { rating?: number | null }) {
-  if (rating == null) return <span className="text-muted-foreground">—</span>
-  const color = rating >= 4 ? "text-green-600" : rating >= 3 ? "text-yellow-600" : "text-red-600"
-  return (
-    <div className={`flex items-center gap-1 font-medium ${color}`}>
-      <Star className="w-3.5 h-3.5 fill-current" />
-      <span>{rating.toFixed(1)}</span>
-    </div>
-  )
-}
-
-function ReliabilityDisplay({ score }: { score?: number | null }) {
-  if (score == null) return <span className="text-muted-foreground">—</span>
-  const color = score >= 80 ? "bg-green-500" : score >= 60 ? "bg-yellow-500" : "bg-red-500"
-  return (
-    <div className="space-y-1 min-w-[70px]">
-      <span className="text-sm font-medium">{score.toFixed(0)}%</span>
-      <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden">
-        <div className={`h-full ${color} rounded-full`} style={{ width: `${Math.min(score, 100)}%` }} />
-      </div>
-    </div>
-  )
-}
 
 export function SupplierRegistry({
   onSupplierSelect,
@@ -200,9 +175,7 @@ export function SupplierRegistry({
       let av: any, bv: any
       switch (sortField) {
         case "name": av = a.name.toLowerCase(); bv = b.name.toLowerCase(); break
-        case "rating": av = a.rating ?? -1; bv = b.rating ?? -1; break
         case "total_orders": av = a.total_orders ?? 0; bv = b.total_orders ?? 0; break
-        case "reliability_score": av = a.reliability_score ?? -1; bv = b.reliability_score ?? -1; break
         case "created_at": av = new Date(a.created_at).getTime(); bv = new Date(b.created_at).getTime(); break
         default: return 0
       }
@@ -548,14 +521,8 @@ export function SupplierRegistry({
                       <TableHead>RFC</TableHead>
                       <TableHead>Tipo</TableHead>
                       <TableHead>Estado</TableHead>
-                      <TableHead className="cursor-pointer select-none" onClick={() => toggleSort("rating")}>
-                        Calificación <SortIndicator field="rating" />
-                      </TableHead>
                       <TableHead className="cursor-pointer select-none" onClick={() => toggleSort("total_orders")}>
                         Órdenes <SortIndicator field="total_orders" />
-                      </TableHead>
-                      <TableHead className="cursor-pointer select-none" onClick={() => toggleSort("reliability_score")}>
-                        Confiabilidad <SortIndicator field="reliability_score" />
                       </TableHead>
                       <TableHead className="text-right">Acciones</TableHead>
                     </TableRow>
@@ -597,7 +564,6 @@ export function SupplierRegistry({
                         </TableCell>
                         <TableCell>{getTypeBadge(supplier.supplier_type)}</TableCell>
                         <TableCell>{getStatusBadge(supplier.status)}</TableCell>
-                        <TableCell><RatingDisplay rating={supplier.rating} /></TableCell>
                         <TableCell>
                           <div className="text-sm">
                             <span className="font-medium">{supplier.total_orders ?? 0}</span>
@@ -608,7 +574,6 @@ export function SupplierRegistry({
                             )}
                           </div>
                         </TableCell>
-                        <TableCell><ReliabilityDisplay score={supplier.reliability_score} /></TableCell>
                         <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                           {changingStatusFor === supplier.id ? (
                             <div className="flex justify-end">
@@ -671,19 +636,11 @@ export function SupplierRegistry({
                     </div>
 
                     {/* Metrics */}
-                    <div className="grid grid-cols-3 gap-2 text-sm">
-                      <div className="bg-muted/40 rounded p-2 text-center">
-                        <RatingDisplay rating={supplier.rating} />
-                        <p className="text-xs text-muted-foreground mt-1">Calificación</p>
-                      </div>
-                      <div className="bg-muted/40 rounded p-2 text-center">
-                        <span className="font-medium">{supplier.total_orders ?? 0}</span>
-                        <p className="text-xs text-muted-foreground mt-1">Órdenes</p>
-                      </div>
-                      <div className="bg-muted/40 rounded p-2 text-center">
-                        <ReliabilityDisplay score={supplier.reliability_score} />
-                        <p className="text-xs text-muted-foreground mt-1">Confiabilidad</p>
-                      </div>
+                    <div className="flex items-center gap-3 text-sm text-muted-foreground">
+                      <span className="font-medium text-foreground">{supplier.total_orders ?? 0}</span> órdenes
+                      {supplier.avg_order_amount != null && supplier.avg_order_amount > 0 && (
+                        <span>· Prom. ${supplier.avg_order_amount.toLocaleString("es-MX", { maximumFractionDigits: 0 })}</span>
+                      )}
                     </div>
                   </div>
                 ))}

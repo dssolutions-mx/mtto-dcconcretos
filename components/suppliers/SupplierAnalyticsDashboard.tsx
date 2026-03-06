@@ -198,10 +198,17 @@ export function SupplierAnalyticsDashboard({
               <Star className="w-8 h-8 text-yellow-500" />
               <div>
                 <p className="text-sm font-medium">Calificación Promedio</p>
-                <p className="text-3xl font-bold">{analytics.summary.average_rating}</p>
-                <p className="text-xs text-muted-foreground">
-                  de 5.0 estrellas
-                </p>
+                {analytics.summary.average_rating > 0 ? (
+                  <>
+                    <p className="text-3xl font-bold">{analytics.summary.average_rating.toFixed(1)}</p>
+                    <p className="text-xs text-muted-foreground">de 5.0 estrellas</p>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-2xl font-bold text-muted-foreground">Sin datos</p>
+                    <p className="text-xs text-muted-foreground">Aún no hay calificaciones</p>
+                  </>
+                )}
               </div>
             </div>
           </CardContent>
@@ -213,10 +220,17 @@ export function SupplierAnalyticsDashboard({
               <TrendingUp className="w-8 h-8 text-purple-500" />
               <div>
                 <p className="text-sm font-medium">Confiabilidad Promedio</p>
-                <p className="text-3xl font-bold">{analytics.summary.average_reliability}%</p>
-                <p className="text-xs text-muted-foreground">
-                  nivel de confianza
-                </p>
+                {analytics.summary.average_reliability > 0 ? (
+                  <>
+                    <p className="text-3xl font-bold">{analytics.summary.average_reliability.toFixed(0)}%</p>
+                    <p className="text-xs text-muted-foreground">nivel de confianza</p>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-2xl font-bold text-muted-foreground">Sin datos</p>
+                    <p className="text-xs text-muted-foreground">Aún no hay historial</p>
+                  </>
+                )}
               </div>
             </div>
           </CardContent>
@@ -294,6 +308,20 @@ export function SupplierAnalyticsDashboard({
                       <Badge variant="destructive">{analytics.by_performance.poor}</Badge>
                     </div>
                   </div>
+                  {(analytics.by_performance.unrated ?? 0) > 0 && (
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-muted-foreground">Sin calificación</span>
+                      <div className="flex items-center gap-2">
+                        <div className="w-20 bg-gray-200 rounded-full h-2">
+                          <div
+                            className="bg-gray-400 h-2 rounded-full"
+                            style={{ width: `${(analytics.by_performance.unrated / analytics.summary.total_suppliers) * 100}%` }}
+                          />
+                        </div>
+                        <Badge variant="outline" className="text-muted-foreground">{analytics.by_performance.unrated}</Badge>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>
