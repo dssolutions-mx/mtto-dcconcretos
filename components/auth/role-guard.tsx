@@ -316,7 +316,7 @@ export function ViewerGuard({ children, fallback }: { children: React.ReactNode,
 export function MaintenanceTeamGuard({ children, fallback }: { children: React.ReactNode, fallback?: React.ReactNode }) {
   const { profile } = useAuthZustand()
   
-  if (!profile || !['GERENCIA_GENERAL', 'JEFE_UNIDAD_NEGOCIO', 'ENCARGADO_MANTENIMIENTO', 'JEFE_PLANTA'].includes(profile.role)) {
+  if (!profile || !['GERENCIA_GENERAL', 'JEFE_UNIDAD_NEGOCIO', 'ENCARGADO_MANTENIMIENTO', 'JEFE_PLANTA', 'GERENTE_MANTENIMIENTO', 'COORDINADOR_MANTENIMIENTO'].includes(profile.role)) {
     return <>{fallback}</>
   }
   
@@ -327,7 +327,7 @@ export function MaintenanceTeamGuard({ children, fallback }: { children: React.R
 export function PurchasingTeamGuard({ children, fallback }: { children: React.ReactNode, fallback?: React.ReactNode }) {
   const { profile } = useAuthZustand()
   
-  if (!profile || !['GERENCIA_GENERAL', 'JEFE_UNIDAD_NEGOCIO', 'AREA_ADMINISTRATIVA', 'JEFE_PLANTA', 'ENCARGADO_MANTENIMIENTO', 'AUXILIAR_COMPRAS'].includes(profile.role)) {
+  if (!profile || !['GERENCIA_GENERAL', 'JEFE_UNIDAD_NEGOCIO', 'AREA_ADMINISTRATIVA', 'JEFE_PLANTA', 'ENCARGADO_MANTENIMIENTO', 'AUXILIAR_COMPRAS', 'GERENTE_MANTENIMIENTO', 'COORDINADOR_MANTENIMIENTO'].includes(profile.role)) {
     return <>{fallback}</>
   }
   

@@ -972,7 +972,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
         </div>
 
         {/* Compliance Section */}
-        {isComplianceSystemEnabled && ['GERENCIA_GENERAL', 'JEFE_UNIDAD_NEGOCIO', 'JEFE_PLANTA', 'AREA_ADMINISTRATIVA', 'ENCARGADO_MANTENIMIENTO'].includes(profile?.role || '') && (
+        {isComplianceSystemEnabled && ['GERENCIA_GENERAL', 'JEFE_UNIDAD_NEGOCIO', 'JEFE_PLANTA', 'AREA_ADMINISTRATIVA', 'ENCARGADO_MANTENIMIENTO', 'GERENTE_MANTENIMIENTO', 'COORDINADOR_MANTENIMIENTO', 'RECURSOS_HUMANOS'].includes(profile?.role || '') && (
           <div className="px-4" data-tour="compliance-section" id="compliance-section">
             <Collapsible open={complianceOpen} onOpenChange={setComplianceOpen}>
               <CollapsibleTrigger asChild>

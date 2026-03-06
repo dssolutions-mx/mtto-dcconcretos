@@ -1498,7 +1498,10 @@ function EmployeeCredentialEditForm({
                     <SelectItem value="JEFE_UNIDAD_NEGOCIO">Jefe de Unidad de Negocio</SelectItem>
                     <SelectItem value="AREA_ADMINISTRATIVA">Área Administrativa</SelectItem>
                     <SelectItem value="JEFE_PLANTA">Jefe de Planta</SelectItem>
-                    <SelectItem value="ENCARGADO_MANTENIMIENTO">Encargado de Mantenimiento</SelectItem>
+                    <SelectItem value="COORDINADOR_MANTENIMIENTO">Coordinador de Mantenimiento</SelectItem>
+                    <SelectItem value="GERENTE_MANTENIMIENTO">Gerente de Mantenimiento</SelectItem>
+                    <SelectItem value="MECANICO">Mecánico</SelectItem>
+                    <SelectItem value="RECURSOS_HUMANOS">Recursos Humanos</SelectItem>
                     <SelectItem value="DOSIFICADOR">Dosificador</SelectItem>
                     <SelectItem value="OPERADOR">Operador</SelectItem>
                     <SelectItem value="AUXILIAR_COMPRAS">Auxiliar de Compras</SelectItem>

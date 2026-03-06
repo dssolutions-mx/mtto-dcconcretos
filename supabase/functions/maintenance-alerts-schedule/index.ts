@@ -180,7 +180,7 @@ async function getRecipients(supabase: any): Promise<Recipient[]> {
       console.error('Error fetching GM profiles:', gmError)
     }
     
-    // Get BU Managers
+    // Get BU Managers (JEFE_UNIDAD_NEGOCIO)
     const { data: buProfiles, error: buError } = await supabase
       .from('profiles')
       .select('id, nombre, apellido, email, business_unit_id')
@@ -189,6 +189,17 @@ async function getRecipients(supabase: any): Promise<Recipient[]> {
     
     if (buError) {
       console.error('Error fetching BU profiles:', buError)
+    }
+
+    // Get Maintenance Managers (GERENTE_MANTENIMIENTO) - BU scoped maintenance authority
+    const { data: gerenteProfiles, error: gerenteError } = await supabase
+      .from('profiles')
+      .select('id, nombre, apellido, email, business_unit_id')
+      .or('role.eq.GERENTE_MANTENIMIENTO,business_role.eq.GERENTE_MANTENIMIENTO')
+      .eq('status', 'active')
+
+    if (gerenteError) {
+      console.error('Error fetching Gerente Mantenimiento profiles:', gerenteError)
     }
     
     // Get emails from auth.users (try/catch in case admin API not available)
@@ -233,6 +244,22 @@ async function getRecipients(supabase: any): Promise<Recipient[]> {
             role: 'JEFE_UNIDAD_NEGOCIO',
             business_unit_id: profile.business_unit_id,
             name: `${profile.nombre || ''} ${profile.apellido || ''}`.trim() || 'Jefe de Unidad'
+          })
+        }
+      }
+    }
+
+    // Process Maintenance Managers (GERENTE_MANTENIMIENTO) - BU scoped
+    if (gerenteProfiles && gerenteProfiles.length > 0) {
+      for (const profile of gerenteProfiles) {
+        const user = usersById.get(profile.id)
+        const email = user?.email || profile.email
+        if (email && profile.business_unit_id) {
+          recipients.push({
+            email: email,
+            role: 'GERENTE_MANTENIMIENTO',
+            business_unit_id: profile.business_unit_id,
+            name: `${profile.nombre || ''} ${profile.apellido || ''}`.trim() || 'Gerente de Mantenimiento'
           })
         }
       }
@@ -730,7 +757,7 @@ serve(async (req) => {
     for (const recipient of recipients) {
       // Filter alerts based on recipient role
       let filteredAlerts = allAlerts
-      if (recipient.role === 'JEFE_UNIDAD_NEGOCIO' && recipient.business_unit_id) {
+      if ((recipient.role === 'JEFE_UNIDAD_NEGOCIO' || recipient.role === 'GERENTE_MANTENIMIENTO') && recipient.business_unit_id) {
         filteredAlerts = allAlerts.filter(a => a.business_unit_id === recipient.business_unit_id)
       }
       // GERENCIA_GENERAL gets all alerts (no filtering)

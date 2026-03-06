@@ -124,7 +124,7 @@ export function getComprehensiveTourSteps(userRole?: string): ComprehensiveTourS
     ]
   }
 
-  if (['GERENCIA_GENERAL', 'JEFE_UNIDAD_NEGOCIO', 'JEFE_PLANTA', 'AREA_ADMINISTRATIVA', 'ENCARGADO_MANTENIMIENTO'].includes(userRole || '')) {
+  if (['GERENCIA_GENERAL', 'JEFE_UNIDAD_NEGOCIO', 'JEFE_PLANTA', 'AREA_ADMINISTRATIVA', 'ENCARGADO_MANTENIMIENTO', 'GERENTE_MANTENIMIENTO', 'COORDINADOR_MANTENIMIENTO'].includes(userRole || '')) {
     return [
       ...baseSteps,
       {

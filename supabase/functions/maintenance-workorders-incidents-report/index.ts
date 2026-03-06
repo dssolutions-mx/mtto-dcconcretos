@@ -58,15 +58,26 @@ async function getRecipients(supabase: any): Promise<Recipient[]> {
       console.error('Error fetching BU profiles:', buError)
     }
     
-    // Get Plant Managers (JEFE_PLANTA)
+    // Get Maintenance Managers (GERENTE_MANTENIMIENTO) - business unit scoped
+    const { data: gerenteProfiles, error: gerenteError } = await supabase
+      .from('profiles')
+      .select('id, nombre, apellido, email, business_unit_id')
+      .or('role.eq.GERENTE_MANTENIMIENTO,business_role.eq.GERENTE_MANTENIMIENTO')
+      .eq('status', 'active')
+
+    if (gerenteError) {
+      console.error('Error fetching Gerente Mantenimiento profiles:', gerenteError)
+    }
+
+    // Get Maintenance Coordinators (COORDINADOR_MANTENIMIENTO + legacy JEFE_PLANTA/ENCARGADO_MANTENIMIENTO)
     const { data: plantProfiles, error: plantError } = await supabase
       .from('profiles')
       .select('id, nombre, apellido, email, plant_id, business_unit_id')
-      .eq('role', 'JEFE_PLANTA')
+      .in('role', ['JEFE_PLANTA', 'ENCARGADO_MANTENIMIENTO', 'COORDINADOR_MANTENIMIENTO'])
       .eq('status', 'active')
     
     if (plantError) {
-      console.error('Error fetching Plant profiles:', plantError)
+      console.error('Error fetching coordinator/plant profiles:', plantError)
     }
     
     // Get emails from auth.users (try/catch in case admin API not available)
@@ -116,7 +127,24 @@ async function getRecipients(supabase: any): Promise<Recipient[]> {
       }
     }
     
-    // Process Plant Managers
+    // Process Maintenance Managers (GERENTE_MANTENIMIENTO) - BU scoped
+    if (gerenteProfiles && gerenteProfiles.length > 0) {
+      for (const profile of gerenteProfiles) {
+        const user = usersById.get(profile.id)
+        const email = user?.email || profile.email
+        if (email && profile.business_unit_id) {
+          recipients.push({
+            email: email,
+            role: 'GERENTE_MANTENIMIENTO',
+            business_unit_id: profile.business_unit_id,
+            plant_id: null,
+            name: `${profile.nombre || ''} ${profile.apellido || ''}`.trim() || 'Gerente de Mantenimiento'
+          })
+        }
+      }
+    }
+
+    // Process Maintenance Coordinators (COORDINADOR_MANTENIMIENTO + legacy JEFE_PLANTA)
     if (plantProfiles && plantProfiles.length > 0) {
       for (const profile of plantProfiles) {
         const user = usersById.get(profile.id)
@@ -124,10 +152,10 @@ async function getRecipients(supabase: any): Promise<Recipient[]> {
         if (email && profile.plant_id) {
           recipients.push({
             email: email,
-            role: 'JEFE_PLANTA',
+            role: 'COORDINADOR_MANTENIMIENTO',
             business_unit_id: profile.business_unit_id,
             plant_id: profile.plant_id,
-            name: `${profile.nombre || ''} ${profile.apellido || ''}`.trim() || 'Jefe de Planta'
+            name: `${profile.nombre || ''} ${profile.apellido || ''}`.trim() || 'Coordinador de Mantenimiento'
           })
         }
       }
@@ -182,8 +210,27 @@ function filterReportByRecipient(report: any, recipient: Recipient): any {
       (po: any) => woIds.has(po.work_order_id)
     )
   }
-  // JEFE_PLANTA gets only their plant
-  else if (recipient.role === 'JEFE_PLANTA' && recipient.plant_id) {
+  // GERENTE_MANTENIMIENTO gets their business unit
+  else if (recipient.role === 'GERENTE_MANTENIMIENTO' && recipient.business_unit_id) {
+    filtered.work_orders_created = (report.work_orders_created || []).filter(
+      (wo: any) => wo.business_unit_id === recipient.business_unit_id
+    )
+    filtered.work_orders_completed = (report.work_orders_completed || []).filter(
+      (wo: any) => wo.business_unit_id === recipient.business_unit_id
+    )
+    filtered.incidents_created = (report.incidents_created || []).filter(
+      (inc: any) => inc.business_unit_id === recipient.business_unit_id
+    )
+    const woIds = new Set([
+      ...filtered.work_orders_created.map((wo: any) => wo.id),
+      ...filtered.work_orders_completed.map((wo: any) => wo.id)
+    ])
+    filtered.purchase_orders_pending = (report.purchase_orders_pending || []).filter(
+      (po: any) => woIds.has(po.work_order_id)
+    )
+  }
+  // COORDINADOR_MANTENIMIENTO (and legacy JEFE_PLANTA) gets only their plant
+  else if ((recipient.role === 'COORDINADOR_MANTENIMIENTO' || recipient.role === 'JEFE_PLANTA') && recipient.plant_id) {
     filtered.work_orders_created = (report.work_orders_created || []).filter(
       (wo: any) => wo.plant_id === recipient.plant_id
     )

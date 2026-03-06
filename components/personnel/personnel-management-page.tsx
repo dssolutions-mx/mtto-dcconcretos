@@ -134,6 +134,10 @@ export function PersonnelManagementPage() {
       'GERENCIA_GENERAL': 'bg-purple-100 text-purple-800',
       'JEFE_UNIDAD_NEGOCIO': 'bg-blue-100 text-blue-800',
       'ENCARGADO_MANTENIMIENTO': 'bg-green-100 text-green-800',
+      'COORDINADOR_MANTENIMIENTO': 'bg-emerald-100 text-emerald-800',
+      'GERENTE_MANTENIMIENTO': 'bg-teal-100 text-teal-800',
+      'MECANICO': 'bg-lime-100 text-lime-800',
+      'RECURSOS_HUMANOS': 'bg-purple-100 text-purple-800',
       'JEFE_PLANTA': 'bg-orange-100 text-orange-800',
       'DOSIFICADOR': 'bg-yellow-100 text-yellow-800',
       'OPERADOR': 'bg-gray-100 text-gray-800',
@@ -148,7 +152,11 @@ export function PersonnelManagementPage() {
     const names = {
       'GERENCIA_GENERAL': 'Gerencia General',
       'JEFE_UNIDAD_NEGOCIO': 'Jefe Unidad de Negocio',
-      'ENCARGADO_MANTENIMIENTO': 'Encargado Mantenimiento',
+      'ENCARGADO_MANTENIMIENTO': 'Coordinador de Mantenimiento',
+      'COORDINADOR_MANTENIMIENTO': 'Coordinador de Mantenimiento',
+      'GERENTE_MANTENIMIENTO': 'Gerente de Mantenimiento',
+      'MECANICO': 'Mecánico',
+      'RECURSOS_HUMANOS': 'Recursos Humanos',
       'JEFE_PLANTA': 'Jefe de Planta',
       'DOSIFICADOR': 'Dosificador',
       'OPERADOR': 'Operador',
@@ -225,7 +233,11 @@ export function PersonnelManagementPage() {
                 <SelectItem value="OPERADOR">Operadores</SelectItem>
                 <SelectItem value="DOSIFICADOR">Dosificadores</SelectItem>
                 <SelectItem value="JEFE_PLANTA">Jefes de Planta</SelectItem>
-                <SelectItem value="ENCARGADO_MANTENIMIENTO">Encargados Mantenimiento</SelectItem>
+                <SelectItem value="ENCARGADO_MANTENIMIENTO">Encargados Mant. (Legacy)</SelectItem>
+                <SelectItem value="COORDINADOR_MANTENIMIENTO">Coordinadores Mantenimiento</SelectItem>
+                <SelectItem value="GERENTE_MANTENIMIENTO">Gerentes Mantenimiento</SelectItem>
+                <SelectItem value="MECANICO">Mecánicos</SelectItem>
+                <SelectItem value="RECURSOS_HUMANOS">Recursos Humanos</SelectItem>
                 <SelectItem value="JEFE_UNIDAD_NEGOCIO">Jefes Unidad Negocio</SelectItem>
               </SelectContent>
             </Select>

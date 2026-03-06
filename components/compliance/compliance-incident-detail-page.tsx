@@ -145,7 +145,7 @@ export function ComplianceIncidentDetailPage({
 
   const canReview = () => {
     if (!incident || !profile) return false
-    const allowedRoles = ['GERENCIA_GENERAL', 'JEFE_UNIDAD_NEGOCIO', 'JEFE_PLANTA', 'AREA_ADMINISTRATIVA', 'ENCARGADO_MANTENIMIENTO']
+    const allowedRoles = ['GERENCIA_GENERAL', 'JEFE_UNIDAD_NEGOCIO', 'JEFE_PLANTA', 'AREA_ADMINISTRATIVA', 'ENCARGADO_MANTENIMIENTO', 'GERENTE_MANTENIMIENTO', 'COORDINADOR_MANTENIMIENTO', 'RECURSOS_HUMANOS']
     return (
       allowedRoles.includes(profile.role || '') &&
       ['pending', 'under_review'].includes(incident.dispute_status || 'none')
@@ -154,7 +154,7 @@ export function ComplianceIncidentDetailPage({
 
   const canApplySanction = () => {
     if (!incident || !profile) return false
-    const allowedRoles = ['GERENCIA_GENERAL', 'JEFE_UNIDAD_NEGOCIO', 'JEFE_PLANTA', 'AREA_ADMINISTRATIVA', 'ENCARGADO_MANTENIMIENTO']
+    const allowedRoles = ['GERENCIA_GENERAL', 'JEFE_UNIDAD_NEGOCIO', 'JEFE_PLANTA', 'AREA_ADMINISTRATIVA', 'ENCARGADO_MANTENIMIENTO', 'GERENTE_MANTENIMIENTO', 'COORDINADOR_MANTENIMIENTO', 'RECURSOS_HUMANOS']
     return (
       allowedRoles.includes(profile.role || '') &&
       ['pending_review', 'confirmed'].includes(incident.status) &&

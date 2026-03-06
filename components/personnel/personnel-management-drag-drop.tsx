@@ -414,8 +414,13 @@ export function PersonnelManagementDragDrop() {
 
   const availableRoles = [
     'OPERADOR',
-    'ENCARGADO_MANTENIMIENTO',
+    'COORDINADOR_MANTENIMIENTO',
+    'GERENTE_MANTENIMIENTO',
+    'MECANICO',
+    'RECURSOS_HUMANOS',
+    'ENCARGADO_ALMACEN',
     'JEFE_PLANTA',
+    'ENCARGADO_MANTENIMIENTO',
     'JEFE_UNIDAD_NEGOCIO',
     'DOSIFICADOR',
     'AUXILIAR_COMPRAS',

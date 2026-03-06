@@ -19,7 +19,10 @@ import { useAuthZustand } from "@/hooks/use-auth-zustand"
 const USER_ROLES = [
   { value: "GERENCIA_GENERAL", label: "Gerencia General" },
   { value: "JEFE_UNIDAD_NEGOCIO", label: "Jefe de Unidad de Negocio" },
-  { value: "ENCARGADO_MANTENIMIENTO", label: "Encargado de Mantenimiento" },
+  { value: "COORDINADOR_MANTENIMIENTO", label: "Coordinador de Mantenimiento" },
+  { value: "GERENTE_MANTENIMIENTO", label: "Gerente de Mantenimiento" },
+  { value: "MECANICO", label: "Mecánico" },
+  { value: "RECURSOS_HUMANOS", label: "Recursos Humanos" },
   { value: "JEFE_PLANTA", label: "Jefe de Planta" },
   { value: "DOSIFICADOR", label: "Dosificador" },
   { value: "OPERADOR", label: "Operador" },

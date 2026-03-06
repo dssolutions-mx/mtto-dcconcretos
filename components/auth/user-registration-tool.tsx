@@ -171,7 +171,7 @@ export function UserRegistrationTool() {
     }
 
     // For plant-specific roles, require plant selection
-    const plantSpecificRoles = ['OPERADOR', 'DOSIFICADOR', 'ENCARGADO_MANTENIMIENTO', 'JEFE_PLANTA']
+    const plantSpecificRoles = ['OPERADOR', 'DOSIFICADOR', 'ENCARGADO_MANTENIMIENTO', 'JEFE_PLANTA', 'COORDINADOR_MANTENIMIENTO', 'MECANICO']
     if (plantSpecificRoles.includes(formData.role) && !formData.plant_id) {
       toast.error('Este rol requiere selección de planta')
       return
@@ -471,7 +471,7 @@ export function UserRegistrationTool() {
                     ))}
                   </SelectContent>
                 </Select>
-                {selectedRole && ['OPERADOR', 'DOSIFICADOR', 'ENCARGADO_MANTENIMIENTO', 'JEFE_PLANTA'].includes(formData.role) && (
+                {selectedRole && ['OPERADOR', 'DOSIFICADOR', 'ENCARGADO_MANTENIMIENTO', 'JEFE_PLANTA', 'COORDINADOR_MANTENIMIENTO', 'MECANICO'].includes(formData.role) && (
                   <Badge variant="secondary" className="text-xs">
                     Este rol requiere selección de planta
                   </Badge>
