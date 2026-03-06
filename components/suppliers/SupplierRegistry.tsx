@@ -5,7 +5,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   Table,
   TableBody,
@@ -27,7 +26,6 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog"
 import {
   DropdownMenu,
@@ -45,22 +43,15 @@ import {
   Edit,
   Eye,
   Star,
-  MapPin,
-  Phone,
-  Mail,
-  Building,
-  Award,
   TrendingUp,
   AlertTriangle,
   CheckCircle,
   Clock,
-  DollarSign
 } from "lucide-react"
-import { Supplier, SupplierService, SupplierContact } from "@/types/suppliers"
+import { Supplier } from "@/types/suppliers"
 import { createClient } from "@/lib/supabase"
 import { SupplierForm } from "./SupplierForm"
 import { SupplierDetails } from "./SupplierDetails"
-import { SupplierPerformanceChart } from "./SupplierPerformanceChart"
 
 interface SupplierRegistryProps {
   onSupplierSelect?: (supplier: Supplier) => void
@@ -85,11 +76,14 @@ export function SupplierRegistry({
   const [typeFilter, setTypeFilter] = useState<string>(filterByType || "all")
   const [sortField, setSortField] = useState<SortField>('name')
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc')
-  const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(null)
-  const [showCreateDialog, setShowCreateDialog] = useState(false)
-  const [showDetailsDialog, setShowDetailsDialog] = useState(false)
 
-  // Load suppliers
+  // Dialog state
+  const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(null)
+  const [showDetailsDialog, setShowDetailsDialog] = useState(false)
+  const [showCreateDialog, setShowCreateDialog] = useState(false)
+  const [showEditDialog, setShowEditDialog] = useState(false)
+  const [supplierToEdit, setSupplierToEdit] = useState<Supplier | null>(null)
+
   useEffect(() => {
     loadSuppliers()
   }, [statusFilter, typeFilter])
@@ -112,6 +106,8 @@ export function SupplierRegistry({
           total_orders,
           avg_order_amount,
           reliability_score,
+          tax_id,
+          bank_account_info,
           created_at
         `)
 
@@ -142,19 +138,16 @@ export function SupplierRegistry({
     }
   }
 
-  // Filter and sort suppliers
   const filteredAndSortedSuppliers = useMemo(() => {
     let filtered = suppliers.filter(supplier => {
       const matchesSearch = supplier.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                           supplier.business_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
                           supplier.contact_person?.toLowerCase().includes(searchTerm.toLowerCase())
-
       return matchesSearch
     })
 
-    // Sort suppliers
     filtered.sort((a, b) => {
-      let aValue, bValue
+      let aValue: any, bValue: any
 
       switch (sortField) {
         case 'name':
@@ -181,29 +174,54 @@ export function SupplierRegistry({
           return 0
       }
 
-      if (sortDirection === 'asc') {
-        return aValue > bValue ? 1 : -1
-      } else {
-        return aValue < bValue ? 1 : -1
-      }
+      return sortDirection === 'asc' ? (aValue > bValue ? 1 : -1) : (aValue < bValue ? 1 : -1)
     })
 
     return filtered
   }, [suppliers, searchTerm, sortField, sortDirection])
 
+  const isIncomplete = (supplier: Supplier) =>
+    !supplier.tax_id || !(supplier.bank_account_info as any)?.account_number
+
   const getStatusBadge = (status: string) => {
-    const statusConfig = {
-      active: { variant: "default" as const, icon: CheckCircle, label: "Activo" },
-      inactive: { variant: "secondary" as const, icon: Clock, label: "Inactivo" },
-      suspended: { variant: "destructive" as const, icon: AlertTriangle, label: "Suspendido" },
-      blacklisted: { variant: "destructive" as const, icon: AlertTriangle, label: "Bloqueado" }
+    const statusConfig: Record<string, { className: string; icon: any; label: string }> = {
+      pending: {
+        className: "bg-yellow-50 text-yellow-700 border-yellow-300",
+        icon: Clock,
+        label: "Pendiente"
+      },
+      active: {
+        className: "bg-blue-50 text-blue-700 border-blue-300",
+        icon: CheckCircle,
+        label: "Activo"
+      },
+      active_certified: {
+        className: "bg-green-50 text-green-700 border-green-300",
+        icon: CheckCircle,
+        label: "Certificado"
+      },
+      inactive: {
+        className: "bg-gray-50 text-gray-600 border-gray-300",
+        icon: Clock,
+        label: "Inactivo"
+      },
+      suspended: {
+        className: "bg-red-50 text-red-700 border-red-300",
+        icon: AlertTriangle,
+        label: "Suspendido"
+      },
+      blacklisted: {
+        className: "bg-red-100 text-red-800 border-red-400",
+        icon: AlertTriangle,
+        label: "Bloqueado"
+      },
     }
 
-    const config = statusConfig[status as keyof typeof statusConfig] || statusConfig.active
+    const config = statusConfig[status] || statusConfig.active
     const Icon = config.icon
 
     return (
-      <Badge variant={config.variant} className="flex items-center gap-1">
+      <Badge className={`flex items-center gap-1 border ${config.className}`}>
         <Icon className="w-3 h-3" />
         {config.label}
       </Badge>
@@ -220,15 +238,10 @@ export function SupplierRegistry({
     }
 
     const config = typeConfig[type as keyof typeof typeConfig] || typeConfig.company
-
-    return (
-      <Badge className={config.color}>
-        {config.label}
-      </Badge>
-    )
+    return <Badge className={config.color}>{config.label}</Badge>
   }
 
-  const handleSupplierClick = (supplier: Supplier) => {
+  const handleRowClick = (supplier: Supplier) => {
     if (showSelection) {
       onSupplierSelect?.(supplier)
     } else {
@@ -237,8 +250,21 @@ export function SupplierRegistry({
     }
   }
 
+  // Opens edit dialog from the details modal — closes details first to avoid nested portal issues
+  const handleEditFromDetails = () => {
+    setShowDetailsDialog(false)
+    setSupplierToEdit(selectedSupplier)
+    setTimeout(() => setShowEditDialog(true), 100)
+  }
+
   const handleCreateSuccess = () => {
     setShowCreateDialog(false)
+    loadSuppliers()
+  }
+
+  const handleEditSuccess = () => {
+    setShowEditDialog(false)
+    setSupplierToEdit(null)
     loadSuppliers()
   }
 
@@ -250,6 +276,43 @@ export function SupplierRegistry({
       setSortDirection('asc')
     }
   }
+
+  const renderDropdownActions = (supplier: Supplier) => (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          variant="ghost"
+          className="h-8 w-8 p-0"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <MoreHorizontal className="h-4 w-4" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuLabel>Acciones</DropdownMenuLabel>
+        <DropdownMenuItem
+          onSelect={(e) => {
+            e.preventDefault()
+            setSelectedSupplier(supplier)
+            setTimeout(() => setShowDetailsDialog(true), 0)
+          }}
+        >
+          <Eye className="mr-2 h-4 w-4" />
+          Ver detalles
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          onSelect={(e) => {
+            e.preventDefault()
+            setSupplierToEdit(supplier)
+            setTimeout(() => setShowEditDialog(true), 0)
+          }}
+        >
+          <Edit className="mr-2 h-4 w-4" />
+          Editar
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
 
   return (
     <div className="space-y-4 md:space-y-6">
@@ -293,7 +356,9 @@ export function SupplierRegistry({
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Todos</SelectItem>
+                  <SelectItem value="pending">Pendientes</SelectItem>
                   <SelectItem value="active">Activos</SelectItem>
+                  <SelectItem value="active_certified">Certificados</SelectItem>
                   <SelectItem value="inactive">Inactivos</SelectItem>
                   <SelectItem value="suspended">Suspendidos</SelectItem>
                   <SelectItem value="blacklisted">Bloqueados</SelectItem>
@@ -320,7 +385,9 @@ export function SupplierRegistry({
       {/* Suppliers List */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-lg md:text-xl">Proveedores ({filteredAndSortedSuppliers.length})</CardTitle>
+          <CardTitle className="text-lg md:text-xl">
+            Proveedores ({filteredAndSortedSuppliers.length})
+          </CardTitle>
           <CardDescription>
             Lista de proveedores con métricas de rendimiento
           </CardDescription>
@@ -331,37 +398,30 @@ export function SupplierRegistry({
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
               <span className="ml-2">Cargando proveedores...</span>
             </div>
+          ) : filteredAndSortedSuppliers.length === 0 ? (
+            <div className="text-center py-12 text-muted-foreground">
+              <p className="text-lg font-medium">No se encontraron proveedores</p>
+              <p className="text-sm mt-1">Ajusta los filtros o agrega un nuevo proveedor</p>
+            </div>
           ) : (
             <>
-              {/* Desktop Table View */}
+              {/* Desktop Table */}
               <div className="hidden md:block overflow-x-auto">
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead
-                        className="cursor-pointer hover:bg-muted/50"
-                        onClick={() => toggleSort('name')}
-                      >
+                      <TableHead className="cursor-pointer hover:bg-muted/50" onClick={() => toggleSort('name')}>
                         Proveedor {sortField === 'name' && (sortDirection === 'asc' ? '↑' : '↓')}
                       </TableHead>
                       <TableHead>Tipo</TableHead>
                       <TableHead>Estado</TableHead>
-                      <TableHead
-                        className="cursor-pointer hover:bg-muted/50"
-                        onClick={() => toggleSort('rating')}
-                      >
+                      <TableHead className="cursor-pointer hover:bg-muted/50" onClick={() => toggleSort('rating')}>
                         Calificación {sortField === 'rating' && (sortDirection === 'asc' ? '↑' : '↓')}
                       </TableHead>
-                      <TableHead
-                        className="cursor-pointer hover:bg-muted/50"
-                        onClick={() => toggleSort('total_orders')}
-                      >
+                      <TableHead className="cursor-pointer hover:bg-muted/50" onClick={() => toggleSort('total_orders')}>
                         Órdenes {sortField === 'total_orders' && (sortDirection === 'asc' ? '↑' : '↓')}
                       </TableHead>
-                      <TableHead
-                        className="cursor-pointer hover:bg-muted/50"
-                        onClick={() => toggleSort('reliability_score')}
-                      >
+                      <TableHead className="cursor-pointer hover:bg-muted/50" onClick={() => toggleSort('reliability_score')}>
                         Confiabilidad {sortField === 'reliability_score' && (sortDirection === 'asc' ? '↑' : '↓')}
                       </TableHead>
                       <TableHead>Acciones</TableHead>
@@ -374,15 +434,21 @@ export function SupplierRegistry({
                         className={`cursor-pointer hover:bg-muted/50 ${
                           selectedSupplierId === supplier.id ? 'bg-primary/5' : ''
                         }`}
-                        onClick={() => handleSupplierClick(supplier)}
+                        onClick={() => handleRowClick(supplier)}
                       >
                         <TableCell>
                           <div>
-                            <div className="font-medium">{supplier.name}</div>
+                            <div className="font-medium flex items-center gap-2">
+                              {supplier.name}
+                              {isIncomplete(supplier) && (
+                                <Badge variant="outline" className="text-xs text-amber-600 border-amber-400 bg-amber-50">
+                                  <AlertTriangle className="w-3 h-3 mr-1" />
+                                  Incompleto
+                                </Badge>
+                              )}
+                            </div>
                             {supplier.business_name && (
-                              <div className="text-sm text-muted-foreground">
-                                {supplier.business_name}
-                              </div>
+                              <div className="text-sm text-muted-foreground">{supplier.business_name}</div>
                             )}
                             {supplier.contact_person && (
                               <div className="text-sm text-muted-foreground">
@@ -391,12 +457,8 @@ export function SupplierRegistry({
                             )}
                           </div>
                         </TableCell>
-                        <TableCell>
-                          {getTypeBadge(supplier.supplier_type)}
-                        </TableCell>
-                        <TableCell>
-                          {getStatusBadge(supplier.status)}
-                        </TableCell>
+                        <TableCell>{getTypeBadge(supplier.supplier_type)}</TableCell>
+                        <TableCell>{getStatusBadge(supplier.status)}</TableCell>
                         <TableCell>
                           <div className="flex items-center gap-1">
                             <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />
@@ -419,29 +481,8 @@ export function SupplierRegistry({
                             <span>{supplier.reliability_score?.toFixed(0) || 'N/A'}%</span>
                           </div>
                         </TableCell>
-                        <TableCell>
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" className="h-8 w-8 p-0">
-                                <MoreHorizontal className="h-4 w-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuLabel>Acciones</DropdownMenuLabel>
-                              <DropdownMenuItem onClick={() => handleSupplierClick(supplier)}>
-                                <Eye className="mr-2 h-4 w-4" />
-                                Ver detalles
-                              </DropdownMenuItem>
-                              <DropdownMenuItem>
-                                <Edit className="mr-2 h-4 w-4" />
-                                Editar
-                              </DropdownMenuItem>
-                              <DropdownMenuSeparator />
-                              <DropdownMenuItem className="text-destructive">
-                                Cambiar estado
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
+                        <TableCell onClick={(e) => e.stopPropagation()}>
+                          {renderDropdownActions(supplier)}
                         </TableCell>
                       </TableRow>
                     ))}
@@ -449,7 +490,7 @@ export function SupplierRegistry({
                 </Table>
               </div>
 
-              {/* Mobile Card View */}
+              {/* Mobile Cards */}
               <div className="md:hidden space-y-3">
                 {filteredAndSortedSuppliers.map((supplier) => (
                   <div
@@ -457,47 +498,30 @@ export function SupplierRegistry({
                     className={`border rounded-lg p-4 cursor-pointer hover:bg-muted/50 transition-colors ${
                       selectedSupplierId === supplier.id ? 'ring-2 ring-primary' : ''
                     }`}
-                    onClick={() => handleSupplierClick(supplier)}
+                    onClick={() => handleRowClick(supplier)}
                   >
                     <div className="flex items-start justify-between mb-3">
                       <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-1">
+                        <div className="flex items-center gap-2 mb-1 flex-wrap">
                           <h4 className="font-semibold">{supplier.name}</h4>
                           {getTypeBadge(supplier.supplier_type)}
+                          {isIncomplete(supplier) && (
+                            <Badge variant="outline" className="text-xs text-amber-600 border-amber-400 bg-amber-50">
+                              <AlertTriangle className="w-3 h-3 mr-1" />
+                              Incompleto
+                            </Badge>
+                          )}
                         </div>
                         {supplier.business_name && (
-                          <p className="text-sm text-muted-foreground mb-2">
-                            {supplier.business_name}
-                          </p>
+                          <p className="text-sm text-muted-foreground mb-1">{supplier.business_name}</p>
                         )}
                         {supplier.contact_person && (
-                          <p className="text-sm text-muted-foreground">
-                            Contacto: {supplier.contact_person}
-                          </p>
+                          <p className="text-sm text-muted-foreground">Contacto: {supplier.contact_person}</p>
                         )}
                       </div>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" className="h-8 w-8 p-0">
-                            <MoreHorizontal className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuLabel>Acciones</DropdownMenuLabel>
-                          <DropdownMenuItem onClick={() => handleSupplierClick(supplier)}>
-                            <Eye className="mr-2 h-4 w-4" />
-                            Ver detalles
-                          </DropdownMenuItem>
-                          <DropdownMenuItem>
-                            <Edit className="mr-2 h-4 w-4" />
-                            Editar
-                          </DropdownMenuItem>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem className="text-destructive">
-                            Cambiar estado
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
+                      <div onClick={(e) => e.stopPropagation()}>
+                        {renderDropdownActions(supplier)}
+                      </div>
                     </div>
 
                     <div className="grid grid-cols-3 gap-4 text-sm">
@@ -539,7 +563,35 @@ export function SupplierRegistry({
               Registra un nuevo proveedor en el sistema
             </DialogDescription>
           </DialogHeader>
-          <SupplierForm onSuccess={handleCreateSuccess} />
+          <SupplierForm
+            onSuccess={handleCreateSuccess}
+            onCancel={() => setShowCreateDialog(false)}
+          />
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Supplier Dialog */}
+      <Dialog open={showEditDialog} onOpenChange={(open) => {
+        setShowEditDialog(open)
+        if (!open) setSupplierToEdit(null)
+      }}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Editar Proveedor</DialogTitle>
+            <DialogDescription>
+              Modifica la información del proveedor
+            </DialogDescription>
+          </DialogHeader>
+          {supplierToEdit && (
+            <SupplierForm
+              supplier={supplierToEdit}
+              onSuccess={handleEditSuccess}
+              onCancel={() => {
+                setShowEditDialog(false)
+                setSupplierToEdit(null)
+              }}
+            />
+          )}
         </DialogContent>
       </Dialog>
 
@@ -547,10 +599,22 @@ export function SupplierRegistry({
       <Dialog open={showDetailsDialog} onOpenChange={setShowDetailsDialog}>
         <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Detalles del Proveedor</DialogTitle>
-            <DialogDescription>
-              Información completa y métricas de rendimiento
-            </DialogDescription>
+            <div className="flex items-center justify-between w-full pr-6">
+              <div>
+                <DialogTitle>Detalles del Proveedor</DialogTitle>
+                <DialogDescription>
+                  Información completa y métricas de rendimiento
+                </DialogDescription>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleEditFromDetails}
+              >
+                <Edit className="w-4 h-4 mr-2" />
+                Editar
+              </Button>
+            </div>
           </DialogHeader>
           {selectedSupplier && (
             <SupplierDetails

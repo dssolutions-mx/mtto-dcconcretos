@@ -29,6 +29,9 @@ export interface Supplier {
   bank_account_info?: BankAccountInfo
   tax_exempt?: boolean
 
+  // Fiscal document
+  tax_document_url?: string
+
   // Performance tracking
   rating?: number
   total_orders?: number
@@ -37,6 +40,7 @@ export interface Supplier {
   avg_delivery_time?: number
   reliability_score?: number
   business_unit_id?: string
+  business_unit_ids?: string[]
 
   // System fields
   status: SupplierStatus
@@ -144,7 +148,9 @@ export type SupplierType =
   | 'service_provider'
 
 export type SupplierStatus =
+  | 'pending'
   | 'active'
+  | 'active_certified'
   | 'inactive'
   | 'suspended'
   | 'blacklisted'
@@ -374,6 +380,13 @@ export interface SupplierFormData {
   payment_terms?: PaymentTerms
   payment_methods?: PaymentMethod[]
   business_hours?: BusinessHours
+
+  // Financial
+  bank_account_info?: BankAccountInfo
+  tax_document_url?: string
+
+  // Multi business unit
+  business_unit_ids?: string[]
 }
 
 // Component Props Types
