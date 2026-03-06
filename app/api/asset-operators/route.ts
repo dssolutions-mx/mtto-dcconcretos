@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
+import { loadActorContext, canManageAssetOperators } from '@/lib/auth/server-authorization'
 
 export async function GET(request: NextRequest) {
   try {
@@ -88,6 +89,11 @@ export async function POST(request: NextRequest) {
     const { data: { user }, error: authError } = await supabase.auth.getUser()
     if (authError || !user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const actor = await loadActorContext(supabase, user.id)
+    if (!canManageAssetOperators(actor)) {
+      return NextResponse.json({ error: 'Forbidden: Only RH or General Management can manage asset operators' }, { status: 403 })
     }
 
     const {
@@ -202,6 +208,11 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
+    const putActor = await loadActorContext(supabase, user.id)
+    if (!canManageAssetOperators(putActor)) {
+      return NextResponse.json({ error: 'Forbidden: Only RH or General Management can manage asset operators' }, { status: 403 })
+    }
+
     const {
       id,
       assignment_type,
@@ -269,6 +280,11 @@ export async function DELETE(request: NextRequest) {
     const { data: { user }, error: authError } = await supabase.auth.getUser()
     if (authError || !user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const delActor = await loadActorContext(supabase, user.id)
+    if (!canManageAssetOperators(delActor)) {
+      return NextResponse.json({ error: 'Forbidden: Only RH or General Management can manage asset operators' }, { status: 403 })
     }
 
     if (!id) {

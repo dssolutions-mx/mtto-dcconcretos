@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
+import { loadActorContext, canManageComplianceSanctions } from '@/lib/auth/server-authorization'
 import type { ApplySanctionRequest } from '@/types/compliance'
 
 export async function POST(request: NextRequest) {
@@ -14,25 +15,10 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Get user profile to check role
-    const { data: profile, error: profileError } = await supabase
-      .from('profiles')
-      .select('id, role')
-      .eq('id', user.id)
-      .single()
-
-    if (profileError || !profile) {
+    const actor = await loadActorContext(supabase, user.id)
+    if (!canManageComplianceSanctions(actor)) {
       return NextResponse.json(
-        { error: 'Profile not found' },
-        { status: 404 }
-      )
-    }
-
-    // Only managers can apply sanctions
-    const allowedRoles = ['GERENCIA_GENERAL', 'JEFE_UNIDAD_NEGOCIO', 'JEFE_PLANTA', 'AREA_ADMINISTRATIVA', 'ENCARGADO_MANTENIMIENTO']
-    if (!allowedRoles.includes(profile.role)) {
-      return NextResponse.json(
-        { error: 'Forbidden: Only managers can apply sanctions' },
+        { error: 'Forbidden: Only RH or General Management can manage sanctions' },
         { status: 403 }
       )
     }
@@ -188,19 +174,8 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    // Get user profile
-    const { data: profile, error: profileError } = await supabase
-      .from('profiles')
-      .select('id, role')
-      .eq('id', user.id)
-      .single()
-
-    if (profileError || !profile) {
-      return NextResponse.json(
-        { error: 'Profile not found' },
-        { status: 404 }
-      )
-    }
+    const actor = await loadActorContext(supabase, user.id)
+    const isRHOrGM = canManageComplianceSanctions(actor)
 
     const { searchParams } = new URL(request.url)
     const userId = searchParams.get('user_id')
@@ -236,17 +211,14 @@ export async function GET(request: NextRequest) {
       .order('applied_date', { ascending: false })
       .limit(100)
 
-    // Apply filters based on role
-    const allowedRoles = ['GERENCIA_GENERAL', 'JEFE_UNIDAD_NEGOCIO', 'JEFE_PLANTA', 'AREA_ADMINISTRATIVA', 'ENCARGADO_MANTENIMIENTO']
-    
-    if (allowedRoles.includes(profile.role)) {
-      // Managers can see all sanctions in their scope
+    if (isRHOrGM) {
+      // RH and GM can see all sanctions in scope
       if (userId) {
         query = query.eq('user_id', userId)
       }
     } else {
       // Regular users can only see their own sanctions
-      query = query.eq('user_id', profile.id)
+      query = query.eq('user_id', user.id)
     }
 
     if (status) {

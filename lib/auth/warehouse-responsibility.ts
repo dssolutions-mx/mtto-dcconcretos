@@ -69,6 +69,27 @@ const LEGACY_WAREHOUSE_RESPONSIBILITY: Partial<
     canReceiveInventory: true,
     canAdjustInventory: false,
   },
+  // New roles per POL-OPE-001/002
+  GERENTE_MANTENIMIENTO: {
+    canReleaseInventory: true,
+    canReceiveInventory: true,
+    canAdjustInventory: true,
+  },
+  COORDINADOR_MANTENIMIENTO: {
+    canReleaseInventory: false,
+    canReceiveInventory: false,
+    canAdjustInventory: false,
+  },
+  MECANICO: {
+    canReleaseInventory: false,
+    canReceiveInventory: false,
+    canAdjustInventory: false,
+  },
+  RECURSOS_HUMANOS: {
+    canReleaseInventory: false,
+    canReceiveInventory: false,
+    canAdjustInventory: false,
+  },
 }
 
 function resolveLegacyWarehouseFallback(

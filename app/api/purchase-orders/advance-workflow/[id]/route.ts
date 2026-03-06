@@ -71,7 +71,7 @@ export async function PUT(
           const { data: selResult, error: selErr } = await supabase.rpc('select_quotation', {
             p_quotation_id: body.quotation_id,
             p_user_id: user.id,
-            p_selection_reason: 'Selección al aprobar por Jefe de Unidad'
+            p_selection_reason: 'Selección al aprobar por Gerente de Mantenimiento'
           })
           interface SelectQuotationResult {
             success?: boolean
@@ -184,6 +184,21 @@ export async function PUT(
             return NextResponse.json({
               error: 'Esta orden requiere aprobación de Gerencia General después de la autorización técnica.'
             }, { status: 403 })
+          }
+
+          // Paths C and D require Administration viability before GM can approve
+          if (policy.requiresViability && isGM) {
+            const { data: poViability } = await supabase
+              .from('purchase_orders')
+              .select('viability_state')
+              .eq('id', id)
+              .maybeSingle()
+            if (!poViability?.viability_state || poViability.viability_state === 'pending') {
+              return NextResponse.json({
+                error: 'Administración debe registrar la viabilidad financiera antes de la aprobación final.',
+                requires_viability: true,
+              }, { status: 403 })
+            }
           }
         }
       }

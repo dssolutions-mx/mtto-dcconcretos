@@ -1,4 +1,5 @@
-export const LEGACY_DB_ROLES = [
+// Original DB enum values (legacy roles still used by existing profiles)
+const ORIGINAL_DB_ROLES = [
   'GERENCIA_GENERAL',
   'JEFE_UNIDAD_NEGOCIO',
   'AREA_ADMINISTRATIVA',
@@ -12,19 +13,31 @@ export const LEGACY_DB_ROLES = [
   'ENCARGADO_ALMACEN',
 ] as const
 
+// New roles added per POL-OPE-001/002 — now valid DB enum values
+const NEW_DB_ROLES = [
+  'GERENTE_MANTENIMIENTO',
+  'COORDINADOR_MANTENIMIENTO',
+  'MECANICO',
+  'RECURSOS_HUMANOS',
+] as const
+
+export const LEGACY_DB_ROLES = [...ORIGINAL_DB_ROLES, ...NEW_DB_ROLES] as const
+
 export type LegacyDbRole = (typeof LEGACY_DB_ROLES)[number]
 
 export const FUTURE_BUSINESS_ROLES = [
   'GERENCIA_GENERAL',
   'GERENTE_MANTENIMIENTO',
+  'JEFE_UNIDAD_NEGOCIO',
   'COORDINADOR_MANTENIMIENTO',
   'AREA_ADMINISTRATIVA',
   'AUXILIAR_COMPRAS',
+  'ENCARGADO_ALMACEN',
   'OPERADOR',
+  'MECANICO',
   'VISUALIZADOR',
   'EJECUTIVO',
   'RECURSOS_HUMANOS',
-  'MECANICO',
 ] as const
 
 export type FutureBusinessRole = (typeof FUTURE_BUSINESS_ROLES)[number]
@@ -39,9 +52,9 @@ export interface RoleScopeMetadata {
 
 const LEGACY_ROLE_LABELS: Record<LegacyDbRole, string> = {
   GERENCIA_GENERAL: 'Gerencia General',
-  JEFE_UNIDAD_NEGOCIO: 'Gerente de Mantenimiento',
+  JEFE_UNIDAD_NEGOCIO: 'Jefe de Unidad de Negocio',
   AREA_ADMINISTRATIVA: 'Área Administrativa',
-  ENCARGADO_MANTENIMIENTO: 'Coordinador de Mantenimiento',
+  ENCARGADO_MANTENIMIENTO: 'Encargado de Mantenimiento',
   JEFE_PLANTA: 'Jefe de Planta',
   AUXILIAR_COMPRAS: 'Auxiliar de Compras',
   DOSIFICADOR: 'Dosificador',
@@ -49,24 +62,33 @@ const LEGACY_ROLE_LABELS: Record<LegacyDbRole, string> = {
   VISUALIZADOR: 'Visualizador',
   EJECUTIVO: 'Ejecutivo',
   ENCARGADO_ALMACEN: 'Encargado de Almacén',
+  GERENTE_MANTENIMIENTO: 'Gerente de Mantenimiento',
+  COORDINADOR_MANTENIMIENTO: 'Coordinador de Mantenimiento',
+  MECANICO: 'Mecánico',
+  RECURSOS_HUMANOS: 'Recursos Humanos',
 }
 
 const FUTURE_ROLE_LABELS: Record<FutureBusinessRole, string> = {
   GERENCIA_GENERAL: 'Gerencia General',
   GERENTE_MANTENIMIENTO: 'Gerente de Mantenimiento',
+  JEFE_UNIDAD_NEGOCIO: 'Jefe de Unidad de Negocio',
   COORDINADOR_MANTENIMIENTO: 'Coordinador de Mantenimiento',
   AREA_ADMINISTRATIVA: 'Área Administrativa',
   AUXILIAR_COMPRAS: 'Auxiliar de Compras',
+  ENCARGADO_ALMACEN: 'Encargado de Almacén',
   OPERADOR: 'Operador',
+  MECANICO: 'Mecánico',
   VISUALIZADOR: 'Visualizador',
   EJECUTIVO: 'Ejecutivo',
   RECURSOS_HUMANOS: 'Recursos Humanos',
-  MECANICO: 'Mecánico',
 }
 
+// Maps legacy DB roles to their semantic future business role equivalents.
+// ENCARGADO_MANTENIMIENTO and JEFE_PLANTA both map to COORDINADOR_MANTENIMIENTO during transition.
+// New DB roles map directly to themselves.
 export const LEGACY_ROLE_TO_BUSINESS_ROLE: Partial<Record<LegacyDbRole, FutureBusinessRole>> = {
   GERENCIA_GENERAL: 'GERENCIA_GENERAL',
-  JEFE_UNIDAD_NEGOCIO: 'GERENTE_MANTENIMIENTO',
+  JEFE_UNIDAD_NEGOCIO: 'JEFE_UNIDAD_NEGOCIO',
   AREA_ADMINISTRATIVA: 'AREA_ADMINISTRATIVA',
   ENCARGADO_MANTENIMIENTO: 'COORDINADOR_MANTENIMIENTO',
   JEFE_PLANTA: 'COORDINADOR_MANTENIMIENTO',
@@ -75,19 +97,28 @@ export const LEGACY_ROLE_TO_BUSINESS_ROLE: Partial<Record<LegacyDbRole, FutureBu
   OPERADOR: 'OPERADOR',
   VISUALIZADOR: 'VISUALIZADOR',
   EJECUTIVO: 'EJECUTIVO',
+  ENCARGADO_ALMACEN: 'ENCARGADO_ALMACEN',
+  GERENTE_MANTENIMIENTO: 'GERENTE_MANTENIMIENTO',
+  COORDINADOR_MANTENIMIENTO: 'COORDINADOR_MANTENIMIENTO',
+  MECANICO: 'MECANICO',
+  RECURSOS_HUMANOS: 'RECURSOS_HUMANOS',
 }
 
+// Maps future business roles to the DB enum value used when persisting.
+// All new DB roles map directly to themselves.
 export const FUTURE_ROLE_TO_LEGACY_ROLE: Partial<Record<FutureBusinessRole, LegacyDbRole>> = {
   GERENCIA_GENERAL: 'GERENCIA_GENERAL',
-  GERENTE_MANTENIMIENTO: 'JEFE_UNIDAD_NEGOCIO',
-  COORDINADOR_MANTENIMIENTO: 'ENCARGADO_MANTENIMIENTO',
+  GERENTE_MANTENIMIENTO: 'GERENTE_MANTENIMIENTO',
+  JEFE_UNIDAD_NEGOCIO: 'JEFE_UNIDAD_NEGOCIO',
+  COORDINADOR_MANTENIMIENTO: 'COORDINADOR_MANTENIMIENTO',
   AREA_ADMINISTRATIVA: 'AREA_ADMINISTRATIVA',
   AUXILIAR_COMPRAS: 'AUXILIAR_COMPRAS',
+  ENCARGADO_ALMACEN: 'ENCARGADO_ALMACEN',
   OPERADOR: 'OPERADOR',
+  MECANICO: 'MECANICO',
   VISUALIZADOR: 'VISUALIZADOR',
   EJECUTIVO: 'EJECUTIVO',
-  RECURSOS_HUMANOS: 'AREA_ADMINISTRATIVA',
-  MECANICO: 'OPERADOR',
+  RECURSOS_HUMANOS: 'RECURSOS_HUMANOS',
 }
 
 export const BUSINESS_ROLE_SCOPE: Record<FutureBusinessRole, RoleScopeMetadata> = {
@@ -99,12 +130,17 @@ export const BUSINESS_ROLE_SCOPE: Record<FutureBusinessRole, RoleScopeMetadata> 
   GERENTE_MANTENIMIENTO: {
     scope: 'business_unit',
     label: 'Unidad de negocio',
-    description: 'Aprobador técnico principal durante la transición desde los roles legacy.',
+    description: 'Aprobador técnico de Nivel 1 para todas las OCs. Gestiona el padrón de proveedores y tiene visibilidad de toda la red de activos.',
+  },
+  JEFE_UNIDAD_NEGOCIO: {
+    scope: 'business_unit',
+    label: 'Unidad de negocio',
+    description: 'Jefe de unidad de negocio. No aprueba órdenes de compra.',
   },
   COORDINADOR_MANTENIMIENTO: {
     scope: 'plant',
     label: 'Planta',
-    description: 'Responsable operativo de mantenimiento y creación de solicitudes.',
+    description: 'Crea OTs y OCs. Límite de autorización $0. El Gerente de Mantenimiento aprueba.',
   },
   AREA_ADMINISTRATIVA: {
     scope: 'global',
@@ -114,12 +150,22 @@ export const BUSINESS_ROLE_SCOPE: Record<FutureBusinessRole, RoleScopeMetadata> 
   AUXILIAR_COMPRAS: {
     scope: 'global',
     label: 'Global',
-    description: 'Soporte operativo de compras e inventario.',
+    description: 'Soporte operativo de compras.',
+  },
+  ENCARGADO_ALMACEN: {
+    scope: 'plant',
+    label: 'Planta',
+    description: 'Guardián del inventario físico. Libera inventario solo con OC aprobada en sistema.',
   },
   OPERADOR: {
     scope: 'plant',
     label: 'Planta',
     description: 'Rol operativo de ejecución en planta.',
+  },
+  MECANICO: {
+    scope: 'plant',
+    label: 'Planta',
+    description: 'Lee OTs asignadas y sube evidencia fotográfica (antes/después). No crea OCs ni aprueba nada.',
   },
   VISUALIZADOR: {
     scope: 'global',
@@ -134,15 +180,12 @@ export const BUSINESS_ROLE_SCOPE: Record<FutureBusinessRole, RoleScopeMetadata> 
   RECURSOS_HUMANOS: {
     scope: 'global',
     label: 'Global',
-    description: 'Propietario futuro de altas, bajas y gobierno de personal.',
-  },
-  MECANICO: {
-    scope: 'plant',
-    label: 'Planta',
-    description: 'Rol técnico operativo asociado a ejecución de trabajo y evidencia.',
+    description: 'Propietario del módulo de conciliación. Da de alta usuarios, reasigna operadores y dicta sanciones.',
   },
 }
 
+// Per POL-OPE-001/002: only GERENTE_MANTENIMIENTO authorizes POs (Nivel 1).
+// COORDINADOR_MANTENIMIENTO creates POs but has $0 authorization limit.
 const TECHNICAL_APPROVER_ROLES = new Set<FutureBusinessRole>(['GERENTE_MANTENIMIENTO'])
 
 const VIABILITY_REVIEWER_ROLES = new Set<FutureBusinessRole>(['AREA_ADMINISTRATIVA'])

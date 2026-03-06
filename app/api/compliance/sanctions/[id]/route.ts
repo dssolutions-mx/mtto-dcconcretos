@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
+import { loadActorContext, canManageComplianceSanctions } from '@/lib/auth/server-authorization'
 
 export async function PATCH(
   request: NextRequest,
@@ -20,21 +21,15 @@ export async function PATCH(
     const body = await request.json()
     const { status, resolution_notes } = body
 
-    // Get user profile
-    const { data: profile, error: profileError } = await supabase
-      .from('profiles')
-      .select('id, role')
-      .eq('id', user.id)
-      .single()
-
-    if (profileError || !profile) {
+    const actor = await loadActorContext(supabase, user.id)
+    if (!canManageComplianceSanctions(actor)) {
       return NextResponse.json(
-        { error: 'Profile not found' },
-        { status: 404 }
+        { error: 'Forbidden: Only RH or General Management can update sanctions' },
+        { status: 403 }
       )
     }
 
-    // Get sanction to verify ownership/access
+    // Get sanction to verify existence
     const { data: sanction, error: sanctionError } = await supabase
       .from('sanctions')
       .select('id, user_id, status')
@@ -48,15 +43,6 @@ export async function PATCH(
       )
     }
 
-    // Only managers can update sanctions
-    const allowedRoles = ['GERENCIA_GENERAL', 'JEFE_UNIDAD_NEGOCIO', 'JEFE_PLANTA', 'AREA_ADMINISTRATIVA', 'ENCARGADO_MANTENIMIENTO']
-    if (!allowedRoles.includes(profile.role)) {
-      return NextResponse.json(
-        { error: 'Forbidden: Only managers can update sanctions' },
-        { status: 403 }
-      )
-    }
-
     // Validate status
     if (status && !['active', 'resolved', 'cancelled'].includes(status)) {
       return NextResponse.json(
@@ -66,12 +52,12 @@ export async function PATCH(
     }
 
     // Build update object
-    const updateData: any = {}
+    const updateData: Record<string, unknown> = {}
     if (status) {
       updateData.status = status
       if (status === 'resolved' || status === 'cancelled') {
         updateData.resolved_at = new Date().toISOString()
-        updateData.resolved_by = profile.id
+        updateData.resolved_by = user.id
       }
     }
     if (resolution_notes !== undefined) {
@@ -125,19 +111,8 @@ export async function GET(
 
     const { id } = await params
 
-    // Get user profile
-    const { data: profile, error: profileError } = await supabase
-      .from('profiles')
-      .select('id, role')
-      .eq('id', user.id)
-      .single()
-
-    if (profileError || !profile) {
-      return NextResponse.json(
-        { error: 'Profile not found' },
-        { status: 404 }
-      )
-    }
+    const actor = await loadActorContext(supabase, user.id)
+    const isRHOrGM = canManageComplianceSanctions(actor)
 
     // Build query
     let query = supabase
@@ -173,10 +148,9 @@ export async function GET(
       .eq('id', id)
       .single()
 
-    // Apply RLS: Users can only see their own sanctions unless they're managers
-    const allowedRoles = ['GERENCIA_GENERAL', 'JEFE_UNIDAD_NEGOCIO', 'JEFE_PLANTA', 'AREA_ADMINISTRATIVA', 'ENCARGADO_MANTENIMIENTO']
-    if (!allowedRoles.includes(profile.role)) {
-      query = query.eq('user_id', profile.id)
+    // RH and GM can see all; others only see their own
+    if (!isRHOrGM) {
+      query = query.eq('user_id', user.id)
     }
 
     const { data: sanction, error } = await query

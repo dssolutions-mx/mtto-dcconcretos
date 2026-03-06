@@ -304,8 +304,8 @@ serve(async (req) => {
     }
 
     // Resolve Business Unit from plant, then BU manager via profiles (role-based assignment)
-    let businessUnitManagerEmail: string | null = null
-    let businessUnitManagerName: string | null = null
+    let technicalApproverEmail: string | null = null
+    let technicalApproverName: string | null = null
     if (resolvedPlantId) {
       const { data: plant } = await supabase
         .from('plants')
@@ -314,17 +314,17 @@ serve(async (req) => {
         .maybeSingle()
       const buId = plant?.business_unit_id as string | undefined
       if (buId) {
-        // Pick active profiles in this BU with role JEFE_UNIDAD_NEGOCIO
-        const { data: buManagers } = await supabase
+        // Pick GERENTE_MANTENIMIENTO as technical approver per POL-OPE-001/002 (COORDINADOR only creates, not approves)
+        const { data: technicalApprovers } = await supabase
           .from('profiles')
           .select('email, nombre, apellido')
-          .eq('role', 'JEFE_UNIDAD_NEGOCIO')
+          .or('role.eq.GERENTE_MANTENIMIENTO,business_role.eq.GERENTE_MANTENIMIENTO')
           .eq('business_unit_id', buId)
           .eq('status', 'active')
-        const m = (buManagers || []).find((p) => !!p.email)
+        const m = (technicalApprovers || []).find((p) => !!p.email)
         if (m?.email) {
-          businessUnitManagerEmail = m.email
-          businessUnitManagerName = `${(m as any).nombre || ''} ${(m as any).apellido || ''}`.trim()
+          technicalApproverEmail = m.email
+          technicalApproverName = `${(m as any).nombre || ''} ${(m as any).apellido || ''}`.trim()
         }
       }
     }
@@ -384,11 +384,11 @@ serve(async (req) => {
       }
     } else {
       // No first approval yet → always notify BU Manager first
-      if (businessUnitManagerEmail) {
+      if (technicalApproverEmail) {
         // Use email from profiles (already resolved above) — avoid listUsers() pagination
-        const { data: buMgrProfile } = await supabase.from('profiles').select('id, email').eq('email', businessUnitManagerEmail).maybeSingle()
-        const buEmail = (buMgrProfile?.email && buMgrProfile.email.trim()) || businessUnitManagerEmail
-        recipients = [{ email: buEmail, name: businessUnitManagerName || '', userId: buMgrProfile?.id }]
+        const { data: buMgrProfile } = await supabase.from('profiles').select('id, email').eq('email', technicalApproverEmail).maybeSingle()
+        const buEmail = (buMgrProfile?.email && buMgrProfile.email.trim()) || technicalApproverEmail
+        recipients = [{ email: buEmail, name: technicalApproverName || '', userId: buMgrProfile?.id }]
       } else {
         // Fallback to GM if BU manager not found
         recipients = gmRecipients

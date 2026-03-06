@@ -119,9 +119,11 @@ function getRoleScopeFromBusinessRole(
   const scopeMap: Record<FutureBusinessRole, RoleScope> = {
     GERENCIA_GENERAL: 'global',
     GERENTE_MANTENIMIENTO: 'business_unit',
+    JEFE_UNIDAD_NEGOCIO: 'business_unit',
     COORDINADOR_MANTENIMIENTO: 'plant',
     AREA_ADMINISTRATIVA: 'global',
     AUXILIAR_COMPRAS: 'global',
+    ENCARGADO_ALMACEN: 'plant',
     OPERADOR: 'plant',
     VISUALIZADOR: 'global',
     EJECUTIVO: 'global',
@@ -188,7 +190,7 @@ export function checkRHOwnershipAuthority(
 
 /**
  * Check if actor has technical approval authority for purchase orders.
- * Technical approver = GERENTE_MANTENIMIENTO (maps from JEFE_UNIDAD_NEGOCIO).
+ * Technical approver = GERENTE_MANTENIMIENTO per POL-OPE-001/002.
  */
 export function checkTechnicalApprovalAuthority(
   actor: ActorContext | null
@@ -225,7 +227,7 @@ export function checkGMEscalationAuthority(
 
 /**
  * Check if actor can update user authorization (role, limits, scope).
- * Uses shared rule: GERENCIA_GENERAL, JEFE_UNIDAD_NEGOCIO, AREA_ADMINISTRATIVA.
+ * Uses shared rule: GERENCIA_GENERAL or RECURSOS_HUMANOS (Task 7 completes RH ownership).
  * Task 7 will add RECURSOS_HUMANOS; for Task 3 we keep legacy roles.
  */
 export function canUpdateUserAuthorization(

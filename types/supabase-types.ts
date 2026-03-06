@@ -10401,6 +10401,10 @@ export type Database = {
         | "EJECUTIVO"
         | "VISUALIZADOR"
         | "ENCARGADO_ALMACEN"
+        | "GERENTE_MANTENIMIENTO"
+        | "COORDINADOR_MANTENIMIENTO"
+        | "MECANICO"
+        | "RECURSOS_HUMANOS"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -10541,6 +10545,10 @@ export const Constants = {
         "EJECUTIVO",
         "VISUALIZADOR",
         "ENCARGADO_ALMACEN",
+        "GERENTE_MANTENIMIENTO",
+        "COORDINADOR_MANTENIMIENTO",
+        "MECANICO",
+        "RECURSOS_HUMANOS",
       ],
     },
   },

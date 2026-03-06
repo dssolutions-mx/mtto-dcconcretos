@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
+import { loadActorContext, canReviewComplianceDispute } from '@/lib/auth/server-authorization'
 
 export async function POST(
   request: NextRequest,
@@ -13,21 +14,10 @@ export async function POST(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Verify user is a manager
-    const { data: profile, error: profileError } = await supabase
-      .from('profiles')
-      .select('role')
-      .eq('id', user.id)
-      .single()
-
-    if (profileError || !profile) {
-      return NextResponse.json({ error: 'Profile not found' }, { status: 404 })
-    }
-
-    const allowedRoles = ['GERENCIA_GENERAL', 'JEFE_UNIDAD_NEGOCIO', 'JEFE_PLANTA', 'AREA_ADMINISTRATIVA', 'ENCARGADO_MANTENIMIENTO']
-    if (!allowedRoles.includes(profile.role)) {
+    const actor = await loadActorContext(supabase, user.id)
+    if (!canReviewComplianceDispute(actor)) {
       return NextResponse.json(
-        { error: 'Only managers can review disputes' },
+        { error: 'Forbidden: Only RH or General Management can review disputes' },
         { status: 403 }
       )
     }
