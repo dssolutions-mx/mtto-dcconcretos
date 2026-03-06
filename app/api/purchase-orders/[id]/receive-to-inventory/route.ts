@@ -46,9 +46,21 @@ export async function POST(
       }
     }
 
-    const canReceive = await canUserReceiveInventory(user.id)
-    if (!canReceive) {
-      return NextResponse.json({ success: false, error: 'You do not have permission to receive inventory' }, { status: 403 })
+    const warehouseIds = [...new Set(body.items.map((item) => item.warehouse_id))]
+    const receiveChecks = await Promise.all(
+      warehouseIds.map(async (warehouseId) => ({
+        warehouseId,
+        allowed: await canUserReceiveInventory(user.id, warehouseId),
+      }))
+    )
+
+    const deniedWarehouse = receiveChecks.find((check) => !check.allowed)
+    if (deniedWarehouse) {
+      return NextResponse.json({
+        success: false,
+        error: 'You do not have permission to receive inventory in one or more selected warehouses',
+        warehouse_id: deniedWarehouse.warehouseId,
+      }, { status: 403 })
     }
 
     const result = await InventoryReceiptService.receiveToInventory({

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import { loadActorContext, canUpdateUserAuthorization } from '@/lib/auth/server-authorization'
+import { normalizeRoleForPersistence } from '@/lib/auth/role-model'
 
 export async function PATCH(request: NextRequest) {
   try {
@@ -47,7 +48,15 @@ export async function PATCH(request: NextRequest) {
 
     // Update user profile
     const updateData: Record<string, unknown> = {}
-    if (role !== undefined) updateData.role = role
+    if (role !== undefined) {
+      const normalizedRole = normalizeRoleForPersistence(role)
+      if (!normalizedRole) {
+        return NextResponse.json({ error: 'Rol inválido' }, { status: 400 })
+      }
+      updateData.role = normalizedRole.role
+      updateData.business_role = normalizedRole.businessRole
+      updateData.role_scope = normalizedRole.roleScope
+    }
     if (individual_limit !== undefined) updateData.can_authorize_up_to = individual_limit
     if (business_unit_id !== undefined) updateData.business_unit_id = business_unit_id || null
     if (plant_id !== undefined) updateData.plant_id = plant_id || null

@@ -7,6 +7,7 @@ import {
   checkTechnicalApprovalAuthority,
   checkGMEscalationAuthority,
   checkScopeOverBusinessUnit,
+  checkViabilityReviewAuthority,
   canValidateReceipts,
 } from '@/lib/auth/server-authorization'
 import {
@@ -86,6 +87,8 @@ export async function PUT(
       }
     }
 
+    let recordAuthorizationAfterWorkflow = false
+
     // Approval authorization: use workflow policy and shared auth helpers
     if (body.new_status === 'approved') {
       const { data: purchaseOrder } = await supabase
@@ -152,28 +155,29 @@ export async function PUT(
             }, { status: 403 })
           }
 
-          const { error: authUpdateError } = await supabase
-            .from('purchase_orders')
-            .update({ authorized_by: user.id, authorization_date: new Date().toISOString() })
-            .eq('id', id)
-          if (authUpdateError) {
-            return NextResponse.json({ error: 'No se pudo registrar la autorización' }, { status: 500 })
-          }
-
           if (needsGMEscalation && !isGM) {
-            const { error: statusError } = await supabase
+            const { error: escalationError } = await supabase
               .from('purchase_orders')
-              .update({ status: 'pending_approval', updated_at: new Date().toISOString() })
+              .update({
+                authorized_by: user.id,
+                authorization_date: new Date().toISOString(),
+                status: 'pending_approval',
+                updated_at: new Date().toISOString(),
+              })
               .eq('id', id)
-            if (statusError) {
-              console.error('Failed to update status for escalation:', statusError)
+
+            if (escalationError) {
+              return NextResponse.json({ error: 'No se pudo registrar la autorización escalada' }, { status: 500 })
             }
+
             return NextResponse.json({
               success: true,
               message: 'Autorización registrada. Se ha escalado a Gerencia General para aprobación final.',
               escalated_to_gm: true
             })
           }
+
+          recordAuthorizationAfterWorkflow = true
         } else {
           // Second approval: GM required when policy needs escalation
           if (needsGMEscalation && !isGM) {
@@ -186,7 +190,47 @@ export async function PUT(
     }
 
     if (body.new_status === 'validated') {
-      if (!canValidateReceipts(actor)) {
+      const { data: purchaseOrder } = await supabase
+        .from('purchase_orders')
+        .select('id, po_purpose, work_order_type, approval_amount, total_amount')
+        .eq('id', id)
+        .maybeSingle()
+
+      const policy = resolveWorkflowPath({
+        poPurpose: purchaseOrder?.po_purpose ?? null,
+        workOrderType: purchaseOrder?.work_order_type ?? null,
+        approvalAmount: Number(purchaseOrder?.approval_amount ?? purchaseOrder?.total_amount ?? 0),
+      })
+
+      if (policy.requiresViability) {
+        const canReviewViability =
+          checkViabilityReviewAuthority(actor) || checkGMEscalationAuthority(actor)
+
+        if (!canReviewViability) {
+          return NextResponse.json({
+            error: 'Solo Área Administrativa o Gerencia General pueden registrar la viabilidad administrativa.'
+          }, { status: 403 })
+        }
+
+        const { error: viabilityError } = await supabase
+          .from('purchase_orders')
+          .update({
+            viability_state: 'viable',
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', id)
+
+        if (viabilityError) {
+          return NextResponse.json({ error: 'No se pudo registrar la viabilidad administrativa' }, { status: 500 })
+        }
+
+        return NextResponse.json({
+          success: true,
+          message: 'Viabilidad administrativa registrada correctamente.',
+          workflow_advanced: false,
+          viability_recorded: true,
+        })
+      } else if (!canValidateReceipts(actor)) {
         return NextResponse.json({
           error: 'Solo Gerencia General o Área Administrativa con límites de autorización asignados pueden validar comprobantes.'
         }, { status: 403 })
@@ -200,6 +244,17 @@ export async function PUT(
       user.id, 
       body.notes
     )
+
+    if (body.new_status === 'approved' && recordAuthorizationAfterWorkflow) {
+      const { error: authUpdateError } = await supabase
+        .from('purchase_orders')
+        .update({ authorized_by: user.id, authorization_date: new Date().toISOString() })
+        .eq('id', id)
+
+      if (authUpdateError) {
+        return NextResponse.json({ error: 'La orden se aprobó, pero no se pudo registrar la autorización técnica.' }, { status: 500 })
+      }
+    }
     
     return NextResponse.json({
       success: result.success,

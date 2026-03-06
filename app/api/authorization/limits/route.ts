@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import { AuthorizationConfigUpdate } from '@/types/authorization'
+import { loadActorContext, canUpdateUserAuthorization } from '@/lib/auth/server-authorization'
 
 // GET - Fetch all authorization limits (with hierarchy view)
 export async function GET(request: NextRequest) {
@@ -63,15 +64,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'User not authenticated' }, { status: 401 })
     }
 
-    // Get user profile to check permissions
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('role')
-      .eq('id', user.id)
-      .single()
-
-    // Only GERENCIA_GENERAL and AREA_ADMINISTRATIVA can create/update limits
-    if (!profile?.role || !['GERENCIA_GENERAL', 'AREA_ADMINISTRATIVA'].includes(profile.role)) {
+    const actor = await loadActorContext(supabase, user.id)
+    if (!actor || !canUpdateUserAuthorization(actor)) {
       return NextResponse.json({ 
         error: 'Insufficient permissions to manage authorization limits' 
       }, { status: 403 })
@@ -117,7 +111,7 @@ export async function POST(request: NextRequest) {
         .from('authorization_limits')
         .insert({
           user_id: body.user_id,
-          granted_by_user_id: user.id,
+          granted_by_user_id: actor.userId,
           max_amount: body.new_limit,
           delegatable_amount: body.new_limit, // Can delegate up to their limit
           business_unit_id: body.business_unit_id,
@@ -158,15 +152,8 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: 'User not authenticated' }, { status: 401 })
     }
 
-    // Get user profile to check permissions
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('role')
-      .eq('id', user.id)
-      .single()
-
-    // Only GERENCIA_GENERAL and AREA_ADMINISTRATIVA can delete limits
-    if (!profile?.role || !['GERENCIA_GENERAL', 'AREA_ADMINISTRATIVA'].includes(profile.role)) {
+    const actor = await loadActorContext(supabase, user.id)
+    if (!actor || !canUpdateUserAuthorization(actor)) {
       return NextResponse.json({ 
         error: 'Insufficient permissions to delete authorization limits' 
       }, { status: 403 })

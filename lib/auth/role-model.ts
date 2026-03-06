@@ -39,9 +39,9 @@ export interface RoleScopeMetadata {
 
 const LEGACY_ROLE_LABELS: Record<LegacyDbRole, string> = {
   GERENCIA_GENERAL: 'Gerencia General',
-  JEFE_UNIDAD_NEGOCIO: 'Jefe Unidad de Negocio',
+  JEFE_UNIDAD_NEGOCIO: 'Gerente de Mantenimiento',
   AREA_ADMINISTRATIVA: 'Área Administrativa',
-  ENCARGADO_MANTENIMIENTO: 'Encargado Mantenimiento',
+  ENCARGADO_MANTENIMIENTO: 'Coordinador de Mantenimiento',
   JEFE_PLANTA: 'Jefe de Planta',
   AUXILIAR_COMPRAS: 'Auxiliar de Compras',
   DOSIFICADOR: 'Dosificador',
@@ -75,6 +75,19 @@ export const LEGACY_ROLE_TO_BUSINESS_ROLE: Partial<Record<LegacyDbRole, FutureBu
   OPERADOR: 'OPERADOR',
   VISUALIZADOR: 'VISUALIZADOR',
   EJECUTIVO: 'EJECUTIVO',
+}
+
+export const FUTURE_ROLE_TO_LEGACY_ROLE: Partial<Record<FutureBusinessRole, LegacyDbRole>> = {
+  GERENCIA_GENERAL: 'GERENCIA_GENERAL',
+  GERENTE_MANTENIMIENTO: 'JEFE_UNIDAD_NEGOCIO',
+  COORDINADOR_MANTENIMIENTO: 'ENCARGADO_MANTENIMIENTO',
+  AREA_ADMINISTRATIVA: 'AREA_ADMINISTRATIVA',
+  AUXILIAR_COMPRAS: 'AUXILIAR_COMPRAS',
+  OPERADOR: 'OPERADOR',
+  VISUALIZADOR: 'VISUALIZADOR',
+  EJECUTIVO: 'EJECUTIVO',
+  RECURSOS_HUMANOS: 'AREA_ADMINISTRATIVA',
+  MECANICO: 'OPERADOR',
 }
 
 export const BUSINESS_ROLE_SCOPE: Record<FutureBusinessRole, RoleScopeMetadata> = {
@@ -213,4 +226,41 @@ export function isGMEscalatorRole(role: string | null | undefined): boolean {
 export function isRHOwnerRole(role: string | null | undefined): boolean {
   const businessRole = resolveBusinessRole(role)
   return businessRole ? RH_OWNER_ROLES.has(businessRole) : false
+}
+
+export interface NormalizedPersistedRole {
+  role: LegacyDbRole
+  businessRole: FutureBusinessRole | null
+  roleScope: RoleScope | null
+}
+
+export function normalizeRoleForPersistence(
+  role: string | null | undefined
+): NormalizedPersistedRole | null {
+  if (!role) {
+    return null
+  }
+
+  if (isLegacyDbRole(role)) {
+    return {
+      role,
+      businessRole: resolveBusinessRole(role),
+      roleScope: resolveRoleScope(role),
+    }
+  }
+
+  if (isFutureBusinessRole(role)) {
+    const legacyRole = FUTURE_ROLE_TO_LEGACY_ROLE[role]
+    if (!legacyRole) {
+      return null
+    }
+
+    return {
+      role: legacyRole,
+      businessRole: role,
+      roleScope: resolveRoleScope(role),
+    }
+  }
+
+  return null
 }

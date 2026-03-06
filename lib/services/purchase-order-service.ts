@@ -339,7 +339,8 @@ export class PurchaseOrderService {
           workflow_policy: {
             path: workflowPolicy.path,
             requires_viability: workflowPolicy.requiresViability,
-            next_step_for_administration: nextStepForAdmin,
+            requires_gm_if_above_threshold: workflowPolicy.requiresGMIfAboveThreshold,
+            next_step_description: nextStepForAdmin,
           },
         },
       }

@@ -46,9 +46,21 @@ export async function POST(
       }
     }
 
-    const canRelease = await canUserReleaseInventory(user.id)
-    if (!canRelease) {
-      return NextResponse.json({ success: false, error: 'You do not have permission to fulfill from inventory' }, { status: 403 })
+    const warehouseIds = [...new Set(body.fulfillments.map((fulfillment) => fulfillment.warehouse_id))]
+    const releaseChecks = await Promise.all(
+      warehouseIds.map(async (warehouseId) => ({
+        warehouseId,
+        allowed: await canUserReleaseInventory(user.id, warehouseId),
+      }))
+    )
+
+    const deniedWarehouse = releaseChecks.find((check) => !check.allowed)
+    if (deniedWarehouse) {
+      return NextResponse.json({
+        success: false,
+        error: 'You do not have permission to fulfill from inventory in one or more selected warehouses',
+        warehouse_id: deniedWarehouse.warehouseId,
+      }, { status: 403 })
     }
 
     const result = await InventoryFulfillmentService.fulfillFromInventory({

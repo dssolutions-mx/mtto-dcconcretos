@@ -6,6 +6,7 @@ import {
   canCreateOperators,
   canViewOperatorsList,
 } from '@/lib/auth/server-authorization'
+import { normalizeRoleForPersistence } from '@/lib/auth/role-model'
 
 export async function POST(request: NextRequest) {
   try {
@@ -43,11 +44,17 @@ export async function POST(request: NextRequest) {
       password
     } = await request.json()
 
+    const normalizedRole = normalizeRoleForPersistence(role)
+
     // Validate required fields
     if (!nombre || !apellido || !email || !role || !employee_code || !password) {
       return NextResponse.json({ 
         error: 'Missing required fields: nombre, apellido, email, role, employee_code, password' 
       }, { status: 400 })
+    }
+
+    if (!normalizedRole) {
+      return NextResponse.json({ error: 'Invalid role provided' }, { status: 400 })
     }
 
     if (password.length < 6) {
@@ -83,7 +90,8 @@ export async function POST(request: NextRequest) {
       user_metadata: {
         nombre,
         apellido,
-        role,
+        role: normalizedRole.role,
+        business_role: normalizedRole.businessRole,
         employee_code
       }
     })
@@ -104,7 +112,9 @@ export async function POST(request: NextRequest) {
         email,
         telefono,
         phone_secondary,
-        role,
+        role: normalizedRole.role,
+        business_role: normalizedRole.businessRole,
+        role_scope: normalizedRole.roleScope,
         employee_code,
         position,
         shift,
@@ -127,6 +137,8 @@ export async function POST(request: NextRequest) {
         telefono,
         phone_secondary,
         role,
+        business_role,
+        role_scope,
         employee_code,
         position,
         shift,
@@ -147,6 +159,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       ...operator,
+      user: { profile: operator },
       message: 'User created successfully',
       login_instructions: {
         email: email,
@@ -196,6 +209,8 @@ export async function GET(request: NextRequest) {
         telefono,
         phone_secondary,
         role,
+        business_role,
+        role_scope,
         employee_code,
         position,
         shift,
@@ -217,32 +232,8 @@ export async function GET(request: NextRequest) {
     } else {
       query = query.eq('status', status)
 
-      if (actor.profile.role === 'GERENCIA_GENERAL') {
-        // General management can see all operators
-      } else if (actor.profile.role === 'JEFE_UNIDAD_NEGOCIO') {
-        if (actor.profile.business_unit_id) {
-          query = query.or(
-            `business_unit_id.eq.${actor.profile.business_unit_id},business_unit_id.is.null`
-          )
-        }
-      } else if (
-        actor.profile.role === 'JEFE_PLANTA' ||
-        actor.profile.role === 'ENCARGADO_MANTENIMIENTO' ||
-        actor.profile.role === 'DOSIFICADOR'
-      ) {
-        if (actor.profile.plant_id) {
-          query = query.eq('plant_id', actor.profile.plant_id)
-        }
-      } else {
-        return NextResponse.json([])
-      }
-
       if (plant_id) {
-        if (actor.profile.role === 'JEFE_UNIDAD_NEGOCIO') {
-          query = query.or(`plant_id.eq.${plant_id},plant_id.is.null`)
-        } else {
-          query = query.eq('plant_id', plant_id)
-        }
+        query = query.eq('plant_id', plant_id)
       }
 
       if (business_unit_id) {
@@ -250,7 +241,7 @@ export async function GET(request: NextRequest) {
       }
 
       if (role) {
-        query = query.eq('role', role)
+        query = query.or(`role.eq.${role},business_role.eq.${role}`)
       }
     }
 

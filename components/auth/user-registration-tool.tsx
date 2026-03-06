@@ -46,11 +46,12 @@ interface UserRegistrationFormData {
 const AVAILABLE_ROLES = [
   { value: 'OPERADOR', label: 'Operador', description: 'Operación básica de equipos' },
   { value: 'DOSIFICADOR', label: 'Dosificador', description: 'Gestión de diesel y dosificación' },
-  { value: 'ENCARGADO_MANTENIMIENTO', label: 'Encargado Mantenimiento', description: 'Gestión completa de mantenimiento' },
+  { value: 'ENCARGADO_MANTENIMIENTO', label: 'Coordinador de Mantenimiento', description: 'Gestión completa de mantenimiento' },
   { value: 'JEFE_PLANTA', label: 'Jefe de Planta', description: 'Supervisión completa de planta' },
-  { value: 'JEFE_UNIDAD_NEGOCIO', label: 'Jefe Unidad de Negocio', description: 'Gestión de unidad de negocio' },
+  { value: 'JEFE_UNIDAD_NEGOCIO', label: 'Gerente de Mantenimiento', description: 'Gestión de unidad de negocio' },
   { value: 'AUXILIAR_COMPRAS', label: 'Auxiliar de Compras', description: 'Gestión de compras e inventario' },
   { value: 'AREA_ADMINISTRATIVA', label: 'Área Administrativa', description: 'Administración y autorización' },
+  { value: 'RECURSOS_HUMANOS', label: 'Recursos Humanos', description: 'Altas, bajas y gobierno de personal' },
   { value: 'EJECUTIVO', label: 'Ejecutivo', description: 'Acceso ejecutivo con gestión de personal' },
   { value: 'VISUALIZADOR', label: 'Visualizador', description: 'Visualización de información' }
 ]
@@ -63,6 +64,8 @@ const SHIFT_OPTIONS = [
 
 export function UserRegistrationTool() {
   const { profile } = useAuthZustand()
+  const canManageUsers =
+    profile?.business_role === 'RECURSOS_HUMANOS' || profile?.role === 'GERENCIA_GENERAL'
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(false)
   const [businessUnits, setBusinessUnits] = useState<BusinessUnit[]>([])
@@ -198,10 +201,10 @@ export function UserRegistrationTool() {
         throw new Error(result.error || 'Error creating user')
       }
 
-      toast.success('✅ Usuario registrado exitosamente', {
-        description: `${result.nombre} ${result.apellido} ha sido registrado como ${result.role}. Credenciales: ${result.email} / ${formData.provisional_password}`,
-        duration: 8000
-      })
+      toast.success(
+        `✅ Usuario registrado: ${result.nombre} ${result.apellido} (${result.role}). Credenciales: ${result.email} / ${formData.provisional_password}`,
+        { duration: 8000 }
+      )
 
       // Reset form
       setFormData({
@@ -224,15 +227,19 @@ export function UserRegistrationTool() {
 
       setOpen(false)
 
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error creating user:', error)
-      toast.error('Error registrando usuario: ' + error.message)
+      toast.error(`Error registrando usuario: ${error instanceof Error ? error.message : 'Error desconocido'}`)
     } finally {
       setLoading(false)
     }
   }
 
   const selectedRole = AVAILABLE_ROLES.find(role => role.value === formData.role)
+
+  if (!canManageUsers) {
+    return null
+  }
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>

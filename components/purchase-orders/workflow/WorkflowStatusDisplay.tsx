@@ -1303,6 +1303,29 @@ export function WorkflowStatusDisplay({
         </Card>
       )}
 
+      {workflowStatus?.purchase_order?.workflow_policy?.requires_viability &&
+       currentStatus === 'pending_approval' &&
+       (!workflowStatus.purchase_order.viability_state || workflowStatus.purchase_order.viability_state === 'pending') && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">Registrar Viabilidad</CardTitle>
+            <CardDescription>
+              Área Administrativa o Gerencia General deben registrar la viabilidad antes de la aprobación final.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <Button
+              onClick={() => handleAdvanceWithUpload('validated')}
+              disabled={isUpdating || isLoadingWorkflow}
+              className="w-full"
+            >
+              <Shield className="mr-2 h-4 w-4" />
+              Registrar viabilidad administrativa
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Simplified Action Section - Show only NEXT logical action */}
       {workflowStatus?.allowed_next_statuses && workflowStatus.allowed_next_statuses.length > 0 && 
        !['validated', 'rejected'].includes(currentStatus) && (

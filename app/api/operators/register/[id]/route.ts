@@ -29,16 +29,28 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     const { id: operatorId } = await params
     const updateData = await request.json()
 
-    // Remove fields that shouldn't be updated directly
-    const { id, created_at, created_by, updated_by, updated_at, resolve_conflicts, ...allowedFields } = updateData
-    void id
-    void created_at
-    void created_by
-    void updated_by
-    void updated_at
+    const { resolve_conflicts, ...rawFields } = updateData
+
+    // Role, authorization, lifecycle, and audit changes must go through dedicated endpoints.
+    const fieldsToUpdate = Object.fromEntries(
+      Object.entries(rawFields).filter(([key]) => [
+        'nombre',
+        'apellido',
+        'email',
+        'telefono',
+        'phone_secondary',
+        'employee_code',
+        'position',
+        'shift',
+        'hire_date',
+        'plant_id',
+        'business_unit_id',
+        'notas_rh',
+      ].includes(key))
+    )
 
     // Check for conflicts if plant_id is being changed
-    const newPlantId = allowedFields.plant_id
+    const newPlantId = fieldsToUpdate.plant_id as string | null | undefined
     const currentOperator = await supabase
       .from('profiles')
       .select('plant_id')
@@ -131,8 +143,9 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       }
     }
 
-    // Use only the allowed fields
-    const fieldsToUpdate = allowedFields
+    if (Object.keys(fieldsToUpdate).length === 0) {
+      return NextResponse.json({ error: 'No updatable fields were provided' }, { status: 400 })
+    }
 
     // Update the operator
     const { data: operator, error } = await supabase

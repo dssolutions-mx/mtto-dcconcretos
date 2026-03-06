@@ -57,7 +57,7 @@ export function useAuthZustand() {
   }
 
   // Permission checking functions bound to current user
-  const permissionRoleKey = profile?.role || profile?.business_role || null
+  const permissionRoleKey = profile?.business_role || profile?.role || null
   const metadataRoleKey = profile?.business_role ?? profile?.role ?? null
   const resolvedBusinessRole = profile?.business_role ?? resolveBusinessRole(profile?.role)
   const resolvedRoleScope: RoleScope | null =

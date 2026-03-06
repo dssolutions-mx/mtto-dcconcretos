@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
+import { loadActorContext, canUpdateUserAuthorization } from '@/lib/auth/server-authorization'
 
 // GET - Fetch authorization summary
 export async function GET(request: NextRequest) {
@@ -64,12 +65,16 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'User profile not found - no data returned' }, { status: 404 })
     }
 
+    const actor = await loadActorContext(supabase, user.id)
+    const canManageAuthorization = canUpdateUserAuthorization(actor)
+    const effectiveUserId = canManageAuthorization ? userId : user.id
+
     // If user_id is provided, get specific user summary
-    if (userId) {
+    if (effectiveUserId) {
       const { data: userSummary, error: userError } = await supabase
         .from('user_authorization_summary')
         .select('*')
-        .eq('user_id', userId)
+.eq('user_id', effectiveUserId)
         .single()
 
       if (userError) {
@@ -82,13 +87,13 @@ export async function GET(request: NextRequest) {
       
       // Global scope
       const { data: globalAuth, error: globalError } = await supabase
-        .rpc('get_user_effective_authorization', { p_user_id: userId })
+.rpc('get_user_effective_authorization', { p_user_id: effectiveUserId })
 
       if (!globalError) {
         scopes.push({
           scope_type: 'global',
           effective_authorization: globalAuth,
-          available_delegation: await getAvailableDelegation(supabase, userId)
+          available_delegation: await getAvailableDelegation(supabase, effectiveUserId)
         })
       }
 
@@ -96,7 +101,7 @@ export async function GET(request: NextRequest) {
       if (userSummary.business_unit_id) {
         const { data: buAuth, error: buError } = await supabase
           .rpc('get_user_effective_authorization', { 
-            p_user_id: userId,
+            p_user_id: effectiveUserId,
             p_business_unit_id: userSummary.business_unit_id
           })
 
@@ -106,7 +111,7 @@ export async function GET(request: NextRequest) {
             business_unit_id: userSummary.business_unit_id,
             business_unit_name: userSummary.business_unit_name,
             effective_authorization: buAuth,
-            available_delegation: await getAvailableDelegation(supabase, userId, userSummary.business_unit_id)
+            available_delegation: await getAvailableDelegation(supabase, effectiveUserId, userSummary.business_unit_id)
           })
         }
       }
@@ -115,7 +120,7 @@ export async function GET(request: NextRequest) {
       if (userSummary.plant_id) {
         const { data: plantAuth, error: plantError } = await supabase
           .rpc('get_user_effective_authorization', { 
-            p_user_id: userId,
+            p_user_id: effectiveUserId,
             p_business_unit_id: userSummary.business_unit_id,
             p_plant_id: userSummary.plant_id
           })
@@ -128,7 +133,7 @@ export async function GET(request: NextRequest) {
             business_unit_id: userSummary.business_unit_id,
             business_unit_name: userSummary.business_unit_name,
             effective_authorization: plantAuth,
-            available_delegation: await getAvailableDelegation(supabase, userId, userSummary.business_unit_id, userSummary.plant_id)
+            available_delegation: await getAvailableDelegation(supabase, effectiveUserId, userSummary.business_unit_id, userSummary.plant_id)
           })
         }
       }
@@ -206,6 +211,7 @@ export async function GET(request: NextRequest) {
           apellido,
           email,
           role,
+          business_role,
           business_unit_id,
           plant_id,
           is_active,
@@ -255,7 +261,23 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    const deduped = Object.values(uniqueByUser)
+    let deduped = Object.values(uniqueByUser)
+
+    const profileIds = [...new Set(deduped.map((u: any) => u.user_id || u.id).filter(Boolean))]
+    if (profileIds.length > 0) {
+      const { data: compatibilityProfiles } = await supabase
+        .from('profiles')
+        .select('id, business_role, role_scope')
+        .in('id', profileIds)
+
+      const compatibilityById = new Map((compatibilityProfiles || []).map((p: any) => [p.id, p]))
+      deduped = deduped.map((user: any) => {
+        const profile = compatibilityById.get(user.user_id || user.id)
+        return profile
+          ? { ...user, business_role: profile.business_role ?? null, role_scope: profile.role_scope ?? null }
+          : user
+      })
+    }
 
     // Group by business unit and plant for hierarchical view
     const groupedSummary = groupByHierarchy(deduped)

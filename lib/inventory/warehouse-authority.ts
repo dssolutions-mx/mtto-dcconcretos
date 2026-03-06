@@ -28,11 +28,11 @@ export async function resolveWarehouseAuthority(
 
   const { data: profile } = await supabase
     .from('profiles')
-    .select('role')
+.select('role, business_role')
     .eq('id', input.userId)
     .single()
 
-  const legacyResult = resolveWarehouseResponsibility({ role: profile?.role ?? null })
+  const legacyResult = resolveWarehouseResponsibility({ role: (profile as { business_role?: string | null } | null)?.business_role ?? profile?.role ?? null })
 
   const now = new Date().toISOString()
   const { data: rows } = await supabase
@@ -42,21 +42,22 @@ export async function resolveWarehouseAuthority(
     .lte('effective_from', now)
     .or(`effective_until.is.null,effective_until.gte.${now}`)
 
-  const assignments = (rows || []).filter((r) => {
+  const activeAssignments = rows || []
+  const assignments = activeAssignments.filter((r) => {
     if (input.warehouseId && r.warehouse_id && r.warehouse_id !== input.warehouseId) return false
     if (input.plantId && r.plant_id && r.plant_id !== input.plantId) return false
     return true
   })
 
-  if (assignments.length > 0) {
+  if (activeAssignments.length > 0) {
     const anyRelease = assignments.some((a) => a.can_release_inventory)
     const anyReceive = assignments.some((a) => a.can_receive_inventory)
     const anyAdjust = assignments.some((a) => a.can_adjust_inventory)
     return {
-      canReleaseInventory: anyRelease || legacyResult.canReleaseInventory,
-      canReceiveInventory: anyReceive || legacyResult.canReceiveInventory,
-      canAdjustInventory: anyAdjust || legacyResult.canAdjustInventory,
-      isWarehouseResponsible: anyRelease || anyReceive || anyAdjust || legacyResult.isWarehouseResponsible,
+      canReleaseInventory: anyRelease,
+      canReceiveInventory: anyReceive,
+      canAdjustInventory: anyAdjust,
+      isWarehouseResponsible: anyRelease || anyReceive || anyAdjust,
       source: 'explicit_assignment',
       hasExplicitAssignment: true,
     }

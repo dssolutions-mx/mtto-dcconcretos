@@ -881,7 +881,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                     </Link>
                   </Button>
                 )}
-                {['GERENCIA_GENERAL', 'JEFE_UNIDAD_NEGOCIO', 'AREA_ADMINISTRATIVA'].includes(profile.role) && (
+                {(profile.role === 'GERENCIA_GENERAL' || profile.business_role === 'RECURSOS_HUMANOS') && (
                   <Button
                     variant={isPathActive("/gestion/autorizaciones") ? "secondary" : "ghost"}
                     className="w-full justify-start pl-8"

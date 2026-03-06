@@ -19,6 +19,8 @@ import { getAuthorizationLimit } from '@/lib/auth/role-permissions'
 export interface ActorProfile {
   id: string
   role: string
+  business_role?: string | null
+  role_scope?: string | null
   business_unit_id: string | null
   plant_id: string | null
   can_authorize_up_to: number | null
@@ -32,7 +34,7 @@ export interface ActorContext {
   authorizationLimit: number
 }
 
-const PROFILE_SELECT = 'id, role, business_unit_id, plant_id, can_authorize_up_to'
+const PROFILE_SELECT = 'id, role, business_role, role_scope, business_unit_id, plant_id, can_authorize_up_to'
 
 /**
  * Load the current actor's profile from profiles table.
@@ -55,6 +57,8 @@ export async function loadActorProfile(
   return {
     id: data.id,
     role: data.role ?? '',
+    business_role: (data as { business_role?: string | null }).business_role ?? null,
+    role_scope: (data as { role_scope?: string | null }).role_scope ?? null,
     business_unit_id: data.business_unit_id ?? null,
     plant_id: data.plant_id ?? null,
     can_authorize_up_to:
@@ -70,6 +74,9 @@ export async function loadActorProfile(
 export function resolveEffectiveBusinessRole(
   profile: ActorProfile | null
 ): FutureBusinessRole | null {
+  if (profile?.business_role) {
+    return resolveBusinessRole(profile.business_role)
+  }
   if (!profile?.role) {
     return null
   }
@@ -95,7 +102,7 @@ export async function loadActorContext(
   const authorizationLimit =
     (profile.can_authorize_up_to ?? 0) > 0
       ? (profile.can_authorize_up_to ?? 0)
-      : getAuthorizationLimit(profile.role)
+      : getAuthorizationLimit(profile.business_role ?? profile.role)
 
   return {
     userId,
@@ -139,7 +146,7 @@ export function checkScopeOverBusinessUnit(
     return true
   }
   if (!businessUnitId) {
-    return actor.scope === 'global'
+    return false
   }
   return actor.profile.business_unit_id === businessUnitId
 }
@@ -176,7 +183,7 @@ export function checkRHOwnershipAuthority(
   if (!actor) {
     return false
   }
-  return isRHOwnerRole(actor.profile.role)
+  return isRHOwnerRole(actor.profile.business_role ?? actor.profile.role)
 }
 
 /**
@@ -189,7 +196,7 @@ export function checkTechnicalApprovalAuthority(
   if (!actor) {
     return false
   }
-  return isTechnicalApproverRole(actor.profile.role)
+  return isTechnicalApproverRole(actor.profile.business_role ?? actor.profile.role)
 }
 
 /**
@@ -201,7 +208,7 @@ export function checkViabilityReviewAuthority(
   if (!actor) {
     return false
   }
-  return isViabilityReviewerRole(actor.profile.role)
+  return isViabilityReviewerRole(actor.profile.business_role ?? actor.profile.role)
 }
 
 /**
@@ -213,7 +220,7 @@ export function checkGMEscalationAuthority(
   if (!actor) {
     return false
   }
-  return isGMEscalatorRole(actor.profile.role)
+  return isGMEscalatorRole(actor.profile.business_role ?? actor.profile.role)
 }
 
 /**
@@ -227,12 +234,7 @@ export function canUpdateUserAuthorization(
   if (!actor) {
     return false
   }
-  const allowedRoles = [
-    'GERENCIA_GENERAL',
-    'JEFE_UNIDAD_NEGOCIO',
-    'AREA_ADMINISTRATIVA',
-  ]
-  return allowedRoles.includes(actor.profile.role)
+  return checkRHOwnershipAuthority(actor) || actor.profile.role === 'GERENCIA_GENERAL'
 }
 
 /**
@@ -244,15 +246,7 @@ export function canViewOperatorsList(
   if (!actor) {
     return false
   }
-  const allowedRoles = [
-    'GERENCIA_GENERAL',
-    'JEFE_UNIDAD_NEGOCIO',
-    'JEFE_PLANTA',
-    'ENCARGADO_MANTENIMIENTO',
-    'DOSIFICADOR',
-    'EJECUTIVO',
-  ]
-  return allowedRoles.includes(actor.profile.role)
+  return checkRHOwnershipAuthority(actor) || actor.profile.role === 'GERENCIA_GENERAL'
 }
 
 /**
@@ -264,14 +258,7 @@ export function canCreateOperators(
   if (!actor) {
     return false
   }
-  const allowedRoles = [
-    'GERENCIA_GENERAL',
-    'JEFE_UNIDAD_NEGOCIO',
-    'JEFE_PLANTA',
-    'ENCARGADO_MANTENIMIENTO',
-    'EJECUTIVO',
-  ]
-  return allowedRoles.includes(actor.profile.role)
+  return checkRHOwnershipAuthority(actor) || actor.profile.role === 'GERENCIA_GENERAL'
 }
 
 /**
@@ -283,13 +270,7 @@ export function canUpdateOperators(
   if (!actor) {
     return false
   }
-  const allowedRoles = [
-    'GERENCIA_GENERAL',
-    'JEFE_UNIDAD_NEGOCIO',
-    'JEFE_PLANTA',
-    'ENCARGADO_MANTENIMIENTO',
-  ]
-  return allowedRoles.includes(actor.profile.role)
+  return checkRHOwnershipAuthority(actor) || actor.profile.role === 'GERENCIA_GENERAL'
 }
 
 /**
@@ -301,8 +282,7 @@ export function canDeactivateUsers(
   if (!actor) {
     return false
   }
-  const allowedRoles = ['GERENCIA_GENERAL', 'JEFE_UNIDAD_NEGOCIO']
-  return allowedRoles.includes(actor.profile.role)
+  return checkRHOwnershipAuthority(actor) || actor.profile.role === 'GERENCIA_GENERAL'
 }
 
 /**
@@ -326,10 +306,39 @@ export function canValidateReceipts(
   if (!actor) {
     return false
   }
-  const allowedRoles = ['GERENCIA_GENERAL', 'AREA_ADMINISTRATIVA']
-  if (!allowedRoles.includes(actor.profile.role)) {
+  const canValidate =
+    checkGMEscalationAuthority(actor) || checkViabilityReviewAuthority(actor)
+  if (!canValidate) {
     return false
   }
   const limit = actor.authorizationLimit
   return limit > 0
+}
+
+export function canManageAssetOperators(actor: ActorContext | null): boolean {
+  if (!actor) {
+    return false
+  }
+  return checkRHOwnershipAuthority(actor) || actor.profile.role === 'GERENCIA_GENERAL'
+}
+
+export function canReviewComplianceDispute(actor: ActorContext | null): boolean {
+  if (!actor) {
+    return false
+  }
+  return checkRHOwnershipAuthority(actor) || actor.profile.role === 'GERENCIA_GENERAL'
+}
+
+export function canManageComplianceSanctions(actor: ActorContext | null): boolean {
+  if (!actor) {
+    return false
+  }
+  return checkRHOwnershipAuthority(actor) || actor.profile.role === 'GERENCIA_GENERAL'
+}
+
+export function canAccessRHReporting(actor: ActorContext | null): boolean {
+  if (!actor) {
+    return false
+  }
+  return checkRHOwnershipAuthority(actor) || actor.profile.role === 'GERENCIA_GENERAL'
 }

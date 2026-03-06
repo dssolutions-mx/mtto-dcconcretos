@@ -42,6 +42,7 @@ interface UserProfile {
   apellido: string
   email: string
   role: string
+  business_role?: string | null
   individual_limit: number
   role_limit: number
   effective_global_authorization: number
@@ -79,11 +80,14 @@ const USER_ROLES = [
   'JEFE_UNIDAD_NEGOCIO',
   'EJECUTIVO',
   'GERENCIA_GENERAL',
-  'VISUALIZADOR'
+  'VISUALIZADOR',
+  'RECURSOS_HUMANOS'
 ]
 
 export default function AuthorizationManagementPage() {
   const { profile, refreshProfile } = useAuthZustand()
+  const canManageUserAuthorization =
+    profile?.business_role === 'RECURSOS_HUMANOS' || profile?.role === 'GERENCIA_GENERAL'
   const [activeTab, setActiveTab] = useState('users')
 
   const [businessUnits, setBusinessUnits] = useState<BusinessUnit[]>([])
@@ -471,7 +475,7 @@ export default function AuthorizationManagementPage() {
   const openUserEditDialog = (user: UserProfile) => {
     setUserEditForm({
       user_id: user.user_id,
-      role: user.role,
+      role: user.business_role || user.role,
       individual_limit: user.individual_limit.toString(),
       business_unit_id: user.business_unit_id || 'unassigned',
       plant_id: user.plant_id || 'unassigned',
@@ -489,6 +493,7 @@ export default function AuthorizationManagementPage() {
       'JEFE_PLANTA': 'bg-green-100 text-green-800',
       'AREA_ADMINISTRATIVA': 'bg-orange-100 text-orange-800',
       'ENCARGADO_MANTENIMIENTO': 'bg-yellow-100 text-yellow-800',
+      'RECURSOS_HUMANOS': 'bg-rose-100 text-rose-800',
       'EJECUTIVO': 'bg-indigo-100 text-indigo-800',
       'default': 'bg-gray-100 text-gray-800'
     }
@@ -499,14 +504,15 @@ export default function AuthorizationManagementPage() {
     const names = {
       'OPERADOR': 'Operador',
       'DOSIFICADOR': 'Dosificador',
-      'ENCARGADO_MANTENIMIENTO': 'Encargado de Mantenimiento',
+      'ENCARGADO_MANTENIMIENTO': 'Coordinador de Mantenimiento',
       'JEFE_PLANTA': 'Jefe de Planta',
       'AREA_ADMINISTRATIVA': 'Área Administrativa',
       'AUXILIAR_COMPRAS': 'Auxiliar de Compras',
-      'JEFE_UNIDAD_NEGOCIO': 'Jefe de Unidad de Negocio',
+      'JEFE_UNIDAD_NEGOCIO': 'Gerente de Mantenimiento',
       'EJECUTIVO': 'Ejecutivo',
       'GERENCIA_GENERAL': 'Gerencia General',
-      'VISUALIZADOR': 'Visualizador'
+      'VISUALIZADOR': 'Visualizador',
+      'RECURSOS_HUMANOS': 'Recursos Humanos'
     }
     return names[role as keyof typeof names] || role
   }
@@ -755,8 +761,8 @@ export default function AuthorizationManagementPage() {
                         </div>
                       </TableCell>
                       <TableCell>
-                        <Badge className={getRoleColor(user.role)} variant="secondary">
-                          {getRoleDisplayName(user.role)}
+                        <Badge className={getRoleColor(user.business_role || user.role)} variant="secondary">
+                          {getRoleDisplayName(user.business_role || user.role)}
                         </Badge>
                       </TableCell>
                       <TableCell>
@@ -784,14 +790,16 @@ export default function AuthorizationManagementPage() {
                         </div>
                       </TableCell>
                       <TableCell>
-                        <Button 
-                          variant="outline" 
-                          size="sm"
-                          onClick={() => openUserEditDialog(user)}
-                        >
-                          <Edit className="h-4 w-4" />
-                        </Button>
-                        {user.role !== 'GERENCIA_GENERAL' && (user as any).is_active !== false && (
+                        {canManageUserAuthorization && (
+                          <Button 
+                            variant="outline" 
+                            size="sm"
+                            onClick={() => openUserEditDialog(user)}
+                          >
+                            <Edit className="h-4 w-4" />
+                          </Button>
+                        )}
+                        {canManageUserAuthorization && user.role !== 'GERENCIA_GENERAL' && (user as any).is_active !== false && (
                               <Button 
                                 variant="destructive" 
                                 size="sm" 
@@ -810,6 +818,7 @@ export default function AuthorizationManagementPage() {
           </Card>
 
           {/* User Edit Dialog */}
+          {canManageUserAuthorization && (
           <Dialog open={showUserEditDialog} onOpenChange={setShowUserEditDialog}>
             <DialogContent className="max-w-2xl">
               <DialogHeader>
@@ -926,6 +935,7 @@ export default function AuthorizationManagementPage() {
               </div>
             </DialogContent>
           </Dialog>
+          )}
         </TabsContent>
 
       </Tabs>
