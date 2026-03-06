@@ -1,6 +1,5 @@
 import { createClient } from "@/lib/supabase-server"
 import { redirect } from "next/navigation"
-import { use } from "react"
 
 export default async function GeneratePurchaseOrderPage({
   params,
@@ -43,5 +42,13 @@ export default async function GeneratePurchaseOrderPage({
 
   // Redirect to the new typed purchase order creation system
   // This integrates work orders with the new enhanced purchase order system
-  redirect(`/compras/crear-tipificada?workOrderId=${id}`);
+  const searchParams = new URLSearchParams({
+    workOrderId: id,
+  })
+
+  if (typeof workOrder.type === "string" && workOrder.type.trim() !== "") {
+    searchParams.set("workOrderType", workOrder.type)
+  }
+
+  redirect(`/compras/crear-tipificada?${searchParams.toString()}`);
 } 

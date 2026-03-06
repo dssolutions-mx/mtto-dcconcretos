@@ -20,6 +20,27 @@ export enum POPurpose {
   MIXED = "mixed"                                // Partial from each
 }
 
+export type PurchaseOrderWorkOrderType = "preventive" | "corrective"
+
+export enum PurchaseOrderViabilityState {
+  NOT_REQUIRED = "not_required",
+  PENDING = "pending",
+  VIABLE = "viable",
+  NOT_VIABLE = "not_viable",
+}
+
+export enum PurchaseOrderApprovalAmountSource {
+  REQUEST_TOTAL = "request_total",
+  ITEMS_TOTAL = "items_total",
+  PURCHASE_ITEMS_TOTAL = "purchase_items_total",
+  SELECTED_QUOTATION = "selected_quotation",
+}
+
+export enum PurchaseOrderPaymentCondition {
+  CASH = "cash",
+  CREDIT = "credit",
+}
+
 // Enhanced status workflow for all types
 export enum EnhancedPOStatus {
   // Estados comunes
@@ -49,7 +70,7 @@ export interface EnhancedPurchaseOrder {
   order_id: string
   work_order_id: string
   supplier: string
-  items: any[]
+  items: unknown[]
   total_amount: number
   status: string
   notes?: string
@@ -63,6 +84,11 @@ export interface EnhancedPurchaseOrder {
   // ✅ NUEVOS CAMPOS IMPLEMENTADOS EN STAGE 1
   po_type: PurchaseOrderType
   po_purpose?: POPurpose                  // Purpose classification for expense tracking
+  work_order_type?: PurchaseOrderWorkOrderType
+  viability_state?: PurchaseOrderViabilityState
+  approval_amount?: number
+  approval_amount_source?: PurchaseOrderApprovalAmountSource
+  payment_condition?: PurchaseOrderPaymentCondition
   payment_method?: PaymentMethod
   requires_quote: boolean                 // Auto-calculado por trigger
   store_location?: string                 // Para compras directas
@@ -90,13 +116,13 @@ export interface EnhancedPurchaseOrder {
 export interface DirectPurchaseOrder extends EnhancedPurchaseOrder {
   po_type: PurchaseOrderType.DIRECT_PURCHASE
   store_location?: string                 // Opcional, ya no es obligatorio
-  requires_quote: false                   // Siempre false
+  requires_quote: boolean                 // Depende del monto y del contexto normalizado
 }
 
 export interface DirectServiceOrder extends EnhancedPurchaseOrder {
   po_type: PurchaseOrderType.DIRECT_SERVICE
   service_provider: string                // Obligatorio
-  requires_quote: boolean                 // Basado en monto ($10k threshold)
+  requires_quote: boolean                 // Basado en monto ($5k threshold)
 }
 
 export interface SpecialOrder extends EnhancedPurchaseOrder {
@@ -109,14 +135,22 @@ export interface CreatePurchaseOrderRequest {
   work_order_id?: string       // Optional - allows standalone purchase orders
   plant_id?: string           // Required for standalone POs (when no work_order_id)
   po_type: PurchaseOrderType
-  po_purpose?: POPurpose      // Auto-determined during creation (optional override)
+  po_purpose?: POPurpose      // Server-normalized during creation
+  work_order_type?: PurchaseOrderWorkOrderType // Server-resolved when work_order_id exists
+  viability_state?: PurchaseOrderViabilityState
+  approval_amount?: number // Server-derived canonical routing amount on create
+  approval_amount_source?: PurchaseOrderApprovalAmountSource
+  payment_condition?: PurchaseOrderPaymentCondition
   supplier: string
-  items: any[]
+  items: unknown[]
   total_amount: number
   payment_method?: PaymentMethod
+  supplier_payment_terms?: string // Supplier/provider metadata for routing fallback only
   notes?: string
   quotation_url?: string       // Legacy single URL (mantener para compatibilidad)
   quotation_urls?: string[]    // Array of quotation URLs (preferred for new uploads)
+  quotation_amounts?: number[] // Optional quotation metadata; selected quotation becomes canonical later
+  quotation_payment_terms?: string[] // Optional quotation metadata; selected quotation becomes canonical later
   purchase_date?: string       // Fecha de compra (requerido)
   max_payment_date?: string    // Fecha máxima de pago (requerido solo para transferencias)
   
@@ -146,6 +180,18 @@ export interface WorkflowStatusResponse {
     authorization_date?: string | null
     total_amount?: string | null
     po_purpose?: POPurpose
+    work_order_type?: PurchaseOrderWorkOrderType | null
+    approval_amount?: number | null
+    approval_amount_source?: PurchaseOrderApprovalAmountSource | null
+    payment_condition?: PurchaseOrderPaymentCondition | null
+    viability_state?: PurchaseOrderViabilityState | null
+    /** Policy-derived: Path A/B/C/D, viability requirement, next step for Administration */
+    workflow_policy?: {
+      path: 'A' | 'B' | 'C' | 'D'
+      requires_viability: boolean
+      requires_gm_if_above_threshold: boolean
+      next_step_description?: string
+    }
   }
 }
 

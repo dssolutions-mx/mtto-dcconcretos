@@ -2,46 +2,47 @@ import { NextRequest, NextResponse } from 'next/server'
 import { PurchaseOrderService } from '@/lib/services/purchase-order-service'
 import { AdvanceWorkflowRequest } from '@/types/purchase-orders'
 import { createClient } from '@/lib/supabase-server'
-import { getRoleDisplayName } from '@/lib/auth/role-permissions'
+import {
+  loadActorContext,
+  checkTechnicalApprovalAuthority,
+  checkGMEscalationAuthority,
+  checkScopeOverBusinessUnit,
+  canValidateReceipts,
+} from '@/lib/auth/server-authorization'
+import {
+  resolveWorkflowPath,
+  GM_ESCALATION_THRESHOLD_MXN,
+} from '@/lib/purchase-orders/workflow-policy'
 
 export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    // Resolve params using await
     const resolvedParams = await params
     const id = resolvedParams.id
-    
-    // Get authenticated user
+
     const supabase = await createClient()
     const { data: { user }, error: authError } = await supabase.auth.getUser()
-    
+
     if (authError || !user) {
-      return NextResponse.json({ 
-        error: 'User not authenticated' 
+      return NextResponse.json({
+        error: 'User not authenticated'
       }, { status: 401 })
     }
 
-    // ✅ NUEVO SISTEMA: Obtener perfil con límite dinámico de autorización
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('role, can_authorize_up_to, business_unit_id, plant_id')
-      .eq('id', user.id)
-      .single()
-    
-    if (!profile?.role) {
-      return NextResponse.json({ 
-        error: 'User role not found' 
+    const actor = await loadActorContext(supabase, user.id)
+    if (!actor?.profile?.role) {
+      return NextResponse.json({
+        error: 'User role not found'
       }, { status: 403 })
     }
 
-    // Parse request body
     const body: AdvanceWorkflowRequest = await request.json()
-    
+
     if (!body.new_status) {
-      return NextResponse.json({ 
-        error: 'new_status is required' 
+      return NextResponse.json({
+        error: 'new_status is required'
       }, { status: 400 })
     }
 
@@ -71,34 +72,38 @@ export async function PUT(
             p_user_id: user.id,
             p_selection_reason: 'Selección al aprobar por Jefe de Unidad'
           })
-          if (selErr || !(selResult as any)?.success) {
+          interface SelectQuotationResult {
+            success?: boolean
+            error?: string
+          }
+          const res = selResult as SelectQuotationResult
+          if (selErr || !res?.success) {
             return NextResponse.json({
-              error: (selResult as any)?.error || selErr?.message || 'Error al seleccionar cotización'
+              error: res?.error ?? selErr?.message ?? 'Error al seleccionar cotización'
             }, { status: 400 })
           }
         }
       }
     }
-    
-    // ✅ NUEVO SISTEMA (Paso 1 de 2): Aprobación BU primero, escalamiento a Gerencia si excede límite
+
+    // Approval authorization: use workflow policy and shared auth helpers
     if (body.new_status === 'approved') {
-      // Get the purchase order to check amount and links
       const { data: purchaseOrder } = await supabase
         .from('purchase_orders')
-        .select('id, status, total_amount, work_order_id, plant_id, authorized_by, authorization_date')
+        .select('id, status, total_amount, approval_amount, work_order_id, plant_id, po_purpose, work_order_type, authorized_by, authorization_date')
         .eq('id', id)
         .single()
 
       if (purchaseOrder) {
-        const amount = Number(purchaseOrder.total_amount || 0)
-        const userLimit = Number(profile.can_authorize_up_to || 0)
+        const amount = Number(
+          purchaseOrder.approval_amount ?? purchaseOrder.total_amount ?? 0
+        )
 
-        // Resolve Business Unit from plant (direct) or via work order -> asset -> plant
-        let resolvedPlantId: string | null = purchaseOrder.plant_id || null
+        let resolvedPlantId: string | null = purchaseOrder.plant_id ?? null
         if (!resolvedPlantId && purchaseOrder.work_order_id) {
           const { data: wo } = await supabase
             .from('work_orders')
-            .select('id, asset_id, service_order_id')
+            .select('id, asset_id')
             .eq('id', purchaseOrder.work_order_id)
             .maybeSingle()
           if (wo?.asset_id) {
@@ -107,7 +112,7 @@ export async function PUT(
               .select('plant_id')
               .eq('id', wo.asset_id)
               .maybeSingle()
-            resolvedPlantId = asset?.plant_id || null
+            resolvedPlantId = asset?.plant_id ?? null
           }
         }
 
@@ -118,81 +123,72 @@ export async function PUT(
             .select('business_unit_id')
             .eq('id', resolvedPlantId)
             .maybeSingle()
-          buId = (plant?.business_unit_id as string | null) || null
+          buId = (plant?.business_unit_id as string | null) ?? null
         }
 
-        // If first approval not recorded yet, only BU Manager of that BU can perform it (GM can bypass)
+        const policy = resolveWorkflowPath({
+          poPurpose: purchaseOrder.po_purpose ?? null,
+          workOrderType: purchaseOrder.work_order_type ?? null,
+          approvalAmount: amount,
+        })
+
+        const needsGMEscalation =
+          policy.requiresGMIfAboveThreshold &&
+          amount >= GM_ESCALATION_THRESHOLD_MXN
+
+        const isTechnicalApprover = checkTechnicalApprovalAuthority(actor)
+        const isGM = checkGMEscalationAuthority(actor)
+        const hasScope = checkScopeOverBusinessUnit(actor, buId)
+
         if (!purchaseOrder.authorized_by) {
-          const isBuManager = profile.role === 'JEFE_UNIDAD_NEGOCIO' && buId && profile.business_unit_id === buId
-          const isGM = profile.role === 'GERENCIA_GENERAL'
-          
-          if (!isBuManager && !isGM) {
-            return NextResponse.json({ 
-              error: 'Solo el Jefe de Unidad de Negocio correspondiente o Gerencia General puede aprobar esta orden.' 
+          // First approval: technical approver with scope, or GM (can bypass)
+          if (isGM && hasScope) {
+            // GM can always do first (and only) approval when they have scope
+          } else if (isTechnicalApprover && hasScope) {
+            // Technical approver can do first approval
+          } else {
+            return NextResponse.json({
+              error: 'Solo el aprobador técnico correspondiente o Gerencia General puede aprobar esta orden.'
             }, { status: 403 })
           }
 
-          // Record BU authorization
           const { error: authUpdateError } = await supabase
             .from('purchase_orders')
             .update({ authorized_by: user.id, authorization_date: new Date().toISOString() })
             .eq('id', id)
           if (authUpdateError) {
-            return NextResponse.json({ error: 'No se pudo registrar la autorización de BU' }, { status: 500 })
+            return NextResponse.json({ error: 'No se pudo registrar la autorización' }, { status: 500 })
           }
 
-          // If within BU limit, proceed to full approval now (single-step)
-          if (amount <= userLimit) {
-            // continue to approval below via service call
-          } else {
-            // Exceeds BU limit: do NOT finalize approval here; escalate to Gerencia General
-            // Ensure PO status stays as 'pending_approval' to trigger GM notification
-            // The database trigger notify_po_pending_approval will fire automatically on status update
+          if (needsGMEscalation && !isGM) {
             const { error: statusError } = await supabase
               .from('purchase_orders')
-              .update({ 
-                status: 'pending_approval',
-                updated_at: new Date().toISOString()
-              })
+              .update({ status: 'pending_approval', updated_at: new Date().toISOString() })
               .eq('id', id)
-            
             if (statusError) {
               console.error('Failed to update status for escalation:', statusError)
             }
-
             return NextResponse.json({
               success: true,
-              message: 'Autorización de BU registrada. Se ha escalado a Gerencia General para aprobación final.',
+              message: 'Autorización registrada. Se ha escalado a Gerencia General para aprobación final.',
               escalated_to_gm: true
             })
           }
         } else {
-          // Second lock: if already BU-authorized and amount exceeds BU limit, require GM role to approve
-          if (amount > userLimit && profile.role !== 'GERENCIA_GENERAL') {
-            return NextResponse.json({ 
-              error: 'Esta orden requiere aprobación de Gerencia General después de la autorización del Jefe de Unidad.' 
+          // Second approval: GM required when policy needs escalation
+          if (needsGMEscalation && !isGM) {
+            return NextResponse.json({
+              error: 'Esta orden requiere aprobación de Gerencia General después de la autorización técnica.'
             }, { status: 403 })
           }
         }
       }
     }
-    
-    // ✅ SISTEMA HÍBRIDO: Validación de comprobantes con autorización dinámica + restricción administrativa
+
     if (body.new_status === 'validated') {
-      const canValidateRoles = ['GERENCIA_GENERAL', 'AREA_ADMINISTRATIVA']
-      
-      // Primero verificar rol administrativo
-      if (!canValidateRoles.includes(profile.role)) {
-        return NextResponse.json({ 
-          error: `Solo ${canValidateRoles.map(r => getRoleDisplayName(r)).join(' y ')} pueden validar comprobantes` 
-        }, { status: 403 })
-      }
-      
-      // Segundo, verificar que tenga autorización efectiva asignada
-      const userLimit = profile.can_authorize_up_to || 0
-      if (userLimit === 0) {
-        return NextResponse.json({ 
-          error: `Aunque tienes rol administrativo, necesitas tener límites de autorización asignados para validar comprobantes. Contacta a tu supervisor.` 
+      if (!canValidateReceipts(actor)) {
+        return NextResponse.json({
+          error: 'Solo Gerencia General o Área Administrativa con límites de autorización asignados pueden validar comprobantes.'
         }, { status: 403 })
       }
     }
@@ -253,11 +249,12 @@ export async function PUT(
     }
     
     // Also handle Supabase error object case for quotation required
+    const err = error as { code?: string; message?: string }
     if (
-      error && typeof error === 'object' && 'code' in error && (error as any).code === 'P0001' &&
-      'message' in error && typeof (error as any).message === 'string' &&
-      ((error as any).message.includes('Quotation required for this purchase order before approval') ||
-       (error as any).message.includes('Cannot approve: quotation is required but not uploaded'))
+      error && typeof error === 'object' && 'code' in error && err.code === 'P0001' &&
+      'message' in error && typeof err.message === 'string' &&
+      (err.message.includes('Quotation required for this purchase order before approval') ||
+       err.message.includes('Cannot approve: quotation is required but not uploaded'))
     ) {
       return NextResponse.json({ 
         success: false,
@@ -269,9 +266,9 @@ export async function PUT(
     }
     
     // Generic Postgres/Supabase error mapping to avoid unhelpful 500s
-    const e: any = error
+    const e = error as { code?: string; status?: string; message?: string; details?: string; hint?: string; error_description?: string }
     const code = e?.code || e?.status || null
-    const message = typeof e?.message === 'string' ? e.message : (typeof e === 'string' ? e : null)
+    const message = typeof e?.message === 'string' ? e.message : (typeof e === 'string' ? String(e) : null)
     const errDetails = typeof e?.details === 'string' ? e.details : null
     const hint = typeof e?.hint === 'string' ? e.hint : null
     const details = message || errDetails || (typeof e?.error_description === 'string' ? e.error_description : 'Unknown error')

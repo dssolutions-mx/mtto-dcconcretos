@@ -36,7 +36,10 @@ interface UsePurchaseOrdersState {
 // Hook return interface
 interface UsePurchaseOrdersReturn extends UsePurchaseOrdersState {
   // Core operations
-  createPurchaseOrder: (request: CreatePurchaseOrderRequest) => Promise<EnhancedPurchaseOrder | null>
+  createPurchaseOrder: (
+    request: CreatePurchaseOrderRequest,
+    options?: CreatePurchaseOrderOptions
+  ) => Promise<EnhancedPurchaseOrder | null>
   loadPurchaseOrders: (filters?: PurchaseOrderFilters) => Promise<void>
   loadPurchaseOrder: (id: string) => Promise<void>
   
@@ -70,6 +73,10 @@ interface PurchaseOrderFilters {
   dateTo?: string
   limit?: number
   offset?: number
+}
+
+interface CreatePurchaseOrderOptions {
+  suppressSuccessToast?: boolean
 }
 
 export function usePurchaseOrders(): UsePurchaseOrdersReturn {
@@ -135,7 +142,8 @@ export function usePurchaseOrders(): UsePurchaseOrdersReturn {
 
   // Create purchase order
   const createPurchaseOrder = useCallback(async (
-    request: CreatePurchaseOrderRequest
+    request: CreatePurchaseOrderRequest,
+    options?: CreatePurchaseOrderOptions
   ): Promise<EnhancedPurchaseOrder | null> => {
     setState(prev => ({ ...prev, isCreating: true, error: null, validationErrors: [] }))
 
@@ -149,10 +157,12 @@ export function usePurchaseOrders(): UsePurchaseOrdersReturn {
         throw new Error(response.message || 'Error creating purchase order')
       }
 
-      toast({
-        title: "Éxito",
-        description: `Orden de compra ${response.data.order_id} creada exitosamente`,
-      })
+      if (!options?.suppressSuccessToast) {
+        toast({
+          title: "Éxito",
+          description: `Orden de compra ${response.data.order_id} creada exitosamente`,
+        })
+      }
 
       // Add to local state
       setState(prev => ({

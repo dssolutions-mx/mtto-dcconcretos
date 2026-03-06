@@ -1,17 +1,22 @@
 import { useAuthStore } from '@/store'
 import { useShallow } from 'zustand/react/shallow'
-import { 
-  hasModuleAccess, 
-  hasWriteAccess, 
-  hasCreateAccess, 
-  hasDeleteAccess, 
+import {
+  hasModuleAccess,
+  hasWriteAccess,
+  hasCreateAccess,
+  hasDeleteAccess,
   hasAuthorizationAccess,
-  canAuthorizeAmount,
-  getAuthorizationLimit,
-  getRoleScope,
   canAccessRoute,
-  type ModulePermissions 
+  getRoleDisplayName,
+  isGMEscalator,
+  isRHOwner,
+  isTechnicalApprover,
+  isViabilityReviewer,
+  resolveCompatibleRoleInfo,
+  type ModulePermissions,
 } from '@/lib/auth/role-permissions'
+import { resolveWarehouseResponsibility } from '@/lib/auth/warehouse-responsibility'
+import { resolveBusinessRole, resolveRoleScope, type RoleScope } from '@/lib/auth/role-model'
 
 /**
  * Direct Zustand-based auth hook - replaces the problematic context-based one
@@ -43,7 +48,8 @@ export function useAuthZustand() {
   )
 
   // Enforce inactive users cannot access: if profile.is_active === false, sign out ASAP
-  if (typeof window !== 'undefined' && profile && (profile as any).is_active === false) {
+  const profileWithActiveFlag = profile as (typeof profile & { is_active?: boolean | null }) | null
+  if (typeof window !== 'undefined' && profileWithActiveFlag?.is_active === false) {
     // Fire and forget sign out; avoid render loops by checking loading state
     queueMicrotask(() => {
       try { signOut() } catch {}
@@ -51,63 +57,84 @@ export function useAuthZustand() {
   }
 
   // Permission checking functions bound to current user
+  const permissionRoleKey = profile?.role || profile?.business_role || null
+  const metadataRoleKey = profile?.business_role ?? profile?.role ?? null
+  const resolvedBusinessRole = profile?.business_role ?? resolveBusinessRole(profile?.role)
+  const resolvedRoleScope: RoleScope | null =
+    profile?.role_scope ?? resolveRoleScope(profile?.business_role ?? profile?.role)
+  const legacyRoleInfo = profile?.role ? resolveCompatibleRoleInfo(profile.role) : null
+  const roleInfo = metadataRoleKey
+    ? {
+        ...resolveCompatibleRoleInfo(metadataRoleKey),
+        legacyRole: legacyRoleInfo?.legacyRole ?? null,
+        businessRole: resolvedBusinessRole,
+        scope: resolvedRoleScope,
+      }
+    : null
+  const warehouseResponsibility = profile
+    ? resolveWarehouseResponsibility({
+        role: profile.role,
+        ...(profile.warehouse_responsibility ?? {}),
+      })
+    : null
+
   const permissionCheckers = {
-    hasModuleAccess: (module: keyof ModulePermissions) => 
-      profile ? hasModuleAccess(profile.role, module) : false,
-    
-    hasWriteAccess: (module: keyof ModulePermissions) => 
-      profile ? hasWriteAccess(profile.role, module) : false,
-    
-    hasCreateAccess: (module: keyof ModulePermissions) => 
-      profile ? hasCreateAccess(profile.role, module) : false,
-    
-    hasDeleteAccess: (module: keyof ModulePermissions) => 
-      profile ? hasDeleteAccess(profile.role, module) : false,
-    
-    hasAuthorizationAccess: (module: keyof ModulePermissions) => 
-      profile ? hasAuthorizationAccess(profile.role, module) : false,
-    
-    canAuthorizeAmount: (amount: number) => 
+    hasModuleAccess: (module: keyof ModulePermissions) =>
+      permissionRoleKey ? hasModuleAccess(permissionRoleKey, module) : false,
+
+    hasWriteAccess: (module: keyof ModulePermissions) =>
+      permissionRoleKey ? hasWriteAccess(permissionRoleKey, module) : false,
+
+    hasCreateAccess: (module: keyof ModulePermissions) =>
+      permissionRoleKey ? hasCreateAccess(permissionRoleKey, module) : false,
+
+    hasDeleteAccess: (module: keyof ModulePermissions) =>
+      permissionRoleKey ? hasDeleteAccess(permissionRoleKey, module) : false,
+
+    hasAuthorizationAccess: (module: keyof ModulePermissions) =>
+      permissionRoleKey ? hasAuthorizationAccess(permissionRoleKey, module) : false,
+
+    canAuthorizeAmount: (amount: number) =>
       profile ? amount <= (profile.can_authorize_up_to || 0) : false,
-    
-    canAccessRoute: (pathname: string) => 
-      profile ? canAccessRoute(profile.role, pathname) : false
+
+    canAccessRoute: (pathname: string) =>
+      permissionRoleKey ? canAccessRoute(permissionRoleKey, pathname) : false,
   }
 
   // UI helpers bound to current user
   const UI_PERMISSIONS = {
     canShowCreateButton: (role: string, module: keyof ModulePermissions) => {
-      return hasCreateAccess(role as any, module)
+      return hasCreateAccess(role, module)
     },
     canShowEditButton: (role: string, module: keyof ModulePermissions) => {
-      return hasWriteAccess(role as any, module)
+      return hasWriteAccess(role, module)
     },
     canShowDeleteButton: (role: string, module: keyof ModulePermissions) => {
-      return hasDeleteAccess(role as any, module)
+      return hasDeleteAccess(role, module)
     },
     canShowAuthorizeButton: (role: string, module: keyof ModulePermissions) => {
-      return hasAuthorizationAccess(role as any, module)
+      return hasAuthorizationAccess(role, module)
     },
     shouldShowInNavigation: (role: string, module: keyof ModulePermissions) => {
-      return hasModuleAccess(role as any, module)
+      return hasModuleAccess(role, module)
     }
   }
 
   const uiHelpers = {
-    canShowCreateButton: (module: keyof ModulePermissions) => 
-      profile ? UI_PERMISSIONS.canShowCreateButton(profile.role, module) : false,
-    
-    canShowEditButton: (module: keyof ModulePermissions) => 
-      profile ? UI_PERMISSIONS.canShowEditButton(profile.role, module) : false,
-    
-    canShowDeleteButton: (module: keyof ModulePermissions) => 
-      profile ? UI_PERMISSIONS.canShowDeleteButton(profile.role, module) : false,
-    
-    canShowAuthorizeButton: (module: keyof ModulePermissions) => 
-      profile ? UI_PERMISSIONS.canShowAuthorizeButton(profile.role, module) : false,
-    
-    shouldShowInNavigation: (module: keyof ModulePermissions) => 
-      profile ? UI_PERMISSIONS.shouldShowInNavigation(profile.role, module) : false
+    canShowCreateButton: (module: keyof ModulePermissions) =>
+      permissionRoleKey ? UI_PERMISSIONS.canShowCreateButton(permissionRoleKey, module) : false,
+
+    canShowEditButton: (module: keyof ModulePermissions) =>
+      permissionRoleKey ? UI_PERMISSIONS.canShowEditButton(permissionRoleKey, module) : false,
+
+    canShowDeleteButton: (module: keyof ModulePermissions) =>
+      permissionRoleKey ? UI_PERMISSIONS.canShowDeleteButton(permissionRoleKey, module) : false,
+
+    canShowAuthorizeButton: (module: keyof ModulePermissions) =>
+      permissionRoleKey ? UI_PERMISSIONS.canShowAuthorizeButton(permissionRoleKey, module) : false,
+
+    shouldShowInNavigation: (module: keyof ModulePermissions) =>
+      permissionRoleKey ? UI_PERMISSIONS.shouldShowInNavigation(permissionRoleKey, module) : false,
   }
 
   // Get authorization limit
@@ -119,6 +146,11 @@ export function useAuthZustand() {
     businessUnitName: profile?.business_units?.name || null,
     plantId: profile?.plant_id || null,
     businessUnitId: profile?.business_unit_id || null,
+    role: profile?.role || null,
+    legacyRole: roleInfo?.legacyRole ?? null,
+    businessRole: roleInfo?.businessRole ?? null,
+    roleScope: roleInfo?.scope ?? null,
+    warehouseResponsibility,
   }
 
   return {
@@ -144,6 +176,18 @@ export function useAuthZustand() {
 
     // UI helpers
     ui: uiHelpers,
+
+    // Compatibility role model
+    roleInfo,
+    legacyRole: roleInfo?.legacyRole ?? null,
+    businessRole: roleInfo?.businessRole ?? null,
+    roleScope: roleInfo?.scope ?? null,
+    roleDisplayName: metadataRoleKey ? getRoleDisplayName(metadataRoleKey) : null,
+    warehouseResponsibility,
+    isTechnicalApprover: metadataRoleKey ? isTechnicalApprover(metadataRoleKey) : false,
+    isViabilityReviewer: metadataRoleKey ? isViabilityReviewer(metadataRoleKey) : false,
+    isGMEscalator: metadataRoleKey ? isGMEscalator(metadataRoleKey) : false,
+    isRhOwner: metadataRoleKey ? isRHOwner(metadataRoleKey) : false,
 
     // Authorization limit
     authorizationLimit,

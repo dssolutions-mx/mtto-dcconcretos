@@ -1,5 +1,10 @@
 import { User, Session } from '@supabase/supabase-js'
-import { type ModulePermissions } from '@/lib/auth/role-permissions'
+import type {
+  FutureBusinessRole,
+  RoleScope,
+  WarehouseResponsibility,
+  WarehouseResponsibilityInput,
+} from './index'
 
 // User Profile type (matching existing system)
 export interface UserProfile {
@@ -8,6 +13,9 @@ export interface UserProfile {
   apellido: string
   email: string
   role: string
+  business_role?: FutureBusinessRole | null
+  role_scope?: RoleScope | null
+  warehouse_responsibility?: WarehouseResponsibility | WarehouseResponsibilityInput | null
   plant_id: string | null
   business_unit_id: string | null
   can_authorize_up_to: number
@@ -118,7 +126,7 @@ export interface MetricsState {
 export interface OfflineOperation {
   id: string
   type: 'auth' | 'profile_update' | 'session_refresh' | 'sign_out'
-  payload: any
+  payload: unknown
   timestamp: number
   retryCount: number
   maxRetries: number

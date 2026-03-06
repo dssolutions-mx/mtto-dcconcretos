@@ -136,7 +136,7 @@ async function PurchaseOrderDetailsMobileContent({ id }: { id: string }) {
     }
   }
   
-  // Get the approver name if available
+  // Get the approver name if available (final approval)
   let approverName = "No aprobado"
   if (order.approved_by) {
     const { data: approverData } = await supabase
@@ -147,6 +147,19 @@ async function PurchaseOrderDetailsMobileContent({ id }: { id: string }) {
       
     if (approverData && approverData.nombre) {
       approverName = `${approverData.nombre || ''} ${approverData.apellido || ''}`.trim()
+    }
+  }
+
+  // Get the authorizer name (first/technical approval - Task 4: workflow state visibility)
+  let authorizerName: string | null = null
+  if (order.authorized_by) {
+    const { data: authorizerData } = await supabase
+      .from("profiles")
+      .select("nombre, apellido")
+      .eq("id", order.authorized_by)
+      .single()
+    if (authorizerData && authorizerData.nombre) {
+      authorizerName = `${authorizerData.nombre || ''} ${authorizerData.apellido || ''}`.trim()
     }
   }
 
@@ -207,6 +220,7 @@ async function PurchaseOrderDetailsMobileContent({ id }: { id: string }) {
       workOrder={workOrder}
       requesterName={requesterName}
       approverName={approverName}
+      authorizerName={authorizerName}
       items={items || []}
       formatCurrency={formatCurrency}
       formatDate={formatDate}

@@ -46,11 +46,8 @@ export async function POST(request: NextRequest) {
     
     return NextResponse.json({
       ...result,
-      policy_details: {
-        direct_purchase: 'Las compras directas nunca requieren cotización',
-        direct_service: 'Los servicios directos requieren cotización si el monto es mayor o igual a $5,000 MXN',
-        special_order: 'Los pedidos especiales siempre requieren cotización formal'
-      }[body.po_type]
+      policy_source: 'requires_quotation()',
+      policy_details: 'La política vigente se resuelve con la función requires_quotation() de la base de datos.'
     })
     
   } catch (error) {

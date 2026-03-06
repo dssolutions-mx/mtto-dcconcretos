@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect, useCallback } from "react"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -36,6 +36,7 @@ import { toast } from "sonner"
 import { SupplierSelector } from "@/components/suppliers/SupplierSelector"
 import { Supplier } from "@/types/suppliers"
 import { PartAutocomplete, PartSuggestion } from "@/components/inventory/part-autocomplete"
+import { buildPurchaseOrderRoutingContext } from "@/lib/purchase-orders/routing-context"
 
 interface DirectPurchaseFormProps {
   workOrderId?: string
@@ -71,8 +72,9 @@ interface PurchaseOrderItem {
 interface WorkOrderData {
   id: string
   order_id: string
+  type?: string
   description: string
-  required_parts?: any
+  required_parts?: unknown
   estimated_cost?: string
   plant_id?: string
   asset?: {
@@ -90,8 +92,10 @@ export function DirectPurchaseForm({
   onCancel 
 }: DirectPurchaseFormProps) {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const { createPurchaseOrder, isCreating, error, clearError } = usePurchaseOrders()
   const { userPlants, loading: plantsLoading } = useUserPlant()
+  const launchWorkOrderType = searchParams.get("workOrderType")
 
   // Plant selection state
   const [selectedPlantId, setSelectedPlantId] = useState<string>("")
@@ -140,7 +144,7 @@ export function DirectPurchaseForm({
     supplier_id?: string
     supplier_name: string
     quoted_amount: number
-    quotation_items?: any[]
+    quotation_items: unknown[]
     delivery_days?: number
     payment_terms?: string
     validity_date?: Date
@@ -150,6 +154,12 @@ export function DirectPurchaseForm({
     file_name?: string
   }
   const [quotations, setQuotations] = useState<QuotationFormData[]>([])
+
+  const normalizeQuotations = (nextQuotations: QuotationFormData[]): QuotationFormData[] =>
+    nextQuotations.map((quotation) => ({
+      ...quotation,
+      quotation_items: Array.isArray(quotation.quotation_items) ? quotation.quotation_items : [],
+    }))
 
   // Load work order data and recent suppliers
   useEffect(() => {
@@ -227,9 +237,20 @@ export function DirectPurchaseForm({
             
             // Load parts and try to match with catalog
             const partsWithIds = await Promise.all(
-              requiredParts.map(async (part: any, index: number) => {
-                const partNumber = part.partNumber || part.part_number || ''
-                let part_id: string | undefined = part.part_id || part.id
+              requiredParts.map(async (part, index: number) => {
+                const partRecord = part as Record<string, unknown>
+                const partNumber =
+                  typeof partRecord.partNumber === 'string'
+                    ? partRecord.partNumber
+                    : typeof partRecord.part_number === 'string'
+                      ? partRecord.part_number
+                      : ''
+                let part_id =
+                  typeof partRecord.part_id === 'string'
+                    ? partRecord.part_id
+                    : typeof partRecord.id === 'string'
+                      ? partRecord.id
+                      : undefined
                 
                 // If no part_id but has part_number, look it up in catalog
                 if (!part_id && partNumber) {
@@ -252,12 +273,20 @@ export function DirectPurchaseForm({
                 
                 const item: PurchaseOrderItem = {
                   id: `wo-part-${index}`,
-                  name: part.name || part.item || 'Artículo',
+                  name:
+                    typeof partRecord.name === 'string'
+                      ? partRecord.name
+                      : typeof partRecord.item === 'string'
+                        ? partRecord.item
+                        : 'Artículo',
                   partNumber: partNumber,
                   part_id: part_id,
-                  quantity: Number(part.quantity) || 1,
-                  unit_price: Number(part.unit_price) || Number(part.price) || 0,
-                  total_price: Number(part.total_price) || (Number(part.quantity) || 1) * (Number(part.unit_price) || Number(part.price) || 0),
+                  quantity: Number(partRecord.quantity) || 1,
+                  unit_price: Number(partRecord.unit_price) || Number(partRecord.price) || 0,
+                  total_price:
+                    Number(partRecord.total_price) ||
+                    (Number(partRecord.quantity) || 1) *
+                      (Number(partRecord.unit_price) || Number(partRecord.price) || 0),
                   fulfill_from: 'purchase'  // Default to purchase, will be checked later
                 }
                 
@@ -351,6 +380,20 @@ export function DirectPurchaseForm({
   const purchaseItems = items.filter(i => i.fulfill_from === 'purchase' || !i.fulfill_from)
   const purchaseTotal = purchaseItems.reduce((sum, item) => sum + (item.total_price || 0), 0)
   const fullTotal = items.reduce((sum, item) => sum + (item.total_price || 0), 0)
+  const routingContext = buildPurchaseOrderRoutingContext({
+    poType: PurchaseOrderType.DIRECT_PURCHASE,
+    workOrderId,
+    workOrderType: workOrder?.type ?? launchWorkOrderType,
+    totalAmount: formData.total_amount || fullTotal,
+    paymentMethod: formData.payment_method,
+    supplierPaymentTerms: selectedSupplier?.payment_terms,
+    quotationAmounts: quotations.map((quotation) => quotation.quoted_amount),
+    quotationPaymentTerms: quotations.map((quotation) => quotation.payment_terms),
+    items: items.map((item) => ({
+      fulfill_from: item.fulfill_from,
+      total_price: item.total_price,
+    })),
+  })
 
   useEffect(() => {
     setFormData(prev => ({ ...prev, total_amount: fullTotal, items }))
@@ -377,19 +420,18 @@ export function DirectPurchaseForm({
   // Auto-set supplier to "Inventario Interno" when all items are from inventory
   useEffect(() => {
     if (workOrderId && items.length > 0 && !validationResult?.requires_quote) {
-      const poPurpose = calculatePOPurpose(items)
-      if (poPurpose === 'work_order_inventory') {
+      if (routingContext.poPurpose === 'work_order_inventory') {
         setFormData(prev => ({ ...prev, supplier: 'Inventario Interno' }))
         setSelectedSupplier(null) // Clear selected supplier
-      } else if (poPurpose !== 'work_order_inventory' && formData.supplier === 'Inventario Interno') {
+      } else if (routingContext.poPurpose !== 'work_order_inventory' && formData.supplier === 'Inventario Interno') {
         // Reset to default if not all inventory
         setFormData(prev => ({ ...prev, supplier: prev.supplier === 'Inventario Interno' ? 'Por definir' : prev.supplier }))
       }
     }
-  }, [items, workOrderId, validationResult?.requires_quote])
+  }, [formData.supplier, items.length, routingContext.poPurpose, validationResult?.requires_quote, workOrderId])
 
   // Handle form input changes
-  const handleInputChange = (field: string, value: any) => {
+  const handleInputChange = (field: string, value: unknown) => {
     setFormData(prev => ({ ...prev, [field]: value }))
     clearError()
   }
@@ -418,7 +460,7 @@ export function DirectPurchaseForm({
   }
 
   // Handle new item changes
-  const handleNewItemChange = (field: string, value: any) => {
+  const handleNewItemChange = (field: string, value: unknown) => {
     setNewItem(prev => {
       const updated = { ...prev, [field]: value }
       
@@ -536,7 +578,7 @@ export function DirectPurchaseForm({
   }
 
   // Update existing item
-  const updateItem = (itemId: string, field: string, value: any) => {
+  const updateItem = (itemId: string, field: string, value: unknown) => {
     setItems(prev => prev.map(item => {
       if (item.id !== itemId) return item
       
@@ -557,18 +599,6 @@ export function DirectPurchaseForm({
       
       return updated
     }))
-  }
-
-  // Calculate PO purpose based on item selections
-  const calculatePOPurpose = (items: PurchaseOrderItem[]): string => {
-    if (items.length === 0) return 'work_order_cash'
-    
-    const inventoryCount = items.filter(i => i.fulfill_from === 'inventory').length
-    const purchaseCount = items.filter(i => i.fulfill_from === 'purchase' || !i.fulfill_from).length
-    
-    if (inventoryCount === items.length) return 'work_order_inventory'
-    if (purchaseCount === items.length) return 'work_order_cash'
-    return 'mixed'
   }
 
   // Validate form
@@ -642,59 +672,67 @@ export function DirectPurchaseForm({
     }
 
     try {
-      // Determine PO purpose based on work order linkage and item selections
-      let po_purpose = 'work_order_cash'
-      
-      if (!workOrderId) {
-        // No work order = restocking
-        po_purpose = 'inventory_restock'
-      } else if (workOrderId && items.length > 0) {
-        // Calculate po_purpose from item fulfill_from selections
-        po_purpose = calculatePOPurpose(items)
-      }
-      
-      // Determine supplier based on po_purpose and whether quotations are used
+      const submissionRoutingContext = buildPurchaseOrderRoutingContext({
+        poType: PurchaseOrderType.DIRECT_PURCHASE,
+        workOrderId,
+        workOrderType: workOrder?.type ?? launchWorkOrderType,
+        totalAmount: formData.total_amount || fullTotal,
+        paymentMethod: formData.payment_method,
+        supplierPaymentTerms: selectedSupplier?.payment_terms,
+        quotationAmounts: quotations.map((quotation) => quotation.quoted_amount),
+        quotationPaymentTerms: quotations.map((quotation) => quotation.payment_terms),
+        items: items.map((item) => ({
+          fulfill_from: item.fulfill_from,
+          total_price: item.total_price,
+        })),
+      })
+
+      // total_amount = full PO value (inventory + purchase); approval_amount from routing context
+      const requestTotalAmount = formData.total_amount || fullTotal
+
+      // Keep the create-time PO payload rooted in the request.
+      // Quotations are attached for later comparison/selection, but they do not
+      // replace supplier/items/total until a quotation is explicitly selected.
       let finalSupplier = formData.supplier || "Por definir"
-      let finalItems = items
+      const finalItems = items
       
       // Auto-set supplier to "Inventario Interno" if all items are from inventory
-      if (po_purpose === 'work_order_inventory') {
+      if (submissionRoutingContext.poPurpose === 'work_order_inventory') {
         finalSupplier = 'Inventario Interno'
       }
       
-      // If quotations exist: supplier/total come from selected quotation.
-      // IMPORTANT: Always include inventory items so "Cumplir desde Inventario" works.
-      // Purchase items will come from the selected quotation.
-      if (quotations.length > 0) {
-        finalSupplier = "Por definir" // Will be set when quotation is selected
-        finalItems = items.filter(i => i.fulfill_from === 'inventory') // Keep inventory items for fulfill flow
-      }
+      const normalizedQuotations = normalizeQuotations(quotations)
 
-      // Total amount: when quotations exist use first quoted amount; when WO use purchase total (or full if all inventory)
-      const requestTotalAmount = quotations.length > 0 && quotations[0]?.quoted_amount
-        ? quotations[0].quoted_amount
-        : workOrderId && items.length > 0
-          ? (purchaseTotal > 0 ? purchaseTotal : fullTotal)
-          : (formData.total_amount || 0)
       const request: CreatePurchaseOrderRequest = {
         work_order_id: workOrderId,
         po_type: PurchaseOrderType.DIRECT_PURCHASE,
-        po_purpose: po_purpose,
+        po_purpose: submissionRoutingContext.poPurpose,
+        work_order_type: submissionRoutingContext.workOrderType || undefined,
+        approval_amount: submissionRoutingContext.approvalAmount,
+        approval_amount_source: submissionRoutingContext.approvalAmountSource,
+        payment_condition: submissionRoutingContext.paymentCondition,
         supplier: finalSupplier,
         items: finalItems,
         total_amount: requestTotalAmount,
         payment_method: formData.payment_method,
+        supplier_payment_terms: selectedSupplier?.payment_terms,
         notes: formData.notes,
         purchase_date: formData.purchase_date,
+        quotation_amounts: normalizedQuotations.map((quotation) => quotation.quoted_amount),
+        quotation_payment_terms: normalizedQuotations
+          .map((quotation) => quotation.payment_terms)
+          .filter((paymentTerms): paymentTerms is string => Boolean(paymentTerms)),
         max_payment_date: formData.payment_method === PaymentMethod.TRANSFER ? formData.max_payment_date : undefined,
         // Include plant_id: from work order for WO-based, or selected for standalone
         ...(selectedPlantId && { plant_id: selectedPlantId }),
         ...(workOrderId && workOrder && !selectedPlantId && (workOrder.plant_id || workOrder.asset?.plant_id) && {
-          plant_id: workOrder.plant_id || workOrder.asset!.plant_id
+          plant_id: workOrder.plant_id ?? workOrder.asset?.plant_id
         })
       }
 
-      const result = await createPurchaseOrder(request)
+      const result = await createPurchaseOrder(request, {
+        suppressSuccessToast: normalizedQuotations.length > 0,
+      })
       
       // Validate that PO was created successfully
       if (!result || !result.id) {
@@ -704,15 +742,19 @@ export function DirectPurchaseForm({
       console.log('Purchase order created:', { id: result.id, order_id: result.order_id })
       
       // Create quotations if provided (always create if quotations exist, regardless of amount)
-      if (quotations.length > 0) {
+      if (normalizedQuotations.length > 0) {
         try {
           // Upload files first (if any) - this provides natural delay and ensures files are ready
           const supabase = createClient()
           const { data: { user } } = await supabase.auth.getUser()
           
-          if (user) {
+          if (!user) {
+            throw new Error('No se pudo autenticar al usuario para guardar las cotizaciones.')
+          }
+
+          {
             // Upload files first, then create quotations (same pattern as DirectServiceForm/SpecialOrderForm)
-            for (const quotation of quotations) {
+            for (const quotation of normalizedQuotations) {
               let fileUrl = quotation.file_url
               
               // Upload file if provided
@@ -724,13 +766,20 @@ export function DirectPurchaseForm({
                 const { data: uploadData, error: uploadError } = await supabase.storage
                   .from('quotations')
                   .upload(fileName, quotation.file, { cacheControl: '3600', upsert: false })
-                
-                if (!uploadError && uploadData) {
-                  const { data: signedUrlData } = await supabase.storage
-                    .from('quotations')
-                    .createSignedUrl(uploadData.path, 3600 * 24 * 7)
-                  fileUrl = signedUrlData?.signedUrl
+
+                if (uploadError || !uploadData) {
+                  throw new Error(uploadError?.message || 'No se pudo subir el archivo de cotización.')
                 }
+
+                const { data: signedUrlData, error: signedUrlError } = await supabase.storage
+                  .from('quotations')
+                  .createSignedUrl(uploadData.path, 3600 * 24 * 7)
+
+                if (signedUrlError || !signedUrlData?.signedUrl) {
+                  throw new Error(signedUrlError?.message || 'No se pudo generar la URL de la cotización.')
+                }
+
+                fileUrl = signedUrlData.signedUrl
               }
               
               // Update quotation with file URL
@@ -741,7 +790,7 @@ export function DirectPurchaseForm({
           // Additional delay to ensure PO is fully committed to database (after file uploads)
           await new Promise(resolve => setTimeout(resolve, 1000))
           
-          for (const quotation of quotations) {
+          for (const quotation of normalizedQuotations) {
             // Format validity_date if it's a Date object
             let validityDateStr: string | undefined = undefined
             if (quotation.validity_date) {
@@ -794,10 +843,29 @@ export function DirectPurchaseForm({
             const quotationResult = await response.json()
             console.log('Quotation created successfully:', quotationResult)
           }
-          toast.success(`Compra creada con ${quotations.length} cotización${quotations.length > 1 ? 'es' : ''}`)
+          toast.success(`Compra creada con ${normalizedQuotations.length} cotización${normalizedQuotations.length > 1 ? 'es' : ''}`)
         } catch (quotationError) {
           console.error('Error creating quotations:', quotationError)
-          toast.warning('Compra creada pero hubo un error al guardar las cotizaciones. Puede agregarlas después.')
+          let rollbackMessage = 'No se pudo verificar la reversión automática de la orden borrador.'
+          try {
+            const rollbackResponse = await fetch(`/api/purchase-orders/${result.id}`, {
+              method: 'DELETE',
+            })
+            const rollbackPayload = await rollbackResponse.json().catch(() => ({}))
+            rollbackMessage = rollbackResponse.ok
+              ? 'La orden borrador se revirtió automáticamente.'
+              : `No se pudo revertir automáticamente la orden borrador: ${rollbackPayload.error || rollbackResponse.statusText}`
+          } catch (rollbackError) {
+            console.error('Error rolling back draft purchase order:', rollbackError)
+          }
+          const errorMessage = quotationError instanceof Error
+            ? quotationError.message
+            : 'No se pudieron guardar las cotizaciones.'
+          setFormErrors([
+            `No se completó la creación estricta de la OC. ${errorMessage} ${rollbackMessage}`,
+          ])
+          toast.error('No se pudo completar la orden con sus cotizaciones.')
+          return
         }
       }
       
@@ -1012,8 +1080,7 @@ export function DirectPurchaseForm({
             <div className="space-y-2">
               <Label>Proveedor *</Label>
               {(() => {
-                const poPurpose = calculatePOPurpose(items)
-                const isInventoryOnly = poPurpose === 'work_order_inventory' && workOrderId
+                const isInventoryOnly = routingContext.poPurpose === 'work_order_inventory' && workOrderId
                 
                 if (isInventoryOnly) {
                   return (
@@ -1119,13 +1186,12 @@ export function DirectPurchaseForm({
 
       {/* Informative Alerts - Show inventory vs purchase summary (always when WO has items) */}
       {items.length > 0 && workOrderId && (() => {
-        const poPurpose = calculatePOPurpose(items)
         const inventoryItems = items.filter(i => i.fulfill_from === 'inventory')
         const purchaseItems = items.filter(i => i.fulfill_from === 'purchase' || !i.fulfill_from)
         const inventoryTotal = inventoryItems.reduce((sum, item) => sum + (item.total_price || 0), 0)
         const purchaseTotal = purchaseItems.reduce((sum, item) => sum + (item.total_price || 0), 0)
         
-        if (poPurpose === 'work_order_inventory') {
+        if (routingContext.poPurpose === 'work_order_inventory') {
           return (
             <Alert className="border-green-500 bg-green-50">
               <CheckCircle2 className="h-4 w-4 text-green-600" />
@@ -1134,7 +1200,7 @@ export function DirectPurchaseForm({
               </AlertDescription>
             </Alert>
           )
-        } else if (poPurpose === 'mixed') {
+        } else if (routingContext.poPurpose === 'mixed') {
           return (
             <Alert className="border-yellow-500 bg-yellow-50">
               <AlertCircle className="h-4 w-4 text-yellow-600" />
@@ -1143,7 +1209,7 @@ export function DirectPurchaseForm({
               </AlertDescription>
             </Alert>
           )
-        } else if (poPurpose === 'work_order_cash') {
+        } else if (routingContext.poPurpose === 'work_order_cash') {
           return (
             <Alert className="border-blue-500 bg-blue-50">
               <ShoppingCart className="h-4 w-4 text-blue-600" />
@@ -1423,7 +1489,6 @@ export function DirectPurchaseForm({
                   const purchaseItems = items.filter(i => i.fulfill_from === 'purchase' || !i.fulfill_from)
                   const inventoryTotal = inventoryItems.reduce((sum, item) => sum + (item.total_price || 0), 0)
                   const purchaseTotal = purchaseItems.reduce((sum, item) => sum + (item.total_price || 0), 0)
-                  const poPurpose = calculatePOPurpose(items)
                   
                   return (
                     <>
@@ -1509,14 +1574,8 @@ export function DirectPurchaseForm({
           <QuotationFormForCreation
             quotations={quotations}
             onQuotationsChange={(newQuotations) => {
-              setQuotations(newQuotations)
+              setQuotations(normalizeQuotations(newQuotations))
               setFormErrors(prev => prev.filter(error => !error.includes('cotización')))
-              
-              // Update total amount if quotations exist (for display)
-              if (newQuotations.length > 0 && validationResult?.requires_quote) {
-                const avgTotal = newQuotations.reduce((sum, q) => sum + q.quoted_amount, 0) / newQuotations.length
-                setFormData(prev => ({ ...prev, total_amount: avgTotal }))
-              }
             }}
             workOrderId={workOrderId}
             prefillItems={validationResult?.requires_quote && purchaseItems.length > 0

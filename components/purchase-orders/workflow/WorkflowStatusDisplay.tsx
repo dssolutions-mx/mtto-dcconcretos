@@ -1056,6 +1056,102 @@ export function WorkflowStatusDisplay({
         </CardContent>
       </Card>
 
+      {/* Payment Condition - highlighted for Administration (Paths C/D) */}
+      {workflowStatus?.purchase_order?.payment_condition && workflowStatus.purchase_order.po_purpose !== 'work_order_inventory' && (
+        <Alert className={
+          workflowStatus.purchase_order.payment_condition === 'cash'
+            ? 'border-emerald-500 bg-emerald-50'
+            : 'border-amber-500 bg-amber-50'
+        }>
+          <DollarSign className="h-4 w-4" />
+          <AlertTitle className="font-semibold">Condición de Pago</AlertTitle>
+          <AlertDescription>
+            <Badge variant={workflowStatus.purchase_order.payment_condition === 'cash' ? 'default' : 'secondary'} className="mt-1">
+              {workflowStatus.purchase_order.payment_condition === 'cash' ? 'Efectivo' : 'Crédito'}
+            </Badge>
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {/* Viability Status - for Paths C/D when Administration must review */}
+      {workflowStatus?.purchase_order?.workflow_policy?.requires_viability && (
+        <Alert className={
+          workflowStatus.purchase_order.viability_state === 'viable'
+            ? 'border-green-500 bg-green-50'
+            : workflowStatus.purchase_order.viability_state === 'not_viable'
+            ? 'border-red-500 bg-red-50'
+            : 'border-slate-400 bg-slate-50'
+        }>
+          <Shield className="h-4 w-4" />
+          <AlertTitle className="font-semibold">Viabilidad Administrativa</AlertTitle>
+          <AlertDescription>
+            <div className="space-y-1 mt-1">
+              <div className="flex items-center gap-2">
+                <Badge variant={
+                  workflowStatus.purchase_order.viability_state === 'viable' ? 'default' :
+                  workflowStatus.purchase_order.viability_state === 'not_viable' ? 'destructive' : 'outline'
+                }>
+                  {workflowStatus.purchase_order.viability_state === 'viable' && 'Viable'}
+                  {workflowStatus.purchase_order.viability_state === 'not_viable' && 'No viable'}
+                  {(!workflowStatus.purchase_order.viability_state || workflowStatus.purchase_order.viability_state === 'pending') && 'Pendiente'}
+                </Badge>
+                <span className="text-sm">Path {workflowStatus.purchase_order.workflow_policy?.path}</span>
+              </div>
+              {workflowStatus.purchase_order.workflow_policy?.next_step_description && (
+                <p className="text-sm text-muted-foreground mt-2">
+                  {workflowStatus.purchase_order.workflow_policy.next_step_description}
+                </p>
+              )}
+            </div>
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {/* Payment Condition - highlighted for Administration (Task 4) */}
+      {workflowStatus?.purchase_order?.payment_condition && workflowStatus.purchase_order.po_purpose !== 'work_order_inventory' && (
+        <Alert className={
+          workflowStatus.purchase_order.payment_condition === 'credit'
+            ? 'border-amber-500 bg-amber-50'
+            : 'border-emerald-500 bg-emerald-50'
+        }>
+          <DollarSign className="h-4 w-4" />
+          <AlertTitle className="font-semibold">
+            Condición de Pago: {workflowStatus.purchase_order.payment_condition === 'credit' ? 'Crédito' : 'Contado'}
+          </AlertTitle>
+          <AlertDescription>
+            {workflowStatus.purchase_order.payment_condition === 'credit'
+              ? 'Esta orden involucra pago a crédito. Administración debe revisar viabilidad antes de aprobación final.'
+              : 'Pago de contado. Flujo simplificado.'}
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {/* Viability Status - for Path C/D when Administration must review (Task 4) */}
+      {workflowStatus?.purchase_order?.workflow_policy?.requires_viability && (
+        <Alert className="border-slate-500 bg-slate-50">
+          <Shield className="h-4 w-4" />
+          <AlertTitle className="font-semibold">Revisión de Viabilidad Administrativa</AlertTitle>
+          <AlertDescription className="space-y-2 mt-2">
+            <div className="flex justify-between items-center">
+              <span>Estado:</span>
+              <Badge variant={
+                workflowStatus.purchase_order.viability_state === 'viable' ? 'default' :
+                workflowStatus.purchase_order.viability_state === 'not_viable' ? 'destructive' : 'outline'
+              }>
+                {workflowStatus.purchase_order.viability_state === 'viable' && 'Viable'}
+                {workflowStatus.purchase_order.viability_state === 'not_viable' && 'No viable'}
+                {(!workflowStatus.purchase_order.viability_state || workflowStatus.purchase_order.viability_state === 'pending') && 'Pendiente'}
+              </Badge>
+            </div>
+            {workflowStatus.purchase_order.workflow_policy.next_step_description && (
+              <p className="text-sm font-medium mt-2">
+                {workflowStatus.purchase_order.workflow_policy.next_step_description}
+              </p>
+            )}
+          </AlertDescription>
+        </Alert>
+      )}
+
       {/* Cash Impact Indicator */}
       {workflowStatus?.purchase_order?.po_purpose && (
         <Alert className={

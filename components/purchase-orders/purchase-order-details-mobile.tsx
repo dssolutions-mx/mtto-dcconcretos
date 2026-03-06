@@ -19,6 +19,7 @@ interface PurchaseOrderDetailsMobileProps {
   workOrder: any
   requesterName: string
   approverName: string
+  authorizerName?: string | null
   items: any[]
   formatCurrency: (amount: string | null) => string
   formatDate: (dateString: string | null, formatStr?: string) => string
@@ -33,6 +34,7 @@ export function PurchaseOrderDetailsMobile({
   workOrder,
   requesterName,
   approverName,
+  authorizerName,
   items,
   formatCurrency,
   formatDate,
@@ -185,6 +187,16 @@ export function PurchaseOrderDetailsMobile({
               <p className="text-sm">{requesterName}</p>
             </div>
           </div>
+
+          {authorizerName && (
+            <div className="flex items-start space-x-3">
+              <FileCheck className="h-4 w-4 text-blue-600 mt-0.5" />
+              <div className="flex-1">
+                <p className="text-xs font-medium text-muted-foreground">Autorizado por (Jefe de Unidad)</p>
+                <p className="text-sm">{authorizerName}</p>
+              </div>
+            </div>
+          )}
 
           {order.approved_by && (
             <div className="flex items-start space-x-3">

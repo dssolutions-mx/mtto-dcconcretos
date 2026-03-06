@@ -1,4 +1,21 @@
+import type {
+  FutureBusinessRole,
+  LegacyDbRole,
+  RoleScope,
+} from '@/lib/auth/role-model';
+import type {
+  WarehouseResponsibility,
+  WarehouseResponsibilityInput,
+  WarehouseResponsibilitySource,
+} from '@/lib/auth/warehouse-responsibility';
 import { Database } from './supabase-types';
+
+export type { FutureBusinessRole, LegacyDbRole, RoleScope } from '@/lib/auth/role-model';
+export type {
+  WarehouseResponsibility,
+  WarehouseResponsibilityInput,
+  WarehouseResponsibilitySource,
+} from '@/lib/auth/warehouse-responsibility';
 
 // Alias para tipos de tablas
 export type DbTables = Database['public']['Tables'];
@@ -168,7 +185,7 @@ export interface WorkOrderCompletion {
   downtime_hours: number;
   technician_notes?: string;
   resolution_details: string;
-  parts_used?: any[];
+  parts_used?: unknown[];
   labor_hours: number;
   labor_cost: number;
   total_cost: number;
@@ -181,6 +198,9 @@ export type Profile = DbTables['profiles']['Row'] & {
   business_unit?: BusinessUnit;
   assigned_assets?: AssetOperator[];
   office?: Office;
+  business_role?: FutureBusinessRole | null;
+  role_scope?: RoleScope | null;
+  warehouse_responsibility?: WarehouseResponsibility | WarehouseResponsibilityInput | null;
 };
 export type InsertProfile = DbTables['profiles']['Insert'];
 export type UpdateProfile = DbTables['profiles']['Update'];
@@ -244,25 +264,33 @@ export enum ChecklistIssueStatus {
   Fail = 'fail'
 }
 
-// Enhanced User Roles for Phase 2 Multi-Plant Organization
+// Legacy-facing app enum retained for backward compatibility with existing consumers.
 export enum UserRole {
   // Legacy roles (for backward compatibility)
   User = 'user',
   MaintenanceManager = 'ENCARGADO_MANTENIMIENTO',
   PlantManager = 'JEFE_PLANTA',
   Executive = 'EJECUTIVO',
+  WarehouseManager = 'ENCARGADO_ALMACEN',
   
   // New Phase 2 organizational roles
   GeneralManagement = 'GERENCIA_GENERAL',
   BusinessUnitManager = 'JEFE_UNIDAD_NEGOCIO',
-  MaintenanceSpecialist = 'ENCARGADO_MANTENIMIENTO',
-  PlantManager2 = 'JEFE_PLANTA',
   Dosificador = 'DOSIFICADOR',
   Operator = 'OPERADOR',
   PurchasingAssistant = 'AUXILIAR_COMPRAS',
   AdministrativeArea = 'AREA_ADMINISTRATIVA',
   Viewer = 'VISUALIZADOR'
 }
+
+// Namespace merge preserves legacy enum aliases without reintroducing duplicate enum values.
+// eslint-disable-next-line @typescript-eslint/no-namespace
+export namespace UserRole {
+  export const MaintenanceSpecialist = UserRole.MaintenanceManager;
+  export const PlantManager2 = UserRole.PlantManager;
+}
+
+export type CompatibleUserRole = LegacyDbRole | FutureBusinessRole | UserRole.User
 
 // Assignment types for asset operators
 export enum AssignmentType {
@@ -323,7 +351,7 @@ export interface WorkOrderComplete extends WorkOrder {
   downtime_hours?: number;
   technician_notes?: string;
   resolution_details?: string;
-  parts_used?: any[];
+  parts_used?: unknown[];
   labor_hours?: number;
   labor_cost?: number;
   total_cost?: number;
@@ -454,7 +482,10 @@ export enum ExpenseType {
 export interface UserOrganizationalContext {
   profile_id: string;
   user_name: string;
-  user_role: UserRole;
+  user_role: CompatibleUserRole;
+  legacy_role?: LegacyDbRole;
+  business_role?: FutureBusinessRole;
+  role_scope?: RoleScope;
   plant_id?: string;
   plant_name?: string;
   business_unit_id?: string;
@@ -463,6 +494,7 @@ export interface UserOrganizationalContext {
   can_manage_operators: boolean;
   can_assign_assets: boolean;
   employee_code?: string;
+  warehouse_responsibility?: WarehouseResponsibility;
 }
 
 // Asset assignment request
@@ -510,9 +542,12 @@ export interface EmergencyContact {
 
 // Authorization matrix entry
 export interface AuthorizationMatrix {
-  role: UserRole;
+  role: CompatibleUserRole;
   max_amount: number;
   requires_approval: boolean;
-  approver_role?: UserRole;
+  approver_role?: CompatibleUserRole;
   description: string;
-} 
+  role_scope?: RoleScope;
+  warehouse_responsibility_source?: WarehouseResponsibilitySource;
+  warehouse_responsibility?: WarehouseResponsibilityInput;
+}

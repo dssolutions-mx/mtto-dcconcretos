@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -37,6 +37,7 @@ import { PartAutocomplete, PartSuggestion } from "@/components/inventory/part-au
 import { useUserPlant } from "@/hooks/use-user-plant"
 import { format } from "date-fns"
 import { toast } from "sonner"
+import { buildPurchaseOrderRoutingContext } from "@/lib/purchase-orders/routing-context"
 
 interface SpecialOrderFormProps {
   workOrderId?: string
@@ -74,8 +75,9 @@ interface OrderItem {
 interface WorkOrderData {
   id: string
   order_id: string
+  type?: string
   description: string
-  required_parts?: any
+  required_parts?: unknown
   estimated_cost?: string
   plant_id?: string
   asset?: {
@@ -109,8 +111,10 @@ export function SpecialOrderForm({
   onCancel 
 }: SpecialOrderFormProps) {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const { createPurchaseOrder, isCreating, error, clearError } = usePurchaseOrders()
   const { userPlants, loading: plantsLoading } = useUserPlant()
+  const launchWorkOrderType = searchParams.get("workOrderType")
 
   // Plant selection state
   const [selectedPlantId, setSelectedPlantId] = useState<string | undefined>(undefined)
@@ -165,6 +169,7 @@ export function SpecialOrderForm({
     supplier_id?: string
     supplier_name: string
     quoted_amount: number
+    quotation_items: unknown[]
     delivery_days?: number
     payment_terms?: string
     validity_date?: Date
@@ -174,6 +179,12 @@ export function SpecialOrderForm({
     file_name?: string
   }
   const [quotations, setQuotations] = useState<QuotationFormData[]>([])
+
+  const normalizeQuotations = (nextQuotations: QuotationFormData[]): QuotationFormData[] =>
+    nextQuotations.map((quotation) => ({
+      ...quotation,
+      quotation_items: Array.isArray(quotation.quotation_items) ? quotation.quotation_items : [],
+    }))
   // Legacy support
   const [quotationUrls, setQuotationUrls] = useState<string[]>([])
   const [quotationUrl, setQuotationUrl] = useState<string | null>(null)
@@ -253,9 +264,20 @@ export function SpecialOrderForm({
               ? workOrderData.required_parts 
               : JSON.parse(workOrderData.required_parts)
             
-            partsToLoad = await Promise.all(requiredParts.map(async (part: any, index: number) => {
-              const partNumber = part.partNumber || part.part_number || ''
-              let part_id: string | undefined = part.part_id || part.id
+            partsToLoad = await Promise.all(requiredParts.map(async (part, index: number) => {
+              const partRecord = part as Record<string, unknown>
+              const partNumber =
+                typeof partRecord.partNumber === 'string'
+                  ? partRecord.partNumber
+                  : typeof partRecord.part_number === 'string'
+                    ? partRecord.part_number
+                    : ''
+              let part_id =
+                typeof partRecord.part_id === 'string'
+                  ? partRecord.part_id
+                  : typeof partRecord.id === 'string'
+                    ? partRecord.id
+                    : undefined
               if (!part_id && partNumber) {
                 try {
                   const { data: foundParts } = await supabase
@@ -273,12 +295,22 @@ export function SpecialOrderForm({
               return {
                 id: `wo-part-${index}`,
                 part_number: partNumber,
-                description: part.name || part.item || part.description || 'Artículo',
-                brand: part.brand || '',
-                quantity: Number(part.quantity) || 1,
-                unit_price: Number(part.unit_price) || Number(part.price) || 0,
-                total_price: Number(part.total_price) || (Number(part.quantity) || 1) * (Number(part.unit_price) || Number(part.price) || 0),
-                lead_time_days: part.lead_time_days || 15,
+                description:
+                  typeof partRecord.name === 'string'
+                    ? partRecord.name
+                    : typeof partRecord.item === 'string'
+                      ? partRecord.item
+                      : typeof partRecord.description === 'string'
+                        ? partRecord.description
+                        : 'Artículo',
+                brand: typeof partRecord.brand === 'string' ? partRecord.brand : '',
+                quantity: Number(partRecord.quantity) || 1,
+                unit_price: Number(partRecord.unit_price) || Number(partRecord.price) || 0,
+                total_price:
+                  Number(partRecord.total_price) ||
+                  (Number(partRecord.quantity) || 1) *
+                    (Number(partRecord.unit_price) || Number(partRecord.price) || 0),
+                lead_time_days: Number(partRecord.lead_time_days) || 15,
                 is_special_order: true,
                 part_id,
                 fulfill_from: 'purchase' as const
@@ -337,7 +369,7 @@ export function SpecialOrderForm({
   }, [items])
 
   // Handle form input changes
-  const handleInputChange = (field: string, value: any) => {
+  const handleInputChange = (field: string, value: unknown) => {
     setFormData(prev => ({ ...prev, [field]: value }))
     clearError()
   }
@@ -371,7 +403,7 @@ export function SpecialOrderForm({
   }
 
   // Handle new item changes
-  const handleNewItemChange = (field: string, value: any) => {
+  const handleNewItemChange = (field: string, value: unknown) => {
     setNewItem(prev => {
       const updated = { ...prev, [field]: value }
       
@@ -505,12 +537,15 @@ export function SpecialOrderForm({
       is_special_order: true
     }
 
-    // Check availability if part_id exists
+    setItems(prev => [...prev, item])
+    
+    // Check availability after insertion so state hydration can attach the result.
     if (item.part_id) {
-      await checkItemAvailability(item)
+      setTimeout(() => {
+        void checkItemAvailability(item)
+      }, 0)
     }
 
-    setItems(prev => [...prev, item])
     setNewItem({
       part_number: '',
       description: '',
@@ -532,7 +567,7 @@ export function SpecialOrderForm({
   }
 
   // Edit existing item inline
-  const handleItemChange = (itemId: string, field: keyof OrderItem, value: any) => {
+  const handleItemChange = (itemId: string, field: keyof OrderItem, value: unknown) => {
     setItems(prev => prev.map(item => {
       if (item.id !== itemId) return item
       const updated: OrderItem = { ...item, [field]: value }
@@ -549,18 +584,6 @@ export function SpecialOrderForm({
       
       return updated
     }))
-  }
-
-  // Calculate PO purpose based on item selections
-  const calculatePOPurpose = (items: OrderItem[]): string => {
-    if (items.length === 0) return 'work_order_cash'
-    
-    const inventoryCount = items.filter(i => i.fulfill_from === 'inventory').length
-    const purchaseCount = items.filter(i => i.fulfill_from === 'purchase' || !i.fulfill_from).length
-    
-    if (inventoryCount === items.length) return 'work_order_inventory'
-    if (purchaseCount === items.length) return 'work_order_cash'
-    return 'mixed'
   }
 
   // Validate form
@@ -638,22 +661,35 @@ export function SpecialOrderForm({
     }
 
     try {
-      // Determine PO purpose based on work order linkage and item selections
-      let po_purpose = 'work_order_cash'
-      
-      if (!workOrderId) {
-        // No work order = restocking
-        po_purpose = 'inventory_restock'
-      } else if (workOrderId && items.length > 0) {
-        // Calculate po_purpose from item fulfill_from selections
-        po_purpose = calculatePOPurpose(items)
-      }
-      
+      const normalizedQuotations = normalizeQuotations(quotations)
+      const isStandaloneQuoteFirstDraft = !workOrderId && items.length === 0 && quotations.length > 0
+      const requestItems = isStandaloneQuoteFirstDraft ? [] : items
+      // For quote-first drafts: derive provisional total_amount from first quotation so PO can be created
+      const requestTotalAmount = isStandaloneQuoteFirstDraft
+        ? (normalizedQuotations[0]?.quoted_amount ?? 0)
+        : (formData.total_amount || 0)
+
+      const submissionRoutingContext = buildPurchaseOrderRoutingContext({
+        poType: PurchaseOrderType.SPECIAL_ORDER,
+        workOrderId,
+        workOrderType: workOrder?.type ?? launchWorkOrderType,
+        totalAmount: requestTotalAmount,
+        quotationAmounts: normalizedQuotations.map((quotation) => quotation.quoted_amount),
+        quotationPaymentTerms: normalizedQuotations.map((quotation) => quotation.payment_terms),
+        paymentMethod: formData.payment_method,
+        items: requestItems.map((item) => ({
+          fulfill_from: item.fulfill_from,
+          total_price: item.total_price,
+        })),
+      })
+
       // Determine supplier based on po_purpose
-      let finalSupplier = formData.supplier || "Por definir"
+      let finalSupplier = isStandaloneQuoteFirstDraft
+        ? "Proveedor por seleccionar"
+        : (formData.supplier || "Por definir")
       
       // Auto-set supplier to "Inventario Interno" if all items are from inventory
-      if (po_purpose === 'work_order_inventory') {
+      if (submissionRoutingContext.poPurpose === 'work_order_inventory') {
         finalSupplier = 'Inventario Interno'
       }
       
@@ -661,14 +697,22 @@ export function SpecialOrderForm({
       const request: CreatePurchaseOrderRequest = {
         work_order_id: workOrderId || undefined,
         po_type: PurchaseOrderType.SPECIAL_ORDER,
-        po_purpose: po_purpose,
+        po_purpose: submissionRoutingContext.poPurpose,
+        work_order_type: submissionRoutingContext.workOrderType || undefined,
+        approval_amount: submissionRoutingContext.approvalAmount,
+        approval_amount_source: submissionRoutingContext.approvalAmountSource,
+        payment_condition: submissionRoutingContext.paymentCondition,
         supplier: finalSupplier,
-        items: items,
-        total_amount: formData.total_amount!,
+        items: requestItems,
+        total_amount: requestTotalAmount,
         payment_method: formData.payment_method,
         notes: formData.notes,
         purchase_date: formData.purchase_date,
         quotation_urls: quotationUrls.length > 0 ? quotationUrls : undefined,
+        quotation_amounts: normalizedQuotations.map((quotation) => quotation.quoted_amount),
+        quotation_payment_terms: normalizedQuotations
+          .map((quotation) => quotation.payment_terms)
+          .filter((paymentTerms): paymentTerms is string => Boolean(paymentTerms)),
         quotation_url: quotationUrl || undefined, // Legacy fallback
         ...(formData.max_payment_date && { max_payment_date: formData.max_payment_date })
       }
@@ -677,67 +721,102 @@ export function SpecialOrderForm({
       if (selectedPlantId) {
         request.plant_id = selectedPlantId as string
       } else if (workOrderId && workOrder && (workOrder.plant_id || workOrder.asset?.plant_id)) {
-        request.plant_id = workOrder.plant_id || workOrder.asset!.plant_id
+        request.plant_id = workOrder.plant_id ?? workOrder.asset?.plant_id
       }
 
-      const result = await createPurchaseOrder(request)
+      const result = await createPurchaseOrder(request, {
+        suppressSuccessToast: normalizedQuotations.length > 0,
+      })
       
       if (result) {
         // Create quotations after PO is created
-        if (quotations.length > 0) {
+        if (normalizedQuotations.length > 0) {
           try {
             const supabase = createClient()
             const { data: { user } } = await supabase.auth.getUser()
             
-            if (user) {
-              // Upload files first, then create quotations
-              for (const quotation of quotations) {
-                let fileUrl = quotation.file_url
+            if (!user) {
+              throw new Error('No se pudo autenticar al usuario para guardar las cotizaciones.')
+            }
+
+            // Upload files first, then create quotations
+            for (const quotation of normalizedQuotations) {
+              let fileUrl = quotation.file_url
+              
+              // Upload file if provided
+              if (quotation.file && !fileUrl) {
+                const folderName = workOrderId || result.id
+                const sanitizedFileName = quotation.file.name.replace(/[^a-zA-Z0-9.-]/g, '_')
+                const fileName = `${folderName}/${Date.now()}_${sanitizedFileName}`
                 
-                // Upload file if provided
-                if (quotation.file && !fileUrl) {
-                  const folderName = workOrderId || result.id
-                  const sanitizedFileName = quotation.file.name.replace(/[^a-zA-Z0-9.-]/g, '_')
-                  const fileName = `${folderName}/${Date.now()}_${sanitizedFileName}`
-                  
-                  const { data: uploadData, error: uploadError } = await supabase.storage
-                    .from('quotations')
-                    .upload(fileName, quotation.file, { cacheControl: '3600', upsert: false })
-                  
-                  if (!uploadError && uploadData) {
-                    const { data: signedUrlData } = await supabase.storage
-                      .from('quotations')
-                      .createSignedUrl(uploadData.path, 3600 * 24 * 7)
-                    fileUrl = signedUrlData?.signedUrl
-                  }
+                const { data: uploadData, error: uploadError } = await supabase.storage
+                  .from('quotations')
+                  .upload(fileName, quotation.file, { cacheControl: '3600', upsert: false })
+                
+                if (uploadError || !uploadData) {
+                  throw new Error(uploadError?.message || 'No se pudo subir el archivo de cotización.')
                 }
-                
-                // Create quotation via API
-                const quotationRequest: any = {
-                  purchase_order_id: result.id,
-                  supplier_id: quotation.supplier_id,
-                  supplier_name: quotation.supplier_name,
-                  quoted_amount: quotation.quoted_amount,
-                  quotation_items: quotation.quotation_items || undefined, // Include item-level pricing
-                  delivery_days: quotation.delivery_days,
-                  payment_terms: quotation.payment_terms,
-                  validity_date: quotation.validity_date ? format(quotation.validity_date, 'yyyy-MM-dd') : undefined,
-                  notes: quotation.notes,
-                  file_url: fileUrl,
-                  file_name: quotation.file_name
+
+                const { data: signedUrlData, error: signedUrlError } = await supabase.storage
+                  .from('quotations')
+                  .createSignedUrl(uploadData.path, 3600 * 24 * 7)
+
+                if (signedUrlError || !signedUrlData?.signedUrl) {
+                  throw new Error(signedUrlError?.message || 'No se pudo generar la URL de la cotización.')
                 }
-                
-                await fetch('/api/purchase-orders/quotations', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify(quotationRequest)
-                })
+
+                fileUrl = signedUrlData.signedUrl
+              }
+              
+              // Create quotation via API
+              const quotationRequest = {
+                purchase_order_id: result.id,
+                supplier_id: quotation.supplier_id,
+                supplier_name: quotation.supplier_name,
+                quoted_amount: quotation.quoted_amount,
+                quotation_items: quotation.quotation_items || undefined, // Include item-level pricing
+                delivery_days: quotation.delivery_days,
+                payment_terms: quotation.payment_terms,
+                validity_date: quotation.validity_date ? format(quotation.validity_date, 'yyyy-MM-dd') : undefined,
+                notes: quotation.notes,
+                file_url: fileUrl,
+                file_name: quotation.file_name
+              }
+              
+              const response = await fetch('/api/purchase-orders/quotations', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(quotationRequest)
+              })
+
+              if (!response.ok) {
+                const errorData = await response.json().catch(() => ({ error: response.statusText }))
+                throw new Error(errorData.error || response.statusText || 'No se pudo guardar la cotización.')
               }
             }
           } catch (error) {
             console.error('Error creating quotations:', error)
-            toast.error('PO creada pero hubo error al guardar cotizaciones. Puede agregarlas manualmente.')
+            const message = error instanceof Error ? error.message : 'No se pudieron guardar las cotizaciones.'
+            let rollbackMessage = 'No se pudo verificar la reversión automática de la orden borrador.'
+            try {
+              const rollbackResponse = await fetch(`/api/purchase-orders/${result.id}`, {
+                method: 'DELETE',
+              })
+              const rollbackPayload = await rollbackResponse.json().catch(() => ({}))
+              rollbackMessage = rollbackResponse.ok
+                ? 'La orden borrador se revirtió automáticamente.'
+                : `No se pudo revertir automáticamente la orden borrador: ${rollbackPayload.error || rollbackResponse.statusText}`
+            } catch (rollbackError) {
+              console.error('Error rolling back draft purchase order:', rollbackError)
+            }
+            setFormErrors([
+              `No se completó la creación estricta de la OC ${result.order_id}. ${message} ${rollbackMessage}`,
+            ])
+            toast.error(`No se pudo completar la OC ${result.order_id} con sus cotizaciones.`)
+            return
           }
+
+          toast.success(`Pedido especial creado con ${normalizedQuotations.length} cotización${normalizedQuotations.length > 1 ? 'es' : ''}`)
         }
         
         if (onSuccess) {
@@ -766,6 +845,19 @@ export function SpecialOrderForm({
     brand: i.brand,
     part_id: i.part_id
   }))
+  const routingContext = buildPurchaseOrderRoutingContext({
+    poType: PurchaseOrderType.SPECIAL_ORDER,
+    workOrderId,
+    workOrderType: workOrder?.type ?? launchWorkOrderType,
+    totalAmount: formData.total_amount,
+    paymentMethod: formData.payment_method,
+    quotationAmounts: quotations.map((quotation) => quotation.quoted_amount),
+    quotationPaymentTerms: quotations.map((quotation) => quotation.payment_terms),
+    items: items.map((item) => ({
+      fulfill_from: item.fulfill_from,
+      total_price: item.total_price,
+    })),
+  })
 
   // Loading state
   if (isLoadingWorkOrder) {
@@ -1182,12 +1274,11 @@ export function SpecialOrderForm({
 
           {/* Inventory vs purchase summary - same as DirectPurchaseForm */}
           {items.length > 0 && workOrderId && (() => {
-            const poPurpose = calculatePOPurpose(items)
             const inventoryItemsList = items.filter(i => i.fulfill_from === 'inventory')
             const purchaseItemsList = items.filter(i => i.fulfill_from === 'purchase' || !i.fulfill_from)
             const inventoryTotalSum = inventoryItemsList.reduce((sum, item) => sum + (item.total_price || 0), 0)
             const purchaseTotalSum = purchaseItemsList.reduce((sum, item) => sum + (item.total_price || 0), 0)
-            if (poPurpose === 'work_order_inventory') {
+            if (routingContext.poPurpose === 'work_order_inventory') {
               return (
                 <Alert className="border-green-500 bg-green-50">
                   <CheckCircle2 className="h-4 w-4 text-green-600" />
@@ -1196,7 +1287,7 @@ export function SpecialOrderForm({
                   </AlertDescription>
                 </Alert>
               )
-            } else if (poPurpose === 'mixed') {
+            } else if (routingContext.poPurpose === 'mixed') {
               return (
                 <Alert className="border-yellow-500 bg-yellow-50">
                   <AlertCircle className="h-4 w-4 text-yellow-600" />
@@ -1205,7 +1296,7 @@ export function SpecialOrderForm({
                   </AlertDescription>
                 </Alert>
               )
-            } else if (poPurpose === 'work_order_cash') {
+            } else if (routingContext.poPurpose === 'work_order_cash') {
               return (
                 <Alert className="border-blue-500 bg-blue-50">
                   <ShoppingCart className="h-4 w-4 text-blue-600" />
@@ -1226,15 +1317,8 @@ export function SpecialOrderForm({
       <QuotationFormForCreation
         quotations={quotations}
         onQuotationsChange={(newQuotations) => {
-          setQuotations(newQuotations)
+          setQuotations(normalizeQuotations(newQuotations))
           setFormErrors(prev => prev.filter(error => !error.includes('cotización')))
-          
-          // Calculate total from all quotations (for display purposes)
-          // Actual total will come from selected quotation
-          if (newQuotations.length > 0) {
-            const avgTotal = newQuotations.reduce((sum, q) => sum + q.quoted_amount, 0) / newQuotations.length
-            setFormData(prev => ({ ...prev, total_amount: avgTotal }))
-          }
         }}
         workOrderId={workOrderId}
         prefillItems={prefillItems.length > 0 ? prefillItems : undefined}
@@ -1276,7 +1360,7 @@ export function SpecialOrderForm({
         <QuotationValidator
           poType={PurchaseOrderType.SPECIAL_ORDER}
           amount={formData.total_amount}
-          poPurpose={formData.po_purpose}
+          poPurpose={routingContext.poPurpose}
           onValidationResult={setValidationResult}
         />
       ) : null}

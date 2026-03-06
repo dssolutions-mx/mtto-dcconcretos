@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -35,6 +35,7 @@ import { Supplier } from "@/types/suppliers"
 import { format } from "date-fns"
 import { toast } from "sonner"
 import { Separator } from "@/components/ui/separator"
+import { buildPurchaseOrderRoutingContext } from "@/lib/purchase-orders/routing-context"
 
 interface DirectServiceFormProps {
   workOrderId?: string
@@ -56,13 +57,16 @@ interface ServiceItem {
 interface WorkOrderData {
   id: string
   order_id: string
+  type?: string
   description: string
-  required_parts?: any
+  required_parts?: unknown
   estimated_cost?: string
+  plant_id?: string
   asset?: {
     id: string
     name: string
     asset_id: string
+    plant_id?: string
   }
 }
 
@@ -87,8 +91,10 @@ export function DirectServiceForm({
   onCancel 
 }: DirectServiceFormProps) {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const { createPurchaseOrder, isCreating, error, clearError } = usePurchaseOrders()
   const { userPlants, loading: plantLoading, error: plantError, userRole, hasFullAccess } = useUserPlant()
+  const launchWorkOrderType = searchParams.get("workOrderType")
 
   // Work order state
   const [workOrder, setWorkOrder] = useState<WorkOrderData | null>(null)
@@ -138,6 +144,7 @@ export function DirectServiceForm({
     supplier_id?: string
     supplier_name: string
     quoted_amount: number
+    quotation_items: unknown[]
     delivery_days?: number
     payment_terms?: string
     validity_date?: Date
@@ -147,6 +154,12 @@ export function DirectServiceForm({
     file_name?: string
   }
   const [quotations, setQuotations] = useState<QuotationFormData[]>([])
+
+  const normalizeQuotations = (nextQuotations: QuotationFormData[]): QuotationFormData[] =>
+    nextQuotations.map((quotation) => ({
+      ...quotation,
+      quotation_items: Array.isArray(quotation.quotation_items) ? quotation.quotation_items : [],
+    }))
   // Legacy support
   const [quotationUrls, setQuotationUrls] = useState<string[]>([])
   const [quotationUrl, setQuotationUrl] = useState<string | null>(null)
@@ -206,6 +219,21 @@ export function DirectServiceForm({
         if (!workOrderData) {
           setWorkOrderError("Orden de trabajo no encontrada")
           return
+        }
+
+        if (!workOrderData.plant_id && workOrderData.asset?.id) {
+          const { data: assetData } = await supabase
+            .from('assets')
+            .select('plant_id')
+            .eq('id', workOrderData.asset.id)
+            .single()
+
+          if (assetData?.plant_id) {
+            workOrderData.plant_id = assetData.plant_id
+            if (workOrderData.asset) {
+              workOrderData.asset.plant_id = assetData.plant_id
+            }
+          }
         }
         
         setWorkOrder(workOrderData)
@@ -273,7 +301,7 @@ export function DirectServiceForm({
   }, [services])
 
   // Handle form input changes
-  const handleInputChange = (field: string, value: any) => {
+  const handleInputChange = (field: string, value: unknown) => {
     setFormData(prev => ({ ...prev, [field]: value }))
     clearError()
   }
@@ -307,7 +335,7 @@ export function DirectServiceForm({
   }
 
   // Handle new service changes
-  const handleNewServiceChange = (field: string, value: any) => {
+  const handleNewServiceChange = (field: string, value: unknown) => {
     setNewService(prev => {
       const updated = { ...prev, [field]: value }
       
@@ -366,7 +394,7 @@ export function DirectServiceForm({
     }
 
     // Service provider validation - Only required if quotation NOT required
-    if (!validationResult?.requires_quote && !selectedSupplier) {
+    if (!validationResult?.requires_quote && !selectedSupplier && !formData.service_provider?.trim()) {
       errors.push('Proveedor de servicio es requerido para servicios menores a $5,000')
     }
 
@@ -423,16 +451,11 @@ export function DirectServiceForm({
     }
 
     try {
-      // Determine PO purpose
-      // Services are typically not in inventory, but check for consistency
-      let po_purpose = 'work_order_cash'
-      
-      if (!workOrderId) {
-        // Services for restocking don't make sense, but handle it
-        po_purpose = 'work_order_cash' // Services are always purchased
-      }
-      // Note: Services are rarely in inventory, so we default to cash
-      
+      const finalServiceProvider =
+        selectedSupplier?.name ||
+        formData.service_provider?.trim() ||
+        "Proveedor por definir"
+
       // For flat-fee services (no individual services), create a single item
       let finalItems = services
       if (services.length === 0 && formData.total_amount && formData.total_amount > 0) {
@@ -447,18 +470,40 @@ export function DirectServiceForm({
         }]
       }
 
+      const submissionRoutingContext = buildPurchaseOrderRoutingContext({
+        poType: PurchaseOrderType.DIRECT_SERVICE,
+        workOrderId,
+        workOrderType: workOrder?.type ?? launchWorkOrderType,
+        totalAmount: formData.total_amount,
+        paymentMethod: formData.payment_method,
+        supplierPaymentTerms: selectedSupplier?.payment_terms,
+        quotationAmounts: quotations.map((quotation) => quotation.quoted_amount),
+        quotationPaymentTerms: quotations.map((quotation) => quotation.payment_terms),
+      })
+
+      const normalizedQuotations = normalizeQuotations(quotations)
+
       const request: CreatePurchaseOrderRequest = {
         work_order_id: workOrderId || undefined,
         po_type: PurchaseOrderType.DIRECT_SERVICE,
-        po_purpose: po_purpose,
-        supplier: selectedSupplier?.name || formData.service_provider!, // Use selected supplier name or fallback
+        po_purpose: submissionRoutingContext.poPurpose,
+        work_order_type: submissionRoutingContext.workOrderType || undefined,
+        approval_amount: submissionRoutingContext.approvalAmount,
+        approval_amount_source: submissionRoutingContext.approvalAmountSource,
+        payment_condition: submissionRoutingContext.paymentCondition,
+        supplier: finalServiceProvider,
         items: finalItems,
         total_amount: formData.total_amount!,
         payment_method: formData.payment_method,
-        service_provider: selectedSupplier?.name || formData.service_provider,
+        supplier_payment_terms: selectedSupplier?.payment_terms,
+        service_provider: finalServiceProvider,
         notes: formData.notes,
         purchase_date: formData.purchase_date,
         quotation_urls: quotationUrls.length > 0 ? quotationUrls : undefined,
+        quotation_amounts: normalizedQuotations.map((quotation) => quotation.quoted_amount),
+        quotation_payment_terms: normalizedQuotations
+          .map((quotation) => quotation.payment_terms)
+          .filter((paymentTerms): paymentTerms is string => Boolean(paymentTerms)),
         quotation_url: quotationUrl || undefined, // Legacy fallback
         max_payment_date: formData.payment_method === PaymentMethod.TRANSFER ? formData.max_payment_date : undefined
       }
@@ -466,66 +511,107 @@ export function DirectServiceForm({
       // Only add plant_id for standalone orders and when a plant is selected
       if (!workOrderId && selectedPlantId && selectedPlantId.trim() !== '') {
         request.plant_id = selectedPlantId
+      } else if (
+        workOrderId &&
+        workOrder &&
+        (workOrder.plant_id || workOrder.asset?.plant_id)
+      ) {
+        request.plant_id = workOrder.plant_id || workOrder.asset?.plant_id
       }
 
-      const result = await createPurchaseOrder(request)
+      const result = await createPurchaseOrder(request, {
+        suppressSuccessToast: normalizedQuotations.length > 0,
+      })
       
       if (result) {
         // Create quotations after PO is created
-        if (quotations.length > 0) {
+        if (normalizedQuotations.length > 0) {
           try {
             const supabase = createClient()
             const { data: { user } } = await supabase.auth.getUser()
             
-            if (user) {
-              // Upload files first, then create quotations
-              for (const quotation of quotations) {
-                let fileUrl = quotation.file_url
+            if (!user) {
+              throw new Error('No se pudo autenticar al usuario para guardar las cotizaciones.')
+            }
+
+            // Upload files first, then create quotations
+            for (const quotation of normalizedQuotations) {
+              let fileUrl = quotation.file_url
+              
+              // Upload file if provided
+              if (quotation.file && !fileUrl) {
+                const folderName = workOrderId || result.id
+                const sanitizedFileName = quotation.file.name.replace(/[^a-zA-Z0-9.-]/g, '_')
+                const fileName = `${folderName}/${Date.now()}_${sanitizedFileName}`
                 
-                // Upload file if provided
-                if (quotation.file && !fileUrl) {
-                  const folderName = workOrderId || result.id
-                  const sanitizedFileName = quotation.file.name.replace(/[^a-zA-Z0-9.-]/g, '_')
-                  const fileName = `${folderName}/${Date.now()}_${sanitizedFileName}`
-                  
-                  const { data: uploadData, error: uploadError } = await supabase.storage
-                    .from('quotations')
-                    .upload(fileName, quotation.file, { cacheControl: '3600', upsert: false })
-                  
-                  if (!uploadError && uploadData) {
-                    const { data: signedUrlData } = await supabase.storage
-                      .from('quotations')
-                      .createSignedUrl(uploadData.path, 3600 * 24 * 7)
-                    fileUrl = signedUrlData?.signedUrl
-                  }
+                const { data: uploadData, error: uploadError } = await supabase.storage
+                  .from('quotations')
+                  .upload(fileName, quotation.file, { cacheControl: '3600', upsert: false })
+                
+                if (uploadError || !uploadData) {
+                  throw new Error(uploadError?.message || 'No se pudo subir el archivo de cotización.')
                 }
-                
-                // Create quotation via API
-                const quotationRequest: any = {
-                  purchase_order_id: result.id,
-                  supplier_id: quotation.supplier_id,
-                  supplier_name: quotation.supplier_name,
-                  quoted_amount: quotation.quoted_amount,
-                  quotation_items: quotation.quotation_items || undefined, // Include item-level pricing
-                  delivery_days: quotation.delivery_days,
-                  payment_terms: quotation.payment_terms,
-                  validity_date: quotation.validity_date ? format(quotation.validity_date, 'yyyy-MM-dd') : undefined,
-                  notes: quotation.notes,
-                  file_url: fileUrl,
-                  file_name: quotation.file_name
+
+                const { data: signedUrlData, error: signedUrlError } = await supabase.storage
+                  .from('quotations')
+                  .createSignedUrl(uploadData.path, 3600 * 24 * 7)
+
+                if (signedUrlError || !signedUrlData?.signedUrl) {
+                  throw new Error(signedUrlError?.message || 'No se pudo generar la URL de la cotización.')
                 }
-                
-                await fetch('/api/purchase-orders/quotations', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify(quotationRequest)
-                })
+
+                fileUrl = signedUrlData.signedUrl
+              }
+              
+              // Create quotation via API
+              const quotationRequest = {
+                purchase_order_id: result.id,
+                supplier_id: quotation.supplier_id,
+                supplier_name: quotation.supplier_name,
+                quoted_amount: quotation.quoted_amount,
+                quotation_items: quotation.quotation_items || undefined, // Include item-level pricing
+                delivery_days: quotation.delivery_days,
+                payment_terms: quotation.payment_terms,
+                validity_date: quotation.validity_date ? format(quotation.validity_date, 'yyyy-MM-dd') : undefined,
+                notes: quotation.notes,
+                file_url: fileUrl,
+                file_name: quotation.file_name
+              }
+              
+              const response = await fetch('/api/purchase-orders/quotations', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(quotationRequest)
+              })
+
+              if (!response.ok) {
+                const errorData = await response.json().catch(() => ({ error: response.statusText }))
+                throw new Error(errorData.error || response.statusText || 'No se pudo guardar la cotización.')
               }
             }
           } catch (error) {
             console.error('Error creating quotations:', error)
-            toast.error('PO creada pero hubo error al guardar cotizaciones. Puede agregarlas manualmente.')
+            const message = error instanceof Error ? error.message : 'No se pudieron guardar las cotizaciones.'
+            let rollbackMessage = 'No se pudo verificar la reversión automática de la orden borrador.'
+            try {
+              const rollbackResponse = await fetch(`/api/purchase-orders/${result.id}`, {
+                method: 'DELETE',
+              })
+              const rollbackPayload = await rollbackResponse.json().catch(() => ({}))
+              rollbackMessage = rollbackResponse.ok
+                ? 'La orden borrador se revirtió automáticamente.'
+                : `No se pudo revertir automáticamente la orden borrador: ${rollbackPayload.error || rollbackResponse.statusText}`
+            } catch (rollbackError) {
+              console.error('Error rolling back draft purchase order:', rollbackError)
+            }
+            setFormErrors([
+              `No se completó la creación estricta de la OC ${result.order_id}. ${message} ${rollbackMessage}`,
+            ])
+            toast.error(`No se pudo completar la OC ${result.order_id} con sus cotizaciones.`)
+            return
           }
+
+          toast.success(`Servicio creado con ${normalizedQuotations.length} cotización${normalizedQuotations.length > 1 ? 'es' : ''}`)
         }
         
         if (onSuccess) {
@@ -653,7 +739,7 @@ export function DirectServiceForm({
             <QuotationFormForCreation
               quotations={quotations}
               onQuotationsChange={(newQuotations) => {
-                setQuotations(newQuotations)
+                setQuotations(normalizeQuotations(newQuotations))
                 setFormErrors(prev => prev.filter(error => !error.includes('cotización')))
               }}
               workOrderId={workOrderId}

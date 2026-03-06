@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
+import { loadActorContext, canUpdateUserAuthorization } from '@/lib/auth/server-authorization'
 
 export async function PATCH(request: NextRequest) {
   try {
@@ -14,35 +15,38 @@ export async function PATCH(request: NextRequest) {
       plant_id,
       position,
       notes
-    } = body
+    } = body as {
+      user_id?: string
+      role?: string
+      individual_limit?: number
+      business_unit_id?: string | null
+      plant_id?: string | null
+      position?: string
+      notes?: string
+    }
 
-    // Get current user and verify permissions
+    if (!user_id) {
+      return NextResponse.json({ error: 'user_id is required' }, { status: 400 })
+    }
+
     const { data: { user }, error: authError } = await supabase.auth.getUser()
     if (authError || !user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Get current user profile to check permissions
-    const { data: currentProfile, error: profileError } = await supabase
-      .from('profiles')
-      .select('role')
-      .eq('id', user.id)
-      .single()
-
-    if (profileError || !currentProfile) {
+    const actor = await loadActorContext(supabase, user.id)
+    if (!actor) {
       return NextResponse.json({ error: 'Profile not found' }, { status: 404 })
     }
 
-    // Only certain roles can update user authorization
-    const canUpdateRoles = ['GERENCIA_GENERAL', 'JEFE_UNIDAD_NEGOCIO', 'AREA_ADMINISTRATIVA']
-    if (!canUpdateRoles.includes(currentProfile.role)) {
+    if (!canUpdateUserAuthorization(actor)) {
       return NextResponse.json({ 
         error: 'No tienes permisos para actualizar autorizaciones de usuario' 
       }, { status: 403 })
     }
 
     // Update user profile
-    const updateData: any = {}
+    const updateData: Record<string, unknown> = {}
     if (role !== undefined) updateData.role = role
     if (individual_limit !== undefined) updateData.can_authorize_up_to = individual_limit
     if (business_unit_id !== undefined) updateData.business_unit_id = business_unit_id || null

@@ -10,8 +10,52 @@ import {
   ValidationResult,
   DirectPurchasesResponse,
   DirectServicesResponse,
-  SpecialOrdersResponse
+  SpecialOrdersResponse,
+  PurchaseOrderViabilityState,
 } from '@/types/purchase-orders'
+import {
+  buildPurchaseOrderRoutingContext,
+  type PurchaseOrderRoutingContext,
+} from '@/lib/purchase-orders/routing-context'
+import { buildServerRoutingContextInput } from '@/lib/purchase-orders/server-routing-seed'
+import {
+  resolveWorkflowPath,
+  getNextStepForAdministration,
+} from '@/lib/purchase-orders/workflow-policy'
+
+type PurchaseOrderRecord = {
+  status?: string | null
+  requires_quote?: boolean | null
+  total_amount?: string | number | null
+  store_location?: string | null
+  service_provider?: string | null
+  supplier?: string | null
+}
+
+type PurchaseOrderSummaryRow = {
+  count?: number | null
+  total_amount?: string | number | null
+  avg_amount?: string | number | null
+  quote_rate?: string | number | null
+  po_type?: string | null
+}
+
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message
+  }
+
+  if (
+    typeof error === 'object' &&
+    error !== null &&
+    'message' in error &&
+    typeof error.message === 'string'
+  ) {
+    return error.message
+  }
+
+  return ''
+}
 
 export class PurchaseOrderService {
   
@@ -25,24 +69,31 @@ export class PurchaseOrderService {
     po_purpose?: string
   ): Promise<QuoteValidationResponse> {
     const supabase = await createClient()
-    
+
     try {
       const { data, error } = await supabase
-        .rpc('requires_quotation', { 
-          p_po_type: po_type, 
+        .rpc('requires_quotation', {
+          p_po_type: po_type,
           p_amount: amount,
-          p_po_purpose: po_purpose ?? null
+          p_po_purpose: po_purpose ?? null,
         })
-      
+
       if (error) throw error
-      
-      const reason = this.getQuoteReason(po_type, amount, data)
-      const recommendation = this.getQuoteRecommendation(po_type, amount, data)
+
+      const requiresQuote = Boolean(data)
+      const reason = this.getQuoteReason(po_type, amount, requiresQuote)
+      const recommendation = this.getQuoteRecommendation(po_type, amount, requiresQuote)
       
       return { 
-        requires_quote: data,
-        reason,
-        threshold_amount: po_type === PurchaseOrderType.DIRECT_SERVICE ? 5000 : undefined,
+        requires_quote: requiresQuote,
+        reason: po_purpose === 'work_order_inventory'
+          ? 'Las órdenes surtidas totalmente desde inventario no requieren cotización'
+          : reason,
+        threshold_amount:
+          po_type === PurchaseOrderType.DIRECT_PURCHASE ||
+          po_type === PurchaseOrderType.DIRECT_SERVICE
+            ? 5000
+            : undefined,
         recommendation
       }
     } catch (error) {
@@ -63,48 +114,44 @@ export class PurchaseOrderService {
     try {
       // Generate unique order ID
       const order_id = await this.generateOrderId()
-      
-      // Determine PO purpose if not provided
-      // Default: work_order_cash if has WO, inventory_restock if standalone
-      const po_purpose = request.po_purpose || 
-        (request.work_order_id ? 'work_order_cash' : 'inventory_restock')
-      
-      // Check if quotation is required
-      // Note: requires_quote will be set by trigger, but we need to check it to determine initial status
-      const { data: quoteCheck } = await supabase
-        .rpc('requires_quotation', {
-          p_po_type: request.po_type,
-          p_amount: request.total_amount || 0
-        })
-      
-      const requiresQuote = quoteCheck || false
+      const normalizedRequest = await this.normalizeCreateRequest(request)
+      const quoteRequirement = await this.validateQuoteRequirement(
+        normalizedRequest.po_type,
+        normalizedRequest.approval_amount ?? 0,
+        normalizedRequest.po_purpose
+      )
       
       // Determine initial status:
       // - If requires quote: start in 'draft' (will advance after quotation selection)
       // - If doesn't require quote: go directly to 'pending_approval'
       // - Exception: inventory-only POs don't need approval, but still go to pending_approval for workflow
-      const initialStatus = requiresQuote ? 'draft' : 'pending_approval'
+      const initialStatus = quoteRequirement.requires_quote ? 'draft' : 'pending_approval'
       
       const { data, error } = await supabase
         .from('purchase_orders')
         .insert({
           order_id,
-          work_order_id: request.work_order_id,
-          plant_id: request.plant_id,
-          po_type: request.po_type,
-          po_purpose: po_purpose,
-          supplier: request.supplier,
-          total_amount: request.total_amount,
-          payment_method: request.payment_method,
-          store_location: request.store_location,
-          service_provider: request.service_provider,
-          items: request.items,
-          notes: request.notes,
-          quotation_url: request.quotation_url,
+          work_order_id: normalizedRequest.work_order_id,
+          plant_id: normalizedRequest.plant_id,
+          po_type: normalizedRequest.po_type,
+          po_purpose: normalizedRequest.po_purpose,
+          work_order_type: normalizedRequest.work_order_type,
+          supplier: normalizedRequest.supplier,
+          total_amount: normalizedRequest.total_amount,
+          approval_amount: normalizedRequest.approval_amount,
+          approval_amount_source: normalizedRequest.approval_amount_source,
+          payment_method: normalizedRequest.payment_method,
+          payment_condition: normalizedRequest.payment_condition,
+          viability_state: normalizedRequest.viability_state,
+          store_location: normalizedRequest.store_location,
+          service_provider: normalizedRequest.service_provider,
+          items: normalizedRequest.items,
+          notes: normalizedRequest.notes,
+          quotation_url: normalizedRequest.quotation_url,
           // Store quotation_urls as JSONB array; avoid stringifying to prevent scalar JSON issues
-          quotation_urls: Array.isArray(request.quotation_urls) ? request.quotation_urls : (request.quotation_urls ? [request.quotation_urls] : null),
-          purchase_date: request.purchase_date,
-          max_payment_date: request.max_payment_date,
+          quotation_urls: Array.isArray(normalizedRequest.quotation_urls) ? normalizedRequest.quotation_urls : (normalizedRequest.quotation_urls ? [normalizedRequest.quotation_urls] : null),
+          purchase_date: normalizedRequest.purchase_date,
+          max_payment_date: normalizedRequest.max_payment_date,
           requested_by: user_id,
           status: initialStatus,
           created_at: new Date().toISOString(),
@@ -118,7 +165,14 @@ export class PurchaseOrderService {
         throw new Error(`Failed to create purchase order: ${error.message}`)
       }
       
-      return data as EnhancedPurchaseOrder
+      return {
+        ...(data as EnhancedPurchaseOrder),
+        work_order_type: normalizedRequest.work_order_type,
+        viability_state: normalizedRequest.viability_state,
+        approval_amount: normalizedRequest.approval_amount,
+        approval_amount_source: normalizedRequest.approval_amount_source,
+        payment_condition: normalizedRequest.payment_condition,
+      }
       
     } catch (error) {
       console.error('Error in createTypedPurchaseOrder:', error)
@@ -160,7 +214,7 @@ export class PurchaseOrderService {
             }
             // Only check items when already selected (items come from selection)
             if (po.quotation_selection_status === 'selected') {
-              const items = po.items as any[]
+              const items = po.items as unknown[]
               if (!items || !Array.isArray(items) || items.length === 0) {
                 throw new Error(
                   'La orden de compra no tiene artículos. Los artículos deben ser agregados desde la cotización seleccionada.'
@@ -182,7 +236,7 @@ export class PurchaseOrderService {
       if (error) {
         // If attempting to approve and the only blocker is max_payment_date being in the past,
         // bypass that constraint per new business rule and directly approve.
-        const message = typeof (error as any)?.message === 'string' ? (error as any).message : ''
+        const message = getErrorMessage(error)
         if (new_status === 'approved' && message.includes('max_payment_date cannot be in the past')) {
           // Perform a safe direct update to approved, recording approver and timestamp
           const { error: updateError } = await supabase
@@ -202,51 +256,6 @@ export class PurchaseOrderService {
           }
 
           return { success: true, message: 'Orden aprobada ignorando restricción de fecha de pago (política actualizada)' }
-        }
-
-        // If DB rejects due to missing quotation but the PO actually has one, approve directly
-        if (
-          new_status === 'approved' && (
-            message.includes('Quotation required for this purchase order before approval') ||
-            message.includes('Cannot approve: quotation is required but not uploaded')
-          )
-        ) {
-          // Load quotation fields to double-check presence
-          const { data: po, error: poError } = await supabase
-            .from('purchase_orders')
-            .select('quotation_urls, quotation_url, requires_quote')
-            .eq('id', id)
-            .single()
-
-          if (!poError && po) {
-            const urlsValue: unknown = (po as any).quotation_urls
-            const hasArrayQuotes = Array.isArray(urlsValue)
-              ? (urlsValue as unknown[]).some(u => typeof u === 'string' && (u as string).trim() !== '')
-              : false
-            const legacyQuote = typeof (po as any).quotation_url === 'string' && (po as any).quotation_url.trim() !== ''
-            const hasAnyQuote = hasArrayQuotes || legacyQuote
-
-            // If we have any quotes, proceed with direct approval
-            if (hasAnyQuote) {
-              const { error: updateError2 } = await supabase
-                .from('purchase_orders')
-                .update({
-                  status: 'approved',
-                  approved_by: user_id,
-                  authorization_date: new Date().toISOString(),
-                  updated_at: new Date().toISOString()
-                })
-                .eq('id', id)
-                .select()
-                .single()
-
-              if (updateError2) {
-                throw updateError2
-              }
-
-              return { success: true, message: 'Orden aprobada: se detectó cotización existente aunque la validación la rechazó' }
-            }
-          }
         }
 
         // Surface original error for API route to map properly
@@ -271,7 +280,7 @@ export class PurchaseOrderService {
       // Get current PO with authorization info for 2-step approval display
       const { data: po, error: poError } = await supabase
         .from('purchase_orders')
-        .select('id, status, po_type, po_purpose, requires_quote, authorized_by, authorization_date, total_amount')
+        .select('id, status, po_type, po_purpose, work_order_type, requires_quote, authorized_by, authorization_date, total_amount, approval_amount, approval_amount_source, payment_condition, viability_state')
         .eq('id', id)
         .single()
       
@@ -293,6 +302,21 @@ export class PurchaseOrderService {
         console.error('Function parameters:', { p_current_status: po.status, p_po_type: po.po_type })
         throw new Error(`Failed to get valid next statuses: ${statusError.message}`)
       }
+
+      // App-layer workflow policy enrichment (Task 4: authoritative before SQL migration)
+      const approvalAmount = Number(po.approval_amount ?? po.total_amount ?? 0)
+      const policyInput = {
+        poPurpose: po.po_purpose ?? null,
+        workOrderType: po.work_order_type ?? null,
+        approvalAmount,
+        paymentCondition: po.payment_condition ?? null,
+      }
+      const workflowPolicy = resolveWorkflowPath(policyInput)
+      const nextStepForAdmin = getNextStepForAdministration(
+        policyInput,
+        po.status,
+        po.viability_state ?? null
+      )
       
       return {
         current_status: po.status,
@@ -306,8 +330,18 @@ export class PurchaseOrderService {
           authorized_by: po.authorized_by,
           authorization_date: po.authorization_date,
           total_amount: po.total_amount,
-          po_purpose: po.po_purpose || undefined
-        }
+          po_purpose: po.po_purpose || undefined,
+          work_order_type: po.work_order_type || null,
+          approval_amount: po.approval_amount ? Number(po.approval_amount) : null,
+          approval_amount_source: po.approval_amount_source || null,
+          payment_condition: po.payment_condition || null,
+          viability_state: po.viability_state || null,
+          workflow_policy: {
+            path: workflowPolicy.path,
+            requires_viability: workflowPolicy.requiresViability,
+            next_step_for_administration: nextStepForAdmin,
+          },
+        },
       }
     } catch (error) {
       console.error('Error getting workflow status:', error)
@@ -359,7 +393,7 @@ export class PurchaseOrderService {
       const analytics = this.analyzeDirectPurchases(orders || [])
       
       return {
-        orders: orders as any[],
+        orders: (orders || []) as EnhancedPurchaseOrder[],
         top_stores: analytics.topStores,
         avg_amount: analytics.avgAmount,
         completion_rate: analytics.completionRate
@@ -388,7 +422,7 @@ export class PurchaseOrderService {
       const analytics = this.analyzeDirectServices(orders || [])
       
       return {
-        orders: orders as any[],
+        orders: (orders || []) as EnhancedPurchaseOrder[],
         with_quotes: analytics.withQuotes,
         without_quotes: analytics.withoutQuotes,
         top_providers: analytics.topProviders,
@@ -418,7 +452,7 @@ export class PurchaseOrderService {
       const analytics = this.analyzeSpecialOrders(orders || [])
       
       return {
-        orders: orders as any[],
+        orders: (orders || []) as EnhancedPurchaseOrder[],
         avg_delivery_time: analytics.avgDeliveryTime,
         completion_stages: analytics.completionStages,
         top_agencies: analytics.topAgencies
@@ -430,10 +464,112 @@ export class PurchaseOrderService {
   }
   
   // ============== PRIVATE HELPER METHODS ==============
+
+  static async buildCreateRoutingContext(
+    request: CreatePurchaseOrderRequest
+  ): Promise<PurchaseOrderRoutingContext> {
+    const workOrderType = await this.resolveWorkOrderType(request)
+
+    return buildPurchaseOrderRoutingContext(
+      buildServerRoutingContextInput(request, workOrderType)
+    )
+  }
+
+  static async normalizeCreateRequest(
+    request: CreatePurchaseOrderRequest
+  ): Promise<CreatePurchaseOrderRequest> {
+    const requestWithResolvedPlant = await this.withResolvedPlantId(request)
+    const requestWithCompatibilityDefaults =
+      this.withCompatibilityDefaults(requestWithResolvedPlant)
+    const routingContext = await this.buildCreateRoutingContext(
+      requestWithCompatibilityDefaults
+    )
+
+    return {
+      ...requestWithCompatibilityDefaults,
+      po_purpose: routingContext.poPurpose,
+      work_order_type: routingContext.workOrderType ?? undefined,
+      approval_amount: routingContext.approvalAmount,
+      approval_amount_source: routingContext.approvalAmountSource,
+      payment_condition: routingContext.paymentCondition,
+      viability_state: routingContext.poPurpose === 'work_order_inventory'
+        ? PurchaseOrderViabilityState.NOT_REQUIRED
+        : PurchaseOrderViabilityState.PENDING,
+    }
+  }
+
+  private static withCompatibilityDefaults(
+    request: CreatePurchaseOrderRequest
+  ): CreatePurchaseOrderRequest {
+    if (request.po_type !== PurchaseOrderType.DIRECT_SERVICE) {
+      return request
+    }
+
+    const placeholderServiceProvider =
+      request.service_provider?.trim() ||
+      request.supplier?.trim() ||
+      'Proveedor por definir'
+
+    return {
+      ...request,
+      supplier: request.supplier?.trim() || placeholderServiceProvider,
+      service_provider: placeholderServiceProvider,
+    }
+  }
+
+  private static async withResolvedPlantId(
+    request: CreatePurchaseOrderRequest
+  ): Promise<CreatePurchaseOrderRequest> {
+    if (request.plant_id || !request.work_order_id) {
+      return request
+    }
+
+    const supabase = await createClient()
+    const { data: workOrder } = await supabase
+      .from('work_orders')
+      .select(`
+        plant_id,
+        asset:assets (
+          plant_id
+        )
+      `)
+      .eq('id', request.work_order_id)
+      .maybeSingle()
+
+    const plantId = workOrder?.plant_id || workOrder?.asset?.plant_id
+
+    if (!plantId) {
+      return request
+    }
+
+    return {
+      ...request,
+      plant_id: plantId,
+    }
+  }
+
+  private static async resolveWorkOrderType(
+    request: CreatePurchaseOrderRequest
+  ): Promise<CreatePurchaseOrderRequest['work_order_type']> {
+    if (!request.work_order_id) {
+      return request.work_order_type
+    }
+
+    const supabase = await createClient()
+    const { data } = await supabase
+      .from('work_orders')
+      .select('type')
+      .eq('id', request.work_order_id)
+      .maybeSingle()
+
+    return data?.type ?? undefined
+  }
   
   private static getQuoteReason(po_type: PurchaseOrderType, amount: number, requires: boolean): string {
     if (po_type === PurchaseOrderType.DIRECT_PURCHASE) {
-      return 'Las compras directas no requieren cotización'
+      return requires ? 
+        `Compra directa por $${amount.toLocaleString()} requiere cotización (>= $5,000)` :
+        `Compra directa por $${amount.toLocaleString()} no requiere cotización (< $5,000)`
     }
     
     if (po_type === PurchaseOrderType.DIRECT_SERVICE) {
@@ -451,7 +587,9 @@ export class PurchaseOrderService {
   
   private static getQuoteRecommendation(po_type: PurchaseOrderType, amount: number, requires: boolean): string {
     if (po_type === PurchaseOrderType.DIRECT_PURCHASE) {
-      return 'Proceda con la compra una vez aprobada. No necesita cotización previa.'
+      return requires ?
+        'Obtenga cotización del proveedor antes de solicitar aprobación.' :
+        'Puede proceder sin cotización. Solicite aprobación directamente.'
     }
     
     if (po_type === PurchaseOrderType.DIRECT_SERVICE) {
@@ -530,13 +668,13 @@ export class PurchaseOrderService {
     return `PO-${timestamp}-${random}`
   }
   
-  private static formatSummaryMetrics(data: any[]): any {
+  private static formatSummaryMetrics(data: PurchaseOrderSummaryRow[]) {
     // Format the summary data from po_type_summary view
     const summary = {
       total_orders: 0,
       total_amount: 0,
-      by_type: {} as any,
-      by_payment_method: {} as any
+      by_type: {} as PurchaseOrderMetrics['summary']['by_type'],
+      by_payment_method: {} as PurchaseOrderMetrics['summary']['by_payment_method']
     }
     
     // Process the data from the view
@@ -557,7 +695,7 @@ export class PurchaseOrderService {
     return summary
   }
   
-  private static analyzeDirectPurchases(orders: any[]) {
+  private static analyzeDirectPurchases(orders: PurchaseOrderRecord[]) {
     const storeAnalysis = orders.reduce((acc, order) => {
       const store = order.store_location || 'Sin especificar'
       if (!acc[store]) {
@@ -588,7 +726,7 @@ export class PurchaseOrderService {
     return { topStores, avgAmount, completionRate }
   }
   
-  private static analyzeDirectServices(orders: any[]) {
+  private static analyzeDirectServices(orders: PurchaseOrderRecord[]) {
     const withQuotes = orders.filter(order => order.requires_quote).length
     const withoutQuotes = orders.length - withQuotes
     
@@ -628,7 +766,7 @@ export class PurchaseOrderService {
     return { withQuotes, withoutQuotes, topProviders, thresholdAnalysis }
   }
   
-  private static analyzeSpecialOrders(orders: any[]) {
+  private static analyzeSpecialOrders(orders: PurchaseOrderRecord[]) {
     // Calculate average delivery time (placeholder logic)
     const avgDeliveryTime = 7 // days - would need actual delivery data
     
@@ -677,7 +815,6 @@ export class PurchaseOrderValidationService {
     
     if (!request.po_type) errors.push('po_type es requerido')
     if (!request.supplier) errors.push('supplier es requerido')
-    if (!request.total_amount || request.total_amount <= 0) errors.push('total_amount debe ser mayor a 0')
     
     // Validaciones específicas por tipo
     switch (request.po_type) {
@@ -689,14 +826,31 @@ export class PurchaseOrderValidationService {
         if (!request.service_provider) {
           errors.push('service_provider es requerido para servicios directos')
         }
+        if (!request.total_amount || request.total_amount <= 0) {
+          errors.push('total_amount debe ser mayor a 0')
+        }
         break
         
       case PurchaseOrderType.SPECIAL_ORDER:
-        // Special orders siempre requieren cotización - se valida en el frontend
+        // Quote-first draft path: allow total_amount=0 when quotation_amounts has values
+        const hasQuotationAmounts =
+          request.quotation_amounts && request.quotation_amounts.length > 0
+        const hasValidTotal =
+          request.total_amount != null && request.total_amount > 0
+        if (!hasQuotationAmounts && !hasValidTotal) {
+          errors.push('total_amount debe ser mayor a 0 o se requieren quotation_amounts para borradores quote-first')
+        }
         break
         
       default:
         errors.push('po_type debe ser direct_purchase, direct_service, o special_order')
+    }
+
+    if (
+      request.po_type === PurchaseOrderType.DIRECT_PURCHASE &&
+      (!request.total_amount || request.total_amount <= 0)
+    ) {
+      errors.push('total_amount debe ser mayor a 0')
     }
     
     // Validar payment_method si se proporciona

@@ -18,9 +18,10 @@ export async function POST(request: NextRequest) {
 
     // Parse request body
     const body: CreatePurchaseOrderRequest = await request.json()
+    const normalizedRequest = await PurchaseOrderService.normalizeCreateRequest(body)
     
     // Validate request
-    const validation = PurchaseOrderValidationService.validateCreateRequest(body)
+    const validation = PurchaseOrderValidationService.validateCreateRequest(normalizedRequest)
     if (!validation.isValid) {
       return NextResponse.json({ 
         success: false,
@@ -30,12 +31,12 @@ export async function POST(request: NextRequest) {
     }
     
     // Create purchase order with tipo específico
-    const purchaseOrder = await PurchaseOrderService.createTypedPurchaseOrder(body, user.id)
+    const purchaseOrder = await PurchaseOrderService.createTypedPurchaseOrder(normalizedRequest, user.id)
     
     return NextResponse.json({
       success: true,
       data: purchaseOrder,
-      message: `Orden de ${body.po_type.replace('_', ' ')} creada exitosamente y enviada a aprobación`
+      message: `Orden de ${normalizedRequest.po_type.replace('_', ' ')} creada exitosamente y enviada a aprobación`
     })
     
   } catch (error) {

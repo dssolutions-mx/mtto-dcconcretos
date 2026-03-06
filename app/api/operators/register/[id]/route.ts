@@ -1,31 +1,28 @@
 import { createClient } from '@/lib/supabase-server'
 import { NextRequest, NextResponse } from 'next/server'
 import { checkOperatorAssetConflicts } from '@/lib/utils/conflict-detection'
+import {
+  loadActorContext,
+  canUpdateOperators,
+  canViewOperatorsList,
+  checkScopeOverBusinessUnit,
+} from '@/lib/auth/server-authorization'
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const supabase = await createClient()
-    
-    // Get current user and verify permissions
+
     const { data: { user }, error: authError } = await supabase.auth.getUser()
     if (authError || !user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Check if user has permission to update operators
-    const { data: currentProfile, error: profileError } = await supabase
-      .from('profiles')
-      .select('role, plant_id, business_unit_id')
-      .eq('id', user.id)
-      .single()
-
-    if (profileError || !currentProfile) {
+    const actor = await loadActorContext(supabase, user.id)
+    if (!actor) {
       return NextResponse.json({ error: 'Profile not found' }, { status: 404 })
     }
 
-    // Only certain roles can update operators
-    const allowedRoles = ['GERENCIA_GENERAL', 'JEFE_UNIDAD_NEGOCIO', 'JEFE_PLANTA', 'ENCARGADO_MANTENIMIENTO']
-    if (!allowedRoles.includes(currentProfile.role)) {
+    if (!canUpdateOperators(actor)) {
       return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 })
     }
 
@@ -34,6 +31,11 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
     // Remove fields that shouldn't be updated directly
     const { id, created_at, created_by, updated_by, updated_at, resolve_conflicts, ...allowedFields } = updateData
+    void id
+    void created_at
+    void created_by
+    void updated_by
+    void updated_at
 
     // Check for conflicts if plant_id is being changed
     const newPlantId = allowedFields.plant_id
@@ -105,10 +107,10 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
           // Move assets that can be moved (check permissions)
           for (const asset of conflictCheck.assets_in_other_plants) {
-            // Check if user has permission to move this asset
-            const canMove = currentProfile.role === 'GERENCIA_GENERAL' || 
-                           (currentProfile.role === 'JEFE_UNIDAD_NEGOCIO' && 
-                            asset.business_unit_id === currentProfile.business_unit_id)
+            const canMove = checkScopeOverBusinessUnit(
+              actor,
+              asset.business_unit_id ?? null
+            )
 
             if (canMove) {
               const { error: moveAssetError } = await supabase
@@ -178,11 +180,19 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const supabase = await createClient()
-    
-    // Get current user and verify permissions
+
     const { data: { user }, error: authError } = await supabase.auth.getUser()
     if (authError || !user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const actor = await loadActorContext(supabase, user.id)
+    if (!actor) {
+      return NextResponse.json({ error: 'Profile not found' }, { status: 404 })
+    }
+
+    if (!canViewOperatorsList(actor)) {
+      return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 })
     }
 
     const { id: operatorId } = await params

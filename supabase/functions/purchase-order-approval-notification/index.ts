@@ -267,13 +267,22 @@ serve(async (req) => {
 
     const { data: po, error: poErr } = await supabase
       .from('purchase_orders')
-      .select('id, order_id, total_amount, supplier, po_type, po_purpose, plant_id, requested_by, work_order_id, notes, quotation_url')
+      .select('id, order_id, total_amount, approval_amount, supplier, po_type, po_purpose, work_order_type, plant_id, requested_by, work_order_id, notes, quotation_url')
       .eq('id', id)
       .single()
     if (poErr || !po) return new Response(JSON.stringify({ error: poErr?.message || 'PO not found' }), { status: 404 })
 
-    // Determine recipients based on organizational hierarchy and thresholds
-    const amount = Number(po.total_amount || 0)
+    // Workflow policy: GM escalation threshold 7000 MXN, path-based skip GM (Task 5)
+    const GM_ESCALATION_THRESHOLD_MXN = 7000
+    const amount = Number(po.approval_amount ?? po.total_amount ?? 0)
+    const purpose = (po.po_purpose || '').toString().trim().toLowerCase()
+    const workOrderType = (po.work_order_type || '').toString().trim().toLowerCase()
+    const woType = workOrderType === 'preventive' || workOrderType === 'preventivo' ? 'preventive' : workOrderType === 'corrective' || workOrderType === 'correctivo' ? 'corrective' : null
+    const aboveThreshold = amount >= GM_ESCALATION_THRESHOLD_MXN
+
+    const skipGM = (purpose === 'work_order_inventory' && woType === 'preventive') ||
+      ((purpose === 'work_order_cash' || purpose === 'mixed') && woType === 'preventive')
+    const requiresGMEscalation = !skipGM && aboveThreshold
 
     // Resolve plant id from PO directly or via work order / asset
     let resolvedPlantId: string | null = po.plant_id || null
@@ -366,12 +375,11 @@ serve(async (req) => {
     let recipients: Array<{ userId?: string; email: string; name: string }> = []
     
     if (hasFirstApproval) {
-      // BU already approved; check if amount exceeds BU limit → escalate to GM
-      // For now, use a simple threshold: if amount > 5000 and BU approved, notify GM
-      if (amount > 5000) {
+      // BU already approved; escalate to GM only when path requires it and amount >= 7000 (Task 5)
+      if (requiresGMEscalation) {
         recipients = gmRecipients
       } else {
-        // Amount within BU limit; no further escalation needed
+        // Path skips GM or amount < 7000; no further escalation needed
         recipients = []
       }
     } else {

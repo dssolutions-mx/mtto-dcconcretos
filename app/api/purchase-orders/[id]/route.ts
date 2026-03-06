@@ -260,3 +260,71 @@ export async function PATCH(
     }, { status: 500 })
   }
 } 
+
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await params
+    const supabase = await createClient()
+
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    if (authError || !user) {
+      return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
+    }
+
+    const { data: purchaseOrder, error: poError } = await supabase
+      .from('purchase_orders')
+      .select('id, status, requested_by, selected_quotation_id')
+      .eq('id', id)
+      .single()
+
+    if (poError || !purchaseOrder) {
+      return NextResponse.json({ error: 'Purchase order not found' }, { status: 404 })
+    }
+
+    if (purchaseOrder.requested_by !== user.id) {
+      return NextResponse.json({ error: 'No autorizado para eliminar esta orden' }, { status: 403 })
+    }
+
+    if (purchaseOrder.status !== 'draft' || purchaseOrder.selected_quotation_id) {
+      return NextResponse.json({
+        error: 'Solo se pueden revertir órdenes en borrador sin cotización seleccionada',
+      }, { status: 409 })
+    }
+
+    const { error: deleteQuotationsError } = await supabase
+      .from('purchase_order_quotations')
+      .delete()
+      .eq('purchase_order_id', id)
+
+    if (deleteQuotationsError) {
+      return NextResponse.json({
+        error: deleteQuotationsError.message || 'No se pudieron eliminar las cotizaciones relacionadas',
+      }, { status: 500 })
+    }
+
+    const { error: deletePoError } = await supabase
+      .from('purchase_orders')
+      .delete()
+      .eq('id', id)
+
+    if (deletePoError) {
+      return NextResponse.json({
+        error: deletePoError.message || 'No se pudo revertir la orden de compra',
+      }, { status: 500 })
+    }
+
+    return NextResponse.json({
+      success: true,
+      message: 'Purchase order reverted successfully',
+    })
+  } catch (error) {
+    console.error('Error in DELETE /api/purchase-orders/[id]:', error)
+    return NextResponse.json({
+      error: 'Internal server error',
+      details: error instanceof Error ? error.message : 'Unknown error',
+    }, { status: 500 })
+  }
+}
