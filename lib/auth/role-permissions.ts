@@ -354,11 +354,8 @@ export const ROLE_PERMISSIONS: Record<string, RoleConfig> = {
 }
 
 function resolveRoleConfig(userRole: string): RoleConfig | null {
-  if (isLegacyDbRole(userRole)) {
-    return LEGACY_ROLE_PERMISSIONS[userRole]
-  }
-
-  return ROLE_PERMISSIONS[userRole] ?? null
+  const legacy = isLegacyDbRole(userRole) ? LEGACY_ROLE_PERMISSIONS[userRole as LegacyDbRole] : undefined
+  return legacy ?? ROLE_PERMISSIONS[userRole] ?? null
 }
 
 function hasAccessLevel(
