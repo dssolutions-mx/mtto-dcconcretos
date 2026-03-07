@@ -49,9 +49,9 @@ function buildEmailHtml(
   viewUrl: string,
   quotations: any[] = [],
   approveByQuotation: QuotationAction[] = [],
-  opts: { isTest?: boolean; variantLabel?: string; hideSelectedState?: boolean; selectedByPersonName?: string } = {}
+  opts: { isTest?: boolean; variantLabel?: string; hideSelectedState?: boolean; selectedByPersonName?: string; approvalChainHtml?: string } = {}
 ) {
-  const { isTest = false, variantLabel = '', hideSelectedState = false, selectedByPersonName = '' } = opts
+  const { isTest = false, variantLabel = '', hideSelectedState = false, selectedByPersonName = '', approvalChainHtml = '' } = opts
   const totalAmount = Number(po.total_amount || 0)
   const poPurpose = po.po_purpose || 'work_order_cash'
   const cashImpact = (poPurpose === 'work_order_inventory' || poPurpose === 'inventory_restock') ? 0 : totalAmount
@@ -203,6 +203,12 @@ function buildEmailHtml(
       ${po.quotation_html || ''}
     </div>
     ${po.notes_html || ''}
+    ${approvalChainHtml ? `
+    <div class="alert-box" style="background:#ecfdf5; border-left-color:#0d9488; margin-bottom:16px;">
+      <div style="font-weight:600; margin-bottom:8px;">Cadena de aprobación</div>
+      ${approvalChainHtml}
+    </div>
+    ` : ''}
     <p>Estimado/a ${recipientName || 'autorizador'}, se solicita su autorización para la siguiente orden:</p>
     <p>
       ${approveByQuotation.length >= 2 ? (() => {
@@ -375,7 +381,7 @@ serve(async (req) => {
     }
 
     // Workflow stage detection: determine who to notify next
-    const { data: poFull } = await supabase.from('purchase_orders').select('authorized_by, viability_state').eq('id', po.id).maybeSingle()
+    const { data: poFull } = await supabase.from('purchase_orders').select('authorized_by, viability_state, viability_checked_by').eq('id', po.id).maybeSingle()
     const hasFirstApproval = !!poFull?.authorized_by
 
     // Resolve approver name for GM email (replace "Auto-seleccionada" with "Hector Morales la seleccionó")
@@ -383,6 +389,14 @@ serve(async (req) => {
     if (hasFirstApproval && poFull?.authorized_by) {
       const { data: approverProfile } = await supabase.from('profiles').select('nombre, apellido').eq('id', poFull.authorized_by).maybeSingle()
       if (approverProfile) approverName = `${(approverProfile as any).nombre || ''} ${(approverProfile as any).apellido || ''}`.trim()
+    }
+
+    // Resolve viability confirmer name for GM email (Administración)
+    let viabilityConfirmerName = ''
+    const vcb = (poFull as any)?.viability_checked_by
+    if (vcb) {
+      const { data: vcProfile } = await supabase.from('profiles').select('nombre, apellido').eq('id', vcb).maybeSingle()
+      if (vcProfile) viabilityConfirmerName = `${(vcProfile as any).nombre || ''} ${(vcProfile as any).apellido || ''}`.trim()
     }
 
     let recipients: Array<{ userId?: string; email: string; name: string }> = []
@@ -575,7 +589,16 @@ serve(async (req) => {
       const variantLabel = variant === 'bu' ? 'BU' : variant === 'gm' ? 'GM' : ''
       const hideSelectedState = useBuStyle || (!hasFirstApproval && !useGmStyle) // BU selecting: never show "selected"; GM sees selection after BU approved
       const selectedByPersonName = (useGmStyle || isGmEscalationWithMultipleQuotes) ? approverName : ''
-      const html = buildEmailHtml(htmlReadyPo, r.name, approveUrl, rejectUrl, viewUrl, pendingQuotations, finalApproveByQuotation, { isTest, variantLabel, hideSelectedState, selectedByPersonName })
+      // Build approval chain for GM email when applicable
+      let approvalChainHtml = ''
+      const isGmRecipient = useGmStyle || (!useBuStyle && !useGmStyle && gmRecipients.some((g) => recipients.some((rec) => rec.email === g.email)))
+      if (isGmRecipient && hasFirstApproval) {
+        const parts: string[] = []
+        if (approverName) parts.push(`<strong>Gerente de Mantenimiento</strong> (${approverName}) aprobó técnicamente esta orden.`)
+        if (viabilityConfirmerName) parts.push(`<strong>Administración</strong> (${viabilityConfirmerName}) confirmó la viabilidad financiera.`)
+        if (parts.length) approvalChainHtml = parts.join('<br/>')
+      }
+      const html = buildEmailHtml(htmlReadyPo, r.name, approveUrl, rejectUrl, viewUrl, pendingQuotations, finalApproveByQuotation, { isTest, variantLabel, hideSelectedState, selectedByPersonName, approvalChainHtml })
 
       // SendGrid: disable click tracking to avoid URL rewriting
       const response = await fetch('https://api.sendgrid.com/v3/mail/send', {

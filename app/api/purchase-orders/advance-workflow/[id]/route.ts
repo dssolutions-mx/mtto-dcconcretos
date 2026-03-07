@@ -235,6 +235,7 @@ export async function PUT(
           .from('purchase_orders')
           .update({
             viability_state: 'viable',
+            viability_checked_by: user.id,
             updated_at: new Date().toISOString(),
           })
           .eq('id', id)
