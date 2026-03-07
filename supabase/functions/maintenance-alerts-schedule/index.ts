@@ -249,16 +249,17 @@ async function getRecipients(supabase: any): Promise<Recipient[]> {
       }
     }
 
-    // Process Maintenance Managers (GERENTE_MANTENIMIENTO) - BU scoped
+    // Process Maintenance Managers (GERENTE_MANTENIMIENTO) - GLOBAL scope
+    // They oversee the entire company, so they receive all maintenance alerts.
     if (gerenteProfiles && gerenteProfiles.length > 0) {
       for (const profile of gerenteProfiles) {
         const user = usersById.get(profile.id)
         const email = user?.email || profile.email
-        if (email && profile.business_unit_id) {
+        if (email) {
           recipients.push({
             email: email,
             role: 'GERENTE_MANTENIMIENTO',
-            business_unit_id: profile.business_unit_id,
+            business_unit_id: null,
             name: `${profile.nombre || ''} ${profile.apellido || ''}`.trim() || 'Gerente de Mantenimiento'
           })
         }
@@ -757,7 +758,7 @@ serve(async (req) => {
     for (const recipient of recipients) {
       // Filter alerts based on recipient role
       let filteredAlerts = allAlerts
-      if ((recipient.role === 'JEFE_UNIDAD_NEGOCIO' || recipient.role === 'GERENTE_MANTENIMIENTO') && recipient.business_unit_id) {
+      if (recipient.role === 'JEFE_UNIDAD_NEGOCIO' && recipient.business_unit_id) {
         filteredAlerts = allAlerts.filter(a => a.business_unit_id === recipient.business_unit_id)
       }
       // GERENCIA_GENERAL gets all alerts (no filtering)

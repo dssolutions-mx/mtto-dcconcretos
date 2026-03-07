@@ -309,29 +309,20 @@ serve(async (req) => {
       }
     }
 
-    // Resolve Business Unit from plant, then BU manager via profiles (role-based assignment)
+    // GERENTE_MANTENIMIENTO has GLOBAL scope — they oversee the entire company,
+    // not just a single business unit. Query without BU filter.
     let technicalApproverEmail: string | null = null
     let technicalApproverName: string | null = null
-    if (resolvedPlantId) {
-      const { data: plant } = await supabase
-        .from('plants')
-        .select('id, business_unit_id')
-        .eq('id', resolvedPlantId)
-        .maybeSingle()
-      const buId = plant?.business_unit_id as string | undefined
-      if (buId) {
-        // Pick GERENTE_MANTENIMIENTO as technical approver per POL-OPE-001/002 (COORDINADOR only creates, not approves)
-        const { data: technicalApprovers } = await supabase
-          .from('profiles')
-          .select('email, nombre, apellido')
-          .or('role.eq.GERENTE_MANTENIMIENTO,business_role.eq.GERENTE_MANTENIMIENTO')
-          .eq('business_unit_id', buId)
-          .eq('status', 'active')
-        const m = (technicalApprovers || []).find((p) => !!p.email)
-        if (m?.email) {
-          technicalApproverEmail = m.email
-          technicalApproverName = `${(m as any).nombre || ''} ${(m as any).apellido || ''}`.trim()
-        }
+    {
+      const { data: technicalApprovers } = await supabase
+        .from('profiles')
+        .select('email, nombre, apellido')
+        .or('role.eq.GERENTE_MANTENIMIENTO,business_role.eq.GERENTE_MANTENIMIENTO')
+        .eq('status', 'active')
+      const m = (technicalApprovers || []).find((p: any) => !!p.email)
+      if (m?.email) {
+        technicalApproverEmail = m.email
+        technicalApproverName = `${(m as any).nombre || ''} ${(m as any).apellido || ''}`.trim()
       }
     }
 

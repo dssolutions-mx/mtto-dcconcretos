@@ -128,9 +128,9 @@ export const BUSINESS_ROLE_SCOPE: Record<FutureBusinessRole, RoleScopeMetadata> 
     description: 'Autoridad transversal con aprobación final y escalaciones globales.',
   },
   GERENTE_MANTENIMIENTO: {
-    scope: 'business_unit',
-    label: 'Unidad de negocio',
-    description: 'Aprobador técnico de Nivel 1 para todas las OCs. Gestiona el padrón de proveedores y tiene visibilidad de toda la red de activos.',
+    scope: 'global',
+    label: 'Global',
+    description: 'Aprobador técnico de Nivel 1 para todas las OCs. Visibilidad y autoridad global sobre toda la red de activos y plantas.',
   },
   JEFE_UNIDAD_NEGOCIO: {
     scope: 'business_unit',

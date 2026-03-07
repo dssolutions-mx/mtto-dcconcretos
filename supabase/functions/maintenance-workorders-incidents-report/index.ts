@@ -127,16 +127,17 @@ async function getRecipients(supabase: any): Promise<Recipient[]> {
       }
     }
     
-    // Process Maintenance Managers (GERENTE_MANTENIMIENTO) - BU scoped
+    // Process Maintenance Managers (GERENTE_MANTENIMIENTO) - GLOBAL scope
+    // They oversee the entire company, not a single BU, so they receive all data.
     if (gerenteProfiles && gerenteProfiles.length > 0) {
       for (const profile of gerenteProfiles) {
         const user = usersById.get(profile.id)
         const email = user?.email || profile.email
-        if (email && profile.business_unit_id) {
+        if (email) {
           recipients.push({
             email: email,
             role: 'GERENTE_MANTENIMIENTO',
-            business_unit_id: profile.business_unit_id,
+            business_unit_id: null,
             plant_id: null,
             name: `${profile.nombre || ''} ${profile.apellido || ''}`.trim() || 'Gerente de Mantenimiento'
           })
@@ -210,24 +211,12 @@ function filterReportByRecipient(report: any, recipient: Recipient): any {
       (po: any) => woIds.has(po.work_order_id)
     )
   }
-  // GERENTE_MANTENIMIENTO gets their business unit
-  else if (recipient.role === 'GERENTE_MANTENIMIENTO' && recipient.business_unit_id) {
-    filtered.work_orders_created = (report.work_orders_created || []).filter(
-      (wo: any) => wo.business_unit_id === recipient.business_unit_id
-    )
-    filtered.work_orders_completed = (report.work_orders_completed || []).filter(
-      (wo: any) => wo.business_unit_id === recipient.business_unit_id
-    )
-    filtered.incidents_created = (report.incidents_created || []).filter(
-      (inc: any) => inc.business_unit_id === recipient.business_unit_id
-    )
-    const woIds = new Set([
-      ...filtered.work_orders_created.map((wo: any) => wo.id),
-      ...filtered.work_orders_completed.map((wo: any) => wo.id)
-    ])
-    filtered.purchase_orders_pending = (report.purchase_orders_pending || []).filter(
-      (po: any) => woIds.has(po.work_order_id)
-    )
+  // GERENTE_MANTENIMIENTO has global scope — gets all data (same as GERENCIA_GENERAL)
+  else if (recipient.role === 'GERENTE_MANTENIMIENTO') {
+    filtered.work_orders_created = report.work_orders_created || []
+    filtered.work_orders_completed = report.work_orders_completed || []
+    filtered.incidents_created = report.incidents_created || []
+    filtered.purchase_orders_pending = report.purchase_orders_pending || []
   }
   // COORDINADOR_MANTENIMIENTO (and legacy JEFE_PLANTA) gets only their plant
   else if ((recipient.role === 'COORDINADOR_MANTENIMIENTO' || recipient.role === 'JEFE_PLANTA') && recipient.plant_id) {

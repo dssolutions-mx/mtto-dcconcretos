@@ -118,7 +118,7 @@ function getRoleScopeFromBusinessRole(
 ): RoleScope {
   const scopeMap: Record<FutureBusinessRole, RoleScope> = {
     GERENCIA_GENERAL: 'global',
-    GERENTE_MANTENIMIENTO: 'business_unit',
+    GERENTE_MANTENIMIENTO: 'global',
     JEFE_UNIDAD_NEGOCIO: 'business_unit',
     COORDINADOR_MANTENIMIENTO: 'plant',
     AREA_ADMINISTRATIVA: 'global',
