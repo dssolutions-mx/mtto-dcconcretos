@@ -192,7 +192,7 @@ export function PurchaseOrderDetailsMobile({
             <div className="flex items-start space-x-3">
               <FileCheck className="h-4 w-4 text-blue-600 mt-0.5" />
               <div className="flex-1">
-                <p className="text-xs font-medium text-muted-foreground">Autorizado por (Jefe de Unidad)</p>
+                <p className="text-xs font-medium text-muted-foreground">Autorizado por (Gerente de Mantenimiento)</p>
                 <p className="text-sm">{authorizerName}</p>
               </div>
             </div>

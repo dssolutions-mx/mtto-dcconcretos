@@ -358,7 +358,7 @@ async function PurchaseOrderDetailsContent({ id }: { id: string }) {
       {order?.status === 'pending_approval' && order?.authorized_by && (
         <Alert className="mb-6 border-blue-200 bg-blue-50">
           <AlertDescription>
-            Esta orden ya fue autorizada por el Jefe de Unidad y se ha escalado a Gerencia General para aprobación final.
+            Esta orden ya fue autorizada por el Gerente de Mantenimiento y se ha escalado a Gerencia General para aprobación final.
           </AlertDescription>
         </Alert>
       )}
@@ -513,7 +513,7 @@ async function PurchaseOrderDetailsContent({ id }: { id: string }) {
 
             {authorizerName && (
               <div>
-                <dt className="font-medium text-sm text-muted-foreground">Autorizado por (Jefe de Unidad)</dt>
+                <dt className="font-medium text-sm text-muted-foreground">Autorizado por (Gerente de Mantenimiento)</dt>
                 <dd className="mt-1">{authorizerName}</dd>
               </div>
             )}
