@@ -206,13 +206,10 @@ export function SupplierSelector({
     return (
       <Card
         key={supplier.id}
-        className={`transition-all ${
-          certified
-            ? 'cursor-pointer hover:shadow-md'
-            : 'opacity-60 cursor-not-allowed'
-        } ${selectedSupplier?.id === supplier.id ? 'ring-2 ring-primary' : ''}`}
-        onClick={() => certified && handleSupplierSelect(supplier)}
-        title={!certified ? 'Este proveedor no está certificado. Completa su RFC y datos bancarios para certificarlo.' : undefined}
+        className={`transition-all cursor-pointer hover:shadow-md ${
+          selectedSupplier?.id === supplier.id ? 'ring-2 ring-primary' : ''
+        }`}
+        onClick={() => handleSupplierSelect(supplier)}
       >
         <CardContent className="p-4">
           <div className="flex items-start justify-between">
@@ -259,7 +256,7 @@ export function SupplierSelector({
 
               {!certified && (
                 <p className="text-xs text-yellow-700 bg-yellow-50 rounded px-2 py-1 mt-1">
-                  Requiere RFC y datos bancarios para ser seleccionable en OCs
+                  Completa RFC y datos bancarios para certificar al proveedor
                 </p>
               )}
 
@@ -471,7 +468,7 @@ export function SupplierSelector({
               <h4 className="font-medium text-sm">
                 Proveedores Disponibles
                 <span className="text-xs font-normal text-muted-foreground ml-2">
-                  (solo certificados son seleccionables)
+                  (certificados ordenados primero)
                 </span>
               </h4>
               {loading ? (
