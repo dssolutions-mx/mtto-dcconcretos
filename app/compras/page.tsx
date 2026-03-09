@@ -1,11 +1,10 @@
 "use client"
 
-import type { Metadata } from "next"
 import Link from "next/link"
+import dynamic from "next/dynamic"
 import { Suspense, useState, useEffect } from "react"
 import { useSearchParams } from "next/navigation"
 import { useToast } from "@/hooks/use-toast"
-import { PurchaseOrdersList } from "@/components/work-orders/purchase-orders-list"
 import { DashboardHeader } from "@/components/dashboard/dashboard-header"
 import { DashboardShell } from "@/components/dashboard/dashboard-shell"
 import { Button } from "@/components/ui/button"
@@ -13,30 +12,53 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge"
 import { Plus, Store, Wrench, Building2, Sparkles, Loader2, Receipt, DollarSign, Shield, CheckCircle, AlertTriangle } from "lucide-react"
 import { useAuthZustand } from "@/hooks/use-auth-zustand"
+import { useIsMobile } from "@/hooks/use-mobile"
 import { formatCurrency } from "@/lib/utils"
 import { AccountsPayableSummaryCard } from "@/components/purchase-orders/AccountsPayableSummaryCard"
+import { ComprasMobileInfoDrawer } from "@/components/compras/ComprasMobileInfoDrawer"
 
-// export const metadata: Metadata = {
-//   title: "Órdenes de Compra | Sistema de Gestión de Mantenimiento",
-//   description: "Lista y gestión de órdenes de compra",
-// }
-
-function PurchaseOrdersListFallback() {
-  return (
-    <div className="flex justify-center items-center h-64">
-      <div className="flex items-center space-x-2">
-        <Loader2 className="h-6 w-6 animate-spin" />
-        <span>Cargando órdenes de compra...</span>
+const PurchaseOrdersList = dynamic(
+  () => import("@/components/work-orders/purchase-orders-list").then(m => ({ default: m.PurchaseOrdersList })),
+  {
+    loading: () => (
+      <div className="flex justify-center items-center h-64">
+        <div className="flex items-center space-x-2">
+          <Loader2 className="h-6 w-6 animate-spin" />
+          <span>Cargando órdenes de compra...</span>
+        </div>
       </div>
-    </div>
-  )
+    ),
+    ssr: false,
+  }
+)
+
+/** Handles toast from ?action=approved|rejected|error - isolated so main page doesn't suspend on useSearchParams */
+function ComprasToastFromParams() {
+  const searchParams = useSearchParams()
+  const { toast } = useToast()
+  useEffect(() => {
+    const action = searchParams.get('action')
+    const poId = searchParams.get('po')
+    if (!action) return
+    if (action === 'approved') {
+      toast({ title: 'Orden aprobada', description: `La orden de compra fue aprobada correctamente${poId ? ` (${poId})` : ''}.` })
+    } else if (action === 'rejected') {
+      toast({ title: 'Orden rechazada', description: `La orden de compra fue rechazada${poId ? ` (${poId})` : ''}.`, variant: 'destructive' })
+    } else if (action === 'error') {
+      toast({ title: 'Error en acción', description: 'No fue posible procesar la acción solicitada.', variant: 'destructive' })
+    }
+  }, [searchParams, toast])
+  return null
 }
 
 export default function PurchaseOrdersPage() {
   return (
-    <Suspense fallback={<div className="p-6">Cargando órdenes de compra...</div>}>
+    <>
+      <Suspense fallback={null}>
+        <ComprasToastFromParams />
+      </Suspense>
       <PurchaseOrdersPageContent />
-    </Suspense>
+    </>
   )
 }
 
@@ -44,66 +66,48 @@ function PurchaseOrdersPageContent() {
   const { profile, hasCreateAccess, authorizationLimit, refreshProfile } = useAuthZustand()
   const [effectiveAuthLimit, setEffectiveAuthLimit] = useState<number>(0)
   const [isLoadingAuth, setIsLoadingAuth] = useState(true)
-  const searchParams = useSearchParams()
-  const { toast } = useToast()
 
-  // Load effective authorization limit from the same source as authorization page
+  // Load effective authorization limit via single-user API (fast, no full org fetch)
   useEffect(() => {
     const loadEffectiveAuthorization = async () => {
       if (!profile?.id) return
-      
+
       try {
-        // Hacer consulta directa a la vista que sabemos funciona correctamente
-        const response = await fetch('/api/authorization/summary')
+        const response = await fetch(`/api/authorization/summary?user_id=${profile.id}`)
         const data = await response.json()
-        
-        // Buscar el usuario actual en la respuesta organizacional
-        let userFound = false
-        if (data.organization_summary) {
-          for (const businessUnit of data.organization_summary) {
-            for (const plant of businessUnit.plants) {
-              const user = plant.users.find((u: any) => u.user_id === profile.id)
-              if (user) {
-                const apiLimit = parseFloat(user.effective_global_authorization || 0)
-                setEffectiveAuthLimit(apiLimit)
-                userFound = true
-                console.log('✅ Found user effective limit:', user.effective_global_authorization)
-                
-                // 🔄 AUTO-REFRESH: Detectar inconsistencias de límite O rol
-                const profileLimit = profile.can_authorize_up_to || 0
-                const limitInconsistent = Math.abs(profileLimit - apiLimit) > 0.01 // Diferencia mayor a 1 centavo
-                const roleInconsistent = user.role !== profile.role
-                
-                if (limitInconsistent || roleInconsistent) {
-                  console.log(`🔄 Inconsistencias detectadas:`, {
-                    limitInconsistent: limitInconsistent ? `Perfil=${profileLimit}, API=${apiLimit}` : false,
-                    roleInconsistent: roleInconsistent ? `Perfil=${profile.role}, API=${user.role}` : false,
-                    triggeringAutoRefresh: true
-                  })
-                  
-                  try {
-                    if (typeof refreshProfile === 'function') {
-                      await refreshProfile()
-                      console.log('✅ Perfil refrescado exitosamente')
-                    }
-                  } catch (refreshError) {
-                    console.error('❌ Error refrescando perfil:', refreshError)
-                  }
-                }
-                break
-              }
-            }
-            if (userFound) break
-          }
+
+        if (!response.ok) {
+          setEffectiveAuthLimit(profile.can_authorize_up_to || 0)
+          return
         }
-        
-        if (!userFound) {
-          console.log('⚠️ User not found in organization summary, using profile limit')
+
+        // Single-user path returns user_summary + authorization_scopes
+        const apiLimit =
+          data.user_summary?.effective_global_authorization != null
+            ? parseFloat(data.user_summary.effective_global_authorization)
+            : data.authorization_scopes?.find((s: { scope_type: string }) => s.scope_type === 'global')
+                ?.effective_authorization ?? 0
+
+        if (apiLimit > 0 || data.user_summary != null) {
+          setEffectiveAuthLimit(apiLimit)
+
+          // Auto-refresh profile if API limit differs from cached profile
+          const profileLimit = profile.can_authorize_up_to || 0
+          const limitInconsistent = Math.abs(profileLimit - apiLimit) > 0.01
+          const roleInconsistent =
+            data.user_summary?.role != null && data.user_summary.role !== profile.role
+
+          if ((limitInconsistent || roleInconsistent) && typeof refreshProfile === 'function') {
+            try {
+              await refreshProfile()
+            } catch {
+              /* ignore */
+            }
+          }
+        } else {
           setEffectiveAuthLimit(profile.can_authorize_up_to || 0)
         }
-      } catch (error) {
-        console.error('Error loading effective authorization:', error)
-        // Fallback to profile limit
+      } catch {
         setEffectiveAuthLimit(profile.can_authorize_up_to || 0)
       } finally {
         setIsLoadingAuth(false)
@@ -111,7 +115,7 @@ function PurchaseOrdersPageContent() {
     }
 
     loadEffectiveAuthorization()
-  }, [profile])
+  }, [profile, refreshProfile])
 
   const displayLimit = effectiveAuthLimit || authorizationLimit
   
@@ -134,23 +138,48 @@ function PurchaseOrdersPageContent() {
   }
   
   const userCapabilities = getUserCapabilities()
-  
-  // Feedback banner/toast for direct actions from email links
-  useEffect(() => {
-    const action = searchParams.get('action')
-    const poId = searchParams.get('po')
-    if (!action) return
-    if (action === 'approved') {
-      toast({ title: 'Orden aprobada', description: `La orden de compra fue aprobada correctamente${poId ? ` (${poId})` : ''}.` })
-    } else if (action === 'rejected') {
-      toast({ title: 'Orden rechazada', description: `La orden de compra fue rechazada${poId ? ` (${poId})` : ''}.`, variant: 'destructive' })
-    } else if (action === 'error') {
-      toast({ title: 'Error en acción', description: 'No fue posible procesar la acción solicitada.', variant: 'destructive' })
-    }
-    // We do not mutate URL here to avoid extra rerenders; navigation can clear params if desired
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-  
+  const isMobile = useIsMobile()
+  const isAdmin = profile && (profile.role === 'GERENCIA_GENERAL' || profile.role === 'AREA_ADMINISTRATIVA')
+
+  if (isMobile) {
+    return (
+      <DashboardShell>
+        {/* Mobile: Compact sticky header */}
+        <div className="sticky top-0 z-10 -mx-4 px-4 py-3 mb-4 bg-background/95 backdrop-blur border-b">
+          <div className="flex items-center justify-between gap-2">
+            <div className="min-w-0 flex-1">
+              <h1 className="text-lg font-semibold truncate">Órdenes de Compra</h1>
+              <p className="text-xs text-muted-foreground truncate">
+                Gestiona las órdenes generadas a partir de órdenes de trabajo
+              </p>
+            </div>
+            <ComprasMobileInfoDrawer
+              profile={profile}
+              userCapabilities={userCapabilities}
+              isLoadingAuth={isLoadingAuth}
+              canCreateOrders={canCreateOrders ?? false}
+              isAdmin={!!isAdmin}
+            />
+          </div>
+        </div>
+
+        {/* Mobile: PO list first (above the fold) */}
+        <PurchaseOrdersList effectiveAuthLimitFromParent={displayLimit} isLoadingAuthFromParent={isLoadingAuth} />
+
+        {/* Mobile: FAB for Nueva Orden */}
+        {canCreateOrders && (
+          <Link
+            href="/compras/crear-tipificada"
+            className="fixed z-50 flex items-center justify-center w-14 h-14 rounded-full bg-sky-700 text-white shadow-lg hover:bg-sky-800 transition-colors duration-200 cursor-pointer min-h-[56px] min-w-[56px] right-4 bottom-[max(1.5rem,env(safe-area-inset-bottom))]"
+            aria-label="Nueva Orden Tipificada"
+          >
+            <Plus className="h-6 w-6" />
+          </Link>
+        )}
+      </DashboardShell>
+    )
+  }
+
   return (
     <DashboardShell>
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-6">
@@ -160,7 +189,6 @@ function PurchaseOrdersPageContent() {
           id="compras-header"
         />
         <div className="flex flex-col sm:flex-row sm:flex-wrap gap-2 w-full md:w-auto">
-          {/* ✅ Solo mostrar botón de comprobantes si tiene acceso de lectura */}
           {profile && hasCreateAccess('purchases') && (
             <Link href="/compras/comprobantes">
               <Button variant="outline" className="w-full sm:w-auto">
@@ -169,8 +197,6 @@ function PurchaseOrdersPageContent() {
               </Button>
             </Link>
           )}
-          
-          {/* ✅ NUEVO: Botón de Cuentas por Pagar para administradores */}
           {profile && (profile.role === 'GERENCIA_GENERAL' || profile.role === 'AREA_ADMINISTRATIVA') && (
             <Link href="/compras/cuentas-por-pagar">
               <Button variant="outline" className="w-full sm:w-auto bg-orange-50 border-orange-200 text-orange-700 hover:bg-orange-100">
@@ -179,8 +205,6 @@ function PurchaseOrdersPageContent() {
               </Button>
             </Link>
           )}
-          
-          {/* ✅ NUEVO SISTEMA: Solo mostrar si puede crear órdenes */}
           {canCreateOrders && (
             <Link href="/compras/crear-tipificada">
               <Button className="w-full sm:w-auto">
@@ -192,7 +216,6 @@ function PurchaseOrdersPageContent() {
         </div>
       </div>
 
-      {/* ✅ NUEVO: Información de Capacidades del Usuario */}
       {profile && (
         <Card className="mb-6 border-blue-200 bg-gradient-to-r from-blue-50 to-indigo-50">
           <CardHeader className="pb-3">
@@ -272,7 +295,6 @@ function PurchaseOrdersPageContent() {
               </div>
             </div>
             
-            {/* Mensaje informativo basado en las capacidades */}
             <div className="mt-4 p-3 bg-blue-100 rounded-lg">
               <p className="text-sm text-blue-800">
                 {userCapabilities.canCreate && userCapabilities.canApprove && (
@@ -293,12 +315,10 @@ function PurchaseOrdersPageContent() {
         </Card>
       )}
 
-      {/* ✅ NUEVO: Cuentas por Pagar Summary para Administradores */}
       {profile && (profile.role === 'GERENCIA_GENERAL' || profile.role === 'AREA_ADMINISTRATIVA') && (
         <AccountsPayableSummaryCard />
       )}
 
-      {/* Enhanced Purchase Order System Banner */}
       <Card className="mb-6 bg-gradient-to-r from-blue-50 to-purple-50 border-blue-200">
         <CardHeader>
           <div className="flex items-center justify-between">
@@ -364,9 +384,7 @@ function PurchaseOrdersPageContent() {
         </CardContent>
       </Card>
 
-      <Suspense fallback={<PurchaseOrdersListFallback />}>
-        <PurchaseOrdersList />
-      </Suspense>
+      <PurchaseOrdersList effectiveAuthLimitFromParent={displayLimit} isLoadingAuthFromParent={isLoadingAuth} />
     </DashboardShell>
   )
 } 

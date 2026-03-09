@@ -178,55 +178,37 @@ export function WorkflowStatusDisplay({
     }
   }, [workflowStatus, purchaseOrderId])
 
-  // Load effective authorization limit - same logic as compras page
+  // Load effective authorization limit via single-user API
   useEffect(() => {
     const loadEffectiveAuthorization = async () => {
       if (!profile?.id) return
-      
+
       try {
-        const response = await fetch('/api/authorization/summary')
+        const response = await fetch(`/api/authorization/summary?user_id=${profile.id}`)
         const data = await response.json()
-        
-        let userFound = false
-        let authSummaryUser = null
-        
-        if (data.organization_summary) {
-          for (const businessUnit of data.organization_summary) {
-            for (const plant of businessUnit.plants) {
-              const user = plant.users.find((u: any) => u.user_id === profile.id)
-              if (user) {
-                authSummaryUser = user
-                setEffectiveAuthLimit(parseFloat(user.effective_global_authorization || 0))
-                userFound = true
-                break
-              }
-            }
-            if (userFound) break
-          }
-        }
-        
-        if (!userFound) {
+
+        if (!response.ok) {
           setEffectiveAuthLimit(profile.can_authorize_up_to || 0)
+          return
         }
 
-        // 🔄 AUTO-REFRESH: Detectar inconsistencias de rol y refrescar automáticamente
-        if (authSummaryUser && authSummaryUser.role !== profile.role) {
-          console.log('🔄 Inconsistencia de rol detectada en workflow:', {
-            profileRole: profile.role,
-            authSummaryRole: authSummaryUser.role,
-            triggeringAutoRefresh: true
-          })
-          
-          // Auto-refresh del perfil sin mostrar loading al usuario
-          try {
-            await refreshProfile()
-            console.log('✅ Auto-refresh del perfil completado en workflow')
-          } catch (error) {
-            console.error('❌ Error en auto-refresh del perfil:', error)
+        const apiLimit =
+          data.user_summary?.effective_global_authorization != null
+            ? parseFloat(data.user_summary.effective_global_authorization)
+            : data.authorization_scopes?.find((s: { scope_type: string }) => s.scope_type === 'global')
+                ?.effective_authorization ?? 0
+
+        if (apiLimit > 0 || data.user_summary != null) {
+          setEffectiveAuthLimit(apiLimit)
+          if (data.user_summary?.role != null && data.user_summary.role !== profile.role && typeof refreshProfile === 'function') {
+            try {
+              await refreshProfile()
+            } catch { /* ignore */ }
           }
+        } else {
+          setEffectiveAuthLimit(profile.can_authorize_up_to || 0)
         }
-      } catch (error) {
-        console.error('Error loading effective authorization in workflow:', error)
+      } catch {
         setEffectiveAuthLimit(profile.can_authorize_up_to || 0)
       } finally {
         setIsLoadingAuth(false)

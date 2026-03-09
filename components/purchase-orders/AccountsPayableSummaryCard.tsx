@@ -7,7 +7,8 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { AlertTriangle, Calendar, Clock, DollarSign, ExternalLink, RefreshCw } from "lucide-react"
 import { AccountsPayableSummary } from "@/types/purchase-orders"
-import { formatCurrency } from "@/lib/utils"
+import { formatCurrency, cn } from "@/lib/utils"
+import { useIsMobile } from "@/hooks/use-mobile"
 
 export function AccountsPayableSummaryCard() {
   const [summary, setSummary] = useState<AccountsPayableSummary | null>(null)
@@ -51,6 +52,42 @@ export function AccountsPayableSummaryCard() {
 
   const hasUrgentItems = summary.total_overdue > 0 || summary.items_due_today > 0
   const totalPendingAmount = summary.total_amount_pending + summary.total_amount_overdue
+  const isMobile = useIsMobile()
+
+  if (isMobile) {
+    return (
+      <Card className={`mb-6 ${hasUrgentItems ? 'border-red-200 bg-red-50/50' : 'border-orange-200 bg-orange-50/50'}`}>
+        <CardContent className="p-4">
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-4 flex-1 min-w-0">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className={cn("h-5 w-5 shrink-0", summary.total_overdue > 0 ? "text-red-600" : "text-slate-400")} />
+                <span className="text-sm font-semibold text-slate-900">{summary.total_overdue} vencidos</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Clock className={cn("h-5 w-5 shrink-0", summary.items_due_today > 0 ? "text-orange-600" : "text-slate-400")} />
+                <span className="text-sm font-semibold text-slate-900">{summary.items_due_today} hoy</span>
+              </div>
+            </div>
+            <Link href="/compras/cuentas-por-pagar">
+              <Button size="sm" variant="outline" className="shrink-0 min-h-[44px] text-sky-700 border-sky-200 hover:bg-sky-50">
+                <ExternalLink className="h-4 w-4 mr-1" />
+                Ver Detalle
+              </Button>
+            </Link>
+          </div>
+          {hasUrgentItems && (
+            <Link href="/compras/cuentas-por-pagar?filter=overdue" className="block mt-3">
+              <Button size="sm" className="w-full min-h-[44px] bg-red-600 hover:bg-red-700">
+                <AlertTriangle className="h-4 w-4 mr-1" />
+                Revisar Urgentes
+              </Button>
+            </Link>
+          )}
+        </CardContent>
+      </Card>
+    )
+  }
 
   return (
     <Card className={`mb-6 ${hasUrgentItems ? 'border-red-200 bg-gradient-to-r from-red-50 to-orange-50' : 'border-orange-200 bg-gradient-to-r from-orange-50 to-yellow-50'}`}>

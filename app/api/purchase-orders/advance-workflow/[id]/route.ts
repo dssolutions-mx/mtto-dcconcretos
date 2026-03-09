@@ -183,11 +183,24 @@ export async function PUT(
 
           recordAuthorizationAfterWorkflow = true
         } else {
-          // Second approval: GM required when policy needs escalation
-          if (needsGMEscalation && !isGM) {
-            return NextResponse.json({
-              error: 'Esta orden requiere aprobación de Gerencia General después de la autorización técnica.'
-            }, { status: 403 })
+          // Second/final approval: only GM (when escalated) or Área Administrativa (when not)—Gerente de Mantenimiento cannot approve here
+          const isViabilityReviewer = checkViabilityReviewAuthority(actor)
+          const hasAuthLimit = actor.authorizationLimit > 0
+          const withinLimit = amount <= actor.authorizationLimit
+
+          if (needsGMEscalation) {
+            if (!isGM) {
+              return NextResponse.json({
+                error: 'Esta orden requiere aprobación de Gerencia General después de la autorización técnica.',
+              }, { status: 403 })
+            }
+          } else {
+            const canDoFinalApproval = isGM || (isViabilityReviewer && hasAuthLimit && withinLimit)
+            if (!canDoFinalApproval) {
+              return NextResponse.json({
+                error: 'La aprobación final corresponde a Área Administrativa o Gerencia General.',
+              }, { status: 403 })
+            }
           }
 
           // Paths C and D require Administration viability before GM can approve

@@ -47,8 +47,6 @@ export async function GET(request: NextRequest) {
       }, { status: 401 })
     }
 
-    console.log('Current authenticated user ID:', user.id)
-
     const { data: currentUserProfile, error: profileError } = await supabase
       .from('profiles')
       .select('*, business_units(name), plants(name)')
@@ -153,25 +151,12 @@ export async function GET(request: NextRequest) {
       .order('effective_global_authorization', { ascending: false })
 
     // Apply scope-based filtering based on current user's role
-    console.log('Authorization summary - Current user profile:', {
-      role: currentUserProfile.role,
-      business_unit_id: currentUserProfile.business_unit_id,
-      plant_id: currentUserProfile.plant_id,
-      business_unit_name: currentUserProfile.business_units?.name
-    })
-
     if (currentUserProfile.role === 'JEFE_UNIDAD_NEGOCIO' && currentUserProfile.business_unit_id) {
-      // JEFE_UNIDAD_NEGOCIO can only see users from their business unit
-      console.log('Applying JEFE_UNIDAD_NEGOCIO filter for business unit:', currentUserProfile.business_unit_id)
       query = query.eq('business_unit_id', currentUserProfile.business_unit_id)
     } else if (currentUserProfile.role === 'JEFE_PLANTA' && currentUserProfile.plant_id) {
-      // JEFE_PLANTA can only see users from their plant
-      console.log('Applying JEFE_PLANTA filter for plant:', currentUserProfile.plant_id)
       query = query.eq('plant_id', currentUserProfile.plant_id)
-    } else {
-      console.log('No scope filtering applied - user can see all users')
     }
-    // GERENCIA_GENERAL and AREA_ADMINISTRATIVA can see all users (no additional filters)
+    // GERENCIA_GENERAL, AREA_ADMINISTRATIVA, GERENTE_MANTENIMIENTO: global scope, no filter
 
     // Apply additional filters from query parameters
     if (businessUnitId) {
@@ -187,16 +172,6 @@ export async function GET(request: NextRequest) {
       console.error('Error fetching organization summary:', orgError)
       return NextResponse.json({ error: orgError.message }, { status: 500 })
     }
-
-    console.log('Authorization summary - Fetched users:', {
-      total_users: organizationSummary?.length || 0,
-      business_units: [...new Set(organizationSummary?.map(u => u.business_unit_name))],
-      sample_users: organizationSummary?.slice(0, 3).map(u => ({
-        name: `${u.nombre} ${u.apellido}`,
-        business_unit: u.business_unit_name,
-        role: u.role
-      }))
-    })
 
     // Normalize active users to include is_active: true for downstream logic
     let combined = (organizationSummary || []).map((u: any) => ({ ...u, is_active: true }))

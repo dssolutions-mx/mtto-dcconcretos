@@ -70,15 +70,20 @@ export async function loadActorProfile(
 
 /**
  * Resolve the effective future business role for a profile.
+ * When profile.role is GERENTE_MANTENIMIENTO, always use it—never trust business_role
+ * for elevation (e.g. legacy GERENCIA_GENERAL) to avoid incorrect approval permissions.
  */
 export function resolveEffectiveBusinessRole(
   profile: ActorProfile | null
 ): FutureBusinessRole | null {
-  if (profile?.business_role) {
-    return resolveBusinessRole(profile.business_role)
-  }
   if (!profile?.role) {
     return null
+  }
+  if (profile.role === 'GERENTE_MANTENIMIENTO') {
+    return 'GERENTE_MANTENIMIENTO'
+  }
+  if (profile.business_role) {
+    return resolveBusinessRole(profile.business_role)
   }
   return resolveBusinessRole(profile.role)
 }
@@ -191,6 +196,8 @@ export function checkRHOwnershipAuthority(
 /**
  * Check if actor has technical approval authority for purchase orders.
  * Technical approver = GERENTE_MANTENIMIENTO per POL-OPE-001/002.
+ * When profile.role is GERENTE_MANTENIMIENTO, always return true—ignore business_role
+ * (which may be wrong legacy data like GERENCIA_GENERAL).
  */
 export function checkTechnicalApprovalAuthority(
   actor: ActorContext | null
@@ -198,11 +205,15 @@ export function checkTechnicalApprovalAuthority(
   if (!actor) {
     return false
   }
+  if (actor.profile.role === 'GERENTE_MANTENIMIENTO') {
+    return true
+  }
   return isTechnicalApproverRole(actor.profile.business_role ?? actor.profile.role)
 }
 
 /**
  * Check if actor has viability review authority (Administration).
+ * GERENTE_MANTENIMIENTO is never a viability reviewer—only AREA_ADMINISTRATIVA/GM.
  */
 export function checkViabilityReviewAuthority(
   actor: ActorContext | null
@@ -210,16 +221,23 @@ export function checkViabilityReviewAuthority(
   if (!actor) {
     return false
   }
+  if (actor.profile.role === 'GERENTE_MANTENIMIENTO') {
+    return false
+  }
   return isViabilityReviewerRole(actor.profile.business_role ?? actor.profile.role)
 }
 
 /**
  * Check if actor has GM escalation authority (final approval).
+ * GERENTE_MANTENIMIENTO is never GM—only GERENCIA_GENERAL has escalation authority.
  */
 export function checkGMEscalationAuthority(
   actor: ActorContext | null
 ): boolean {
   if (!actor) {
+    return false
+  }
+  if (actor.profile.role === 'GERENTE_MANTENIMIENTO') {
     return false
   }
   return isGMEscalatorRole(actor.profile.business_role ?? actor.profile.role)

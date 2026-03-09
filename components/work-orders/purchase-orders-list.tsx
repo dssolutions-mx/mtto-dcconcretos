@@ -209,8 +209,13 @@ function getItemsPreview(items: any): string {
   }
 }
 
-export function PurchaseOrdersList() {
-  // All hooks must be called before any conditional returns
+interface PurchaseOrdersListProps {
+  /** When provided by parent (compras page), skips duplicate auth API fetch */
+  effectiveAuthLimitFromParent?: number
+  isLoadingAuthFromParent?: boolean
+}
+
+export function PurchaseOrdersList({ effectiveAuthLimitFromParent, isLoadingAuthFromParent }: PurchaseOrdersListProps = {}) {
   const isMobile = useIsMobile()
   const { toast } = useToast()
   const { profile, hasCreateAccess } = useAuthZustand()
@@ -219,8 +224,8 @@ export function PurchaseOrdersList() {
   const [isLoading, setIsLoading] = useState(true)
   const [activeTab, setActiveTab] = useState<string>("all")
   const [technicians, setTechnicians] = useState<Record<string, Profile>>({})
-  const [userAuthLimit, setUserAuthLimit] = useState<number>(0)
-  const [isLoadingAuth, setIsLoadingAuth] = useState(true)
+  const [userAuthLimit, setUserAuthLimit] = useState<number>(effectiveAuthLimitFromParent ?? 0)
+  const [isLoadingAuth, setIsLoadingAuth] = useState(isLoadingAuthFromParent ?? true)
   const [selectedAssetId, setSelectedAssetId] = useState<string>("")
   const [fromDate, setFromDate] = useState<Date | undefined>(undefined)
   const [toDate, setToDate] = useState<Date | undefined>(undefined)
@@ -236,45 +241,40 @@ export function PurchaseOrdersList() {
   const [orderToDelete, setOrderToDelete] = useState<PurchaseOrderWithWorkOrder | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
 
-  // Load user authorization limit
+  // Sync parent-provided auth limit when it changes; otherwise fetch ourselves
   useEffect(() => {
+    if (effectiveAuthLimitFromParent != null) {
+      setUserAuthLimit(effectiveAuthLimitFromParent)
+      setIsLoadingAuth(isLoadingAuthFromParent ?? false)
+      return
+    }
+  }, [effectiveAuthLimitFromParent, isLoadingAuthFromParent])
+
+  useEffect(() => {
+    if (effectiveAuthLimitFromParent != null || !profile?.id) return
+
     const loadUserAuthLimit = async () => {
-      if (!profile?.id) return
-      
       try {
-        const response = await fetch('/api/authorization/summary')
+        const response = await fetch(`/api/authorization/summary?user_id=${profile.id}`)
         const data = await response.json()
-        
-        // Find user in organization summary
-        let userFound = false
-        if (data.organization_summary) {
-          for (const businessUnit of data.organization_summary) {
-            for (const plant of businessUnit.plants) {
-              const user = plant.users.find((u: any) => u.user_id === profile.id)
-              if (user) {
-                const limit = parseFloat(user.effective_global_authorization || 0)
-                setUserAuthLimit(limit)
-                userFound = true
-                break
-              }
-            }
-            if (userFound) break
-          }
-        }
-        
-        if (!userFound) {
+        if (!response.ok) {
           setUserAuthLimit(profile.can_authorize_up_to || 0)
+          return
         }
-      } catch (error) {
-        console.error('Error loading user authorization limit:', error)
+        const limit =
+          data.user_summary?.effective_global_authorization != null
+            ? parseFloat(data.user_summary.effective_global_authorization)
+            : data.authorization_scopes?.find((s: { scope_type: string }) => s.scope_type === 'global')
+                ?.effective_authorization ?? 0
+        setUserAuthLimit(limit > 0 || data.user_summary != null ? limit : profile.can_authorize_up_to || 0)
+      } catch {
         setUserAuthLimit(profile.can_authorize_up_to || 0)
       } finally {
         setIsLoadingAuth(false)
       }
     }
-
     loadUserAuthLimit()
-  }, [profile])
+  }, [profile, effectiveAuthLimitFromParent])
 
   // Check if user can approve a specific order
   const canApproveOrder = (order: PurchaseOrderWithWorkOrder): boolean => {
@@ -441,23 +441,8 @@ export function PurchaseOrdersList() {
     try {
       setIsLoading(true)
       const supabase = createClient()
-      
-      // Load technicians for names
-      const { data: techData, error: techError } = await supabase
-        .from("profiles")
-        .select("*")
-      
-      if (techError) {
-        console.error("Error al cargar técnicos:", techError)
-      } else if (techData) {
-        const techMap: Record<string, Profile> = {}
-        techData.forEach(tech => {
-          techMap[tech.id] = tech
-        })
-        setTechnicians(techMap)
-      }
-      
-      // Load purchase orders with basic data first
+
+      // Load purchase orders first (no dependency on technicians)
       const { data: purchaseOrdersData, error } = await supabase
         .from("purchase_orders")
         .select("*")
@@ -467,49 +452,55 @@ export function PurchaseOrdersList() {
         console.error("Error al cargar órdenes de compra:", error)
         throw error
       }
-      
-      // Get work order IDs from purchase orders
+
       const workOrderIds = purchaseOrdersData
         ?.filter(po => po.work_order_id)
         .map(po => po.work_order_id)
         .filter((id): id is string => id !== null) || []
-        
-      // Load work orders with asset information if there are any to load
-      let workOrdersMap: Record<string, any> = {}
-      if (workOrderIds.length > 0) {
-        const { data: workOrdersData, error: workOrdersError } = await supabase
-          .from("work_orders")
-          .select(`
-            id,
-            order_id,
-            description,
-            asset_id,
-            priority,
-            assets (
-              id,
-              name,
-              asset_id,
-              plants (name)
-            )
-          `)
-          .in("id", workOrderIds)
-          
-        if (workOrdersError) {
-          console.error("Error al cargar órdenes de trabajo:", workOrdersError)
-        } else if (workOrdersData) {
-          workOrdersData.forEach(wo => {
-            workOrdersMap[wo.id] = wo
-          })
-        }
+
+      // Load work orders and profiles in parallel (only requested_by profiles, not all)
+      const requestedByIds = [...new Set(purchaseOrdersData?.map(po => po.requested_by).filter(Boolean) || [])] as string[]
+
+      const [workOrdersResult, profilesResult] = await Promise.all([
+        workOrderIds.length > 0
+          ? supabase
+              .from("work_orders")
+              .select(`
+                id,
+                order_id,
+                description,
+                asset_id,
+                priority,
+                assets (
+                  id,
+                  name,
+                  asset_id,
+                  plants (name)
+                )
+              `)
+              .in("id", workOrderIds)
+          : { data: null, error: null },
+        requestedByIds.length > 0
+          ? supabase.from("profiles").select("*").in("id", requestedByIds)
+          : { data: [], error: null },
+      ])
+
+      const workOrdersMap: Record<string, any> = {}
+      if (workOrdersResult.data) {
+        workOrdersResult.data.forEach((wo: any) => { workOrdersMap[wo.id] = wo })
       }
-      
-      // Merge the data and add preview information
+
+      const techMap: Record<string, Profile> = {}
+      if (profilesResult.data) {
+        profilesResult.data.forEach((p: Profile) => { techMap[p.id] = p })
+      }
+      setTechnicians(techMap)
+
       const ordersWithWorkOrders = purchaseOrdersData.map(po => ({
         ...po,
         work_orders: po.work_order_id ? workOrdersMap[po.work_order_id] : null,
         items_preview: getItemsPreview(po.items)
       }))
-      
       setOrders(ordersWithWorkOrders as PurchaseOrderWithWorkOrder[])
 
     } catch (error) {
@@ -541,7 +532,12 @@ export function PurchaseOrdersList() {
 
   // Use mobile-optimized component for mobile devices
   if (isMobile) {
-    return <PurchaseOrdersListMobile />
+    return (
+      <PurchaseOrdersListMobile
+        effectiveAuthLimitFromParent={userAuthLimit}
+        isLoadingAuthFromParent={isLoadingAuth}
+      />
+    )
   }
 
   // Calculate summary metrics

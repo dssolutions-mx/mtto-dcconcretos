@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, useMemo } from "react"
+import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
@@ -10,7 +11,7 @@ import {
   Check, CheckCircle, Edit, Eye, FileCheck, Search, 
   AlertTriangle, Wrench, ShoppingCart, Package, 
   Clock, DollarSign, TrendingUp, Store, Building2, Receipt, ExternalLink, Trash2, MoreVertical,
-  X, Info, Shield, AlertCircle, Zap, MessageSquare
+  X, Info, Shield, AlertCircle, Zap, MessageSquare, Filter
 } from "lucide-react"
 import { createClient } from "@/lib/supabase"
 import Link from "next/link"
@@ -53,6 +54,18 @@ import { formatCurrency } from "@/lib/utils"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Calendar as CalendarPicker } from "@/components/ui/calendar"
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet"
+import { Skeleton } from "@/components/ui/skeleton"
+
+interface ApprovalContextItem {
+  canApprove: boolean
+  canReject: boolean
+  canRecordViability: boolean
+  reason: string
+  nextStep: string
+  workflowStage?: string
+  responsibleRole?: string
+}
 
 interface PurchaseOrderWithWorkOrder extends Omit<PurchaseOrder, 'is_adjustment' | 'original_purchase_order_id'> {
   work_orders?: {
@@ -60,6 +73,7 @@ interface PurchaseOrderWithWorkOrder extends Omit<PurchaseOrder, 'is_adjustment'
     order_id: string;
     description: string;
     asset_id: string | null;
+    priority?: string;
     assets?: {
       id: string;
       name: string;
@@ -176,19 +190,40 @@ function isEnhancedPurchaseOrder(order: PurchaseOrderWithWorkOrder): boolean {
   return Boolean(order.po_type)
 }
 
+// Helper function to get urgency config (from work order priority)
+function getUrgencyConfig(urgency?: string, priority?: string) {
+  const urgencyLevel = urgency || priority || 'medium'
+  switch (urgencyLevel.toLowerCase()) {
+    case 'critical':
+    case 'alta':
+    case 'high':
+      return { variant: "destructive" as const, icon: AlertCircle, label: "Crítica" }
+    case 'medium':
+    case 'media':
+      return { variant: "default" as const, icon: Clock, label: "Media" }
+    case 'low':
+    case 'baja':
+      return { variant: "secondary" as const, icon: Info, label: "Baja" }
+    default:
+      return { variant: "outline" as const, icon: Clock, label: "Normal" }
+  }
+}
+
 // Helper function to get work order from purchase order
 function getWorkOrder(order: PurchaseOrderWithWorkOrder) {
   return order.work_orders;
 }
 
-// Mobile-Optimized Purchase Order Card Component
+// Compact Mobile Purchase Order Card (Phase 4 design specs)
 function PurchaseOrderCard({ 
   order, 
   getTechnicianName, 
   formatCurrency,
   onDeleteOrder,
   userAuthLimit,
-  onQuickApproval 
+  onQuickApproval,
+  onRecordViability,
+  approvalContext
 }: { 
   order: PurchaseOrderWithWorkOrder
   getTechnicianName: (techId: string | null) => string
@@ -196,204 +231,214 @@ function PurchaseOrderCard({
   onDeleteOrder: (order: PurchaseOrderWithWorkOrder) => void
   userAuthLimit: number
   onQuickApproval: (order: PurchaseOrderWithWorkOrder, action: 'approve' | 'reject') => void
+  onRecordViability?: (order: PurchaseOrderWithWorkOrder) => void
+  approvalContext?: ApprovalContextItem | null
 }) {
-  const workOrder = getWorkOrder(order);
+  const router = useRouter()
+  const workOrder = getWorkOrder(order)
   const isEnhanced = isEnhancedPurchaseOrder(order)
   const TypeIcon = getPurchaseOrderTypeIcon(order.po_type || null)
+  const supplierName = isEnhanced && order.service_provider 
+    ? order.service_provider 
+    : order.supplier || "No especificado"
+  const locationLine = workOrder?.assets 
+    ? `${workOrder.assets.asset_id || workOrder.assets.name || ""}${workOrder.assets.plants ? ` • ${workOrder.assets.plants.name}` : ""}`.trim()
+    : ""
+  const ctx = order.status === PurchaseOrderStatus.PendingApproval && !order.is_adjustment ? approvalContext : null
+  const urgencyConfig = getUrgencyConfig(workOrder?.priority, workOrder?.priority)
+  const UrgencyIcon = urgencyConfig.icon
 
   return (
-    <Card className="w-full h-fit hover:shadow-md transition-shadow">
-      <CardHeader className="pb-3">
-        <div className="flex justify-between items-start">
-          <div className="space-y-2 flex-1 min-w-0">
-            <div className="flex items-center space-x-2">
-              <CardTitle className="text-lg font-bold truncate">{order.order_id}</CardTitle>
-              {order.is_adjustment && (
-                <Badge variant="outline" className="bg-yellow-100 text-yellow-800 text-xs">
-                  Ajuste
-                </Badge>
-              )}
-            </div>
-            
-            {/* Type Badge and Icon */}
-            <div className="flex items-center space-x-2">
-              {isEnhanced && order.po_type ? (
-                <>
-                  <div className="p-1 rounded-md bg-blue-100">
-                    <TypeIcon className="h-4 w-4 text-blue-600" />
-                  </div>
-                  <TypeBadge type={order.po_type as PurchaseOrderType} size="sm" />
-                </>
-              ) : (
-                <div className="p-1 rounded-md bg-gray-100">
-                  <ShoppingCart className="h-4 w-4 text-gray-600" />
-                </div>
-              )}
-            </div>
+    <Card className="w-full h-fit rounded-xl border shadow-sm p-4 hover:shadow-md transition-shadow duration-200 cursor-pointer relative">
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={() => router.push(`/compras/${order.id}`)}
+        onKeyDown={(e) => e.key === "Enter" && router.push(`/compras/${order.id}`)}
+        className="block -m-4 p-4 pb-0"
+      >
+        {/* Row 1: PO ID | Amount (no status badge for pending—workflow context below replaces it) */}
+        <div className="flex items-start justify-between gap-2 mb-2 pr-10">
+          <div className="flex items-center gap-2 flex-1 min-w-0">
+            <span className="text-base font-bold text-slate-900 truncate">{order.order_id}</span>
+            {order.is_adjustment && (
+              <Badge variant="outline" className="bg-yellow-100 text-yellow-800 text-xs shrink-0">
+                Ajuste
+              </Badge>
+            )}
+            {/* Status badge only for non-pending; pending shows workflow stage instead */}
+            {!(order.status === PurchaseOrderStatus.PendingApproval && !order.is_adjustment) && (
+              <Badge 
+                variant={getEnhancedStatusConfig(order.status || "Pendiente", order.po_type)}
+                className="shrink-0"
+              >
+                {order.status || "Pendiente"}
+              </Badge>
+            )}
           </div>
-          
-          <div className="flex items-center space-x-2">
-            <Badge 
-              variant={getEnhancedStatusConfig(order.status || "Pendiente", order.po_type)}
-              className="shrink-0"
-            >
-              {order.status || "Pendiente"}
-            </Badge>
-            
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" className="h-8 w-8 p-0">
-                  <span className="sr-only">Abrir menú</span>
-                  <MoreVertical className="h-4 w-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem asChild>
-                  <Link href={`/compras/${order.id}`}>
-                    <Eye className="mr-2 h-4 w-4" />
-                    Ver detalles
-                  </Link>
-                </DropdownMenuItem>
-                
-                {order.status === PurchaseOrderStatus.PendingApproval && !order.is_adjustment && (
-                  <DropdownMenuItem asChild>
-                    <Link href={`/compras/${order.id}/aprobar`}>
-                      <Check className="mr-2 h-4 w-4" />
-                      Aprobar orden
-                    </Link>
-                  </DropdownMenuItem>
-                )}
-                
-                {order.status === PurchaseOrderStatus.Approved && !order.is_adjustment && (
-                  <DropdownMenuItem asChild>
-                    <Link href={`/compras/${order.id}/pedido`}>
-                      <ShoppingCart className="mr-2 h-4 w-4" />
-                      Realizar pedido
-                    </Link>
-                  </DropdownMenuItem>
-                )}
-                
-                {order.status === PurchaseOrderStatus.Validated && !order.is_adjustment && (
-                  <DropdownMenuItem asChild>
-                    <Link href={`/compras/${order.id}/recibido`}>
-                      <Package className="mr-2 h-4 w-4" />
-                      Marcar como recibido
-                    </Link>
-                  </DropdownMenuItem>
-                )}
-                
-                <DropdownMenuItem 
-                  onClick={() => onDeleteOrder(order)}
-                  className="text-red-600 focus:text-red-600"
-                >
-                  <Trash2 className="mr-2 h-4 w-4" />
-                  Eliminar OC
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-        </div>
-      </CardHeader>
-      
-      <CardContent className="space-y-3">
-        {/* Supplier/Provider */}
-        <div>
-          <div className="flex items-center space-x-1 mb-1">
-            <Building2 className="h-3 w-3 text-muted-foreground" />
-            <p className="text-xs font-medium text-muted-foreground">
-              {isEnhanced && order.po_type === PurchaseOrderType.DIRECT_SERVICE 
-                ? "Proveedor de Servicio" 
-                : "Proveedor"}
-            </p>
-          </div>
-          <p className="text-sm font-medium truncate">
-            {isEnhanced && order.service_provider 
-              ? order.service_provider 
-              : order.supplier || "No especificado"}
+          <p className="text-lg font-semibold text-slate-900 shrink-0">
+            {formatCurrency(order.total_amount?.toString() || "0")}
           </p>
         </div>
 
-        {/* Store Location for Direct Purchase */}
-        {isEnhanced && order.store_location && (
-          <div>
-            <div className="flex items-center space-x-1 mb-1">
-              <Store className="h-3 w-3 text-muted-foreground" />
-              <p className="text-xs font-medium text-muted-foreground">Tienda</p>
-            </div>
-            <p className="text-sm truncate">{order.store_location}</p>
-          </div>
-        )}
-
-        {/* Amount */}
-        <div>
-          <div className="flex items-center space-x-1 mb-1">
-            <DollarSign className="h-3 w-3 text-muted-foreground" />
-            <p className="text-xs font-medium text-muted-foreground">Monto</p>
-          </div>
-          <div className="flex items-baseline space-x-2">
-            <p className="text-lg font-bold text-primary">
-              {formatCurrency(order.total_amount?.toString() || "0")}
-            </p>
-            {isEnhanced && order.actual_amount && (
-              <p className="text-xs text-green-600 font-medium">
-                Real: {formatCurrency(order.actual_amount.toString())}
-              </p>
+        {/* Row 2: Workflow stage badge + who's responsible when you cannot act */}
+        {ctx ? (
+          <div className="mb-2 flex flex-wrap items-center gap-2">
+            <Badge
+              variant="outline"
+              className={cn(
+                'shrink-0 font-medium',
+                ctx.workflowStage === 'Validación técnica' && 'bg-blue-50 text-blue-700 border-blue-200',
+                ctx.workflowStage === 'Viabilidad administrativa' && 'bg-amber-50 text-amber-700 border-amber-200',
+                ctx.workflowStage === 'Aprobación final' && 'bg-emerald-50 text-emerald-700 border-emerald-200',
+                !ctx.workflowStage && 'bg-slate-100 text-slate-600 border-slate-200'
+              )}
+            >
+              {ctx.workflowStage || 'Verificando...'}
+            </Badge>
+            {!(ctx.canApprove || ctx.canRecordViability) && ctx.responsibleRole && (
+              <span className="text-xs text-muted-foreground">
+                En espera de: {ctx.responsibleRole}
+              </span>
             )}
           </div>
-        </div>
-
-        {/* Work Order Link */}
-        {workOrder && (
-          <div>
-            <div className="flex items-center space-x-1 mb-1">
-              <Wrench className="h-3 w-3 text-muted-foreground" />
-              <p className="text-xs font-medium text-muted-foreground">Orden de Trabajo</p>
-            </div>
-            <Link 
-              href={`/ordenes/${workOrder.id}`}
-              className="text-sm text-blue-600 hover:underline flex items-center space-x-1"
-            >
-              <span>{workOrder.order_id}</span>
-              <ExternalLink className="h-3 w-3" />
-            </Link>
-            {workOrder.assets && (
-              <div className="flex items-center space-x-1 mt-1">
-                <Building2 className="h-3 w-3 text-muted-foreground" />
-                <span className="text-xs text-muted-foreground">
-                  {workOrder.assets.asset_id || workOrder.assets.name}
-                  {workOrder.assets.plants && (
-                    <span> • {workOrder.assets.plants.name}</span>
-                  )}
-                </span>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Payment Method for Enhanced Orders */}
-        {isEnhanced && order.payment_method && (
-          <div>
-            <div className="flex items-center space-x-1 mb-1">
-              <Receipt className="h-3 w-3 text-muted-foreground" />
-              <p className="text-xs font-medium text-muted-foreground">Forma de Pago</p>
-            </div>
-            <p className="text-sm capitalize">{order.payment_method}</p>
-          </div>
-        )}
-
-        {/* Quote Requirements */}
-        {isEnhanced && order.requires_quote !== undefined && (
-          <div className="flex items-center justify-between">
-            <p className="text-xs text-muted-foreground">Requiere Cotización</p>
-            <Badge 
-              variant={order.requires_quote ? "default" : "secondary"} 
-              className="text-xs"
-            >
-              {order.requires_quote ? "Sí" : "No"}
+        ) : order.status === PurchaseOrderStatus.PendingApproval && !order.is_adjustment && (
+          <div className="mb-2">
+            <Badge variant="outline" className="bg-slate-100 text-slate-600 border-slate-200">
+              Verificando...
             </Badge>
           </div>
         )}
-      </CardContent>
+
+        {/* Row 3: Supplier • Type (compact) */}
+        <div className="flex items-center gap-2 mb-1.5">
+          <p className="text-sm font-medium truncate flex-1 min-w-0">{supplierName}</p>
+          {isEnhanced && order.po_type ? (
+            <TypeBadge type={order.po_type as PurchaseOrderType} size="sm" className="shrink-0" />
+          ) : (
+            <div className="p-1 rounded-md bg-gray-100 shrink-0">
+              <ShoppingCart className="h-3 w-3 text-gray-600" />
+            </div>
+          )}
+        </div>
+
+        {/* Row 4: Work order link + location */}
+        {workOrder && (
+          <div className="flex items-center gap-1 min-w-0" onClick={(e) => e.stopPropagation()}>
+            <Wrench className="h-3 w-3 text-muted-foreground shrink-0" />
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); router.push(`/ordenes/${workOrder.id}`); }}
+              className="text-sm text-sky-700 hover:underline flex items-center gap-1 truncate min-w-0 bg-transparent border-0 p-0 cursor-pointer text-left font-inherit"
+            >
+              <span className="truncate">{workOrder.order_id}</span>
+              <ExternalLink className="h-3 w-3 shrink-0" />
+            </button>
+            {locationLine && (
+              <span className="text-xs text-muted-foreground truncate">• {locationLine}</span>
+            )}
+            {workOrder?.priority && urgencyConfig.variant === 'destructive' && (
+              <span className="px-1.5 py-0.5 rounded text-xs bg-red-50 text-red-600 shrink-0">
+                {urgencyConfig.label}
+              </span>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Approve / Reject / Record Viability actions - when user can act */}
+      {ctx && (ctx.canApprove || ctx.canRecordViability) && (
+        <div className="flex gap-2 mt-3 pt-3 border-t" onClick={(e) => e.stopPropagation()}>
+          {ctx.canApprove && (
+            <>
+              <Button
+                size="sm"
+                className="flex-1 min-h-[44px] bg-green-600 hover:bg-green-700"
+                onClick={() => onQuickApproval(order, 'approve')}
+              >
+                <Check className="h-4 w-4 mr-1" />
+                Aprobar
+              </Button>
+              <Button
+                size="sm"
+                variant="destructive"
+                className="flex-1 min-h-[44px]"
+                onClick={() => onQuickApproval(order, 'reject')}
+              >
+                <X className="h-4 w-4 mr-1" />
+                Rechazar
+              </Button>
+            </>
+          )}
+          {ctx.canRecordViability && !ctx.canApprove && onRecordViability && (
+            <Button
+              size="sm"
+              className="flex-1 min-h-[44px] bg-sky-600 hover:bg-sky-700"
+              onClick={() => onRecordViability(order)}
+            >
+              <Shield className="h-4 w-4 mr-1" />
+              Registrar viabilidad
+            </Button>
+          )}
+        </div>
+      )}
+
+      {/* Menu - positioned top right, outside link area */}
+      <div className="absolute top-2 right-2 z-10">
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" className="h-9 w-9 p-0 min-h-[44px] min-w-[44px]" onClick={(e) => e.stopPropagation()}>
+              <span className="sr-only">Abrir menú</span>
+              <MoreVertical className="h-4 w-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+              <DropdownMenuItem asChild>
+                <Link href={`/compras/${order.id}`}>
+                  <Eye className="mr-2 h-4 w-4" />
+                  Ver detalles
+                </Link>
+              </DropdownMenuItem>
+              {order.status === PurchaseOrderStatus.PendingApproval && !order.is_adjustment && ctx?.canApprove && (
+                <DropdownMenuItem asChild>
+                  <Link href={`/compras/${order.id}/aprobar`}>
+                    <Check className="mr-2 h-4 w-4" />
+                    Aprobar orden
+                  </Link>
+                </DropdownMenuItem>
+              )}
+              {order.status === PurchaseOrderStatus.PendingApproval && !order.is_adjustment && ctx?.canRecordViability && !ctx?.canApprove && (
+                <DropdownMenuItem onClick={(e) => { e.preventDefault(); onRecordViability?.(order); }}>
+                  <Shield className="mr-2 h-4 w-4" />
+                  Registrar viabilidad
+                </DropdownMenuItem>
+              )}
+              {order.status === PurchaseOrderStatus.Approved && !order.is_adjustment && (
+                <DropdownMenuItem asChild>
+                  <Link href={`/compras/${order.id}/pedido`}>
+                    <ShoppingCart className="mr-2 h-4 w-4" />
+                    Realizar pedido
+                  </Link>
+                </DropdownMenuItem>
+              )}
+              {order.status === PurchaseOrderStatus.Validated && !order.is_adjustment && (
+                <DropdownMenuItem asChild>
+                  <Link href={`/compras/${order.id}/recibido`}>
+                    <Package className="mr-2 h-4 w-4" />
+                    Marcar como recibido
+                  </Link>
+                </DropdownMenuItem>
+              )}
+              <DropdownMenuItem 
+                onClick={(e) => { e.preventDefault(); onDeleteOrder(order); }}
+                className="text-red-600 focus:text-red-600"
+              >
+                <Trash2 className="mr-2 h-4 w-4" />
+                Eliminar OC
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
     </Card>
   )
 }
@@ -406,7 +451,9 @@ function MobileView({
   formatCurrency,
   onDeleteOrder,
   userAuthLimit,
-  onQuickApproval 
+  onQuickApproval,
+  onRecordViability,
+  approvalContext
 }: { 
   orders: PurchaseOrderWithWorkOrder[]
   isLoading: boolean
@@ -415,20 +462,21 @@ function MobileView({
   onDeleteOrder: (order: PurchaseOrderWithWorkOrder) => void
   userAuthLimit: number
   onQuickApproval: (order: PurchaseOrderWithWorkOrder, action: 'approve' | 'reject') => void
+  onRecordViability?: (order: PurchaseOrderWithWorkOrder) => void
+  approvalContext?: Record<string, ApprovalContextItem>
 }) {
   if (isLoading) {
     return (
-      <div className="space-y-4">
-        {[...Array(3)].map((_, i) => (
-          <Card key={i} className="h-48 animate-pulse">
-            <CardContent className="p-6">
-              <div className="space-y-3">
-                <div className="h-4 bg-gray-200 rounded w-1/3"></div>
-                <div className="h-4 bg-gray-200 rounded w-1/2"></div>
-                <div className="h-4 bg-gray-200 rounded w-2/3"></div>
-              </div>
-            </CardContent>
-          </Card>
+      <div className="space-y-5">
+        {[...Array(4)].map((_, i) => (
+          <div key={i} className="rounded-xl border p-4 space-y-3">
+            <div className="flex justify-between">
+              <Skeleton className="h-5 w-24" />
+              <Skeleton className="h-6 w-16" />
+            </div>
+            <Skeleton className="h-4 w-3/4" />
+            <Skeleton className="h-4 w-1/2" />
+          </div>
         ))}
       </div>
     )
@@ -449,7 +497,7 @@ function MobileView({
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       {orders.map((order) => (
         <PurchaseOrderCard 
           key={order.id} 
@@ -459,6 +507,8 @@ function MobileView({
           onDeleteOrder={onDeleteOrder}
           userAuthLimit={userAuthLimit}
           onQuickApproval={onQuickApproval}
+          onRecordViability={onRecordViability}
+          approvalContext={approvalContext?.[order.id]}
         />
       ))}
     </div>
@@ -466,16 +516,21 @@ function MobileView({
 }
 
 // Main Component
-export function PurchaseOrdersListMobile() {
+interface PurchaseOrdersListMobileProps {
+  effectiveAuthLimitFromParent?: number
+  isLoadingAuthFromParent?: boolean
+}
+
+export function PurchaseOrdersListMobile({ effectiveAuthLimitFromParent, isLoadingAuthFromParent }: PurchaseOrdersListMobileProps = {}) {
   const { toast } = useToast()
   const { profile } = useAuthZustand()
   const [searchTerm, setSearchTerm] = useState("")
-  const [orders, setOrders] = useState<PurchaseOrderWithWorkOrder[]>([]) 
+  const [orders, setOrders] = useState<PurchaseOrderWithWorkOrder[]>([])
   const [isLoading, setIsLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState<string>("all")
+  const [activeTab, setActiveTab] = useState<string>("pending")
   const [technicians, setTechnicians] = useState<Record<string, Profile>>({})
-  const [userAuthLimit, setUserAuthLimit] = useState<number>(0)
-  const [isLoadingAuth, setIsLoadingAuth] = useState(true)
+  const [userAuthLimit, setUserAuthLimit] = useState<number>(effectiveAuthLimitFromParent ?? 0)
+  const [isLoadingAuth, setIsLoadingAuth] = useState(isLoadingAuthFromParent ?? true)
   const isMobile = useIsMobile()
   const [selectedAssetId, setSelectedAssetId] = useState<string>("")
   const [fromDate, setFromDate] = useState<Date | undefined>(undefined)
@@ -491,9 +546,33 @@ export function PurchaseOrdersListMobile() {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
   const [orderToDelete, setOrderToDelete] = useState<PurchaseOrderWithWorkOrder | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
+  const [filtersOpen, setFiltersOpen] = useState(false)
+  const [approvalContext, setApprovalContext] = useState<Record<string, ApprovalContextItem>>({})
 
   const handleRefresh = async () => {
     await loadOrders()
+  }
+
+  // Load approval context for pending POs
+  const loadApprovalContext = async (orderIds: string[]) => {
+    if (orderIds.length === 0) {
+      setApprovalContext({})
+      return
+    }
+    try {
+      const res = await fetch(`/api/purchase-orders/approval-context?ids=${orderIds.join(',')}`, {
+        cache: 'no-store',
+        credentials: 'include',
+      })
+      if (res.ok) {
+        const data = await res.json()
+        setApprovalContext(data)
+      } else {
+        setApprovalContext({})
+      }
+    } catch {
+      setApprovalContext({})
+    }
   }
 
   const handleDeleteOrder = (order: PurchaseOrderWithWorkOrder) => {
@@ -554,6 +633,46 @@ export function PurchaseOrdersListMobile() {
     setShowApprovalDialog(true)
   }
 
+  // Handle record viability (Administration / GM for paths C, D)
+  const handleRecordViability = async (order: PurchaseOrderWithWorkOrder) => {
+    setIsApproving(true)
+    setOrderToApprove(order)
+    setApprovalAction('approve') // reuse state for loading, actual action is validated
+    try {
+      const res = await fetch(`/api/purchase-orders/advance-workflow/${order.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ new_status: 'validated' })
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        throw new Error(data.error || data.details || 'Error al registrar viabilidad')
+      }
+      setOrders(prev => prev.map(o => 
+        o.id === order.id 
+          ? { ...o, viability_state: 'viable' as const }
+          : o
+      ))
+      toast({
+        title: 'Viabilidad registrada',
+        description: `La orden ${order.order_id} tiene viabilidad administrativa registrada.`,
+      })
+      const pendingIds = orders
+        .filter(o => o.status === PurchaseOrderStatus.PendingApproval && !o.is_adjustment)
+        .map(o => o.id)
+      await loadApprovalContext(pendingIds)
+    } catch (err) {
+      toast({
+        title: 'Error',
+        description: err instanceof Error ? err.message : 'No se pudo registrar viabilidad',
+        variant: 'destructive',
+      })
+    } finally {
+      setIsApproving(false)
+      setOrderToApprove(null)
+    }
+  }
+
   // Confirm approval/rejection
   const confirmApproval = async () => {
     if (!orderToApprove) return
@@ -584,13 +703,16 @@ export function PurchaseOrdersListMobile() {
       }
 
       // Update local state
-      setOrders(prevOrders => 
-        prevOrders.map(o => 
-          o.id === orderToApprove.id 
-            ? { ...o, status: newStatus === 'approved' ? PurchaseOrderStatus.Approved : PurchaseOrderStatus.Rejected }
-            : o
-        )
+      const updatedOrders = orders.map(o => 
+        o.id === orderToApprove.id 
+          ? { ...o, status: newStatus === 'approved' ? PurchaseOrderStatus.Approved : PurchaseOrderStatus.Rejected }
+          : o
       )
+      setOrders(updatedOrders)
+      const pendingIds = updatedOrders
+        .filter(o => o.status === PurchaseOrderStatus.PendingApproval && !o.is_adjustment)
+        .map(o => o.id)
+      await loadApprovalContext(pendingIds)
       
       toast({
         title: approvalAction === 'approve' ? "Orden aprobada" : "Orden rechazada",
@@ -611,67 +733,46 @@ export function PurchaseOrdersListMobile() {
     }
   }
 
-  // Load user authorization limit
+  // Sync parent-provided auth limit; otherwise fetch ourselves
   useEffect(() => {
+    if (effectiveAuthLimitFromParent != null) {
+      setUserAuthLimit(effectiveAuthLimitFromParent)
+      setIsLoadingAuth(isLoadingAuthFromParent ?? false)
+      return
+    }
+  }, [effectiveAuthLimitFromParent, isLoadingAuthFromParent])
+
+  useEffect(() => {
+    if (effectiveAuthLimitFromParent != null || !profile?.id) return
+
     const loadUserAuthLimit = async () => {
-      if (!profile?.id) return
-      
       try {
-        const response = await fetch('/api/authorization/summary')
+        const response = await fetch(`/api/authorization/summary?user_id=${profile.id}`)
         const data = await response.json()
-        
-        // Find user in organization summary
-        let userFound = false
-        if (data.organization_summary) {
-          for (const businessUnit of data.organization_summary) {
-            for (const plant of businessUnit.plants) {
-              const user = plant.users.find((u: any) => u.user_id === profile.id)
-              if (user) {
-                const limit = parseFloat(user.effective_global_authorization || 0)
-                setUserAuthLimit(limit)
-                userFound = true
-                break
-              }
-            }
-            if (userFound) break
-          }
-        }
-        
-        if (!userFound) {
+        if (!response.ok) {
           setUserAuthLimit(profile.can_authorize_up_to || 0)
+        } else {
+          const limit =
+            data.user_summary?.effective_global_authorization != null
+              ? parseFloat(data.user_summary.effective_global_authorization)
+              : data.authorization_scopes?.find((s: { scope_type: string }) => s.scope_type === 'global')
+                  ?.effective_authorization ?? 0
+          setUserAuthLimit(limit > 0 || data.user_summary != null ? limit : profile.can_authorize_up_to || 0)
         }
-      } catch (error) {
-        console.error('Error loading user authorization limit:', error)
+      } catch {
         setUserAuthLimit(profile.can_authorize_up_to || 0)
       } finally {
         setIsLoadingAuth(false)
       }
     }
-
     loadUserAuthLimit()
-  }, [profile])
+  }, [profile, effectiveAuthLimitFromParent])
 
   async function loadOrders() {
     try {
       setIsLoading(true)
       const supabase = createClient()
-      
-      // Load technicians for names
-      const { data: techData, error: techError } = await supabase
-        .from("profiles")
-        .select("*")
-      
-      if (techError) {
-        console.error("Error al cargar técnicos:", techError)
-      } else if (techData) {
-        const techMap: Record<string, Profile> = {}
-        techData.forEach(tech => {
-          techMap[tech.id] = tech
-        })
-        setTechnicians(techMap)
-      }
-      
-      // Load purchase orders first
+
       const { data: purchaseOrdersData, error } = await supabase
         .from("purchase_orders")
         .select("*")
@@ -681,48 +782,37 @@ export function PurchaseOrdersListMobile() {
         console.error("Error al cargar órdenes de compra:", error)
         throw error
       }
-      
-      // Get work order IDs from purchase orders
-      const workOrderIds = purchaseOrdersData
-        ?.filter(po => po.work_order_id)
-        .map(po => po.work_order_id)
-      
-      // Load work orders if any exist
+
+      const workOrderIds = purchaseOrdersData?.filter(po => po.work_order_id).map(po => po.work_order_id) || []
+      const requestedByIds = [...new Set(purchaseOrdersData?.map(po => po.requested_by).filter(Boolean) || [])] as string[]
+
+      const [workOrdersResult, profilesResult] = await Promise.all([
+        workOrderIds.length > 0 ? supabase.from("work_orders").select(`
+          id, order_id, description, asset_id, priority,
+          assets (id, name, asset_id, plants (name))
+        `).in("id", workOrderIds) : { data: null, error: null },
+        requestedByIds.length > 0 ? supabase.from("profiles").select("*").in("id", requestedByIds) : { data: [], error: null },
+      ])
+
       const workOrdersMap: Record<string, any> = {}
-      if (workOrderIds && workOrderIds.length > 0) {
-        const { data: workOrdersData, error: workOrderError } = await supabase
-          .from("work_orders")
-          .select(`
-            id, 
-            order_id, 
-            description, 
-            asset_id,
-            assets (
-              id,
-              name,
-              asset_id,
-              plants (name)
-            )
-          `)
-          .in("id", workOrderIds)
-        
-        if (workOrderError) {
-          console.error("Error al cargar órdenes de trabajo:", workOrderError)
-        } else if (workOrdersData) {
-          workOrdersData.forEach(wo => {
-            workOrdersMap[wo.id] = wo
-          })
-        }
-      }
-      
-      // Merge the data
+      if (workOrdersResult.data) workOrdersResult.data.forEach((wo: any) => { workOrdersMap[wo.id] = wo })
+
+      const techMap: Record<string, Profile> = {}
+      if (profilesResult.data) profilesResult.data.forEach((p: Profile) => { techMap[p.id] = p })
+      setTechnicians(techMap)
+
       const ordersWithWorkOrders = purchaseOrdersData.map(po => ({
         ...po,
         work_orders: po.work_order_id ? workOrdersMap[po.work_order_id] : null,
         items_preview: getItemsPreview(po.items)
       }))
-      
       setOrders(ordersWithWorkOrders as PurchaseOrderWithWorkOrder[])
+
+      // Load approval context for pending non-adjustment POs
+      const pendingIds = (ordersWithWorkOrders as PurchaseOrderWithWorkOrder[])
+        .filter(o => o.status === PurchaseOrderStatus.PendingApproval && !o.is_adjustment)
+        .map(o => o.id)
+      await loadApprovalContext(pendingIds)
 
     } catch (error) {
       console.error("Error al cargar órdenes de compra:", error)
@@ -734,13 +824,15 @@ export function PurchaseOrdersListMobile() {
 
   useEffect(() => {
     loadOrders()
-  }, [])
+  }, [profile?.id])
 
-  // Calculate summary metrics
+  // Calculate summary metrics (En curso = approved + validated)
+  const enCursoCount = orders.filter(o => (o.status === PurchaseOrderStatus.Approved || o.status === PurchaseOrderStatus.Validated) && !o.is_adjustment).length
   const summaryMetrics = {
     pending: orders.filter(o => o.status === PurchaseOrderStatus.PendingApproval && !o.is_adjustment).length,
     approved: orders.filter(o => o.status === PurchaseOrderStatus.Approved && !o.is_adjustment).length,
     validated: orders.filter(o => o.status === PurchaseOrderStatus.Validated && !o.is_adjustment).length,
+    enCurso: enCursoCount,
     adjustments: orders.filter(o => o.is_adjustment).length,
     totalPendingValue: orders
       .filter(o => o.status === PurchaseOrderStatus.PendingApproval && !o.is_adjustment)
@@ -761,12 +853,11 @@ export function PurchaseOrdersListMobile() {
       }, 0)
   }
 
-  // Filter orders by status tab
+  // Filter orders by status tab (En curso = approved + validated)
   const filteredOrdersByTab = orders.filter(order => {
     if (activeTab === "all") return true;
     if (activeTab === "pending") return order.status === PurchaseOrderStatus.PendingApproval && !order.is_adjustment;
-    if (activeTab === "approved") return order.status === PurchaseOrderStatus.Approved && !order.is_adjustment;
-    if (activeTab === "validated") return order.status === PurchaseOrderStatus.Validated && !order.is_adjustment;
+    if (activeTab === "en_curso") return (order.status === PurchaseOrderStatus.Approved || order.status === PurchaseOrderStatus.Validated) && !order.is_adjustment;
     if (activeTab === "received") return order.status === PurchaseOrderStatus.Received && !order.is_adjustment;
     if (activeTab === "adjustments") return order.is_adjustment === true;
     return true;
@@ -847,322 +938,200 @@ export function PurchaseOrdersListMobile() {
     return `$${amount.toFixed(2)}`;
   };
 
+  const hasActiveFilters = selectedAssetId || fromDate || toDate
+
   return (
     <PullToRefresh onRefresh={handleRefresh}>
-      <Card>
-        <CardHeader className={cn(isMobile && "px-4")}>
-          <div className="flex flex-col space-y-4">
-            {/* Summary Metrics - Mobile Optimized */}
-            {isMobile ? (
-              <div className="grid grid-cols-2 gap-3">
-                <div className="text-center p-3 bg-yellow-50 rounded-lg border border-yellow-200">
-                  <p className="text-2xl font-bold text-yellow-700">{summaryMetrics.pending}</p>
-                  <p className="text-xs text-yellow-600">Pendientes</p>
-                </div>
-                <div className="text-center p-3 bg-green-50 rounded-lg border border-green-200">
-                  <p className="text-2xl font-bold text-green-700">{summaryMetrics.approved}</p>
-                  <p className="text-xs text-green-600">Aprobadas</p>
-                </div>
-                <div className="text-center p-3 bg-blue-50 rounded-lg border border-blue-200">
-                  <p className="text-2xl font-bold text-blue-700">{summaryMetrics.validated}</p>
-                  <p className="text-xs text-blue-600">En Proceso</p>
-                </div>
-                <div className="text-center p-3 bg-purple-50 rounded-lg border border-purple-200">
-                  <p className="text-lg font-bold text-purple-700">{formatCurrency(summaryMetrics.totalMonthValue.toString())}</p>
-                  <p className="text-xs text-purple-600">Total Mes</p>
-                </div>
-              </div>
-            ) : (
-              // Desktop metrics layout
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                <Card className={summaryMetrics.pending > 0 ? "border-yellow-200 bg-yellow-50" : ""}>
-                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-sm font-medium">Pendientes</CardTitle>
-                    <Clock className={`h-4 w-4 ${summaryMetrics.pending > 0 ? 'text-yellow-600' : 'text-muted-foreground'}`} />
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-2xl font-bold">{summaryMetrics.pending}</div>
-                    <p className="text-xs text-muted-foreground">
-                      Valor: {formatCurrency(summaryMetrics.totalPendingValue.toString())}
-                    </p>
-                  </CardContent>
-                </Card>
-                {/* Add other desktop metric cards here */}
-              </div>
-            )}
-
-            {/* Search Bar */}
-            <div className="relative">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                type="search"
-                placeholder="Buscar por OC, proveedor..."
-                className="pl-8"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-              />
-            </div>
-
-            {/* Asset Filter */}
-            <div>
-              <Select value={selectedAssetId || "all"} onValueChange={(val) => setSelectedAssetId(val === "all" ? "" : val)}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Filtrar por activo" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Todos los activos</SelectItem>
-                  {assetOptions.map(a => (
-                    <SelectItem key={a.id} value={a.id}>{a.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Date Range Filter */}
-            <div className="grid grid-cols-2 gap-2">
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button variant="outline" className="w-full justify-start">
-                    <Clock className="mr-2 h-4 w-4" />
-                    {fromDate ? fromDate.toLocaleDateString() : "Desde"}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0" align="start">
-                  <CalendarPicker
-                    mode="single"
-                    selected={fromDate}
-                    onSelect={setFromDate}
-                    initialFocus
-                  />
-                </PopoverContent>
-              </Popover>
-
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button variant="outline" className="w-full justify-start">
-                    <Clock className="mr-2 h-4 w-4" />
-                    {toDate ? toDate.toLocaleDateString() : "Hasta"}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0" align="start">
-                  <CalendarPicker
-                    mode="single"
-                    selected={toDate}
-                    onSelect={setToDate}
-                    initialFocus
-                  />
-                </PopoverContent>
-              </Popover>
-            </div>
-
-            {(fromDate || toDate) && (
-              <Button variant="outline" onClick={() => { setFromDate(undefined); setToDate(undefined); }}>
-                Limpiar
-              </Button>
-            )}
+      <div className="space-y-4">
+        {/* Search bar + Filtros button */}
+        <div className="flex gap-2">
+          <div className="relative flex-1 min-w-0">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              type="search"
+              inputMode="search"
+              placeholder="Buscar por OC, proveedor..."
+              className="pl-8 min-h-[44px] text-base"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
           </div>
-        </CardHeader>
-
-        <CardContent className={cn(isMobile && "px-4")}>
-          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            {/* Mobile-Optimized Tabs */}
-            {isMobile ? (
-              <div className="space-y-2 mb-4">
-                {/* Primary Tabs - 2x2 grid */}
-                <div className="grid grid-cols-2 gap-2">
-                  <Button
-                    variant={activeTab === "all" ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => setActiveTab("all")}
-                    className="relative h-12"
-                  >
-                    <div className="text-center">
-                      <div className="font-medium">Todas</div>
-                      <div className="text-xs opacity-75">{orders.length}</div>
-                    </div>
-                  </Button>
-                  <Button
-                    variant={activeTab === "pending" ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => setActiveTab("pending")}
-                    className="relative h-12"
-                  >
-                    <div className="text-center">
-                      <div className="font-medium">Pendientes</div>
-                      <div className="text-xs opacity-75">{summaryMetrics.pending}</div>
-                    </div>
-                    {summaryMetrics.pending > 0 && (
-                      <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-yellow-500 text-[10px] text-white">
-                        {summaryMetrics.pending}
-                      </span>
-                    )}
-                  </Button>
-                  <Button
-                    variant={activeTab === "approved" ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => setActiveTab("approved")}
-                    className="relative h-12"
-                  >
-                    <div className="text-center">
-                      <div className="font-medium">Aprobadas</div>
-                      <div className="text-xs opacity-75">{summaryMetrics.approved}</div>
-                    </div>
-                    {summaryMetrics.approved > 0 && (
-                      <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-green-500 text-[10px] text-white">
-                        {summaryMetrics.approved}
-                      </span>
-                    )}
-                  </Button>
-                  <Button
-                    variant={activeTab === "validated" ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => setActiveTab("validated")}
-                    className="relative h-12"
-                  >
-                    <div className="text-center">
-                      <div className="font-medium">En Proceso</div>
-                      <div className="text-xs opacity-75">{summaryMetrics.validated}</div>
-                    </div>
-                  </Button>
-                </div>
-                
-                {/* Secondary Tabs - Row */}
-                <div className="flex gap-2">
-                  <Button
-                    variant={activeTab === "received" ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => setActiveTab("received")}
-                    className="flex-1"
-                  >
-                    Recibidas
-                  </Button>
-                  <Button
-                    variant={activeTab === "adjustments" ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => setActiveTab("adjustments")}
-                    className="flex-1 relative"
-                  >
-                    Ajustes
-                    {summaryMetrics.adjustments > 0 && (
-                      <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-blue-500 text-[10px] text-white">
-                        {summaryMetrics.adjustments}
-                      </span>
-                    )}
-                  </Button>
-                </div>
-              </div>
-            ) : (
-              /* Desktop Tabs */
-              <TabsList className="mb-4 grid w-full grid-cols-2 sm:grid-cols-6">
-                <TabsTrigger value="all">Todas</TabsTrigger>
-                <TabsTrigger value="pending" className="relative">
-                  Pendientes
-                  {summaryMetrics.pending > 0 && (
-                    <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-yellow-500 text-[10px] text-white">
-                      {summaryMetrics.pending}
-                    </span>
-                  )}
-                </TabsTrigger>
-                <TabsTrigger value="approved" className="relative">
-                  Aprobadas
-                  {summaryMetrics.approved > 0 && (
-                    <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-green-500 text-[10px] text-white">
-                      {summaryMetrics.approved}
-                    </span>
-                  )}
-                </TabsTrigger>
-                <TabsTrigger value="ordered">Pedidas</TabsTrigger>
-                <TabsTrigger value="received">Recibidas</TabsTrigger>
-                <TabsTrigger value="adjustments" className="relative">
-                  Ajustes
-                  <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-blue-500 text-[10px] text-white">
-                    {summaryMetrics.adjustments}
+          <Sheet open={filtersOpen} onOpenChange={setFiltersOpen}>
+            <SheetTrigger asChild>
+              <Button variant="outline" size="icon" className="shrink-0 min-h-[44px] min-w-[44px] cursor-pointer">
+                <Filter className="h-4 w-4" />
+                {hasActiveFilters && (
+                  <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-sky-500 text-[10px] text-white">
+                    !
                   </span>
-                </TabsTrigger>
-              </TabsList>
-            )}
-            
-            {/* Tab Content */}
-            <TabsContent value="all" className="mt-0"> 
-              <MobileView 
-                orders={filteredOrders} 
-                isLoading={isLoading} 
-                getTechnicianName={getTechnicianName}
-                formatCurrency={formatCurrency}
-                onDeleteOrder={handleDeleteOrder}
-                userAuthLimit={userAuthLimit}
-                onQuickApproval={handleQuickApproval}
-              />
-            </TabsContent>
-            
-            <TabsContent value="pending" className="mt-0">
-              <MobileView 
-                orders={filteredOrders} 
-                isLoading={isLoading} 
-                getTechnicianName={getTechnicianName}
-                formatCurrency={formatCurrency}
-                onDeleteOrder={handleDeleteOrder}
-                userAuthLimit={userAuthLimit}
-                onQuickApproval={handleQuickApproval}
-              />
-            </TabsContent>
-            
-            <TabsContent value="approved" className="mt-0">
-              <MobileView 
-                orders={filteredOrders} 
-                isLoading={isLoading} 
-                getTechnicianName={getTechnicianName}
-                formatCurrency={formatCurrency}
-                onDeleteOrder={handleDeleteOrder}
-                userAuthLimit={userAuthLimit}
-                onQuickApproval={handleQuickApproval}
-              />
-            </TabsContent>
-            
-            <TabsContent value="ordered" className="mt-0">
-              <MobileView 
-                orders={filteredOrders} 
-                isLoading={isLoading} 
-                getTechnicianName={getTechnicianName}
-                formatCurrency={formatCurrency}
-                onDeleteOrder={handleDeleteOrder}
-                userAuthLimit={userAuthLimit}
-                onQuickApproval={handleQuickApproval}
-              />
-            </TabsContent>
-            
-            <TabsContent value="received" className="mt-0">
-              <MobileView 
-                orders={filteredOrders} 
-                isLoading={isLoading} 
-                getTechnicianName={getTechnicianName}
-                formatCurrency={formatCurrency}
-                onDeleteOrder={handleDeleteOrder}
-                userAuthLimit={userAuthLimit}
-                onQuickApproval={handleQuickApproval}
-              />
-            </TabsContent>
-            
-            <TabsContent value="adjustments" className="mt-0">
-              <MobileView 
-                orders={filteredOrders} 
-                isLoading={isLoading} 
-                getTechnicianName={getTechnicianName}
-                formatCurrency={formatCurrency}
-                onDeleteOrder={handleDeleteOrder}
-                userAuthLimit={userAuthLimit}
-                onQuickApproval={handleQuickApproval}
-              />
-            </TabsContent>
+                )}
+              </Button>
+            </SheetTrigger>
+            <SheetContent side="bottom" className="rounded-t-2xl max-h-[85vh] overflow-y-auto">
+              <SheetHeader>
+                <SheetTitle>Filtros</SheetTitle>
+              </SheetHeader>
+              <div className="space-y-4 pt-4">
+                <div>
+                  <label className="text-sm font-medium mb-2 block">Activo</label>
+                  <Select value={selectedAssetId || "all"} onValueChange={(val) => setSelectedAssetId(val === "all" ? "" : val)}>
+                    <SelectTrigger className="min-h-[44px]">
+                      <SelectValue placeholder="Todos los activos" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Todos los activos</SelectItem>
+                      {assetOptions.map(a => (
+                        <SelectItem key={a.id} value={a.id}>{a.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button variant="outline" className="w-full justify-start min-h-[44px]">
+                        <Clock className="mr-2 h-4 w-4" />
+                        {fromDate ? fromDate.toLocaleDateString() : "Desde"}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start">
+                      <CalendarPicker
+                        mode="single"
+                        selected={fromDate}
+                        onSelect={setFromDate}
+                        initialFocus
+                      />
+                    </PopoverContent>
+                  </Popover>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button variant="outline" className="w-full justify-start min-h-[44px]">
+                        <Clock className="mr-2 h-4 w-4" />
+                        {toDate ? toDate.toLocaleDateString() : "Hasta"}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start">
+                      <CalendarPicker
+                        mode="single"
+                        selected={toDate}
+                        onSelect={setToDate}
+                        initialFocus
+                      />
+                    </PopoverContent>
+                  </Popover>
+                </div>
+                {(fromDate || toDate) && (
+                  <Button variant="outline" className="w-full min-h-[44px]" onClick={() => { setFromDate(undefined); setToDate(undefined); }}>
+                    Limpiar fechas
+                  </Button>
+                )}
+                <Button className="w-full min-h-[44px] bg-sky-700 hover:bg-sky-800" onClick={() => setFiltersOpen(false)}>
+                  Aplicar
+                </Button>
+              </div>
+            </SheetContent>
+          </Sheet>
+        </div>
+
+        {/* Wrap tabs - no horizontal scroll */}
+        <div className="w-full">
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+            <TabsList className="flex flex-wrap gap-2 h-auto p-0 bg-transparent border-0">
+              <TabsTrigger value="all" className="rounded-full px-4 py-2 min-h-[44px] data-[state=active]:bg-slate-900 data-[state=active]:text-white">
+                Todas {orders.length}
+              </TabsTrigger>
+              <TabsTrigger value="pending" className="rounded-full px-4 py-2 min-h-[44px] relative data-[state=active]:bg-yellow-600 data-[state=active]:text-white">
+                Pendientes {summaryMetrics.pending}
+                {summaryMetrics.pending > 0 && (
+                  <span className="absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-yellow-500 text-[10px] text-white">
+                    {summaryMetrics.pending}
+                  </span>
+                )}
+              </TabsTrigger>
+              <TabsTrigger value="en_curso" className="rounded-full px-4 py-2 min-h-[44px] data-[state=active]:bg-green-600 data-[state=active]:text-white">
+                En Curso {summaryMetrics.enCurso}
+              </TabsTrigger>
+              <TabsTrigger value="received" className="rounded-full px-4 py-2 min-h-[44px] data-[state=active]:bg-slate-900 data-[state=active]:text-white">
+                Recibidas
+              </TabsTrigger>
+              <TabsTrigger value="adjustments" className="rounded-full px-4 py-2 min-h-[44px] relative data-[state=active]:bg-slate-900 data-[state=active]:text-white">
+                Ajustes {summaryMetrics.adjustments}
+              </TabsTrigger>
+            </TabsList>
+            <div className="mt-4">
+              <TabsContent value="all" className="mt-0">
+                <MobileView
+                  orders={filteredOrders}
+                  isLoading={isLoading}
+                  getTechnicianName={getTechnicianName}
+                  formatCurrency={formatCurrency}
+                  onDeleteOrder={handleDeleteOrder}
+                  userAuthLimit={userAuthLimit}
+                  onQuickApproval={handleQuickApproval}
+                  onRecordViability={handleRecordViability}
+                  approvalContext={approvalContext}
+                />
+              </TabsContent>
+              <TabsContent value="pending" className="mt-0">
+                <MobileView
+                  orders={filteredOrders}
+                  isLoading={isLoading}
+                  getTechnicianName={getTechnicianName}
+                  formatCurrency={formatCurrency}
+                  onDeleteOrder={handleDeleteOrder}
+                  userAuthLimit={userAuthLimit}
+                  onQuickApproval={handleQuickApproval}
+                  onRecordViability={handleRecordViability}
+                  approvalContext={approvalContext}
+                />
+              </TabsContent>
+              <TabsContent value="en_curso" className="mt-0">
+                <MobileView
+                  orders={filteredOrders}
+                  isLoading={isLoading}
+                  getTechnicianName={getTechnicianName}
+                  formatCurrency={formatCurrency}
+                  onDeleteOrder={handleDeleteOrder}
+                  userAuthLimit={userAuthLimit}
+                  onQuickApproval={handleQuickApproval}
+                  onRecordViability={handleRecordViability}
+                  approvalContext={approvalContext}
+                />
+              </TabsContent>
+              <TabsContent value="received" className="mt-0">
+                <MobileView
+                  orders={filteredOrders}
+                  isLoading={isLoading}
+                  getTechnicianName={getTechnicianName}
+                  formatCurrency={formatCurrency}
+                  onDeleteOrder={handleDeleteOrder}
+                  userAuthLimit={userAuthLimit}
+                  onQuickApproval={handleQuickApproval}
+                  onRecordViability={handleRecordViability}
+                  approvalContext={approvalContext}
+                />
+              </TabsContent>
+              <TabsContent value="adjustments" className="mt-0">
+                <MobileView
+                  orders={filteredOrders}
+                  isLoading={isLoading}
+                  getTechnicianName={getTechnicianName}
+                  formatCurrency={formatCurrency}
+                  onDeleteOrder={handleDeleteOrder}
+                  userAuthLimit={userAuthLimit}
+                  onQuickApproval={handleQuickApproval}
+                  onRecordViability={handleRecordViability}
+                  approvalContext={approvalContext}
+                />
+              </TabsContent>
+            </div>
           </Tabs>
-        </CardContent>
-        
-        <CardFooter className={cn(isMobile && "px-4")}>
-          <div className="text-xs text-muted-foreground">
-            Mostrando <strong>{filteredOrders.length}</strong> de <strong>{orders.length}</strong> órdenes de compra.
-          </div>
-        </CardFooter>
-      </Card>
+        </div>
+
+        <div className="text-xs text-muted-foreground pt-2 pb-4">
+          Mostrando <strong>{filteredOrders.length}</strong> de <strong>{orders.length}</strong> órdenes.
+        </div>
+      </div>
       
       {/* Delete Confirmation Dialog */}
       <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
