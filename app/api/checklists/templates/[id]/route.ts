@@ -92,7 +92,9 @@ export async function DELETE(
       'JEFE_UNIDAD_NEGOCIO', 
       'ENCARGADO_MANTENIMIENTO',
       'JEFE_PLANTA',
-      'AREA_ADMINISTRATIVA'
+      'AREA_ADMINISTRATIVA',
+      'GERENTE_MANTENIMIENTO',
+      'COORDINADOR_MANTENIMIENTO'
     ]
 
     if (!allowedRoles.includes(profile.role) || profile.status !== 'active') {

@@ -8,6 +8,47 @@ export async function POST(
   try {
     const { id } = await params
     const supabase = await createClient()
+
+    // Verify user is authenticated and has permission to complete checklists
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    if (authError || !user) {
+      return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
+    }
+
+    const { data: profile, error: profileError } = await supabase
+      .from('profiles')
+      .select('role, status')
+      .eq('id', user.id)
+      .single()
+
+    if (profileError || !profile || profile.status !== 'active') {
+      return NextResponse.json(
+        { error: 'Perfil no encontrado o inactivo' },
+        { status: 403 }
+      )
+    }
+
+    const allowedCompletionRoles = [
+      'OPERADOR',
+      'DOSIFICADOR',
+      'GERENCIA_GENERAL',
+      'JEFE_UNIDAD_NEGOCIO',
+      'JEFE_PLANTA',
+      'ENCARGADO_MANTENIMIENTO',
+      'GERENTE_MANTENIMIENTO',
+      'COORDINADOR_MANTENIMIENTO',
+      'MECANICO'
+    ]
+
+    if (!allowedCompletionRoles.includes(profile.role)) {
+      return NextResponse.json(
+        {
+          error: 'No tiene permisos para completar checklists',
+          details: `El rol '${profile.role}' no está autorizado para registrar checklists completados`
+        },
+        { status: 403 }
+      )
+    }
     
     const {
       completed_items,
