@@ -33,33 +33,45 @@ export interface ApprovalContextItem {
 
 export type ApprovalContextResponse = Record<string, ApprovalContextItem>
 
-async function resolveBusinessUnitId(
+/** Batch-resolve business_unit_id for many POs. 4 queries total instead of 3 per PO. */
+async function buildBusinessUnitLookup(
   supabase: Awaited<ReturnType<typeof createClient>>,
-  po: { plant_id?: string | null; work_order_id?: string | null }
-): Promise<string | null> {
-  let resolvedPlantId: string | null = po.plant_id ?? null
-  if (!resolvedPlantId && po.work_order_id) {
-    const { data: wo } = await supabase
-      .from('work_orders')
-      .select('id, asset_id')
-      .eq('id', po.work_order_id)
-      .maybeSingle()
-    if (wo?.asset_id) {
-      const { data: asset } = await supabase
-        .from('assets')
-        .select('plant_id')
-        .eq('id', wo.asset_id)
-        .maybeSingle()
-      resolvedPlantId = asset?.plant_id ?? null
+  pos: Array<{ plant_id?: string | null; work_order_id?: string | null }>
+): Promise<(po: { plant_id?: string | null; work_order_id?: string | null }) => string | null> {
+  const directPlantIds = [...new Set(pos.map(po => po.plant_id).filter(Boolean))] as string[]
+  const workOrderIds = [...new Set(pos.filter(po => !po.plant_id && po.work_order_id).map(po => po.work_order_id!))]
+
+  const woToPlant = new Map<string, string>()
+  if (workOrderIds.length > 0) {
+    const { data: wos } = await supabase.from('work_orders').select('id, asset_id').in('id', workOrderIds)
+    const assetIds = [...new Set((wos ?? []).map((w: { asset_id: string | null }) => w.asset_id).filter(Boolean))] as string[]
+    const woMap = new Map((wos ?? []).map((w: { id: string; asset_id: string | null }) => [w.id, w.asset_id]))
+
+    let assetToPlant = new Map<string, string>()
+    if (assetIds.length > 0) {
+      const { data: assets } = await supabase.from('assets').select('id, plant_id').in('id', assetIds)
+      assetToPlant = new Map((assets ?? []).filter((a: { plant_id: string | null }) => a.plant_id).map((a: { id: string; plant_id: string }) => [a.id, a.plant_id]))
     }
+    workOrderIds.forEach(woId => {
+      const assetId = woMap.get(woId)
+      const plantId = assetId ? assetToPlant.get(assetId) : undefined
+      if (plantId) woToPlant.set(woId, plantId)
+    })
   }
-  if (!resolvedPlantId) return null
-  const { data: plant } = await supabase
-    .from('plants')
-    .select('business_unit_id')
-    .eq('id', resolvedPlantId)
-    .maybeSingle()
-  return (plant?.business_unit_id as string | null) ?? null
+
+  const allPlantIds = [...new Set([...directPlantIds, ...woToPlant.values()])]
+  const plantToBu = new Map<string, string | null>()
+  if (allPlantIds.length > 0) {
+    const { data: plants } = await supabase.from('plants').select('id, business_unit_id').in('id', allPlantIds)
+    ;(plants ?? []).forEach((p: { id: string; business_unit_id: string | null }) => {
+      plantToBu.set(p.id, p.business_unit_id)
+    })
+  }
+
+  return (po: { plant_id?: string | null; work_order_id?: string | null }) => {
+    const plantId = po.plant_id ?? (po.work_order_id ? woToPlant.get(po.work_order_id) ?? null : null) ?? null
+    return plantId ? (plantToBu.get(plantId) ?? null) : null
+  }
 }
 
 export async function GET(request: NextRequest) {
@@ -98,18 +110,9 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    // Diagnostic logging (temporary) - confirm role resolution
     const isTechnicalApprover = checkTechnicalApprovalAuthority(actor)
     const isGM = checkGMEscalationAuthority(actor)
     const isViabilityReviewer = checkViabilityReviewAuthority(actor)
-    console.log('[approval-context] Role resolution:', {
-      profileRole: actor.profile.role,
-      profileBusinessRole: actor.profile.business_role ?? null,
-      effectiveBusinessRole: actor.effectiveBusinessRole ?? null,
-      isTechnicalApprover,
-      isGM,
-      isViabilityReviewer,
-    })
 
     const { data: purchaseOrders, error } = await supabase
       .from('purchase_orders')
@@ -128,6 +131,8 @@ export async function GET(request: NextRequest) {
     }
 
     const result: ApprovalContextResponse = {}
+    const nonAdjustment = (purchaseOrders ?? []).filter((po: { is_adjustment?: boolean }) => !po.is_adjustment)
+    const resolveBuId = await buildBusinessUnitLookup(supabase, nonAdjustment)
 
     for (const po of purchaseOrders || []) {
       if (po.is_adjustment) {
@@ -143,7 +148,7 @@ export async function GET(request: NextRequest) {
       }
 
       const amount = Number(po.approval_amount ?? po.total_amount ?? 0)
-      const buId = await resolveBusinessUnitId(supabase, po)
+      const buId = resolveBuId(po)
       const hasScope = checkScopeOverBusinessUnit(actor, buId)
 
       const policy = resolveWorkflowPath({
