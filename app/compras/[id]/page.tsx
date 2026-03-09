@@ -16,7 +16,7 @@ import { ReceiptSection } from "@/components/work-orders/receipt-section"
 import { WorkflowStatusDisplay } from "@/components/purchase-orders/workflow/WorkflowStatusDisplay"
 import { TypeBadge } from "@/components/purchase-orders/shared/TypeBadge"
 import { ReceiptDisplaySection } from "@/components/purchase-orders/ReceiptDisplaySection"
-import { PurchaseOrderDetailsMobile } from "@/components/purchase-orders/purchase-order-details-mobile"
+import { PurchaseOrderDetailsRouter } from "@/components/purchase-orders/purchase-order-details-router"
 import { PurchaseOrderWorkOrderLink } from "@/components/purchase-orders/purchase-order-work-order-link"
 import { Suspense } from "react"
 import { EditPOButton } from "@/components/purchase-orders/EditPOButton"
@@ -352,7 +352,7 @@ async function PurchaseOrderDetailsContent({ id }: { id: string }) {
     }
   }
 
-  return (
+  const desktopContent = (
     <div className="container mx-auto px-6 py-4 md:py-8">
       {/* Escalation/Approval banners */}
       {order?.status === 'pending_approval' && order?.authorized_by && (
@@ -831,6 +831,18 @@ async function PurchaseOrderDetailsContent({ id }: { id: string }) {
       )}
     </div>
   )
-} 
 
-// removed inline client bridge; using dedicated client component instead
+  return (
+    <Suspense fallback={desktopContent}>
+      <PurchaseOrderDetailsRouter
+        order={order}
+        workOrder={workOrder}
+        requesterName={requesterName}
+        approverName={approverName}
+        authorizerName={authorizerName}
+        items={items}
+        desktopContent={desktopContent}
+      />
+    </Suspense>
+  )
+}

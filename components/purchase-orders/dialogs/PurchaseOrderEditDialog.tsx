@@ -1,15 +1,17 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Plus, Trash2, Save, Loader2, Package } from "lucide-react"
+import { Card } from "@/components/ui/card"
+import { Plus, Trash2, Save, Loader2, Package, FileText } from "lucide-react"
 import { toast } from "@/components/ui/use-toast"
 import { PartAutocomplete, PartSuggestion } from "@/components/inventory/part-autocomplete"
+import { useIsMobile } from "@/hooks/use-mobile"
 
 type PurchaseOrderEditable = {
   supplier?: string | null
@@ -32,6 +34,8 @@ interface PurchaseOrderEditDialogProps {
 }
 
 export function PurchaseOrderEditDialog({ open, onOpenChange, purchaseOrderId, initialData, onUpdated }: PurchaseOrderEditDialogProps) {
+  const isMobile = useIsMobile()
+  const scrollRef = useRef<HTMLDivElement>(null)
   const [form, setForm] = useState<PurchaseOrderEditable>({})
   const [items, setItems] = useState<any[]>([])
   const [isSaving, setIsSaving] = useState(false)
@@ -61,6 +65,8 @@ export function PurchaseOrderEditDialog({ open, onOpenChange, purchaseOrderId, i
         max_payment_date: formatDateForInput(initialData.max_payment_date),
       })
       setItems(Array.isArray(initialData.items) ? initialData.items : [])
+      // Scroll to top when opening so general info is visible first
+      requestAnimationFrame(() => scrollRef.current?.scrollTo({ top: 0 }))
     }
   }, [open, initialData])
 
@@ -187,13 +193,20 @@ export function PurchaseOrderEditDialog({ open, onOpenChange, purchaseOrderId, i
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl max-h-[90vh] overflow-hidden flex flex-col">
+      <DialogContent className={`overflow-hidden flex flex-col ${isMobile ? "max-w-[100vw] sm:max-w-3xl max-h-[90dvh] sm:max-h-[90vh] w-[calc(100vw-2rem)]" : "max-w-3xl max-h-[90vh]"}`}>
         <DialogHeader>
           <DialogTitle>Editar Orden de Compra</DialogTitle>
           <DialogDescription>Actualiza la información general y los artículos.</DialogDescription>
         </DialogHeader>
 
-        <div className="flex-1 overflow-y-auto min-h-0 pr-2">
+        <div ref={scrollRef} className="flex-1 overflow-y-auto min-h-0 pr-2">
+          {/* Información general - visible first on mobile */}
+          <div className="space-y-2 mb-4">
+            <h3 className="text-sm font-semibold text-muted-foreground flex items-center gap-2">
+              <FileText className="h-4 w-4" />
+              Información general
+            </h3>
+          </div>
           <div className="grid gap-4 grid-cols-1 md:grid-cols-2">
             <div className="space-y-2">
               <Label>Proveedor</Label>
@@ -244,99 +257,163 @@ export function PurchaseOrderEditDialog({ open, onOpenChange, purchaseOrderId, i
                 <Package className="h-5 w-5 text-muted-foreground" />
                 <Label className="text-base">Artículos/Servicios</Label>
               </div>
-              <Button size="sm" variant="outline" onClick={addItem}><Plus className="h-4 w-4 mr-1" />Agregar</Button>
+              <Button size="sm" variant="outline" onClick={addItem} className={isMobile ? "min-h-[44px]" : ""}>
+                <Plus className="h-4 w-4 mr-1" />Agregar
+              </Button>
             </div>
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="min-w-[250px]">Descripción</TableHead>
-                    <TableHead className="min-w-[150px]">Parte/Código</TableHead>
-                    <TableHead className="text-right w-[100px]">Cantidad</TableHead>
-                    <TableHead className="text-right w-[120px]">Precio Unit.</TableHead>
-                    <TableHead className="text-right w-[100px]">Total</TableHead>
-                    <TableHead className="w-[50px]"></TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {items.map((it, idx) => (
-                    <TableRow key={idx}>
-                      <TableCell>
-                        <div className="space-y-1">
-                          <PartAutocomplete
-                            value={it.description || it.name || ''}
-                            onSelect={(part) => handlePartSelect(idx, part)}
-                            onManualEntry={(text) => handleManualPartEntry(idx, text)}
-                            placeholder="Buscar en catálogo o escribir..."
-                            showPartNumber={true}
-                            allowManualEntry={true}
-                          />
-                          <div className="flex items-center justify-between">
-                            <p className="text-xs text-muted-foreground">
-                              💡 Busca en el catálogo o escribe manualmente
-                            </p>
-                            {it.part_id && (
-                              <span className="text-xs text-green-600 font-medium flex items-center gap-1">
-                                <Package className="h-3 w-3" />
-                                En catálogo
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <Input 
-                          value={it.part_number || it.partNumber || ''} 
-                          onChange={e => updateItem(idx, 'part_number', e.target.value)}
-                          placeholder="Cód/Modelo"
+
+            {isMobile ? (
+              <div className="space-y-3">
+                {items.map((it, idx) => (
+                  <Card key={idx} className="p-4 space-y-2">
+                    <PartAutocomplete
+                      value={it.description || it.name || ""}
+                      onSelect={(part) => handlePartSelect(idx, part)}
+                      onManualEntry={(text) => handleManualPartEntry(idx, text)}
+                      placeholder="Buscar o escribir..."
+                      showPartNumber={true}
+                      allowManualEntry={true}
+                      popoverSide="top"
+                      inModalContext={true}
+                    />
+                    <Input
+                      value={it.part_number || it.partNumber || ""}
+                      onChange={(e) => updateItem(idx, "part_number", e.target.value)}
+                      placeholder="Código/Modelo"
+                      className="min-h-[44px]"
+                    />
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="space-y-1">
+                        <Label className="text-xs">Cantidad</Label>
+                        <Input
+                          type="number"
+                          value={it.quantity ?? 1}
+                          onChange={(e) => updateItem(idx, "quantity", Number(e.target.value))}
+                          className="min-h-[44px] text-right"
                         />
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <Input 
-                          type="number" 
-                          value={it.quantity ?? 1} 
-                          onChange={e => updateItem(idx, 'quantity', Number(e.target.value))}
-                          className="text-right"
-                        />
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <Input 
-                          type="number" 
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs">Precio Unit.</Label>
+                        <Input
+                          type="number"
                           step="0.01"
-                          value={it.unit_price ?? 0} 
-                          onChange={e => updateItem(idx, 'unit_price', Number(e.target.value))}
-                          className="text-right"
+                          value={it.unit_price ?? 0}
+                          onChange={(e) => updateItem(idx, "unit_price", Number(e.target.value))}
+                          className="min-h-[44px] text-right"
                         />
-                      </TableCell>
-                      <TableCell className="text-right font-medium">
-                        ${Number(it.total_price || 0).toFixed(2)}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <Button variant="ghost" size="icon" onClick={() => removeItem(idx)}>
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                  {items.length === 0 && (
+                      </div>
+                    </div>
+                    <div className="flex justify-between items-center pt-2 border-t">
+                      <span className="text-sm font-medium">Total: ${Number(it.total_price || 0).toFixed(2)}</span>
+                      <Button variant="ghost" size="icon" onClick={() => removeItem(idx)} aria-label="Eliminar artículo">
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </Card>
+                ))}
+                <Button variant="outline" onClick={addItem} className="w-full min-h-[44px]">
+                  <Plus className="h-4 w-4 mr-2" />Agregar artículo
+                </Button>
+                {items.length === 0 && (
+                  <p className="text-center text-muted-foreground py-4 text-sm">No hay artículos. Toca "Agregar artículo" para comenzar.</p>
+                )}
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
                     <TableRow>
-                      <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
-                        No hay artículos. Haz clic en "Agregar" para comenzar.
-                      </TableCell>
+                      <TableHead className="min-w-[250px]">Descripción</TableHead>
+                      <TableHead className="min-w-[150px]">Parte/Código</TableHead>
+                      <TableHead className="text-right w-[100px]">Cantidad</TableHead>
+                      <TableHead className="text-right w-[120px]">Precio Unit.</TableHead>
+                      <TableHead className="text-right w-[100px]">Total</TableHead>
+                      <TableHead className="w-[50px]"></TableHead>
                     </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-            </div>
+                  </TableHeader>
+                  <TableBody>
+                    {items.map((it, idx) => (
+                      <TableRow key={idx}>
+                        <TableCell>
+                          <div className="space-y-1">
+                            <PartAutocomplete
+                              value={it.description || it.name || ""}
+                              onSelect={(part) => handlePartSelect(idx, part)}
+                              onManualEntry={(text) => handleManualPartEntry(idx, text)}
+                              placeholder="Buscar en catálogo o escribir..."
+                              showPartNumber={true}
+                              allowManualEntry={true}
+                            />
+                            <div className="flex items-center justify-between">
+                              <p className="text-xs text-muted-foreground">
+                                💡 Busca en el catálogo o escribe manualmente
+                              </p>
+                              {it.part_id && (
+                                <span className="text-xs text-green-600 font-medium flex items-center gap-1">
+                                  <Package className="h-3 w-3" />
+                                  En catálogo
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Input
+                            value={it.part_number || it.partNumber || ""}
+                            onChange={(e) => updateItem(idx, "part_number", e.target.value)}
+                            placeholder="Cód/Modelo"
+                          />
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Input
+                            type="number"
+                            value={it.quantity ?? 1}
+                            onChange={(e) => updateItem(idx, "quantity", Number(e.target.value))}
+                            className="text-right"
+                          />
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Input
+                            type="number"
+                            step="0.01"
+                            value={it.unit_price ?? 0}
+                            onChange={(e) => updateItem(idx, "unit_price", Number(e.target.value))}
+                            className="text-right"
+                          />
+                        </TableCell>
+                        <TableCell className="text-right font-medium">
+                          ${Number(it.total_price || 0).toFixed(2)}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Button variant="ghost" size="icon" onClick={() => removeItem(idx)}>
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                    {items.length === 0 && (
+                      <TableRow>
+                        <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
+                          No hay artículos. Haz clic en "Agregar" para comenzar.
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+
             <div className="text-right mt-2 font-medium text-lg">
               Total calculado: ${totalCalculated.toFixed(2)}
             </div>
           </div>
         </div>
 
-        <DialogFooter className="mt-4 flex-shrink-0">
-          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
-          <Button onClick={handleSave} disabled={isSaving}>
+        <DialogFooter className={`mt-4 flex-shrink-0 gap-2 ${isMobile ? "flex-col sm:flex-row" : ""}`}>
+          <Button variant="outline" onClick={() => onOpenChange(false)} className={isMobile ? "w-full sm:w-auto order-2 sm:order-1" : ""}>
+            Cancelar
+          </Button>
+          <Button onClick={handleSave} disabled={isSaving} className={isMobile ? "w-full sm:w-auto order-1 sm:order-2 min-h-[44px]" : ""}>
             {isSaving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Save className="h-4 w-4 mr-2" />}
             Guardar cambios
           </Button>

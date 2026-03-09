@@ -3,16 +3,22 @@
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { Separator } from "@/components/ui/separator"
 import { 
-  ArrowLeft, FileCheck, Package, ShoppingCart, FileText, Download, ExternalLink, 
-  Store, Wrench, Building2, Receipt, AlertCircle, DollarSign, Calendar, User,
-  Clock, MapPin
+  ArrowLeft, FileCheck, Package, ShoppingCart, FileText, ExternalLink, 
+  Store, Wrench, Building2, Receipt, DollarSign, Calendar, User,
+  Clock, MapPin, ChevronDown
 } from "lucide-react"
 import Link from "next/link"
 import { ReactNode } from "react"
 import { PurchaseOrderType } from "@/types/purchase-orders"
 import { TypeBadge } from "@/components/purchase-orders/shared/TypeBadge"
+import { WorkflowStatusDisplay } from "@/components/purchase-orders/workflow/WorkflowStatusDisplay"
+import { QuotationComparisonManager } from "@/components/purchase-orders/quotations/QuotationComparisonManager"
+import { ReceiptDisplaySection } from "@/components/purchase-orders/ReceiptDisplaySection"
+import { POInventoryActions } from "@/components/purchase-orders/inventory-actions"
+import { EditPOButton } from "@/components/purchase-orders/EditPOButton"
 
 interface PurchaseOrderDetailsMobileProps {
   order: any
@@ -45,15 +51,15 @@ export function PurchaseOrderDetailsMobile({
 }: PurchaseOrderDetailsMobileProps) {
   
   return (
-    <div className="container mx-auto px-4 py-4 space-y-4">
+    <div className="container mx-auto px-4 md:px-6 py-5 md:py-6 space-y-6 md:space-y-8">
       {/* Mobile Header */}
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center justify-between mb-6">
         <Button variant="outline" size="icon" asChild>
           <Link href="/compras">
             <ArrowLeft className="h-4 w-4" />
           </Link>
         </Button>
-        <div className="flex-1 text-center">
+        <div className="flex-1 text-center min-w-0">
           <h1 className="text-xl font-bold truncate">{order.order_id}</h1>
           {order.po_type && (
             <div className="mt-1">
@@ -61,44 +67,70 @@ export function PurchaseOrderDetailsMobile({
             </div>
           )}
         </div>
-        <div className="w-10" /> {/* Spacer for balance */}
+        {order.status !== "validated" ? (
+          <div className="shrink-0">
+            <EditPOButton
+              compact
+              id={order.id}
+              initialData={{
+                supplier: order.supplier,
+                total_amount: order.total_amount ? Number(order.total_amount) : 0,
+                payment_method: order.payment_method,
+                notes: order.notes,
+                store_location: order.store_location,
+                service_provider: order.service_provider,
+                quotation_url: order.quotation_url,
+                purchase_date: order.purchase_date,
+                max_payment_date: order.max_payment_date,
+                items: (() => {
+                  const raw = typeof order.items === "string" ? JSON.parse(order.items) : order.items
+                  return Array.isArray(raw) ? raw : []
+                })(),
+              }}
+            />
+          </div>
+        ) : (
+          <div className="w-10" />
+        )}
       </div>
 
-      {/* Status Card */}
-      <Card className="border-l-4 border-l-blue-500">
-        <CardContent className="pt-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-muted-foreground">Estado Actual</p>
-              <div className="flex items-center space-x-2 mt-1">
-                <Badge variant="secondary" className="text-sm">
-                  {order.status || "Pendiente"}
-                </Badge>
+      {/* Status Card - simplified for legacy; enhanced POs use WorkflowStatusDisplay below */}
+      {!order.po_type && (
+        <Card className="border-l-4 border-l-blue-500">
+          <CardContent className="p-5 md:p-6">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="text-sm text-muted-foreground">Estado Actual</p>
+                <div className="flex items-center space-x-2 mt-1">
+                  <Badge variant="secondary" className="text-sm">
+                    {order.status || "Pendiente"}
+                  </Badge>
+                </div>
+              </div>
+              <div className="text-right">
+                <p className="text-2xl font-bold text-primary">
+                  {formatCurrency(order.total_amount)}
+                </p>
+                {order.actual_amount && (
+                  <p className="text-sm text-green-600">
+                    Real: {formatCurrency(order.actual_amount.toString())}
+                  </p>
+                )}
               </div>
             </div>
-            <div className="text-right">
-              <p className="text-2xl font-bold text-primary">
-                {formatCurrency(order.total_amount)}
-              </p>
-              {order.actual_amount && (
-                <p className="text-sm text-green-600">
-                  Real: {formatCurrency(order.actual_amount.toString())}
-                </p>
-              )}
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      )}
 
-      {/* Key Information Card */}
+      {/* Resumen Card */}
       <Card>
-        <CardHeader>
+        <CardHeader className="p-5 md:p-6">
           <CardTitle className="text-lg flex items-center">
             <Building2 className="h-5 w-5 mr-2" />
-            Información Principal
+            Resumen
           </CardTitle>
         </CardHeader>
-        <CardContent className="space-y-3">
+        <CardContent className="p-5 md:p-6 pt-0 space-y-4">
           {/* Purchase Order Type - only show for enhanced orders */}
           {order.po_type && (
             <div className="flex items-start space-x-3 p-3 bg-blue-50 rounded-lg">
@@ -126,22 +158,36 @@ export function PurchaseOrderDetailsMobile({
 
           {/* Supplier/Provider */}
           <div className="flex items-start space-x-3">
-            <Store className="h-4 w-4 text-muted-foreground mt-0.5" />
-            <div className="flex-1">
+            <Store className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
+            <div className="flex-1 min-w-0">
               <p className="text-xs font-medium text-muted-foreground">
                 {order.po_type === PurchaseOrderType.DIRECT_SERVICE ? "Proveedor de Servicio" : "Proveedor"}
               </p>
-              <p className="text-sm font-medium">
+              <p className="text-sm font-medium truncate">
                 {order.service_provider || order.supplier || "No especificado"}
               </p>
+            </div>
+          </div>
+
+          {/* Amount */}
+          <div className="flex items-start space-x-3">
+            <DollarSign className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
+            <div className="flex-1">
+              <p className="text-xs font-medium text-muted-foreground">Monto Total</p>
+              <p className="text-sm font-semibold">{formatCurrency(order.total_amount)}</p>
+              {order.actual_amount && (
+                <p className="text-xs text-green-600 mt-0.5">
+                  Real: {formatCurrency(order.actual_amount.toString())}
+                </p>
+              )}
             </div>
           </div>
 
           {/* Store Location */}
           {order.store_location && (
             <div className="flex items-start space-x-3">
-              <MapPin className="h-4 w-4 text-muted-foreground mt-0.5" />
-              <div className="flex-1">
+              <MapPin className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
+              <div className="flex-1 min-w-0">
                 <p className="text-xs font-medium text-muted-foreground">Ubicación</p>
                 <p className="text-sm">{order.store_location}</p>
               </div>
@@ -151,7 +197,7 @@ export function PurchaseOrderDetailsMobile({
           {/* Payment Method */}
           {order.payment_method && (
             <div className="flex items-start space-x-3">
-              <Receipt className="h-4 w-4 text-muted-foreground mt-0.5" />
+              <Receipt className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
               <div className="flex-1">
                 <p className="text-xs font-medium text-muted-foreground">Forma de Pago</p>
                 <p className="text-sm capitalize">{order.payment_method}</p>
@@ -168,97 +214,183 @@ export function PurchaseOrderDetailsMobile({
               </Badge>
             </div>
           )}
+
+          {/* Historial - Collapsible (default closed on mobile) */}
+          <Collapsible defaultOpen={false} className="mt-4 pt-4 border-t">
+            <CollapsibleTrigger asChild>
+              <button
+                type="button"
+                className="flex w-full items-center justify-between text-left text-sm font-medium text-muted-foreground hover:text-foreground transition-colors cursor-pointer group"
+              >
+                <span className="flex items-center gap-2">
+                  <Clock className="h-4 w-4" />
+                  Historial de la orden
+                </span>
+                <ChevronDown className="h-4 w-4 shrink-0 transition-transform duration-200 group-data-[state=open]:rotate-180" />
+              </button>
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <div className="space-y-4 pt-4">
+                <div className="flex items-start space-x-3">
+                  <User className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
+                  <div className="flex-1">
+                    <p className="text-xs font-medium text-muted-foreground">Solicitado por</p>
+                    <p className="text-sm">{requesterName}</p>
+                  </div>
+                </div>
+
+                {authorizerName && (
+                  <div className="flex items-start space-x-3">
+                    <FileCheck className="h-4 w-4 text-blue-600 mt-0.5 shrink-0" />
+                    <div className="flex-1">
+                      <p className="text-xs font-medium text-muted-foreground">Autorizado por (Gerente de Mantenimiento)</p>
+                      <p className="text-sm">{authorizerName}</p>
+                    </div>
+                  </div>
+                )}
+
+                {order.approved_by && (
+                  <div className="flex items-start space-x-3">
+                    <FileCheck className="h-4 w-4 text-green-600 mt-0.5 shrink-0" />
+                    <div className="flex-1">
+                      <p className="text-xs font-medium text-muted-foreground">Aprobado por</p>
+                      <p className="text-sm">{approverName}</p>
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex items-start space-x-3">
+                  <Calendar className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
+                  <div className="flex-1">
+                    <p className="text-xs font-medium text-muted-foreground">Fecha de Creación</p>
+                    <p className="text-sm">{formatDate(order.created_at)}</p>
+                  </div>
+                </div>
+
+                {order.purchase_date && (
+                  <div className="flex items-start space-x-3">
+                    <Calendar className="h-4 w-4 text-blue-600 mt-0.5 shrink-0" />
+                    <div className="flex-1">
+                      <p className="text-xs font-medium text-muted-foreground">Fecha Planeada de Compra</p>
+                      <p className="text-sm font-semibold text-blue-600">{formatDate(order.purchase_date)}</p>
+                    </div>
+                  </div>
+                )}
+
+                {order.approval_date && (
+                  <div className="flex items-start space-x-3">
+                    <Clock className="h-4 w-4 text-green-600 mt-0.5 shrink-0" />
+                    <div className="flex-1">
+                      <p className="text-xs font-medium text-muted-foreground">Fecha de Aprobación</p>
+                      <p className="text-sm">{formatDate(order.approval_date)}</p>
+                    </div>
+                  </div>
+                )}
+
+                {order.purchased_at && (
+                  <div className="flex items-start space-x-3">
+                    <ShoppingCart className="h-4 w-4 text-blue-600 mt-0.5 shrink-0" />
+                    <div className="flex-1">
+                      <p className="text-xs font-medium text-muted-foreground">Fecha de Compra</p>
+                      <p className="text-sm">{formatDate(order.purchased_at)}</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </CollapsibleContent>
+          </Collapsible>
         </CardContent>
       </Card>
 
-      {/* People & Dates Card */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg flex items-center">
-            <User className="h-5 w-5 mr-2" />
-            Personas y Fechas
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="flex items-start space-x-3">
-            <User className="h-4 w-4 text-muted-foreground mt-0.5" />
-            <div className="flex-1">
-              <p className="text-xs font-medium text-muted-foreground">Solicitado por</p>
-              <p className="text-sm">{requesterName}</p>
-            </div>
-          </div>
+      {/* Workflow - collapsible, after Resumen */}
+      {order.po_type && (
+        <Card>
+          <Collapsible defaultOpen={false}>
+            <CollapsibleTrigger asChild>
+              <CardHeader className="p-5 md:p-6 pb-2 cursor-pointer hover:bg-muted/30 transition-colors rounded-t-lg group/trigger">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle className="text-lg flex items-center">
+                      <Clock className="h-5 w-5 mr-2" />
+                      Workflow y acciones
+                    </CardTitle>
+                    <CardDescription className="text-sm mt-1">
+                      Estado actual: {order.status?.replace('_', ' ')}
+                    </CardDescription>
+                  </div>
+                  <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200 group-data-[state=open]/trigger:rotate-180" />
+                </div>
+              </CardHeader>
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <CardContent className="p-5 md:p-6 pt-0">
+                <WorkflowStatusDisplay
+                  purchaseOrderId={order.id}
+                  poType={order.po_type as PurchaseOrderType}
+                  currentStatus={order.status}
+                />
+              </CardContent>
+            </CollapsibleContent>
+          </Collapsible>
+        </Card>
+      )}
 
-          {authorizerName && (
-            <div className="flex items-start space-x-3">
-              <FileCheck className="h-4 w-4 text-blue-600 mt-0.5" />
-              <div className="flex-1">
-                <p className="text-xs font-medium text-muted-foreground">Autorizado por (Gerente de Mantenimiento)</p>
-                <p className="text-sm">{authorizerName}</p>
-              </div>
-            </div>
-          )}
-
-          {order.approved_by && (
-            <div className="flex items-start space-x-3">
-              <FileCheck className="h-4 w-4 text-green-600 mt-0.5" />
-              <div className="flex-1">
-                <p className="text-xs font-medium text-muted-foreground">Aprobado por</p>
-                <p className="text-sm">{approverName}</p>
-              </div>
-            </div>
-          )}
-
-          <div className="flex items-start space-x-3">
-            <Calendar className="h-4 w-4 text-muted-foreground mt-0.5" />
-            <div className="flex-1">
-              <p className="text-xs font-medium text-muted-foreground">Fecha de Creación</p>
-              <p className="text-sm">{formatDate(order.created_at)}</p>
-            </div>
-          </div>
-
-          {/* Purchase Date */}
-          {order.purchase_date && (
-            <div className="flex items-start space-x-3">
-              <Calendar className="h-4 w-4 text-blue-600 mt-0.5" />
-              <div className="flex-1">
-                <p className="text-xs font-medium text-muted-foreground">Fecha Planeada de Compra</p>
-                <p className="text-sm font-semibold text-blue-600">{formatDate(order.purchase_date)}</p>
-              </div>
-            </div>
-          )}
-
-          {order.approval_date && (
-            <div className="flex items-start space-x-3">
-              <Clock className="h-4 w-4 text-green-600 mt-0.5" />
-              <div className="flex-1">
-                <p className="text-xs font-medium text-muted-foreground">Fecha de Aprobación</p>
-                <p className="text-sm">{formatDate(order.approval_date)}</p>
-              </div>
-            </div>
-          )}
-
-          {order.purchased_at && (
-            <div className="flex items-start space-x-3">
-              <ShoppingCart className="h-4 w-4 text-blue-600 mt-0.5" />
-              <div className="flex-1">
-                <p className="text-xs font-medium text-muted-foreground">Fecha de Compra</p>
-                <p className="text-sm">{formatDate(order.purchased_at)}</p>
-              </div>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      {/* Quotation - collapsible, form in modal */}
+      {order.po_type && order.po_purpose !== 'work_order_inventory' && (
+        <Card>
+          <Collapsible defaultOpen={!order.selected_quotation_id}>
+            <CollapsibleTrigger asChild>
+              <CardHeader className="p-5 md:p-6 pb-2 cursor-pointer hover:bg-muted/30 transition-colors rounded-t-lg group/trigger">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle className="text-lg flex items-center">
+                      <FileText className="h-5 w-5 mr-2" />
+                      Cotización
+                    </CardTitle>
+                    {order.requires_quote && !order.selected_quotation_id && (
+                      <CardDescription className="text-sm mt-1">
+                        {order.po_type === PurchaseOrderType.DIRECT_SERVICE
+                          ? "Requiere cotización (≥ $5,000 MXN)"
+                          : "Requiere cotización antes de aprobar"
+                        }
+                      </CardDescription>
+                    )}
+                    {order.selected_quotation_id && (
+                      <CardDescription className="text-sm mt-1 text-green-700">
+                        Toca para ver detalles
+                      </CardDescription>
+                    )}
+                  </div>
+                  <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200 group-data-[state=open]/trigger:rotate-180" />
+                </div>
+              </CardHeader>
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <CardContent className="p-5 md:p-6 pt-0">
+                <QuotationComparisonManager
+                  purchaseOrderId={order.id}
+                  workOrderId={order.work_order_id}
+                  quotationSelectionRequired={order.quotation_selection_required || false}
+                  quotationSelectionStatus={order.quotation_selection_status}
+                  poPurpose={order.po_purpose}
+                  className="space-y-4"
+                />
+              </CardContent>
+            </CollapsibleContent>
+          </Collapsible>
+        </Card>
+      )}
 
       {/* Work Order Card */}
       {workOrder && (
         <Card>
-          <CardHeader>
+          <CardHeader className="p-5 md:p-6">
             <CardTitle className="text-lg flex items-center">
               <Wrench className="h-5 w-5 mr-2" />
               Orden de Trabajo
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-3">
+          <CardContent className="p-5 md:p-6 pt-0 space-y-4">
             <div>
               <p className="text-xs font-medium text-muted-foreground">ID de Orden</p>
               <p className="text-sm font-medium">{workOrder.order_id}</p>
@@ -284,87 +416,13 @@ export function PurchaseOrderDetailsMobile({
         </Card>
       )}
 
-      {/* Quotation Card */}
-      {order.po_type && (order.quotation_url || order.requires_quote) && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg flex items-center space-x-2">
-              <FileText className="h-5 w-5" />
-              <span>Cotización</span>
-              {order.requires_quote && (
-                <Badge variant={order.quotation_url ? "default" : "destructive"} className="text-xs">
-                  {order.quotation_url ? "Completada" : "Requerida"}
-                </Badge>
-              )}
-            </CardTitle>
-            {order.requires_quote && (
-              <CardDescription className="text-sm">
-                {order.po_type === PurchaseOrderType.DIRECT_SERVICE
-                  ? `Esta orden de servicio por ${formatCurrency(order.total_amount)} requiere cotización por ser mayor o igual a $5,000 MXN`
-                  : "Esta orden requiere cotización antes de ser aprobada"
-                }
-              </CardDescription>
-            )}
-          </CardHeader>
-          <CardContent>
-            {order.quotation_url ? (
-              <div className="space-y-3">
-                <div className="flex items-center space-x-2">
-                  <Badge variant="secondary" className="text-green-600 bg-green-50 text-xs">
-                    <FileCheck className="h-3 w-3 mr-1" />
-                    Cotización Disponible
-                  </Badge>
-                </div>
-                
-                <div className="grid grid-cols-2 gap-2">
-                  <Button asChild variant="outline" size="sm">
-                    <a 
-                      href={order.quotation_url} 
-                      target="_blank" 
-                      rel="noopener noreferrer"
-                      className="flex items-center justify-center space-x-1"
-                    >
-                      <Download className="h-4 w-4" />
-                      <span>Descargar</span>
-                    </a>
-                  </Button>
-                  
-                  <Button asChild variant="secondary" size="sm">
-                    <a 
-                      href={order.quotation_url} 
-                      target="_blank" 
-                      rel="noopener noreferrer"
-                      className="flex items-center justify-center space-x-1"
-                    >
-                      <ExternalLink className="h-4 w-4" />
-                      <span>Ver</span>
-                    </a>
-                  </Button>
-                </div>
-              </div>
-            ) : (
-              <div className="text-center py-6">
-                <div className="rounded-full bg-yellow-100 p-3 mx-auto w-12 h-12 flex items-center justify-center mb-4">
-                  <AlertCircle className="h-6 w-6 text-yellow-600" />
-                </div>
-                <h4 className="font-medium mb-2">Cotización Pendiente</h4>
-                <p className="text-sm text-muted-foreground mb-4">
-                  Esta orden requiere cotización antes de poder ser aprobada.
-                </p>
-                <Badge variant="destructive" className="text-xs">Pendiente de Cotización</Badge>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
-
       {/* Notes Card */}
       {order.notes && (
         <Card>
-          <CardHeader>
+          <CardHeader className="p-5 md:p-6">
             <CardTitle className="text-lg">Notas</CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="p-5 md:p-6 pt-0">
             <p className="text-sm whitespace-pre-wrap">{order.notes}</p>
           </CardContent>
         </Card>
@@ -373,7 +431,7 @@ export function PurchaseOrderDetailsMobile({
       {/* Items Card */}
       {items && items.length > 0 && (
         <Card>
-          <CardHeader>
+          <CardHeader className="p-5 md:p-6">
             <CardTitle className="text-lg">
               {order.po_type === PurchaseOrderType.DIRECT_SERVICE 
                 ? "Servicios Solicitados" 
@@ -383,8 +441,8 @@ export function PurchaseOrderDetailsMobile({
               }
             </CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
+          <CardContent className="p-5 md:p-6 pt-0">
+            <div className="space-y-4">
               {/* Direct Service Display */}
               {order.po_type === PurchaseOrderType.DIRECT_SERVICE ? (
                 items.map((service: any, index: number) => (
@@ -461,26 +519,44 @@ export function PurchaseOrderDetailsMobile({
         </Card>
       )}
 
-      {/* Action Buttons */}
-      <Card>
-        <CardContent className="pt-6">
-          <div className="space-y-3">
-            {getActionButtons(order) && (
-              <div className="flex flex-col gap-3">
-                {getActionButtons(order)}
-              </div>
-            )}
-            
-            {/* Always show "Ver Detalles Completos" button */}
-            <Button asChild variant="outline" className="w-full">
-              <Link href={`/compras/${order.id}?view=desktop`}>
-                <ExternalLink className="mr-2 h-4 w-4" />
-                Ver Detalles Completos
-              </Link>
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+      {/* Receipts - after approval */}
+      {order.po_type &&
+       order.status &&
+       ['approved', 'purchased', 'receipt_uploaded', 'completed', 'validated'].includes(order.status) && (
+        <ReceiptDisplaySection purchaseOrderId={order.id} poType={order.po_type} />
+      )}
+
+      {/* Inventory actions - when PO has catalog items */}
+      {order.po_type && items && items.some((item: any) => item.part_id || item.partNumber) && (
+        <Card>
+          <CardHeader className="p-5 md:p-6">
+            <CardTitle className="text-lg">Gestión de Inventario</CardTitle>
+            <CardDescription>
+              Recibe items a inventario o cumple la orden desde inventario existente
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="p-5 md:p-6 pt-0">
+            <div className="flex flex-col gap-3">
+              <POInventoryActions
+                purchaseOrderId={order.id}
+                receivedToInventory={order.received_to_inventory || false}
+                inventoryFulfilled={order.inventory_fulfilled || false}
+              />
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Action Buttons - legacy POs only; enhanced POs use workflow card above */}
+      {getActionButtons(order) && (
+        <Card>
+          <CardContent className="p-5 md:p-6">
+            <div className="flex flex-col gap-3">
+              {getActionButtons(order)}
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   )
 } 

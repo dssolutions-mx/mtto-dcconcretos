@@ -79,6 +79,14 @@ export function WorkflowStatusDisplay({
   const [isLoadingQuotations, setIsLoadingQuotations] = useState<boolean>(false)
   const [pendingApprovalQuotations, setPendingApprovalQuotations] = useState<any[]>([])
   const [selectedQuotationForApproval, setSelectedQuotationForApproval] = useState<string | null>(null)
+  const [approvalContext, setApprovalContext] = useState<{
+    canApprove: boolean
+    canReject: boolean
+    canRecordViability: boolean
+    reason: string
+    nextStep: string
+    responsibleRole?: string
+  } | null>(null)
   
   // Get PO amount from workflowStatus (always fresh)
   const purchaseOrderAmount = parseFloat(workflowStatus?.purchase_order?.total_amount || '0')
@@ -217,6 +225,32 @@ export function WorkflowStatusDisplay({
 
     loadEffectiveAuthorization()
   }, [profile, refreshProfile])
+
+  // Load approval context for pending POs - gates which action cards to show (same as mobile list)
+  useEffect(() => {
+    const loadApprovalContext = async () => {
+      if (currentStatus !== 'pending_approval') {
+        setApprovalContext(null)
+        return
+      }
+      try {
+        const res = await fetch(
+          `/api/purchase-orders/approval-context?ids=${purchaseOrderId}`,
+          { cache: 'no-store', credentials: 'include' }
+        )
+        if (res.ok) {
+          const data = await res.json()
+          const ctx = data[purchaseOrderId]
+          setApprovalContext(ctx ?? null)
+        } else {
+          setApprovalContext(null)
+        }
+      } catch {
+        setApprovalContext(null)
+      }
+    }
+    loadApprovalContext()
+  }, [currentStatus, purchaseOrderId])
 
   // Helper function to upload receipt file
   const uploadReceiptFile = async (file: File): Promise<string | null> => {
@@ -1004,240 +1038,151 @@ export function WorkflowStatusDisplay({
   const Icon = statusConfig.icon
   const progress = getWorkflowProgress(currentStatus, poType, poPurpose)
 
+  const requiresViability = workflowStatus?.purchase_order?.workflow_policy?.requires_viability
+  const viabilityState = workflowStatus?.purchase_order?.viability_state
+  const hasTechnicalApproval = !!workflowStatus?.purchase_order?.authorized_by
+  const hasViability = viabilityState === 'viable'
+  const needsGMEscalation = purchaseOrderAmount >= 7000 && workflowStatus?.purchase_order?.workflow_policy?.requires_gm_if_above_threshold
+
   return (
     <div className={`space-y-6 ${className}`}>
-      {/* Current Status */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center space-x-3">
-            <div className={`p-2 rounded-lg ${statusConfig.color.replace('text-', 'bg-').replace('-700', '-200')}`}>
+      {/* Single consolidated workflow card - Status + Progress + Approval steps + Financial summary */}
+      <Card className="overflow-hidden">
+        <CardHeader className="p-5 md:p-6 pb-4">
+          <CardTitle className="flex items-center gap-3">
+            <div className={`p-2 rounded-lg shrink-0 ${statusConfig.color.replace('text-', 'bg-').replace('-700', '-200')}`}>
               <Icon className="h-5 w-5" />
             </div>
-            <div>
-              <span className="text-lg">Estado Actual: {statusConfig.label}</span>
+            <div className="min-w-0">
+              <span className="text-lg block">Estado: {statusConfig.label}</span>
               <p className="text-sm text-muted-foreground font-normal">
                 {statusConfig.description}
               </p>
             </div>
           </CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="p-5 md:p-6 pt-0 space-y-5">
           {/* Progress Bar */}
-          <div className="space-y-2">
+          <div className="space-y-1.5">
             <div className="flex justify-between text-sm text-muted-foreground">
-              <span>Progreso del Workflow</span>
+              <span>Progreso</span>
               <span>{progress}%</span>
             </div>
-            <div className="w-full bg-gray-200 rounded-full h-2">
+            <div className="w-full bg-muted rounded-full h-1.5">
               <div 
-                className="bg-primary h-2 rounded-full transition-all duration-300" 
+                className="bg-primary h-1.5 rounded-full transition-all duration-300" 
                 style={{ width: `${progress}%` }}
               />
             </div>
           </div>
-        </CardContent>
-      </Card>
 
-      {/* Payment Condition — highlighted for Administration (Paths C/D require viability review) */}
-      {workflowStatus?.purchase_order?.payment_condition && workflowStatus.purchase_order.po_purpose !== 'work_order_inventory' && (
-        <Alert className={
-          workflowStatus.purchase_order.payment_condition === 'credit'
-            ? 'border-amber-500 bg-amber-50'
-            : 'border-emerald-500 bg-emerald-50'
-        }>
-          <DollarSign className="h-4 w-4" />
-          <AlertTitle className="font-semibold">
-            Condición de Pago:{' '}
-                    <span className="font-bold">{workflowStatus.purchase_order.payment_condition === 'credit' ? '💳 Crédito' : '💵 Contado'}</span>
-          </AlertTitle>
-          <AlertDescription>
-            {workflowStatus.purchase_order.payment_condition === 'credit'
-              ? 'Esta orden involucra pago a crédito. Administración debe revisar viabilidad antes de aprobación final.'
-              : 'Pago de contado. Flujo simplificado.'}
-          </AlertDescription>
-        </Alert>
-      )}
-
-      {/* Viability Status — Paths C and D require Administration review before GM approval */}
-      {workflowStatus?.purchase_order?.workflow_policy?.requires_viability && (
-        <Alert className="border-slate-500 bg-slate-50">
-          <Shield className="h-4 w-4" />
-          <AlertTitle className="font-semibold">Revisión de Viabilidad Administrativa</AlertTitle>
-          <AlertDescription className="space-y-2 mt-2">
-            <div className="flex justify-between items-center">
-              <span>Estado:</span>
-              <Badge variant={
-                workflowStatus.purchase_order.viability_state === 'viable' ? 'default' :
-                workflowStatus.purchase_order.viability_state === 'not_viable' ? 'destructive' : 'outline'
-              }>
-                {workflowStatus.purchase_order.viability_state === 'viable' && 'Viable'}
-                {workflowStatus.purchase_order.viability_state === 'not_viable' && 'No viable'}
-                {(!workflowStatus.purchase_order.viability_state || workflowStatus.purchase_order.viability_state === 'pending') && 'Pendiente'}
-              </Badge>
-            </div>
-            {workflowStatus.purchase_order.workflow_policy.next_step_description && (
-              <p className="text-sm font-medium mt-2">
-                {workflowStatus.purchase_order.workflow_policy.next_step_description}
-              </p>
-            )}
-          </AlertDescription>
-        </Alert>
-      )}
-
-      {/* Cash Impact Indicator */}
-      {workflowStatus?.purchase_order?.po_purpose && (
-        <Alert className={
-          workflowStatus.purchase_order.po_purpose === 'work_order_inventory' 
-            ? 'border-blue-500 bg-blue-50' 
-            : workflowStatus.purchase_order.po_purpose === 'inventory_restock'
-            ? 'border-purple-500 bg-purple-50'
-            : 'border-orange-500 bg-orange-50'
-        }>
-          <Info className="h-4 w-4" />
-          <AlertTitle className="font-semibold">
-            {workflowStatus.purchase_order.po_purpose === 'work_order_inventory' && 'Solicitud de Uso de Inventario'}
-            {workflowStatus.purchase_order.po_purpose === 'inventory_restock' && 'Compra para Reabastecimiento'}
-            {workflowStatus.purchase_order.po_purpose === 'work_order_cash' && 'Compra Directa con Efectivo'}
-            {workflowStatus.purchase_order.po_purpose === 'mixed' && 'Compra Mixta (Efectivo + Inventario)'}
-          </AlertTitle>
-          <AlertDescription className="space-y-2 mt-2">
-            <div className="flex justify-between">
-              <span>Monto Total:</span>
-              <span className="font-bold">{formatCurrency(workflowStatus.purchase_order.total_amount || 0)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span>Impacto en Efectivo:</span>
-              <span className={`font-bold ${
-                workflowStatus.purchase_order.po_purpose === 'work_order_inventory' ? 'text-green-600' : 'text-red-600'
-              }`}>
-                {workflowStatus.purchase_order.po_purpose === 'work_order_inventory' 
-                  ? '$0 (desde inventario)' 
-                  : formatCurrency(workflowStatus.purchase_order.total_amount || 0)}
-              </span>
-            </div>
-            {workflowStatus.purchase_order.po_purpose === 'work_order_inventory' && (
-              <div className="text-sm text-muted-foreground mt-2 p-2 bg-white rounded">
-                ✓ Las partes están disponibles en inventario. No requiere efectivo este mes.
-                <br />
-                ✓ Esta es una solicitud de AUTORIZACIÓN para usar inventario existente.
-              </div>
-            )}
-            {workflowStatus.purchase_order.po_purpose === 'inventory_restock' && (
-              <div className="text-sm text-muted-foreground mt-2 p-2 bg-white rounded">
-                ⓘ Compra para reabastecimiento de inventario.
-                <br />
-                ⓘ El gasto se reconoce cuando se usen las partes, no al comprar.
-              </div>
-            )}
-          </AlertDescription>
-        </Alert>
-      )}
-
-      {/* Authorization Check for Approval Actions - Now shows 2-step approval status */}
-      {currentStatus === 'pending_approval' && purchaseOrderAmount > 0 && (
-        <Card className="border-yellow-200 bg-yellow-50">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-yellow-800">
-              <DollarSign className="h-5 w-5" />
-              Información de Autorización
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {/* Amount and Limit */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-medium">Monto a Autorizar:</span>
-                <span className="text-lg font-bold">{formatCurrency(purchaseOrderAmount)}</span>
-              </div>
-              {profile && (
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium">Tu Límite de Autorización:</span>
-                  <span className="text-lg font-bold text-green-600">
-                    {isLoadingAuth ? 'Cargando...' : (
-                      effectiveAuthLimit === Number.MAX_SAFE_INTEGER
-                        ? 'Sin límite' 
-                        : formatCurrency(effectiveAuthLimit)
+          {/* When pending_approval: Unified 3-step approval chain + compact financial summary */}
+          {currentStatus === 'pending_approval' && purchaseOrderAmount > 0 && (
+            <>
+              {/* Compact financial summary - one block */}
+              <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm p-3 rounded-lg bg-muted/50">
+                <div>
+                  <span className="text-muted-foreground">Monto</span>
+                  <p className="font-semibold">{formatCurrency(purchaseOrderAmount)}</p>
+                </div>
+                {profile && (
+                  <div>
+                    <span className="text-muted-foreground">Tu límite</span>
+                    <p className={`font-semibold ${purchaseOrderAmount <= effectiveAuthLimit ? 'text-green-600' : ''}`}>
+                      {isLoadingAuth ? '...' : effectiveAuthLimit === Number.MAX_SAFE_INTEGER ? 'Sin límite' : formatCurrency(effectiveAuthLimit)}
+                    </p>
+                  </div>
+                )}
+                {workflowStatus?.purchase_order?.payment_condition && workflowStatus.purchase_order.po_purpose !== 'work_order_inventory' && (
+                  <div className="col-span-2">
+                    <span className="text-muted-foreground">Condición: </span>
+                    <span className="font-medium">{workflowStatus.purchase_order.payment_condition === 'credit' ? 'Crédito' : 'Contado'}</span>
+                    {workflowStatus.purchase_order.payment_condition === 'credit' && (
+                      <span className="text-muted-foreground text-xs ml-1">(Admin debe revisar viabilidad)</span>
                     )}
-                  </span>
-                </div>
-              )}
-            </div>
-            
-            {/* 2-Step Approval Status */}
-            {purchaseOrderAmount > 5000 && (
-              <div className="border-t pt-4 space-y-3">
-                <div className="flex items-center gap-2 text-sm font-medium">
-                  <Info className="h-4 w-4" />
-                  <span>Proceso de Aprobación en 2 Pasos</span>
-                </div>
-                
-                <div className="space-y-2 ml-6">
-                  {/* Step 1: BU Manager */}
-                  <div className="flex items-start gap-3">
-                    <div className={`mt-0.5 h-5 w-5 rounded-full flex items-center justify-center text-xs font-bold ${
-                      workflowStatus?.purchase_order?.authorized_by 
-                        ? 'bg-green-100 text-green-700' 
-                        : 'bg-gray-100 text-gray-600'
-                    }`}>
-                      {workflowStatus?.purchase_order?.authorized_by ? '✓' : '1'}
-                    </div>
-                    <div className="flex-1">
-                      <div className="text-sm font-medium">Gerente de Mantenimiento</div>
-                      <div className="text-xs text-muted-foreground">
-                        {workflowStatus?.purchase_order?.authorized_by 
-                          ? 'Aprobación completada' 
-                          : 'Debe aprobar primero esta orden'}
-                      </div>
-                    </div>
-                    <Badge variant={workflowStatus?.purchase_order?.authorized_by ? "default" : "outline"} className="text-xs">
-                      {workflowStatus?.purchase_order?.authorized_by ? 'Completado' : 'Pendiente'}
-                    </Badge>
                   </div>
-                  
-                  {/* Step 2: GM */}
-                  <div className="flex items-start gap-3">
-                    <div className={`mt-0.5 h-5 w-5 rounded-full flex items-center justify-center text-xs font-bold ${
-                      workflowStatus?.purchase_order?.authorized_by 
-                        ? 'bg-blue-100 text-blue-700' 
-                        : 'bg-gray-100 text-gray-400'
-                    }`}>
-                      2
-                    </div>
-                    <div className="flex-1">
-                      <div className="text-sm font-medium">Gerencia General</div>
-                      <div className="text-xs text-muted-foreground">
-                        {workflowStatus?.purchase_order?.authorized_by 
-                          ? 'Listo para aprobación final' 
-                          : 'Aprobará después del Paso 1'}
-                      </div>
-                    </div>
-                    <Badge variant="outline" className="text-xs">
-                      {workflowStatus?.purchase_order?.authorized_by ? 'En curso' : 'Bloqueado'}
-                    </Badge>
-                  </div>
-                </div>
-                
-                {/* GM Notice */}
-                {profile?.role === 'GERENCIA_GENERAL' && !workflowStatus?.purchase_order?.authorized_by && (
-                  <div className="mt-3 p-3 bg-white rounded-md border text-sm">
-                    <div className="flex items-start gap-2">
-                      <Info className="h-4 w-4 mt-0.5 text-blue-600 flex-shrink-0" />
-                      <div className="text-muted-foreground">
-                        Como <strong>Gerente General</strong>, puedes aprobar esta orden directamente (bypass), 
-                        pero el proceso recomendado es esperar la aprobación del Gerente de Mantenimiento primero.
-                      </div>
-                    </div>
+                )}
+                {workflowStatus?.purchase_order?.po_purpose && workflowStatus.purchase_order.po_purpose !== 'work_order_inventory' && (
+                  <div className="col-span-2">
+                    <span className="text-muted-foreground">Impacto efectivo: </span>
+                    <span className={`font-medium ${workflowStatus.purchase_order.po_purpose === 'work_order_inventory' ? 'text-green-600' : ''}`}>
+                      {workflowStatus.purchase_order.po_purpose === 'work_order_inventory' ? '$0' : formatCurrency(workflowStatus.purchase_order.total_amount || 0)}
+                    </span>
                   </div>
                 )}
               </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
 
+              {/* 3-step approval chain - only when amount requires GM (2-step) or path has viability */}
+              {(needsGMEscalation || requiresViability) && (
+                <div className="space-y-2 pt-2 border-t">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Pasos de aprobación</p>
+                  <div className="space-y-2">
+                    {/* Step 1: Technical (Gerente Mantenimiento) */}
+                    <div className="flex items-center gap-3">
+                      <div className={`h-6 w-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
+                        hasTechnicalApproval ? 'bg-green-100 text-green-700' : 'bg-muted text-muted-foreground'
+                      }`}>
+                        {hasTechnicalApproval ? '✓' : '1'}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <span className="text-sm font-medium">Gerente de Mantenimiento</span>
+                        <span className="text-xs text-muted-foreground block">{hasTechnicalApproval ? 'Completado' : 'Pendiente'}</span>
+                      </div>
+                      {hasTechnicalApproval && <CheckCircle className="h-4 w-4 text-green-600 shrink-0" />}
+                    </div>
+
+                    {/* Step 2: Viability - only when path requires it */}
+                    {requiresViability && (
+                      <div className="flex items-center gap-3">
+                        <div className={`h-6 w-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
+                          hasViability ? 'bg-green-100 text-green-700' : hasTechnicalApproval ? 'bg-muted text-muted-foreground' : 'bg-muted/50 text-muted-foreground/50'
+                        }`}>
+                          {hasViability ? '✓' : '2'}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <span className="text-sm font-medium">Viabilidad administrativa</span>
+                          <span className="text-xs text-muted-foreground block">
+                            {hasViability ? 'Viable' : viabilityState === 'not_viable' ? 'No viable' : 'Pendiente'}
+                          </span>
+                        </div>
+                        {hasViability && <CheckCircle className="h-4 w-4 text-green-600 shrink-0" />}
+                      </div>
+                    )}
+
+                    {/* Final step: GM approval (step 3 if viability required, else step 2) */}
+                    <div className="flex items-center gap-3">
+                      <div className={`h-6 w-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
+                        (requiresViability ? hasViability : hasTechnicalApproval) ? 'bg-blue-100 text-blue-700' : 'bg-muted/50 text-muted-foreground/50'
+                      }`}>
+                        {requiresViability ? '3' : '2'}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <span className="text-sm font-medium">Gerencia General</span>
+                        <span className="text-xs text-muted-foreground block">
+                          {(requiresViability && !hasViability) || (!requiresViability && !hasTechnicalApproval) ? 'Bloqueado' : 'Pendiente aprobación final'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {profile?.role === 'GERENCIA_GENERAL' && !hasTechnicalApproval && (
+                    <p className="text-xs text-muted-foreground mt-2">
+                      Puedes aprobar directamente, pero se recomienda esperar al Gerente de Mantenimiento.
+                    </p>
+                  )}
+                </div>
+              )}
+            </>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Registrar Viabilidad - only when current user is authorized (same logic as mobile list) */}
       {workflowStatus?.purchase_order?.workflow_policy?.requires_viability &&
        currentStatus === 'pending_approval' &&
-       (!workflowStatus.purchase_order.viability_state || workflowStatus.purchase_order.viability_state === 'pending') && (
+       (!workflowStatus.purchase_order.viability_state || workflowStatus.purchase_order.viability_state === 'pending') &&
+       approvalContext?.canRecordViability &&
+       !approvalContext?.canApprove && (
         <Card>
           <CardHeader>
             <CardTitle className="text-lg">Registrar Viabilidad</CardTitle>
@@ -1258,9 +1203,10 @@ export function WorkflowStatusDisplay({
         </Card>
       )}
 
-      {/* Simplified Action Section - Show only NEXT logical action */}
+      {/* Simplified Action Section - Show only NEXT logical action. For pending_approval, gate by approval-context. */}
       {workflowStatus?.allowed_next_statuses && workflowStatus.allowed_next_statuses.length > 0 && 
-       !['validated', 'rejected'].includes(currentStatus) && (
+       !['validated', 'rejected'].includes(currentStatus) &&
+       (currentStatus !== 'pending_approval' || approvalContext?.canApprove) && (
         <Card>
           <CardHeader>
             <CardTitle className="text-lg">Siguiente Acción</CardTitle>
@@ -1672,6 +1618,30 @@ export function WorkflowStatusDisplay({
         </Card>
       )}
 
+      {/* Pending approval but user cannot act - show who is responsible (same as mobile list) */}
+      {currentStatus === 'pending_approval' &&
+       approvalContext &&
+       !approvalContext.canApprove &&
+       !approvalContext.canRecordViability && (
+        <Card>
+          <CardContent className="py-6">
+            <Alert className="border-amber-200 bg-amber-50">
+              <Clock className="h-4 w-4 text-amber-600" />
+              <AlertDescription>
+                <span className="font-medium text-amber-900">
+                  {approvalContext.responsibleRole
+                    ? `En espera de ${approvalContext.responsibleRole}`
+                    : approvalContext.nextStep || 'No hay acciones disponibles para ti en este momento.'}
+                </span>
+                {approvalContext.reason && (
+                  <p className="mt-1 text-sm text-amber-800">{approvalContext.reason}</p>
+                )}
+              </AlertDescription>
+            </Alert>
+          </CardContent>
+        </Card>
+      )}
+
       {/* No Actions Available */}
       {workflowStatus && workflowStatus.allowed_next_statuses.length === 0 && (
         <Card>
@@ -1688,32 +1658,6 @@ export function WorkflowStatusDisplay({
         </Card>
       )}
 
-      {/* Workflow Information */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-sm font-medium text-muted-foreground">
-            Información del Workflow
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="flex justify-between items-center">
-            <span className="text-sm">Tipo de Orden:</span>
-            <Badge variant="outline">{poType.replace('_', ' ').toUpperCase()}</Badge>
-          </div>
-          <div className="flex justify-between items-center">
-            <span className="text-sm">Requiere Cotización:</span>
-            <Badge variant={workflowStatus?.requires_quote ? "default" : "secondary"}>
-              {workflowStatus?.requires_quote ? "Sí" : "No"}
-            </Badge>
-          </div>
-          <div className="flex justify-between items-center">
-            <span className="text-sm">Etapa del Workflow:</span>
-            <Badge variant="outline">
-              {workflowStatus?.workflow_stage || statusConfig.label}
-            </Badge>
-          </div>
-        </CardContent>
-      </Card>
     </div>
   )
 } 

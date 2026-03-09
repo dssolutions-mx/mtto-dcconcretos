@@ -29,6 +29,10 @@ interface PartAutocompleteProps {
   showPartNumber?: boolean
   autoFocus?: boolean
   allowManualEntry?: boolean // Allow typing parts not in catalog
+  /** When true, popover opens upward to avoid overlapping content below (e.g. inside scrollable dialog) */
+  popoverSide?: "top" | "bottom"
+  /** When true, use higher z-index for use inside dialogs. Do NOT use modal mode - it conflicts with parent dialogs and breaks scroll. */
+  inModalContext?: boolean
 }
 
 export function PartAutocomplete({
@@ -40,7 +44,9 @@ export function PartAutocomplete({
   disabled = false,
   showPartNumber = true,
   autoFocus = false,
-  allowManualEntry = true
+  allowManualEntry = true,
+  popoverSide,
+  inModalContext = false
 }: PartAutocompleteProps) {
   const [open, setOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState(value)
@@ -199,9 +205,13 @@ export function PartAutocomplete({
           )}
         </div>
       </PopoverTrigger>
-      <PopoverContent 
-        className="w-[var(--radix-popover-trigger-width)] p-0" 
+      <PopoverContent
+        className={cn(
+          "w-[var(--radix-popover-trigger-width)] p-0",
+          inModalContext && "z-[100]"
+        )}
         align="start"
+        side={popoverSide}
         onOpenAutoFocus={(e) => e.preventDefault()}
         onInteractOutside={(e) => {
           // Don't close if clicking on the input

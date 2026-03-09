@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -40,6 +40,8 @@ interface EnhancedQuotationUploaderProps {
   onQuotationRemoved?: (quotationId: string) => void
   existingQuotations?: PurchaseOrderQuotation[]
   className?: string
+  /** Compact mode: fewer fields, no nested card */
+  compact?: boolean
 }
 
 export function EnhancedQuotationUploader({
@@ -48,10 +50,10 @@ export function EnhancedQuotationUploader({
   onQuotationAdded,
   onQuotationRemoved,
   existingQuotations = [],
-  className = ""
+  className = "",
+  compact = false
 }: EnhancedQuotationUploaderProps) {
   const supabase = createClient()
-  const [quotations, setQuotations] = useState<PurchaseOrderQuotation[]>(existingQuotations)
   const [showForm, setShowForm] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isUploadingFile, setIsUploadingFile] = useState(false)
@@ -67,10 +69,6 @@ export function EnhancedQuotationUploader({
   
   const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(null)
   const [formErrors, setFormErrors] = useState<string[]>([])
-
-  useEffect(() => {
-    setQuotations(existingQuotations)
-  }, [existingQuotations])
 
   const validateForm = (): boolean => {
     const errors: string[] = []
@@ -187,7 +185,6 @@ export function EnhancedQuotationUploader({
       }
       
       const newQuotation = result.data as PurchaseOrderQuotation
-      setQuotations(prev => [...prev, newQuotation])
       onQuotationAdded?.(newQuotation)
       
       // Reset form
@@ -213,137 +210,52 @@ export function EnhancedQuotationUploader({
     }
   }
 
-  const handleDeleteQuotation = async (quotationId: string) => {
-    if (!confirm('¿Está seguro de eliminar esta cotización?')) {
-      return
-    }
-    
-    try {
-      const response = await fetch(`/api/purchase-orders/quotations/${quotationId}`, {
-        method: 'DELETE'
-      })
-      
-      if (!response.ok) {
-        throw new Error('Error al eliminar cotización')
-      }
-      
-      setQuotations(prev => prev.filter(q => q.id !== quotationId))
-      onQuotationRemoved?.(quotationId)
-      toast.success('Cotización eliminada')
-    } catch (error) {
-      console.error('Error deleting quotation:', error)
-      toast.error('Error al eliminar cotización')
-    }
-  }
+  const showFormSection = compact || showForm
 
   return (
     <div className={className}>
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle className="text-lg flex items-center space-x-2">
-                <FileText className="h-5 w-5" />
-                <span>Cotizaciones de Proveedores</span>
-              </CardTitle>
-              <CardDescription>
-                Agregue cotizaciones de diferentes proveedores para comparar precios y condiciones
-              </CardDescription>
-            </div>
-            {!showForm && (
-              <Button onClick={() => setShowForm(true)} size="sm">
-                <Plus className="h-4 w-4 mr-2" />
-                Agregar Cotización
-              </Button>
-            )}
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {/* Existing Quotations List */}
-          {quotations.length > 0 && (
-            <div className="space-y-2">
-              <Label>Cotizaciones Agregadas ({quotations.length})</Label>
-              {quotations.map((quotation) => (
-                <div key={quotation.id} className="p-3 border rounded-lg bg-muted/30">
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <div className="flex items-center space-x-2 mb-1">
-                        <span className="font-medium">{quotation.supplier_name}</span>
-                        {quotation.status === 'selected' && (
-                          <span className="px-2 py-1 text-xs bg-green-100 text-green-700 rounded">
-                            Seleccionada
-                          </span>
-                        )}
-                      </div>
-                      <div className="text-sm text-muted-foreground space-y-1">
-                        <div>Monto: ${quotation.quoted_amount.toLocaleString('es-MX')}</div>
-                        {quotation.delivery_days && (
-                          <div>Entrega: {quotation.delivery_days} días</div>
-                        )}
-                        {quotation.payment_terms && (
-                          <div>Condiciones: {quotation.payment_terms}</div>
-                        )}
-                      </div>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      {quotation.file_url && (
-                        <Button variant="ghost" size="sm" asChild>
-                          <a href={quotation.file_url} target="_blank" rel="noopener noreferrer">
-                            Ver
-                          </a>
-                        </Button>
-                      )}
-                      {quotation.status !== 'selected' && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleDeleteQuotation(quotation.id)}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
+      {!compact && (
+        <div className="flex items-center justify-between mb-4">
+          <p className="text-sm text-muted-foreground">
+            Agregue cotizaciones de diferentes proveedores para comparar
+          </p>
+          {!showForm && (
+            <Button onClick={() => setShowForm(true)} size="sm">
+              <Plus className="h-4 w-4 mr-2" />
+              Agregar Cotización
+            </Button>
           )}
+        </div>
+      )}
 
-          {/* Add Quotation Form */}
-          {showForm && (
-            <Card className="border-dashed">
-              <CardHeader>
-                <CardTitle className="text-base">Nueva Cotización</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <form onSubmit={handleSubmit} className="space-y-4">
-                  {/* Supplier Selection */}
-                  <div className="space-y-2">
-                    <Label>Proveedor *</Label>
-                    <SupplierSelector
-                      value={selectedSupplier?.id}
-                      onChange={(supplier) => {
-                        setSelectedSupplier(supplier)
-                        setFormData(prev => ({
-                          ...prev,
-                          supplier_id: supplier?.id,
-                          supplier_name: supplier?.name || ''
-                        }))
-                      }}
-                      placeholder="Buscar proveedor o escribir nombre..."
-                      showPerformance={true}
-                      allowManualInput={true}
-                      onManualInputChange={(name) => {
-                        setFormData(prev => ({ ...prev, supplier_name: name }))
-                        setSelectedSupplier(null)
-                      }}
-                    />
-                  </div>
+      {showFormSection && (
+        <div className={compact ? "space-y-3" : "border rounded-lg p-4 space-y-4"}>
+          <form onSubmit={handleSubmit} className={compact ? "space-y-3" : "space-y-4"}>
+            <div className="space-y-2">
+              <Label>Proveedor *</Label>
+              <SupplierSelector
+                value={selectedSupplier?.id}
+                onChange={(supplier) => {
+                  setSelectedSupplier(supplier)
+                  setFormData(prev => ({
+                    ...prev,
+                    supplier_id: supplier?.id,
+                    supplier_name: supplier?.name || ''
+                  }))
+                }}
+                placeholder="Buscar proveedor o escribir nombre..."
+                showPerformance={!compact}
+                allowManualInput={true}
+                onManualInputChange={(name) => {
+                  setFormData(prev => ({ ...prev, supplier_name: name }))
+                  setSelectedSupplier(null)
+                }}
+              />
+            </div>
 
-                  {/* Quoted Amount */}
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="quoted_amount">Monto Cotizado *</Label>
+            <div className={compact ? "space-y-4" : "grid grid-cols-2 gap-4"}>
+              <div className="space-y-2">
+                <Label htmlFor="quoted_amount">Monto Cotizado *</Label>
                       <div className="relative">
                         <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-sm text-muted-foreground">$</span>
                         <Input
@@ -356,135 +268,132 @@ export function EnhancedQuotationUploader({
                           className="pl-8"
                           required
                         />
-                      </div>
-                    </div>
+                </div>
+              </div>
 
-                    {/* Delivery Days */}
-                    <div className="space-y-2">
-                      <Label htmlFor="delivery_days">Días de Entrega</Label>
-                      <Input
-                        id="delivery_days"
-                        type="number"
-                        min="1"
-                        value={formData.delivery_days || ''}
-                        onChange={(e) => setFormData(prev => ({ ...prev, delivery_days: parseInt(e.target.value) || undefined }))}
-                        placeholder="Ej: 7"
+              <div className="space-y-2">
+                <Label htmlFor="delivery_days">Días de Entrega</Label>
+                <Input
+                  id="delivery_days"
+                  type="number"
+                  min="1"
+                  value={formData.delivery_days || ''}
+                  onChange={(e) => setFormData(prev => ({ ...prev, delivery_days: parseInt(e.target.value) || undefined }))}
+                  placeholder="Ej: 7"
+                />
+              </div>
+            </div>
+
+            {!compact && (
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="payment_terms">Condiciones de Pago</Label>
+                  <Input
+                    id="payment_terms"
+                    value={formData.payment_terms || ''}
+                    onChange={(e) => setFormData(prev => ({ ...prev, payment_terms: e.target.value }))}
+                    placeholder="Ej: 30 días, Contado"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="validity_date">Vigencia de Cotización</Label>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        className={cn(
+                          "w-full justify-start text-left font-normal",
+                          !formData.validity_date && "text-muted-foreground"
+                        )}
+                      >
+                        <CalendarIcon className="mr-2 h-4 w-4" />
+                        {formData.validity_date ? (
+                          format(formData.validity_date, "PPP", { locale: es })
+                        ) : (
+                          <span>Seleccionar fecha</span>
+                        )}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0">
+                      <Calendar
+                        mode="single"
+                        selected={formData.validity_date}
+                        onSelect={(date) => setFormData(prev => ({ ...prev, validity_date: date }))}
+                        initialFocus
                       />
-                    </div>
-                  </div>
+                    </PopoverContent>
+                  </Popover>
+                </div>
+              </div>
+            )}
 
-                  {/* Payment Terms and Validity */}
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="payment_terms">Condiciones de Pago</Label>
-                      <Input
-                        id="payment_terms"
-                        value={formData.payment_terms || ''}
-                        onChange={(e) => setFormData(prev => ({ ...prev, payment_terms: e.target.value }))}
-                        placeholder="Ej: 30 días, Contado"
-                      />
-                    </div>
+            <div className="space-y-2">
+              <Label htmlFor="quotation_file">Archivo de Cotización *</Label>
+              <Input
+                id="quotation_file"
+                type="file"
+                accept=".pdf,.jpg,.jpeg,.png,.webp"
+                onChange={handleFileChange}
+                disabled={isUploadingFile}
+              />
+              {formData.file && (
+                <div className="flex items-center space-x-2 text-sm text-muted-foreground">
+                  <FileText className="h-4 w-4" />
+                  <span>{formData.file.name}</span>
+                </div>
+              )}
+            </div>
 
-                    <div className="space-y-2">
-                      <Label htmlFor="validity_date">Vigencia de Cotización</Label>
-                      <Popover>
-                        <PopoverTrigger asChild>
-                          <Button
-                            variant="outline"
-                            className={cn(
-                              "w-full justify-start text-left font-normal",
-                              !formData.validity_date && "text-muted-foreground"
-                            )}
-                          >
-                            <CalendarIcon className="mr-2 h-4 w-4" />
-                            {formData.validity_date ? (
-                              format(formData.validity_date, "PPP", { locale: es })
-                            ) : (
-                              <span>Seleccionar fecha</span>
-                            )}
-                          </Button>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-auto p-0">
-                          <Calendar
-                            mode="single"
-                            selected={formData.validity_date}
-                            onSelect={(date) => setFormData(prev => ({ ...prev, validity_date: date }))}
-                            initialFocus
-                          />
-                        </PopoverContent>
-                      </Popover>
-                    </div>
-                  </div>
+            {!compact && (
+              <div className="space-y-2">
+                <Label htmlFor="quotation_notes">Notas</Label>
+                <Textarea
+                  id="quotation_notes"
+                  value={formData.notes || ''}
+                  onChange={(e) => setFormData(prev => ({ ...prev, notes: e.target.value }))}
+                  placeholder="Notas adicionales..."
+                  rows={2}
+                />
+              </div>
+            )}
 
-                  {/* File Upload */}
-                  <div className="space-y-2">
-                    <Label htmlFor="quotation_file">Archivo de Cotización *</Label>
-                    <Input
-                      id="quotation_file"
-                      type="file"
-                      accept=".pdf,.jpg,.jpeg,.png,.webp"
-                      onChange={handleFileChange}
-                      disabled={isUploadingFile}
-                    />
-                    {formData.file && (
-                      <div className="flex items-center space-x-2 text-sm text-muted-foreground">
-                        <FileText className="h-4 w-4" />
-                        <span>{formData.file.name}</span>
-                      </div>
-                    )}
-                  </div>
+            {formErrors.length > 0 && (
+              <Alert variant="destructive">
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>
+                  <ul className="list-disc list-inside space-y-1">
+                    {formErrors.map((error, index) => (
+                      <li key={index}>{error}</li>
+                    ))}
+                  </ul>
+                </AlertDescription>
+              </Alert>
+            )}
 
-                  {/* Notes */}
-                  <div className="space-y-2">
-                    <Label htmlFor="quotation_notes">Notas</Label>
-                    <Textarea
-                      id="quotation_notes"
-                      value={formData.notes || ''}
-                      onChange={(e) => setFormData(prev => ({ ...prev, notes: e.target.value }))}
-                      placeholder="Notas adicionales sobre esta cotización..."
-                      rows={3}
-                    />
-                  </div>
-
-                  {/* Form Errors */}
-                  {formErrors.length > 0 && (
-                    <Alert variant="destructive">
-                      <AlertCircle className="h-4 w-4" />
-                      <AlertDescription>
-                        <ul className="list-disc list-inside space-y-1">
-                          {formErrors.map((error, index) => (
-                            <li key={index}>{error}</li>
-                          ))}
-                        </ul>
-                      </AlertDescription>
-                    </Alert>
-                  )}
-
-                  {/* Form Actions */}
-                  <div className="flex justify-end space-x-2">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => {
-                        setShowForm(false)
-                        setFormErrors([])
-                      }}
-                    >
-                      Cancelar
-                    </Button>
-                    <Button
-                      type="submit"
-                      disabled={isSubmitting || isUploadingFile}
-                    >
-                      {isSubmitting ? 'Guardando...' : 'Agregar Cotización'}
-                    </Button>
-                  </div>
-                </form>
-              </CardContent>
-            </Card>
-          )}
-        </CardContent>
-      </Card>
+            <div className="flex gap-2 pt-2">
+              {!compact && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setShowForm(false)
+                    setFormErrors([])
+                  }}
+                >
+                  Cancelar
+                </Button>
+              )}
+              <Button
+                type="submit"
+                disabled={isSubmitting || isUploadingFile}
+                className="flex-1"
+              >
+                {isSubmitting ? 'Guardando...' : 'Agregar'}
+              </Button>
+            </div>
+          </form>
+        </div>
+      )}
     </div>
   )
 }

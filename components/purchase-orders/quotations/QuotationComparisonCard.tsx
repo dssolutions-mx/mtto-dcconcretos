@@ -3,7 +3,7 @@
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Star, Clock, DollarSign, CheckCircle2, XCircle, FileText, TrendingDown, Zap } from "lucide-react"
+import { Star, Clock, DollarSign, CheckCircle2, XCircle, FileText, TrendingDown, Zap, Trash2 } from "lucide-react"
 import { PurchaseOrderQuotation } from "@/types/purchase-orders"
 import { Supplier } from "@/types/suppliers"
 import { QuotationStatus } from "@/types/purchase-orders"
@@ -15,6 +15,7 @@ interface QuotationComparisonCardProps {
   isFastestDelivery?: boolean
   onSelect?: (quotationId: string) => void
   onReject?: (quotationId: string) => void
+  onDelete?: (quotationId: string) => void
   showActions?: boolean
 }
 
@@ -25,6 +26,7 @@ export function QuotationComparisonCard({
   isFastestDelivery = false,
   onSelect,
   onReject,
+  onDelete,
   showActions = true
 }: QuotationComparisonCardProps) {
   const supplier = quotation.supplier as Supplier | undefined
@@ -166,23 +168,28 @@ export function QuotationComparisonCard({
         )}
 
         {/* Actions */}
-        {showActions && !isSelected && quotation.status === QuotationStatus.PENDING && (
-          <div className="flex space-x-2 mt-auto pt-4">
-            <Button
-              size="sm"
-              className="flex-1"
-              onClick={() => onSelect?.(quotation.id)}
-            >
-              <CheckCircle2 className="h-4 w-4 mr-2" />
-              Seleccionar
-            </Button>
-            {onReject && (
+        {!isSelected && quotation.status === QuotationStatus.PENDING && (showActions || onDelete) && (
+          <div className="flex gap-2 mt-auto pt-4">
+            {showActions && onSelect && (
+              <Button size="sm" className="flex-1" onClick={() => onSelect(quotation.id)}>
+                <CheckCircle2 className="h-4 w-4 mr-2" />
+                Seleccionar
+              </Button>
+            )}
+            {showActions && onReject && (
+              <Button size="sm" variant="outline" onClick={() => onReject(quotation.id)}>
+                <XCircle className="h-4 w-4" />
+              </Button>
+            )}
+            {onDelete && (
               <Button
                 size="sm"
-                variant="outline"
-                onClick={() => onReject?.(quotation.id)}
+                variant="ghost"
+                className="text-muted-foreground hover:text-destructive"
+                onClick={() => onDelete(quotation.id)}
+                title="Eliminar cotización"
               >
-                <XCircle className="h-4 w-4" />
+                <Trash2 className="h-4 w-4" />
               </Button>
             )}
           </div>
