@@ -66,10 +66,6 @@ export function CreationEntryStep({
     }
   }, [preSelectedModelId])
 
-  const filteredTemplates = preSelectedModelId
-    ? templates.filter((t) => t.model_id === preSelectedModelId)
-    : templates
-
   const selectedTemplate = templates.find((t) => t.id === selectedTemplateId)
 
   useEffect(() => {
@@ -169,13 +165,12 @@ export function CreationEntryStep({
                   />
                 </SelectTrigger>
                 <SelectContent>
-                  {filteredTemplates.length === 0 ? (
+                  {templates.length === 0 ? (
                     <div className="p-4 text-sm text-muted-foreground">
                       No hay plantillas
-                      {preSelectedModelId ? " para este modelo" : ""}
                     </div>
                   ) : (
-                    filteredTemplates.map((t) => (
+                    templates.map((t) => (
                       <SelectItem key={t.id} value={t.id}>
                         {t.name}
                         {t.equipment_models

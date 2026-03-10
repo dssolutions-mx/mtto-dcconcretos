@@ -51,15 +51,15 @@ export function CollapsibleSectionCard({
 
   const cardBorderClass =
     sectionType === "evidence"
-      ? "border-blue-200 bg-blue-50/50"
+      ? "border-blue-200/60 bg-blue-50/30"
       : sectionType === "cleanliness_bonus"
-        ? "border-green-200 bg-green-50/50"
+        ? "border-green-200/60 bg-green-50/30"
         : sectionType === "security_talk"
-          ? "border-orange-200 bg-orange-50/50"
-          : ""
+          ? "border-orange-200/60 bg-orange-50/30"
+          : "border-border/40"
 
   return (
-    <Card className={cn(cardBorderClass)}>
+    <Card className={cn("shadow-sm", cardBorderClass)}>
       <Collapsible open={expanded} onOpenChange={(open) => onToggle(open)}>
         <CardHeader className="pb-3">
           <div className="flex items-center gap-3">

@@ -285,9 +285,9 @@ export function SectionsStep({
       </div>
 
       <Button
-        variant="outline"
+        variant="ghost"
         onClick={() => setShowAddDialog(true)}
-        className="w-full"
+        className="w-full border border-dashed border-muted-foreground/30 hover:border-muted-foreground/50"
       >
         <Plus className="h-4 w-4 mr-2" />
         Agregar sección

@@ -75,7 +75,7 @@ export function TemplateCreationStepper({
         tabIndex={-1}
         role="region"
         aria-label={`Paso ${currentStep + 1} de 3: ${STEPS[currentStep].label}`}
-        className="rounded-lg border bg-card p-6 focus:outline-none"
+        className="rounded-lg border border-border/60 bg-card p-6 focus:outline-none shadow-sm"
       >
         {currentStep === 0 && (
           <div>

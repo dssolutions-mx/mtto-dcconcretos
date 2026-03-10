@@ -156,7 +156,7 @@ export function ChecklistDashboard() {
 
   return (
     <DashboardShell>
-      <div className="checklist-module font-sf-pro">
+      <div className="checklist-module font-sans">
         <div className="mb-6">
           <DashboardHeader
             heading={isOperator ? "Mis Checklists" : "Checklists de Mantenimiento"}

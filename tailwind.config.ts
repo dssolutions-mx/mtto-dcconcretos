@@ -10,6 +10,11 @@ const config: Config = {
   ],
   theme: {
   	extend: {
+  		fontFamily: {
+  			sans: ['-apple-system', 'BlinkMacSystemFont', '"SF Pro Text"', '"SF Pro Display"', 'system-ui', '"Segoe UI"', '"Helvetica Neue"', 'Arial', 'sans-serif'],
+  			'sf-pro': ['-apple-system', 'BlinkMacSystemFont', '"SF Pro Text"', '"SF Pro Display"', 'system-ui', '"Segoe UI"', '"Helvetica Neue"', 'Arial', 'sans-serif'],
+  			mono: ['ui-monospace', '"SF Mono"', '"Cascadia Code"', '"Source Code Pro"', 'Menlo', 'Monaco', 'Consolas', 'monospace'],
+  		},
   		colors: {
   			background: 'hsl(var(--background))',
   			foreground: 'hsl(var(--foreground))',
@@ -68,9 +73,6 @@ const config: Config = {
   				'status-due': 'hsl(var(--checklist-status-due, 38 92% 50%))',
   				'status-overdue': 'hsl(var(--checklist-status-overdue, 0 84% 60%))'
   			}
-  		},
-  		fontFamily: {
-  			'sf-pro': ['-apple-system', 'BlinkMacSystemFont', '"SF Pro Text"', '"SF Pro Display"', 'system-ui', '"Helvetica Neue"', 'sans-serif']
   		},
   		boxShadow: {
   			'checklist-1': 'var(--checklist-elevation-1, 0 1px 2px rgb(0 0 0 / 0.05))',

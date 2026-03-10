@@ -21,7 +21,7 @@ export function DaySummarySection({ stats }: DaySummarySectionProps) {
     return (
       <Card className="mb-6 shadow-checklist-2 border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/30">
         <CardHeader className="pb-3">
-          <CardTitle className="text-lg font-sf-pro flex items-center gap-2">
+          <CardTitle className="text-lg font-sans flex items-center gap-2">
             <ClipboardCheck className="h-5 w-5 text-checklist-primary" />
             Resumen del Día
           </CardTitle>

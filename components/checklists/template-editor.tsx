@@ -6,7 +6,7 @@
 // - Proper timeout cleanup on component unmount/section removal
 // - Eliminated expensive array operations on every keystroke
 
-import React, { useState, useEffect, useRef, useCallback } from 'react'
+import React, { useState, useEffect, useRef, useCallback, startTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -55,6 +55,7 @@ import { validateTemplate as validateTemplateShared } from './template-editor/us
 
 interface ChecklistItem {
   id?: string
+  _clientId?: string
   description: string
   required: boolean
   order_index: number
@@ -79,6 +80,7 @@ interface CleanlinessConfig {
 
 interface ChecklistSection {
   id?: string
+  _clientId?: string
   title: string
   order_index: number
   section_type?: 'checklist' | 'evidence' | 'cleanliness_bonus' | 'security_talk'
@@ -455,11 +457,13 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
   // Core template functions
   const addSection = () => {
     const newSection: ChecklistSection = {
+      _clientId: crypto.randomUUID(),
       title: `Nueva Sección ${template.sections.length + 1}`,
       order_index: template.sections.length,
       section_type: 'checklist',
       items: [
         {
+          _clientId: crypto.randomUUID(),
           description: 'Nuevo Item',
           required: true,
           order_index: 0,
@@ -484,6 +488,7 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
   const addEvidenceSection = () => {
     const newTitle = `Evidencia Fotográfica ${template.sections.filter(s => s.section_type === 'evidence').length + 1}`
     const newSection: ChecklistSection = {
+      _clientId: crypto.randomUUID(),
       title: newTitle,
       order_index: template.sections.length,
       section_type: 'evidence',
@@ -515,6 +520,7 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
   const addSecuritySection = () => {
     const newTitle = `Charla de Seguridad ${template.sections.filter(s => s.section_type === 'security_talk').length + 1}`
     const newSection: ChecklistSection = {
+      _clientId: crypto.randomUUID(),
       title: newTitle,
       order_index: template.sections.length,
       section_type: 'security_talk',
@@ -544,6 +550,7 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
   const addCleanlinessSection = () => {
     const newTitle = `Verificación de Limpieza ${template.sections.filter(s => s.section_type === 'cleanliness_bonus').length + 1}`
     const newSection: ChecklistSection = {
+      _clientId: crypto.randomUUID(),
       title: newTitle,
       order_index: template.sections.length,
       section_type: 'cleanliness_bonus',
@@ -557,18 +564,8 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
         }
       },
       items: [
-        {
-          description: 'Interior está limpio',
-          required: true,
-          order_index: 0,
-          item_type: 'check'
-        },
-        {
-          description: 'Exterior está limpio',
-          required: true,
-          order_index: 1,
-          item_type: 'check'
-        }
+        { _clientId: crypto.randomUUID(), description: 'Interior está limpio', required: true, order_index: 0, item_type: 'check' },
+        { _clientId: crypto.randomUUID(), description: 'Exterior está limpio', required: true, order_index: 1, item_type: 'check' }
       ]
     }
     
@@ -661,110 +658,87 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
       }
     }
     
-    setTemplate(prev => ({
-      ...prev,
-      sections: prev.sections.filter((_, index) => index !== sectionIndex)
-    }))
-    setHasChanges(true)
-    
-    // Re-index local state for remaining sections
-    const newSectionTitles = { ...sectionTitles }
-    const newDescriptions = { ...itemDescriptions }
-    const newExpectedValues = { ...itemExpectedValues }
-    const newTolerances = { ...itemTolerances }
-    const newEvidenceDescriptions = { ...evidenceDescriptions }
-    const newEvidenceMinPhotos = { ...evidenceMinPhotos }
-    const newEvidenceMaxPhotos = { ...evidenceMaxPhotos }
-    const newCleanlinessMinPhotos = { ...cleanlinessMinPhotos }
-    const newCleanlinessMaxPhotos = { ...cleanlinessMaxPhotos }
-    const newCleanlinessAreasStr = { ...cleanlinessAreasStr }
-    
-    // Remove state for deleted section and sections that will be shifted
-    for (let i = sectionIndex; i < template.sections.length; i++) {
-      delete newSectionTitles[i]
-      delete newEvidenceMinPhotos[i]
-      delete newEvidenceMaxPhotos[i]
-      delete newCleanlinessMinPhotos[i]
-      delete newCleanlinessMaxPhotos[i]
-      delete newCleanlinessAreasStr[i]
+    startTransition(() => {
+      setTemplate(prev => ({
+        ...prev,
+        sections: prev.sections.filter((_, index) => index !== sectionIndex)
+      }))
+      setHasChanges(true)
       
-      // Remove item state for this section
-      const section = template.sections[i]
-      if (section) {
-        for (let j = 0; j < section.items.length; j++) {
-          const oldKey = `${i}-${j}`
-          delete newDescriptions[oldKey]
-          delete newExpectedValues[oldKey]
-          delete newTolerances[oldKey]
-        }
-        
-        // Remove evidence state for this section
-        if (section.evidence_config) {
-          section.evidence_config.categories.forEach(category => {
-            const oldKey = `${i}-${category}`
-            delete newEvidenceDescriptions[oldKey]
-          })
-        }
-      }
-    }
-    
-    // Re-index remaining sections (shift indices down)
-    for (let i = sectionIndex + 1; i < template.sections.length; i++) {
-      const newIndex = i - 1
+      const newSectionTitles = { ...sectionTitles }
+      const newDescriptions = { ...itemDescriptions }
+      const newExpectedValues = { ...itemExpectedValues }
+      const newTolerances = { ...itemTolerances }
+      const newEvidenceDescriptions = { ...evidenceDescriptions }
+      const newEvidenceMinPhotos = { ...evidenceMinPhotos }
+      const newEvidenceMaxPhotos = { ...evidenceMaxPhotos }
+      const newCleanlinessMinPhotos = { ...cleanlinessMinPhotos }
+      const newCleanlinessMaxPhotos = { ...cleanlinessMaxPhotos }
+      const newCleanlinessAreasStr = { ...cleanlinessAreasStr }
       
-      // Re-index section titles
-      if (sectionTitles[i]) {
-        newSectionTitles[newIndex] = sectionTitles[i]
-      }
-      
-      // Re-index item state
-      const section = template.sections[i]
-      if (section) {
-        for (let j = 0; j < section.items.length; j++) {
-          const oldKey = `${i}-${j}`
-          const newKey = `${newIndex}-${j}`
-          
-          if (itemDescriptions[oldKey]) {
-            newDescriptions[newKey] = itemDescriptions[oldKey]
+      for (let i = sectionIndex; i < template.sections.length; i++) {
+        delete newSectionTitles[i]
+        delete newEvidenceMinPhotos[i]
+        delete newEvidenceMaxPhotos[i]
+        delete newCleanlinessMinPhotos[i]
+        delete newCleanlinessMaxPhotos[i]
+        delete newCleanlinessAreasStr[i]
+        const sec = template.sections[i]
+        if (sec) {
+          for (let j = 0; j < sec.items.length; j++) {
+            const oldKey = `${i}-${j}`
+            delete newDescriptions[oldKey]
+            delete newExpectedValues[oldKey]
+            delete newTolerances[oldKey]
           }
-          if (itemExpectedValues[oldKey]) {
-            newExpectedValues[newKey] = itemExpectedValues[oldKey]
-          }
-          if (itemTolerances[oldKey]) {
-            newTolerances[newKey] = itemTolerances[oldKey]
+          if (sec.evidence_config) {
+            sec.evidence_config.categories.forEach(category => {
+              delete newEvidenceDescriptions[`${i}-${category}`]
+            })
           }
         }
-        
-        // Re-index evidence state
-        if (section.evidence_config) {
-          section.evidence_config.categories.forEach(category => {
-            const oldKey = `${i}-${category}`
-            const newKey = `${newIndex}-${category}`
-            if (evidenceDescriptions[oldKey]) {
-              newEvidenceDescriptions[newKey] = evidenceDescriptions[oldKey]
-            }
-          })
-          if (evidenceMinPhotos[i] !== undefined) newEvidenceMinPhotos[newIndex] = evidenceMinPhotos[i]
-          if (evidenceMaxPhotos[i] !== undefined) newEvidenceMaxPhotos[newIndex] = evidenceMaxPhotos[i]
-        }
-        if (section.cleanliness_config) {
-          if (cleanlinessMinPhotos[i] !== undefined) newCleanlinessMinPhotos[newIndex] = cleanlinessMinPhotos[i]
-          if (cleanlinessMaxPhotos[i] !== undefined) newCleanlinessMaxPhotos[newIndex] = cleanlinessMaxPhotos[i]
-          if (cleanlinessAreasStr[i] !== undefined) newCleanlinessAreasStr[newIndex] = cleanlinessAreasStr[i]
+      }
+      
+      for (let i = sectionIndex + 1; i < template.sections.length; i++) {
+        const newIndex = i - 1
+        if (sectionTitles[i] !== undefined) newSectionTitles[newIndex] = sectionTitles[i]
+        const sec = template.sections[i]
+        if (sec) {
+          for (let j = 0; j < sec.items.length; j++) {
+            const oldKey = `${i}-${j}`
+            const newKey = `${newIndex}-${j}`
+            if (itemDescriptions[oldKey] !== undefined) newDescriptions[newKey] = itemDescriptions[oldKey]
+            if (itemExpectedValues[oldKey] !== undefined) newExpectedValues[newKey] = itemExpectedValues[oldKey]
+            if (itemTolerances[oldKey] !== undefined) newTolerances[newKey] = itemTolerances[oldKey]
+          }
+          if (sec.evidence_config) {
+            sec.evidence_config.categories.forEach(category => {
+              const oldKey = `${i}-${category}`
+              const newKey = `${newIndex}-${category}`
+              if (evidenceDescriptions[oldKey] !== undefined) newEvidenceDescriptions[newKey] = evidenceDescriptions[oldKey]
+            })
+            if (evidenceMinPhotos[i] !== undefined) newEvidenceMinPhotos[newIndex] = evidenceMinPhotos[i]
+            if (evidenceMaxPhotos[i] !== undefined) newEvidenceMaxPhotos[newIndex] = evidenceMaxPhotos[i]
+          }
+          if (sec.cleanliness_config) {
+            if (cleanlinessMinPhotos[i] !== undefined) newCleanlinessMinPhotos[newIndex] = cleanlinessMinPhotos[i]
+            if (cleanlinessMaxPhotos[i] !== undefined) newCleanlinessMaxPhotos[newIndex] = cleanlinessMaxPhotos[i]
+            if (cleanlinessAreasStr[i] !== undefined) newCleanlinessAreasStr[newIndex] = cleanlinessAreasStr[i]
+          }
         }
       }
-    }
-    
-    setSectionTitles(newSectionTitles)
-    setItemDescriptions(newDescriptions)
-    setItemExpectedValues(newExpectedValues)
-    setItemTolerances(newTolerances)
-    setEvidenceDescriptions(newEvidenceDescriptions)
-    setEvidenceMinPhotos(newEvidenceMinPhotos)
-    setEvidenceMaxPhotos(newEvidenceMaxPhotos)
-    setCleanlinessMinPhotos(newCleanlinessMinPhotos)
-    setCleanlinessMaxPhotos(newCleanlinessMaxPhotos)
-    setCleanlinessAreasStr(newCleanlinessAreasStr)
+      
+      setSectionTitles(newSectionTitles)
+      setItemDescriptions(newDescriptions)
+      setItemExpectedValues(newExpectedValues)
+      setItemTolerances(newTolerances)
+      setEvidenceDescriptions(newEvidenceDescriptions)
+      setEvidenceMinPhotos(newEvidenceMinPhotos)
+      setEvidenceMaxPhotos(newEvidenceMaxPhotos)
+      setCleanlinessMinPhotos(newCleanlinessMinPhotos)
+      setCleanlinessMaxPhotos(newCleanlinessMaxPhotos)
+      setCleanlinessAreasStr(newCleanlinessAreasStr)
+    })
   }
 
   const moveSectionUp = (sectionIndex: number) => {
@@ -1194,6 +1168,7 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
       const section = prev.sections[sectionIndex]
       if (!section) return prev
       const newItem: ChecklistItem = {
+        _clientId: crypto.randomUUID(),
         description: 'Nuevo Item',
         required: true,
         order_index: section.items.length,
@@ -1227,14 +1202,11 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
       delete descriptionTimeouts.current[key]
     }
     
-    // Clear all timeouts for items in this section that will be shifted
     const section = template.sections[sectionIndex]
     for (let i = itemIndex; i < section.items.length; i++) {
       const currentKey = `${sectionIndex}-${i}`
       const expectedKey = `${currentKey}-expected`
       const toleranceKey = `${currentKey}-tolerance`
-      
-      // Clear timeouts
       if (descriptionTimeouts.current[currentKey]) {
         clearTimeout(descriptionTimeouts.current[currentKey])
         delete descriptionTimeouts.current[currentKey]
@@ -1249,43 +1221,31 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
       }
     }
     
-    // Update the template
-    const updatedItems = template.sections[sectionIndex].items.filter((_, index) => index !== itemIndex)
-    updateSection(sectionIndex, { items: updatedItems })
-    setHasChanges(true)
-    
-    // Re-index local state for remaining items
-    const newDescriptions = { ...itemDescriptions }
-    const newExpectedValues = { ...itemExpectedValues }
-    const newTolerances = { ...itemTolerances }
-    
-    // Remove state for deleted item and items that will be shifted
-    for (let i = itemIndex; i < section.items.length; i++) {
-      const oldKey = `${sectionIndex}-${i}`
-      delete newDescriptions[oldKey]
-      delete newExpectedValues[oldKey]
-      delete newTolerances[oldKey]
-    }
-    
-    // Re-index remaining items (shift indices down)
-    for (let i = itemIndex + 1; i < section.items.length; i++) {
-      const oldKey = `${sectionIndex}-${i}`
-      const newKey = `${sectionIndex}-${i - 1}`
+    startTransition(() => {
+      const updatedItems = section.items.filter((_, index) => index !== itemIndex)
+      updateSection(sectionIndex, { items: updatedItems })
+      setHasChanges(true)
       
-      if (itemDescriptions[oldKey]) {
-        newDescriptions[newKey] = itemDescriptions[oldKey]
+      const newDescriptions = { ...itemDescriptions }
+      const newExpectedValues = { ...itemExpectedValues }
+      const newTolerances = { ...itemTolerances }
+      for (let i = itemIndex; i < section.items.length; i++) {
+        const oldKey = `${sectionIndex}-${i}`
+        delete newDescriptions[oldKey]
+        delete newExpectedValues[oldKey]
+        delete newTolerances[oldKey]
       }
-      if (itemExpectedValues[oldKey]) {
-        newExpectedValues[newKey] = itemExpectedValues[oldKey]
+      for (let i = itemIndex + 1; i < section.items.length; i++) {
+        const oldKey = `${sectionIndex}-${i}`
+        const newKey = `${sectionIndex}-${i - 1}`
+        if (itemDescriptions[oldKey] !== undefined) newDescriptions[newKey] = itemDescriptions[oldKey]
+        if (itemExpectedValues[oldKey] !== undefined) newExpectedValues[newKey] = itemExpectedValues[oldKey]
+        if (itemTolerances[oldKey] !== undefined) newTolerances[newKey] = itemTolerances[oldKey]
       }
-      if (itemTolerances[oldKey]) {
-        newTolerances[newKey] = itemTolerances[oldKey]
-      }
-    }
-    
-    setItemDescriptions(newDescriptions)
-    setItemExpectedValues(newExpectedValues)
-    setItemTolerances(newTolerances)
+      setItemDescriptions(newDescriptions)
+      setItemExpectedValues(newExpectedValues)
+      setItemTolerances(newTolerances)
+    })
   }
 
   // Evidence functions
@@ -1962,6 +1922,21 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
     }
   }
 
+  const onModelChange = useCallback((value: string) => {
+    setTemplate(prev => ({ ...prev, model_id: value }))
+    setHasChanges(true)
+  }, [])
+
+  const onFrequencyChange = useCallback((value: string) => {
+    setTemplate(prev => ({ ...prev, frequency: value }))
+    setHasChanges(true)
+  }, [])
+
+  const onHoursIntervalChange = useCallback((value: number | undefined) => {
+    setTemplate(prev => ({ ...prev, hours_interval: value }))
+    setHasChanges(true)
+  }, [])
+
   const updateSecurityConfig = useCallback((sectionIndex: number, updates: Partial<SecurityConfig>) => {
     setTemplate(prev => {
       const section = prev.sections[sectionIndex]
@@ -2136,8 +2111,8 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
           </div>
           
           <div className="space-y-3">
-            {config.categories.map((category, catIndex) => (
-              <div key={catIndex} className="border rounded-lg p-3 bg-gray-50">
+            {config.categories.map((category) => (
+              <div key={category} className="border rounded-lg p-3 bg-gray-50">
                 <div className="flex items-center justify-between mb-2">
                   <Badge variant="outline">{category}</Badge>
                   <Button
@@ -2151,7 +2126,7 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
                 <div className="space-y-2">
                   <Label className="text-sm">Descripción/Instrucciones</Label>
                   <Textarea
-                    value={evidenceDescriptions[`${sectionIndex}-${category}`] || config.descriptions[category] || ''}
+                    value={(`${sectionIndex}-${category}` in evidenceDescriptions) ? evidenceDescriptions[`${sectionIndex}-${category}`] : (config.descriptions[category] ?? '')}
                     onChange={(e) => updateEvidenceDescriptionLocal(sectionIndex, category, e.target.value)}
                     placeholder={`Instrucciones para fotografiar ${category.toLowerCase()}`}
                     rows={2}
@@ -2264,18 +2239,9 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
         models={models}
         onNameChange={updateTemplateNameLocal}
         onDescriptionChange={updateTemplateDescriptionLocal}
-        onModelChange={(value) => {
-          setTemplate(prev => ({ ...prev, model_id: value }))
-          setHasChanges(true)
-        }}
-        onFrequencyChange={(value) => {
-          setTemplate(prev => ({ ...prev, frequency: value }))
-          setHasChanges(true)
-        }}
-        onHoursIntervalChange={(value) => {
-          setTemplate(prev => ({ ...prev, hours_interval: value }))
-          setHasChanges(true)
-        }}
+        onModelChange={onModelChange}
+        onFrequencyChange={onFrequencyChange}
+        onHoursIntervalChange={onHoursIntervalChange}
       />
 
       <div className="space-y-4">
@@ -2333,11 +2299,11 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
         </div>
 
         {template.sections.map((section, sectionIndex) => (
-          <Card key={sectionIndex} className={
+          <Card key={section.id ?? section._clientId ?? sectionIndex} className={`[content-visibility:auto] [contain-intrinsic-size:auto_120px] ${
             section.section_type === 'evidence' ? 'border-blue-200 bg-blue-50/50' : 
             section.section_type === 'cleanliness_bonus' ? 'border-green-200 bg-green-50/50' :
             section.section_type === 'security_talk' ? 'border-orange-200 bg-orange-50/50' : ''
-          }>
+          }`}>
             <CardHeader className="pb-3">
               <div className="flex justify-between items-center">
                 <div className="flex-1 space-y-3">
@@ -2378,7 +2344,7 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
                     </Select>
                   </div>
                   <Input
-                    value={sectionTitles[sectionIndex] || section.title}
+                    value={sectionIndex in sectionTitles ? sectionTitles[sectionIndex] : section.title}
                     onChange={(e) => updateSectionTitleLocal(sectionIndex, e.target.value)}
                     className="font-semibold"
                     placeholder="Título de la sección"
@@ -2430,13 +2396,13 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
                   <div className="space-y-3">
                     <h4 className="font-medium text-sm text-gray-700">Items a Verificar:</h4>
                     {section.items.map((item, itemIndex) => (
-                      <div key={itemIndex} className="border rounded-lg p-4 space-y-3">
+                      <div key={item.id ?? item._clientId ?? itemIndex} className="border rounded-lg p-4 space-y-3">
                         <div className="flex justify-between items-start">
                           <div className="flex-1 space-y-3">
                             <div className="flex items-center gap-2">
                               {getItemTypeIcon(item.item_type)}
                               <Input
-                                value={itemDescriptions[`${sectionIndex}-${itemIndex}`] || item.description}
+                                value={(`${sectionIndex}-${itemIndex}` in itemDescriptions) ? itemDescriptions[`${sectionIndex}-${itemIndex}`] : item.description}
                                 onChange={(e) => updateItemDescriptionLocal(sectionIndex, itemIndex, e.target.value)}
                                 placeholder="Descripción del item"
                               />
@@ -2460,12 +2426,12 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
                               {(item.item_type === 'measure' || item.item_type === 'text') && (
                                 <>
                                   <Input
-                                    value={itemExpectedValues[`${sectionIndex}-${itemIndex}`] || item.expected_value || ''}
+                                    value={(`${sectionIndex}-${itemIndex}` in itemExpectedValues) ? itemExpectedValues[`${sectionIndex}-${itemIndex}`] : (item.expected_value ?? '')}
                                     onChange={(e) => updateItemExpectedValueLocal(sectionIndex, itemIndex, e.target.value)}
                                     placeholder="Valor esperado"
                                   />
                                   <Input
-                                    value={itemTolerances[`${sectionIndex}-${itemIndex}`] || item.tolerance || ''}
+                                    value={(`${sectionIndex}-${itemIndex}` in itemTolerances) ? itemTolerances[`${sectionIndex}-${itemIndex}`] : (item.tolerance ?? '')}
                                     onChange={(e) => updateItemToleranceLocal(sectionIndex, itemIndex, e.target.value)}
                                     placeholder="Tolerancia"
                                   />
@@ -2550,13 +2516,13 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
               ) : (
                 <>
                   {section.items.map((item, itemIndex) => (
-                    <div key={itemIndex} className="border rounded-lg p-4 space-y-3">
+                    <div key={item.id ?? item._clientId ?? itemIndex} className="border rounded-lg p-4 space-y-3">
                       <div className="flex justify-between items-start">
                         <div className="flex-1 space-y-3">
                           <div className="flex items-center gap-2">
                             {getItemTypeIcon(item.item_type)}
                             <Input
-                              value={itemDescriptions[`${sectionIndex}-${itemIndex}`] || item.description}
+                              value={(`${sectionIndex}-${itemIndex}` in itemDescriptions) ? itemDescriptions[`${sectionIndex}-${itemIndex}`] : item.description}
                               onChange={(e) => updateItemDescriptionLocal(sectionIndex, itemIndex, e.target.value)}
                               placeholder="Descripción del item"
                             />
@@ -2580,12 +2546,12 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
                             {(item.item_type === 'measure' || item.item_type === 'text') && (
                               <>
                                 <Input
-                                  value={itemExpectedValues[`${sectionIndex}-${itemIndex}`] || item.expected_value || ''}
+                                  value={(`${sectionIndex}-${itemIndex}` in itemExpectedValues) ? itemExpectedValues[`${sectionIndex}-${itemIndex}`] : (item.expected_value ?? '')}
                                   onChange={(e) => updateItemExpectedValueLocal(sectionIndex, itemIndex, e.target.value)}
                                   placeholder="Valor esperado"
                                 />
                                 <Input
-                                  value={itemTolerances[`${sectionIndex}-${itemIndex}`] || item.tolerance || ''}
+                                  value={(`${sectionIndex}-${itemIndex}` in itemTolerances) ? itemTolerances[`${sectionIndex}-${itemIndex}`] : (item.tolerance ?? '')}
                                   onChange={(e) => updateItemToleranceLocal(sectionIndex, itemIndex, e.target.value)}
                                   placeholder="Tolerancia"
                                 />

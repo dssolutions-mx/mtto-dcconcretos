@@ -136,4 +136,55 @@ export function AssetDetailSkeleton() {
       </div>
     </div>
   )
+}
+
+export function AssetChecklistDetailSkeleton() {
+  return (
+    <div className="space-y-6">
+      {/* Header + 3 buttons */}
+      <div className="flex items-center justify-between gap-4">
+        <div className="space-y-2 flex-1 min-w-0">
+          <Skeleton className="h-8 w-2/3" />
+          <Skeleton className="h-4 w-full" />
+        </div>
+        <div className="flex gap-2 flex-shrink-0">
+          <Skeleton className="h-9 w-24" />
+          <Skeleton className="h-9 w-36" />
+          <Skeleton className="h-9 w-40" />
+        </div>
+      </div>
+      {/* KPI card */}
+      <Card>
+        <CardHeader>
+          <Skeleton className="h-6 w-48" />
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="text-center">
+                <Skeleton className="h-8 w-12 mx-auto mb-1" />
+                <Skeleton className="h-3 w-24 mx-auto" />
+              </div>
+            ))}
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <Skeleton className="h-4 w-32" />
+            <Skeleton className="h-4 w-28" />
+            <Skeleton className="h-4 w-36" />
+          </div>
+        </CardContent>
+      </Card>
+      {/* Tabs */}
+      <div className="flex space-x-1 border rounded-lg p-1 max-w-md">
+        {Array.from({ length: 3 }).map((_, index) => (
+          <Skeleton key={index} className="h-9 w-28" />
+        ))}
+      </div>
+      {/* Content grid */}
+      <div className="grid gap-6 md:grid-cols-2">
+        <CardSkeleton />
+        <CardSkeleton />
+      </div>
+    </div>
+  )
 } 
