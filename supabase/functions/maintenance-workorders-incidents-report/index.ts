@@ -69,11 +69,11 @@ async function getRecipients(supabase: any): Promise<Recipient[]> {
       console.error('Error fetching Gerente Mantenimiento profiles:', gerenteError)
     }
 
-    // Get Maintenance Coordinators (COORDINADOR_MANTENIMIENTO + legacy JEFE_PLANTA/ENCARGADO_MANTENIMIENTO)
+    // Get Maintenance Coordinators (COORDINADOR_MANTENIMIENTO + JEFE_PLANTA)
     const { data: plantProfiles, error: plantError } = await supabase
       .from('profiles')
       .select('id, nombre, apellido, email, plant_id, business_unit_id')
-      .in('role', ['JEFE_PLANTA', 'ENCARGADO_MANTENIMIENTO', 'COORDINADOR_MANTENIMIENTO'])
+      .in('role', ['JEFE_PLANTA', 'COORDINADOR_MANTENIMIENTO'])
       .eq('status', 'active')
     
     if (plantError) {

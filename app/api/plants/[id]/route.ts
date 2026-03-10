@@ -24,7 +24,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     }
 
     // Only certain roles can update plants
-    const allowedRoles = ['GERENCIA_GENERAL', 'JEFE_UNIDAD_NEGOCIO', 'JEFE_PLANTA']
+    const allowedRoles = ['GERENCIA_GENERAL', 'JEFE_UNIDAD_NEGOCIO', 'JEFE_PLANTA', 'COORDINADOR_MANTENIMIENTO']
     if (!allowedRoles.includes(currentProfile.role)) {
       return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 })
     }

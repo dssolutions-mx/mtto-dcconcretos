@@ -4,6 +4,7 @@ import { useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { 
   Store, 
   Wrench, 
@@ -11,9 +12,11 @@ import {
   ArrowRight,
   CheckCircle,
   AlertCircle,
-  Info
+  Info,
+  ChevronDown
 } from "lucide-react"
 import { PurchaseOrderType } from "@/types/purchase-orders"
+import { useIsMobile } from "@/hooks/use-mobile"
 
 interface PurchaseOrderTypeSelectorProps {
   onTypeSelected: (type: PurchaseOrderType) => void
@@ -26,6 +29,7 @@ export function PurchaseOrderTypeSelector({
   selectedType,
   workOrderId 
 }: PurchaseOrderTypeSelectorProps) {
+  const isMobile = useIsMobile()
   const [hoveredType, setHoveredType] = useState<PurchaseOrderType | null>(null)
 
   const purchaseOrderTypes = [
@@ -91,17 +95,19 @@ export function PurchaseOrderTypeSelector({
   return (
     <div className="space-y-6">
       <div className="text-center space-y-2">
-        <h2 className="text-2xl font-bold tracking-tight">¿Cómo vas a resolver esta necesidad?</h2>
-        <p className="text-muted-foreground">
+        <h2 className={isMobile ? "text-xl font-bold tracking-tight" : "text-2xl font-bold tracking-tight"}>
+          ¿Cómo vas a resolver esta necesidad?
+        </h2>
+        <p className="text-muted-foreground text-sm md:text-base">
           Selecciona el tipo de orden de compra más apropiado para tu situación
         </p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
         {purchaseOrderTypes.map((orderType) => {
           const Icon = orderType.icon
           const isSelected = selectedType === orderType.type
-          const isHovered = hoveredType === orderType.type
+          const isHovered = !isMobile && hoveredType === orderType.type
 
           return (
             <Card 
@@ -109,22 +115,23 @@ export function PurchaseOrderTypeSelector({
               className={`
                 cursor-pointer transition-all duration-200 relative
                 ${orderType.color}
-                ${isSelected ? 'ring-2 ring-primary ring-offset-2' : ''}
-                ${isHovered ? 'shadow-lg transform -translate-y-1' : 'shadow-sm'}
+                ${isSelected ? "ring-2 ring-primary ring-offset-2" : ""}
+                ${isHovered ? "shadow-lg transform -translate-y-1" : "shadow-sm"}
+                ${isMobile ? "min-h-[44px]" : ""}
               `}
-              onMouseEnter={() => setHoveredType(orderType.type)}
+              onMouseEnter={() => !isMobile && setHoveredType(orderType.type)}
               onMouseLeave={() => setHoveredType(null)}
               onClick={() => onTypeSelected(orderType.type)}
             >
               {isSelected && (
-                <div className="absolute -top-2 -right-2">
+                <div className="absolute -top-2 -right-2 z-10">
                   <CheckCircle className="h-6 w-6 text-primary bg-white rounded-full" />
                 </div>
               )}
 
-              <CardHeader className="pb-3">
+              <CardHeader className={isMobile ? "pb-2" : "pb-3"}>
                 <div className="flex items-center space-x-3">
-                  <div className={`p-2 rounded-lg bg-white/80 ${orderType.iconColor}`}>
+                  <div className={`p-2 rounded-lg bg-white/80 shrink-0 ${orderType.iconColor}`}>
                     <Icon className="h-6 w-6" />
                   </div>
                   <div className="flex-1 min-w-0">
@@ -145,61 +152,85 @@ export function PurchaseOrderTypeSelector({
                 </div>
               </CardHeader>
 
-              <CardContent className="space-y-4">
-                {/* Features */}
-                <div className="space-y-2">
-                  <h4 className="text-sm font-medium text-muted-foreground">Características:</h4>
-                  <div className="grid grid-cols-1 gap-1">
-                    {orderType.features.map((feature, index) => (
-                      <div key={index} className="text-xs text-muted-foreground">
-                        {feature}
+              {isMobile ? (
+                <CardContent className="pt-0">
+                  <Collapsible defaultOpen={false} className="group">
+                    <CollapsibleTrigger asChild>
+                      <button
+                        type="button"
+                        className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 w-full py-2"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        Más información
+                        <ChevronDown className="h-3 w-3 transition-transform duration-200 group-data-[state=open]:rotate-180" />
+                      </button>
+                    </CollapsibleTrigger>
+                    <CollapsibleContent onClick={(e) => e.stopPropagation()}>
+                      <div className="space-y-3 pt-2 border-t border-white/40 text-xs text-muted-foreground">
+                        <div>
+                          <span className="font-medium">Proceso: </span>
+                          {orderType.process}
+                        </div>
+                        <div>
+                          <span className="font-medium">Ejemplos: </span>
+                          {orderType.examples}
+                        </div>
+                        <div className="flex items-start gap-2">
+                          <Info className="h-3 w-3 mt-0.5 shrink-0" />
+                          {orderType.threshold}
+                        </div>
                       </div>
-                    ))}
+                    </CollapsibleContent>
+                  </Collapsible>
+                </CardContent>
+              ) : (
+                <CardContent className="space-y-4">
+                  <div className="space-y-2">
+                    <h4 className="text-sm font-medium text-muted-foreground">Características:</h4>
+                    <div className="grid grid-cols-1 gap-1">
+                      {orderType.features.map((feature, index) => (
+                        <div key={index} className="text-xs text-muted-foreground">
+                          {feature}
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                </div>
-
-                {/* Process Flow */}
-                <div className="space-y-2">
-                  <h4 className="text-sm font-medium text-muted-foreground">Proceso:</h4>
-                  <div className="text-xs text-muted-foreground bg-white/60 p-2 rounded">
-                    {orderType.process}
+                  <div className="space-y-2">
+                    <h4 className="text-sm font-medium text-muted-foreground">Proceso:</h4>
+                    <div className="text-xs text-muted-foreground bg-white/60 p-2 rounded">
+                      {orderType.process}
+                    </div>
                   </div>
-                </div>
-
-                {/* Examples */}
-                <div className="space-y-2">
-                  <h4 className="text-sm font-medium text-muted-foreground">Ejemplos:</h4>
-                  <p className="text-xs text-muted-foreground">
-                    {orderType.examples}
-                  </p>
-                </div>
-
-                {/* Threshold Info */}
-                <div className="pt-2 border-t border-white/40">
-                  <div className="flex items-start space-x-2">
-                    <Info className="h-4 w-4 text-muted-foreground mt-0.5 flex-shrink-0" />
+                  <div className="space-y-2">
+                    <h4 className="text-sm font-medium text-muted-foreground">Ejemplos:</h4>
                     <p className="text-xs text-muted-foreground">
-                      {orderType.threshold}
+                      {orderType.examples}
                     </p>
                   </div>
-                </div>
-              </CardContent>
+                  <div className="pt-2 border-t border-white/40">
+                    <div className="flex items-start space-x-2">
+                      <Info className="h-4 w-4 text-muted-foreground mt-0.5 flex-shrink-0" />
+                      <p className="text-xs text-muted-foreground">
+                        {orderType.threshold}
+                      </p>
+                    </div>
+                  </div>
+                </CardContent>
+              )}
             </Card>
           )
         })}
       </div>
 
-      {/* Action Button */}
       {selectedType && (
         <div className="flex justify-center pt-4">
           <Button 
             size="lg" 
-            className="min-w-[200px]"
+            className={isMobile ? "w-full min-h-[44px]" : "min-w-[200px]"}
             onClick={() => {
-              // This will be handled by parent component
               const selectedTypeData = purchaseOrderTypes.find(t => t.type === selectedType)
               if (selectedTypeData) {
-                // Parent will handle the navigation
+                onTypeSelected(selectedType)
               }
             }}
           >
@@ -211,19 +242,42 @@ export function PurchaseOrderTypeSelector({
 
       {/* Information Panel */}
       <Card className="bg-muted/30">
-        <CardContent className="pt-6">
-          <div className="flex items-start space-x-3">
-            <AlertCircle className="h-5 w-5 text-yellow-600 mt-0.5 flex-shrink-0" />
-            <div className="space-y-2">
-              <h4 className="font-medium">¿No estás seguro cuál elegir?</h4>
-              <div className="text-sm text-muted-foreground space-y-1">
-                <p><strong>Compra Directa:</strong> Para urgencias y compras simples en tiendas locales</p>
-                <p><strong>Servicio Directo:</strong> Para técnicos conocidos y servicios especializados</p>
-                <p><strong>Pedido Especial:</strong> Para proveedores formales y componentes críticos</p>
+        {isMobile ? (
+          <Collapsible defaultOpen={false}>
+            <CollapsibleTrigger asChild>
+              <CardContent className="pt-6 cursor-pointer hover:bg-muted/50 transition-colors">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-start space-x-3">
+                    <AlertCircle className="h-5 w-5 text-yellow-600 mt-0.5 flex-shrink-0" />
+                    <h4 className="font-medium">¿No estás seguro cuál elegir?</h4>
+                  </div>
+                  <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
+                </div>
+              </CardContent>
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <CardContent className="pt-0 text-sm text-muted-foreground space-y-1">
+                <p><strong>Compra Directa:</strong> Urgencias y tiendas locales</p>
+                <p><strong>Servicio Directo:</strong> Técnicos y servicios especializados</p>
+                <p><strong>Pedido Especial:</strong> Proveedores formales y componentes críticos</p>
+              </CardContent>
+            </CollapsibleContent>
+          </Collapsible>
+        ) : (
+          <CardContent className="pt-6">
+            <div className="flex items-start space-x-3">
+              <AlertCircle className="h-5 w-5 text-yellow-600 mt-0.5 flex-shrink-0" />
+              <div className="space-y-2">
+                <h4 className="font-medium">¿No estás seguro cuál elegir?</h4>
+                <div className="text-sm text-muted-foreground space-y-1">
+                  <p><strong>Compra Directa:</strong> Para urgencias y compras simples en tiendas locales</p>
+                  <p><strong>Servicio Directo:</strong> Para técnicos conocidos y servicios especializados</p>
+                  <p><strong>Pedido Especial:</strong> Para proveedores formales y componentes críticos</p>
+                </div>
               </div>
             </div>
-          </div>
-        </CardContent>
+          </CardContent>
+        )}
       </Card>
     </div>
   )

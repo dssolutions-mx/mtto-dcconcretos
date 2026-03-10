@@ -90,7 +90,6 @@ export async function DELETE(
     const allowedRoles = [
       'GERENCIA_GENERAL',
       'JEFE_UNIDAD_NEGOCIO', 
-      'ENCARGADO_MANTENIMIENTO',
       'JEFE_PLANTA',
       'AREA_ADMINISTRATIVA',
       'GERENTE_MANTENIMIENTO',

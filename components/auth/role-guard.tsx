@@ -268,18 +268,18 @@ export function AdministrativeGuard({ children, fallback }: { children: React.Re
   return <>{children}</>
 }
 
-// ENCARGADO_MANTENIMIENTO specific guard
+// Coordinador de Mantenimiento guard
 export function MaintenanceManagerGuard({ children, fallback }: { children: React.ReactNode, fallback?: React.ReactNode }) {
   const { profile } = useAuthZustand()
   
-  if (!profile || profile.role !== 'ENCARGADO_MANTENIMIENTO') {
+  if (!profile || profile.role !== 'COORDINADOR_MANTENIMIENTO') {
     return <>{fallback}</>
   }
   
   return <>{children}</>
 }
 
-// JEFE_PLANTA specific guard
+// JEFE_PLANTA specific guard (has $50k authorization; distinct from COORDINADOR which has $0)
 export function PlantManagerGuard({ children, fallback }: { children: React.ReactNode, fallback?: React.ReactNode }) {
   const { profile } = useAuthZustand()
   
@@ -316,7 +316,7 @@ export function ViewerGuard({ children, fallback }: { children: React.ReactNode,
 export function MaintenanceTeamGuard({ children, fallback }: { children: React.ReactNode, fallback?: React.ReactNode }) {
   const { profile } = useAuthZustand()
   
-  if (!profile || !['GERENCIA_GENERAL', 'JEFE_UNIDAD_NEGOCIO', 'ENCARGADO_MANTENIMIENTO', 'JEFE_PLANTA', 'GERENTE_MANTENIMIENTO', 'COORDINADOR_MANTENIMIENTO'].includes(profile.role)) {
+  if (!profile || !['GERENCIA_GENERAL', 'JEFE_UNIDAD_NEGOCIO', 'JEFE_PLANTA', 'GERENTE_MANTENIMIENTO', 'COORDINADOR_MANTENIMIENTO'].includes(profile.role)) {
     return <>{fallback}</>
   }
   
@@ -327,7 +327,7 @@ export function MaintenanceTeamGuard({ children, fallback }: { children: React.R
 export function PurchasingTeamGuard({ children, fallback }: { children: React.ReactNode, fallback?: React.ReactNode }) {
   const { profile } = useAuthZustand()
   
-  if (!profile || !['GERENCIA_GENERAL', 'JEFE_UNIDAD_NEGOCIO', 'AREA_ADMINISTRATIVA', 'JEFE_PLANTA', 'ENCARGADO_MANTENIMIENTO', 'AUXILIAR_COMPRAS', 'GERENTE_MANTENIMIENTO', 'COORDINADOR_MANTENIMIENTO'].includes(profile.role)) {
+  if (!profile || !['GERENCIA_GENERAL', 'JEFE_UNIDAD_NEGOCIO', 'AREA_ADMINISTRATIVA', 'JEFE_PLANTA', 'AUXILIAR_COMPRAS', 'GERENTE_MANTENIMIENTO', 'COORDINADOR_MANTENIMIENTO'].includes(profile.role)) {
     return <>{fallback}</>
   }
   

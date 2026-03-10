@@ -59,11 +59,6 @@ const LEGACY_WAREHOUSE_RESPONSIBILITY: Partial<
     canReceiveInventory: true,
     canAdjustInventory: false,
   },
-  ENCARGADO_MANTENIMIENTO: {
-    canReleaseInventory: true,
-    canReceiveInventory: true,
-    canAdjustInventory: false,
-  },
   DOSIFICADOR: {
     canReleaseInventory: false,
     canReceiveInventory: true,
@@ -76,8 +71,8 @@ const LEGACY_WAREHOUSE_RESPONSIBILITY: Partial<
     canAdjustInventory: true,
   },
   COORDINADOR_MANTENIMIENTO: {
-    canReleaseInventory: false,
-    canReceiveInventory: false,
+    canReleaseInventory: true,
+    canReceiveInventory: true,
     canAdjustInventory: false,
   },
   MECANICO: {

@@ -5,16 +5,15 @@ import { useRouter, useSearchParams } from "next/navigation"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Alert, AlertDescription } from "@/components/ui/alert"
 import { 
   ArrowLeft, 
   Store, 
   Wrench, 
   Building2,
-  CheckCircle,
-  AlertCircle
+  CheckCircle
 } from "lucide-react"
 import { PurchaseOrderType } from "@/types/purchase-orders"
+import { useIsMobile } from "@/hooks/use-mobile"
 import { PurchaseOrderTypeSelector } from "./PurchaseOrderTypeSelector"
 import { DirectPurchaseForm } from "./DirectPurchaseForm"
 import { DirectServiceForm } from "./DirectServiceForm"
@@ -37,6 +36,7 @@ export function EnhancedPurchaseOrderCreationForm({
 }: EnhancedPurchaseOrderCreationFormProps) {
   const router = useRouter()
   const searchParams = useSearchParams()
+  const isMobile = useIsMobile()
   
   const [currentStep, setCurrentStep] = useState<CreationStep>(CreationStep.SELECT_TYPE)
   const [selectedType, setSelectedType] = useState<PurchaseOrderType | null>(null)
@@ -119,33 +119,36 @@ export function EnhancedPurchaseOrderCreationForm({
     <div className="space-y-6">
       {currentStep !== CreationStep.SELECT_TYPE && (
         <Card>
-          <CardContent className="py-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-3">
+          <CardContent className={isMobile ? "py-3 px-4" : "py-4"}>
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center space-x-3 min-w-0 flex-1">
                 <Button
                   variant="ghost"
                   size="sm"
                   onClick={handleBackToTypeSelection}
-                  className="h-8 w-8 p-0"
+                  className={isMobile ? "h-10 w-10 p-0 shrink-0" : "h-8 w-8 p-0"}
+                  aria-label="Volver al selector de tipo"
                 >
                   <ArrowLeft className="h-4 w-4" />
                 </Button>
                 
                 {selectedType && (
-                  <div className="flex items-center space-x-3">
+                  <div className="flex items-center space-x-2 md:space-x-3 min-w-0">
                     {(() => {
                       const typeInfo = getTypeInfo(selectedType)
                       const Icon = typeInfo.icon
                       return (
                         <>
-                          <div className={`p-2 rounded-lg ${typeInfo.color}`}>
-                            <Icon className="h-5 w-5" />
+                          <div className={`p-1.5 md:p-2 rounded-lg shrink-0 ${typeInfo.color}`}>
+                            <Icon className="h-4 w-4 md:h-5 md:w-5" />
                           </div>
-                          <div>
-                            <h3 className="font-medium">{typeInfo.title}</h3>
-                            <p className="text-sm text-muted-foreground">
-                              {typeInfo.description}
-                            </p>
+                          <div className="min-w-0">
+                            <h3 className="font-medium text-sm md:text-base truncate">{typeInfo.title}</h3>
+                            {!isMobile && (
+                              <p className="text-sm text-muted-foreground truncate">
+                                {typeInfo.description}
+                              </p>
+                            )}
                           </div>
                         </>
                       )
@@ -155,12 +158,12 @@ export function EnhancedPurchaseOrderCreationForm({
               </div>
 
               {workOrderIdState ? (
-                <Badge variant="outline">
+                <Badge variant="outline" className="shrink-0 text-xs">
                   Orden: {workOrderIdState}
                 </Badge>
               ) : (
-                <Badge variant="secondary">
-                  Orden Independiente
+                <Badge variant="secondary" className="shrink-0 text-xs">
+                  Independiente
                 </Badge>
               )}
             </div>
@@ -208,22 +211,32 @@ export function EnhancedPurchaseOrderCreationForm({
       )}
 
       {currentStep === CreationStep.SUCCESS && (
-        <div className="text-center py-12">
-          <CheckCircle className="h-16 w-16 mx-auto text-green-600 mb-4" />
+        <div className="text-center py-8 md:py-12">
+          <CheckCircle className="h-14 w-14 md:h-16 md:w-16 mx-auto text-green-600 mb-4" />
           <h3 className="text-lg font-medium mb-2">¡Orden de Compra Creada!</h3>
-          <p className="text-muted-foreground mb-4">
+          <p className="text-muted-foreground mb-4 text-sm md:text-base">
             Tu orden de compra ha sido creada exitosamente. Serás redirigido automáticamente.
           </p>
-          <div className="flex justify-center space-x-3">
-            <Button variant="outline" onClick={() => router.push('/compras')}>
+          <div className={`flex gap-3 ${isMobile ? "flex-col" : "justify-center"}`}>
+            <Button 
+              variant="outline" 
+              onClick={() => router.push('/compras')} 
+              className={isMobile ? "w-full min-h-[44px]" : ""}
+            >
               Ver Todas las Compras
             </Button>
             {workOrderIdState ? (
-              <Button onClick={() => router.push(`/ordenes/${workOrderIdState}`)}>
+              <Button 
+                onClick={() => router.push(`/ordenes/${workOrderIdState}`)}
+                className={isMobile ? "w-full min-h-[44px]" : ""}
+              >
                 Volver a Orden de Trabajo
               </Button>
             ) : (
-              <Button onClick={() => router.push('/compras')}>
+              <Button 
+                onClick={() => router.push('/compras')}
+                className={isMobile ? "w-full min-h-[44px]" : ""}
+              >
                 Ver Todas las Compras
               </Button>
             )}

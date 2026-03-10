@@ -420,7 +420,6 @@ export function PersonnelManagementDragDrop() {
     'RECURSOS_HUMANOS',
     'ENCARGADO_ALMACEN',
     'JEFE_PLANTA',
-    'ENCARGADO_MANTENIMIENTO',
     'JEFE_UNIDAD_NEGOCIO',
     'DOSIFICADOR',
     'AUXILIAR_COMPRAS',

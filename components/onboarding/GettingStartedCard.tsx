@@ -31,7 +31,7 @@ export function GettingStartedCard({ userRole, userName }: GettingStartedCardPro
       'OPERADOR': 'Operador',
       'DOSIFICADOR': 'Dosificador',
       'JEFE_PLANTA': 'Jefe de Planta',
-      'ENCARGADO_MANTENIMIENTO': 'Coordinador de Mantenimiento',
+      'COORDINADOR_MANTENIMIENTO': 'Coordinador de Mantenimiento',
       'JEFE_UNIDAD_NEGOCIO': 'Jefe de Unidad de Negocio',
       'AREA_ADMINISTRATIVA': 'Área Administrativa',
       'GERENCIA_GENERAL': 'Gerencia General'

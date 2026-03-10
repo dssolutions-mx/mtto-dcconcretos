@@ -57,7 +57,7 @@ export default function SanctionsPage() {
 
   const canApplySanction = () => {
     if (!profile) return false
-    const allowedRoles = ['GERENCIA_GENERAL', 'JEFE_UNIDAD_NEGOCIO', 'JEFE_PLANTA', 'AREA_ADMINISTRATIVA', 'ENCARGADO_MANTENIMIENTO']
+    const allowedRoles = ['GERENCIA_GENERAL', 'JEFE_UNIDAD_NEGOCIO', 'JEFE_PLANTA', 'AREA_ADMINISTRATIVA', 'COORDINADOR_MANTENIMIENTO']
     return allowedRoles.includes(profile.role)
   }
 

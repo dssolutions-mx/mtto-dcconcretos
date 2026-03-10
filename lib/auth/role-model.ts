@@ -3,7 +3,6 @@ const ORIGINAL_DB_ROLES = [
   'GERENCIA_GENERAL',
   'JEFE_UNIDAD_NEGOCIO',
   'AREA_ADMINISTRATIVA',
-  'ENCARGADO_MANTENIMIENTO',
   'JEFE_PLANTA',
   'AUXILIAR_COMPRAS',
   'DOSIFICADOR',
@@ -54,7 +53,6 @@ const LEGACY_ROLE_LABELS: Record<LegacyDbRole, string> = {
   GERENCIA_GENERAL: 'Gerencia General',
   JEFE_UNIDAD_NEGOCIO: 'Jefe de Unidad de Negocio',
   AREA_ADMINISTRATIVA: 'Área Administrativa',
-  ENCARGADO_MANTENIMIENTO: 'Coordinador de Mantenimiento (Legacy)',
   JEFE_PLANTA: 'Coordinador de Mantenimiento (Legacy)',
   AUXILIAR_COMPRAS: 'Auxiliar de Compras',
   DOSIFICADOR: 'Dosificador',
@@ -84,13 +82,12 @@ const FUTURE_ROLE_LABELS: Record<FutureBusinessRole, string> = {
 }
 
 // Maps legacy DB roles to their semantic future business role equivalents.
-// ENCARGADO_MANTENIMIENTO and JEFE_PLANTA both map to COORDINADOR_MANTENIMIENTO during transition.
+// JEFE_PLANTA maps to COORDINADOR_MANTENIMIENTO during transition.
 // New DB roles map directly to themselves.
 export const LEGACY_ROLE_TO_BUSINESS_ROLE: Partial<Record<LegacyDbRole, FutureBusinessRole>> = {
   GERENCIA_GENERAL: 'GERENCIA_GENERAL',
   JEFE_UNIDAD_NEGOCIO: 'JEFE_UNIDAD_NEGOCIO',
   AREA_ADMINISTRATIVA: 'AREA_ADMINISTRATIVA',
-  ENCARGADO_MANTENIMIENTO: 'COORDINADOR_MANTENIMIENTO',
   JEFE_PLANTA: 'COORDINADOR_MANTENIMIENTO',
   AUXILIAR_COMPRAS: 'AUXILIAR_COMPRAS',
   DOSIFICADOR: 'OPERADOR',

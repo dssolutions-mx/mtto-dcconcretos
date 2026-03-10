@@ -91,7 +91,7 @@ export interface EmergencyContact {
 export type UserRole = 
   | 'GERENCIA_GENERAL'
   | 'JEFE_UNIDAD_NEGOCIO'
-  | 'ENCARGADO_MANTENIMIENTO'
+  | 'COORDINADOR_MANTENIMIENTO'
   | 'JEFE_PLANTA'
   | 'DOSIFICADOR'
   | 'OPERADOR'

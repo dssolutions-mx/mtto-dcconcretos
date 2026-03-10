@@ -46,7 +46,7 @@ interface UserRegistrationFormData {
 const AVAILABLE_ROLES = [
   { value: 'OPERADOR', label: 'Operador', description: 'Operación básica de equipos' },
   { value: 'DOSIFICADOR', label: 'Dosificador', description: 'Gestión de diesel y dosificación' },
-  { value: 'ENCARGADO_MANTENIMIENTO', label: 'Coordinador de Mantenimiento', description: 'Gestión completa de mantenimiento' },
+  { value: 'COORDINADOR_MANTENIMIENTO', label: 'Coordinador de Mantenimiento', description: 'Gestión completa de mantenimiento' },
   { value: 'JEFE_PLANTA', label: 'Jefe de Planta', description: 'Supervisión completa de planta' },
   { value: 'JEFE_UNIDAD_NEGOCIO', label: 'Gerente de Mantenimiento', description: 'Gestión de unidad de negocio' },
   { value: 'AUXILIAR_COMPRAS', label: 'Auxiliar de Compras', description: 'Gestión de compras e inventario' },
@@ -171,7 +171,7 @@ export function UserRegistrationTool() {
     }
 
     // For plant-specific roles, require plant selection
-    const plantSpecificRoles = ['OPERADOR', 'DOSIFICADOR', 'ENCARGADO_MANTENIMIENTO', 'JEFE_PLANTA', 'COORDINADOR_MANTENIMIENTO', 'MECANICO']
+    const plantSpecificRoles = ['OPERADOR', 'DOSIFICADOR', 'JEFE_PLANTA', 'COORDINADOR_MANTENIMIENTO', 'MECANICO']
     if (plantSpecificRoles.includes(formData.role) && !formData.plant_id) {
       toast.error('Este rol requiere selección de planta')
       return
@@ -471,7 +471,7 @@ export function UserRegistrationTool() {
                     ))}
                   </SelectContent>
                 </Select>
-                {selectedRole && ['OPERADOR', 'DOSIFICADOR', 'ENCARGADO_MANTENIMIENTO', 'JEFE_PLANTA', 'COORDINADOR_MANTENIMIENTO', 'MECANICO'].includes(formData.role) && (
+                {selectedRole && ['OPERADOR', 'DOSIFICADOR', 'JEFE_PLANTA', 'COORDINADOR_MANTENIMIENTO', 'MECANICO'].includes(formData.role) && (
                   <Badge variant="secondary" className="text-xs">
                     Este rol requiere selección de planta
                   </Badge>

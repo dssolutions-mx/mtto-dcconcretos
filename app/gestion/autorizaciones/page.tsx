@@ -73,7 +73,6 @@ interface BusinessUnitLimit {
 const USER_ROLES = [
   'OPERADOR',
   'DOSIFICADOR', 
-  'ENCARGADO_MANTENIMIENTO',
   'COORDINADOR_MANTENIMIENTO',
   'GERENTE_MANTENIMIENTO',
   'MECANICO',
@@ -496,7 +495,7 @@ export default function AuthorizationManagementPage() {
       'JEFE_UNIDAD_NEGOCIO': 'bg-blue-100 text-blue-800',
       'JEFE_PLANTA': 'bg-green-100 text-green-800',
       'AREA_ADMINISTRATIVA': 'bg-orange-100 text-orange-800',
-      'ENCARGADO_MANTENIMIENTO': 'bg-yellow-100 text-yellow-800',
+      'COORDINADOR_MANTENIMIENTO': 'bg-yellow-100 text-yellow-800',
       'RECURSOS_HUMANOS': 'bg-rose-100 text-rose-800',
       'EJECUTIVO': 'bg-indigo-100 text-indigo-800',
       'default': 'bg-gray-100 text-gray-800'
@@ -508,7 +507,7 @@ export default function AuthorizationManagementPage() {
     const names = {
       'OPERADOR': 'Operador',
       'DOSIFICADOR': 'Dosificador',
-      'ENCARGADO_MANTENIMIENTO': 'Coordinador de Mantenimiento',
+      'COORDINADOR_MANTENIMIENTO': 'Coordinador de Mantenimiento',
       'JEFE_PLANTA': 'Jefe de Planta',
       'AREA_ADMINISTRATIVA': 'Área Administrativa',
       'AUXILIAR_COMPRAS': 'Auxiliar de Compras',

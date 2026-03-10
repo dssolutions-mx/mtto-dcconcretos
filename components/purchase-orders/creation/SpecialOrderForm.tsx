@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -24,7 +25,8 @@ import {
   Clock,
   Quote,
   ShoppingCart,
-  XCircle
+  XCircle,
+  ChevronDown
 } from "lucide-react"
 import { PurchaseOrderType, PaymentMethod, CreatePurchaseOrderRequest, QuoteValidationResponse } from "@/types/purchase-orders"
 import { QuotationValidator } from "./QuotationValidator"
@@ -38,6 +40,7 @@ import { useUserPlant } from "@/hooks/use-user-plant"
 import { format } from "date-fns"
 import { toast } from "sonner"
 import { buildPurchaseOrderRoutingContext } from "@/lib/purchase-orders/routing-context"
+import { useIsMobile } from "@/hooks/use-mobile"
 
 interface SpecialOrderFormProps {
   workOrderId?: string
@@ -112,6 +115,7 @@ export function SpecialOrderForm({
 }: SpecialOrderFormProps) {
   const router = useRouter()
   const searchParams = useSearchParams()
+  const isMobile = useIsMobile()
   const { createPurchaseOrder, isCreating, error, clearError } = usePurchaseOrders()
   const { userPlants, loading: plantsLoading } = useUserPlant()
   const launchWorkOrderType = searchParams.get("workOrderType")
@@ -954,8 +958,8 @@ export function SpecialOrderForm({
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-3">
-                <div className="lg:col-span-3">
+              <div className={isMobile ? "grid grid-cols-1 gap-3" : "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-3"}>
+                <div className={isMobile ? "" : "lg:col-span-3"}>
                   <Label htmlFor="new-item-description">Buscar Parte del Catálogo *</Label>
                   <PartAutocomplete
                     value={newItem.description || ""}
@@ -964,6 +968,8 @@ export function SpecialOrderForm({
                     placeholder="Buscar por nombre o número de parte..."
                     showPartNumber={true}
                     allowManualEntry={true}
+                    popoverSide={isMobile ? "top" : undefined}
+                    inModalContext={isMobile}
                   />
                   <p className="text-xs text-muted-foreground mt-1">
                     Busca en el catálogo de inventario o escribe manualmente
@@ -1052,7 +1058,7 @@ export function SpecialOrderForm({
                     })}
                   </span>
                 </div>
-                <Button type="button" onClick={addItem} size="sm">
+                <Button type="button" onClick={addItem} size={isMobile ? "default" : "sm"} className={isMobile ? "min-h-[44px] w-full" : ""}>
                   <Plus className="h-4 w-4 mr-2" />
                   Agregar
                 </Button>
@@ -1060,28 +1066,124 @@ export function SpecialOrderForm({
             </CardContent>
           </Card>
 
-          {/* Items Table */}
+          {/* Items List */}
           {items.length > 0 && (
             <div className="border rounded-lg">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Artículo/Parte</TableHead>
-                    <TableHead>Marca</TableHead>
-                    <TableHead>Cant.</TableHead>
-                    <TableHead>Precio Unit.</TableHead>
-                    <TableHead>Total</TableHead>
-                    {workOrderId ? (
-                      <TableHead>Origen</TableHead>
-                    ) : null}
-                    {workOrderId ? (
-                      <TableHead>Almacén</TableHead>
-                    ) : null}
-                    <TableHead>Entrega</TableHead>
-                    <TableHead className="w-[100px]">Acciones</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
+              {isMobile ? (
+                <div className="p-4 space-y-3">
+                  {items.map((item) => {
+                    const isInventory = item.fulfill_from === 'inventory'
+                    return (
+                      <Card key={item.id} className={`p-4 space-y-2 ${isInventory ? "bg-green-50/70 border-green-200" : ""}`}>
+                        <div className="flex justify-between items-start gap-2">
+                          <div className="flex-1 space-y-1">
+                            <Input
+                              value={item.description}
+                              onChange={(e) => handleItemChange(item.id, 'description', e.target.value)}
+                              placeholder="Descripción"
+                              className="min-h-[44px] font-medium"
+                            />
+                            <Input
+                              value={item.part_number}
+                              onChange={(e) => handleItemChange(item.id, 'part_number', e.target.value)}
+                              placeholder="P/N"
+                              className="min-h-[40px] text-sm"
+                            />
+                          </div>
+                          <Button type="button" variant="ghost" size="icon" onClick={() => removeItem(item.id)} aria-label="Eliminar">
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <Label className="text-xs">Marca</Label>
+                            <Input value={item.brand} onChange={(e) => handleItemChange(item.id, 'brand', e.target.value)} placeholder="Marca" className="min-h-[44px]" />
+                          </div>
+                          <div>
+                            <Label className="text-xs">Cantidad</Label>
+                            <Input type="number" min={1} value={item.quantity} onChange={(e) => handleItemChange(item.id, 'quantity', e.target.value)} className="min-h-[44px]" />
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <Label className="text-xs">Precio Unit.</Label>
+                            <Input type="number" step="0.01" min={0} value={item.unit_price} onChange={(e) => handleItemChange(item.id, 'unit_price', e.target.value)} disabled={isInventory} className={`min-h-[44px] ${isInventory ? "bg-muted" : ""}`} />
+                          </div>
+                          <div>
+                            <Label className="text-xs">Entrega (días)</Label>
+                            {isInventory ? (
+                              <span className="flex items-center min-h-[44px] text-muted-foreground">N/A</span>
+                            ) : (
+                              <Input type="number" min={1} value={item.lead_time_days || 15} onChange={(e) => handleItemChange(item.id, 'lead_time_days', Number(e.target.value))} className="min-h-[44px]" />
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex justify-between items-center pt-2 border-t">
+                          <div className="flex gap-2 flex-wrap">
+                            {workOrderId && (
+                              <Select value={item.fulfill_from || 'purchase'} onValueChange={(value: 'inventory' | 'purchase') => {
+                                setItems(prev => prev.map(i => {
+                                  if (i.id !== item.id) return i
+                                  const updates: Partial<OrderItem> = { fulfill_from: value }
+                                  if (value === 'purchase') updates.warehouse_id = undefined
+                                  else if (value === 'inventory' && i.availability?.available_by_warehouse?.length) {
+                                    const wh = i.availability.available_by_warehouse
+                                    const best = wh.filter(w => w.available_quantity >= (Number(i.quantity) || 0)).sort((a, b) => b.available_quantity - a.available_quantity)[0]
+                                    updates.warehouse_id = best?.warehouse_id || wh[0].warehouse_id
+                                  }
+                                  return { ...i, ...updates }
+                                }))
+                              }}>
+                                <SelectTrigger className="h-8 w-[120px]">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="inventory">Inventario</SelectItem>
+                                  <SelectItem value="purchase">Compra</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            )}
+                            {item.is_special_order && <Badge variant="secondary" className="text-xs"><FileText className="h-3 w-3 mr-1" />Especial</Badge>}
+                          </div>
+                          <span className="font-semibold">${item.total_price.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                        </div>
+                        {workOrderId && isInventory && item.availability?.available_by_warehouse?.length ? (
+                          <div>
+                            <Label className="text-xs">Almacén</Label>
+                            <Select value={item.warehouse_id || ''} onValueChange={(v) => handleItemChange(item.id, 'warehouse_id', v)}>
+                              <SelectTrigger className="min-h-[44px]">
+                                <SelectValue placeholder="Seleccionar almacén" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {item.availability.available_by_warehouse.map((w) => (
+                                  <SelectItem key={w.warehouse_id} value={w.warehouse_id}>
+                                    {w.warehouse_name} ({w.available_quantity} disp.)
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        ) : null}
+                      </Card>
+                    )
+                  })}
+                </div>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Artículo/Parte</TableHead>
+                      <TableHead>Marca</TableHead>
+                      <TableHead>Cant.</TableHead>
+                      <TableHead>Precio Unit.</TableHead>
+                      <TableHead>Total</TableHead>
+                      {workOrderId ? <TableHead>Origen</TableHead> : null}
+                      {workOrderId ? <TableHead>Almacén</TableHead> : null}
+                      <TableHead>Entrega</TableHead>
+                      <TableHead className="w-[100px]">Acciones</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
                   {items.map((item) => {
                     const isInventory = item.fulfill_from === 'inventory'
                     return (
@@ -1234,6 +1336,7 @@ export function SpecialOrderForm({
                   )})}
                 </TableBody>
               </Table>
+              )}
             </div>
           )}
 
@@ -1327,14 +1430,51 @@ export function SpecialOrderForm({
       {/* Work Order Information */}
       {workOrder && (
         <Card>
-          <CardHeader>
-            <CardTitle className="text-lg flex items-center space-x-2">
-              <Package className="h-5 w-5" />
-              <span>Información de la Orden de Trabajo</span>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {isMobile ? (
+            <Collapsible defaultOpen={false}>
+              <CardHeader asChild>
+                <CollapsibleTrigger className="w-full text-left hover:no-underline group">
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-lg flex items-center space-x-2">
+                      <Package className="h-5 w-5" />
+                      <span>Información de la Orden de Trabajo</span>
+                    </CardTitle>
+                    <ChevronDown className="h-4 w-4 shrink-0 transition-transform group-data-[state=open]:rotate-180" />
+                  </div>
+                </CollapsibleTrigger>
+              </CardHeader>
+              <CollapsibleContent>
+                <CardContent className="space-y-3">
+                  <div className="grid grid-cols-1 gap-4">
+                    <div>
+                      <Label className="text-sm font-medium text-muted-foreground">Orden de Trabajo</Label>
+                      <p className="font-medium">{workOrder.order_id}</p>
+                    </div>
+                    {workOrder.asset && (
+                      <div>
+                        <Label className="text-sm font-medium text-muted-foreground">Activo</Label>
+                        <p className="font-medium">{workOrder.asset.name}</p>
+                        <p className="text-sm text-muted-foreground">{workOrder.asset.asset_id}</p>
+                      </div>
+                    )}
+                    <div>
+                      <Label className="text-sm font-medium text-muted-foreground">Descripción</Label>
+                      <p className="text-sm">{workOrder.description}</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </CollapsibleContent>
+            </Collapsible>
+          ) : (
+            <>
+              <CardHeader>
+                <CardTitle className="text-lg flex items-center space-x-2">
+                  <Package className="h-5 w-5" />
+                  <span>Información de la Orden de Trabajo</span>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <Label className="text-sm font-medium text-muted-foreground">Orden de Trabajo</Label>
                 <p className="font-medium">{workOrder.order_id}</p>
@@ -1347,11 +1487,13 @@ export function SpecialOrderForm({
                 </div>
               )}
             </div>
-            <div>
-              <Label className="text-sm font-medium text-muted-foreground">Descripción</Label>
-              <p className="text-sm">{workOrder.description}</p>
-            </div>
-          </CardContent>
+                <div>
+                  <Label className="text-sm font-medium text-muted-foreground">Descripción</Label>
+                  <p className="text-sm">{workOrder.description}</p>
+                </div>
+              </CardContent>
+            </>
+          )}
         </Card>
       )}
 
@@ -1389,16 +1531,24 @@ export function SpecialOrderForm({
 
       {/* Basic Information Card */}
       <Card>
-        <CardHeader>
-          <CardTitle className="text-lg flex items-center space-x-2">
-            <FileText className="h-5 w-5" />
-            <span>Información Básica</span>
-          </CardTitle>
-          <CardDescription>
-            Configure fechas y método de pago. El proveedor y artículos se agregarán en las cotizaciones.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
+        {isMobile ? (
+          <Collapsible defaultOpen={true}>
+            <CardHeader asChild>
+              <CollapsibleTrigger className="w-full text-left hover:no-underline group">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle className="text-lg flex items-center space-x-2">
+                      <FileText className="h-5 w-5" />
+                      <span>Información Básica</span>
+                    </CardTitle>
+                    <CardDescription>Fechas y método de pago</CardDescription>
+                  </div>
+                  <ChevronDown className="h-4 w-4 shrink-0 transition-transform group-data-[state=open]:rotate-180" />
+                </div>
+              </CollapsibleTrigger>
+            </CardHeader>
+            <CollapsibleContent>
+              <CardContent className="space-y-4">
           <Alert>
             <AlertCircle className="h-4 w-4" />
             <AlertDescription>
@@ -1422,6 +1572,7 @@ export function SpecialOrderForm({
                 value={formData.purchase_date || ''}
                 onChange={(e) => handleInputChange('purchase_date', e.target.value)}
                 required
+                className={isMobile ? "min-h-[44px]" : ""}
               />
               <p className="text-xs text-muted-foreground">
                 Fecha en que se realizará o se realizó la compra
@@ -1434,7 +1585,7 @@ export function SpecialOrderForm({
                 value={formData.payment_method || ""} 
                 onValueChange={(value) => handleInputChange('payment_method', value as PaymentMethod)}
               >
-                <SelectTrigger>
+                <SelectTrigger className={isMobile ? "min-h-[44px]" : ""}>
                   <SelectValue placeholder="Seleccionar método de pago" />
                 </SelectTrigger>
                 <SelectContent>
@@ -1475,18 +1626,84 @@ export function SpecialOrderForm({
             </div>
           </div>
         </CardContent>
+            </CollapsibleContent>
+          </Collapsible>
+        ) : (
+          <>
+            <CardHeader>
+              <CardTitle className="text-lg flex items-center space-x-2">
+                <FileText className="h-5 w-5" />
+                <span>Información Básica</span>
+              </CardTitle>
+              <CardDescription>
+                Configure fechas y método de pago. El proveedor y artículos se agregarán en las cotizaciones.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <Alert>
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>
+                  <strong>Flujo de Pedido Especial:</strong>
+                  <ol className="list-decimal list-inside mt-2 space-y-1">
+                    <li>Configure la información básica (fechas, método de pago, notas)</li>
+                    <li>Agregue cotizaciones de diferentes proveedores (cada una con sus artículos y precios)</li>
+                    <li>Compare las cotizaciones y seleccione la mejor opción</li>
+                    <li>El sistema actualizará automáticamente el proveedor y artículos seleccionados</li>
+                  </ol>
+                </AlertDescription>
+              </Alert>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="purchase_date">Fecha de Compra *</Label>
+                  <Input id="purchase_date" type="date" value={formData.purchase_date || ''} onChange={(e) => handleInputChange('purchase_date', e.target.value)} required />
+                  <p className="text-xs text-muted-foreground">Fecha en que se realizará o se realizó la compra</p>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="payment_method">Método de Pago *</Label>
+                  <Select value={formData.payment_method || ""} onValueChange={(value) => handleInputChange('payment_method', value as PaymentMethod)}>
+                    <SelectTrigger><SelectValue placeholder="Seleccionar método de pago" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={PaymentMethod.TRANSFER}>Transferencia</SelectItem>
+                      <SelectItem value={PaymentMethod.CARD}>Tarjeta Corporativa</SelectItem>
+                      <SelectItem value={PaymentMethod.CASH}>Efectivo</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                {formData.payment_method === PaymentMethod.TRANSFER && (
+                  <div className="space-y-2">
+                    <Label htmlFor="max_payment_date">Fecha Máxima de Pago *</Label>
+                    <Input id="max_payment_date" type="date" value={formData.max_payment_date || ""} onChange={(e) => handleInputChange('max_payment_date', e.target.value)} min={new Date().toISOString().split('T')[0]} />
+                    <p className="text-sm text-muted-foreground">Fecha límite para realizar la transferencia al proveedor</p>
+                  </div>
+                )}
+                <div className="space-y-2 md:col-span-2">
+                  <Label htmlFor="notes">Notas Adicionales</Label>
+                  <Textarea id="notes" placeholder="Notas adicionales sobre el pedido especial" value={formData.notes || ''} onChange={(e) => handleInputChange('notes', e.target.value)} rows={3} />
+                </div>
+              </div>
+            </CardContent>
+          </>
+        )}
       </Card>
 
       {/* Plant Selection - Only show for standalone orders */}
       {!workOrderId && (
         <Card>
-          <CardHeader>
-            <CardTitle className="text-lg flex items-center space-x-2">
-              <Building2 className="h-5 w-5" />
-              <span>Selección de Planta</span>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
+          {isMobile ? (
+            <Collapsible defaultOpen={!!selectedPlantId}>
+              <CardHeader asChild>
+                <CollapsibleTrigger className="w-full text-left hover:no-underline group">
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-lg flex items-center space-x-2">
+                      <Building2 className="h-5 w-5" />
+                      <span>Selección de Planta</span>
+                    </CardTitle>
+                    <ChevronDown className="h-4 w-4 shrink-0 transition-transform group-data-[state=open]:rotate-180" />
+                  </div>
+                </CollapsibleTrigger>
+              </CardHeader>
+              <CollapsibleContent>
+                <CardContent className="space-y-4">
             {plantsLoading ? (
               <div className="flex items-center justify-center py-8">
                 <Loader2 className="h-6 w-6 animate-spin mr-2" />
@@ -1531,6 +1748,51 @@ export function SpecialOrderForm({
               </div>
             )}
           </CardContent>
+              </CollapsibleContent>
+            </Collapsible>
+          ) : (
+            <>
+              <CardHeader>
+                <CardTitle className="text-lg flex items-center space-x-2">
+                  <Building2 className="h-5 w-5" />
+                  <span>Selección de Planta</span>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {plantsLoading ? (
+                  <div className="flex justify-center items-center py-8">
+                    <Loader2 className="h-6 w-6 animate-spin mr-2" />
+                    <span>Cargando plantas...</span>
+                  </div>
+                ) : userPlants.length === 0 ? (
+                  <Alert>
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertDescription>No tienes acceso a ninguna planta. Contacta al administrador.</AlertDescription>
+                  </Alert>
+                ) : (
+                  <div className="space-y-2">
+                    <Label htmlFor="plant_selector">Planta *</Label>
+                    <Select value={selectedPlantId || ""} onValueChange={setSelectedPlantId} required>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Selecciona la planta donde se realizará el pedido" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {userPlants.map((plant) => (
+                          <SelectItem key={plant.plant_id} value={plant.plant_id}>
+                            <div className="flex flex-col">
+                              <span className="font-medium">{plant.plant_name}</span>
+                              {plant.business_unit_name && <span className="text-xs text-muted-foreground">{plant.business_unit_name}</span>}
+                            </div>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">Selecciona la planta para la cual se solicita este pedido especial</p>
+                  </div>
+                )}
+              </CardContent>
+            </>
+          )}
         </Card>
       )}
 

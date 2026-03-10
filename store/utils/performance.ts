@@ -136,7 +136,6 @@ export const authSelectors = {
       canExecuteChecklists: [
         'OPERADOR',
         'DOSIFICADOR',
-        'ENCARGADO_MANTENIMIENTO',
         'JEFE_PLANTA'
       ].includes(role),
     }

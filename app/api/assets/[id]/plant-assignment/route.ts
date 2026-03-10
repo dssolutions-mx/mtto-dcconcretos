@@ -28,7 +28,7 @@ export async function PATCH(
     }
 
     // Only certain roles can update asset plant assignments
-    const allowedRoles = ['GERENCIA_GENERAL', 'JEFE_UNIDAD_NEGOCIO', 'JEFE_PLANTA', 'ENCARGADO_MANTENIMIENTO']
+    const allowedRoles = ['GERENCIA_GENERAL', 'JEFE_UNIDAD_NEGOCIO', 'JEFE_PLANTA', 'COORDINADOR_MANTENIMIENTO']
     if (!allowedRoles.includes(currentProfile.role)) {
       return NextResponse.json({ error: 'Insufficient permissions to modify asset assignments' }, { status: 403 })
     }

@@ -20,6 +20,10 @@ import { cn } from "@/lib/utils"
 import { Badge } from "@/components/ui/badge"
 import { PartAutocomplete, PartSuggestion } from "@/components/inventory/part-autocomplete"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { useIsMobile } from "@/hooks/use-mobile"
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
+import { ChevronDown } from "lucide-react"
 
 interface QuotationItem {
   item_index?: number
@@ -63,6 +67,7 @@ export function QuotationFormForCreation({
   className = "",
   prefillItems = []
 }: QuotationFormForCreationProps) {
+  const isMobile = useIsMobile()
   const [showForm, setShowForm] = useState(false)
   const [hasAppliedPrefill, setHasAppliedPrefill] = useState(false)
   const [formErrors, setFormErrors] = useState<string[]>([])
@@ -127,12 +132,12 @@ export function QuotationFormForCreation({
         part_id: part.id  // ✅ Save link to inventory catalog
       }))
     } else {
-      // Clear part_id if selection is cleared
-      setNewQuotationItem(prev => ({
-        ...prev,
-        part_id: undefined
-      }))
+      setNewQuotationItem(prev => ({ ...prev, part_id: undefined }))
     }
+  }
+
+  const handleManualPartEntry = (text: string) => {
+    setNewQuotationItem(prev => ({ ...prev, description: text || "", part_id: undefined }))
   }
 
   const handleNewItemChange = (field: string, value: any) => {
@@ -315,9 +320,29 @@ export function QuotationFormForCreation({
                       <div className="text-sm text-muted-foreground space-y-1">
                         <div>Monto: ${quotation.quoted_amount.toLocaleString('es-MX')}</div>
                         {quotation.quotation_items && quotation.quotation_items.length > 0 && (
-                          <div className="text-xs">
-                            {quotation.quotation_items.length} {quotation.quotation_items.length === 1 ? 'item' : 'items'} con precios
-                          </div>
+                          isMobile ? (
+                            <Collapsible>
+                              <CollapsibleTrigger className="flex items-center gap-1 text-xs hover:underline">
+                                {quotation.quotation_items.length} {quotation.quotation_items.length === 1 ? 'artículo' : 'artículos'}
+                                <ChevronDown className="h-3 w-3" />
+                              </CollapsibleTrigger>
+                              <CollapsibleContent>
+                                <div className="mt-2 space-y-2">
+                                  {quotation.quotation_items.map((item, idx) => (
+                                    <div key={idx} className="p-2 rounded bg-background text-sm border">
+                                      <p className="font-medium">{item.description}</p>
+                                      {item.part_number && <p className="text-xs text-muted-foreground">P/N: {item.part_number}</p>}
+                                      <p className="text-xs mt-1">{item.quantity} × ${item.unit_price.toLocaleString('es-MX')} = ${item.total_price.toLocaleString('es-MX')}</p>
+                                    </div>
+                                  ))}
+                                </div>
+                              </CollapsibleContent>
+                            </Collapsible>
+                          ) : (
+                            <div className="text-xs">
+                              {quotation.quotation_items.length} {quotation.quotation_items.length === 1 ? 'item' : 'items'} con precios
+                            </div>
+                          )
                         )}
                         {quotation.delivery_days && (
                           <div>Entrega: {quotation.delivery_days} días</div>
@@ -334,11 +359,7 @@ export function QuotationFormForCreation({
                       </div>
                     </div>
                     <div className="flex items-center space-x-2">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleRemoveQuotation(index)}
-                      >
+                      <Button variant="ghost" size="sm" onClick={() => handleRemoveQuotation(index)}>
                         <Trash2 className="h-4 w-4" />
                       </Button>
                     </div>
@@ -350,6 +371,105 @@ export function QuotationFormForCreation({
 
           {/* Add Quotation Form */}
           {showForm && (
+            isMobile ? (
+              <Dialog open={showForm} onOpenChange={(open) => { if (!open) { setShowForm(false); setFormErrors([]) } }}>
+                <DialogContent className="max-w-[95vw] max-h-[90vh] overflow-y-auto p-4 md:p-6">
+                  <DialogHeader>
+                    <DialogTitle>Nueva Cotización</DialogTitle>
+                  </DialogHeader>
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <Label>Proveedor *</Label>
+                      <SupplierSelector
+                        value={selectedSupplier?.id}
+                        onChange={(supplier) => {
+                          setSelectedSupplier(supplier)
+                          setFormData(prev => ({ ...prev, supplier_id: supplier?.id, supplier_name: supplier?.name || '' }))
+                        }}
+                        placeholder="Buscar proveedor o escribir nombre..."
+                        showPerformance={true}
+                        allowManualInput={true}
+                        onManualInputChange={(name) => {
+                          setFormData(prev => ({ ...prev, supplier_name: name }))
+                          setSelectedSupplier(null)
+                        }}
+                      />
+                    </div>
+                    <div className="space-y-3 border-t pt-4">
+                      <Label className="font-semibold">Artículos *</Label>
+                      {quotationItems.length > 0 && (
+                        <div className="space-y-2">
+                          {quotationItems.map((item, idx) => (
+                            <Card key={idx} className="p-3">
+                              <div className="flex justify-between items-start">
+                                <div>
+                                  <p className="font-medium">{item.description}</p>
+                                  {item.part_number && <p className="text-xs text-muted-foreground">P/N: {item.part_number}</p>}
+                                  <p className="text-sm mt-1">{item.quantity} × ${item.unit_price.toLocaleString('es-MX')} = ${item.total_price.toLocaleString('es-MX')}</p>
+                                </div>
+                                <Button type="button" variant="ghost" size="icon" onClick={() => removeQuotationItem(idx)}><Trash2 className="h-4 w-4" /></Button>
+                              </div>
+                            </Card>
+                          ))}
+                        </div>
+                      )}
+                      <Card className="border-dashed p-3">
+                        <div className="space-y-2">
+                          <PartAutocomplete value={newQuotationItem.description || ""} onSelect={handlePartSelect} onManualEntry={handleManualPartEntry} placeholder="Buscar parte..." showPartNumber={true} allowManualEntry={true} popoverSide="top" inModalContext={true} />
+                          <div className="grid grid-cols-2 gap-2">
+                            <Input type="number" min="1" value={newQuotationItem.quantity || ""} onChange={(e) => handleNewItemChange('quantity', e.target.value)} placeholder="Cant" className="min-h-[44px]" />
+                            <div className="relative">
+                              <span className="absolute left-2 top-1/2 -translate-y-1/2 text-sm">$</span>
+                              <Input type="number" step="0.01" min="0" value={newQuotationItem.unit_price || ""} onChange={(e) => handleNewItemChange('unit_price', e.target.value)} placeholder="Precio" className="pl-6 min-h-[44px]" />
+                            </div>
+                          </div>
+                          <Input value={newQuotationItem.brand || ""} onChange={(e) => handleNewItemChange('brand', e.target.value)} placeholder="Marca (opcional)" className="min-h-[40px] text-sm" />
+                          <Button type="button" onClick={addQuotationItem} className="w-full min-h-[44px]" disabled={!newQuotationItem.description || !newQuotationItem.quantity || !newQuotationItem.unit_price}>
+                            <Plus className="h-4 w-4 mr-2" />Agregar Artículo
+                          </Button>
+                        </div>
+                      </Card>
+                    </div>
+                    <div className="space-y-2 border-t pt-4">
+                      <Label htmlFor="quoted_amount_mob">Monto Total Cotizado *</Label>
+                      <Input id="quoted_amount_mob" type="number" step="0.01" min="0" value={formData.quoted_amount || ''} onChange={(e) => setFormData(prev => ({ ...prev, quoted_amount: parseFloat(e.target.value) || 0 }))} className="pl-8 font-semibold min-h-[44px]" readOnly={quotationItems.length > 0} />
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-2">
+                        <Label>Días de Entrega</Label>
+                        <Input type="number" min="1" value={formData.delivery_days || ''} onChange={(e) => setFormData(prev => ({ ...prev, delivery_days: parseInt(e.target.value) || undefined }))} placeholder="7" className="min-h-[44px]" />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Condiciones de Pago</Label>
+                        <Input value={formData.payment_terms || ''} onChange={(e) => setFormData(prev => ({ ...prev, payment_terms: e.target.value }))} placeholder="30 días" className="min-h-[44px]" />
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Vigencia de Cotización</Label>
+                      <Input type="date" value={formData.validity_date ? format(formData.validity_date, "yyyy-MM-dd") : ""} onChange={(e) => setFormData(prev => ({ ...prev, validity_date: e.target.value ? new Date(e.target.value) : undefined }))} className="min-h-[44px]" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Notas</Label>
+                      <Textarea value={formData.notes || ''} onChange={(e) => setFormData(prev => ({ ...prev, notes: e.target.value }))} placeholder="Notas adicionales sobre esta cotización..." rows={2} className="min-h-[44px]" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Archivo (Opcional)</Label>
+                      <Input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp" onChange={handleFileChange} disabled={isUploadingFile} />
+                    </div>
+                    {formErrors.length > 0 && (
+                      <Alert variant="destructive">
+                        <AlertCircle className="h-4 w-4" />
+                        <AlertDescription><ul className="list-disc list-inside">{formErrors.map((e, i) => <li key={i}>{e}</li>)}</ul></AlertDescription>
+                      </Alert>
+                    )}
+                    <div className="flex gap-2">
+                      <Button type="button" variant="outline" className="flex-1 min-h-[44px]" onClick={() => { setShowForm(false); setFormErrors([]) }}>Cancelar</Button>
+                      <Button type="button" className="flex-1 min-h-[44px]" onClick={handleAddQuotation}>Agregar Cotización</Button>
+                    </div>
+                  </div>
+                </DialogContent>
+              </Dialog>
+            ) : (
             <Card className="border-dashed">
               <CardHeader>
                 <CardTitle className="text-base">Nueva Cotización</CardTitle>
@@ -441,8 +561,10 @@ export function QuotationFormForCreation({
                             <PartAutocomplete
                               value={newQuotationItem.description || ""}
                               onSelect={handlePartSelect}
+                              onManualEntry={handleManualPartEntry}
                               placeholder="Buscar por nombre o número de parte..."
                               showPartNumber={true}
+                              allowManualEntry={true}
                             />
                             <p className="text-xs text-muted-foreground mt-1">
                               Busca en el catálogo de inventario o escribe manualmente
@@ -670,6 +792,7 @@ export function QuotationFormForCreation({
                 </div>
               </CardContent>
             </Card>
+            )
           )}
 
           {/* Info Alert */}

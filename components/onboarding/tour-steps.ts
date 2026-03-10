@@ -474,7 +474,7 @@ export function getTourStepsForRole(role?: string): Tour[] {
   }
 
   // Maintenance Manager - Focused on maintenance, assets, work orders, checklists
-  if (['ENCARGADO_MANTENIMIENTO', 'COORDINADOR_MANTENIMIENTO', 'GERENTE_MANTENIMIENTO'].includes(role)) {
+  if (['COORDINADOR_MANTENIMIENTO', 'GERENTE_MANTENIMIENTO'].includes(role)) {
     return maintenanceManagerTourSteps
   }
 

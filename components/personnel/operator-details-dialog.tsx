@@ -70,7 +70,7 @@ export function OperatorDetailsDialog({
     const colors = {
       'GERENCIA_GENERAL': 'bg-purple-100 text-purple-800',
       'JEFE_UNIDAD_NEGOCIO': 'bg-blue-100 text-blue-800',
-      'ENCARGADO_MANTENIMIENTO': 'bg-green-100 text-green-800',
+      'COORDINADOR_MANTENIMIENTO': 'bg-green-100 text-green-800',
       'JEFE_PLANTA': 'bg-orange-100 text-orange-800',
       'DOSIFICADOR': 'bg-yellow-100 text-yellow-800',
       'OPERADOR': 'bg-gray-100 text-gray-800',
@@ -85,7 +85,7 @@ export function OperatorDetailsDialog({
     const names = {
       'GERENCIA_GENERAL': 'Gerencia General',
       'JEFE_UNIDAD_NEGOCIO': 'Jefe Unidad de Negocio',
-      'ENCARGADO_MANTENIMIENTO': 'Coordinador de Mantenimiento',
+      'COORDINADOR_MANTENIMIENTO': 'Coordinador de Mantenimiento',
       'JEFE_PLANTA': 'Jefe de Planta',
       'DOSIFICADOR': 'Dosificador',
       'OPERADOR': 'Operador',

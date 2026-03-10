@@ -268,7 +268,7 @@ export enum ChecklistIssueStatus {
 export enum UserRole {
   // Legacy roles (for backward compatibility)
   User = 'user',
-  MaintenanceManager = 'ENCARGADO_MANTENIMIENTO',
+  MaintenanceManager = 'COORDINADOR_MANTENIMIENTO',
   PlantManager = 'JEFE_PLANTA',
   Executive = 'EJECUTIVO',
   WarehouseManager = 'ENCARGADO_ALMACEN',

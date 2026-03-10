@@ -42,7 +42,7 @@ const getRoleBadgeVariant = (role: string): "default" | "secondary" | "destructi
   const variants: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
     'GERENCIA_GENERAL': 'default',
     'JEFE_UNIDAD_NEGOCIO': 'default',
-    'ENCARGADO_MANTENIMIENTO': 'secondary',
+    'COORDINADOR_MANTENIMIENTO': 'secondary',
     'JEFE_PLANTA': 'secondary',
     'OPERADOR': 'outline',
     'DOSIFICADOR': 'outline',
@@ -56,7 +56,7 @@ const getRoleDisplayName = (role: string) => {
   const names: Record<string, string> = {
     'GERENCIA_GENERAL': 'Gerencia General',
     'JEFE_UNIDAD_NEGOCIO': 'Jefe Unidad de Negocio',
-    'ENCARGADO_MANTENIMIENTO': 'Coordinador de Mantenimiento',
+    'COORDINADOR_MANTENIMIENTO': 'Coordinador de Mantenimiento',
     'JEFE_PLANTA': 'Jefe de Planta',
     'DOSIFICADOR': 'Dosificador',
     'OPERADOR': 'Operador',

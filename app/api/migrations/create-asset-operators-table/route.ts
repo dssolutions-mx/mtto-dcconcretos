@@ -109,7 +109,7 @@ export async function POST(request: NextRequest) {
               OR (p.role = 'JEFE_UNIDAD_NEGOCIO' AND p.business_unit_id = (
                 SELECT business_unit_id FROM plants WHERE id = a.plant_id
               ))
-              OR (p.role IN ('JEFE_PLANTA', 'ENCARGADO_MANTENIMIENTO') AND p.plant_id = a.plant_id)
+              OR (p.role IN ('JEFE_PLANTA', 'COORDINADOR_MANTENIMIENTO') AND p.plant_id = a.plant_id)
             )
           )
         );

@@ -102,7 +102,7 @@ export async function POST(
       const { data: managers } = await supabase
         .from('profiles')
         .select('id')
-        .in('role', ['GERENCIA_GENERAL', 'JEFE_UNIDAD_NEGOCIO', 'JEFE_PLANTA', 'AREA_ADMINISTRATIVA'])
+        .in('role', ['GERENCIA_GENERAL', 'JEFE_UNIDAD_NEGOCIO', 'JEFE_PLANTA', 'AREA_ADMINISTRATIVA', 'COORDINADOR_MANTENIMIENTO'])
         .or(
           `role.eq.GERENCIA_GENERAL,role.eq.AREA_ADMINISTRATIVA${
             userProfile.plant_id ? `,plant_id.eq.${userProfile.plant_id}` : ''

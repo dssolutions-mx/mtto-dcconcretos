@@ -98,8 +98,8 @@ const LEGACY_ROLE_PERMISSIONS: Record<LegacyDbRole, RoleConfig> = {
     scope: 'global',
     description: 'Administración, autorización de compras y gestión de personal',
   },
-  ENCARGADO_MANTENIMIENTO: {
-    name: 'Encargado Mantenimiento',
+  COORDINADOR_MANTENIMIENTO: {
+    name: 'Coordinador de Mantenimiento',
     businessRole: 'COORDINADOR_MANTENIMIENTO',
     permissions: {
       assets: 'read_write',
@@ -265,8 +265,8 @@ const FUTURE_ROLE_PERMISSIONS: Record<FutureBusinessRole, RoleConfig> = {
   COORDINADOR_MANTENIMIENTO: {
     name: 'Coordinador de Mantenimiento',
     businessRole: 'COORDINADOR_MANTENIMIENTO',
-    permissions: LEGACY_ROLE_PERMISSIONS.ENCARGADO_MANTENIMIENTO.permissions,
-    authorizationLimit: LEGACY_ROLE_PERMISSIONS.ENCARGADO_MANTENIMIENTO.authorizationLimit,
+    permissions: LEGACY_ROLE_PERMISSIONS.COORDINADOR_MANTENIMIENTO.permissions,
+    authorizationLimit: LEGACY_ROLE_PERMISSIONS.COORDINADOR_MANTENIMIENTO.authorizationLimit,
     scope: 'plant',
     description: 'Compatibilidad para el rol operativo futuro de mantenimiento.',
   },

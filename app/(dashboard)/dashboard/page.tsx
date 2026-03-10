@@ -621,8 +621,8 @@ function DashboardContent() {
         </Card>
       )}
 
-      {/* ENCARGADO MANTENIMIENTO - Maintenance Focus */}
-      {profile?.role === 'ENCARGADO_MANTENIMIENTO' && (
+      {/* COORDINADOR MANTENIMIENTO - Maintenance Focus */}
+      {profile?.role === 'COORDINADOR_MANTENIMIENTO' && (
         <Card className="border-green-200 bg-gradient-to-r from-green-50 to-emerald-50">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-green-800">

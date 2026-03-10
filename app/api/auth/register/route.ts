@@ -51,7 +51,6 @@ export async function POST(request: NextRequest) {
     const validRoles = [
       'GERENCIA_GENERAL',
       'JEFE_UNIDAD_NEGOCIO', 
-      'ENCARGADO_MANTENIMIENTO',
       'JEFE_PLANTA',
       'DOSIFICADOR',
       'OPERADOR',

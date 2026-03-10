@@ -45,7 +45,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Only certain roles can create plants
-    const allowedRoles = ['GERENCIA_GENERAL', 'JEFE_UNIDAD_NEGOCIO', 'JEFE_PLANTA']
+    const allowedRoles = ['GERENCIA_GENERAL', 'JEFE_UNIDAD_NEGOCIO', 'JEFE_PLANTA', 'COORDINADOR_MANTENIMIENTO']
     if (!allowedRoles.includes(currentProfile.role)) {
       return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 })
     }

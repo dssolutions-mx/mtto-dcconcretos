@@ -57,7 +57,7 @@ export async function POST(request: NextRequest) {
               'GERENCIA_GENERAL',
               'JEFE_UNIDAD_NEGOCIO', 
               'JEFE_PLANTA',
-              'ENCARGADO_MANTENIMIENTO'
+              'COORDINADOR_MANTENIMIENTO'
             )
           )
         );

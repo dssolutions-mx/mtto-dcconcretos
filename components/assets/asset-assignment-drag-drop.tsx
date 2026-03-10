@@ -322,7 +322,7 @@ function getRoleDisplayName(role: string) {
   const names: Record<string, string> = {
     'GERENCIA_GENERAL': 'Gerencia General',
     'JEFE_UNIDAD_NEGOCIO': 'Jefe Unidad de Negocio',
-    'ENCARGADO_MANTENIMIENTO': 'Coordinador de Mantenimiento',
+    'COORDINADOR_MANTENIMIENTO': 'Coordinador de Mantenimiento',
     'JEFE_PLANTA': 'Jefe de Planta',
     'DOSIFICADOR': 'Dosificador',
     'OPERADOR': 'Operador',

@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -24,7 +25,8 @@ import {
   Package,
   Building2,
   FileText,
-  XCircle
+  XCircle,
+  ChevronDown
 } from "lucide-react"
 import { PurchaseOrderType, PaymentMethod, CreatePurchaseOrderRequest, QuoteValidationResponse } from "@/types/purchase-orders"
 import { QuotationValidator } from "./QuotationValidator"
@@ -37,6 +39,7 @@ import { SupplierSelector } from "@/components/suppliers/SupplierSelector"
 import { Supplier } from "@/types/suppliers"
 import { PartAutocomplete, PartSuggestion } from "@/components/inventory/part-autocomplete"
 import { buildPurchaseOrderRoutingContext } from "@/lib/purchase-orders/routing-context"
+import { useIsMobile } from "@/hooks/use-mobile"
 
 interface DirectPurchaseFormProps {
   workOrderId?: string
@@ -93,6 +96,7 @@ export function DirectPurchaseForm({
 }: DirectPurchaseFormProps) {
   const router = useRouter()
   const searchParams = useSearchParams()
+  const isMobile = useIsMobile()
   const { createPurchaseOrder, isCreating, error, clearError } = usePurchaseOrders()
   const { userPlants, loading: plantsLoading } = useUserPlant()
   const launchWorkOrderType = searchParams.get("workOrderType")
@@ -940,33 +944,73 @@ export function DirectPurchaseForm({
 
       {/* Work Order Information */}
       {workOrder && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg flex items-center space-x-2">
-              <Package className="h-5 w-5" />
-              <span>Información de la Orden de Trabajo</span>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <Label className="text-sm font-medium text-muted-foreground">Orden de Trabajo</Label>
-                <p className="font-medium">{workOrder.order_id}</p>
-              </div>
-              {workOrder.asset && (
+        isMobile ? (
+          <Card>
+            <Collapsible defaultOpen={false}>
+              <CollapsibleTrigger asChild>
+                <CardHeader className="p-5 md:p-6 pb-2 cursor-pointer hover:bg-muted/30 transition-colors rounded-t-lg group/trigger">
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-lg flex items-center space-x-2">
+                      <Package className="h-5 w-5" />
+                      <span>Información de la Orden de Trabajo</span>
+                    </CardTitle>
+                    <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200 group-data-[state=open]/trigger:rotate-180" />
+                  </div>
+                  <CardDescription className="text-sm mt-1">{workOrder.order_id}</CardDescription>
+                </CardHeader>
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                <CardContent className="p-5 md:p-6 pt-0 space-y-3">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <Label className="text-sm font-medium text-muted-foreground">Orden de Trabajo</Label>
+                      <p className="font-medium">{workOrder.order_id}</p>
+                    </div>
+                    {workOrder.asset && (
+                      <div>
+                        <Label className="text-sm font-medium text-muted-foreground">Activo</Label>
+                        <p className="font-medium">{workOrder.asset.name}</p>
+                        <p className="text-sm text-muted-foreground">{workOrder.asset.asset_id}</p>
+                      </div>
+                    )}
+                  </div>
+                  <div>
+                    <Label className="text-sm font-medium text-muted-foreground">Descripción</Label>
+                    <p className="text-sm">{workOrder.description}</p>
+                  </div>
+                </CardContent>
+              </CollapsibleContent>
+            </Collapsible>
+          </Card>
+        ) : (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg flex items-center space-x-2">
+                <Package className="h-5 w-5" />
+                <span>Información de la Orden de Trabajo</span>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <Label className="text-sm font-medium text-muted-foreground">Activo</Label>
-                  <p className="font-medium">{workOrder.asset.name}</p>
-                  <p className="text-sm text-muted-foreground">{workOrder.asset.asset_id}</p>
+                  <Label className="text-sm font-medium text-muted-foreground">Orden de Trabajo</Label>
+                  <p className="font-medium">{workOrder.order_id}</p>
                 </div>
-              )}
-            </div>
-            <div>
-              <Label className="text-sm font-medium text-muted-foreground">Descripción</Label>
-              <p className="text-sm">{workOrder.description}</p>
-            </div>
-          </CardContent>
-        </Card>
+                {workOrder.asset && (
+                  <div>
+                    <Label className="text-sm font-medium text-muted-foreground">Activo</Label>
+                    <p className="font-medium">{workOrder.asset.name}</p>
+                    <p className="text-sm text-muted-foreground">{workOrder.asset.asset_id}</p>
+                  </div>
+                )}
+              </div>
+              <div>
+                <Label className="text-sm font-medium text-muted-foreground">Descripción</Label>
+                <p className="text-sm">{workOrder.description}</p>
+              </div>
+            </CardContent>
+          </Card>
+        )
       )}
 
       {/* Validation Results - use purchase-only total for quote decision when from work order */}
@@ -1002,83 +1046,129 @@ export function DirectPurchaseForm({
 
       {/* Basic Information - ALWAYS VISIBLE (dates and payment method) */}
       <Card>
-        <CardHeader>
-          <CardTitle className="text-lg">Información Básica</CardTitle>
-          <CardDescription>
-            Fechas y método de pago requeridos para todas las compras
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* Purchase Date - ALWAYS REQUIRED */}
-            <div className="space-y-2">
-              <Label htmlFor="purchase_date">Fecha de Compra *</Label>
-              <Input
-                id="purchase_date"
-                type="date"
-                value={formData.purchase_date || ''}
-                onChange={(e) => handleInputChange('purchase_date', e.target.value)}
-                required
-              />
-              <p className="text-xs text-muted-foreground">
-                Fecha en que se realizará o se realizó la compra
-              </p>
-            </div>
-
-            {/* Payment Method - ALWAYS REQUIRED */}
-            <div className="space-y-2">
-              <Label htmlFor="payment_method">Método de Pago *</Label>
-              <Select
-                value={formData.payment_method || ""}
-                onValueChange={(value) => handleInputChange('payment_method', value)}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecciona método de pago" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={PaymentMethod.CASH}>Efectivo</SelectItem>
-                  <SelectItem value={PaymentMethod.CARD}>Tarjeta</SelectItem>
-                  <SelectItem value={PaymentMethod.TRANSFER}>Transferencia</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
-          {/* Max Payment Date - Only shown for transfers */}
-          {formData.payment_method === PaymentMethod.TRANSFER && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 border-t">
-              <div className="space-y-2">
-                <Label htmlFor="max_payment_date">Fecha Máxima de Pago *</Label>
-                <Input
-                  id="max_payment_date"
-                  type="date"
-                  value={formData.max_payment_date || ""}
-                  onChange={(e) => handleInputChange('max_payment_date', e.target.value)}
-                  min={new Date().toISOString().split('T')[0]}
-                  required={formData.payment_method === PaymentMethod.TRANSFER}
-                />
-                <p className="text-xs text-muted-foreground">
-                  Fecha límite para realizar la transferencia
-                </p>
+        {isMobile ? (
+          <Collapsible defaultOpen={true}>
+            <CollapsibleTrigger asChild>
+              <CardHeader className="p-5 md:p-6 pb-2 cursor-pointer hover:bg-muted/30 transition-colors rounded-t-lg group/trigger">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle className="text-lg">Información Básica</CardTitle>
+                    <CardDescription className="text-sm mt-1">
+                      Fechas y método de pago
+                    </CardDescription>
+                  </div>
+                  <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200 group-data-[state=open]/trigger:rotate-180" />
+                </div>
+              </CardHeader>
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <CardContent className="p-5 md:p-6 pt-0 space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="purchase_date">Fecha de Compra *</Label>
+                    <Input
+                      id="purchase_date"
+                      type="date"
+                      value={formData.purchase_date || ''}
+                      onChange={(e) => handleInputChange('purchase_date', e.target.value)}
+                      required
+                      className={isMobile ? "min-h-[44px]" : ""}
+                    />
+                    <p className="text-xs text-muted-foreground">Fecha en que se realizará la compra</p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="payment_method">Método de Pago *</Label>
+                    <Select value={formData.payment_method || ""} onValueChange={(value) => handleInputChange('payment_method', value)}>
+                      <SelectTrigger className={isMobile ? "min-h-[44px]" : ""}>
+                        <SelectValue placeholder="Selecciona método de pago" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value={PaymentMethod.CASH}>Efectivo</SelectItem>
+                        <SelectItem value={PaymentMethod.CARD}>Tarjeta</SelectItem>
+                        <SelectItem value={PaymentMethod.TRANSFER}>Transferencia</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                {formData.payment_method === PaymentMethod.TRANSFER && (
+                  <div className="pt-4 border-t">
+                    <div className="space-y-2">
+                      <Label htmlFor="max_payment_date">Fecha Máxima de Pago *</Label>
+                      <Input
+                        id="max_payment_date"
+                        type="date"
+                        value={formData.max_payment_date || ""}
+                        onChange={(e) => handleInputChange('max_payment_date', e.target.value)}
+                        min={new Date().toISOString().split('T')[0]}
+                        required={formData.payment_method === PaymentMethod.TRANSFER}
+                        className={isMobile ? "min-h-[44px]" : ""}
+                      />
+                      <p className="text-xs text-muted-foreground">Fecha límite para la transferencia</p>
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </CollapsibleContent>
+          </Collapsible>
+        ) : (
+          <>
+            <CardHeader>
+              <CardTitle className="text-lg">Información Básica</CardTitle>
+              <CardDescription>Fechas y método de pago requeridos para todas las compras</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="purchase_date">Fecha de Compra *</Label>
+                  <Input id="purchase_date" type="date" value={formData.purchase_date || ''} onChange={(e) => handleInputChange('purchase_date', e.target.value)} required />
+                  <p className="text-xs text-muted-foreground">Fecha en que se realizará o se realizó la compra</p>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="payment_method">Método de Pago *</Label>
+                  <Select value={formData.payment_method || ""} onValueChange={(value) => handleInputChange('payment_method', value)}>
+                    <SelectTrigger><SelectValue placeholder="Selecciona método de pago" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={PaymentMethod.CASH}>Efectivo</SelectItem>
+                      <SelectItem value={PaymentMethod.CARD}>Tarjeta</SelectItem>
+                      <SelectItem value={PaymentMethod.TRANSFER}>Transferencia</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
-            </div>
-          )}
-        </CardContent>
+              {formData.payment_method === PaymentMethod.TRANSFER && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 border-t">
+                  <div className="space-y-2">
+                    <Label htmlFor="max_payment_date">Fecha Máxima de Pago *</Label>
+                    <Input id="max_payment_date" type="date" value={formData.max_payment_date || ""} onChange={(e) => handleInputChange('max_payment_date', e.target.value)} min={new Date().toISOString().split('T')[0]} required={formData.payment_method === PaymentMethod.TRANSFER} />
+                    <p className="text-xs text-muted-foreground">Fecha límite para realizar la transferencia</p>
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </>
+        )}
       </Card>
 
       {/* Supplier Information - Only show if quotation NOT required */}
       {!validationResult?.requires_quote && (
       <Card>
-        <CardHeader>
-          <CardTitle className="text-lg">Información del Proveedor</CardTitle>
-          <CardDescription>
-            Para compras menores a $5,000, el proveedor se define aquí
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label>Proveedor *</Label>
+        {isMobile ? (
+          <Collapsible defaultOpen={true}>
+            <CollapsibleTrigger asChild>
+              <CardHeader className="p-5 md:p-6 pb-2 cursor-pointer hover:bg-muted/30 transition-colors rounded-t-lg group/trigger">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle className="text-lg">Información del Proveedor</CardTitle>
+                    <CardDescription className="text-sm mt-1">Proveedor para compras menores a $5,000</CardDescription>
+                  </div>
+                  <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200 group-data-[state=open]/trigger:rotate-180" />
+                </div>
+              </CardHeader>
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <CardContent className="p-5 md:p-6 pt-0 space-y-4">
+                <div className="space-y-2">
+                  <Label>Proveedor *</Label>
               {(() => {
                 const isInventoryOnly = routingContext.poPurpose === 'work_order_inventory' && workOrderId
                 
@@ -1109,9 +1199,51 @@ export function DirectPurchaseForm({
                   />
                 )
               })()}
-            </div>
-          </div>
-        </CardContent>
+                </div>
+              </CardContent>
+            </CollapsibleContent>
+          </Collapsible>
+        ) : (
+          <>
+            <CardHeader>
+              <CardTitle className="text-lg">Información del Proveedor</CardTitle>
+              <CardDescription>Para compras menores a $5,000, el proveedor se define aquí</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Proveedor *</Label>
+                  {(() => {
+                    const isInventoryOnly = routingContext.poPurpose === 'work_order_inventory' && workOrderId
+                    if (isInventoryOnly) {
+                      return (
+                        <div className="flex items-center gap-2 p-2 border rounded-md bg-muted">
+                          <Package className="h-4 w-4 text-green-600" />
+                          <span className="font-medium">Inventario Interno</span>
+                          <Badge variant="outline" className="ml-auto">Automático</Badge>
+                        </div>
+                      )
+                    }
+                    return (
+                      <SupplierSelector
+                        value={selectedSupplier?.id}
+                        onChange={(supplier) => {
+                          setSelectedSupplier(supplier)
+                          handleInputChange('supplier', supplier?.name || '')
+                        }}
+                        placeholder="Seleccionar proveedor"
+                        showPerformance={true}
+                        allowManualInput={true}
+                        onManualInputChange={(name) => handleInputChange('supplier', name)}
+                        businessUnitId={userPlants?.[0]?.business_unit_id}
+                      />
+                    )
+                  })()}
+                </div>
+              </div>
+            </CardContent>
+          </>
+        )}
       </Card>
       )}
 
@@ -1224,30 +1356,34 @@ export function DirectPurchaseForm({
 
       {/* Items Section - Always show (items pre-loaded from WO; user decides inventory vs purchase per item) */}
       <Card>
-        <CardHeader>
+        <CardHeader className={isMobile ? "p-5 md:p-6" : ""}>
           <CardTitle className="text-lg">Artículos a Comprar</CardTitle>
           <CardDescription>
             Agregue los artículos que necesita comprar. Seleccione la fuente (inventario o compra) para cada item.
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className={`space-y-4 ${isMobile ? "p-5 md:p-6 pt-0" : ""}`}>
           {/* Add New Item */}
-          <div className="p-4 border rounded-lg bg-muted/30">
+          <div className={`border rounded-lg bg-muted/30 ${isMobile ? "p-4" : "p-4"}`}>
             <h4 className="font-medium mb-3">Agregar Artículo</h4>
-            <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
-              <div className="md:col-span-2">
+            <div className={`grid gap-3 ${isMobile ? "grid-cols-1" : "grid-cols-1 md:grid-cols-5"}`}>
+              <div className={isMobile ? "" : "md:col-span-2"}>
                 <Label htmlFor="item_name">Buscar Parte del Catálogo</Label>
                 <PartAutocomplete
                   value={newItem.name || ""}
                   onSelect={handlePartSelect}
                   onManualEntry={handleManualPartEntry}
-                  placeholder="Buscar por nombre o número de parte..."
+                  placeholder={isMobile ? "Buscar o escribir..." : "Buscar por nombre o número de parte..."}
                   showPartNumber={true}
                   allowManualEntry={true}
+                  popoverSide={isMobile ? "top" : undefined}
+                  inModalContext={isMobile}
                 />
-                <p className="text-xs text-muted-foreground mt-1">
-                  Busca en el catálogo o escribe manualmente si no está en el catálogo
-                </p>
+                {!isMobile && (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Busca en el catálogo o escribe manualmente si no está en el catálogo
+                  </p>
+                )}
               </div>
 
               <div className="hidden">
@@ -1269,6 +1405,7 @@ export function DirectPurchaseForm({
                   placeholder="1"
                   value={newItem.quantity || ""}
                   onChange={(e) => handleNewItemChange('quantity', e.target.value)}
+                  className={isMobile ? "min-h-[44px]" : ""}
                 />
               </div>
 
@@ -1282,11 +1419,12 @@ export function DirectPurchaseForm({
                   placeholder="0.00"
                   value={newItem.unit_price || ""}
                   onChange={(e) => handleNewItemChange('unit_price', e.target.value)}
+                  className={isMobile ? "min-h-[44px]" : ""}
                 />
               </div>
 
               <div className="flex items-end">
-                <Button type="button" onClick={addItem} className="w-full">
+                <Button type="button" onClick={addItem} className={`w-full ${isMobile ? "min-h-[44px]" : ""}`}>
                   <Plus className="h-4 w-4 mr-2" />
                   Agregar
                 </Button>
@@ -1303,21 +1441,131 @@ export function DirectPurchaseForm({
           {/* Items List */}
           {items.length > 0 ? (
             <div className="border rounded-lg">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Descripción</TableHead>
-                    <TableHead>Parte/Código</TableHead>
-                    <TableHead>Cantidad</TableHead>
-                    <TableHead>Precio Unit.</TableHead>
-                    <TableHead>Disponibilidad</TableHead>
-                    <TableHead>Fuente</TableHead>
-                    <TableHead>Almacén</TableHead>
-                    <TableHead>Total</TableHead>
-                    <TableHead>Acciones</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
+              {isMobile ? (
+                <div className="p-4 space-y-3">
+                  {items.map((item) => {
+                    const availability = item.availability
+                    const hasPartId = !!item.part_id
+                    const isInventory = item.fulfill_from === 'inventory'
+                    return (
+                      <Card key={item.id} className={`p-4 space-y-2 ${isInventory ? "bg-green-50/70 border-green-200" : ""}`}>
+                        <div className="flex justify-between items-start gap-2">
+                          <div className="flex-1 space-y-1">
+                            <Input
+                              value={item.name}
+                              onChange={(e) => updateItem(item.id, 'name', e.target.value)}
+                              placeholder="Nombre del artículo"
+                              className="min-h-[44px] font-medium"
+                            />
+                            <Input
+                              value={item.partNumber}
+                              onChange={(e) => updateItem(item.id, 'partNumber', e.target.value)}
+                              placeholder="Parte / Código"
+                              className="min-h-[40px] text-muted-foreground text-sm"
+                            />
+                          </div>
+                          <Button type="button" variant="ghost" size="icon" onClick={() => removeItem(item.id)} aria-label="Eliminar">
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <Label className="text-xs">Cantidad</Label>
+                            <Input
+                              type="number"
+                              min="1"
+                              value={item.quantity || ""}
+                              onChange={(e) => updateItem(item.id, 'quantity', e.target.value)}
+                              placeholder="1"
+                              className="min-h-[44px]"
+                            />
+                          </div>
+                          <div>
+                            <Label className="text-xs">Precio Unit.</Label>
+                            <Input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={item.unit_price || ""}
+                              onChange={(e) => updateItem(item.id, 'unit_price', e.target.value)}
+                              className={`min-h-[44px] ${isInventory ? "bg-muted" : ""}`}
+                              placeholder="0.00"
+                              disabled={isInventory}
+                            />
+                          </div>
+                        </div>
+                        <div className="flex justify-between items-center pt-2 border-t">
+                          <div className="flex gap-2 items-center flex-wrap">
+                            <Badge variant={isInventory ? "default" : "outline"} className="text-xs">
+                              {isInventory ? <><Package className="h-3 w-3 mr-1" />Inventario</> : <><ShoppingCart className="h-3 w-3 mr-1" />A Comprar</>}
+                            </Badge>
+                            {hasPartId && availability && (
+                              <Badge variant={availability.sufficient ? "default" : availability.total_available > 0 ? "secondary" : "destructive"} className="text-xs">
+                                {availability.sufficient ? `${availability.total_available} disp.` : availability.total_available > 0 ? `Parcial (${availability.total_available})` : "Sin Stock"}
+                              </Badge>
+                            )}
+                          </div>
+                          <span className="font-semibold">${(item.total_price || 0).toFixed(2)}</span>
+                        </div>
+                        {isInventory && availability?.available_by_warehouse?.length ? (
+                          <div>
+                            <Label className="text-xs">Almacén</Label>
+                            <Select value={item.warehouse_id || ''} onValueChange={(v) => updateItem(item.id, 'warehouse_id', v)}>
+                              <SelectTrigger className="min-h-[44px]">
+                                <SelectValue placeholder="Seleccionar almacén" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {availability.available_by_warehouse.map((w) => (
+                                  <SelectItem key={w.warehouse_id} value={w.warehouse_id}>
+                                    {w.warehouse_name} ({w.available_quantity} disp.)
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        ) : !isInventory && (
+                          <Select value={item.fulfill_from || 'purchase'} onValueChange={(v: 'inventory' | 'purchase') => {
+                            setItems(prev => prev.map(i => {
+                              if (i.id !== item.id) return i
+                              const updates: Partial<PurchaseOrderItem> = { fulfill_from: v }
+                              if (v === 'purchase') updates.warehouse_id = undefined
+                              else if (v === 'inventory' && i.availability?.available_by_warehouse?.length) {
+                                const wh = i.availability.available_by_warehouse
+                                const best = wh.filter(w => w.available_quantity >= (Number(i.quantity) || 0)).sort((a, b) => b.available_quantity - a.available_quantity)[0]
+                                updates.warehouse_id = best?.warehouse_id || wh[0].warehouse_id
+                              }
+                              return { ...i, ...updates }
+                            }))
+                          }}>
+                            <SelectTrigger className="min-h-[44px]">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="inventory"><div className="flex items-center gap-2"><Package className="h-4 w-4" />De Inventario</div></SelectItem>
+                              <SelectItem value="purchase"><div className="flex items-center gap-2"><ShoppingCart className="h-4 w-4" />A Comprar</div></SelectItem>
+                            </SelectContent>
+                          </Select>
+                        )}
+                      </Card>
+                    )
+                  })}
+                </div>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Descripción</TableHead>
+                      <TableHead>Parte/Código</TableHead>
+                      <TableHead>Cantidad</TableHead>
+                      <TableHead>Precio Unit.</TableHead>
+                      <TableHead>Disponibilidad</TableHead>
+                      <TableHead>Fuente</TableHead>
+                      <TableHead>Almacén</TableHead>
+                      <TableHead>Total</TableHead>
+                      <TableHead>Acciones</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
                   {items.map((item) => {
                     const availability = item.availability
                     const hasPartId = !!item.part_id
@@ -1481,7 +1729,7 @@ export function DirectPurchaseForm({
                   })}
                 </TableBody>
               </Table>
-
+              )}
               {/* Enhanced Total Summary */}
               <div className="p-4 border-t bg-muted/30 space-y-2">
                 {(() => {
@@ -1543,35 +1791,37 @@ export function DirectPurchaseForm({
 
       {/* Quotations Section - ALWAYS VISIBLE, required if >= $5k */}
       <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-2">
-              <FileText className="h-5 w-5" />
-              <CardTitle className="text-lg">Cotizaciones de Proveedores</CardTitle>
-            </div>
-            {validationResult?.requires_quote && (
-              <Badge variant="destructive">Obligatorio</Badge>
-            )}
-            {!validationResult?.requires_quote && (
-              <Badge variant="secondary">Opcional</Badge>
-            )}
-          </div>
-          <CardDescription>
-            {validationResult?.requires_quote ? (
-              <>
-                Esta compra por ${(formData.total_amount || 0).toLocaleString('es-MX')} requiere cotización 
-                por ser mayor o igual a $5,000 MXN. Agregue al menos una cotización con proveedor y precios.
-              </>
-            ) : (
-              <>
-                Opcional: Puede agregar cotizaciones para comparar proveedores, incluso para compras menores a $5,000.
-                Si agrega cotizaciones, el proveedor y artículos se tomarán de la cotización seleccionada.
-              </>
-            )}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <QuotationFormForCreation
+        {isMobile ? (
+          <Collapsible defaultOpen={quotations.length > 0}>
+            <CardHeader asChild>
+              <CollapsibleTrigger className="w-full text-left hover:no-underline group">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-2">
+                    <FileText className="h-5 w-5 shrink-0" />
+                    <CardTitle className="text-lg">Cotizaciones de Proveedores</CardTitle>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {validationResult?.requires_quote && (
+                      <Badge variant="destructive">Obligatorio</Badge>
+                    )}
+                    {!validationResult?.requires_quote && (
+                      <Badge variant="secondary">Opcional</Badge>
+                    )}
+                    <ChevronDown className="h-4 w-4 shrink-0 transition-transform group-data-[state=open]:rotate-180" />
+                  </div>
+                </div>
+                <CardDescription className="mt-1">
+                  {validationResult?.requires_quote ? (
+                    <>Esta compra requiere cotización por ser ≥ $5,000 MXN.</>
+                  ) : (
+                    <>Opcional: agregue cotizaciones para comparar proveedores.</>
+                  )}
+                </CardDescription>
+              </CollapsibleTrigger>
+            </CardHeader>
+            <CollapsibleContent>
+              <CardContent>
+                <QuotationFormForCreation
             quotations={quotations}
             onQuotationsChange={(newQuotations) => {
               setQuotations(normalizeQuotations(newQuotations))
@@ -1590,7 +1840,61 @@ export function DirectPurchaseForm({
               : undefined
             }
           />
-        </CardContent>
+              </CardContent>
+            </CollapsibleContent>
+          </Collapsible>
+        ) : (
+          <>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2">
+                  <FileText className="h-5 w-5" />
+                  <CardTitle className="text-lg">Cotizaciones de Proveedores</CardTitle>
+                </div>
+                {validationResult?.requires_quote && (
+                  <Badge variant="destructive">Obligatorio</Badge>
+                )}
+                {!validationResult?.requires_quote && (
+                  <Badge variant="secondary">Opcional</Badge>
+                )}
+              </div>
+              <CardDescription>
+                {validationResult?.requires_quote ? (
+                  <>
+                    Esta compra por ${(formData.total_amount || 0).toLocaleString('es-MX')} requiere cotización 
+                    por ser mayor o igual a $5,000 MXN. Agregue al menos una cotización con proveedor y precios.
+                  </>
+                ) : (
+                  <>
+                    Opcional: Puede agregar cotizaciones para comparar proveedores, incluso para compras menores a $5,000.
+                    Si agrega cotizaciones, el proveedor y artículos se tomarán de la cotización seleccionada.
+                  </>
+                )}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <QuotationFormForCreation
+                quotations={quotations}
+                onQuotationsChange={(newQuotations) => {
+                  setQuotations(normalizeQuotations(newQuotations))
+                  setFormErrors(prev => prev.filter(error => !error.includes('cotización')))
+                }}
+                workOrderId={workOrderId}
+                prefillItems={validationResult?.requires_quote && purchaseItems.length > 0
+                  ? purchaseItems.map((p) => ({
+                      description: p.name,
+                      part_number: p.partNumber,
+                      quantity: Number(p.quantity) || 1,
+                      unit_price: Number(p.unit_price) || 0,
+                      total_price: p.total_price || 0,
+                      part_id: p.part_id
+                    }))
+                  : undefined
+                }
+              />
+            </CardContent>
+          </>
+        )}
       </Card>
 
       {/* Notes */}

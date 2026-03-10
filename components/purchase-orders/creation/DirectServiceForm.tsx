@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -22,7 +23,8 @@ import {
   CheckCircle2,
   Package,
   Clock,
-  FileText
+  FileText,
+  ChevronDown
 } from "lucide-react"
 import { PurchaseOrderType, PaymentMethod, CreatePurchaseOrderRequest, QuoteValidationResponse } from "@/types/purchase-orders"
 import { QuotationValidator } from "./QuotationValidator"
@@ -36,6 +38,7 @@ import { format } from "date-fns"
 import { toast } from "sonner"
 import { Separator } from "@/components/ui/separator"
 import { buildPurchaseOrderRoutingContext } from "@/lib/purchase-orders/routing-context"
+import { useIsMobile } from "@/hooks/use-mobile"
 
 interface DirectServiceFormProps {
   workOrderId?: string
@@ -92,6 +95,7 @@ export function DirectServiceForm({
 }: DirectServiceFormProps) {
   const router = useRouter()
   const searchParams = useSearchParams()
+  const isMobile = useIsMobile()
   const { createPurchaseOrder, isCreating, error, clearError } = usePurchaseOrders()
   const { userPlants, loading: plantLoading, error: plantError, userRole, hasFullAccess } = useUserPlant()
   const launchWorkOrderType = searchParams.get("workOrderType")
@@ -685,31 +689,70 @@ export function DirectServiceForm({
       {/* Work Order Information */}
       {workOrder && (
         <Card>
-          <CardHeader>
-            <CardTitle className="text-lg flex items-center space-x-2">
-              <Package className="h-5 w-5" />
-              <span>Información de la Orden de Trabajo</span>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <Label className="text-sm font-medium text-muted-foreground">Orden de Trabajo</Label>
-                <p className="font-medium">{workOrder.order_id}</p>
-              </div>
-              {workOrder.asset && (
-                <div>
-                  <Label className="text-sm font-medium text-muted-foreground">Activo</Label>
-                  <p className="font-medium">{workOrder.asset.name}</p>
-                  <p className="text-sm text-muted-foreground">{workOrder.asset.asset_id}</p>
+          {isMobile ? (
+            <Collapsible defaultOpen={false}>
+              <CardHeader asChild>
+                <CollapsibleTrigger className="group w-full text-left hover:no-underline">
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-lg flex items-center space-x-2">
+                      <Package className="h-5 w-5" />
+                      <span>Información de la Orden de Trabajo</span>
+                    </CardTitle>
+                    <ChevronDown className="h-4 w-4 shrink-0 transition-transform group-data-[state=open]:rotate-180" />
+                  </div>
+                </CollapsibleTrigger>
+              </CardHeader>
+              <CollapsibleContent>
+                <CardContent className="space-y-3">
+                  <div className="grid grid-cols-1 gap-4">
+                    <div>
+                      <Label className="text-sm font-medium text-muted-foreground">Orden de Trabajo</Label>
+                      <p className="font-medium">{workOrder.order_id}</p>
+                    </div>
+                    {workOrder.asset && (
+                      <div>
+                        <Label className="text-sm font-medium text-muted-foreground">Activo</Label>
+                        <p className="font-medium">{workOrder.asset.name}</p>
+                        <p className="text-sm text-muted-foreground">{workOrder.asset.asset_id}</p>
+                      </div>
+                    )}
+                    <div>
+                      <Label className="text-sm font-medium text-muted-foreground">Descripción</Label>
+                      <p className="text-sm">{workOrder.description}</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </CollapsibleContent>
+            </Collapsible>
+          ) : (
+            <>
+              <CardHeader>
+                <CardTitle className="text-lg flex items-center space-x-2">
+                  <Package className="h-5 w-5" />
+                  <span>Información de la Orden de Trabajo</span>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <Label className="text-sm font-medium text-muted-foreground">Orden de Trabajo</Label>
+                    <p className="font-medium">{workOrder.order_id}</p>
+                  </div>
+                  {workOrder.asset && (
+                    <div>
+                      <Label className="text-sm font-medium text-muted-foreground">Activo</Label>
+                      <p className="font-medium">{workOrder.asset.name}</p>
+                      <p className="text-sm text-muted-foreground">{workOrder.asset.asset_id}</p>
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
-            <div>
-              <Label className="text-sm font-medium text-muted-foreground">Descripción</Label>
-              <p className="text-sm">{workOrder.description}</p>
-            </div>
-          </CardContent>
+                <div>
+                  <Label className="text-sm font-medium text-muted-foreground">Descripción</Label>
+                  <p className="text-sm">{workOrder.description}</p>
+                </div>
+              </CardContent>
+            </>
+          )}
         </Card>
       )}
 
@@ -725,26 +768,62 @@ export function DirectServiceForm({
       {/* Quotation Upload - Only show when required */}
       {validationResult?.requires_quote && (
         <Card>
-          <CardHeader>
-            <CardTitle className="text-lg flex items-center space-x-2">
-              <FileText className="h-5 w-5" />
-              <span>Cotización Requerida</span>
-              <Badge variant="destructive">Obligatorio</Badge>
-            </CardTitle>
-            <CardDescription>
-              El servicio por ${(formData.total_amount || 0).toLocaleString('es-MX')} requiere cotización por ser mayor o igual a $5,000 MXN
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <QuotationFormForCreation
-              quotations={quotations}
-              onQuotationsChange={(newQuotations) => {
-                setQuotations(normalizeQuotations(newQuotations))
-                setFormErrors(prev => prev.filter(error => !error.includes('cotización')))
-              }}
-              workOrderId={workOrderId}
-            />
-          </CardContent>
+          {isMobile ? (
+            <Collapsible defaultOpen={quotations.length > 0}>
+              <CardHeader asChild>
+                <CollapsibleTrigger className="group w-full text-left hover:no-underline">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <CardTitle className="text-lg flex items-center space-x-2">
+                        <FileText className="h-5 w-5" />
+                        <span>Cotización Requerida</span>
+                        <Badge variant="destructive">Obligatorio</Badge>
+                      </CardTitle>
+                      <CardDescription>
+                        El servicio requiere cotización por ser ≥ $5,000 MXN
+                      </CardDescription>
+                    </div>
+                    <ChevronDown className="h-4 w-4 shrink-0 transition-transform group-data-[state=open]:rotate-180" />
+                  </div>
+                </CollapsibleTrigger>
+              </CardHeader>
+              <CollapsibleContent>
+                <CardContent>
+                  <QuotationFormForCreation
+                    quotations={quotations}
+                    onQuotationsChange={(newQuotations) => {
+                      setQuotations(normalizeQuotations(newQuotations))
+                      setFormErrors(prev => prev.filter(error => !error.includes('cotización')))
+                    }}
+                    workOrderId={workOrderId}
+                  />
+                </CardContent>
+              </CollapsibleContent>
+            </Collapsible>
+          ) : (
+            <>
+              <CardHeader>
+                <CardTitle className="text-lg flex items-center space-x-2">
+                  <FileText className="h-5 w-5" />
+                  <span>Cotización Requerida</span>
+                  <Badge variant="destructive">Obligatorio</Badge>
+                </CardTitle>
+                <CardDescription>
+                  El servicio por ${(formData.total_amount || 0).toLocaleString('es-MX')} requiere cotización por ser mayor o igual a $5,000 MXN
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <QuotationFormForCreation
+                  quotations={quotations}
+                  onQuotationsChange={(newQuotations) => {
+                    setQuotations(normalizeQuotations(newQuotations))
+                    setFormErrors(prev => prev.filter(error => !error.includes('cotización')))
+                  }}
+                  workOrderId={workOrderId}
+                />
+              </CardContent>
+            </>
+          )}
         </Card>
       )}
 
@@ -772,112 +851,178 @@ export function DirectServiceForm({
 
       {/* Basic Information - ALWAYS VISIBLE (dates and payment method) */}
       <Card>
-        <CardHeader>
-          <CardTitle className="text-lg">Información Básica</CardTitle>
-          <CardDescription>
-            Fechas y método de pago requeridos para todos los servicios
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {/* Plant Selector for Standalone Orders */}
-          {!workOrderId && (
-            <div className="space-y-2 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-              <Label htmlFor="plant_selector" className="text-sm font-medium text-blue-900">
-                Planta * (Orden Independiente)
-              </Label>
-              <Select value={selectedPlantId} onValueChange={setSelectedPlantId}>
-                <SelectTrigger className="bg-white">
-                  <SelectValue placeholder="Seleccionar planta donde se ejecutará el servicio" />
-                </SelectTrigger>
-                <SelectContent>
-                  {userPlants.map((plant) => (
-                    <SelectItem key={plant.plant_id} value={plant.plant_id}>
-                      {plant.plant_name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {!selectedPlantId && (
-                <p className="text-sm text-red-600">
-                  Se requiere seleccionar una planta para órdenes independientes
-                </p>
+        {isMobile ? (
+          <Collapsible defaultOpen={true}>
+            <CardHeader asChild>
+              <CollapsibleTrigger className="group w-full text-left hover:no-underline">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle className="text-lg">Información Básica</CardTitle>
+                    <CardDescription>Fechas y método de pago</CardDescription>
+                  </div>
+                  <ChevronDown className="h-4 w-4 shrink-0 transition-transform group-data-[state=open]:rotate-180" />
+                </div>
+              </CollapsibleTrigger>
+            </CardHeader>
+            <CollapsibleContent>
+              <CardContent className="space-y-4">
+                {!workOrderId && (
+                  <div className="space-y-2 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                    <Label htmlFor="plant_selector" className="text-sm font-medium text-blue-900">Planta * (Orden Independiente)</Label>
+                    <Select value={selectedPlantId} onValueChange={setSelectedPlantId}>
+                      <SelectTrigger className="bg-white min-h-[44px]">
+                        <SelectValue placeholder="Seleccionar planta" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {userPlants.map((plant) => (
+                          <SelectItem key={plant.plant_id} value={plant.plant_id}>{plant.plant_name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {!selectedPlantId && <p className="text-sm text-red-600">Se requiere seleccionar una planta para órdenes independientes</p>}
+                    <p className="text-xs text-blue-700">Esta orden no está vinculada a una orden de trabajo específica</p>
+                  </div>
+                )}
+                <div className="grid grid-cols-1 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="purchase_date">Fecha de Compra *</Label>
+                    <Input id="purchase_date" type="date" value={formData.purchase_date || ''} onChange={(e) => handleInputChange('purchase_date', e.target.value)} required className="min-h-[44px]" />
+                    <p className="text-xs text-muted-foreground">Fecha en que se realizará o se realizó la compra</p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="payment_method">Método de Pago *</Label>
+                    <Select value={formData.payment_method || ""} onValueChange={(value) => handleInputChange('payment_method', value)}>
+                      <SelectTrigger className="min-h-[44px]">
+                        <SelectValue placeholder="Seleccionar método de pago" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value={PaymentMethod.TRANSFER}>Transferencia</SelectItem>
+                        <SelectItem value={PaymentMethod.CASH}>Efectivo</SelectItem>
+                        <SelectItem value={PaymentMethod.CARD}>Tarjeta</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                {formData.payment_method === PaymentMethod.TRANSFER && (
+                  <div className="space-y-2">
+                    <Label htmlFor="max_payment_date">Fecha Máxima de Pago *</Label>
+                    <Input id="max_payment_date" type="date" value={formData.max_payment_date || ""} onChange={(e) => handleInputChange('max_payment_date', e.target.value)} min={new Date().toISOString().split('T')[0]} required={formData.payment_method === PaymentMethod.TRANSFER} className="min-h-[44px]" />
+                    <p className="text-xs text-muted-foreground">Fecha límite para realizar la transferencia</p>
+                  </div>
+                )}
+              </CardContent>
+            </CollapsibleContent>
+          </Collapsible>
+        ) : (
+          <>
+            <CardHeader>
+              <CardTitle className="text-lg">Información Básica</CardTitle>
+              <CardDescription>Fechas y método de pago requeridos para todos los servicios</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {!workOrderId && (
+                <div className="space-y-2 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                  <Label htmlFor="plant_selector" className="text-sm font-medium text-blue-900">Planta * (Orden Independiente)</Label>
+                  <Select value={selectedPlantId} onValueChange={setSelectedPlantId}>
+                    <SelectTrigger className="bg-white">
+                      <SelectValue placeholder="Seleccionar planta donde se ejecutará el servicio" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {userPlants.map((plant) => (
+                        <SelectItem key={plant.plant_id} value={plant.plant_id}>{plant.plant_name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {!selectedPlantId && <p className="text-sm text-red-600">Se requiere seleccionar una planta para órdenes independientes</p>}
+                  <p className="text-xs text-blue-700">Esta orden no está vinculada a una orden de trabajo específica</p>
+                </div>
               )}
-              <p className="text-xs text-blue-700">
-                Esta orden no está vinculada a una orden de trabajo específica
-              </p>
-            </div>
-          )}
-          
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* Purchase Date - ALWAYS REQUIRED */}
-            <div className="space-y-2">
-              <Label htmlFor="purchase_date">Fecha de Compra *</Label>
-              <Input
-                id="purchase_date"
-                type="date"
-                value={formData.purchase_date || ''}
-                onChange={(e) => handleInputChange('purchase_date', e.target.value)}
-                required
-              />
-              <p className="text-xs text-muted-foreground">
-                Fecha en que se realizará o se realizó la compra
-              </p>
-            </div>
-
-            {/* Payment Method - ALWAYS REQUIRED */}
-            <div className="space-y-2">
-              <Label htmlFor="payment_method">Método de Pago *</Label>
-              <Select 
-                value={formData.payment_method || ""} 
-                onValueChange={(value) => handleInputChange('payment_method', value)}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Seleccionar método de pago" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={PaymentMethod.TRANSFER}>Transferencia</SelectItem>
-                  <SelectItem value={PaymentMethod.CASH}>Efectivo</SelectItem>
-                  <SelectItem value={PaymentMethod.CARD}>Tarjeta</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
-          {/* Max Payment Date - Only shown for transfers */}
-          {formData.payment_method === PaymentMethod.TRANSFER && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 border-t">
-              <div className="space-y-2">
-                <Label htmlFor="max_payment_date">Fecha Máxima de Pago *</Label>
-                <Input
-                  id="max_payment_date"
-                  type="date"
-                  value={formData.max_payment_date || ""}
-                  onChange={(e) => handleInputChange('max_payment_date', e.target.value)}
-                  min={new Date().toISOString().split('T')[0]}
-                  required={formData.payment_method === PaymentMethod.TRANSFER}
-                />
-                <p className="text-xs text-muted-foreground">
-                  Fecha límite para realizar la transferencia
-                </p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="purchase_date">Fecha de Compra *</Label>
+                  <Input id="purchase_date" type="date" value={formData.purchase_date || ''} onChange={(e) => handleInputChange('purchase_date', e.target.value)} required />
+                  <p className="text-xs text-muted-foreground">Fecha en que se realizará o se realizó la compra</p>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="payment_method">Método de Pago *</Label>
+                  <Select value={formData.payment_method || ""} onValueChange={(value) => handleInputChange('payment_method', value)}>
+                    <SelectTrigger><SelectValue placeholder="Seleccionar método de pago" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={PaymentMethod.TRANSFER}>Transferencia</SelectItem>
+                      <SelectItem value={PaymentMethod.CASH}>Efectivo</SelectItem>
+                      <SelectItem value={PaymentMethod.CARD}>Tarjeta</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
-            </div>
-          )}
-        </CardContent>
+              {formData.payment_method === PaymentMethod.TRANSFER && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 border-t">
+                  <div className="space-y-2">
+                    <Label htmlFor="max_payment_date">Fecha Máxima de Pago *</Label>
+                    <Input id="max_payment_date" type="date" value={formData.max_payment_date || ""} onChange={(e) => handleInputChange('max_payment_date', e.target.value)} min={new Date().toISOString().split('T')[0]} required={formData.payment_method === PaymentMethod.TRANSFER} />
+                    <p className="text-xs text-muted-foreground">Fecha límite para realizar la transferencia</p>
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </>
+        )}
       </Card>
 
       {/* Service Provider Information - Only show if quotation NOT required */}
       {!validationResult?.requires_quote && (
       <Card>
-        <CardHeader>
-          <CardTitle className="text-lg flex items-center space-x-2">
-            <User className="h-5 w-5" />
-            <span>Información del Proveedor de Servicio</span>
-          </CardTitle>
-          <CardDescription>
-            Servicio menor a $5,000 - proveedor se define aquí
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
+        {isMobile ? (
+          <Collapsible defaultOpen={true}>
+            <CardHeader asChild>
+              <CollapsibleTrigger className="group w-full text-left hover:no-underline">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle className="text-lg flex items-center space-x-2">
+                      <User className="h-5 w-5" />
+                      <span>Proveedor de Servicio</span>
+                    </CardTitle>
+                    <CardDescription>Servicio menor a $5,000</CardDescription>
+                  </div>
+                  <ChevronDown className="h-4 w-4 shrink-0 transition-transform group-data-[state=open]:rotate-180" />
+                </div>
+              </CollapsibleTrigger>
+            </CardHeader>
+            <CollapsibleContent>
+              <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <Label>Proveedor de Servicio *</Label>
+                  <SupplierSelector
+                    value={selectedSupplier?.id}
+                    onChange={(supplier) => {
+                      setSelectedSupplier(supplier)
+                      handleInputChange('service_provider', supplier?.name || '')
+                      handleInputChange('supplier', supplier?.name || '')
+                    }}
+                    placeholder="Seleccionar proveedor"
+                    filterByType="service_provider"
+                    showPerformance={true}
+                    allowManualInput={true}
+                    onManualInputChange={(name) => {
+                      handleInputChange('service_provider', name)
+                      handleInputChange('supplier', name)
+                    }}
+                    businessUnitId={userPlants?.[0]?.business_unit_id}
+                  />
+                </div>
+              </CardContent>
+            </CollapsibleContent>
+          </Collapsible>
+        ) : (
+          <>
+            <CardHeader>
+              <CardTitle className="text-lg flex items-center space-x-2">
+                <User className="h-5 w-5" />
+                <span>Información del Proveedor de Servicio</span>
+              </CardTitle>
+              <CardDescription>Servicio menor a $5,000 - proveedor se define aquí</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label>Proveedor de Servicio *</Label>
@@ -901,6 +1046,8 @@ export function DirectServiceForm({
             </div>
           </div>
         </CardContent>
+          </>
+        )}
       </Card>
       )}
 
@@ -985,14 +1132,15 @@ export function DirectServiceForm({
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
-                <div className="lg:col-span-2">
+              <div className={isMobile ? "grid grid-cols-1 gap-3" : "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3"}>
+                <div className={isMobile ? "" : "lg:col-span-2"}>
                   <Label htmlFor="new-service-description">Descripción del Servicio</Label>
                   <Input
                     id="new-service-description"
                     placeholder="Ej: Reparación de motor eléctrico"
                     value={newService.description || ""}
                     onChange={(e) => handleNewServiceChange('description', e.target.value)}
+                    className={isMobile ? "min-h-[44px]" : ""}
                   />
                 </div>
                 <div>
@@ -1001,7 +1149,7 @@ export function DirectServiceForm({
                     value={newService.category || ""} 
                     onValueChange={(value) => handleNewServiceChange('category', value)}
                   >
-                    <SelectTrigger>
+                    <SelectTrigger className={isMobile ? "min-h-[44px]" : ""}>
                       <SelectValue placeholder="Categoría" />
                     </SelectTrigger>
                     <SelectContent>
@@ -1024,6 +1172,7 @@ export function DirectServiceForm({
                     placeholder="8"
                     value={newService.estimated_hours}
                     onChange={(e) => handleNewServiceChange('estimated_hours', e.target.value)}
+                    className={isMobile ? "min-h-[44px]" : ""}
                   />
                 </div>
                 <div>
@@ -1036,7 +1185,7 @@ export function DirectServiceForm({
                       step="0.01"
                       min="0"
                       placeholder="500.00"
-                      className="pl-8"
+                      className={isMobile ? "pl-8 min-h-[44px]" : "pl-8"}
                       value={newService.hourly_rate}
                       onChange={(e) => handleNewServiceChange('hourly_rate', e.target.value)}
                     />
@@ -1064,7 +1213,7 @@ export function DirectServiceForm({
                       })}
                     </span>
                   </div>
-                  <Button type="button" onClick={addService} size="sm">
+                  <Button type="button" onClick={addService} size={isMobile ? "default" : "sm"} className={isMobile ? "min-h-[44px] w-full" : ""}>
                     <Plus className="h-4 w-4 mr-2" />
                     Agregar
                   </Button>
@@ -1073,68 +1222,92 @@ export function DirectServiceForm({
             </CardContent>
           </Card>
 
-          {/* Services Table */}
+          {/* Services List */}
           {services.length > 0 && (
             <div className="border rounded-lg">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Descripción</TableHead>
-                    <TableHead>Categoría</TableHead>
-                    <TableHead>Horas</TableHead>
-                    <TableHead>Tarifa</TableHead>
-                    <TableHead>Total</TableHead>
-                    <TableHead className="w-[100px]">Acciones</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
+              {isMobile ? (
+                <div className="p-4 space-y-3">
                   {services.map((service) => (
-                    <TableRow key={service.id}>
-                      <TableCell>
+                    <Card key={service.id} className="p-4 space-y-2">
+                      <div className="flex justify-between items-start gap-2">
                         <div>
                           <p className="font-medium">{service.description}</p>
-                          {service.specialist_required && (
-                            <Badge variant="secondary" className="text-xs mt-1">
-                              <User className="h-3 w-3 mr-1" />
-                              Especialista
-                            </Badge>
-                          )}
+                          <div className="flex items-center gap-2 mt-1 flex-wrap">
+                            <Badge variant="outline" className="text-xs">{service.category}</Badge>
+                            {service.specialist_required && (
+                              <Badge variant="secondary" className="text-xs">
+                                <User className="h-3 w-3 mr-1" />
+                                Especialista
+                              </Badge>
+                            )}
+                          </div>
                         </div>
-                      </TableCell>
-                      <TableCell>{service.category}</TableCell>
-                      <TableCell>
-                        <div className="flex items-center space-x-1">
-                          <Clock className="h-4 w-4 text-muted-foreground" />
-                          <span>{Number(service.estimated_hours).toFixed(1)}h</span>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        ${Number(service.hourly_rate).toLocaleString('es-MX', { 
-                          minimumFractionDigits: 2, 
-                          maximumFractionDigits: 2 
-                        })}
-                      </TableCell>
-                      <TableCell className="font-medium">
-                        ${service.total_cost.toLocaleString('es-MX', { 
-                          minimumFractionDigits: 2, 
-                          maximumFractionDigits: 2 
-                        })}
-                      </TableCell>
-                      <TableCell>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => removeService(service.id)}
-                          className="text-red-600 hover:text-red-700"
-                        >
+                        <Button type="button" variant="ghost" size="icon" onClick={() => removeService(service.id)} aria-label="Eliminar">
                           <Trash2 className="h-4 w-4" />
                         </Button>
-                      </TableCell>
-                    </TableRow>
+                      </div>
+                      <div className="flex justify-between items-center pt-2 border-t text-sm">
+                        <div className="flex items-center gap-3 text-muted-foreground">
+                          <span className="flex items-center gap-1">
+                            <Clock className="h-3 w-3" />
+                            {Number(service.estimated_hours).toFixed(1)}h
+                          </span>
+                          <span>${Number(service.hourly_rate).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}/h</span>
+                        </div>
+                        <span className="font-semibold">${service.total_cost.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                      </div>
+                    </Card>
                   ))}
-                </TableBody>
-              </Table>
+                </div>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Descripción</TableHead>
+                      <TableHead>Categoría</TableHead>
+                      <TableHead>Horas</TableHead>
+                      <TableHead>Tarifa</TableHead>
+                      <TableHead>Total</TableHead>
+                      <TableHead className="w-[100px]">Acciones</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {services.map((service) => (
+                      <TableRow key={service.id}>
+                        <TableCell>
+                          <div>
+                            <p className="font-medium">{service.description}</p>
+                            {service.specialist_required && (
+                              <Badge variant="secondary" className="text-xs mt-1">
+                                <User className="h-3 w-3 mr-1" />
+                                Especialista
+                              </Badge>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell>{service.category}</TableCell>
+                        <TableCell>
+                          <div className="flex items-center space-x-1">
+                            <Clock className="h-4 w-4 text-muted-foreground" />
+                            <span>{Number(service.estimated_hours).toFixed(1)}h</span>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          ${Number(service.hourly_rate).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </TableCell>
+                        <TableCell className="font-medium">
+                          ${service.total_cost.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </TableCell>
+                        <TableCell>
+                          <Button type="button" variant="ghost" size="sm" onClick={() => removeService(service.id)} className="text-red-600 hover:text-red-700">
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
             </div>
           )}
 
