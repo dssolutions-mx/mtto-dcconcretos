@@ -1,0 +1,246 @@
+"use client"
+
+import { useState, useEffect } from "react"
+import { useSearchParams } from "next/navigation"
+import { DashboardShell } from "@/components/dashboard/dashboard-shell"
+import { DashboardHeader } from "@/components/dashboard/dashboard-header"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Card, CardContent } from "@/components/ui/card"
+import { Badge } from "@/components/ui/badge"
+import { Truck, FileText, AlertTriangle, WifiOff, Loader2 } from "lucide-react"
+import Link from "next/link"
+import { useAuthZustand } from "@/hooks/use-auth-zustand"
+import { OfflineStatus } from "@/components/checklists/offline-status"
+import { OfflineChecklistList } from "@/components/checklists/offline-checklist-list"
+import { DaySummarySection } from "./day-summary-section"
+import { QuickActionsSection } from "./quick-actions-section"
+import { UnresolvedIssuesWidget } from "./unresolved-issues-widget"
+import { AssetGridView } from "./asset-grid-view"
+import { ModelTemplatesNavigator } from "../model-templates-navigator"
+import { useChecklistSchedules, useChecklistTemplates } from "@/hooks/useChecklists"
+import { toast } from "sonner"
+
+export function ChecklistDashboard() {
+  const searchParams = useSearchParams()
+  const tabParam = searchParams?.get("tab")
+  const { profile, ui } = useAuthZustand()
+  const { schedules, loading, error, fetchSchedules } = useChecklistSchedules()
+  const { templates, fetchTemplates } = useChecklistTemplates()
+  const [activeTab, setActiveTab] = useState<"assets" | "templates">("assets")
+
+  useEffect(() => {
+    if (tabParam === "templates") {
+      setActiveTab("templates")
+    }
+  }, [tabParam])
+  const [preparingOffline, setPreparingOffline] = useState(false)
+  const [isOnline, setIsOnline] = useState<boolean | undefined>(undefined)
+  const [stats, setStats] = useState({
+    daily: { total: 0, pending: 0, overdue: 0 },
+    weekly: { total: 0, pending: 0, overdue: 0 },
+    monthly: { total: 0, pending: 0, overdue: 0 },
+    templates: 0,
+    preventive: { total: 0, pending: 0, overdue: 0 },
+  })
+
+  const isOperator = profile?.role && ["OPERADOR", "DOSIFICADOR"].includes(profile.role)
+  const canCreateChecklists = ui?.canShowCreateButton("checklists") ?? false
+  const canScheduleChecklists = ui?.canShowEditButton("checklists") ?? false
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      setIsOnline(navigator.onLine)
+      const on = () => setIsOnline(true)
+      const off = () => setIsOnline(false)
+      window.addEventListener("online", on)
+      window.addEventListener("offline", off)
+      return () => {
+        window.removeEventListener("online", on)
+        window.removeEventListener("offline", off)
+      }
+    }
+  }, [])
+
+  useEffect(() => {
+    fetchSchedules("pendiente")
+    fetchTemplates()
+  }, [fetchSchedules, fetchTemplates])
+
+  useEffect(() => {
+    if (schedules.length > 0 || templates.length > 0) {
+      const today = new Date()
+      today.setHours(0, 0, 0, 0)
+      const tomorrow = new Date(today)
+      tomorrow.setDate(tomorrow.getDate() + 1)
+
+      const dailyItems = schedules.filter((s) => s.checklists?.frequency === "diario")
+      const weeklyItems = schedules.filter((s) => s.checklists?.frequency === "semanal")
+      const monthlyItems = schedules.filter((s) => s.checklists?.frequency === "mensual")
+      const preventiveItems = schedules.filter((s) => (s as { maintenance_plan_id?: string }).maintenance_plan_id)
+
+      const todaysDaily = dailyItems.filter((s) => {
+        const d = new Date((s as { scheduled_day?: string }).scheduled_day || s.scheduled_date)
+        d.setHours(0, 0, 0, 0)
+        return d >= today && d < tomorrow
+      }).length
+      const todaysWeekly = weeklyItems.filter((s) => {
+        const d = new Date((s as { scheduled_day?: string }).scheduled_day || s.scheduled_date)
+        d.setHours(0, 0, 0, 0)
+        return d >= today && d < tomorrow
+      }).length
+      const todaysMonthly = monthlyItems.filter((s) => {
+        const d = new Date((s as { scheduled_day?: string }).scheduled_day || s.scheduled_date)
+        d.setHours(0, 0, 0, 0)
+        return d >= today && d < tomorrow
+      }).length
+
+      const overdueDaily = dailyItems.filter(
+        (s) => new Date((s as { scheduled_day?: string }).scheduled_day || s.scheduled_date) < today
+      ).length
+      const overdueWeekly = weeklyItems.filter(
+        (s) => new Date((s as { scheduled_day?: string }).scheduled_day || s.scheduled_date) < today
+      ).length
+      const overdueMonthly = monthlyItems.filter(
+        (s) => new Date((s as { scheduled_day?: string }).scheduled_day || s.scheduled_date) < today
+      ).length
+      const overduePreventive = preventiveItems.filter(
+        (s) => new Date((s as { scheduled_day?: string }).scheduled_day || s.scheduled_date) < today
+      ).length
+      const pendingPreventive = preventiveItems.filter((s) => s.status === "pendiente").length
+
+      setStats({
+        daily: { total: todaysDaily, pending: todaysDaily, overdue: overdueDaily },
+        weekly: { total: todaysWeekly, pending: todaysWeekly, overdue: overdueWeekly },
+        monthly: { total: todaysMonthly, pending: todaysMonthly, overdue: overdueMonthly },
+        templates: templates.length,
+        preventive: {
+          total: preventiveItems.length,
+          pending: pendingPreventive,
+          overdue: overduePreventive,
+        },
+      })
+    }
+  }, [schedules, templates])
+
+  const handlePrepareOffline = async () => {
+    try {
+      const mod = await import("@/lib/services/offline-checklist-service")
+      const svc = mod.offlineChecklistService
+      setPreparingOffline(true)
+      const cached = await svc.massiveCachePreparation()
+      toast.success(`Preparado para uso offline: ${cached} checklists descargados`)
+    } catch (err: unknown) {
+      toast.error(`Error al preparar modo offline: ${err instanceof Error ? err.message : "Error desconocido"}`)
+    } finally {
+      setPreparingOffline(false)
+    }
+  }
+
+  const handleSyncComplete = () => {
+    fetchSchedules("pendiente")
+    fetchTemplates()
+  }
+
+  const offlineNotice = (
+    <Card className="mb-6 border-orange-200 dark:border-orange-900/50 bg-orange-50/50 dark:bg-orange-950/20">
+      <CardContent className="p-4">
+        <div className="flex items-center gap-2">
+          <WifiOff className="h-4 w-4 text-orange-600 dark:text-orange-400" />
+          <span className="text-sm font-medium text-orange-700 dark:text-orange-300">
+            Modo Offline — Mostrando datos en caché limitados
+          </span>
+        </div>
+      </CardContent>
+    </Card>
+  )
+
+  return (
+    <DashboardShell>
+      <div className="checklist-module font-sf-pro">
+        <DashboardHeader
+          heading={isOperator ? "Mis Checklists" : "Checklists de Mantenimiento"}
+          text={
+            isOperator
+              ? "Ejecuta los checklists asignados a tus activos."
+              : "Gestión de checklists por activo. Identifica qué activos necesitan atención."
+          }
+          id="checklists-header"
+        >
+          {isOperator && (
+            <div className="flex items-center gap-2 mb-4">
+              <Badge variant="outline" className="bg-blue-50 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800">
+                Operador
+              </Badge>
+              <span className="text-sm text-muted-foreground">Solo checklists de tus activos asignados</span>
+            </div>
+          )}
+          <div className="flex flex-col sm:flex-row gap-2 items-start sm:items-center">
+            <div className="sm:hidden">
+              <OfflineStatus showDetails={false} onSyncComplete={handleSyncComplete} />
+            </div>
+            <QuickActionsSection
+              canScheduleChecklists={canScheduleChecklists}
+              canCreateChecklists={canCreateChecklists}
+              onPrepareOffline={handlePrepareOffline}
+              preparingOffline={preparingOffline}
+              isOnline={isOnline}
+            />
+          </div>
+        </DashboardHeader>
+
+        <div className="hidden sm:block mb-6">
+          <OfflineStatus onSyncComplete={handleSyncComplete} />
+        </div>
+
+        {isOnline === false && (
+          <Card className="mb-6 border-orange-200 dark:border-orange-900/50 bg-orange-50 dark:bg-orange-950/20">
+            <CardContent className="pt-6">
+              <div className="flex items-center gap-3">
+                <WifiOff className="h-5 w-5 text-orange-600 dark:text-orange-400" />
+                <div>
+                  <p className="font-medium text-orange-800 dark:text-orange-200">Modo Offline Activo</p>
+                  <p className="text-sm text-orange-700 dark:text-orange-300">
+                    Solo puedes acceder a checklists visitados previamente con conexión.
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {isOnline === false ? (
+          <OfflineChecklistList />
+        ) : (
+          <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as typeof activeTab)} className="space-y-4">
+            <TabsList className="grid w-full max-w-md grid-cols-2">
+              <TabsTrigger value="assets" className="flex items-center gap-2">
+                <Truck className="h-4 w-4" />
+                Activos
+              </TabsTrigger>
+              <TabsTrigger value="templates" className="flex items-center gap-2">
+                <FileText className="h-4 w-4" />
+                Plantillas
+              </TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="assets" className="mt-6">
+              <div className="mb-6 grid grid-cols-1 lg:grid-cols-4 gap-4">
+                <div className="lg:col-span-3">
+                  <DaySummarySection stats={stats} />
+                </div>
+                <div>
+                  <UnresolvedIssuesWidget />
+                </div>
+              </div>
+              <AssetGridView isOffline={false} offlineNotice={offlineNotice} />
+            </TabsContent>
+
+            <TabsContent value="templates" className="mt-6">
+              <ModelTemplatesNavigator />
+            </TabsContent>
+          </Tabs>
+        )}
+      </div>
+    </DashboardShell>
+  )
+}

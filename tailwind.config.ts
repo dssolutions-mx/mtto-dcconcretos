@@ -60,7 +60,22 @@ const config: Config = {
   				'accent-foreground': 'hsl(var(--sidebar-accent-foreground))',
   				border: 'hsl(var(--sidebar-border))',
   				ring: 'hsl(var(--sidebar-ring))'
+  			},
+  			checklist: {
+  				primary: 'hsl(var(--checklist-primary, 215 16% 47%))',
+  				cta: 'hsl(var(--checklist-cta, 25 95% 53%))',
+  				'status-ok': 'hsl(var(--checklist-status-ok, 142 76% 36%))',
+  				'status-due': 'hsl(var(--checklist-status-due, 38 92% 50%))',
+  				'status-overdue': 'hsl(var(--checklist-status-overdue, 0 84% 60%))'
   			}
+  		},
+  		fontFamily: {
+  			'sf-pro': ['-apple-system', 'BlinkMacSystemFont', '"SF Pro Text"', '"SF Pro Display"', 'system-ui', '"Helvetica Neue"', 'sans-serif']
+  		},
+  		boxShadow: {
+  			'checklist-1': 'var(--checklist-elevation-1, 0 1px 2px rgb(0 0 0 / 0.05))',
+  			'checklist-2': 'var(--checklist-elevation-2, 0 4px 6px -1px rgb(0 0 0 / 0.08), 0 2px 4px -2px rgb(0 0 0 / 0.06))',
+  			'checklist-3': 'var(--checklist-elevation-3, 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.08))'
   		},
   		borderRadius: {
   			lg: 'var(--radius)',

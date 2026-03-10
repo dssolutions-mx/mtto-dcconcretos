@@ -32,7 +32,7 @@ export async function GET() {
 
     // Proceed with normal queries if connection is good
     const [assetsResult, pendingResult, completedResult] = await Promise.all([
-      // Get all assets with organizational structure
+      // Get all assets with organizational structure and equipment model
       supabase
         .from('assets')
         .select(`
@@ -45,6 +45,7 @@ export async function GET() {
           current_hours,
           plant_id,
           department_id,
+          model_id,
           plants (
             id,
             name,
@@ -54,16 +55,33 @@ export async function GET() {
             id,
             name,
             code
+          ),
+          equipment_models (
+            id,
+            name,
+            manufacturer
           )
         `)
         .in('status', ['operational', 'maintenance']),
       
-      // Get all pending schedules
+      // Get all pending schedules (with checklist frequency for filtering)
       supabase
         .from('checklist_schedules')
         .select(`
-          *,
-          checklists(name, description)
+          id,
+          asset_id,
+          template_id,
+          status,
+          scheduled_day,
+          scheduled_date,
+          maintenance_plan_id,
+          created_at,
+          updated_at,
+          checklists!template_id (
+            name,
+            description,
+            frequency
+          )
         `)
         .eq('status', 'pendiente'),
       
@@ -71,8 +89,15 @@ export async function GET() {
       supabase
         .from('checklist_schedules')
         .select(`
-          *,
-          checklists(name, description)
+          id,
+          asset_id,
+          template_id,
+          status,
+          scheduled_day,
+          scheduled_date,
+          maintenance_plan_id,
+          updated_at,
+          checklists!template_id(name, description, frequency)
         `)
         .eq('status', 'completado')
         .gte('updated_at', new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString())
@@ -191,13 +216,25 @@ export async function GET() {
       assets
         .map(asset => (asset as any).departments?.name || asset.department)
         .filter(Boolean)
-    )]
+    )].sort()
 
     const plants = [...new Set(
       assets
         .map(asset => (asset as any).plants?.name || asset.location)
         .filter(Boolean)
-    )]
+    )].sort()
+
+    // Derive unique models list from assets (no extra query)
+    const modelsMap = new Map<string, { id: string; name: string; manufacturer: string | null }>()
+    for (const asset of assets) {
+      const em = (asset as any).equipment_models
+      if (em?.id && em?.name) {
+        if (!modelsMap.has(em.id)) {
+          modelsMap.set(em.id, { id: em.id, name: em.name, manufacturer: em.manufacturer ?? null })
+        }
+      }
+    }
+    const models = Array.from(modelsMap.values()).sort((a, b) => a.name.localeCompare(b.name))
 
     // Calculate comprehensive statistics
     const totalOverdue = assetSummaries.reduce((sum, { asset }) => sum + asset.overdue_checklists, 0)
@@ -230,6 +267,7 @@ export async function GET() {
         assets: sortedAssetSummaries,
         departments,
         plants,
+        models,
         stats: {
           total_assets: assets.length,
           total_pending: totalPending,

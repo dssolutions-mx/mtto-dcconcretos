@@ -86,7 +86,7 @@ export async function GET(request: Request) {
       .from('checklist_schedules')
       .select(`
         *,
-        checklists (
+        checklists!template_id (
           *,
           equipment_models (name, manufacturer)
         ),

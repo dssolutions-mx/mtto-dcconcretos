@@ -4,7 +4,7 @@ import React from "react"
 import { useState, useEffect } from "react"
 
 import Link from "next/link"
-import { usePathname } from "next/navigation"
+import { usePathname, useSearchParams } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { useAuthZustand } from "@/hooks/use-auth-zustand"
@@ -104,6 +104,7 @@ function AppLogo({
 
 export function Sidebar({ className, onLinkClick }: SidebarProps) {
   const pathname = usePathname()
+  const searchParams = useSearchParams()
   const { profile, ui } = useAuthZustand()
   const { isComplianceSystemEnabled } = useSystemSettings()
   const [equipmentOpen, setEquipmentOpen] = useState(false)
@@ -229,18 +230,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                   >
                     <Link href="/checklists">
                       <ClipboardCheck className="mr-2 h-4 w-4" />
-                      Todos mis Checklists
-                    </Link>
-                  </Button>
-                  <Button
-                    variant={isPathActive("/checklists/assets") ? "secondary" : "ghost"}
-                    className="w-full justify-start pl-8"
-                    asChild
-                    onClick={handleLinkClick}
-                  >
-                    <Link href="/checklists/assets">
-                      <Truck className="mr-2 h-4 w-4" />
-                      Vista por Activos
+                      Checklists
                     </Link>
                   </Button>
                   <Button
@@ -584,19 +574,54 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                   </CollapsibleTrigger>
                   <CollapsibleContent className="space-y-1 mt-2">
                     {ui.shouldShowInNavigation('checklists') && (
-                      <Button
-                        variant={isPathActive("/checklists") ? "secondary" : "ghost"}
-                        className="w-full justify-start pl-8"
-                        asChild
-                        onClick={handleLinkClick}
-                    data-tour="checklists-nav"
-                    id="checklists-nav-manager"
-                      >
-                        <Link href="/checklists">
-                          <ClipboardCheck className="mr-2 h-4 w-4" />
-                          Checklists
-                        </Link>
-                      </Button>
+                      <>
+                        <Button
+                          variant={pathname === "/checklists" && searchParams?.get("tab") !== "templates" ? "secondary" : "ghost"}
+                          className="w-full justify-start pl-8"
+                          asChild
+                          onClick={handleLinkClick}
+                          data-tour="checklists-nav"
+                          id="checklists-nav-manager"
+                        >
+                          <Link href="/checklists">
+                            <Truck className="mr-2 h-4 w-4" />
+                            Por Activos
+                          </Link>
+                        </Button>
+                        <Button
+                          variant={pathname === "/checklists/programar" ? "secondary" : "ghost"}
+                          className="w-full justify-start pl-8"
+                          asChild
+                          onClick={handleLinkClick}
+                        >
+                          <Link href="/checklists/programar">
+                            <ClipboardCheck className="mr-2 h-4 w-4" />
+                            Programar
+                          </Link>
+                        </Button>
+                        <Button
+                          variant={pathname === "/checklists/problemas-pendientes" ? "secondary" : "ghost"}
+                          className="w-full justify-start pl-8"
+                          asChild
+                          onClick={handleLinkClick}
+                        >
+                          <Link href="/checklists/problemas-pendientes">
+                            <AlertTriangle className="mr-2 h-4 w-4" />
+                            Problemas Pendientes
+                          </Link>
+                        </Button>
+                        <Button
+                          variant={pathname === "/checklists" && searchParams?.get("tab") === "templates" ? "secondary" : "ghost"}
+                          className="w-full justify-start pl-8"
+                          asChild
+                          onClick={handleLinkClick}
+                        >
+                          <Link href="/checklists?tab=templates">
+                            <FileText className="mr-2 h-4 w-4" />
+                            Plantillas
+                          </Link>
+                        </Button>
+                      </>
                     )}
                     {ui.shouldShowInNavigation('maintenance') && (
                       <Button

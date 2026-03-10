@@ -1,11 +1,12 @@
 "use client"
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { UserProfile } from "@/components/auth/user-profile"
 import { ChangePasswordForm } from "@/components/auth/change-password-form"
+import { MaintenanceTeamGuard } from "@/components/auth/role-guard"
+import { CacheCleanupButton } from "@/components/checklists/cache-cleanup-button"
 import { useAuthZustand } from "@/hooks/use-auth-zustand"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { User, Lock, Building, Phone, Mail, ShieldCheck } from "lucide-react"
+import { User, Lock, Building, Phone, Mail, ShieldCheck, Settings2 } from "lucide-react"
 import { Separator } from "@/components/ui/separator"
 
 export default function ConfiguracionPage() {
@@ -35,9 +36,10 @@ export default function ConfiguracionPage() {
       </div>
 
       <Tabs defaultValue="profile" className="space-y-4">
-        <TabsList className="grid w-full grid-cols-2 max-w-md">
+        <TabsList className="grid w-full grid-cols-3 max-w-2xl">
           <TabsTrigger value="profile">Perfil</TabsTrigger>
           <TabsTrigger value="security">Seguridad</TabsTrigger>
+          <TabsTrigger value="system">Sistema</TabsTrigger>
         </TabsList>
 
         <TabsContent value="profile" className="space-y-4">
@@ -143,6 +145,35 @@ export default function ConfiguracionPage() {
 
         <TabsContent value="security" className="space-y-4">
           <ChangePasswordForm />
+        </TabsContent>
+
+        <TabsContent value="system" className="space-y-4">
+          <MaintenanceTeamGuard
+            fallback={
+              <Card>
+                <CardContent className="pt-6">
+                  <p className="text-muted-foreground text-center">
+                    No tienes permisos para acceder a la configuración del sistema.
+                  </p>
+                </CardContent>
+              </Card>
+            }
+          >
+            <Card className="max-w-2xl">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Settings2 className="h-5 w-5" />
+                  Administración de Cache
+                </CardTitle>
+                <CardDescription>
+                  Herramientas para gestionar el almacenamiento local y resolver problemas de sincronización de checklists
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <CacheCleanupButton />
+              </CardContent>
+            </Card>
+          </MaintenanceTeamGuard>
         </TabsContent>
       </Tabs>
     </div>

@@ -6,6 +6,32 @@ body {
   font-family: Arial, Helvetica, sans-serif;
 }
 
+/* Checklist Module: SF Pro via system font stack (Apple HIG) */
+.checklist-module {
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", system-ui, "Helvetica Neue", sans-serif;
+}
+
+/* Touch targets: min 44x44px per Apple HIG */
+@layer utilities {
+  .touch-target {
+    min-width: 44px;
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .checklist-module *,
+  .checklist-module *::before,
+  .checklist-module *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
 @layer utilities {
   .text-balance {
     text-wrap: balance;
@@ -96,6 +122,18 @@ body {
 
 @layer base {
   :root {
+    /* Checklist module tokens (industrial + Apple HIG) */
+    --checklist-primary: 215 16% 47%;
+    --checklist-cta: 25 95% 53%;
+    --checklist-bg: 210 40% 98%;
+    --checklist-text: 215 25% 27%;
+    --checklist-status-ok: 142 76% 36%;
+    --checklist-status-due: 38 92% 50%;
+    --checklist-status-overdue: 0 84% 60%;
+    --checklist-status-none: 215 16% 47%;
+    --checklist-elevation-1: 0 1px 2px rgb(0 0 0 / 0.05);
+    --checklist-elevation-2: 0 4px 6px -1px rgb(0 0 0 / 0.08), 0 2px 4px -2px rgb(0 0 0 / 0.06);
+    --checklist-elevation-3: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.08);
     --background: 0 0% 100%;
     --foreground: 0 0% 3.9%;
     --card: 0 0% 100%;
