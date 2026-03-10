@@ -7,37 +7,16 @@ import { BasicInfoCard } from "@/components/checklists/template-editor/basic-inf
 import { SectionsStep } from "@/components/checklists/template-creation/sections-step"
 import { ReviewStep } from "@/components/checklists/template-creation/review-step"
 import { ChevronLeft, ChevronRight } from "lucide-react"
-import type { ChecklistTemplate } from "./types"
+import {
+  createInitialTemplate,
+  type ChecklistTemplate,
+} from "@/components/checklists/template-editor/use-template-editor-state"
 
 const STEPS = [
   { label: "Información básica" },
   { label: "Secciones" },
   { label: "Revisar" },
 ]
-
-function createInitialTemplate(preSelectedModelId?: string): ChecklistTemplate {
-  return {
-    name: "",
-    description: "",
-    model_id: preSelectedModelId || "",
-    frequency: "mensual",
-    sections: [
-      {
-        title: "Nueva Sección 1",
-        order_index: 0,
-        section_type: "checklist",
-        items: [
-          {
-            description: "Nuevo Item",
-            required: true,
-            order_index: 0,
-            item_type: "check",
-          },
-        ],
-      },
-    ],
-  }
-}
 
 interface TemplateCreationStepperProps {
   preSelectedModelId?: string

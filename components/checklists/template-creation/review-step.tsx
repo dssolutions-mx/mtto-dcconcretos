@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge"
 import { Loader2, Pencil } from "lucide-react"
 import { toast } from "sonner"
 import { createClient } from "@/lib/supabase"
+import { validateTemplate as validateTemplateShared } from "@/components/checklists/template-editor/use-template-editor-state"
 import type { ChecklistTemplate } from "./types"
 
 const FREQUENCY_LABELS: Record<string, string> = {
@@ -51,50 +52,8 @@ export function ReviewStep({
       ? `${frequencyLabel} (cada ${template.hours_interval} h)`
       : frequencyLabel
 
-  const validateTemplate = (): string[] => {
-    const errors: string[] = []
-    const name = (template.name || "").trim()
-    if (!name) errors.push("El nombre de la plantilla es requerido")
-    if (!template.model_id) errors.push("Selecciona un modelo de equipo")
-    if (!template.sections?.length)
-      errors.push("La plantilla debe tener al menos una sección")
-    if (
-      template.frequency === "horas" &&
-      (!template.hours_interval || template.hours_interval < 1)
-    ) {
-      errors.push('Indica el intervalo en horas cuando la frecuencia es "Por Horas"')
-    }
-    for (const [i, section] of (template.sections || []).entries()) {
-      const title = (section.title || "").trim()
-      if (!title) errors.push(`La sección ${i + 1} debe tener un título`)
-      if (section.section_type === "evidence") {
-        if (!section.evidence_config?.categories?.length) {
-          errors.push(
-            `La sección de evidencia "${title || "Sin título"}" debe tener al menos una categoría`
-          )
-        }
-      } else if (section.section_type !== "security_talk" && section.items?.length) {
-        for (const [j, item] of section.items.entries()) {
-          const desc = (item.description || "").trim()
-          if (!desc)
-            errors.push(
-              `El ítem ${j + 1} de la sección "${title || "Sin título"}" debe tener descripción`
-            )
-        }
-      } else if (
-        (section.section_type === "checklist" ||
-          section.section_type === "cleanliness_bonus" ||
-          !section.section_type) &&
-        (!section.items || section.items.length === 0)
-      ) {
-        errors.push(`La sección "${title || "Sin título"}" debe tener al menos un ítem`)
-      }
-    }
-    return errors
-  }
-
   const handleSave = async () => {
-    const errors = validateTemplate()
+    const errors = validateTemplateShared(template)
     if (errors.length > 0) {
       toast.error(errors[0])
       return

@@ -6,7 +6,7 @@
 // - Proper timeout cleanup on component unmount/section removal
 // - Eliminated expensive array operations on every keystroke
 
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -19,6 +19,12 @@ import { Switch } from '@/components/ui/switch'
 import { useToast } from '@/components/ui/use-toast'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Alert, AlertDescription } from '@/components/ui/alert'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { 
   Plus, 
   Trash2, 
@@ -27,11 +33,11 @@ import {
   ArrowUp, 
   ArrowDown, 
   History,
+  ChevronDown,
   AlertTriangle,
   Check,
   X,
   Edit3,
-  Copy,
   CheckSquare,
   Camera,
   Sparkles,
@@ -40,6 +46,12 @@ import {
 
 import { createClient } from '@/lib/supabase'
 import { SecurityConfig } from '@/types'
+import { Skeleton } from '@/components/ui/skeleton'
+import { VersionHistoryDialog } from './dialogs/version-history-dialog'
+import { ChangeSummaryDialog } from './dialogs/change-summary-dialog'
+import { TemplatePreviewDialog } from './dialogs/template-preview-dialog'
+import { BasicInfoCard } from './template-editor/basic-info-card'
+import { validateTemplate as validateTemplateShared } from './template-editor/use-template-editor-state'
 
 interface ChecklistItem {
   id?: string
@@ -128,9 +140,10 @@ interface TemplateEditorProps {
   preSelectedModelId?: string
   onSave?: (template: ChecklistTemplate) => void
   onCancel?: () => void
+  onDirtyChange?: (dirty: boolean) => void
 }
 
-export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCancel }: TemplateEditorProps) {
+export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCancel, onDirtyChange }: TemplateEditorProps) {
   const router = useRouter()
   const { toast } = useToast()
   const [template, setTemplate] = useState<ChecklistTemplate>({
@@ -159,6 +172,17 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
   const [evidenceDescriptions, setEvidenceDescriptions] = useState<Record<string, string>>({})
   const evidenceTimeouts = useRef<Record<string, NodeJS.Timeout>>({})
   
+  // Debounced evidence config min/max photos (Phase 1.1)
+  const [evidenceMinPhotos, setEvidenceMinPhotos] = useState<Record<number, number>>({})
+  const [evidenceMaxPhotos, setEvidenceMaxPhotos] = useState<Record<number, number>>({})
+  const evidenceConfigTimeouts = useRef<Record<string, NodeJS.Timeout>>({})
+  
+  // Debounced cleanliness config (Phase 1.1)
+  const [cleanlinessMinPhotos, setCleanlinessMinPhotos] = useState<Record<number, number>>({})
+  const [cleanlinessMaxPhotos, setCleanlinessMaxPhotos] = useState<Record<number, number>>({})
+  const [cleanlinessAreasStr, setCleanlinessAreasStr] = useState<Record<number, string>>({})
+  const cleanlinessConfigTimeouts = useRef<Record<string, NodeJS.Timeout>>({})
+  
   const [versions, setVersions] = useState<TemplateVersion[]>([])
   const [showVersionHistory, setShowVersionHistory] = useState(false)
   const [showPreview, setShowPreview] = useState(false)
@@ -168,8 +192,47 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [hasChanges, setHasChanges] = useState(false)
+  const [validationErrors, setValidationErrors] = useState<string[]>([])
+  const [showCancelConfirm, setShowCancelConfirm] = useState(false)
+  const [sectionTypeChangeConfirm, setSectionTypeChangeConfirm] = useState<{
+    sectionIndex: number
+    newType: 'checklist' | 'evidence' | 'cleanliness_bonus' | 'security_talk'
+  } | null>(null)
+  const [previewVersion, setPreviewVersion] = useState<TemplateVersion | null>(null)
 
-  // Initialize local states when template changes
+  // Client-side validation (call after flush - uses template state)
+  const validateTemplate = (): string[] => validateTemplateShared(template)
+
+  // Sync dirty state to parent (Bug C fix)
+  useEffect(() => {
+    onDirtyChange?.(hasChanges)
+  }, [hasChanges, onDirtyChange])
+
+  // Warn user before leaving with unsaved changes
+  useEffect(() => {
+    const handler = (e: BeforeUnloadEvent) => {
+      if (hasChanges) {
+        e.preventDefault()
+      }
+    }
+    window.addEventListener('beforeunload', handler)
+    return () => window.removeEventListener('beforeunload', handler)
+  }, [hasChanges])
+
+  // Cleanup all debounce timeouts on unmount (Phase 1.2)
+  useEffect(() => {
+    return () => {
+      Object.values(templateTimeouts.current).forEach(t => t && clearTimeout(t))
+      Object.values(titleTimeouts.current).forEach(t => clearTimeout(t))
+      Object.values(descriptionTimeouts.current).forEach(t => clearTimeout(t))
+      Object.values(itemFieldTimeouts.current).forEach(t => clearTimeout(t))
+      Object.values(evidenceTimeouts.current).forEach(t => clearTimeout(t))
+      Object.values(evidenceConfigTimeouts.current).forEach(t => clearTimeout(t))
+      Object.values(cleanlinessConfigTimeouts.current).forEach(t => clearTimeout(t))
+    }
+  }, [])
+
+  // Initialize local state when template loads or sections change. Dependencies intentionally exclude local state maps to avoid overwriting user input during typing.
   useEffect(() => {
     const newTitles: Record<number, string> = {}
     template.sections.forEach((section, index) => {
@@ -189,11 +252,17 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
     }
   }, [template.sections.length, template.name, template.description])
 
+  // Sync item/evidence/cleanliness local state when sections change. Dependencies intentionally exclude local state to avoid overwriting during typing.
   useEffect(() => {
     const newDescriptions: Record<string, string> = {}
     const newExpectedValues: Record<string, string> = {}
     const newTolerances: Record<string, string> = {}
     const newEvidenceDescs: Record<string, string> = {}
+    const newEvidenceMin: Record<number, number> = {}
+    const newEvidenceMax: Record<number, number> = {}
+    const newCleanlinessMin: Record<number, number> = {}
+    const newCleanlinessMax: Record<number, number> = {}
+    const newCleanlinessAreas: Record<number, string> = {}
     
     template.sections.forEach((section, sectionIndex) => {
       section.items.forEach((item, itemIndex) => {
@@ -210,12 +279,29 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
       })
       
       if (section.evidence_config) {
+        if (!(sectionIndex in evidenceMinPhotos)) {
+          newEvidenceMin[sectionIndex] = section.evidence_config.min_photos
+        }
+        if (!(sectionIndex in evidenceMaxPhotos)) {
+          newEvidenceMax[sectionIndex] = section.evidence_config.max_photos
+        }
         Object.entries(section.evidence_config.descriptions).forEach(([category, desc]) => {
           const evidenceKey = `${sectionIndex}-${category}`
           if (!(evidenceKey in evidenceDescriptions)) {
             newEvidenceDescs[evidenceKey] = desc
           }
         })
+      }
+      if (section.cleanliness_config) {
+        if (!(sectionIndex in cleanlinessMinPhotos)) {
+          newCleanlinessMin[sectionIndex] = section.cleanliness_config.min_photos
+        }
+        if (!(sectionIndex in cleanlinessMaxPhotos)) {
+          newCleanlinessMax[sectionIndex] = section.cleanliness_config.max_photos
+        }
+        if (!(sectionIndex in cleanlinessAreasStr)) {
+          newCleanlinessAreas[sectionIndex] = section.cleanliness_config.areas?.join(', ') || ''
+        }
       }
     })
     
@@ -231,14 +317,31 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
     if (Object.keys(newEvidenceDescs).length > 0) {
       setEvidenceDescriptions(prev => ({ ...prev, ...newEvidenceDescs }))
     }
+    if (Object.keys(newEvidenceMin).length > 0) {
+      setEvidenceMinPhotos(prev => ({ ...prev, ...newEvidenceMin }))
+    }
+    if (Object.keys(newEvidenceMax).length > 0) {
+      setEvidenceMaxPhotos(prev => ({ ...prev, ...newEvidenceMax }))
+    }
+    if (Object.keys(newCleanlinessMin).length > 0) {
+      setCleanlinessMinPhotos(prev => ({ ...prev, ...newCleanlinessMin }))
+    }
+    if (Object.keys(newCleanlinessMax).length > 0) {
+      setCleanlinessMaxPhotos(prev => ({ ...prev, ...newCleanlinessMax }))
+    }
+    if (Object.keys(newCleanlinessAreas).length > 0) {
+      setCleanlinessAreasStr(prev => ({ ...prev, ...newCleanlinessAreas }))
+    }
   }, [template.sections])
 
+  // Load models and template on mount / templateId change. Functions are stable; deps omitted intentionally.
   useEffect(() => {
     loadModels()
     if (templateId) {
       loadTemplate()
       loadVersionHistory()
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- loadModels/loadTemplate/loadVersionHistory are effectively stable
   }, [templateId])
 
   const loadModels = async () => {
@@ -312,6 +415,7 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
         hours_interval: templateData.hours_interval,
         sections: sections.sort((a: ChecklistSection, b: ChecklistSection) => a.order_index - b.order_index)
       })
+      setValidationErrors([])
     } catch (error) {
       console.error('Error loading template:', error)
       toast({
@@ -481,7 +585,7 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
     setHasChanges(true)
   }
 
-  const updateSection = (sectionIndex: number, updates: Partial<ChecklistSection>) => {
+  const updateSection = useCallback((sectionIndex: number, updates: Partial<ChecklistSection>) => {
     setTemplate(prev => {
       const newSections = prev.sections.map((section, index) =>
         index === sectionIndex ? { ...section, ...updates } : section
@@ -489,7 +593,7 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
       return { ...prev, sections: newSections }
     })
     setHasChanges(true)
-  }
+  }, [])
 
   const deleteSection = (sectionIndex: number) => {
     if (titleTimeouts.current[sectionIndex]) {
@@ -537,6 +641,22 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
               delete evidenceTimeouts.current[evidenceKey]
             }
           })
+          ;['min', 'max'].forEach(suffix => {
+            const key = `${i}-${suffix}`
+            if (evidenceConfigTimeouts.current[key]) {
+              clearTimeout(evidenceConfigTimeouts.current[key])
+              delete evidenceConfigTimeouts.current[key]
+            }
+          })
+        }
+        if (section.cleanliness_config) {
+          ;['min', 'max', 'areas'].forEach(suffix => {
+            const key = `${i}-${suffix}`
+            if (cleanlinessConfigTimeouts.current[key]) {
+              clearTimeout(cleanlinessConfigTimeouts.current[key])
+              delete cleanlinessConfigTimeouts.current[key]
+            }
+          })
         }
       }
     }
@@ -553,10 +673,20 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
     const newExpectedValues = { ...itemExpectedValues }
     const newTolerances = { ...itemTolerances }
     const newEvidenceDescriptions = { ...evidenceDescriptions }
+    const newEvidenceMinPhotos = { ...evidenceMinPhotos }
+    const newEvidenceMaxPhotos = { ...evidenceMaxPhotos }
+    const newCleanlinessMinPhotos = { ...cleanlinessMinPhotos }
+    const newCleanlinessMaxPhotos = { ...cleanlinessMaxPhotos }
+    const newCleanlinessAreasStr = { ...cleanlinessAreasStr }
     
     // Remove state for deleted section and sections that will be shifted
     for (let i = sectionIndex; i < template.sections.length; i++) {
       delete newSectionTitles[i]
+      delete newEvidenceMinPhotos[i]
+      delete newEvidenceMaxPhotos[i]
+      delete newCleanlinessMinPhotos[i]
+      delete newCleanlinessMaxPhotos[i]
+      delete newCleanlinessAreasStr[i]
       
       // Remove item state for this section
       const section = template.sections[i]
@@ -614,6 +744,13 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
               newEvidenceDescriptions[newKey] = evidenceDescriptions[oldKey]
             }
           })
+          if (evidenceMinPhotos[i] !== undefined) newEvidenceMinPhotos[newIndex] = evidenceMinPhotos[i]
+          if (evidenceMaxPhotos[i] !== undefined) newEvidenceMaxPhotos[newIndex] = evidenceMaxPhotos[i]
+        }
+        if (section.cleanliness_config) {
+          if (cleanlinessMinPhotos[i] !== undefined) newCleanlinessMinPhotos[newIndex] = cleanlinessMinPhotos[i]
+          if (cleanlinessMaxPhotos[i] !== undefined) newCleanlinessMaxPhotos[newIndex] = cleanlinessMaxPhotos[i]
+          if (cleanlinessAreasStr[i] !== undefined) newCleanlinessAreasStr[newIndex] = cleanlinessAreasStr[i]
         }
       }
     }
@@ -623,6 +760,11 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
     setItemExpectedValues(newExpectedValues)
     setItemTolerances(newTolerances)
     setEvidenceDescriptions(newEvidenceDescriptions)
+    setEvidenceMinPhotos(newEvidenceMinPhotos)
+    setEvidenceMaxPhotos(newEvidenceMaxPhotos)
+    setCleanlinessMinPhotos(newCleanlinessMinPhotos)
+    setCleanlinessMaxPhotos(newCleanlinessMaxPhotos)
+    setCleanlinessAreasStr(newCleanlinessAreasStr)
   }
 
   const moveSectionUp = (sectionIndex: number) => {
@@ -667,6 +809,22 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
               delete evidenceTimeouts.current[evidenceKey]
             }
           })
+          ;['min', 'max'].forEach(suffix => {
+            const key = `${idx}-${suffix}`
+            if (evidenceConfigTimeouts.current[key]) {
+              clearTimeout(evidenceConfigTimeouts.current[key])
+              delete evidenceConfigTimeouts.current[key]
+            }
+          })
+        }
+        if (section.cleanliness_config) {
+          ;['min', 'max', 'areas'].forEach(suffix => {
+            const key = `${idx}-${suffix}`
+            if (cleanlinessConfigTimeouts.current[key]) {
+              clearTimeout(cleanlinessConfigTimeouts.current[key])
+              delete cleanlinessConfigTimeouts.current[key]
+            }
+          })
         }
       }
     })
@@ -686,6 +844,11 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
     const newExpectedValues = { ...itemExpectedValues }
     const newTolerances = { ...itemTolerances }
     const newEvidenceDescriptions = { ...evidenceDescriptions }
+    const newEvidenceMinPhotos = { ...evidenceMinPhotos }
+    const newEvidenceMaxPhotos = { ...evidenceMaxPhotos }
+    const newCleanlinessMinPhotos = { ...cleanlinessMinPhotos }
+    const newCleanlinessMaxPhotos = { ...cleanlinessMaxPhotos }
+    const newCleanlinessAreasStr = { ...cleanlinessAreasStr }
     
     // Swap section titles
     const tempTitle = newSectionTitles[sectionIndex]
@@ -716,6 +879,13 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
             const key = `${index}-${category}`
             delete newEvidenceDescriptions[key]
           })
+          delete newEvidenceMinPhotos[index]
+          delete newEvidenceMaxPhotos[index]
+        }
+        if (section.cleanliness_config) {
+          delete newCleanlinessMinPhotos[index]
+          delete newCleanlinessMaxPhotos[index]
+          delete newCleanlinessAreasStr[index]
         }
       }
     })
@@ -737,6 +907,13 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
           const newKey = `${targetIndex}-${category}`
           if (evidenceDescriptions[oldKey]) newEvidenceDescriptions[newKey] = evidenceDescriptions[oldKey]
         })
+        if (evidenceMinPhotos[sectionIndex] !== undefined) newEvidenceMinPhotos[targetIndex] = evidenceMinPhotos[sectionIndex]
+        if (evidenceMaxPhotos[sectionIndex] !== undefined) newEvidenceMaxPhotos[targetIndex] = evidenceMaxPhotos[sectionIndex]
+      }
+      if (currentSection.cleanliness_config) {
+        if (cleanlinessMinPhotos[sectionIndex] !== undefined) newCleanlinessMinPhotos[targetIndex] = cleanlinessMinPhotos[sectionIndex]
+        if (cleanlinessMaxPhotos[sectionIndex] !== undefined) newCleanlinessMaxPhotos[targetIndex] = cleanlinessMaxPhotos[sectionIndex]
+        if (cleanlinessAreasStr[sectionIndex] !== undefined) newCleanlinessAreasStr[targetIndex] = cleanlinessAreasStr[sectionIndex]
       }
     }
     
@@ -756,6 +933,13 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
           const newKey = `${sectionIndex}-${category}`
           if (evidenceDescriptions[oldKey]) newEvidenceDescriptions[newKey] = evidenceDescriptions[oldKey]
         })
+        if (evidenceMinPhotos[targetIndex] !== undefined) newEvidenceMinPhotos[sectionIndex] = evidenceMinPhotos[targetIndex]
+        if (evidenceMaxPhotos[targetIndex] !== undefined) newEvidenceMaxPhotos[sectionIndex] = evidenceMaxPhotos[targetIndex]
+      }
+      if (targetSection.cleanliness_config) {
+        if (cleanlinessMinPhotos[targetIndex] !== undefined) newCleanlinessMinPhotos[sectionIndex] = cleanlinessMinPhotos[targetIndex]
+        if (cleanlinessMaxPhotos[targetIndex] !== undefined) newCleanlinessMaxPhotos[sectionIndex] = cleanlinessMaxPhotos[targetIndex]
+        if (cleanlinessAreasStr[targetIndex] !== undefined) newCleanlinessAreasStr[sectionIndex] = cleanlinessAreasStr[targetIndex]
       }
     }
     
@@ -764,6 +948,11 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
     setItemExpectedValues(newExpectedValues)
     setItemTolerances(newTolerances)
     setEvidenceDescriptions(newEvidenceDescriptions)
+    setEvidenceMinPhotos(newEvidenceMinPhotos)
+    setEvidenceMaxPhotos(newEvidenceMaxPhotos)
+    setCleanlinessMinPhotos(newCleanlinessMinPhotos)
+    setCleanlinessMaxPhotos(newCleanlinessMaxPhotos)
+    setCleanlinessAreasStr(newCleanlinessAreasStr)
   }
 
   const moveSectionDown = (sectionIndex: number) => {
@@ -808,6 +997,22 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
               delete evidenceTimeouts.current[evidenceKey]
             }
           })
+          ;['min', 'max'].forEach(suffix => {
+            const key = `${idx}-${suffix}`
+            if (evidenceConfigTimeouts.current[key]) {
+              clearTimeout(evidenceConfigTimeouts.current[key])
+              delete evidenceConfigTimeouts.current[key]
+            }
+          })
+        }
+        if (section.cleanliness_config) {
+          ;['min', 'max', 'areas'].forEach(suffix => {
+            const key = `${idx}-${suffix}`
+            if (cleanlinessConfigTimeouts.current[key]) {
+              clearTimeout(cleanlinessConfigTimeouts.current[key])
+              delete cleanlinessConfigTimeouts.current[key]
+            }
+          })
         }
       }
     })
@@ -827,6 +1032,11 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
     const newExpectedValues = { ...itemExpectedValues }
     const newTolerances = { ...itemTolerances }
     const newEvidenceDescriptions = { ...evidenceDescriptions }
+    const newEvidenceMinPhotos = { ...evidenceMinPhotos }
+    const newEvidenceMaxPhotos = { ...evidenceMaxPhotos }
+    const newCleanlinessMinPhotos = { ...cleanlinessMinPhotos }
+    const newCleanlinessMaxPhotos = { ...cleanlinessMaxPhotos }
+    const newCleanlinessAreasStr = { ...cleanlinessAreasStr }
     
     // Swap section titles
     const tempTitle = newSectionTitles[sectionIndex]
@@ -857,6 +1067,13 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
             const key = `${index}-${category}`
             delete newEvidenceDescriptions[key]
           })
+          delete newEvidenceMinPhotos[index]
+          delete newEvidenceMaxPhotos[index]
+        }
+        if (section.cleanliness_config) {
+          delete newCleanlinessMinPhotos[index]
+          delete newCleanlinessMaxPhotos[index]
+          delete newCleanlinessAreasStr[index]
         }
       }
     })
@@ -878,6 +1095,13 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
           const newKey = `${targetIndex}-${category}`
           if (evidenceDescriptions[oldKey]) newEvidenceDescriptions[newKey] = evidenceDescriptions[oldKey]
         })
+        if (evidenceMinPhotos[sectionIndex] !== undefined) newEvidenceMinPhotos[targetIndex] = evidenceMinPhotos[sectionIndex]
+        if (evidenceMaxPhotos[sectionIndex] !== undefined) newEvidenceMaxPhotos[targetIndex] = evidenceMaxPhotos[sectionIndex]
+      }
+      if (currentSection.cleanliness_config) {
+        if (cleanlinessMinPhotos[sectionIndex] !== undefined) newCleanlinessMinPhotos[targetIndex] = cleanlinessMinPhotos[sectionIndex]
+        if (cleanlinessMaxPhotos[sectionIndex] !== undefined) newCleanlinessMaxPhotos[targetIndex] = cleanlinessMaxPhotos[sectionIndex]
+        if (cleanlinessAreasStr[sectionIndex] !== undefined) newCleanlinessAreasStr[targetIndex] = cleanlinessAreasStr[sectionIndex]
       }
     }
     
@@ -897,6 +1121,13 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
           const newKey = `${sectionIndex}-${category}`
           if (evidenceDescriptions[oldKey]) newEvidenceDescriptions[newKey] = evidenceDescriptions[oldKey]
         })
+        if (evidenceMinPhotos[targetIndex] !== undefined) newEvidenceMinPhotos[sectionIndex] = evidenceMinPhotos[targetIndex]
+        if (evidenceMaxPhotos[targetIndex] !== undefined) newEvidenceMaxPhotos[sectionIndex] = evidenceMaxPhotos[targetIndex]
+      }
+      if (targetSection.cleanliness_config) {
+        if (cleanlinessMinPhotos[targetIndex] !== undefined) newCleanlinessMinPhotos[sectionIndex] = cleanlinessMinPhotos[targetIndex]
+        if (cleanlinessMaxPhotos[targetIndex] !== undefined) newCleanlinessMaxPhotos[sectionIndex] = cleanlinessMaxPhotos[targetIndex]
+        if (cleanlinessAreasStr[targetIndex] !== undefined) newCleanlinessAreasStr[sectionIndex] = cleanlinessAreasStr[targetIndex]
       }
     }
     
@@ -905,57 +1136,89 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
     setItemExpectedValues(newExpectedValues)
     setItemTolerances(newTolerances)
     setEvidenceDescriptions(newEvidenceDescriptions)
+    setEvidenceMinPhotos(newEvidenceMinPhotos)
+    setEvidenceMaxPhotos(newEvidenceMaxPhotos)
+    setCleanlinessMinPhotos(newCleanlinessMinPhotos)
+    setCleanlinessMaxPhotos(newCleanlinessMaxPhotos)
+    setCleanlinessAreasStr(newCleanlinessAreasStr)
   }
 
-  const updateSectionType = (sectionIndex: number, newType: 'checklist' | 'evidence' | 'cleanliness_bonus' | 'security_talk') => {
-    updateSection(sectionIndex, { 
-      section_type: newType,
-      evidence_config: newType === 'evidence' ? {
-        min_photos: 1,
-        max_photos: 5,
-        categories: ['Estado General'],
-        descriptions: { 'Estado General': 'Vista general del equipo' }
-      } : undefined,
-      cleanliness_config: newType === 'cleanliness_bonus' ? {
-        min_photos: 2,
-        max_photos: 4,
-        areas: ['Interior', 'Exterior'],
-        descriptions: {
-          'Interior': 'Fotografiar evidencia del estado de limpieza interior',
-          'Exterior': 'Fotografiar evidencia del estado de limpieza exterior'
-        }
-      } : template.sections[sectionIndex].cleanliness_config,
-      security_config: newType === 'security_talk' ? {
-        mode: 'plant_manager',
-        require_attendance: true,
-        require_topic: true,
-        require_reflection: true,
-        allow_evidence: false
-      } : template.sections[sectionIndex].security_config,
-      items: newType === 'evidence' || newType === 'security_talk' ? [] : template.sections[sectionIndex].items
-    })
-  }
-
-  // Item functions
-  const addItem = (sectionIndex: number) => {
-    const newItem: ChecklistItem = {
-      description: 'Nuevo Item',
-      required: true,
-      order_index: template.sections[sectionIndex].items.length,
-      item_type: 'check'
+  const handleSectionTypeChange = (sectionIndex: number, newType: 'checklist' | 'evidence' | 'cleanliness_bonus' | 'security_talk') => {
+    const section = template.sections[sectionIndex]
+    const wouldLoseItems = (newType === 'evidence' || newType === 'security_talk') && (section?.items?.length ?? 0) > 0
+    if (wouldLoseItems) {
+      setSectionTypeChangeConfirm({ sectionIndex, newType })
+    } else {
+      updateSectionType(sectionIndex, newType)
     }
-    
-    updateSection(sectionIndex, {
-      items: [...template.sections[sectionIndex].items, newItem]
-    })
   }
 
-  const updateItem = (sectionIndex: number, itemIndex: number, updates: Partial<ChecklistItem>) => {
-    const updatedItems = template.sections[sectionIndex].items.map((item, index) =>
-      index === itemIndex ? { ...item, ...updates } : item
-    )
-    updateSection(sectionIndex, { items: updatedItems })
-  }
+  const updateSectionType = useCallback((sectionIndex: number, newType: 'checklist' | 'evidence' | 'cleanliness_bonus' | 'security_talk') => {
+    setTemplate(prev => {
+      const section = prev.sections[sectionIndex]
+      const updates: Partial<ChecklistSection> = {
+        section_type: newType,
+        evidence_config: newType === 'evidence' ? {
+          min_photos: 1,
+          max_photos: 5,
+          categories: ['Estado General'],
+          descriptions: { 'Estado General': 'Vista general del equipo' }
+        } : undefined,
+        cleanliness_config: newType === 'cleanliness_bonus' ? {
+          min_photos: 2,
+          max_photos: 4,
+          areas: ['Interior', 'Exterior'],
+          descriptions: {
+            'Interior': 'Fotografiar evidencia del estado de limpieza interior',
+            'Exterior': 'Fotografiar evidencia del estado de limpieza exterior'
+          }
+        } : section?.cleanliness_config,
+        security_config: newType === 'security_talk' ? {
+          mode: 'plant_manager',
+          require_attendance: true,
+          require_topic: true,
+          require_reflection: true,
+          allow_evidence: false
+        } : section?.security_config,
+        items: newType === 'evidence' || newType === 'security_talk' ? [] : (section?.items ?? [])
+      }
+      const newSections = prev.sections.map((s, i) => i === sectionIndex ? { ...s, ...updates } : s)
+      return { ...prev, sections: newSections }
+    })
+    setHasChanges(true)
+  }, [])
+
+  // Item functions (functional setState to avoid stale closure)
+  const addItem = useCallback((sectionIndex: number) => {
+    setTemplate(prev => {
+      const section = prev.sections[sectionIndex]
+      if (!section) return prev
+      const newItem: ChecklistItem = {
+        description: 'Nuevo Item',
+        required: true,
+        order_index: section.items.length,
+        item_type: 'check'
+      }
+      const newSections = [...prev.sections]
+      newSections[sectionIndex] = { ...section, items: [...section.items, newItem] }
+      return { ...prev, sections: newSections }
+    })
+    setHasChanges(true)
+  }, [])
+
+  const updateItem = useCallback((sectionIndex: number, itemIndex: number, updates: Partial<ChecklistItem>) => {
+    setTemplate(prev => {
+      const section = prev.sections[sectionIndex]
+      if (!section) return prev
+      const updatedItems = section.items.map((item, index) =>
+        index === itemIndex ? { ...item, ...updates } : item
+      )
+      const newSections = [...prev.sections]
+      newSections[sectionIndex] = { ...section, items: updatedItems }
+      return { ...prev, sections: newSections }
+    })
+    setHasChanges(true)
+  }, [])
 
   const deleteItem = (sectionIndex: number, itemIndex: number) => {
     const key = `${sectionIndex}-${itemIndex}`
@@ -1026,52 +1289,76 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
   }
 
   // Evidence functions
-  const updateEvidenceConfig = (sectionIndex: number, config: Partial<EvidenceConfig>) => {
-    const section = template.sections[sectionIndex]
-    if (section.evidence_config) {
-      updateSection(sectionIndex, {
+  const updateEvidenceConfig = useCallback((sectionIndex: number, config: Partial<EvidenceConfig>) => {
+    setTemplate(prev => {
+      const section = prev.sections[sectionIndex]
+      if (!section?.evidence_config) return prev
+      const newSections = [...prev.sections]
+      newSections[sectionIndex] = {
+        ...section,
         evidence_config: { ...section.evidence_config, ...config }
-      })
-    }
-  }
+      }
+      return { ...prev, sections: newSections }
+    })
+    setHasChanges(true)
+  }, [])
 
-  const addEvidenceCategory = (sectionIndex: number, category: string) => {
-    const section = template.sections[sectionIndex]
-    if (section.evidence_config && !section.evidence_config.categories.includes(category)) {
-      updateEvidenceConfig(sectionIndex, {
-        categories: [...section.evidence_config.categories, category],
-        descriptions: {
-          ...section.evidence_config.descriptions,
-          [category]: `Instrucciones para ${category.toLowerCase()}`
+  const addEvidenceCategory = useCallback((sectionIndex: number, category: string) => {
+    setTemplate(prev => {
+      const section = prev.sections[sectionIndex]
+      if (!section?.evidence_config || section.evidence_config.categories.includes(category)) return prev
+      const newSections = [...prev.sections]
+      newSections[sectionIndex] = {
+        ...section,
+        evidence_config: {
+          ...section.evidence_config,
+          categories: [...section.evidence_config.categories, category],
+          descriptions: {
+            ...section.evidence_config.descriptions,
+            [category]: `Instrucciones para ${category.toLowerCase()}`
+          }
         }
-      })
-    }
-  }
+      }
+      return { ...prev, sections: newSections }
+    })
+    setHasChanges(true)
+  }, [])
 
-  const removeEvidenceCategory = (sectionIndex: number, category: string) => {
-    const section = template.sections[sectionIndex]
-    if (section.evidence_config) {
+  const removeEvidenceCategory = useCallback((sectionIndex: number, category: string) => {
+    setTemplate(prev => {
+      const section = prev.sections[sectionIndex]
+      if (!section?.evidence_config) return prev
       const newDescriptions = { ...section.evidence_config.descriptions }
       delete newDescriptions[category]
-      
-      updateEvidenceConfig(sectionIndex, {
-        categories: section.evidence_config.categories.filter(c => c !== category),
-        descriptions: newDescriptions
-      })
-    }
-  }
-
-  const updateCategoryDescription = (sectionIndex: number, category: string, description: string) => {
-    const section = template.sections[sectionIndex]
-    if (section.evidence_config) {
-      updateEvidenceConfig(sectionIndex, {
-        descriptions: {
-          ...section.evidence_config.descriptions,
-          [category]: description
+      const newSections = [...prev.sections]
+      newSections[sectionIndex] = {
+        ...section,
+        evidence_config: {
+          categories: section.evidence_config.categories.filter(c => c !== category),
+          descriptions: newDescriptions
         }
-      })
-    }
-  }
+      }
+      return { ...prev, sections: newSections }
+    })
+    setHasChanges(true)
+  }, [])
+
+  const updateCategoryDescription = useCallback((sectionIndex: number, category: string, description: string) => {
+    setTemplate(prev => {
+      const section = prev.sections[sectionIndex]
+      if (!section?.evidence_config) return prev
+      const newSections = [...prev.sections]
+      newSections[sectionIndex] = {
+        ...section,
+        evidence_config: {
+          ...section.evidence_config,
+          descriptions: { ...section.evidence_config.descriptions, [category]: description }
+        }
+      }
+      return { ...prev, sections: newSections }
+    })
+    setHasChanges(true)
+  }, [])
 
   // Optimized local update functions
   const updateTemplateNameLocal = (name: string) => {
@@ -1172,6 +1459,98 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
     }, 500)
   }
 
+  const updateEvidenceMinPhotosLocal = (sectionIndex: number, value: number) => {
+    setEvidenceMinPhotos(prev => ({ ...prev, [sectionIndex]: value }))
+    const key = `${sectionIndex}-min`
+    if (evidenceConfigTimeouts.current[key]) clearTimeout(evidenceConfigTimeouts.current[key])
+    evidenceConfigTimeouts.current[key] = setTimeout(() => {
+      updateEvidenceConfig(sectionIndex, { min_photos: value })
+      delete evidenceConfigTimeouts.current[key]
+    }, 400)
+  }
+
+  const updateEvidenceMaxPhotosLocal = (sectionIndex: number, value: number) => {
+    setEvidenceMaxPhotos(prev => ({ ...prev, [sectionIndex]: value }))
+    const key = `${sectionIndex}-max`
+    if (evidenceConfigTimeouts.current[key]) clearTimeout(evidenceConfigTimeouts.current[key])
+    evidenceConfigTimeouts.current[key] = setTimeout(() => {
+      updateEvidenceConfig(sectionIndex, { max_photos: value })
+      delete evidenceConfigTimeouts.current[key]
+    }, 400)
+  }
+
+  const updateCleanlinessMinPhotosLocal = (sectionIndex: number, value: number) => {
+    setCleanlinessMinPhotos(prev => ({ ...prev, [sectionIndex]: value }))
+    const key = `${sectionIndex}-min`
+    if (cleanlinessConfigTimeouts.current[key]) clearTimeout(cleanlinessConfigTimeouts.current[key])
+    cleanlinessConfigTimeouts.current[key] = setTimeout(() => {
+      setTemplate(prev => {
+        const section = prev.sections[sectionIndex]
+        if (!section?.cleanliness_config) return prev
+        const newSections = [...prev.sections]
+        newSections[sectionIndex] = {
+          ...section,
+          cleanliness_config: {
+            ...section.cleanliness_config,
+            min_photos: value,
+            max_photos: section.cleanliness_config.max_photos ?? 4
+          }
+        }
+        return { ...prev, sections: newSections }
+      })
+      setHasChanges(true)
+      delete cleanlinessConfigTimeouts.current[key]
+    }, 400)
+  }
+
+  const updateCleanlinessMaxPhotosLocal = (sectionIndex: number, value: number) => {
+    setCleanlinessMaxPhotos(prev => ({ ...prev, [sectionIndex]: value }))
+    const key = `${sectionIndex}-max`
+    if (cleanlinessConfigTimeouts.current[key]) clearTimeout(cleanlinessConfigTimeouts.current[key])
+    cleanlinessConfigTimeouts.current[key] = setTimeout(() => {
+      setTemplate(prev => {
+        const section = prev.sections[sectionIndex]
+        if (!section?.cleanliness_config) return prev
+        const newSections = [...prev.sections]
+        newSections[sectionIndex] = {
+          ...section,
+          cleanliness_config: {
+            ...section.cleanliness_config,
+            min_photos: section.cleanliness_config.min_photos ?? 2,
+            max_photos: value
+          }
+        }
+        return { ...prev, sections: newSections }
+      })
+      setHasChanges(true)
+      delete cleanlinessConfigTimeouts.current[key]
+    }, 400)
+  }
+
+  const updateCleanlinessAreasLocal = (sectionIndex: number, value: string) => {
+    setCleanlinessAreasStr(prev => ({ ...prev, [sectionIndex]: value }))
+    const key = `${sectionIndex}-areas`
+    if (cleanlinessConfigTimeouts.current[key]) clearTimeout(cleanlinessConfigTimeouts.current[key])
+    cleanlinessConfigTimeouts.current[key] = setTimeout(() => {
+      const areas = value.split(',').map(a => a.trim()).filter(a => a.length > 0)
+      setTemplate(prev => {
+        const section = prev.sections[sectionIndex]
+        if (!section?.cleanliness_config) return prev
+        const newSections = [...prev.sections]
+        newSections[sectionIndex] = {
+          ...section,
+          cleanliness_config: {
+            ...section.cleanliness_config,
+            areas: areas.length > 0 ? areas : ['Interior', 'Exterior']
+          }
+        }
+        return { ...prev, sections: newSections }
+      })
+      setHasChanges(true)
+      delete cleanlinessConfigTimeouts.current[key]
+    }, 500)
+  }
+
   const saveTemplate = async () => {
     setSaving(true)
     try {
@@ -1194,10 +1573,12 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
         }
       })
 
-      // Clear any pending evidence description timeouts
+      // Clear any pending evidence description timeouts (Bug B fix: split on first hyphen only - categories can contain hyphens/spaces)
       Object.entries(evidenceTimeouts.current).forEach(([key, timeout]) => {
         clearTimeout(timeout)
-        const [sectionIndexStr, category] = key.split('-')
+        const firstDash = key.indexOf('-')
+        const sectionIndexStr = key.slice(0, firstDash)
+        const category = key.slice(firstDash + 1)
         const sectionIndex = parseInt(sectionIndexStr)
         const description = evidenceDescriptions[key]
         if (description && template.sections[sectionIndex]?.evidence_config) {
@@ -1205,16 +1586,16 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
         }
       })
 
-      // Clear any pending item field timeouts
+      // Clear any pending item field timeouts (Bug A fix: keys are "0-1-expected"/"0-1-tolerance" but state uses "0-1")
       Object.entries(itemFieldTimeouts.current).forEach(([key, timeout]) => {
         clearTimeout(timeout)
-        const [sectionIndexStr, itemIndexStr] = key.split('-')
+        const baseKey = key.replace(/-expected$|-tolerance$/, '')
+        const [sectionIndexStr, itemIndexStr] = baseKey.split('-')
         const sectionIndex = parseInt(sectionIndexStr)
         const itemIndex = parseInt(itemIndexStr)
-        
-        const expectedValue = itemExpectedValues[key]
-        const tolerance = itemTolerances[key]
-        
+        const expectedValue = key.endsWith('-expected') ? itemExpectedValues[baseKey] : undefined
+        const tolerance = key.endsWith('-tolerance') ? itemTolerances[baseKey] : undefined
+
         if (template.sections[sectionIndex]?.items[itemIndex]) {
           if (expectedValue !== undefined) {
             template.sections[sectionIndex].items[itemIndex].expected_value = expectedValue
@@ -1236,6 +1617,42 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
         if (description && template.sections[sectionIndex]?.items[itemIndex]) {
           template.sections[sectionIndex].items[itemIndex].description = description
         }
+      })
+
+      // Clear any pending evidence config timeouts (min/max photos)
+      Object.entries(evidenceConfigTimeouts.current).forEach(([key, timeout]) => {
+        clearTimeout(timeout)
+        const sectionIndex = parseInt(key.replace(/-min$|-max$/, ''))
+        const section = template.sections[sectionIndex]?.evidence_config
+        if (section) {
+          if (key.endsWith('-min') && sectionIndex in evidenceMinPhotos) {
+            template.sections[sectionIndex].evidence_config!.min_photos = evidenceMinPhotos[sectionIndex]
+          }
+          if (key.endsWith('-max') && sectionIndex in evidenceMaxPhotos) {
+            template.sections[sectionIndex].evidence_config!.max_photos = evidenceMaxPhotos[sectionIndex]
+          }
+        }
+        delete evidenceConfigTimeouts.current[key]
+      })
+
+      // Clear any pending cleanliness config timeouts
+      Object.entries(cleanlinessConfigTimeouts.current).forEach(([key, timeout]) => {
+        clearTimeout(timeout)
+        const sectionIndex = parseInt(key.replace(/-min$|-max$|-areas$/, ''))
+        const section = template.sections[sectionIndex]?.cleanliness_config
+        if (section) {
+          if (key.endsWith('-min') && sectionIndex in cleanlinessMinPhotos) {
+            template.sections[sectionIndex].cleanliness_config!.min_photos = cleanlinessMinPhotos[sectionIndex]
+          }
+          if (key.endsWith('-max') && sectionIndex in cleanlinessMaxPhotos) {
+            template.sections[sectionIndex].cleanliness_config!.max_photos = cleanlinessMaxPhotos[sectionIndex]
+          }
+          if (key.endsWith('-areas') && sectionIndex in cleanlinessAreasStr) {
+            const areas = cleanlinessAreasStr[sectionIndex].split(',').map(a => a.trim()).filter(a => a.length > 0)
+            template.sections[sectionIndex].cleanliness_config!.areas = areas.length > 0 ? areas : ['Interior', 'Exterior']
+          }
+        }
+        delete cleanlinessConfigTimeouts.current[key]
       })
 
       // Sanitize cleanliness config to avoid empty/invalid states
@@ -1271,6 +1688,19 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
         }
         return section
       })
+
+      const errors = validateTemplate()
+      if (errors.length > 0) {
+        setValidationErrors(errors)
+        toast({
+          title: 'Corrige los siguientes errores',
+          description: errors.join('. '),
+          variant: 'destructive'
+        })
+        setSaving(false)
+        return
+      }
+      setValidationErrors([])
 
       const supabase = createClient()
 
@@ -1532,18 +1962,26 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
     }
   }
 
-  const updateSecurityConfig = (sectionIndex: number, updates: Partial<SecurityConfig>) => {
-    const currentConfig = template.sections[sectionIndex].security_config || {
-      mode: 'plant_manager',
-      require_attendance: true,
-      require_topic: true,
-      require_reflection: true,
-      allow_evidence: false
-    }
-    updateSection(sectionIndex, {
-      security_config: { ...currentConfig, ...updates }
+  const updateSecurityConfig = useCallback((sectionIndex: number, updates: Partial<SecurityConfig>) => {
+    setTemplate(prev => {
+      const section = prev.sections[sectionIndex]
+      if (!section) return prev
+      const currentConfig = section.security_config || {
+        mode: 'plant_manager',
+        require_attendance: true,
+        require_topic: true,
+        require_reflection: true,
+        allow_evidence: false
+      }
+      const newSections = [...prev.sections]
+      newSections[sectionIndex] = {
+        ...section,
+        security_config: { ...currentConfig, ...updates }
+      }
+      return { ...prev, sections: newSections }
     })
-  }
+    setHasChanges(true)
+  }, [])
 
   const renderSecuritySection = (section: ChecklistSection, sectionIndex: number) => {
     const config = section.security_config || {
@@ -1664,10 +2102,8 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
               type="number"
               min="1"
               max="20"
-              value={config.min_photos}
-              onChange={(e) => updateEvidenceConfig(sectionIndex, { 
-                min_photos: parseInt(e.target.value) || 1 
-              })}
+              value={evidenceMinPhotos[sectionIndex] ?? config.min_photos}
+              onChange={(e) => updateEvidenceMinPhotosLocal(sectionIndex, parseInt(e.target.value) || 1)}
             />
           </div>
           <div className="space-y-2">
@@ -1676,10 +2112,8 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
               type="number"
               min="1"
               max="20"
-              value={config.max_photos}
-              onChange={(e) => updateEvidenceConfig(sectionIndex, { 
-                max_photos: parseInt(e.target.value) || 5 
-              })}
+              value={evidenceMaxPhotos[sectionIndex] ?? config.max_photos}
+              onChange={(e) => updateEvidenceMaxPhotosLocal(sectionIndex, parseInt(e.target.value) || 5)}
             />
           </div>
         </div>
@@ -1733,7 +2167,28 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
   }
 
   if (loading) {
-    return <div className="flex justify-center p-8">Cargando...</div>
+    return (
+      <div className="space-y-6">
+        <div className="flex justify-between items-center">
+          <Skeleton className="h-9 w-48" />
+          <div className="flex gap-2">
+            <Skeleton className="h-10 w-24" />
+            <Skeleton className="h-10 w-24" />
+          </div>
+        </div>
+        <Skeleton className="h-8 w-full" />
+        <div className="space-y-4">
+          <Skeleton className="h-40 w-full" />
+          <Skeleton className="h-32 w-full" />
+          <Skeleton className="h-24 w-full" />
+        </div>
+        <div className="space-y-4">
+          <Skeleton className="h-10 w-64" />
+          <Skeleton className="h-48 w-full" />
+          <Skeleton className="h-48 w-full" />
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -1763,7 +2218,10 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
               </Button>
             </>
           )}
-          <Button variant="outline" onClick={onCancel}>
+          <Button
+            variant="outline"
+            onClick={() => (hasChanges ? setShowCancelConfirm(true) : onCancel?.())}
+          >
             Cancelar
           </Button>
           <Button onClick={() => templateId && hasChanges ? setShowChangeSummaryDialog(true) : saveTemplate()} disabled={saving}>
@@ -1782,115 +2240,95 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
         </Alert>
       )}
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Información Básica</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="name">Nombre de la Plantilla</Label>
-              <Input
-                id="name"
-                value={templateName || template.name}
-                onChange={(e) => updateTemplateNameLocal(e.target.value)}
-                placeholder="Nombre de la plantilla"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="model">Modelo de Equipo</Label>
-              <Select
-                value={template.model_id}
-                onValueChange={(value) => {
-                  setTemplate(prev => ({ ...prev, model_id: value }))
-                  setHasChanges(true)
-                }}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Seleccionar modelo" />
-                </SelectTrigger>
-                <SelectContent>
-                  {models.map((model) => (
-                    <SelectItem key={model.id} value={model.id}>
-                      {model.name} ({model.manufacturer})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
+      {validationErrors.length > 0 && (
+        <Alert variant="destructive">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertDescription>
+            <ul className="list-disc pl-4 space-y-1">
+              {validationErrors.map((err, i) => (
+                <li key={i}>{err}</li>
+              ))}
+            </ul>
+          </AlertDescription>
+        </Alert>
+      )}
 
-          <div className="space-y-2">
-            <Label htmlFor="description">Descripción</Label>
-            <Textarea
-              id="description"
-              value={templateDescription || template.description}
-              onChange={(e) => updateTemplateDescriptionLocal(e.target.value)}
-              placeholder="Descripción de la plantilla"
-              rows={3}
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="frequency">Frecuencia</Label>
-              <Select
-                value={template.frequency}
-                onValueChange={(value) => {
-                  setTemplate(prev => ({ ...prev, frequency: value }))
-                  setHasChanges(true)
-                }}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="diario">Diario</SelectItem>
-                  <SelectItem value="semanal">Semanal</SelectItem>
-                  <SelectItem value="mensual">Mensual</SelectItem>
-                  <SelectItem value="horas">Por Horas</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            {template.frequency === 'horas' && (
-              <div className="space-y-2">
-                <Label htmlFor="hours">Intervalo en Horas</Label>
-                <Input
-                  id="hours"
-                  type="number"
-                  value={template.hours_interval || ''}
-                  onChange={(e) => {
-                    setTemplate(prev => ({ ...prev, hours_interval: parseInt(e.target.value) || undefined }))
-                    setHasChanges(true)
-                  }}
-                  placeholder="Horas"
-                />
-              </div>
-            )}
-          </div>
-        </CardContent>
-      </Card>
+      <BasicInfoCard
+        templateName={templateName}
+        templateDescription={templateDescription}
+        name={template.name}
+        description={template.description}
+        modelId={template.model_id}
+        frequency={template.frequency}
+        hoursInterval={template.hours_interval}
+        models={models}
+        onNameChange={updateTemplateNameLocal}
+        onDescriptionChange={updateTemplateDescriptionLocal}
+        onModelChange={(value) => {
+          setTemplate(prev => ({ ...prev, model_id: value }))
+          setHasChanges(true)
+        }}
+        onFrequencyChange={(value) => {
+          setTemplate(prev => ({ ...prev, frequency: value }))
+          setHasChanges(true)
+        }}
+        onHoursIntervalChange={(value) => {
+          setTemplate(prev => ({ ...prev, hours_interval: value }))
+          setHasChanges(true)
+        }}
+      />
 
       <div className="space-y-4">
-        <div className="flex justify-between items-center">
+        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
           <h3 className="text-lg font-semibold">Secciones del Checklist</h3>
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={addSection}>
-              <CheckSquare className="h-4 w-4 mr-2" />
-              Agregar Sección Normal
-            </Button>
-            <Button variant="outline" onClick={addEvidenceSection} className="bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100">
-              <Camera className="h-4 w-4 mr-2" />
-              Agregar Sección de Evidencia
-            </Button>
-            <Button variant="outline" onClick={addCleanlinessSection} className="bg-green-50 border-green-200 text-green-700 hover:bg-green-100">
-              <Sparkles className="h-4 w-4 mr-2" />
-              Verificación de Limpieza
-            </Button>
-            <Button variant="outline" onClick={addSecuritySection} className="bg-orange-50 border-orange-200 text-orange-700 hover:bg-orange-100">
-              <Shield className="h-4 w-4 mr-2" />
-              Charla de Seguridad
-            </Button>
+          <div className="flex gap-2 flex-wrap">
+            <div className="md:hidden">
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline">
+                    <Plus className="h-4 w-4 mr-2" />
+                    Agregar sección
+                    <ChevronDown className="h-4 w-4 ml-2" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-56">
+                  <DropdownMenuItem onClick={addSection}>
+                    <CheckSquare className="h-4 w-4 mr-2" />
+                    Checklist Normal
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={addEvidenceSection}>
+                    <Camera className="h-4 w-4 mr-2" />
+                    Evidencia Fotográfica
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={addCleanlinessSection}>
+                    <Sparkles className="h-4 w-4 mr-2" />
+                    Verificación de Limpieza
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={addSecuritySection}>
+                    <Shield className="h-4 w-4 mr-2" />
+                    Charla de Seguridad
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+            <div className="hidden md:flex gap-2">
+              <Button variant="outline" size="sm" onClick={addSection}>
+                <CheckSquare className="h-4 w-4 mr-2" />
+                Checklist
+              </Button>
+              <Button variant="outline" size="sm" onClick={addEvidenceSection} className="bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100">
+                <Camera className="h-4 w-4 mr-2" />
+                Evidencia
+              </Button>
+              <Button variant="outline" size="sm" onClick={addCleanlinessSection} className="bg-green-50 border-green-200 text-green-700 hover:bg-green-100">
+                <Sparkles className="h-4 w-4 mr-2" />
+                Limpieza
+              </Button>
+              <Button variant="outline" size="sm" onClick={addSecuritySection} className="bg-orange-50 border-orange-200 text-orange-700 hover:bg-orange-100">
+                <Shield className="h-4 w-4 mr-2" />
+                Seguridad
+              </Button>
+            </div>
           </div>
         </div>
 
@@ -1906,7 +2344,7 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
                   <div className="flex items-center gap-3">
                     <Select
                       value={section.section_type || 'checklist'}
-                      onValueChange={(value: 'checklist' | 'evidence' | 'cleanliness_bonus' | 'security_talk') => updateSectionType(sectionIndex, value)}
+                      onValueChange={(value: 'checklist' | 'evidence' | 'cleanliness_bonus' | 'security_talk') => handleSectionTypeChange(sectionIndex, value)}
                     >
                       <SelectTrigger className="w-48">
                         <SelectValue />
@@ -2079,18 +2517,8 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
                           type="number"
                           min="1"
                           max="10"
-                          value={section.cleanliness_config?.min_photos ?? 2}
-                          onChange={(e) => {
-                            const minPhotos = parseInt(e.target.value) || 2
-                            updateSection(sectionIndex, {
-                              cleanliness_config: {
-                                min_photos: minPhotos,
-                                max_photos: section.cleanliness_config?.max_photos ?? 4,
-                                areas: section.cleanliness_config?.areas ?? [],
-                                descriptions: section.cleanliness_config?.descriptions ?? {}
-                              }
-                            })
-                          }}
+                          value={cleanlinessMinPhotos[sectionIndex] ?? section.cleanliness_config?.min_photos ?? 2}
+                          onChange={(e) => updateCleanlinessMinPhotosLocal(sectionIndex, parseInt(e.target.value) || 2)}
                         />
                       </div>
                       <div className="space-y-2">
@@ -2099,18 +2527,8 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
                           type="number"
                           min="1"
                           max="20"
-                          value={section.cleanliness_config?.max_photos ?? 4}
-                          onChange={(e) => {
-                            const maxPhotos = parseInt(e.target.value) || 4
-                            updateSection(sectionIndex, {
-                              cleanliness_config: {
-                                min_photos: section.cleanliness_config?.min_photos ?? 2,
-                                max_photos: maxPhotos,
-                                areas: section.cleanliness_config?.areas ?? [],
-                                descriptions: section.cleanliness_config?.descriptions ?? {}
-                              }
-                            })
-                          }}
+                          value={cleanlinessMaxPhotos[sectionIndex] ?? section.cleanliness_config?.max_photos ?? 4}
+                          onChange={(e) => updateCleanlinessMaxPhotosLocal(sectionIndex, parseInt(e.target.value) || 4)}
                         />
                       </div>
                     </div>
@@ -2118,18 +2536,8 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
                     <div className="space-y-2">
                       <Label>Áreas de Evidencia</Label>
                       <Textarea
-                        value={section.cleanliness_config?.areas.join(', ') || ''}
-                        onChange={(e) => {
-                          const areas = e.target.value.split(',').map(a => a.trim()).filter(a => a.length > 0)
-                          updateSection(sectionIndex, {
-                            cleanliness_config: {
-                              min_photos: section.cleanliness_config?.min_photos ?? 2,
-                              max_photos: section.cleanliness_config?.max_photos ?? 4,
-                              descriptions: section.cleanliness_config?.descriptions ?? {},
-                              areas: areas
-                            }
-                          })
-                        }}
+                        value={cleanlinessAreasStr[sectionIndex] ?? section.cleanliness_config?.areas.join(', ') ?? ''}
+                        onChange={(e) => updateCleanlinessAreasLocal(sectionIndex, e.target.value)}
                         placeholder="Ejemplo: Interior, Exterior"
                         rows={2}
                       />
@@ -2220,173 +2628,116 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
         ))}
       </div>
 
-      <Dialog open={showVersionHistory} onOpenChange={setShowVersionHistory}>
-        <DialogContent className="max-w-4xl">
-          <DialogHeader>
-            <DialogTitle>Historial de Versiones - {template.name}</DialogTitle>
-            <DialogDescription>
-              Versiones de esta plantilla de checklist
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 max-h-96 overflow-y-auto">
-            {versions.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground">
-                <History className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                <p>No hay versiones guardadas aún</p>
-                <p className="text-sm">Se creará una versión automáticamente cuando guardes cambios</p>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {versions.map((version) => (
-                  <Card key={version.id} className={version.is_active ? 'border-blue-500 bg-blue-50' : ''}>
-                    <CardHeader className="pb-3">
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <CardTitle className="text-base flex items-center gap-2">
-                            Versión {version.version_number}
-                            {version.is_active && (
-                              <Badge variant="default" className="bg-blue-600">Activa</Badge>
-                            )}
-                          </CardTitle>
-                          <CardDescription>
-                                                         {new Date(version.created_at).toLocaleDateString('es-ES', { 
-                               year: 'numeric', 
-                               month: '2-digit', 
-                               day: '2-digit',
-                               hour: '2-digit',
-                               minute: '2-digit'
-                             })}
-                            {version.created_by && ` • ${version.created_by}`}
-                          </CardDescription>
-                        </div>
-                        <div className="flex gap-2">
-                          <Button variant="outline" size="sm">
-                            <Eye className="h-4 w-4 mr-1" />
-                            Ver
-                          </Button>
-                          {!version.is_active && (
-                            <Button variant="outline" size="sm">
-                              <Copy className="h-4 w-4 mr-1" />
-                              Restaurar
-                            </Button>
-                          )}
-                        </div>
-                      </div>
-                    </CardHeader>
-                    <CardContent className="pt-0">
-                      <div className="space-y-2">
-                        <div>
-                          <Label className="text-sm font-medium">Resumen de cambios:</Label>
-                          <p className="text-sm text-muted-foreground">{version.change_summary || 'Sin descripción'}</p>
-                        </div>
-                        <div className="text-xs text-muted-foreground">
-                          {version.sections?.length || 0} secciones
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            )}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowVersionHistory(false)}>
-              Cerrar
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={showChangeSummaryDialog} onOpenChange={setShowChangeSummaryDialog}>
+      <Dialog
+        open={!!sectionTypeChangeConfirm}
+        onOpenChange={(open) => !open && setSectionTypeChangeConfirm(null)}
+      >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Guardar Cambios</DialogTitle>
+            <DialogTitle>¿Cambiar tipo de sección?</DialogTitle>
             <DialogDescription>
-              Describe los cambios realizados en esta versión de la plantilla
+              Al cambiar a este tipo de sección se eliminarán los ítems actuales. ¿Continuar?
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="changeSummary">Resumen de Cambios</Label>
-              <Textarea
-                id="changeSummary"
-                value={changeSummary}
-                onChange={(e) => setChangeSummary(e.target.value)}
-                placeholder="Ej: Agregué nueva sección de verificación de limpieza, eliminé item duplicado de accesorios..."
-                rows={3}
-              />
-            </div>
-          </div>
           <DialogFooter>
-            <Button 
-              variant="outline" 
-              onClick={() => {
-                setShowChangeSummaryDialog(false)
-                setChangeSummary('')
-              }}
-            >
+            <Button variant="outline" onClick={() => setSectionTypeChangeConfirm(null)}>
               Cancelar
             </Button>
-            <Button 
+            <Button
+              variant="destructive"
               onClick={() => {
-                setShowChangeSummaryDialog(false)
-                saveTemplate()
+                if (sectionTypeChangeConfirm) {
+                  updateSectionType(sectionTypeChangeConfirm.sectionIndex, sectionTypeChangeConfirm.newType)
+                  setSectionTypeChangeConfirm(null)
+                }
               }}
-              disabled={saving}
             >
-              <Save className="h-4 w-4 mr-2" />
-              Guardar
+              Cambiar tipo
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      <Dialog open={showPreview} onOpenChange={setShowPreview}>
-        <DialogContent className="max-w-4xl">
+      <Dialog open={showCancelConfirm} onOpenChange={setShowCancelConfirm}>
+        <DialogContent>
           <DialogHeader>
-            <DialogTitle>Vista Previa - {template.name}</DialogTitle>
+            <DialogTitle>¿Salir sin guardar?</DialogTitle>
+            <DialogDescription>
+              Tienes cambios sin guardar. ¿Estás seguro de que deseas salir sin guardar?
+            </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 max-h-96 overflow-y-auto">
-            {template.sections.map((section, sectionIndex) => (
-              <Card key={sectionIndex}>
-                <CardHeader>
-                  <CardTitle className="text-lg">{section.title}</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  {section.items.map((item, itemIndex) => (
-                    <div key={itemIndex} className="border rounded-lg p-3">
-                      <div className="flex justify-between items-center mb-2">
-                        <span className="font-medium">{item.description}</span>
-                        {item.required && <Badge variant="outline">Requerido</Badge>}
-                      </div>
-                      <div className="flex gap-2">
-                        <Button variant="outline" size="sm">
-                          <Check className="h-4 w-4 mr-1" />
-                          Pass
-                        </Button>
-                        <Button variant="outline" size="sm">
-                          <AlertTriangle className="h-4 w-4 mr-1" />
-                          Flag
-                        </Button>
-                        <Button variant="outline" size="sm">
-                          <X className="h-4 w-4 mr-1" />
-                          Fail
-                        </Button>
-                      </div>
-                      {(item.item_type === 'measure' || item.item_type === 'text') && (
-                        <div className="mt-2 text-sm text-muted-foreground">
-                          {item.expected_value && `Valor esperado: ${item.expected_value}`}
-                          {item.tolerance && ` (±${item.tolerance})`}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </CardContent>
-              </Card>
-            ))}
-          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowCancelConfirm(false)}>
+              Permanecer
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                setShowCancelConfirm(false)
+                onCancel?.()
+              }}
+            >
+              Salir sin guardar
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <VersionHistoryDialog
+        open={showVersionHistory}
+        onOpenChange={setShowVersionHistory}
+        templateName={template.name}
+        versions={versions}
+        onViewVersion={(version) => {
+          setPreviewVersion(version)
+          setShowVersionHistory(false)
+          setShowPreview(true)
+        }}
+        onRestoreVersion={async (version) => {
+          try {
+            const res = await fetch('/api/checklists/templates/restore-version', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ version_id: version.id })
+            })
+            const data = await res.json()
+            if (!res.ok) throw new Error(data.error || 'Error al restaurar')
+            toast({ title: 'Versión restaurada', description: 'La plantilla se ha restaurado correctamente', variant: 'default' })
+            await loadTemplate()
+            await loadVersionHistory()
+            setShowVersionHistory(false)
+          } catch (err) {
+            toast({ title: 'Error', description: (err as Error).message, variant: 'destructive' })
+          }
+        }}
+      />
+
+      <ChangeSummaryDialog
+        open={showChangeSummaryDialog}
+        onOpenChange={(open) => {
+          setShowChangeSummaryDialog(open)
+          if (!open) setChangeSummary('')
+        }}
+        changeSummary={changeSummary}
+        onChangeSummary={setChangeSummary}
+        onSave={() => {
+          setShowChangeSummaryDialog(false)
+          saveTemplate()
+        }}
+        saving={saving}
+      />
+
+      <TemplatePreviewDialog
+        open={showPreview}
+        onOpenChange={(open) => {
+          setShowPreview(open)
+          if (!open) setPreviewVersion(null)
+        }}
+        template={previewVersion
+          ? { name: previewVersion.name, sections: (previewVersion.sections as ChecklistSection[]) || [] }
+          : template
+        }
+      />
     </div>
   )
 } 
