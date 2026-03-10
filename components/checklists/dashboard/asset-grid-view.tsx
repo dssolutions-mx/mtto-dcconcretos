@@ -115,6 +115,7 @@ export function AssetGridView({ isOffline = false, offlineNotice }: AssetGridVie
   const [plantFilter, setPlantFilter] = useState("all")
   const [frequencyFilter, setFrequencyFilter] = useState("all")
   const [modelFilter, setModelFilter] = useState("all")
+  const [historyFilter, setHistoryFilter] = useState("all")
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid")
   const [departments, setDepartments] = useState<string[]>([])
   const [plants, setPlants] = useState<string[]>([])
@@ -172,6 +173,31 @@ export function AssetGridView({ isOffline = false, offlineNotice }: AssetGridVie
     fetchData()
   }, [])
 
+  const sevenDaysAgo = useMemo(() => {
+    const d = new Date()
+    d.setDate(d.getDate() - 7)
+    return d.getTime()
+  }, [])
+
+  function assetMatchesHistory(
+    historyFilter: string,
+    lastChecklistDate: string | null,
+    hasEverCompleted: boolean
+  ): boolean {
+    if (historyFilter === "all") return true
+    if (historyFilter === "recently_completed") {
+      if (!lastChecklistDate) return false
+      return new Date(lastChecklistDate).getTime() >= sevenDaysAgo
+    }
+    if (historyFilter === "no_activity_30d") {
+      return lastChecklistDate === null
+    }
+    if (historyFilter === "has_never") {
+      return !hasEverCompleted
+    }
+    return true
+  }
+
   const filteredAssets = useMemo(() => {
     return assets.filter(({ asset, pending_schedules }) => {
       if (debouncedSearchQuery) {
@@ -202,6 +228,10 @@ export function AssetGridView({ isOffline = false, offlineNotice }: AssetGridVie
         const modelId = asset.equipment_models?.id
         if (modelId !== modelFilter) return false
       }
+      if (historyFilter !== "all") {
+        const hasEver = (asset as { has_ever_completed_checklist?: boolean }).has_ever_completed_checklist ?? false
+        if (!assetMatchesHistory(historyFilter, asset.last_checklist_date, hasEver)) return false
+      }
       return true
     })
   }, [
@@ -212,6 +242,8 @@ export function AssetGridView({ isOffline = false, offlineNotice }: AssetGridVie
     plantFilter,
     frequencyFilter,
     modelFilter,
+    historyFilter,
+    sevenDaysAgo,
   ])
 
   const clearAllFilters = useCallback(() => {
@@ -221,6 +253,7 @@ export function AssetGridView({ isOffline = false, offlineNotice }: AssetGridVie
     setPlantFilter("all")
     setFrequencyFilter("all")
     setModelFilter("all")
+    setHistoryFilter("all")
   }, [])
 
   const statusCounts = useMemo(
@@ -260,28 +293,9 @@ export function AssetGridView({ isOffline = false, offlineNotice }: AssetGridVie
     <div className="space-y-6">
       {isOffline && offlineNotice}
 
-      {/* Stats row */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-        {[
-          { key: "overdue", label: "Activos Atrasados", value: statusCounts.overdue || 0, className: "border-red-200 dark:border-red-900/50" },
-          { key: "due_soon", label: "Próximos", value: statusCounts.due_soon || 0, className: "border-yellow-200 dark:border-yellow-900/50" },
-          { key: "ok", label: "Al día", value: statusCounts.ok || 0, className: "border-green-200 dark:border-green-900/50" },
-          { key: "pending", label: "Checklists Pendientes", value: stats?.total_pending || 0, className: "border-blue-200 dark:border-blue-900/50" },
-          { key: "completed", label: "Completados (30d)", value: stats?.total_completed_recent || 0, className: "border-purple-200 dark:border-purple-900/50" },
-          { key: "no_schedule", label: "Sin programar", value: statusCounts.no_schedule || 0, className: "border-slate-200 dark:border-slate-700" },
-        ].map(({ key, label, value, className }) => (
-          <Card key={key} className={`shadow-checklist-1 ${className}`}>
-            <CardContent className="p-4 text-center">
-              <div className="text-2xl font-bold">{value}</div>
-              <div className="text-sm text-muted-foreground">{label}</div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-
-      {/* Filters */}
+      {/* Filters first — user intent: find and filter */}
       <Card className="shadow-checklist-1">
-        <CardContent className="p-4">
+        <CardContent className="p-4 sm:p-5">
           <AssetFilters
             searchQuery={searchInput}
             onSearchChange={setSearchInput}
@@ -295,6 +309,8 @@ export function AssetGridView({ isOffline = false, offlineNotice }: AssetGridVie
             onFrequencyFilterChange={setFrequencyFilter}
             modelFilter={modelFilter}
             onModelFilterChange={setModelFilter}
+            historyFilter={historyFilter}
+            onHistoryFilterChange={setHistoryFilter}
             viewMode={viewMode}
             onViewModeChange={setViewMode}
             plants={plants}
@@ -307,12 +323,34 @@ export function AssetGridView({ isOffline = false, offlineNotice }: AssetGridVie
               departmentFilter !== "all" ||
               plantFilter !== "all" ||
               frequencyFilter !== "all" ||
-              modelFilter !== "all"
+              modelFilter !== "all" ||
+              historyFilter !== "all"
             }
             onClearFilters={clearAllFilters}
           />
         </CardContent>
       </Card>
+
+      {/* Compact stats bar — quick 3-second scan */}
+      <div className="flex flex-wrap items-center gap-3 text-sm">
+        <span className="font-medium text-muted-foreground">Resumen:</span>
+        <span className="flex items-center gap-1.5">
+          <span className="inline-block w-2 h-2 rounded-full bg-red-500" aria-hidden />
+          <span>{statusCounts.overdue || 0} atrasados</span>
+        </span>
+        <span className="flex items-center gap-1.5 text-muted-foreground">
+          <span className="inline-block w-2 h-2 rounded-full bg-amber-500" aria-hidden />
+          <span>{statusCounts.due_soon || 0} próximos</span>
+        </span>
+        <span className="flex items-center gap-1.5 text-muted-foreground">
+          <span className="inline-block w-2 h-2 rounded-full bg-green-500" aria-hidden />
+          <span>{statusCounts.ok || 0} al día</span>
+        </span>
+        <span className="flex items-center gap-1.5 text-muted-foreground">
+          <span className="inline-block w-2 h-2 rounded-full bg-slate-400" aria-hidden />
+          <span>{statusCounts.no_schedule || 0} sin programar</span>
+        </span>
+      </div>
 
       {/* Asset list */}
       {viewMode === "grid" ? (
@@ -343,7 +381,8 @@ export function AssetGridView({ isOffline = false, offlineNotice }: AssetGridVie
             departmentFilter !== "all" ||
             plantFilter !== "all" ||
             frequencyFilter !== "all" ||
-            modelFilter !== "all"
+            modelFilter !== "all" ||
+            historyFilter !== "all"
           }
           onClearFilters={clearAllFilters}
         />

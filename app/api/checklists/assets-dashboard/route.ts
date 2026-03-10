@@ -122,6 +122,14 @@ export async function GET() {
     const pendingSchedules = pendingResult.data || []
     const completedSchedules = completedResult.data || []
 
+    // Assets that have ever had a completed checklist (for "never executed" filter)
+    const { data: assetsWithCompleted } = await supabase
+      .from('completed_checklists')
+      .select('asset_id')
+    const assetIdsEverCompleted = new Set(
+      (assetsWithCompleted || []).map((r: { asset_id: string }) => r.asset_id).filter(Boolean)
+    )
+
     // Process data to create asset summaries
     // Use date-only strings to avoid timezone skew when comparing dates
     const todayStr = new Date().toISOString().slice(0, 10)
@@ -167,6 +175,8 @@ export async function GET() {
         return aDay.localeCompare(bDay)
       })[0]
 
+      const hasEverCompleted = assetIdsEverCompleted.has(asset.id)
+
       return {
         asset: {
           ...asset,
@@ -175,7 +185,8 @@ export async function GET() {
           last_checklist_date: lastCompleted?.updated_at || null,
           last_checklist_status: lastCompleted ? 'completed' : null,
           next_checklist_date: (nextPending?.scheduled_day || nextPending?.scheduled_date) || null,
-          checklist_status: checklistStatus
+          checklist_status: checklistStatus,
+          has_ever_completed_checklist: hasEverCompleted
         },
         pending_schedules: assetPendingSchedules,
         completed_recent: assetCompletedSchedules.slice(0, 3)

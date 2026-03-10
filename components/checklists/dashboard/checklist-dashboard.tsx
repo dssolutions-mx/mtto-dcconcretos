@@ -157,39 +157,41 @@ export function ChecklistDashboard() {
   return (
     <DashboardShell>
       <div className="checklist-module font-sf-pro">
-        <DashboardHeader
-          heading={isOperator ? "Mis Checklists" : "Checklists de Mantenimiento"}
-          text={
-            isOperator
-              ? "Ejecuta los checklists asignados a tus activos."
-              : "Gestión de checklists por activo. Identifica qué activos necesitan atención."
-          }
-          id="checklists-header"
-        >
+        <div className="mb-6">
+          <DashboardHeader
+            heading={isOperator ? "Mis Checklists" : "Checklists de Mantenimiento"}
+            text={
+              isOperator
+                ? "Ejecuta los checklists asignados a tus activos."
+                : "Identifica qué activos necesitan atención y ejecuta los checklists pendientes."
+            }
+            id="checklists-header"
+          />
           {isOperator && (
-            <div className="flex items-center gap-2 mb-4">
+            <div className="flex items-center gap-2 mt-2">
               <Badge variant="outline" className="bg-blue-50 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800">
                 Operador
               </Badge>
               <span className="text-sm text-muted-foreground">Solo checklists de tus activos asignados</span>
             </div>
           )}
-          <div className="flex flex-col sm:flex-row gap-2 items-start sm:items-center">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mt-4">
+            <div className="flex flex-wrap gap-2">
+              <QuickActionsSection
+                canScheduleChecklists={canScheduleChecklists}
+                canCreateChecklists={canCreateChecklists}
+                onPrepareOffline={handlePrepareOffline}
+                preparingOffline={preparingOffline}
+                isOnline={isOnline}
+              />
+            </div>
+            <div className="hidden sm:block">
+              <OfflineStatus onSyncComplete={handleSyncComplete} />
+            </div>
             <div className="sm:hidden">
               <OfflineStatus showDetails={false} onSyncComplete={handleSyncComplete} />
             </div>
-            <QuickActionsSection
-              canScheduleChecklists={canScheduleChecklists}
-              canCreateChecklists={canCreateChecklists}
-              onPrepareOffline={handlePrepareOffline}
-              preparingOffline={preparingOffline}
-              isOnline={isOnline}
-            />
           </div>
-        </DashboardHeader>
-
-        <div className="hidden sm:block mb-6">
-          <OfflineStatus onSyncComplete={handleSyncComplete} />
         </div>
 
         {isOnline === false && (
@@ -223,8 +225,8 @@ export function ChecklistDashboard() {
               </TabsTrigger>
             </TabsList>
 
-            <TabsContent value="assets" className="mt-6">
-              <div className="mb-6 grid grid-cols-1 lg:grid-cols-4 gap-4">
+            <TabsContent value="assets" className="mt-6 space-y-6">
+              <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
                 <div className="lg:col-span-3">
                   <DaySummarySection stats={stats} />
                 </div>
@@ -232,7 +234,12 @@ export function ChecklistDashboard() {
                   <UnresolvedIssuesWidget />
                 </div>
               </div>
-              <AssetGridView isOffline={false} offlineNotice={offlineNotice} />
+              <section aria-labelledby="assets-filter-heading">
+                <h2 id="assets-filter-heading" className="sr-only">
+                  Buscar y filtrar activos
+                </h2>
+                <AssetGridView isOffline={false} offlineNotice={offlineNotice} />
+              </section>
             </TabsContent>
 
             <TabsContent value="templates" className="mt-6">
