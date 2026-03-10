@@ -4,40 +4,15 @@ import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Stepper } from "@/components/ui/stepper"
 import { BasicInfoCard } from "@/components/checklists/template-editor/basic-info-card"
+import { SectionsStep } from "@/components/checklists/template-creation/sections-step"
 import { ChevronLeft, ChevronRight } from "lucide-react"
+import type { ChecklistTemplate } from "./types"
 
 const STEPS = [
   { label: "Información básica" },
   { label: "Secciones" },
   { label: "Revisar" },
 ]
-
-interface ChecklistItem {
-  id?: string
-  description: string
-  required: boolean
-  order_index: number
-  item_type: "check" | "measure" | "text"
-  expected_value?: string
-  tolerance?: string
-}
-
-interface ChecklistSection {
-  id?: string
-  title: string
-  order_index: number
-  section_type?: "checklist" | "evidence" | "cleanliness_bonus" | "security_talk"
-  items: ChecklistItem[]
-}
-
-interface ChecklistTemplate {
-  name: string
-  description: string
-  model_id: string
-  frequency: string
-  hours_interval?: number
-  sections: ChecklistSection[]
-}
 
 function createInitialTemplate(preSelectedModelId?: string): ChecklistTemplate {
   return {
@@ -74,6 +49,7 @@ export function TemplateCreationStepper({
   const [template, setTemplate] = useState<ChecklistTemplate>(() =>
     createInitialTemplate(preSelectedModelId)
   )
+  const [expandedSectionIndex, setExpandedSectionIndex] = useState<number | null>(0)
   const [models, setModels] = useState<Array<{ id: string; name: string; manufacturer?: string }>>(
     []
   )
@@ -141,10 +117,12 @@ export function TemplateCreationStepper({
           </div>
         )}
         {currentStep === 1 && (
-          <div>
-            <p className="text-muted-foreground">Paso 2 de 3: Secciones</p>
-            <p className="mt-4 text-sm">(Placeholder - SectionsStep será integrado en Task 4)</p>
-          </div>
+          <SectionsStep
+            template={template}
+            setTemplate={setTemplate}
+            expandedSectionIndex={expandedSectionIndex}
+            onExpandedChange={setExpandedSectionIndex}
+          />
         )}
         {currentStep === 2 && (
           <div>
