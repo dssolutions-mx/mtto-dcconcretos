@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Stepper } from "@/components/ui/stepper"
 import { BasicInfoCard } from "@/components/checklists/template-editor/basic-info-card"
@@ -83,10 +83,21 @@ export function TemplateCreationStepper({
     (currentStep === 1 && canAdvanceFromStep1) ||
     currentStep === 2
 
+  const stepContentRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    stepContentRef.current?.focus({ preventScroll: true })
+  }, [currentStep])
+
   return (
     <div className="space-y-6">
       <Stepper steps={STEPS} currentStep={currentStep} />
-      <div className="rounded-lg border bg-card p-6">
+      <div
+        ref={stepContentRef}
+        tabIndex={-1}
+        role="region"
+        aria-label={`Paso ${currentStep + 1} de 3: ${STEPS[currentStep].label}`}
+        className="rounded-lg border bg-card p-6 focus:outline-none"
+      >
         {currentStep === 0 && (
           <div>
             <p className="text-muted-foreground mb-4">Paso 1 de 3: Información básica</p>

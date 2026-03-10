@@ -125,15 +125,15 @@ export function CreationEntryStep({
       <p className="text-muted-foreground">
         Elige cómo quieres empezar
       </p>
-      <div className="grid gap-6 md:grid-cols-2">
+      <div className="grid gap-6 grid-cols-1 md:grid-cols-2">
         <Card className="cursor-pointer transition-colors hover:border-primary/50 hover:bg-muted/30">
           <CardHeader>
             <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary/10">
               <FileText className="h-6 w-6 text-primary" />
             </div>
-            <CardTitle>Crear desde cero</CardTitle>
+            <CardTitle>Empezar con plantilla vacía</CardTitle>
             <CardDescription>
-              Empezar con una plantilla vacía. Ideal cuando diseñas un checklist nuevo.
+              Crear desde cero. Ideal cuando diseñas un checklist nuevo.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -148,9 +148,9 @@ export function CreationEntryStep({
             <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-blue-500/10">
               <Copy className="h-6 w-6 text-blue-600" />
             </div>
-            <CardTitle>Usar plantilla existente</CardTitle>
+            <CardTitle>Copiar y modificar plantilla existente</CardTitle>
             <CardDescription>
-              Copiar y modificar una plantilla que ya tienes.
+              Usar una plantilla como base y adaptarla a tus necesidades.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">

@@ -250,7 +250,7 @@ export function SectionsStep({
     <div className="space-y-6">
       <p className="text-muted-foreground">Paso 2 de 3: Secciones</p>
       <p className="text-sm text-muted-foreground">
-        Agrega y edita las secciones de tu plantilla.
+        Agrega secciones para organizar los ítems de tu checklist. Puedes elegir entre Checklist, Evidencia, Limpieza o Seguridad.
       </p>
 
       <div className="space-y-4">
