@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Stepper } from "@/components/ui/stepper"
 import { BasicInfoCard } from "@/components/checklists/template-editor/basic-info-card"
 import { SectionsStep } from "@/components/checklists/template-creation/sections-step"
+import { ReviewStep } from "@/components/checklists/template-creation/review-step"
 import { ChevronLeft, ChevronRight } from "lucide-react"
 import type { ChecklistTemplate } from "./types"
 
@@ -125,23 +126,25 @@ export function TemplateCreationStepper({
           />
         )}
         {currentStep === 2 && (
-          <div>
-            <p className="text-muted-foreground">Paso 3 de 3: Revisar</p>
-            <p className="mt-4 text-sm">(Placeholder - ReviewStep será integrado en Task 5)</p>
-          </div>
+          <ReviewStep
+            template={template}
+            models={models}
+            onEditBasics={() => setCurrentStep(0)}
+            onEditSections={() => setCurrentStep(1)}
+          />
         )}
       </div>
-      <div className="flex justify-between">
-        <Button
-          variant="outline"
-          onClick={() => setCurrentStep((s) => Math.max(0, s - 1))}
-          disabled={currentStep === 0}
-          aria-label="Paso anterior"
-        >
-          <ChevronLeft className="mr-1 h-4 w-4" />
-          Atrás
-        </Button>
-        {currentStep < 2 ? (
+      {currentStep < 2 && (
+        <div className="flex justify-between">
+          <Button
+            variant="outline"
+            onClick={() => setCurrentStep((s) => Math.max(0, s - 1))}
+            disabled={currentStep === 0}
+            aria-label="Paso anterior"
+          >
+            <ChevronLeft className="mr-1 h-4 w-4" />
+            Atrás
+          </Button>
           <Button
             onClick={() => setCurrentStep((s) => s + 1)}
             disabled={currentStep === 0 && !canAdvanceFromStep0}
@@ -150,12 +153,8 @@ export function TemplateCreationStepper({
             Siguiente
             <ChevronRight className="ml-1 h-4 w-4" />
           </Button>
-        ) : (
-          <Button disabled aria-label="Guardar plantilla">
-            Guardar plantilla
-          </Button>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   )
 }
