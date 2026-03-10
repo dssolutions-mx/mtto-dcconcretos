@@ -5,8 +5,8 @@ import { useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { DashboardHeader } from "@/components/dashboard/dashboard-header"
 import { DashboardShell } from "@/components/dashboard/dashboard-shell"
-import { TemplateEditor } from "@/components/checklists/template-editor"
 import { CreationEntryStep } from "@/components/checklists/template-creation/creation-entry-step"
+import { TemplateCreationStepper } from "@/components/checklists/template-creation/template-creation-stepper"
 import { ArrowLeft } from "lucide-react"
 import Link from "next/link"
 
@@ -43,7 +43,7 @@ function CreateChecklistTemplateContent() {
           onFromScratch={() => setFlowStage("wizard")}
         />
       ) : (
-        <TemplateEditor preSelectedModelId={preSelectedModelId} />
+        <TemplateCreationStepper preSelectedModelId={preSelectedModelId} />
       )}
     </DashboardShell>
   )
