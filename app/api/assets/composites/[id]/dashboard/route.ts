@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase-server'
 import { NextResponse } from 'next/server'
+import { getMaintenanceUnit, getCurrentValue, getMaintenanceValue } from '@/lib/utils/maintenance-units'
 
 export async function GET(
   request: Request,
@@ -57,7 +58,7 @@ export async function GET(
       return NextResponse.json({ success: true, data: { composite, components: [], incidents: incidentsOnly || [], pending_schedules: pendingOnly || [], completed_checklists: completedOnly || [], maintenance_history: historyOnly || [], upcoming_maintenance: [] } })
     }
 
-    // Fetch components (with plant/department for header context)
+    // Fetch components (with plant/department and model for maintenance_unit)
     const { data: components } = await supabase
       .from('assets')
       .select(`
@@ -70,7 +71,8 @@ export async function GET(
         plant_id,
         department_id,
         plants:plants ( id, name ),
-        departments:departments ( id, name )
+        departments:departments ( id, name ),
+        equipment_models ( maintenance_unit )
       `)
       .in('id', componentIds)
 
@@ -104,84 +106,101 @@ export async function GET(
       .order('date', { ascending: false })
       .limit(50)
 
-    // Upcoming maintenance (aggregate) using models & cyclic logic
+    // Upcoming maintenance (aggregate) using cyclic logic - interval-value coverage
     let upcoming_maintenance: any[] = []
     try {
       const modelIds = Array.from(new Set((components || []).map((c: any) => c.model_id).filter(Boolean)))
-      let intervalsByModel: Record<string, any[]> = {}
+      const intervalsByModel: Record<string, any[]> = {}
+      const intervalIds = new Set<string>()
       if (modelIds.length > 0) {
         const { data: intervals } = await supabase
           .from('maintenance_intervals')
           .select('*')
           .in('model_id', modelIds as string[])
-        intervalsByModel = (intervals || []).reduce((acc: any, it: any) => {
-          acc[it.model_id] = acc[it.model_id] || []
-          acc[it.model_id].push(it)
-          return acc
-        }, {})
+        ;(intervals || []).forEach((it: any) => {
+          if (!it.model_id) return
+          intervalsByModel[it.model_id] = intervalsByModel[it.model_id] || []
+          intervalsByModel[it.model_id].push(it)
+          intervalIds.add(it.id)
+        })
       }
 
       const historyByAsset: Record<string, any[]> = {}
       ;(maintenance_history || []).forEach((m: any) => {
+        if (!m.asset_id) return
         historyByAsset[m.asset_id] = historyByAsset[m.asset_id] || []
         historyByAsset[m.asset_id].push(m)
       })
 
       for (const c of components || []) {
-        const currentHours = Number(c.current_hours || 0)
-        const assetHistory = (historyByAsset[c.id] || []).sort((a, b) => (Number(b.hours || 0) - Number(a.hours || 0)))
         const modelIntervals = intervalsByModel[c.model_id] || []
         if (modelIntervals.length === 0) continue
 
+        const unit = getMaintenanceUnit(c)
+        const currentValue = getCurrentValue(c, unit)
         const maxInterval = Math.max(...modelIntervals.map((i: any) => Number(i.interval_value || 0)))
         if (!isFinite(maxInterval) || maxInterval <= 0) continue
 
-        const currentCycle = Math.floor(currentHours / maxInterval) + 1
-        const currentCycleStartHour = (currentCycle - 1) * maxInterval
-        const currentCycleEndHour = currentCycle * maxInterval
-        const highestMaintenanceInCycle = assetHistory
-          .map(h => Number(h.hours) || 0)
-          .filter(h => h > currentCycleStartHour && h < currentCycleEndHour)
-          .reduce((mx, v) => Math.max(mx, v), 0)
+        const currentCycle = Math.floor(currentValue / maxInterval) + 1
+        const cycleStart = (currentCycle - 1) * maxInterval
+        const cycleEnd = currentCycle * maxInterval
+
+        // Preventive history: maintenance_plan_id matches an interval (IS the interval id)
+        const preventiveHistory = (historyByAsset[c.id] || []).filter((m: any) => {
+          const typeLower = m?.type?.toLowerCase()
+          const isPreventive = typeLower === 'preventive' || typeLower === 'preventivo'
+          return isPreventive && m?.maintenance_plan_id && intervalIds.has(m.maintenance_plan_id)
+        })
+
+        const currentCycleMaintenances = preventiveHistory.filter((m: any) => {
+          const mValue = getMaintenanceValue(m, unit)
+          return mValue > cycleStart && mValue < cycleEnd
+        })
+
+        const intervalById = new Map(modelIntervals.map((i: any) => [i.id, i]))
 
         for (const interval of modelIntervals) {
-          const intervalHours = Number(interval.interval_value || 0)
+          const intervalValue = Number(interval.interval_value || 0)
           const isFirstCycleOnly = Boolean((interval as any).is_first_cycle_only)
           if (isFirstCycleOnly && currentCycle !== 1) continue
 
-          let due = ((currentCycle - 1) * maxInterval) + intervalHours
-          let status = 'scheduled'
-          if (due > currentCycleEndHour) {
-            due = (currentCycle * maxInterval) + intervalHours
-            if (due - currentHours > 1000) continue
-          } else {
-            const cycleIntervalHour = due - currentCycleStartHour
-            const highestRelativeHour = highestMaintenanceInCycle - currentCycleStartHour
-            if (highestRelativeHour >= cycleIntervalHour && highestMaintenanceInCycle > 0) {
-              status = 'covered'
-            } else if (currentHours >= due) {
-              status = 'overdue'
-            } else if (currentHours >= due - 100) {
-              status = 'upcoming'
-            }
+          let due = ((currentCycle - 1) * maxInterval) + intervalValue
+          if (due > cycleEnd) {
+            due = (currentCycle * maxInterval) + intervalValue
+            if (due - currentValue > 1000) continue
           }
+
+          const wasPerformed = currentCycleMaintenances.some((m: any) => m.maintenance_plan_id === interval.id)
+          const isCovered = !wasPerformed && currentCycleMaintenances.some((m: any) => {
+            const performed = intervalById.get(m.maintenance_plan_id)
+            if (!performed) return false
+            return performed.type === interval.type &&
+              Number(performed.interval_value || 0) >= intervalValue
+          })
+
+          let status = 'scheduled'
+          if (wasPerformed) status = 'completed'
+          else if (isCovered) status = 'covered'
+          else if (currentValue >= due) status = 'overdue'
+          else if (currentValue >= due - 100) status = 'upcoming'
+
+          // Exclude completed from aggregate list (no action needed)
+          if (status === 'completed') continue
 
           let urgency = 'low'
           if (status === 'upcoming') {
-            const hoursRemaining = due - currentHours
-            urgency = hoursRemaining <= 50 ? 'high' : 'medium'
-          } else if (status === 'overdue') {
-            urgency = 'high'
-          }
+            const remaining = due - currentValue
+            urgency = remaining <= 50 ? 'high' : 'medium'
+          } else if (status === 'overdue') urgency = 'high'
 
           upcoming_maintenance.push({
             asset_id: c.id,
             asset_name: c.name,
             interval_id: interval.id,
-            interval_name: interval.description || `${interval.type} ${interval.interval_value}h`,
+            interval_name: interval.description || `${interval.type} ${interval.interval_value}${unit === 'kilometers' ? 'km' : 'h'}`,
             type: interval.type,
             interval_value: interval.interval_value,
-            current_value: currentHours,
+            current_value: currentValue,
             target_value: due,
             status,
             urgency
@@ -189,15 +208,14 @@ export async function GET(
         }
       }
 
-      // Sort by priority
-      const statusPriority: any = { overdue: 4, upcoming: 3, scheduled: 2, covered: 1 }
-      const urgencyPriority: any = { high: 3, medium: 2, low: 1 }
+      const statusPriority: Record<string, number> = { overdue: 4, upcoming: 3, scheduled: 2, covered: 1 }
+      const urgencyPriority: Record<string, number> = { high: 3, medium: 2, low: 1 }
       upcoming_maintenance.sort((a, b) => {
-        const pa = (statusPriority[a.status] || 0)
-        const pb = (statusPriority[b.status] || 0)
+        const pa = statusPriority[a.status] || 0
+        const pb = statusPriority[b.status] || 0
         if (pa !== pb) return pb - pa
-        const ua = (urgencyPriority[a.urgency] || 0)
-        const ub = (urgencyPriority[b.urgency] || 0)
+        const ua = urgencyPriority[a.urgency] || 0
+        const ub = urgencyPriority[b.urgency] || 0
         if (ua !== ub) return ub - ua
         return (a.interval_value || 0) - (b.interval_value || 0)
       })

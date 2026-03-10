@@ -493,18 +493,10 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
                   const dueInterval = interval;
                   if (!performedInterval || !dueInterval) return false;
                   const sameUnit = performedInterval.type === dueInterval.type;
-                  const sameCategory = (performedInterval as any).maintenance_category === (dueInterval as any).maintenance_category;
-                  const categoryOk = (performedInterval as any).maintenance_category && (dueInterval as any).maintenance_category ? sameCategory : true;
-                  
-                  // CRITICAL: Coverage requires interval value >= due interval value
                   const higherOrEqual = Number(performedInterval.interval_value) >= Number(dueInterval.interval_value);
-                  
-                  // CRITICAL: Also check timing - the performed service must be done AFTER the due value
-                  // This prevents a 1500km service at 5145km from covering a 1800km interval due at 5400km
                   const performedAtValue = getMaintenanceValue(m, maintenanceUnit);
                   const performedAfterDue = performedAtValue >= dueValue;
-                  
-                  const covers = sameUnit && categoryOk && higherOrEqual && performedAfterDue;
+                  const covers = sameUnit && higherOrEqual && performedAfterDue;
                   
                   if (interval.interval_value <= 1500 && covers) {
                     console.log(`[ASSET ${assetId}] ${interval.interval_value}${getUnitLabel(maintenanceUnit)} covered by ${performedInterval.interval_value}${getUnitLabel(maintenanceUnit)} (performed at ${performedAtValue}${getUnitLabel(maintenanceUnit)}, due at ${dueValue}${getUnitLabel(maintenanceUnit)})`);

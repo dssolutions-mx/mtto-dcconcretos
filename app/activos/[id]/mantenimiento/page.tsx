@@ -269,18 +269,12 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
                         // Example: If 1500km service performed at 1150km, it covers 300km, 600km, 900km, 1200km, 1500km
                         // NO timing/position verification needed - purely interval value comparison
                         const isCoveredByHigher = currentCycleMaintenances.some((m: any) => {
-                          const performedPlanId = m.maintenance_plan_id;
-                          const performedInterval = (intervals as any[]).find((i: any) => i.id === performedPlanId);
+                          const performedInterval = (intervals as any[]).find((i: any) => i.id === m.maintenance_plan_id);
                           const dueInterval = interval;
                           if (!performedInterval || !dueInterval) return false;
                           const sameUnit = performedInterval.type === dueInterval.type;
-                          const sameCategory = (performedInterval as any).maintenance_category === (dueInterval as any).maintenance_category;
-                          const categoryOk = (performedInterval as any).maintenance_category && (dueInterval as any).maintenance_category ? sameCategory : true;
-                          // CRITICAL: Coverage based SOLELY on interval value comparison
-                          // If performed interval value >= due interval value, it covers it
-                          // Works forward: performing 1500km covers all intervals <= 1500km, even future ones
                           const higherOrEqual = Number(performedInterval.interval_value) >= Number(dueInterval.interval_value);
-                          return sameUnit && categoryOk && higherOrEqual;
+                          return sameUnit && higherOrEqual;
                         });
 
                         if (isCoveredByHigher) {
@@ -367,10 +361,8 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
                         const performedInterval = (intervals as any[]).find((i: any) => i.id === m.maintenance_plan_id);
                         if (!performedInterval) return false;
                         const sameUnit = performedInterval.type === interval.type;
-                        const sameCategory = (performedInterval as any).maintenance_category === (interval as any).maintenance_category;
-                        const categoryOk = (performedInterval as any).maintenance_category && (interval as any).maintenance_category ? sameCategory : true;
                         const higherOrEqual = Number(performedInterval.interval_value) >= Number(interval.interval_value);
-                        return sameUnit && categoryOk && higherOrEqual;
+                        return sameUnit && higherOrEqual;
                       });
                       
                       // Check if covered by current cycle maintenance
@@ -385,10 +377,8 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
                         const performedInterval = (intervals as any[]).find((i: any) => i.id === m.maintenance_plan_id);
                         if (!performedInterval) return false;
                         const sameUnit = performedInterval.type === interval.type;
-                        const sameCategory = (performedInterval as any).maintenance_category === (interval as any).maintenance_category;
-                        const categoryOk = (performedInterval as any).maintenance_category && (interval as any).maintenance_category ? sameCategory : true;
                         const higherOrEqual = Number(performedInterval.interval_value) >= Number(interval.interval_value);
-                        return sameUnit && categoryOk && higherOrEqual;
+                        return sameUnit && higherOrEqual;
                       });
 
                       // Only add if NOT covered by same cycle OR current cycle
@@ -586,25 +576,17 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
                   if (wasPerformedInCurrentCycle) {
                     status = 'completed';
                   } else {
-                    // Plan-aware coverage: higher/equal interval (same unit/category) covers lower ones
-                    // CRITICAL: Coverage based SOLELY on interval value comparison
-                    // If a higher interval service is performed, it covers ALL lower interval services
-                    // Example: If 2700h service performed, it covers 300h, 600h, 900h, 1200h, 1500h, 1800h, 2100h, 2400h
-                    // NO timing/position verification needed - purely interval value comparison
+                    // Plan-aware coverage: higher/equal interval covers lower ones (same unit)
+                    // CRITICAL: Coverage based on interval value only - category is metadata, not a coverage gate
+                    // A 1500h service covers 300h, 600h, 900h, 1200h regardless of category (standard vs intermediate vs major)
                     // CRITICAL: maintenance_plan_id IS the interval ID
                     const isCoveredByHigher = currentCycleMaintenances.some(m => {
                       const performedInterval = intervals.find((i: any) => i.id === m.maintenance_plan_id);
                       const dueInterval = interval;
                       if (!performedInterval || !dueInterval) return false;
                       const sameUnit = performedInterval.type === dueInterval.type;
-                      const sameCategory = (performedInterval as any).maintenance_category === (dueInterval as any).maintenance_category;
-                      const categoryOk = (performedInterval as any).maintenance_category && (dueInterval as any).maintenance_category ? sameCategory : true;
-                      
-                      // CRITICAL: Coverage based SOLELY on interval value comparison
-                      // If performed interval value >= due interval value, it covers it
                       const higherOrEqual = Number(performedInterval.interval_value) >= Number(dueInterval.interval_value);
-                      
-                      return sameUnit && categoryOk && higherOrEqual;
+                      return sameUnit && higherOrEqual;
                     });
 
                     if (isCoveredByHigher) {
@@ -677,26 +659,18 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
                   const isCoveredInSameCycle = pastCycleMaintenances.some(m => {
                     const performedInterval = intervals.find((i: any) => i.id === m.maintenance_plan_id);
                     if (!performedInterval) return false;
-                    
                     const sameUnit = performedInterval.type === interval.type;
-                    const sameCategory = (performedInterval as any).maintenance_category === (interval as any).maintenance_category;
-                    const categoryOk = (performedInterval as any).maintenance_category && (interval as any).maintenance_category ? sameCategory : true;
                     const higherOrEqual = Number(performedInterval.interval_value) >= Number(interval.interval_value);
-                    
-                    return sameUnit && categoryOk && higherOrEqual;
+                    return sameUnit && higherOrEqual;
                   });
                   
                   // Check if covered by service in current cycle
                   const isCoveredByCurrentCycle = currentCycleMaintenances.some(m => {
                     const performedInterval = intervals.find((i: any) => i.id === m.maintenance_plan_id);
                     if (!performedInterval) return false;
-                    
                     const sameUnit = performedInterval.type === interval.type;
-                    const sameCategory = (performedInterval as any).maintenance_category === (interval as any).maintenance_category;
-                    const categoryOk = (performedInterval as any).maintenance_category && (interval as any).maintenance_category ? sameCategory : true;
                     const higherOrEqual = Number(performedInterval.interval_value) >= Number(interval.interval_value);
-                    
-                    return sameUnit && categoryOk && higherOrEqual;
+                    return sameUnit && higherOrEqual;
                   });
                   
                   // Only add if NOT covered by same cycle OR current cycle
