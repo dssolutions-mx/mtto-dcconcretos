@@ -31,6 +31,8 @@ interface ComparisonProps {
   templateId: string
   isOpen: boolean
   onClose: () => void
+  /** When true, renders inline (no modal) - for use inside tabs where close is not needed */
+  embedded?: boolean
 }
 
 interface ChangeItem {
@@ -41,7 +43,78 @@ interface ChangeItem {
   description: string
 }
 
-export function VersionComparison({ templateId, isOpen, onClose }: ComparisonProps) {
+function ChangeDetailBlock({ value, type }: { value: unknown; type: 'added' | 'removed' }) {
+  const isAdded = type === 'added'
+  const bgClass = isAdded ? 'bg-green-50 dark:bg-green-950/30 border-green-200 dark:border-green-800' : 'bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-800'
+  const textClass = isAdded ? 'text-green-700 dark:text-green-300' : 'text-red-700 dark:text-red-300'
+  const label = isAdded ? 'Agregado:' : 'Eliminado:'
+
+  if (value === null || value === undefined) return null
+  if (typeof value === 'object' && value !== null && 'title' in value) {
+    const section = value as { title?: string; items?: Array<{ description?: string }>; checklist_items?: Array<{ description?: string }> }
+    const items = section.items || section.checklist_items || []
+    return (
+      <div className={`p-3 ${bgClass} border rounded text-sm mt-2`}>
+        <span className={`font-medium ${textClass}`}>{label}</span>
+        <div className="mt-2 space-y-1">
+          <p className="font-medium">{section.title || '—'}</p>
+          {items.length > 0 && (
+            <ul className="list-disc list-inside space-y-0.5 text-muted-foreground mt-2">
+              {items.map((item, i) => (
+                <li key={i}>{item.description || '—'}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
+    )
+  }
+  if (typeof value === 'object' && value !== null && 'description' in value) {
+    const item = value as { description?: string }
+    return (
+      <div className={`p-2 ${bgClass} border rounded text-xs mt-2`}>
+        <span className={`font-medium ${textClass}`}>{label}</span>
+        <div className="mt-1">{item.description || '—'}</div>
+      </div>
+    )
+  }
+  return (
+    <div className={`p-2 ${bgClass} border rounded text-xs mt-2`}>
+      <span className={`font-medium ${textClass}`}>{label}</span>
+      <div className="mt-1">{formatChangeValue(value)}</div>
+    </div>
+  )
+}
+
+function formatChangeValue(value: unknown): string {
+  if (value === null || value === undefined) return '—'
+  if (typeof value === 'string') return value
+  if (typeof value === 'boolean') return value ? 'Sí' : 'No'
+  if (typeof value === 'number') return String(value)
+  if (Array.isArray(value)) {
+    if (value.length === 0) return '(vacío)'
+    const first = value[0]
+    if (typeof first === 'object' && first !== null && 'title' in first) {
+      return value.map((s: any) => s.title || s.description || '—').join('; ')
+    }
+    if (typeof first === 'object' && first !== null && 'description' in first) {
+      return value.map((i: any) => i.description).join('; ')
+    }
+  }
+  if (typeof value === 'object') {
+    const obj = value as Record<string, unknown>
+    if ('title' in obj && typeof obj.title === 'string') {
+      const items = obj.items as unknown[] | undefined
+      const count = Array.isArray(items) ? items.length : 0
+      return count > 0 ? `${obj.title} (${count} ítems)` : obj.title
+    }
+    if ('description' in obj && typeof obj.description === 'string') return obj.description
+    if ('name' in obj && typeof obj.name === 'string') return obj.name
+  }
+  return String(value)
+}
+
+export function VersionComparison({ templateId, isOpen, onClose, embedded = false }: ComparisonProps) {
   const { toast } = useToast()
   const [versions, setVersions] = useState<VersionData[]>([])
   const [leftVersion, setLeftVersion] = useState<string>('')
@@ -331,20 +404,8 @@ export function VersionComparison({ templateId, isOpen, onClose }: ComparisonPro
     }
   }
 
-  return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-6xl max-h-[90vh] overflow-hidden flex flex-col">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <GitCompare className="h-5 w-5" />
-            Comparación de Versiones
-          </DialogTitle>
-          <DialogDescription>
-            Compara diferentes versiones de la plantilla para ver los cambios realizados
-          </DialogDescription>
-        </DialogHeader>
-
-        <div className="flex-1 overflow-hidden flex flex-col space-y-4">
+  const content = (
+    <div className="flex-1 overflow-hidden flex flex-col space-y-4">
           {/* Version Selectors */}
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
@@ -441,37 +502,27 @@ export function VersionComparison({ templateId, isOpen, onClose }: ComparisonPro
                             
                             {change.type === 'modified' && (
                               <div className="grid grid-cols-2 gap-4 mt-2 text-xs">
-                                <div className="p-2 bg-red-50 border border-red-200 rounded">
-                                  <span className="font-medium text-red-700">Antes:</span>
-                                  <div className="text-red-600 font-mono">
-                                    {JSON.stringify(change.oldValue, null, 2)}
+                                <div className="p-2 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 rounded">
+                                  <span className="font-medium text-red-700 dark:text-red-300">Antes:</span>
+                                  <div className="text-red-600 dark:text-red-400 mt-1 break-words">
+                                    {formatChangeValue(change.oldValue)}
                                   </div>
                                 </div>
-                                <div className="p-2 bg-green-50 border border-green-200 rounded">
-                                  <span className="font-medium text-green-700">Después:</span>
-                                  <div className="text-green-600 font-mono">
-                                    {JSON.stringify(change.newValue, null, 2)}
+                                <div className="p-2 bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800 rounded">
+                                  <span className="font-medium text-green-700 dark:text-green-300">Después:</span>
+                                  <div className="text-green-600 dark:text-green-400 mt-1 break-words">
+                                    {formatChangeValue(change.newValue)}
                                   </div>
                                 </div>
                               </div>
                             )}
 
                             {change.type === 'added' && change.newValue && (
-                              <div className="p-2 bg-green-50 border border-green-200 rounded text-xs">
-                                <span className="font-medium text-green-700">Agregado:</span>
-                                <div className="text-green-600 font-mono">
-                                  {JSON.stringify(change.newValue, null, 2)}
-                                </div>
-                              </div>
+                              <ChangeDetailBlock value={change.newValue} type="added" />
                             )}
 
                             {change.type === 'removed' && change.oldValue && (
-                              <div className="p-2 bg-red-50 border border-red-200 rounded text-xs">
-                                <span className="font-medium text-red-700">Eliminado:</span>
-                                <div className="text-red-600 font-mono">
-                                  {JSON.stringify(change.oldValue, null, 2)}
-                                </div>
-                              </div>
+                              <ChangeDetailBlock value={change.oldValue} type="removed" />
                             )}
                           </div>
                         </div>
@@ -492,6 +543,38 @@ export function VersionComparison({ templateId, isOpen, onClose }: ComparisonPro
             </div>
           )}
         </div>
+  )
+
+  if (embedded) {
+    return (
+      <div className="space-y-4">
+        <div>
+          <h3 className="text-lg font-semibold flex items-center gap-2">
+            <GitCompare className="h-5 w-5" />
+            Comparación de Versiones
+          </h3>
+          <p className="text-sm text-muted-foreground mt-1">
+            Compara diferentes versiones de la plantilla para ver los cambios realizados
+          </p>
+        </div>
+        {content}
+      </div>
+    )
+  }
+
+  return (
+    <Dialog open={isOpen} onOpenChange={onClose}>
+      <DialogContent className="max-w-6xl max-h-[90vh] overflow-hidden flex flex-col">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <GitCompare className="h-5 w-5" />
+            Comparación de Versiones
+          </DialogTitle>
+          <DialogDescription>
+            Compara diferentes versiones de la plantilla para ver los cambios realizados
+          </DialogDescription>
+        </DialogHeader>
+        {content}
       </DialogContent>
     </Dialog>
   )

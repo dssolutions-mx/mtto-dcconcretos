@@ -6,14 +6,6 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
-import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -26,10 +18,9 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Copy, Edit, Eye, FileText, Loader2, MoreHorizontal, Plus, Search, Trash, History, Calendar } from "lucide-react"
+import { Eye, FileText, Loader2, Plus, Search, Trash } from "lucide-react"
 import Link from "next/link"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { DuplicateTemplateDialog } from "../duplicate-template-dialog"
 import { useToast } from "@/components/ui/use-toast"
 import { EquipmentModel } from "@/types"
 
@@ -40,8 +31,6 @@ interface TemplatesTabProps {
 export function TemplatesTab({ model }: TemplatesTabProps) {
   const { templates, loading, error, fetchTemplates } = useChecklistTemplates()
   const [searchTerm, setSearchTerm] = useState("")
-  const [duplicateDialogOpen, setDuplicateDialogOpen] = useState(false)
-  const [selectedTemplate, setSelectedTemplate] = useState<Checklist | null>(null)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [templateToDelete, setTemplateToDelete] = useState<Checklist | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
@@ -68,15 +57,6 @@ export function TemplatesTab({ model }: TemplatesTabProps) {
     t.frequency !== 'diario' && t.frequency !== 'semanal' && t.frequency !== 'mensual' &&
     (t.interval_id === null || t.interval_id === undefined)
   )
-
-  const handleDuplicate = (template: Checklist) => {
-    setSelectedTemplate(template)
-    setDuplicateDialogOpen(true)
-  }
-
-  const handleDuplicateSuccess = () => {
-    fetchTemplates() // Refresh the templates list
-  }
 
   const handleDelete = (template: Checklist) => {
     setTemplateToDelete(template)
@@ -196,54 +176,25 @@ export function TemplatesTab({ model }: TemplatesTabProps) {
                   {new Date(template.created_at).toLocaleDateString()}
                 </TableCell>
                 <TableCell className="text-right">
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="icon" className="h-8 w-8">
-                        <MoreHorizontal className="h-4 w-4" />
-                        <span className="sr-only">Acciones</span>
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuLabel>Acciones</DropdownMenuLabel>
-                      <DropdownMenuItem asChild>
-                        <Link href={`/checklists/${template.id}`}>
-                          <Eye className="mr-2 h-4 w-4" />
-                          Ver detalles
-                        </Link>
-                      </DropdownMenuItem>
-                      <DropdownMenuItem asChild>
-                        <Link href={`/checklists/${template.id}/editar`}>
-                          <Edit className="mr-2 h-4 w-4" />
-                          Editar plantilla
-                        </Link>
-                      </DropdownMenuItem>
-                      <DropdownMenuItem asChild>
-                        <Link href={`/checklists/${template.id}?tab=versions`}>
-                          <History className="mr-2 h-4 w-4" />
-                          Ver versiones
-                        </Link>
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem asChild>
-                        <Link href={`/checklists/programar?template=${template.id}`}>
-                          <Calendar className="mr-2 h-4 w-4" />
-                          Programar checklist
-                        </Link>
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => handleDuplicate(template)}>
-                        <Copy className="mr-2 h-4 w-4" />
-                        Duplicar plantilla
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem 
-                        className="text-red-600"
-                        onClick={() => handleDelete(template)}
+                  <div className="flex items-center justify-end gap-1">
+                    <Button variant="ghost" size="icon" className="h-8 w-8" asChild>
+                      <Link
+                        href={`/checklists/plantillas/${template.id}${template.model_id ? `?model=${template.model_id}` : ""}`}
+                        title="Ver detalles"
                       >
-                        <Trash className="mr-2 h-4 w-4" />
-                        Eliminar
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                        <Eye className="h-4 w-4" />
+                      </Link>
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 text-destructive hover:text-destructive"
+                      onClick={() => handleDelete(template)}
+                      title="Eliminar"
+                    >
+                      <Trash className="h-4 w-4" />
+                    </Button>
+                  </div>
                 </TableCell>
               </TableRow>
             ))}
@@ -290,7 +241,7 @@ export function TemplatesTab({ model }: TemplatesTabProps) {
             Crea la primera plantilla de checklist para el modelo {model.name}.
           </p>
           <Button asChild>
-            <Link href={`/checklists/crear?model=${model.id}`}>
+            <Link href={`/checklists/plantillas/crear?model=${model.id}`}>
               <Plus className="mr-2 h-4 w-4" />
               Crear primera plantilla
             </Link>
@@ -302,34 +253,24 @@ export function TemplatesTab({ model }: TemplatesTabProps) {
 
   return (
     <>
-      <div className="space-y-6">
+      <div className="space-y-8">
         {/* Header with search and actions */}
-        <div className="flex flex-col sm:flex-row justify-between gap-4">
+        <div className="flex flex-col sm:flex-row justify-between gap-6">
           <div>
-            <h3 className="text-lg font-semibold">
-              Plantillas para {model.name}
-            </h3>
+            <h3 className="text-lg font-semibold">Plantillas</h3>
             <p className="text-sm text-muted-foreground">
               {modelTemplates.length} plantillas disponibles
             </p>
           </div>
-          <div className="flex gap-2">
-            <div className="relative">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                type="search"
-                placeholder="Buscar plantillas..."
-                className="pl-8 w-[250px]"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-              />
-            </div>
-            <Button asChild>
-              <Link href={`/checklists/crear?model=${model.id}`}>
-                <Plus className="mr-2 h-4 w-4" />
-                Nueva Plantilla
-              </Link>
-            </Button>
+          <div className="relative">
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input
+              type="search"
+              placeholder="Buscar plantillas..."
+              className="pl-8 w-[250px]"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
           </div>
         </div>
 
@@ -366,7 +307,7 @@ export function TemplatesTab({ model }: TemplatesTabProps) {
             )}
           </TabsList>
           
-          <TabsContent value="all" className="mt-6">
+          <TabsContent value="all" className="mt-8">
             <Card>
               <CardHeader>
                 <CardTitle>Todas las plantillas</CardTitle>
@@ -381,7 +322,7 @@ export function TemplatesTab({ model }: TemplatesTabProps) {
           </TabsContent>
           
           {dailyTemplates.length > 0 && (
-            <TabsContent value="diario" className="mt-6">
+            <TabsContent value="diario" className="mt-8">
               <Card>
                 <CardHeader>
                   <CardTitle>Plantillas diarias</CardTitle>
@@ -397,7 +338,7 @@ export function TemplatesTab({ model }: TemplatesTabProps) {
           )}
           
           {weeklyTemplates.length > 0 && (
-            <TabsContent value="semanal" className="mt-6">
+            <TabsContent value="semanal" className="mt-8">
               <Card>
                 <CardHeader>
                   <CardTitle>Plantillas semanales</CardTitle>
@@ -413,7 +354,7 @@ export function TemplatesTab({ model }: TemplatesTabProps) {
           )}
           
           {monthlyTemplates.length > 0 && (
-            <TabsContent value="mensual" className="mt-6">
+            <TabsContent value="mensual" className="mt-8">
               <Card>
                 <CardHeader>
                   <CardTitle>Plantillas mensuales</CardTitle>
@@ -429,7 +370,7 @@ export function TemplatesTab({ model }: TemplatesTabProps) {
           )}
           
           {intervalTemplates.length > 0 && (
-            <TabsContent value="intervals" className="mt-6">
+            <TabsContent value="intervals" className="mt-8">
               <Card>
                 <CardHeader>
                   <CardTitle>Plantillas por intervalo de horas</CardTitle>
@@ -445,7 +386,7 @@ export function TemplatesTab({ model }: TemplatesTabProps) {
           )}
           
           {otherTemplates.length > 0 && (
-            <TabsContent value="other" className="mt-6">
+            <TabsContent value="other" className="mt-8">
               <Card>
                 <CardHeader>
                   <CardTitle>Otras plantillas</CardTitle>
@@ -468,13 +409,6 @@ export function TemplatesTab({ model }: TemplatesTabProps) {
           </div>
         )}
       </div>
-
-      <DuplicateTemplateDialog
-        open={duplicateDialogOpen}
-        onOpenChange={setDuplicateDialogOpen}
-        template={selectedTemplate}
-        onSuccess={handleDuplicateSuccess}
-      />
 
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <AlertDialogContent>

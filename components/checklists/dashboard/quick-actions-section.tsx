@@ -1,7 +1,7 @@
 "use client"
 
 import { Button } from "@/components/ui/button"
-import { ClipboardCheck, Plus, FileDown, Loader2 } from "lucide-react"
+import { ClipboardCheck, Plus, FileDown, Loader2, FileText } from "lucide-react"
 import Link from "next/link"
 
 interface QuickActionsSectionProps {
@@ -38,11 +38,24 @@ export function QuickActionsSection({
           asChild
           variant="outline"
           size="default"
-          className="min-h-[44px] px-5 cursor-pointer"
+          className="min-h-[44px] px-5 cursor-pointer transition-colors duration-200"
         >
-          <Link href="/checklists/crear">
+          <Link href="/checklists/plantillas/crear">
             <Plus className="mr-2 h-4 w-4" />
             Nueva plantilla
+          </Link>
+        </Button>
+      )}
+      {canCreateChecklists && (
+        <Button
+          asChild
+          variant="outline"
+          size="default"
+          className="min-h-[44px] px-5 cursor-pointer transition-colors duration-200"
+        >
+          <Link href="/checklists/plantillas">
+            <FileText className="mr-2 h-4 w-4" />
+            Gestionar plantillas
           </Link>
         </Button>
       )}

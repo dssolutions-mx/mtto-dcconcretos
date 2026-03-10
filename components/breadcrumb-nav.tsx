@@ -108,6 +108,12 @@ export function BreadcrumbNav({ className }: BreadcrumbNavProps) {
           label: "Checklists",
           href: "/checklists"
         })
+        if (pathSegments.length > 1 && pathSegments[1] === "plantillas") {
+          items.push({
+            label: "Plantillas",
+            href: "/checklists/plantillas"
+          })
+        }
       } else if (firstSegment === "ordenes") {
         items.push({
           label: "Órdenes de Trabajo",
@@ -259,17 +265,22 @@ export function BreadcrumbNav({ className }: BreadcrumbNavProps) {
       }
     }
 
-    // Add additional path segments for sub-pages
-    if (pathSegments.length > 1) {
-      const remainingSegments = pathSegments.slice(1)
+    // Add additional path segments for sub-pages (skip segments already handled above)
+    let segmentStartIndex = 1
+    if (firstSegment === "checklists" && pathSegments.length > 1 && pathSegments[1] === "plantillas") {
+      segmentStartIndex = 2
+    }
+    if (pathSegments.length > segmentStartIndex) {
+      const remainingSegments = pathSegments.slice(segmentStartIndex)
       
       remainingSegments.forEach((segment, index) => {
-        const segmentPath = "/" + pathSegments.slice(0, index + 2).join("/")
+        const segmentPath = "/" + pathSegments.slice(0, segmentStartIndex + index + 1).join("/")
         
         // Handle specific sub-page labels
         let label = segment
         if (segment === "crear") label = "Crear"
         else if (segment === "editar") label = "Editar"
+        else if (segment === "plantillas") label = "Plantillas"
         else if (segment === "historial") label = "Historial"
         else if (segment === "historial-checklists") label = "Historial de Checklists"
         else if (segment === "incidentes") label = "Incidentes"

@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { useSearchParams } from "next/navigation"
 import { useEquipmentModels } from "@/hooks/useSupabase"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -31,17 +32,27 @@ interface ModelTemplatesNavigatorProps {
 }
 
 export function ModelTemplatesNavigator({ className }: ModelTemplatesNavigatorProps) {
+  const searchParams = useSearchParams()
+  const modelParam = searchParams?.get("model")
   const { models, loading, error, refetch } = useEquipmentModels()
   const [selectedModel, setSelectedModel] = useState<EquipmentModel | null>(null)
   const [searchTerm, setSearchTerm] = useState("")
   const [activeTab, setActiveTab] = useState("overview")
 
-  // Auto-select first model when models load
   useEffect(() => {
-    if (models.length > 0 && !selectedModel) {
-      setSelectedModel(models[0])
+    if (models.length > 0) {
+      if (modelParam) {
+        const found = models.find((m) => m.id === modelParam)
+        if (found) {
+          setSelectedModel(found)
+          return
+        }
+      }
+      if (!selectedModel) {
+        setSelectedModel(models[0])
+      }
     }
-  }, [models, selectedModel])
+  }, [models, modelParam, selectedModel])
 
   const filteredModels = models.filter(
     (model) =>
@@ -208,7 +219,7 @@ export function ModelTemplatesNavigator({ className }: ModelTemplatesNavigatorPr
                     </Link>
                   </Button>
                   <Button asChild>
-                    <Link href={`/checklists/crear?model=${selectedModel.id}`}>
+                    <Link href={`/checklists/plantillas/crear?model=${selectedModel.id}`}>
                       <Plus className="mr-2 h-4 w-4" />
                       Nueva plantilla
                     </Link>

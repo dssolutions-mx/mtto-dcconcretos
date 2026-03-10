@@ -686,7 +686,7 @@ function DashboardContent() {
                 </Link>
               </Button>
               <Button asChild size="sm" variant="outline">
-                <Link href="/checklists/crear">
+                <Link href="/checklists/plantillas/crear">
                   Nuevo Checklist
                 </Link>
               </Button>

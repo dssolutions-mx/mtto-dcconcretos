@@ -108,7 +108,7 @@ export function CreationEntryStep({
       }
       const newId = data.template_id
       toast.success("Plantilla duplicada")
-      router.push(`/checklists/${newId}/editar`)
+      router.push(`/checklists/plantillas/${newId}/editar`)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Error al duplicar")
     } finally {

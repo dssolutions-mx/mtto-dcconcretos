@@ -241,7 +241,7 @@ export function ServiceOrderDetails({ orderId }: ServiceOrderDetailsProps) {
                 <span className="text-sm text-muted-foreground">Checklist Relacionado</span>
                 <span className="font-medium">
                   {serviceOrder.checklist_id ? (
-                    <Link href={`/checklists/${serviceOrder.checklist_id}`} className="text-primary hover:underline">
+                    <Link href={`/checklists/plantillas/${serviceOrder.checklist_id}`} className="text-primary hover:underline">
                       Ver Checklist
                     </Link>
                   ) : (
@@ -360,7 +360,7 @@ export function ServiceOrderDetails({ orderId }: ServiceOrderDetailsProps) {
 
                   <div className="flex justify-center mt-4">
                     <Button variant="outline" asChild>
-                      <Link href={`/checklists/${relatedChecklist.checklist_id}`}>
+                      <Link href={`/checklists/plantillas/${relatedChecklist.checklist_id}`}>
                         <FileText className="mr-2 h-4 w-4" />
                         Ver Checklist Completo
                       </Link>

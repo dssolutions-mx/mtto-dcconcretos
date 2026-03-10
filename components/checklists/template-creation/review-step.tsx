@@ -118,7 +118,7 @@ export function ReviewStep({
 
       toast.success("Plantilla creada")
       onSaveSuccess?.()
-      router.push(`/checklists/${newTemplate.id}`)
+      router.push(`/checklists/plantillas/${newTemplate.id}`)
     } catch (err) {
       console.error("Error saving template:", err)
       toast.error(err instanceof Error ? err.message : "Error al guardar")

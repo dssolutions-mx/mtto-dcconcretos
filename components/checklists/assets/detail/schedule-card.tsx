@@ -181,7 +181,7 @@ function ScheduleCardInner({
           </Button>
           <Button size="sm" variant="outline" asChild>
             <Link
-              href={`/checklists/${schedule.template_id}`}
+              href={`/checklists/plantillas/${schedule.template_id}`}
               className="cursor-pointer transition-colors duration-200"
             >
               <Eye className="h-3 w-3 mr-1" />

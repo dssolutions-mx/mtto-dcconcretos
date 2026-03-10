@@ -576,7 +576,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                     {ui.shouldShowInNavigation('checklists') && (
                       <>
                         <Button
-                          variant={pathname === "/checklists" && searchParams?.get("tab") !== "templates" ? "secondary" : "ghost"}
+                          variant={pathname === "/checklists" ? "secondary" : "ghost"}
                           className="w-full justify-start pl-8"
                           asChild
                           onClick={handleLinkClick}
@@ -611,12 +611,12 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                           </Link>
                         </Button>
                         <Button
-                          variant={pathname === "/checklists" && searchParams?.get("tab") === "templates" ? "secondary" : "ghost"}
+                          variant={pathname?.startsWith("/checklists/plantillas") ? "secondary" : "ghost"}
                           className="w-full justify-start pl-8"
                           asChild
                           onClick={handleLinkClick}
                         >
-                          <Link href="/checklists?tab=templates">
+                          <Link href="/checklists/plantillas">
                             <FileText className="mr-2 h-4 w-4" />
                             Plantillas
                           </Link>
@@ -1492,8 +1492,8 @@ export function SidebarWrapper({ children }: { children: React.ReactNode }) {
             </div>
           </header>
 
-          {/* Page Content */}
-          <main className="flex-1 overflow-auto relative z-page-content">{children}</main>
+          {/* Page Content - generous padding for breathing room (Apple HIG spacing) */}
+          <main className="flex-1 overflow-auto relative z-page-content px-4 py-6 md:px-6 md:py-8 lg:px-8 lg:py-8">{children}</main>
         </div>
       </div>
     </TooltipProvider>

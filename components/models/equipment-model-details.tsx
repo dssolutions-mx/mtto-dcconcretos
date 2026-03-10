@@ -99,11 +99,13 @@ export function EquipmentModelDetails({ id }: EquipmentModelDetailsProps) {
     performance: {}
   }) as ModelSpecifications;
   
-  // Asegurar que los intervalos tienen la propiedad maintenance_tasks
-  const intervalsWithTasks = maintenanceIntervals.map(interval => ({
-    ...interval,
-    maintenance_tasks: interval.maintenance_tasks || []
-  })) as MaintenanceIntervalWithTasks[];
+  // Asegurar que los intervalos tienen la propiedad maintenance_tasks y ordenarlos por intervalo (menor a mayor)
+  const intervalsWithTasks = maintenanceIntervals
+    .map(interval => ({
+      ...interval,
+      maintenance_tasks: interval.maintenance_tasks || []
+    }))
+    .sort((a, b) => (a.interval_value || 0) - (b.interval_value || 0)) as MaintenanceIntervalWithTasks[];
 
   return (
     <div className="space-y-6">

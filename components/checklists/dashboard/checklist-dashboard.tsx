@@ -1,14 +1,11 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { useSearchParams } from "next/navigation"
 import { DashboardShell } from "@/components/dashboard/dashboard-shell"
 import { DashboardHeader } from "@/components/dashboard/dashboard-header"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Truck, FileText, AlertTriangle, WifiOff, Loader2 } from "lucide-react"
-import Link from "next/link"
+import { Truck, WifiOff } from "lucide-react"
 import { useAuthZustand } from "@/hooks/use-auth-zustand"
 import { OfflineStatus } from "@/components/checklists/offline-status"
 import { OfflineChecklistList } from "@/components/checklists/offline-checklist-list"
@@ -16,23 +13,12 @@ import { DaySummarySection } from "./day-summary-section"
 import { QuickActionsSection } from "./quick-actions-section"
 import { UnresolvedIssuesWidget } from "./unresolved-issues-widget"
 import { AssetGridView } from "./asset-grid-view"
-import { ModelTemplatesNavigator } from "../model-templates-navigator"
-import { useChecklistSchedules, useChecklistTemplates } from "@/hooks/useChecklists"
+import { useChecklistSchedules } from "@/hooks/useChecklists"
 import { toast } from "sonner"
 
 export function ChecklistDashboard() {
-  const searchParams = useSearchParams()
-  const tabParam = searchParams?.get("tab")
   const { profile, ui } = useAuthZustand()
-  const { schedules, loading, error, fetchSchedules } = useChecklistSchedules()
-  const { templates, fetchTemplates } = useChecklistTemplates()
-  const [activeTab, setActiveTab] = useState<"assets" | "templates">("assets")
-
-  useEffect(() => {
-    if (tabParam === "templates") {
-      setActiveTab("templates")
-    }
-  }, [tabParam])
+  const { schedules, fetchSchedules } = useChecklistSchedules()
   const [preparingOffline, setPreparingOffline] = useState(false)
   const [isOnline, setIsOnline] = useState<boolean | undefined>(undefined)
   const [stats, setStats] = useState({
@@ -63,11 +49,10 @@ export function ChecklistDashboard() {
 
   useEffect(() => {
     fetchSchedules("pendiente")
-    fetchTemplates()
-  }, [fetchSchedules, fetchTemplates])
+  }, [fetchSchedules])
 
   useEffect(() => {
-    if (schedules.length > 0 || templates.length > 0) {
+    if (schedules.length > 0) {
       const today = new Date()
       today.setHours(0, 0, 0, 0)
       const tomorrow = new Date(today)
@@ -112,7 +97,7 @@ export function ChecklistDashboard() {
         daily: { total: todaysDaily, pending: todaysDaily, overdue: overdueDaily },
         weekly: { total: todaysWeekly, pending: todaysWeekly, overdue: overdueWeekly },
         monthly: { total: todaysMonthly, pending: todaysMonthly, overdue: overdueMonthly },
-        templates: templates.length,
+        templates: 0,
         preventive: {
           total: preventiveItems.length,
           pending: pendingPreventive,
@@ -120,7 +105,7 @@ export function ChecklistDashboard() {
         },
       })
     }
-  }, [schedules, templates])
+  }, [schedules])
 
   const handlePrepareOffline = async () => {
     try {
@@ -138,7 +123,6 @@ export function ChecklistDashboard() {
 
   const handleSyncComplete = () => {
     fetchSchedules("pendiente")
-    fetchTemplates()
   }
 
   const offlineNotice = (
@@ -213,39 +197,22 @@ export function ChecklistDashboard() {
         {isOnline === false ? (
           <OfflineChecklistList />
         ) : (
-          <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as typeof activeTab)} className="space-y-4">
-            <TabsList className="grid w-full max-w-md grid-cols-2">
-              <TabsTrigger value="assets" className="flex items-center gap-2">
-                <Truck className="h-4 w-4" />
-                Activos
-              </TabsTrigger>
-              <TabsTrigger value="templates" className="flex items-center gap-2">
-                <FileText className="h-4 w-4" />
-                Plantillas
-              </TabsTrigger>
-            </TabsList>
-
-            <TabsContent value="assets" className="mt-6 space-y-6">
-              <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
-                <div className="lg:col-span-3">
-                  <DaySummarySection stats={stats} />
-                </div>
-                <div>
-                  <UnresolvedIssuesWidget />
-                </div>
+          <div className="space-y-6 mt-6">
+            <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
+              <div className="lg:col-span-3">
+                <DaySummarySection stats={stats} />
               </div>
-              <section aria-labelledby="assets-filter-heading">
-                <h2 id="assets-filter-heading" className="sr-only">
-                  Buscar y filtrar activos
-                </h2>
-                <AssetGridView isOffline={false} offlineNotice={offlineNotice} />
-              </section>
-            </TabsContent>
-
-            <TabsContent value="templates" className="mt-6">
-              <ModelTemplatesNavigator />
-            </TabsContent>
-          </Tabs>
+              <div>
+                <UnresolvedIssuesWidget />
+              </div>
+            </div>
+            <section aria-labelledby="assets-filter-heading">
+              <h2 id="assets-filter-heading" className="sr-only">
+                Buscar y filtrar activos
+              </h2>
+              <AssetGridView isOffline={false} offlineNotice={offlineNotice} />
+            </section>
+          </div>
         )}
       </div>
     </DashboardShell>

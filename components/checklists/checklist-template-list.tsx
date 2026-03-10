@@ -162,7 +162,7 @@ export function ChecklistTemplateList() {
             Las plantillas de checklist te permiten definir inspecciones para diferentes equipos.
           </p>
           <Button asChild>
-            <Link href="/checklists/crear">
+            <Link href="/checklists/plantillas/crear">
               <Plus className="mr-2 h-4 w-4" />
               Crear nueva plantilla
             </Link>
@@ -258,19 +258,19 @@ export function ChecklistTemplateList() {
                     <DropdownMenuContent align="end">
                       <DropdownMenuLabel>Acciones</DropdownMenuLabel>
                       <DropdownMenuItem asChild>
-                        <Link href={`/checklists/${template.id}`}>
+                        <Link href={`/checklists/plantillas/${template.id}`}>
                           <Eye className="mr-2 h-4 w-4" />
                           Ver detalles
                         </Link>
                       </DropdownMenuItem>
                       <DropdownMenuItem asChild>
-                        <Link href={`/checklists/${template.id}/editar`}>
+                        <Link href={`/checklists/plantillas/${template.id}/editar`}>
                           <Edit className="mr-2 h-4 w-4" />
                           Editar plantilla
                         </Link>
                       </DropdownMenuItem>
                       <DropdownMenuItem asChild>
-                        <Link href={`/checklists/${template.id}?tab=versions`}>
+                        <Link href={`/checklists/plantillas/${template.id}?tab=versions`}>
                           <History className="mr-2 h-4 w-4" />
                           Ver versiones
                         </Link>
@@ -333,7 +333,7 @@ export function ChecklistTemplateList() {
                 </svg>
               </Button>
               <Button asChild>
-                <Link href="/checklists/crear">
+                <Link href="/checklists/plantillas/crear">
                   <Plus className="mr-2 h-4 w-4" />
                   Nueva Plantilla
                 </Link>
