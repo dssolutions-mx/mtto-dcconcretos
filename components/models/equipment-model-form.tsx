@@ -476,59 +476,19 @@ export function EquipmentModelForm() {
       }
 
       console.log("Guardando modelo:", modelData);
-      
-      // Guardar el modelo en la base de datos
-      const savedModel = await modelsApi.create(modelData);
-      
+
+      // Guardar modelo con intervalos, tareas y repuestos en bulk (optimizado)
+      const savedModel = await modelsApi.createWithHierarchy(modelData, maintenanceIntervals);
+
       console.log("Modelo guardado con éxito:", savedModel);
 
       // Subir documentos si existen
       if (savedModel) {
         const documentTypes: Array<'operationManual' | 'maintenanceGuide' | 'partsList'> = ['operationManual', 'maintenanceGuide', 'partsList'];
-        
+
         for (const docType of documentTypes) {
           if (documentUploads[docType]) {
             await uploadDocument(docType, savedModel.id);
-          }
-        }
-      }
-      
-      // Ahora guardar los intervalos de mantenimiento
-      if (savedModel && maintenanceIntervals.length > 0) {
-        for (const interval of maintenanceIntervals) {
-          const savedInterval = await modelsApi.createMaintenanceInterval({
-            model_id: savedModel.id,
-            interval_value: interval.hours,
-            name: interval.name,
-            description: interval.description || null,
-            type: "Preventivo",
-            estimated_duration: interval.tasks.reduce((sum, task) => sum + (task.estimatedTime || 0), 0),
-          });
-          
-          // Guardar las tareas de cada intervalo
-          if (savedInterval && interval.tasks.length > 0) {
-            for (const task of interval.tasks) {
-              const savedTask = await modelsApi.createMaintenanceTask({
-                interval_id: savedInterval.id,
-                description: task.description,
-                type: task.type,
-                estimated_time: task.estimatedTime,
-                requires_specialist: task.requiresSpecialist,
-              });
-              
-              // Guardar los repuestos de cada tarea
-              if (savedTask && task.parts.length > 0) {
-                for (const part of task.parts) {
-                  await modelsApi.createTaskPart({
-                    task_id: savedTask.id,
-                    name: part.name,
-                    part_number: part.partNumber,
-                    quantity: part.quantity,
-                    cost: part.cost || null,
-                  });
-                }
-              }
-            }
           }
         }
       }

@@ -23,6 +23,7 @@ import { Calendar } from "@/components/ui/calendar"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { cn } from "@/lib/utils"
 import { Switch } from "@/components/ui/switch"
+import { Checkbox } from "@/components/ui/checkbox"
 import { EvidenceUpload, type EvidencePhoto } from "@/components/ui/evidence-upload"
 import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
@@ -112,11 +113,8 @@ export function WorkOrderCompletionForm({ workOrderId, initialData }: WorkOrderC
   const [showEvidenceDialog, setShowEvidenceDialog] = useState(false)
   const [costSource, setCostSource] = useState<'estimated' | 'quoted' | 'confirmed'>('estimated')
   const [purchaseOrderId, setPurchaseOrderId] = useState<string | null>(null)
-  const [checklistStatus, setChecklistStatus] = useState<{
-    required: boolean
-    completed: boolean
-    checklistId: string | null
-  }>({ required: false, completed: false, checklistId: null })
+  const [requiredTasks, setRequiredTasks] = useState<any[]>([])
+  const [completedTasks, setCompletedTasks] = useState<Record<string, boolean>>({})
   const [maintenanceUnit, setMaintenanceUnit] = useState<MaintenanceUnit>('hours')
 
   // Default form values
@@ -188,6 +186,26 @@ export function WorkOrderCompletionForm({ workOrderId, initialData }: WorkOrderC
           }
         }
         
+        // Load required tasks from work order
+        if (orderData.required_tasks) {
+          try {
+            const tasks = typeof orderData.required_tasks === "string"
+              ? JSON.parse(orderData.required_tasks)
+              : orderData.required_tasks
+
+            if (Array.isArray(tasks) && tasks.length > 0) {
+              setRequiredTasks(tasks)
+              const initialCompleted: Record<string, boolean> = {}
+              tasks.forEach((task: { id: string }) => {
+                if (task.id) initialCompleted[task.id] = false
+              })
+              setCompletedTasks(initialCompleted)
+            }
+          } catch (e) {
+            console.error("Error parsing required tasks:", e)
+          }
+        }
+
         // Log maintenance_plan_id for debugging
         console.log('Work order data loaded:', {
           id: orderData.id,
@@ -195,41 +213,10 @@ export function WorkOrderCompletionForm({ workOrderId, initialData }: WorkOrderC
           status: orderData.status,
           maintenance_plan_id: orderData.maintenance_plan_id || null,
           maintenance_unit: unit,
-          asset_current_value: orderData.asset ? getCurrentValue(orderData.asset, unit) : 0
+          asset_current_value: orderData.asset ? getCurrentValue(orderData.asset, unit) : 0,
+          required_tasks_count: orderData.required_tasks ? (typeof orderData.required_tasks === "string" ? JSON.parse(orderData.required_tasks) : orderData.required_tasks).length : 0
         });
-        
-        // Check if this is a preventive order that requires checklist
-        if (orderData.type === MaintenanceType.Preventive) {
-          // Check if order is ready to execute (PO approved/received)
-          // @ts-ignore - RPC function created in recent migration
-          const { data: readyData } = await supabase
-            .rpc('is_work_order_ready_to_execute', { p_work_order_id: workOrderId })
-          
-          if (readyData) {
-            // Get required checklist
-            // @ts-ignore - RPC function created in recent migration
-            const { data: checklistId } = await supabase
-              .rpc('get_required_checklist_for_work_order', { p_work_order_id: workOrderId })
-            
-            if (checklistId) {
-              // Check if checklist is completed
-              // @ts-ignore - Table created in recent migration
-              const { data: maintenanceChecklist } = await supabase
-                .from('maintenance_checklists')
-                .select('*')
-                .eq('work_order_id', workOrderId)
-                .eq('status', 'completed')
-                .single()
-              
-              setChecklistStatus({
-                required: true,
-                completed: !!maintenanceChecklist,
-                checklistId: checklistId
-              })
-            }
-          }
-        }
-        
+
         // Determine which parts and costs to use - Priority: PO Items > Required Parts
         let parts = [];
         let costSource = 'estimated';
@@ -475,8 +462,17 @@ export function WorkOrderCompletionForm({ workOrderId, initialData }: WorkOrderC
         ...data,
         parts_used: formattedParts
       };
-      
-              // Preparar datos para la API - ajustar según lo que el backend realmente acepta
+
+      // Prepare completed tasks data
+      const completedTasksData = requiredTasks
+        .filter((task: { id: string }) => completedTasks[task.id])
+        .map((task: { id: string }) => ({
+          task_id: task.id,
+          completed: true,
+          completed_at: updatedData.completion_date.toISOString()
+        }));
+
+      // Preparar datos para la API - ajustar según lo que el backend realmente acepta
         const formattedData = {
           workOrderId,
           completionData: {
@@ -489,7 +485,8 @@ export function WorkOrderCompletionForm({ workOrderId, initialData }: WorkOrderC
             labor_cost: updatedData.labor_cost || 0,
             completion_date: updatedData.completion_date.toISOString(),
             completion_time: updatedData.completion_time,
-            parts_used: formattedParts, // Incluir los repuestos formateados
+            parts_used: formattedParts,
+            completed_tasks: completedTasksData.length > 0 ? completedTasksData : undefined,
             completion_photos: completionEvidence.map(evidence => ({
               url: evidence.url,
               description: evidence.description,
@@ -515,6 +512,7 @@ export function WorkOrderCompletionForm({ workOrderId, initialData }: WorkOrderC
           actions: updatedData.resolution_details,
           // Important: Include the maintenance_plan_id from the work order to properly mark the maintenance as completed
           maintenance_plan_id: workOrder.maintenance_plan_id || null,
+          completed_tasks: completedTasksData.length > 0 ? completedTasksData : null,
           // Incluir todos los campos de completion que no van en work_orders
           downtime_hours: updatedData.downtime_hours,
           resolution_details: updatedData.resolution_details,
@@ -765,39 +763,6 @@ export function WorkOrderCompletionForm({ workOrderId, initialData }: WorkOrderC
         </div>
       </CardHeader>
       <CardContent>
-        {/* Alert for preventive maintenance checklist requirement */}
-        {workOrder?.type === MaintenanceType.Preventive && checklistStatus.required && (
-          <Alert className={checklistStatus.completed ? "border-green-500" : "border-orange-500"}>
-            {checklistStatus.completed ? (
-              <CheckCircle className="h-4 w-4 text-green-600" />
-            ) : (
-              <AlertTriangle className="h-4 w-4 text-orange-600" />
-            )}
-            <AlertTitle>
-              {checklistStatus.completed 
-                ? "Checklist de Mantenimiento Completado" 
-                : "Checklist de Mantenimiento Requerido"}
-            </AlertTitle>
-            <AlertDescription>
-              {checklistStatus.completed ? (
-                <span>El checklist de mantenimiento preventivo ha sido completado correctamente.</span>
-              ) : (
-                <div className="space-y-2">
-                  <span>Esta orden de trabajo preventiva requiere completar un checklist de mantenimiento antes de marcarla como completada.</span>
-                  <div className="flex gap-2 mt-2">
-                    <Button size="sm" asChild>
-                      <Link href={`/checklists/mantenimiento/${workOrderId}`}>
-                        <ClipboardCheck className="h-4 w-4 mr-2" />
-                        Completar Checklist
-                      </Link>
-                    </Button>
-                  </div>
-                </div>
-              )}
-            </AlertDescription>
-          </Alert>
-        )}
-
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6 mt-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -868,6 +833,95 @@ export function WorkOrderCompletionForm({ workOrderId, initialData }: WorkOrderC
                 </FormItem>
               )}
             />
+
+            {/* Required Tasks Section */}
+            {requiredTasks.length > 0 && (
+              <div className="space-y-4">
+                <div className="flex justify-between items-center">
+                  <div>
+                    <h3 className="text-md font-medium">Tareas de Mantenimiento</h3>
+                    <p className="text-sm text-muted-foreground">
+                      Marque las tareas que fueron completadas durante este mantenimiento
+                    </p>
+                  </div>
+                  <Badge variant="outline">
+                    {Object.values(completedTasks).filter(Boolean).length} de {requiredTasks.length} completadas
+                  </Badge>
+                </div>
+
+                <div className="border rounded-md p-4 space-y-4">
+                  {requiredTasks.map((task: { id: string; description: string; type?: string; estimated_time?: number; requires_specialist?: boolean; parts?: Array<{ name: string; part_number?: string; quantity: number }> }) => (
+                    <div
+                      key={task.id}
+                      className={cn(
+                        "border rounded-md p-4 space-y-3 transition-colors",
+                        completedTasks[task.id] && "bg-green-50 border-green-200"
+                      )}
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="flex items-start gap-3 flex-1">
+                          <div className="pt-1">
+                            <Checkbox
+                              id={`task-${task.id}`}
+                              checked={completedTasks[task.id] || false}
+                              onCheckedChange={(checked) => {
+                                setCompletedTasks(prev => ({
+                                  ...prev,
+                                  [task.id]: checked === true
+                                }))
+                              }}
+                              className="h-5 w-5"
+                            />
+                          </div>
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2">
+                              <h4 className="text-sm font-medium">{task.description}</h4>
+                              {task.type && (
+                                <Badge variant="secondary" className="text-xs">
+                                  {task.type}
+                                </Badge>
+                              )}
+                              {task.requires_specialist && (
+                                <Badge variant="outline" className="text-xs">
+                                  Requiere Especialista
+                                </Badge>
+                              )}
+                            </div>
+                            {task.estimated_time && (
+                              <p className="text-xs text-muted-foreground mt-1">
+                                Tiempo estimado: {task.estimated_time} horas
+                              </p>
+                            )}
+                            {task.parts && task.parts.length > 0 && (
+                              <div className="mt-2">
+                                <p className="text-xs font-medium text-muted-foreground mb-1">
+                                  Repuestos requeridos:
+                                </p>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-1 text-xs text-muted-foreground">
+                                  {task.parts.map((part: { name: string; part_number?: string; quantity: number }, idx: number) => (
+                                    <div key={idx} className="flex items-center gap-2">
+                                      <span>• {part.name}</span>
+                                      {part.part_number && (
+                                        <span className="text-muted-foreground/70">
+                                          ({part.part_number})
+                                        </span>
+                                      )}
+                                      <span className="font-medium">x{part.quantity}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <Separator />
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               {maintenanceUnit === 'kilometers' ? (
@@ -1223,7 +1277,7 @@ export function WorkOrderCompletionForm({ workOrderId, initialData }: WorkOrderC
                 </Button>
                 <Button 
                   type="submit" 
-                  disabled={isLoading || (checklistStatus.required && !checklistStatus.completed)}
+                  disabled={isLoading}
                 >
                   {isLoading ? (
                     <>
@@ -1238,11 +1292,6 @@ export function WorkOrderCompletionForm({ workOrderId, initialData }: WorkOrderC
                   )}
                 </Button>
               </div>
-              {checklistStatus.required && !checklistStatus.completed && (
-                <p className="text-sm text-orange-600 mt-2">
-                  * Debe completar el checklist de mantenimiento antes de finalizar la orden
-                </p>
-              )}
               {Object.keys(form.formState.errors).length > 0 && (
                 <div className="mt-4 p-3 border border-destructive rounded-md bg-destructive/10 text-sm">
                   <p className="font-semibold mb-1">Por favor, corrige los siguientes errores:</p>

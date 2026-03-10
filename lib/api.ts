@@ -207,6 +207,113 @@ export const modelsApi = {
     if (error) throw error;
     return data;
   },
+
+  /**
+   * Create model with intervals, tasks, and parts in bulk (optimized - fewer round-trips).
+   */
+  createWithHierarchy: async (
+    modelData: InsertEquipmentModel,
+    intervals: Array<{
+      hours: number;
+      name: string;
+      description?: string;
+      tasks: Array<{
+        id: string;
+        description: string;
+        type: string;
+        estimatedTime: number;
+        requiresSpecialist: boolean;
+        parts: Array<{ name: string; partNumber: string; quantity: number; cost?: string }>;
+      }>;
+    }>
+  ): Promise<EquipmentModel> => {
+    const { data: savedModel, error: modelError } = await supabase
+      .from('equipment_models')
+      .insert([modelData])
+      .select()
+      .single();
+
+    if (modelError) throw modelError;
+    if (!savedModel) throw new Error('Error al crear el modelo');
+
+    if (intervals.length === 0) return savedModel;
+
+    const newIntervals = intervals.map((inv) => ({
+      model_id: savedModel.id,
+      interval_value: inv.hours,
+      name: inv.name,
+      description: inv.description || null,
+      type: 'Preventivo',
+      estimated_duration: inv.tasks.reduce((sum, t) => sum + (t.estimatedTime || 0), 0),
+    }));
+
+    const { data: createdIntervals, error: intervalsError } = await supabase
+      .from('maintenance_intervals')
+      .insert(newIntervals)
+      .select();
+
+    if (intervalsError) throw intervalsError;
+    if (!createdIntervals || createdIntervals.length === 0) return savedModel;
+
+    const newTasks: Array<{
+      interval_id: string;
+      description: string;
+      type: string;
+      estimated_time: number;
+      requires_specialist: boolean;
+    }> = [];
+    intervals.forEach((inv, idx) => {
+      const intervalId = createdIntervals[idx]?.id;
+      if (!intervalId) return;
+      inv.tasks.forEach((t) => {
+        newTasks.push({
+          interval_id: intervalId,
+          description: t.description,
+          type: t.type,
+          estimated_time: t.estimatedTime,
+          requires_specialist: t.requiresSpecialist,
+        });
+      });
+    });
+
+    if (newTasks.length === 0) return savedModel;
+
+    const { data: createdTasks, error: tasksError } = await supabase
+      .from('maintenance_tasks')
+      .insert(newTasks)
+      .select();
+
+    if (tasksError) throw tasksError;
+    if (!createdTasks || createdTasks.length === 0) return savedModel;
+
+    let taskIdx = 0;
+    const newTaskParts: Array<{ task_id: string; name: string; part_number: string; quantity: number; cost: string | null }> = [];
+    intervals.forEach((inv) => {
+      inv.tasks.forEach((t) => {
+        const taskId = createdTasks[taskIdx]?.id;
+        taskIdx++;
+        if (!taskId || !t.parts?.length) return;
+        t.parts.forEach((p) => {
+          newTaskParts.push({
+            task_id: taskId,
+            name: p.name,
+            part_number: p.partNumber,
+            quantity: p.quantity,
+            cost: p.cost || null,
+          });
+        });
+      });
+    });
+
+    if (newTaskParts.length > 0) {
+      const { error: partsError } = await supabase
+        .from('task_parts')
+        .insert(newTaskParts);
+      if (partsError) throw partsError;
+    }
+
+    return savedModel;
+  },
   
   // Actualizar un intervalo de mantenimiento
   updateMaintenanceInterval: async (id: string, updates: {

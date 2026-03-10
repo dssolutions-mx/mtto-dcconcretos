@@ -306,7 +306,28 @@ export default async function WorkOrderDetailsPage({
   const totalPartsCost = requiredParts.length > 0
     ? requiredParts.reduce((total: number, part: any) => total + (Number(part.total_price) || 0), 0)
     : 0
-    
+
+  // Parse required tasks if exists
+  const requiredTasks = extendedWorkOrder.required_tasks
+    ? typeof extendedWorkOrder.required_tasks === 'string'
+      ? JSON.parse(extendedWorkOrder.required_tasks)
+      : extendedWorkOrder.required_tasks
+    : []
+
+  // Parse completed tasks from maintenance history if completed
+  let completedTaskIds: string[] = []
+  if (isCompleted && maintenanceHistory?.completed_tasks) {
+    const completedTasksData = typeof maintenanceHistory.completed_tasks === 'string'
+      ? JSON.parse(maintenanceHistory.completed_tasks)
+      : maintenanceHistory.completed_tasks
+
+    if (Array.isArray(completedTasksData)) {
+      completedTaskIds = completedTasksData
+        .filter((t: { completed?: boolean }) => t.completed === true)
+        .map((t: { task_id?: string; id?: string }) => t.task_id || t.id)
+    }
+  }
+
   // Parse evidence photos
   const creationPhotos: EvidenceItem[] = extendedWorkOrder.creation_photos 
     ? typeof extendedWorkOrder.creation_photos === 'string'
@@ -839,14 +860,6 @@ export default async function WorkOrderDetailsPage({
                 </Link>
               </Button>
 
-              {/* Direct access to maintenance checklist execution for this OT */}
-              <Button variant="outline" asChild className="w-full">
-                <Link href={`/checklists/mantenimiento/${id}`}>
-                  <ClipboardCheck className="mr-2 h-4 w-4" />
-                  Checklist de mantenimiento
-                </Link>
-              </Button>
-              
               {/* Purchase Order Action Logic */}
               {(() => {
                 const hasPOId = !!extendedWorkOrder.purchase_order_id;
@@ -949,6 +962,82 @@ export default async function WorkOrderDetailsPage({
                     )}
                   </>
                 )}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Required Tasks Section */}
+          {requiredTasks.length > 0 && (
+            <Card className="mt-4">
+              <CardHeader>
+                <CardTitle className="flex items-center justify-between">
+                  Tareas de Mantenimiento
+                  {isCompleted && completedTaskIds.length > 0 && (
+                    <Badge variant="default">
+                      {completedTaskIds.length} de {requiredTasks.length} completadas
+                    </Badge>
+                  )}
+                </CardTitle>
+                <CardDescription>
+                  Tareas requeridas del plan de mantenimiento
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3">
+                  {requiredTasks.map((task: { id: string; description: string; type?: string; estimated_time?: number; requires_specialist?: boolean; parts?: Array<{ name: string; part_number?: string; quantity: number }> }, index: number) => {
+                    const taskCompleted = completedTaskIds.includes(task.id)
+                    return (
+                      <div
+                        key={task.id || index}
+                        className={cn(
+                          "border rounded-lg p-4",
+                          taskCompleted ? "bg-green-50/50 border-green-200" : "bg-gray-50/50"
+                        )}
+                      >
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-2">
+                              {taskCompleted && (
+                                <CheckCircle className="h-4 w-4 text-green-600 shrink-0" />
+                              )}
+                              <h4 className="font-medium text-sm">{task.description}</h4>
+                              {task.type && (
+                                <Badge variant="secondary" className="text-xs">
+                                  {task.type}
+                                </Badge>
+                              )}
+                              {task.requires_specialist && (
+                                <Badge variant="outline" className="text-xs">
+                                  Requiere Especialista
+                                </Badge>
+                              )}
+                            </div>
+                            {task.estimated_time && (
+                              <p className="text-xs text-muted-foreground mb-2">
+                                Tiempo estimado: {task.estimated_time} horas
+                              </p>
+                            )}
+                            {task.parts && task.parts.length > 0 && (
+                              <div className="mt-2">
+                                <p className="text-xs font-medium text-muted-foreground mb-1">
+                                  Repuestos requeridos:
+                                </p>
+                                <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                                  {task.parts.map((part: { name: string; part_number?: string; quantity: number }, idx: number) => (
+                                    <span key={idx}>
+                                      • {part.name}
+                                      {part.part_number && ` (${part.part_number})`} x{part.quantity}
+                                    </span>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
               </CardContent>
             </Card>
           )}

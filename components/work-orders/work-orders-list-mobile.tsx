@@ -233,23 +233,8 @@ export function WorkOrdersList() {
     try {
       setIsLoading(true)
       const supabase = createClient()
-      
-      // Load technicians
-      const { data: techData, error: techError } = await supabase
-        .from("profiles")
-        .select("*")
-      
-      if (techError) {
-        console.error("Error al cargar técnicos:", techError)
-      } else if (techData) {
-        const techMap: Record<string, Profile> = {}
-        techData.forEach(tech => {
-          techMap[tech.id] = tech
-        })
-        setTechnicians(techMap)
-      }
-      
-      // Load work orders
+
+      // Load work orders first
       const { data, error } = await supabase
         .from("work_orders")
         .select(`
@@ -268,6 +253,42 @@ export function WorkOrdersList() {
       }
 
       setWorkOrders(data as WorkOrderWithAsset[])
+
+      // Get unique technician IDs from work orders
+      const assignedIds = data
+        .filter(order => order.assigned_to)
+        .map(order => order.assigned_to as string)
+      const uniqueAssignedIds = [...new Set(assignedIds)]
+
+      // Load technicians: active ones + assigned to work orders (even if inactive) so names always show
+      const techMap: Record<string, Profile> = {}
+
+      const { data: activeTechs, error: activeTechError } = await supabase
+        .from("profiles")
+        .select("id, nombre, apellido")
+        .eq("is_active", true)
+        .limit(500)
+
+      if (!activeTechError && activeTechs) {
+        activeTechs.forEach(tech => {
+          techMap[tech.id] = tech
+        })
+      }
+
+      if (uniqueAssignedIds.length > 0) {
+        const { data: assignedTechs, error: assignedTechError } = await supabase
+          .from("profiles")
+          .select("id, nombre, apellido")
+          .in("id", uniqueAssignedIds)
+
+        if (!assignedTechError && assignedTechs) {
+          assignedTechs.forEach(tech => {
+            techMap[tech.id] = tech
+          })
+        }
+      }
+
+      setTechnicians(techMap)
 
       // Load purchase order statuses
       const poIds = data
