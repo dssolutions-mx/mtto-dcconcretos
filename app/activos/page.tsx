@@ -10,10 +10,11 @@ import { useAuthZustand } from "@/hooks/use-auth-zustand"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 import type { Asset } from "@/types"
+import { PullToRefresh } from "@/components/ui/pull-to-refresh"
 
 interface AssetStats {
   total: number
@@ -43,33 +44,38 @@ export default function AssetsPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<Error | null>(null)
 
-  // Fetch optimized dashboard data
-  useEffect(() => {
-    const fetchDashboardData = async () => {
-      try {
-        setLoading(true)
-        const response = await fetch('/api/assets/dashboard')
-        
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`)
-        }
-        
-        const result = await response.json()
-        setData(result.data)
-        setError(null)
-      } catch (err) {
-        console.error('Error fetching dashboard data:', err)
-        setError(err instanceof Error ? err : new Error(String(err)))
-        toast.error('Error al cargar los datos de activos')
-      } finally {
-        setLoading(false)
+  const fetchDashboardData = useCallback(async () => {
+    try {
+      setLoading(true)
+      const response = await fetch('/api/assets/dashboard')
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`)
       }
+      
+      const result = await response.json()
+      setData(result.data)
+      setError(null)
+    } catch (err) {
+      console.error('Error fetching dashboard data:', err)
+      setError(err instanceof Error ? err : new Error(String(err)))
+      toast.error('Error al cargar los datos de activos')
+    } finally {
+      setLoading(false)
     }
-
-    fetchDashboardData()
   }, [])
+
+  useEffect(() => {
+    fetchDashboardData()
+  }, [fetchDashboardData])
+
+  const handlePullToRefresh = async () => {
+    await fetchDashboardData()
+    await new Promise((resolve) => setTimeout(resolve, 500))
+  }
   
   return (
+    <PullToRefresh onRefresh={handlePullToRefresh} disabled={loading}>
     <DashboardShell className="activos-module">
       <DashboardHeader
         heading="Gestión de Activos"
@@ -218,5 +224,6 @@ export default function AssetsPage() {
         error={error}
       />
     </DashboardShell>
+    </PullToRefresh>
   )
 }
