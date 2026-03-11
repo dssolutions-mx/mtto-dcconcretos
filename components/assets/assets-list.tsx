@@ -2,6 +2,7 @@
 
 import { useState, useMemo, useEffect } from "react"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -29,6 +30,7 @@ interface MaintenanceData {
 }
 
 export function AssetsList({ assets, loading = false, error }: AssetsListProps) {
+  const router = useRouter()
   const [searchTerm, setSearchTerm] = useState("")
   const [statusFilter, setStatusFilter] = useState<string>("all")
   const [locationFilter, setLocationFilter] = useState<string>("all")
@@ -493,7 +495,19 @@ export function AssetsList({ assets, loading = false, error }: AssetsListProps) 
             const alerts = getAssetAlerts(asset)
             
             return (
-              <Card key={asset.id} className="hover:shadow-md transition-shadow">
+              <Card
+                key={asset.id}
+                role="button"
+                tabIndex={0}
+                className="cursor-pointer hover:shadow-md transition-shadow"
+                onClick={() => router.push(`/activos/${asset.id}`)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault()
+                    router.push(`/activos/${asset.id}`)
+                  }
+                }}
+              >
                 <CardHeader className="pb-3">
                   <div className="flex justify-between items-start">
                     <div className="flex-1">
@@ -558,7 +572,7 @@ export function AssetsList({ assets, loading = false, error }: AssetsListProps) 
                   )}
                   
                   {/* Action Buttons */}
-                  <div className="flex gap-2 pt-2">
+                  <div className="flex gap-2 pt-2" onClick={(e) => e.stopPropagation()}>
                     <Button size="sm" variant="outline" className="flex-1 touch-target min-h-[44px]" asChild>
                       <Link href={`/activos/${asset.id}`}>
                         <Eye className="h-4 w-4 mr-1" />
