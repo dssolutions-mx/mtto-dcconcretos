@@ -513,9 +513,9 @@ export function AssetsList({ assets, loading = false, error }: AssetsListProps) 
               >
                 <CardHeader className="pb-3">
                   <div className="flex justify-between items-start">
-                    <div className="flex-1">
-                      <CardTitle className="text-lg leading-tight">{asset.name}</CardTitle>
-                      <CardDescription className="mt-1">{asset.asset_id}</CardDescription>
+                    <div className="flex-1 min-w-0">
+                      <CardTitle className="text-lg leading-tight font-mono tabular-nums">{asset.asset_id}</CardTitle>
+                      <CardDescription className="mt-1 truncate">{asset.name}</CardDescription>
                     </div>
                     <Badge 
                       variant={

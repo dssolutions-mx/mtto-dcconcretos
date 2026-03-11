@@ -739,19 +739,72 @@ export function AssetChecklistEvidenceReport({
                 {/* Checklist Sections and Items */}
                 <div className="space-y-4">
                   {(() => {
-                    const hasMatchingItems = checklist.checklists?.checklist_sections?.some(section => {
+                    const sections = checklist.checklists?.checklist_sections ?? []
+                    const itemIdToDescription = new Map<string, string>()
+                    for (const section of sections) {
+                      const items = section.checklist_items ?? []
+                      for (const item of items) {
+                        if (item?.id && item?.description) {
+                          itemIdToDescription.set(item.id, item.description)
+                        }
+                      }
+                    }
+                    const getDescription = (itemId: string, citem?: { description?: string }) =>
+                      itemIdToDescription.get(itemId) ?? citem?.description ?? `Item ${(itemId ?? '?').toString().slice(0, 8)}`
+                    const hasMatchingItems = sections.some(section => {
                       const securityDataForSection = checklist.security_data?.[section.id]
                       if (section.section_type === 'security_talk' || securityDataForSection) {
                         return !!securityDataForSection
                       }
                       return section.checklist_items?.some(item => getItemCompletionData(checklist, item.id))
                     })
-                    
-                    // Si tenemos plantilla Y hay matching, mostrar por secciones
-                    if (checklist.checklists?.checklist_sections?.length > 0 && hasMatchingItems) {
+                    const renderFallbackItems = () => {
+                      const items = checklist.completed_items ?? []
+                      if (items.length === 0) return null
                       return (
-                    checklist.checklists.checklist_sections
-                      .sort((a, b) => a.order_index - b.order_index)
+                        <div className="border rounded-lg p-4">
+                          <h4 className="font-medium text-lg mb-3 text-gray-900">Elementos Evaluados</h4>
+                          <div className="space-y-3">
+                            {items.map((item, index) => (
+                              <div key={item.item_id || index} className="border-l-4 border-gray-200 pl-4 py-2">
+                                <div className="flex items-start justify-between gap-4 mb-2">
+                                  <div className="flex-1">
+                                    <div className="flex items-center gap-2 mb-1">
+                                      {getStatusIcon(item.status)}
+                                      <span className="font-medium">{getDescription(item.item_id, item)}</span>
+                                    </div>
+                                  </div>
+                                  {getStatusBadge(item.status)}
+                                </div>
+                                <div className="space-y-2 ml-6">
+                                  {item.notes && (
+                                    <div>
+                                      <span className="text-sm font-medium text-gray-500">Observaciones:</span>
+                                      <p className="text-sm mt-1 bg-gray-50 p-2 rounded">{item.notes}</p>
+                                    </div>
+                                  )}
+                                  {item.photo_url && (
+                                    <div>
+                                      <span className="text-sm font-medium text-gray-500 block mb-2">Evidencia Fotográfica:</span>
+                                      <div className="relative inline-block">
+                                        <img
+                                          src={item.photo_url}
+                                          alt={`Evidencia: ${getDescription(item.item_id, item)}`}
+                                          className="w-48 h-36 object-cover rounded border print:max-w-32 print:max-h-24"
+                                        />
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )
+                    }
+                    if (sections.length > 0) {
+                      const sectionCards = [...sections]
+                        .sort((a, b) => a.order_index - b.order_index)
                       .map((section) => {
                         const securityDataForSection = checklist.security_data?.[section.id]
 
@@ -834,62 +887,12 @@ export function AssetChecklistEvidenceReport({
                         );
                       })
                         .filter(Boolean)
-                      );
-                    } else {
-                      // Si no hay matching o no hay plantilla, mostrar directamente los completed_items
-                      return checklist.completed_items?.filter(item => item.description)?.length > 0 && (
-                      <div className="border rounded-lg p-4">
-                        <h4 className="font-medium text-lg mb-3 text-gray-900">
-                          Elementos Evaluados
-                        </h4>
-                        
-                        <div className="space-y-3">
-                          {checklist.completed_items
-                            .filter(item => item.description) // Solo items con descripción
-                            .map((item, index) => (
-                              <div key={item.item_id || index} className="border-l-4 border-gray-200 pl-4 py-2">
-                                <div className="flex items-start justify-between gap-4 mb-2">
-                                  <div className="flex-1">
-                                    <div className="flex items-center gap-2 mb-1">
-                                      {getStatusIcon(item.status)}
-                                      <span className="font-medium">{item.description}</span>
-                                    </div>
-                                  </div>
-                                  {getStatusBadge(item.status)}
-                                </div>
-                                
-                                <div className="space-y-2 ml-6">
-                                  {item.notes && (
-                                    <div>
-                                      <span className="text-sm font-medium text-gray-500">Observaciones:</span>
-                                      <p className="text-sm mt-1 bg-gray-50 p-2 rounded">
-                                        {item.notes}
-                                      </p>
-                                    </div>
-                                  )}
-                                  
-                                  {item.photo_url && (
-                                    <div>
-                                      <span className="text-sm font-medium text-gray-500 block mb-2">
-                                        Evidencia Fotográfica:
-                                      </span>
-                                      <div className="relative inline-block">
-                                        <img 
-                                          src={item.photo_url} 
-                                          alt={`Evidencia: ${item.description}`}
-                                          className="w-48 h-36 object-cover rounded border print:max-w-32 print:max-h-24"
-                                        />
-                                      </div>
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                            ))
-                          }
-                        </div>
-                      </div>
-                      );
+                      if (sectionCards.length === 0 && (checklist.completed_items?.length ?? 0) > 0) {
+                        return renderFallbackItems()
+                      }
+                      return sectionCards
                     }
+                    return renderFallbackItems()
                   })()}
                 </div>
 

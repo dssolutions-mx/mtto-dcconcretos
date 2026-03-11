@@ -21,8 +21,11 @@ import {
   Search, 
   Filter,
   ClipboardCheck,
+  ClipboardList,
   AlertTriangle,
-  CheckCircle
+  CheckCircle,
+  Clock,
+  Gauge
 } from "lucide-react"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
@@ -264,17 +267,25 @@ export default function ChecklistHistoryPage({ params }: { params: Promise<{ id:
   }
 
   return (
-    <DashboardShell>
+    <DashboardShell className="checklist-module">
       <DashboardHeader
         heading={`Historial de Checklists - ${asset?.name || 'Activo'}`}
         text={`Historial completo de inspecciones realizadas en ${asset?.asset_id || 'este activo'}`}
       >
-        <Button variant="outline" asChild>
-          <Link href={`/activos/${assetId}`}>
-            <ArrowLeft className="mr-2 h-4 w-4" />
-            Volver al Activo
-          </Link>
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" size="sm" asChild className="cursor-pointer">
+            <Link href={`/checklists/assets/${assetId}`}>
+              <ClipboardList className="mr-2 h-4 w-4" />
+              Ver Checklist del Activo
+            </Link>
+          </Button>
+          <Button variant="outline" size="sm" asChild className="cursor-pointer">
+            <Link href={`/activos/${assetId}`}>
+              <ArrowLeft className="mr-2 h-4 w-4" />
+              Ver Activo
+            </Link>
+          </Button>
+        </div>
       </DashboardHeader>
 
       <div className="space-y-6">
@@ -476,14 +487,20 @@ export default function ChecklistHistoryPage({ params }: { params: Promise<{ id:
                         </TableCell>
                         
                         <TableCell>
-                          <div className="text-xs space-y-1">
-                            {checklist.equipment_hours_reading && (
-                              <div>🕒 {checklist.equipment_hours_reading}h</div>
+                          <div className="text-xs space-y-1 flex flex-col gap-1">
+                            {checklist.equipment_hours_reading != null && (
+                              <div className="flex items-center gap-1">
+                                <Clock className="h-3 w-3 text-muted-foreground" aria-hidden />
+                                {checklist.equipment_hours_reading}h
+                              </div>
                             )}
-                            {checklist.equipment_kilometers_reading && (
-                              <div>🚗 {checklist.equipment_kilometers_reading}km</div>
+                            {checklist.equipment_kilometers_reading != null && (
+                              <div className="flex items-center gap-1">
+                                <Gauge className="h-3 w-3 text-muted-foreground" aria-hidden />
+                                {checklist.equipment_kilometers_reading}km
+                              </div>
                             )}
-                            {!checklist.equipment_hours_reading && !checklist.equipment_kilometers_reading && (
+                            {checklist.equipment_hours_reading == null && checklist.equipment_kilometers_reading == null && (
                               <span className="text-muted-foreground">Sin lecturas</span>
                             )}
                           </div>

@@ -28,15 +28,13 @@
 
 ### Typography
 
-- **Heading Font:** Fira Code
-- **Body Font:** Fira Sans
-- **Mood:** dashboard, data, analytics, code, technical, precise
-- **Google Fonts:** [Fira Code + Fira Sans](https://fonts.google.com/share?selection.family=Fira+Code:wght@400;500;600;700|Fira+Sans:wght@300;400;500;600;700)
+- **Heading Font:** SF Pro Display / -apple-system (San Francisco on Apple)
+- **Body Font:** SF Pro Text / -apple-system (San Francisco on Apple)
+- **Monospace (IDs, codes):** SF Mono / ui-monospace
+- **Mood:** dashboard, data, analytics, precise
+- **Reference:** Apple Human Interface Guidelines (HIG) for UI style and principles
 
-**CSS Import:**
-```css
-@import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600;700&family=Fira+Sans:wght@300;400;500;600;700&display=swap');
-```
+
 
 ### Spacing Variables
 
@@ -176,6 +174,7 @@
 - ❌ Playful design
 - ❌ Hidden credentials
 - ❌ AI purple/pink gradients
+- ❌ **Fira Code, Fira Sans, or any Fira fonts** — Use San Francisco (SF Pro, SF Mono) and system fonts only
 
 ### Additional Forbidden Patterns
 

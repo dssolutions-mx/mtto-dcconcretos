@@ -309,7 +309,7 @@ export default function OperatorDashboard() {
                       {asset.assignment_type === 'primary' ? 'Principal' : 'Secundario'}
                     </Badge>
                     <Button asChild size="sm" variant="outline">
-                      <Link href={`/checklists/assets?asset=${asset.id}`}>
+                      <Link href={`/checklists/assets/${asset.id}`}>
                         Ver Checklists
                       </Link>
                     </Button>

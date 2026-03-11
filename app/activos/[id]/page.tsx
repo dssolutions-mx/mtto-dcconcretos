@@ -1122,7 +1122,7 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
                   )}
                   {compositeContext.composite && (
                     <Button size="sm" variant="outline" asChild className="w-full sm:w-auto justify-center">
-                      <Link href={`/checklists/programar?assetId=${assetId}`}>
+                      <Link href={`/checklists/programar?asset=${assetId}`}>
                         Programar Checklist Compuesto
                       </Link>
                     </Button>

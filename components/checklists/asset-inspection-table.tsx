@@ -74,7 +74,7 @@ export function AssetInspectionTable({ assets }: { assets: Asset[] }) {
             <TableCell>{renderLastInspection(asset)}</TableCell>
             <TableCell className="text-right">
               <Button asChild size="sm" variant="outline">
-                <Link href={`/checklists/schedules?asset=${asset.id}`}>
+                <Link href={`/checklists/programar?asset=${asset.id}`}>
                   <Calendar className="h-4 w-4 mr-2" />
                   Programar
                 </Link>

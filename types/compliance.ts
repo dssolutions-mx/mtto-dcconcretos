@@ -154,6 +154,8 @@ export interface ComplianceNotification {
 
 // Extended types with related data
 export interface ForgottenAsset extends AssetAccountabilityTracking {
+  /** UUID from assets.id - use for routes like /checklists/assets/[id], /activos/[id] */
+  asset_uuid?: string
   asset_name: string
   asset_code: string
   plant_name: string | null

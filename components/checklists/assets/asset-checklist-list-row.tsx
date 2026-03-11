@@ -51,7 +51,7 @@ export function AssetChecklistListRow({ asset, formatDate }: AssetChecklistListR
   return (
     <Link
       href={`/checklists/assets/${asset.id}`}
-      className="block hover:bg-muted/50 transition-colors duration-200 cursor-pointer"
+      className="block hover:bg-muted/50 transition-colors duration-200 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 rounded-md"
     >
       <div className="p-4">
         <div className="flex items-center justify-between gap-4">

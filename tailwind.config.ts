@@ -13,7 +13,7 @@ const config: Config = {
   		fontFamily: {
   			sans: ['-apple-system', 'BlinkMacSystemFont', '"SF Pro Text"', '"SF Pro Display"', 'system-ui', '"Segoe UI"', '"Helvetica Neue"', 'Arial', 'sans-serif'],
   			'sf-pro': ['-apple-system', 'BlinkMacSystemFont', '"SF Pro Text"', '"SF Pro Display"', 'system-ui', '"Segoe UI"', '"Helvetica Neue"', 'Arial', 'sans-serif'],
-  			mono: ['ui-monospace', '"SF Mono"', '"Cascadia Code"', '"Source Code Pro"', 'Menlo', 'Monaco', 'Consolas', 'monospace'],
+  			mono: ['ui-monospace', '"SF Mono"', 'Menlo', 'Monaco', '"Cascadia Code"', 'Consolas', 'monospace'],
   		},
   		colors: {
   			background: 'hsl(var(--background))',

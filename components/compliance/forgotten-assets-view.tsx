@@ -92,6 +92,7 @@ export function ForgottenAssetsView() {
         const operator = operatorMap[item.asset_id]
         return {
           ...item,
+          asset_uuid: item.asset?.id ?? item.asset_id,
           asset_name: item.asset?.name || 'Sin nombre',
           asset_code: item.asset?.asset_id || 'N/A',
           plant_name: item.asset?.plant?.name || 'Sin planta',
@@ -321,15 +322,15 @@ export function ForgottenAssetsView() {
                     </div>
                   </div>
                   <div className="flex flex-col gap-2">
-                    {!asset.has_operator && (
+                    {!asset.has_operator && asset.asset_uuid && (
                       <Button size="sm" variant="destructive" asChild>
-                        <Link href={`/activos/${asset.asset_id}/asignar-operador`}>
+                        <Link href={`/activos/${asset.asset_uuid}/asignar-operador`}>
                           Asignar Operador
                         </Link>
                       </Button>
                     )}
                     <Button size="sm" variant="outline" asChild>
-                      <Link href={`/checklists/assets/${asset.asset_id}`}>
+                      <Link href={`/checklists/assets/${asset.asset_uuid ?? asset.asset_id}`}>
                         Ver Checklists
                         <ArrowRight className="ml-2 h-4 w-4" />
                       </Link>

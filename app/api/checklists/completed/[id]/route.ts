@@ -202,6 +202,23 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       } else {
         console.log('Found profile data:', data)
         profileData = data
+
+        // Resolve avatar_url from storage path to signed URL (bucket is private)
+        const rawAvatar = profileData?.avatar_url
+        if (rawAvatar && typeof rawAvatar === 'string' && !rawAvatar.startsWith('http') && !rawAvatar.startsWith('data:')) {
+          try {
+            const { data: signed, error: signErr } = await supabase.storage
+              .from('profiles')
+              .createSignedUrl(rawAvatar, 3600)
+            if (!signErr && signed?.signedUrl) {
+              profileData = { ...profileData, avatar_url: signed.signedUrl }
+            } else {
+              profileData = { ...profileData, avatar_url: null }
+            }
+          } catch (_e) {
+            profileData = { ...profileData, avatar_url: null }
+          }
+        }
       }
     }
 

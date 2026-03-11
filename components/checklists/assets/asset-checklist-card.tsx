@@ -80,9 +80,12 @@ export function AssetChecklistCard({ asset, formatDate }: AssetChecklistCardProp
   const modelName = asset.equipment_models?.name || asset.name
 
   return (
-    <Link href={`/checklists/assets/${asset.id}`} className="block cursor-pointer">
+    <Link
+      href={`/checklists/assets/${asset.id}`}
+      className="block cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 rounded-lg transition-colors duration-200"
+    >
       <Card
-        className={`hover:shadow-checklist-2 transition-all duration-200 cursor-pointer ${getStatusCardClasses(
+        className={`shadow-checklist-1 hover:shadow-checklist-2 transition-all duration-200 cursor-pointer ${getStatusCardClasses(
           asset.checklist_status
         )}`}
       >

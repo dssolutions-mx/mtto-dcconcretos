@@ -111,7 +111,7 @@ export default function ReporteChecklistsPage({ params }: PageProps) {
   }, [])
 
   return (
-    <div className="min-h-screen bg-white print:w-full print:m-0 print:p-0">
+    <div className="min-h-screen bg-white print:w-full print:m-0 print:p-0 overflow-x-hidden">
       <AssetChecklistEvidenceReport 
         assetId={assetId} 
         onClose={() => router.back()}
