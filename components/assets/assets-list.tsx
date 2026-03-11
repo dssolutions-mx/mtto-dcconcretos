@@ -3,6 +3,7 @@
 import { useState, useMemo, useEffect } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
+import { useIsMobile } from "@/hooks/use-mobile"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -11,6 +12,7 @@ import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Eye, FileText, AlertTriangle, Clock, RefreshCw, Search, Filter, Wrench, Settings, X, MapPin, Users, Gauge, Calendar, History } from "lucide-react"
 import { Asset } from "@/types"
+import { cn } from "@/lib/utils"
 import { Skeleton } from "@/components/ui/skeleton"
 import { createClient } from "@/lib/supabase"
 
@@ -31,6 +33,7 @@ interface MaintenanceData {
 
 export function AssetsList({ assets, loading = false, error }: AssetsListProps) {
   const router = useRouter()
+  const isMobile = useIsMobile()
   const [searchTerm, setSearchTerm] = useState("")
   const [statusFilter, setStatusFilter] = useState<string>("all")
   const [locationFilter, setLocationFilter] = useState<string>("all")
@@ -421,10 +424,10 @@ export function AssetsList({ assets, loading = false, error }: AssetsListProps) 
               />
             </div>
             
-            {/* Filters */}
-            <div className="flex gap-2">
+            {/* Filters - full width stacked on mobile to avoid overflow */}
+            <div className={cn("flex gap-2", isMobile && "flex-col w-full")}>
               <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="w-[140px]">
+                <SelectTrigger className={cn(isMobile ? "w-full" : "w-[140px]")}>
                   <SelectValue placeholder="Estado" />
                 </SelectTrigger>
                 <SelectContent>
@@ -437,7 +440,7 @@ export function AssetsList({ assets, loading = false, error }: AssetsListProps) 
               </Select>
               
               <Select value={locationFilter} onValueChange={setLocationFilter}>
-                <SelectTrigger className="w-[140px]">
+                <SelectTrigger className={cn(isMobile ? "w-full" : "w-[140px]")}>
                   <SelectValue placeholder="Ubicación" />
                 </SelectTrigger>
                 <SelectContent>
@@ -499,7 +502,7 @@ export function AssetsList({ assets, loading = false, error }: AssetsListProps) 
                 key={asset.id}
                 role="button"
                 tabIndex={0}
-                className="cursor-pointer hover:shadow-md transition-shadow"
+                className="cursor-pointer hover:shadow-md transition-shadow focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 outline-none"
                 onClick={() => router.push(`/activos/${asset.id}`)}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" || e.key === " ") {

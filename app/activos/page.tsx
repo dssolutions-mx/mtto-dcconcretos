@@ -10,6 +10,7 @@ import { useAuthZustand } from "@/hooks/use-auth-zustand"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Skeleton } from "@/components/ui/skeleton"
 import { useState, useEffect, useCallback } from "react"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
@@ -134,115 +135,183 @@ export default function AssetsPage() {
         </div>
       </DashboardHeader>
       
-      {/* Summary Cards */}
-      <div className={cn("grid gap-4 mb-6", isMobile ? "grid-cols-2 gap-3" : "md:grid-cols-2 lg:grid-cols-4")}>
+      {/* Summary Cards - compact on mobile to save space */}
+      <div className={cn("grid mb-4", isMobile ? "grid-cols-2 gap-2" : "grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4")}>
         {/* Total Assets */}
-        <Card>
-          <CardHeader className={cn("flex flex-row items-center justify-between space-y-0", isMobile ? "pb-2 px-3 pt-3" : "pb-2")}>
-            <CardTitle className="text-sm font-medium">Total de Activos</CardTitle>
-            <Package className="h-4 w-4 text-muted-foreground" />
+        <Card className={cn(isMobile && "px-2 py-2")}>
+          <CardHeader className={cn("flex flex-row items-center justify-between space-y-0", isMobile ? "p-0" : "pb-2")}>
+            <CardTitle className={cn("font-medium", isMobile ? "text-xs truncate" : "text-sm")}>Total</CardTitle>
+            {!isMobile && <Package className="h-4 w-4 text-muted-foreground shrink-0" />}
           </CardHeader>
-          <CardContent className={cn(isMobile && "px-3 pb-3 pt-0")}>
-            <div className="text-2xl font-bold">
-              {loading ? '...' : data?.stats.total || 0}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Equipos registrados
-            </p>
+          <CardContent className={cn(isMobile ? "p-0 pt-1" : "pt-0")}>
+            {loading ? (
+              <Skeleton className={cn(isMobile ? "h-5" : "h-7")} />
+            ) : (
+              <div className={cn("font-bold", isMobile ? "text-base" : "text-2xl")}>
+                {data?.stats.total || 0}
+              </div>
+            )}
+            {!isMobile && (
+              <p className="text-xs text-muted-foreground mt-1">Equipos registrados</p>
+            )}
           </CardContent>
         </Card>
 
         {/* Operational Assets */}
-        <Card>
-          <CardHeader className={cn("flex flex-row items-center justify-between space-y-0", isMobile ? "pb-2 px-3 pt-3" : "pb-2")}>
-            <CardTitle className="text-sm font-medium">Operativos</CardTitle>
-            <CheckCircle className="h-4 w-4 text-green-600" />
+        <Card className={cn(isMobile && "px-2 py-2")}>
+          <CardHeader className={cn("flex flex-row items-center justify-between space-y-0", isMobile ? "p-0" : "pb-2")}>
+            <CardTitle className={cn("font-medium", isMobile ? "text-xs truncate" : "text-sm")}>Operativos</CardTitle>
+            {!isMobile && <CheckCircle className="h-4 w-4 text-green-600 shrink-0" />}
           </CardHeader>
-          <CardContent className={cn(isMobile && "px-3 pb-3 pt-0")}>
-            <div className="text-2xl font-bold text-green-600">
-              {loading ? '...' : data?.stats.operational || 0}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              {loading ? '...' : `${Math.round(((data?.stats.operational || 0) / (data?.stats.total || 1)) * 100)}%`} del total
-            </p>
+          <CardContent className={cn(isMobile ? "p-0 pt-1" : "pt-0")}>
+            {loading ? (
+              <Skeleton className={cn(isMobile ? "h-5" : "h-7")} />
+            ) : (
+              <div className={cn("font-bold text-green-600", isMobile ? "text-base" : "text-2xl")}>
+                {data?.stats.operational || 0}
+              </div>
+            )}
+            {!isMobile && (
+              <p className="text-xs text-muted-foreground mt-1">
+                {`${Math.round(((data?.stats.operational || 0) / (data?.stats.total || 1)) * 100)}%`} del total
+              </p>
+            )}
           </CardContent>
         </Card>
 
         {/* Maintenance & Repair */}
-        <Card>
-          <CardHeader className={cn("flex flex-row items-center justify-between space-y-0", isMobile ? "pb-2 px-3 pt-3" : "pb-2")}>
-            <CardTitle className="text-sm font-medium">Mantenimiento/Reparación</CardTitle>
-            <Wrench className="h-4 w-4 text-amber-600" />
+        <Card className={cn(isMobile && "px-2 py-2")}>
+          <CardHeader className={cn("flex flex-row items-center justify-between space-y-0", isMobile ? "p-0" : "pb-2")}>
+            <CardTitle className={cn("font-medium", isMobile ? "text-xs truncate" : "text-sm")}>Mant./Rep.</CardTitle>
+            {!isMobile && <Wrench className="h-4 w-4 text-amber-600 shrink-0" />}
           </CardHeader>
-          <CardContent className={cn(isMobile && "px-3 pb-3 pt-0")}>
-            <div className="text-2xl font-bold text-amber-600">
-              {loading ? '...' : (data?.stats.maintenance || 0) + (data?.stats.repair || 0)}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              {loading ? '...' : `${data?.stats.maintenance || 0} mant. + ${data?.stats.repair || 0} rep.`}
-            </p>
+          <CardContent className={cn(isMobile ? "p-0 pt-1" : "pt-0")}>
+            {loading ? (
+              <Skeleton className={cn(isMobile ? "h-5" : "h-7")} />
+            ) : (
+              <div className={cn("font-bold text-amber-600", isMobile ? "text-base" : "text-2xl")}>
+                {(data?.stats.maintenance || 0) + (data?.stats.repair || 0)}
+              </div>
+            )}
+            {!isMobile && (
+              <p className="text-xs text-muted-foreground mt-1">
+                {data?.stats.maintenance || 0} mant. + {data?.stats.repair || 0} rep.
+              </p>
+            )}
           </CardContent>
         </Card>
 
         {/* Critical Alerts */}
-        <Link href="/incidentes" className="block">
-          <Card className="cursor-pointer hover:shadow-md transition-shadow">
-            <CardHeader className={cn("flex flex-row items-center justify-between space-y-0", isMobile ? "pb-2 px-3 pt-3" : "pb-2")}>
-              <CardTitle className="text-sm font-medium">Alertas Críticas</CardTitle>
-              <AlertTriangle className="h-4 w-4 text-red-600" />
+        <Link
+          href="/incidentes"
+          className="block"
+          aria-label={data?.stats?.criticalAlerts ? `Ver ${data.stats.criticalAlerts} alertas críticas` : "Ir a incidentes"}
+        >
+          <Card className={cn("cursor-pointer hover:shadow-md transition-shadow focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 outline-none", isMobile && "px-2 py-2")}>
+            <CardHeader className={cn("flex flex-row items-center justify-between space-y-0", isMobile ? "p-0" : "pb-2")}>
+              <CardTitle className={cn("font-medium", isMobile ? "text-xs truncate" : "text-sm")}>Alertas</CardTitle>
+              {!isMobile && <AlertTriangle className="h-4 w-4 text-red-600 shrink-0" />}
             </CardHeader>
-            <CardContent className={cn(isMobile && "px-3 pb-3 pt-0")}>
-              <div className="text-2xl font-bold text-red-600">
-                {loading ? '...' : data?.stats.criticalAlerts || 0}
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Requieren atención inmediata
-              </p>
+            <CardContent className={cn(isMobile ? "p-0 pt-1" : "pt-0")}>
+              {loading ? (
+                <Skeleton className={cn(isMobile ? "h-5" : "h-7")} />
+              ) : (
+                <div className={cn("font-bold text-red-600", isMobile ? "text-base" : "text-2xl")}>
+                  {data?.stats.criticalAlerts || 0}
+                </div>
+              )}
+              {!isMobile && (
+                <p className="text-xs text-muted-foreground mt-1">Requieren atención inmediata</p>
+              )}
             </CardContent>
           </Card>
         </Link>
       </div>
 
-      {/* Streamlined Quick Actions */}
-      <div className="mb-6">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <h3 className="text-lg font-medium">Acciones Rápidas</h3>
-          
-          <div className="flex flex-wrap gap-2">
-            {ui.shouldShowInNavigation('maintenance') && (
-              <Button variant="outline" size="sm" asChild>
-                <Link href="/calendario">
-                  <Calendar className="h-4 w-4 mr-2" />
-                  Calendario
-                </Link>
+      {/* Quick Actions - collapsed to dropdown on mobile to save space */}
+      <div className={cn("mb-4", isMobile ? "flex justify-end" : "")}>
+        {isMobile ? (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" className="touch-target" aria-label="Abrir menú de acciones rápidas">
+                <Wrench className="h-4 w-4 mr-2" />
+                Acciones
               </Button>
-            )}
-            {ui.canShowCreateButton('maintenance') && (
-              <Button variant="outline" size="sm" asChild>
-                <Link href="/modelos">
-                  <Settings className="h-4 w-4 mr-2" />
-                  Modelos
-                </Link>
-              </Button>
-            )}
-            {ui.shouldShowInNavigation('reports') && (
-              <Button variant="outline" size="sm" asChild>
-                <Link href="/reportes">
-                  <FileText className="h-4 w-4 mr-2" />
-                  Reportes
-                </Link>
-              </Button>
-            )}
-            {ui.shouldShowInNavigation('maintenance') && (
-              <Button variant="outline" size="sm" asChild>
-                <Link href="/preventivo">
-                  <Wrench className="h-4 w-4 mr-2" />
-                  Preventivo
-                </Link>
-              </Button>
-            )}
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-48">
+              {ui.shouldShowInNavigation('maintenance') && (
+                <DropdownMenuItem asChild>
+                  <Link href="/calendario">
+                    <Calendar className="h-4 w-4 mr-2" />
+                    Calendario
+                  </Link>
+                </DropdownMenuItem>
+              )}
+              {ui.canShowCreateButton('maintenance') && (
+                <DropdownMenuItem asChild>
+                  <Link href="/modelos">
+                    <Settings className="h-4 w-4 mr-2" />
+                    Modelos
+                  </Link>
+                </DropdownMenuItem>
+              )}
+              {ui.shouldShowInNavigation('reports') && (
+                <DropdownMenuItem asChild>
+                  <Link href="/reportes">
+                    <FileText className="h-4 w-4 mr-2" />
+                    Reportes
+                  </Link>
+                </DropdownMenuItem>
+              )}
+              {ui.shouldShowInNavigation('maintenance') && (
+                <DropdownMenuItem asChild>
+                  <Link href="/preventivo">
+                    <Wrench className="h-4 w-4 mr-2" />
+                    Preventivo
+                  </Link>
+                </DropdownMenuItem>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ) : (
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <h3 className="text-lg font-medium">Acciones Rápidas</h3>
+            <div className="flex flex-wrap gap-2">
+              {ui.shouldShowInNavigation('maintenance') && (
+                <Button variant="outline" size="sm" asChild>
+                  <Link href="/calendario">
+                    <Calendar className="h-4 w-4 mr-2" />
+                    Calendario
+                  </Link>
+                </Button>
+              )}
+              {ui.canShowCreateButton('maintenance') && (
+                <Button variant="outline" size="sm" asChild>
+                  <Link href="/modelos">
+                    <Settings className="h-4 w-4 mr-2" />
+                    Modelos
+                  </Link>
+                </Button>
+              )}
+              {ui.shouldShowInNavigation('reports') && (
+                <Button variant="outline" size="sm" asChild>
+                  <Link href="/reportes">
+                    <FileText className="h-4 w-4 mr-2" />
+                    Reportes
+                  </Link>
+                </Button>
+              )}
+              {ui.shouldShowInNavigation('maintenance') && (
+                <Button variant="outline" size="sm" asChild>
+                  <Link href="/preventivo">
+                    <Wrench className="h-4 w-4 mr-2" />
+                    Preventivo
+                  </Link>
+                </Button>
+              )}
+            </div>
           </div>
-        </div>
+        )}
       </div>
       
       {error && (
