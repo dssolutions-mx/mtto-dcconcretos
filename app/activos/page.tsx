@@ -7,11 +7,13 @@ import { DashboardShell } from "@/components/dashboard/dashboard-shell"
 import { AssetsList } from "@/components/assets/assets-list"
 import { Plus, Calendar, CheckCircle, AlertTriangle, Package, Wrench, FileText, Settings, BarChart3 } from "lucide-react"
 import { useAuthZustand } from "@/hooks/use-auth-zustand"
+import { useIsMobile } from "@/hooks/use-mobile"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { useState, useEffect } from "react"
 import { toast } from "sonner"
+import { cn } from "@/lib/utils"
+import type { Asset } from "@/types"
 
 interface AssetStats {
   total: number
@@ -23,7 +25,7 @@ interface AssetStats {
 }
 
 interface DashboardData {
-  assets: any[]
+  assets: Asset[]
   stats: AssetStats
   locations: string[]
   departments: string[]
@@ -36,6 +38,7 @@ interface DashboardData {
 
 export default function AssetsPage() {
   const { ui } = useAuthZustand()
+  const isMobile = useIsMobile()
   const [data, setData] = useState<DashboardData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<Error | null>(null)
@@ -92,14 +95,14 @@ export default function AssetsPage() {
       </DashboardHeader>
       
       {/* Summary Cards */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 mb-6">
+      <div className={cn("grid gap-4 mb-6", isMobile ? "grid-cols-2 gap-3" : "md:grid-cols-2 lg:grid-cols-4")}>
         {/* Total Assets */}
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+          <CardHeader className={cn("flex flex-row items-center justify-between space-y-0", isMobile ? "pb-2 px-3 pt-3" : "pb-2")}>
             <CardTitle className="text-sm font-medium">Total de Activos</CardTitle>
             <Package className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
-          <CardContent>
+          <CardContent className={cn(isMobile && "px-3 pb-3 pt-0")}>
             <div className="text-2xl font-bold">
               {loading ? '...' : data?.stats.total || 0}
             </div>
@@ -111,11 +114,11 @@ export default function AssetsPage() {
 
         {/* Operational Assets */}
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+          <CardHeader className={cn("flex flex-row items-center justify-between space-y-0", isMobile ? "pb-2 px-3 pt-3" : "pb-2")}>
             <CardTitle className="text-sm font-medium">Operativos</CardTitle>
             <CheckCircle className="h-4 w-4 text-green-600" />
           </CardHeader>
-          <CardContent>
+          <CardContent className={cn(isMobile && "px-3 pb-3 pt-0")}>
             <div className="text-2xl font-bold text-green-600">
               {loading ? '...' : data?.stats.operational || 0}
             </div>
@@ -127,11 +130,11 @@ export default function AssetsPage() {
 
         {/* Maintenance & Repair */}
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+          <CardHeader className={cn("flex flex-row items-center justify-between space-y-0", isMobile ? "pb-2 px-3 pt-3" : "pb-2")}>
             <CardTitle className="text-sm font-medium">Mantenimiento/Reparación</CardTitle>
             <Wrench className="h-4 w-4 text-amber-600" />
           </CardHeader>
-          <CardContent>
+          <CardContent className={cn(isMobile && "px-3 pb-3 pt-0")}>
             <div className="text-2xl font-bold text-amber-600">
               {loading ? '...' : (data?.stats.maintenance || 0) + (data?.stats.repair || 0)}
             </div>
@@ -144,11 +147,11 @@ export default function AssetsPage() {
         {/* Critical Alerts */}
         <Link href="/incidentes" className="block">
           <Card className="cursor-pointer hover:shadow-md transition-shadow">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardHeader className={cn("flex flex-row items-center justify-between space-y-0", isMobile ? "pb-2 px-3 pt-3" : "pb-2")}>
               <CardTitle className="text-sm font-medium">Alertas Críticas</CardTitle>
               <AlertTriangle className="h-4 w-4 text-red-600" />
             </CardHeader>
-            <CardContent>
+            <CardContent className={cn(isMobile && "px-3 pb-3 pt-0")}>
               <div className="text-2xl font-bold text-red-600">
                 {loading ? '...' : data?.stats.criticalAlerts || 0}
               </div>
