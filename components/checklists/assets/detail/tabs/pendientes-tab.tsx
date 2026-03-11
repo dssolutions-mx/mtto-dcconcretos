@@ -148,7 +148,7 @@ export function PendientesTab({
                     schedule={schedule}
                     variant="today"
                     onReschedule={onReschedule}
-                    formatDate={formatScheduleDate}
+                    formatDate={formatDate}
                     formatRelativeDate={formatRelativeDate}
                   />
                 ))}
@@ -179,7 +179,7 @@ export function PendientesTab({
                     schedule={schedule}
                     variant="upcoming"
                     onReschedule={onReschedule}
-                    formatDate={formatScheduleDate}
+                    formatDate={formatDate}
                     formatRelativeDate={formatRelativeDate}
                   />
                 ))}
@@ -215,7 +215,7 @@ export function PendientesTab({
                     schedule={schedule}
                     variant="future"
                     onReschedule={onReschedule}
-                    formatDate={formatScheduleDate}
+                    formatDate={formatDate}
                     formatRelativeDate={formatRelativeDate}
                   />
                 ))}
