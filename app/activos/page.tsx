@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button"
 import { DashboardHeader } from "@/components/dashboard/dashboard-header"
 import { DashboardShell } from "@/components/dashboard/dashboard-shell"
 import { AssetsList } from "@/components/assets/assets-list"
-import { Plus, Calendar, CheckCircle, AlertTriangle, Package, Wrench, FileText, Settings, BarChart3 } from "lucide-react"
+import { Plus, Calendar, CheckCircle, AlertTriangle, Package, Wrench, FileText, Settings, BarChart3, MoreVertical } from "lucide-react"
 import { useAuthZustand } from "@/hooks/use-auth-zustand"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { Alert, AlertDescription } from "@/components/ui/alert"
@@ -15,6 +15,12 @@ import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 import type { Asset } from "@/types"
 import { PullToRefresh } from "@/components/ui/pull-to-refresh"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 
 interface AssetStats {
   total: number
@@ -83,19 +89,47 @@ export default function AssetsPage() {
         id="activos-header"
       >
         <div className="flex gap-2">
-          <Button variant="outline" asChild size="default">
-            <Link href="/activos/reportes">
-              <BarChart3 className="mr-2 h-4 w-4" />
-              Reportes
-            </Link>
-          </Button>
-          {ui.canShowCreateButton('assets') && (
-            <Button asChild size="default">
-              <Link href="/activos/crear">
-                <Plus className="mr-2 h-4 w-4" />
-                Nuevo Activo
-              </Link>
-            </Button>
+          {isMobile ? (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="icon" className="touch-target h-11 w-11" aria-label="Abrir menú de acciones">
+                  <MoreVertical className="h-5 w-5" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-48">
+                <DropdownMenuItem asChild>
+                  <Link href="/activos/reportes">
+                    <BarChart3 className="mr-2 h-4 w-4" />
+                    Reportes
+                  </Link>
+                </DropdownMenuItem>
+                {ui.canShowCreateButton('assets') && (
+                  <DropdownMenuItem asChild>
+                    <Link href="/activos/crear">
+                      <Plus className="mr-2 h-4 w-4" />
+                      Nuevo Activo
+                    </Link>
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : (
+            <>
+              <Button variant="outline" asChild size="default">
+                <Link href="/activos/reportes">
+                  <BarChart3 className="mr-2 h-4 w-4" />
+                  Reportes
+                </Link>
+              </Button>
+              {ui.canShowCreateButton('assets') && (
+                <Button asChild size="default">
+                  <Link href="/activos/crear">
+                    <Plus className="mr-2 h-4 w-4" />
+                    Nuevo Activo
+                  </Link>
+                </Button>
+              )}
+            </>
           )}
         </div>
       </DashboardHeader>

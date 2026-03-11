@@ -559,18 +559,18 @@ export function AssetsList({ assets, loading = false, error }: AssetsListProps) 
                   
                   {/* Action Buttons */}
                   <div className="flex gap-2 pt-2">
-                    <Button size="sm" variant="outline" className="flex-1" asChild>
+                    <Button size="sm" variant="outline" className="flex-1 touch-target min-h-[44px]" asChild>
                       <Link href={`/activos/${asset.id}`}>
                         <Eye className="h-4 w-4 mr-1" />
                         Ver
                       </Link>
                     </Button>
-                    <Button size="sm" variant="outline" asChild aria-label="Ver mantenimiento">
+                    <Button size="sm" variant="outline" asChild aria-label="Ver mantenimiento" className="touch-target shrink-0">
                       <Link href={`/activos/${asset.id}/mantenimiento`}>
                         <Wrench className="h-4 w-4" />
                       </Link>
                     </Button>
-                    <Button size="sm" variant="outline" asChild aria-label="Ver historial">
+                    <Button size="sm" variant="outline" asChild aria-label="Ver historial" className="touch-target shrink-0">
                       <Link href={`/activos/${asset.id}/historial`}>
                         <History className="h-4 w-4" />
                       </Link>
