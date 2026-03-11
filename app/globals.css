@@ -27,6 +27,14 @@
   .compras-module [data-animate] {
     animation: none !important;
   }
+
+  .activos-module *,
+  .activos-module *::before,
+  .activos-module *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 @layer utilities {

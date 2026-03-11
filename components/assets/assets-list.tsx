@@ -412,6 +412,7 @@ export function AssetsList({ assets, loading = false, error }: AssetsListProps) 
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
                 placeholder="Buscar por ID, nombre, ubicación, departamento..."
+                aria-label="Buscar por ID, nombre, ubicación o departamento"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="pl-10"
@@ -564,12 +565,12 @@ export function AssetsList({ assets, loading = false, error }: AssetsListProps) 
                         Ver
                       </Link>
                     </Button>
-                    <Button size="sm" variant="outline" asChild>
+                    <Button size="sm" variant="outline" asChild aria-label="Ver mantenimiento">
                       <Link href={`/activos/${asset.id}/mantenimiento`}>
                         <Wrench className="h-4 w-4" />
                       </Link>
                     </Button>
-                    <Button size="sm" variant="outline" asChild>
+                    <Button size="sm" variant="outline" asChild aria-label="Ver historial">
                       <Link href={`/activos/${asset.id}/historial`}>
                         <History className="h-4 w-4" />
                       </Link>

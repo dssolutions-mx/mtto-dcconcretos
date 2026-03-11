@@ -67,7 +67,7 @@ export default function AssetsPage() {
   }, [])
   
   return (
-    <DashboardShell>
+    <DashboardShell className="activos-module">
       <DashboardHeader
         heading="Gestión de Activos"
         text="Administra y supervisa todos los equipos de la empresa"
@@ -142,20 +142,22 @@ export default function AssetsPage() {
         </Card>
 
         {/* Critical Alerts */}
-        <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => window.location.href = '/incidentes'}>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Alertas Críticas</CardTitle>
-            <AlertTriangle className="h-4 w-4 text-red-600" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-red-600">
-              {loading ? '...' : data?.stats.criticalAlerts || 0}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Requieren atención inmediata
-            </p>
-          </CardContent>
-        </Card>
+        <Link href="/incidentes" className="block">
+          <Card className="cursor-pointer hover:shadow-md transition-shadow">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Alertas Críticas</CardTitle>
+              <AlertTriangle className="h-4 w-4 text-red-600" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-red-600">
+                {loading ? '...' : data?.stats.criticalAlerts || 0}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Requieren atención inmediata
+              </p>
+            </CardContent>
+          </Card>
+        </Link>
       </div>
 
       {/* Streamlined Quick Actions */}
