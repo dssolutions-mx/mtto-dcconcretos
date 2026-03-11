@@ -13,6 +13,7 @@ import { useIsMobile } from "@/hooks/use-mobile"
 export function AccountsPayableSummaryCard() {
   const [summary, setSummary] = useState<AccountsPayableSummary | null>(null)
   const [loading, setLoading] = useState(true)
+  const isMobile = useIsMobile()
 
   const fetchSummary = async () => {
     try {
@@ -52,7 +53,6 @@ export function AccountsPayableSummaryCard() {
 
   const hasUrgentItems = summary.total_overdue > 0 || summary.items_due_today > 0
   const totalPendingAmount = summary.total_amount_pending + summary.total_amount_overdue
-  const isMobile = useIsMobile()
 
   if (isMobile) {
     return (

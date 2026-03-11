@@ -16,7 +16,6 @@ import {
 import { createClient } from "@/lib/supabase"
 import Link from "next/link"
 import { 
-  PurchaseOrder, 
   PurchaseOrderStatus, 
   Profile
 } from "@/types"
@@ -51,50 +50,15 @@ import {
 import { Separator } from "@/components/ui/separator"
 import { useAuthZustand } from "@/hooks/use-auth-zustand"
 import { formatCurrency } from "@/lib/utils"
+import { useComprasData, type PurchaseOrderWithWorkOrder } from "@/components/compras/useComprasData"
+import { getWorkOrder, isEnhancedPurchaseOrder, getUrgencyConfig } from "@/components/compras/po-row-utils"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Calendar as CalendarPicker } from "@/components/ui/calendar"
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet"
 import { Skeleton } from "@/components/ui/skeleton"
 
-interface ApprovalContextItem {
-  canApprove: boolean
-  canReject: boolean
-  canRecordViability: boolean
-  reason: string
-  nextStep: string
-  workflowStage?: string
-  responsibleRole?: string
-}
-
-interface PurchaseOrderWithWorkOrder extends Omit<PurchaseOrder, 'is_adjustment' | 'original_purchase_order_id'> {
-  work_orders?: {
-    id: string;
-    order_id: string;
-    description: string;
-    asset_id: string | null;
-    priority?: string;
-    assets?: {
-      id: string;
-      name: string;
-      asset_id: string;
-      plants?: {
-        name: string;
-      };
-    } | null;
-  } | null;
-  is_adjustment?: boolean | null;
-  original_purchase_order_id?: string;
-  // Enhanced purchase order fields
-  po_type?: string;
-  payment_method?: string;
-  requires_quote?: boolean;
-  store_location?: string;
-  service_provider?: string;
-  actual_amount?: number | null;
-  purchased_at?: string;
-  items_preview?: string; // Preview of first few items
-}
+import type { ApprovalContextItem } from "@/types/purchase-orders"
 
 // Helper function to preview items
 function getItemsPreview(items: any): string {
@@ -183,35 +147,6 @@ function getEnhancedStatusConfig(status: string, poType?: string) {
     default:
       return "outline"
   }
-}
-
-// Helper function to determine if this is an enhanced purchase order
-function isEnhancedPurchaseOrder(order: PurchaseOrderWithWorkOrder): boolean {
-  return Boolean(order.po_type)
-}
-
-// Helper function to get urgency config (from work order priority)
-function getUrgencyConfig(urgency?: string, priority?: string) {
-  const urgencyLevel = urgency || priority || 'medium'
-  switch (urgencyLevel.toLowerCase()) {
-    case 'critical':
-    case 'alta':
-    case 'high':
-      return { variant: "destructive" as const, icon: AlertCircle, label: "Crítica" }
-    case 'medium':
-    case 'media':
-      return { variant: "default" as const, icon: Clock, label: "Media" }
-    case 'low':
-    case 'baja':
-      return { variant: "secondary" as const, icon: Info, label: "Baja" }
-    default:
-      return { variant: "outline" as const, icon: Clock, label: "Normal" }
-  }
-}
-
-// Helper function to get work order from purchase order
-function getWorkOrder(order: PurchaseOrderWithWorkOrder) {
-  return order.work_orders;
 }
 
 // Compact Mobile Purchase Order Card (Phase 4 design specs)
@@ -524,11 +459,9 @@ interface PurchaseOrdersListMobileProps {
 export function PurchaseOrdersListMobile({ effectiveAuthLimitFromParent, isLoadingAuthFromParent }: PurchaseOrdersListMobileProps = {}) {
   const { toast } = useToast()
   const { profile } = useAuthZustand()
+  const { orders, setOrders, technicians, approvalContext, isLoading, loadOrders, loadApprovalContext } = useComprasData()
   const [searchTerm, setSearchTerm] = useState("")
-  const [orders, setOrders] = useState<PurchaseOrderWithWorkOrder[]>([])
-  const [isLoading, setIsLoading] = useState(true)
   const [activeTab, setActiveTab] = useState<string>("pending")
-  const [technicians, setTechnicians] = useState<Record<string, Profile>>({})
   const [userAuthLimit, setUserAuthLimit] = useState<number>(effectiveAuthLimitFromParent ?? 0)
   const [isLoadingAuth, setIsLoadingAuth] = useState(isLoadingAuthFromParent ?? true)
   const isMobile = useIsMobile()
@@ -547,32 +480,9 @@ export function PurchaseOrdersListMobile({ effectiveAuthLimitFromParent, isLoadi
   const [orderToDelete, setOrderToDelete] = useState<PurchaseOrderWithWorkOrder | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
   const [filtersOpen, setFiltersOpen] = useState(false)
-  const [approvalContext, setApprovalContext] = useState<Record<string, ApprovalContextItem>>({})
 
   const handleRefresh = async () => {
     await loadOrders()
-  }
-
-  // Load approval context for pending POs
-  const loadApprovalContext = async (orderIds: string[]) => {
-    if (orderIds.length === 0) {
-      setApprovalContext({})
-      return
-    }
-    try {
-      const res = await fetch(`/api/purchase-orders/approval-context?ids=${orderIds.join(',')}`, {
-        cache: 'no-store',
-        credentials: 'include',
-      })
-      if (res.ok) {
-        const data = await res.json()
-        setApprovalContext(data)
-      } else {
-        setApprovalContext({})
-      }
-    } catch {
-      setApprovalContext({})
-    }
   }
 
   const handleDeleteOrder = (order: PurchaseOrderWithWorkOrder) => {
@@ -768,63 +678,9 @@ export function PurchaseOrdersListMobile({ effectiveAuthLimitFromParent, isLoadi
     loadUserAuthLimit()
   }, [profile, effectiveAuthLimitFromParent])
 
-  async function loadOrders() {
-    try {
-      setIsLoading(true)
-      const supabase = createClient()
-
-      const { data: purchaseOrdersData, error } = await supabase
-        .from("purchase_orders")
-        .select("*")
-        .order("created_at", { ascending: false })
-
-      if (error) {
-        console.error("Error al cargar órdenes de compra:", error)
-        throw error
-      }
-
-      const workOrderIds = purchaseOrdersData?.filter(po => po.work_order_id).map(po => po.work_order_id) || []
-      const requestedByIds = [...new Set(purchaseOrdersData?.map(po => po.requested_by).filter(Boolean) || [])] as string[]
-
-      const [workOrdersResult, profilesResult] = await Promise.all([
-        workOrderIds.length > 0 ? supabase.from("work_orders").select(`
-          id, order_id, description, asset_id, priority,
-          assets (id, name, asset_id, plants (name))
-        `).in("id", workOrderIds) : { data: null, error: null },
-        requestedByIds.length > 0 ? supabase.from("profiles").select("*").in("id", requestedByIds) : { data: [], error: null },
-      ])
-
-      const workOrdersMap: Record<string, any> = {}
-      if (workOrdersResult.data) workOrdersResult.data.forEach((wo: any) => { workOrdersMap[wo.id] = wo })
-
-      const techMap: Record<string, Profile> = {}
-      if (profilesResult.data) profilesResult.data.forEach((p: Profile) => { techMap[p.id] = p })
-      setTechnicians(techMap)
-
-      const ordersWithWorkOrders = purchaseOrdersData.map(po => ({
-        ...po,
-        work_orders: po.work_order_id ? workOrdersMap[po.work_order_id] : null,
-        items_preview: getItemsPreview(po.items)
-      }))
-      setOrders(ordersWithWorkOrders as PurchaseOrderWithWorkOrder[])
-
-      // Load approval context for pending non-adjustment POs
-      const pendingIds = (ordersWithWorkOrders as PurchaseOrderWithWorkOrder[])
-        .filter(o => o.status === PurchaseOrderStatus.PendingApproval && !o.is_adjustment)
-        .map(o => o.id)
-      await loadApprovalContext(pendingIds)
-
-    } catch (error) {
-      console.error("Error al cargar órdenes de compra:", error)
-      setOrders([]) 
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
   useEffect(() => {
     loadOrders()
-  }, [profile?.id])
+  }, [loadOrders])
 
   // Calculate summary metrics (En curso = approved + validated)
   const enCursoCount = orders.filter(o => (o.status === PurchaseOrderStatus.Approved || o.status === PurchaseOrderStatus.Validated) && !o.is_adjustment).length

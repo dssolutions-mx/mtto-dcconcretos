@@ -586,12 +586,13 @@ async function PurchaseOrderDetailsContent({ id }: { id: string }) {
         </Card>
 
         {/* Receipt/Comprobante Section - Only show after approval */}
-        {order.status && ['approved', 'purchased', 'receipt_uploaded', 'completed'].includes(order.status) && (
-          <ReceiptDisplaySection purchaseOrderId={order.id} poType={order.po_type} />
-        )}
+        {order.status &&
+          ['approved', 'purchased', 'receipt_uploaded', 'completed', 'validated'].includes(order.status) && (
+            <ReceiptDisplaySection purchaseOrderId={order.id} poType={order.po_type} />
+          )}
 
-        {/* Quotation Section - Always show for enhanced orders */}
-        {order.po_type && (
+        {/* Quotation Section - Show for enhanced orders except inventory-only POs */}
+        {order.po_type && order.po_purpose !== 'work_order_inventory' && (
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center space-x-2">

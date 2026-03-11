@@ -195,6 +195,17 @@ export interface WorkflowStatusResponse {
   }
 }
 
+/** Approval context from /api/purchase-orders/approval-context for pending POs */
+export interface ApprovalContextItem {
+  canApprove: boolean
+  canReject: boolean
+  canRecordViability: boolean
+  reason: string
+  nextStep: string
+  workflowStage: string
+  responsibleRole?: string
+}
+
 // Advance Workflow Request
 export interface AdvanceWorkflowRequest {
   new_status: string

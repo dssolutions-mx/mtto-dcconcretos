@@ -10,14 +10,12 @@ type Body = {
 }
 
 export async function POST(req: NextRequest) {
-  console.log('[SUMMARY API] ========== API CALLED ==========')
   try {
     const { dateFrom, dateTo, businessUnitId, plantId } = (await req.json()) as Body
 
     // Normalize dates to YYYY-MM-DD for consistency
     const dateFromStr = typeof dateFrom === 'string' && dateFrom.includes('T') ? dateFrom.split('T')[0] : dateFrom
     const dateToStr = typeof dateTo === 'string' && dateTo.includes('T') ? dateTo.split('T')[0] : dateTo
-    console.log('[SUMMARY API] Request params:', { dateFrom: dateFromStr, dateTo: dateToStr, businessUnitId, plantId })
 
     // Compute exclusive end-of-day bound in UTC for consistency with other report APIs
     const dateFromStart = new Date(`${dateFromStr}T00:00:00.000Z`)
@@ -158,7 +156,6 @@ export async function POST(req: NextRequest) {
     // maintenance_plans.interval_id references maintenance_intervals.id
     // We need to join through maintenance_plans to get the actual interval_id
     const assetIds = assets.map(a => a.id)
-    console.log('[SUMMARY API] Fetching maintenance history for', assetIds.length, 'assets')
     // CRITICAL: maintenance_history.maintenance_plan_id actually stores INTERVAL IDs directly!
     // No need to join maintenance_plans - the field already contains interval IDs
     const { data: maintenanceHistory, error: historyError } = await supabase
@@ -178,12 +175,6 @@ export async function POST(req: NextRequest) {
 
     if (historyError) {
       console.error('[SUMMARY API] Error fetching maintenance history:', historyError)
-      console.error('[SUMMARY API] Error details:', JSON.stringify(historyError, null, 2))
-    } else {
-      console.log('[SUMMARY API] Fetched', maintenanceHistory?.length || 0, 'maintenance history records')
-      if (maintenanceHistory && maintenanceHistory.length > 0) {
-        console.log('[SUMMARY API] Sample maintenance record:', JSON.stringify(maintenanceHistory[0], null, 2))
-      }
     }
 
     // Group maintenance history by asset_id and maintenance_plan_id
@@ -329,8 +320,6 @@ export async function POST(req: NextRequest) {
         // Include if delta is reasonable (positive and <= 24h/day)
         if (delta >= 0 && (timeDeltaDays >= 60 || hoursPerDay <= MAX_HOURS_PER_DAY)) {
           validReadings.push(current.val)
-        } else {
-          console.warn(`[Summary] Asset ${assetId}: Filtering out diesel reading ${current.val}h (delta: ${delta}h in ${timeDeltaDays.toFixed(1)} days = ${hoursPerDay.toFixed(1)}h/day)`)
         }
       }
       
@@ -408,8 +397,6 @@ export async function POST(req: NextRequest) {
           // Include if delta is reasonable (positive and <= 24h/day, or gap >60 days)
           if (delta >= 0 && (timeDeltaDays >= 60 || hoursPerDay <= MAX_HOURS_PER_DAY)) {
             dieselReadings.push({ ts: current.ts, val: current.val })
-          } else {
-            console.warn(`[Summary] Asset ${assetId}: Filtering out diesel reading ${current.val}h (delta: ${delta}h in ${timeDeltaDays.toFixed(1)} days = ${hoursPerDay.toFixed(1)}h/day)`)
           }
         }
       }
@@ -431,11 +418,8 @@ export async function POST(req: NextRequest) {
         const allowedMax = dieselMax + dieselRange * 2
         
         chkEvents.forEach(e => {
-          // Only include if within reasonable range of diesel readings
           if (e.val >= allowedMin && e.val <= allowedMax) {
             events.push(e)
-          } else {
-            console.warn(`[Summary] Asset ${assetId}: Filtering out checklist reading ${e.val}h (outside diesel range ${dieselMin}-${dieselMax}h, allowed: ${allowedMin.toFixed(0)}-${allowedMax.toFixed(0)}h)`)
           }
         })
       } else {
@@ -497,35 +481,22 @@ export async function POST(req: NextRequest) {
         
         const delta = next.val - current.val
         
-        // Skip negative deltas (resets) - they don't represent hours worked
-        if (delta < 0) {
-          console.warn(`[Summary] Asset ${assetId}: Reading reset detected at ${new Date(next.ts).toISOString()}: ${current.val} → ${next.val} (delta: ${delta})`)
-          continue
-        }
+        if (delta < 0) continue // Skip negative deltas (resets)
         
         // Calculate time delta in days
         const timeDeltaDays = (next.ts - current.ts) / (1000 * 60 * 60 * 24)
         
-        // Skip if time delta is too small (< 1 hour) - likely duplicate or same-event readings
-        if (timeDeltaDays < 1/24) {
-          console.warn(`[Summary] Asset ${assetId}: Skipping delta with <1h gap at ${new Date(next.ts).toISOString()}: ${current.val} → ${next.val} (${timeDeltaDays.toFixed(4)} days)`)
-          continue
-        }
+        if (timeDeltaDays < 1/24) continue // Skip <1h gaps (duplicate readings)
         
         const hoursPerDay = timeDeltaDays > 0 ? delta / timeDeltaDays : 0
         
-        // Validate: skip unrealistic jumps (>24 hours/day)
-        if (hoursPerDay > MAX_HOURS_PER_DAY && timeDeltaDays < 60) {
-          console.warn(`[Summary] Asset ${assetId}: Unrealistic jump detected at ${new Date(next.ts).toISOString()}: ${current.val} → ${next.val} (${delta}h in ${timeDeltaDays.toFixed(1)} days = ${hoursPerDay.toFixed(1)}h/day)`)
-          continue
-        }
+        if (hoursPerDay > MAX_HOURS_PER_DAY && timeDeltaDays < 60) continue // Skip unrealistic jumps
         
         // For very large time gaps (>60 days), cap at reasonable rate (24h/day max)
         let cappedDelta = delta
         if (timeDeltaDays > 0) {
           const maxReasonableDelta = MAX_HOURS_PER_DAY * timeDeltaDays
           if (delta > maxReasonableDelta) {
-            console.warn(`[Summary] Asset ${assetId}: Capping large delta at ${new Date(next.ts).toISOString()}: ${delta}h → ${maxReasonableDelta.toFixed(0)}h (${timeDeltaDays.toFixed(1)} days)`)
             cappedDelta = maxReasonableDelta
           }
         }
@@ -580,40 +551,13 @@ export async function POST(req: NextRequest) {
         }
       })
     }
-    
-    console.log(`[SUMMARY API] Calculated diesel/hours for ${gerencialAssetsMap.size} assets`)
-
     // Process each asset to find most overdue/next maintenance plan using cyclic logic
-    // DEBUG: Asset IDs to log (CR-12 and test asset)
-    const debugAssetIds = ['f6c24547-3403-47fd-9d2f-e41f9c249745', '940fea0f-5a6e-4b07-9d06-2f64dcf636d0'] // CR-12
-    
     const assetSummaries = assets.map(asset => {
       const intervals = intervalsByModel.get(asset.model_id || '') || []
       
       // Get all maintenance history for this asset (not just by plan)
       const assetMaintenanceHistory = (maintenanceHistory || []).filter(mh => mh.asset_id === asset.id)
-      
-          // DEBUG: Log for specific assets
-          if (debugAssetIds.includes(asset.id)) {
-            console.log(`\n\n[DEBUG] ========== ASSET ${asset.id} (${asset.asset_code}) ==========`)
-            console.log(`[DEBUG] Asset name:`, asset.asset_name)
-            console.log(`[DEBUG] Current hours:`, asset.current_hours)
-            console.log(`[DEBUG] Intervals count:`, intervals.length)
-            console.log(`[DEBUG] Intervals:`, JSON.stringify(intervals.map(i => ({ 
-              id: i.id, 
-              interval_value: i.interval_value, 
-              name: i.name 
-            })), null, 2))
-            console.log(`[DEBUG] Maintenance history count:`, assetMaintenanceHistory.length)
-            console.log(`[DEBUG] Maintenance history:`, JSON.stringify(assetMaintenanceHistory.map(mh => ({
-              maintenance_plan_id: mh.maintenance_plan_id,
-              hours: mh.hours,
-              date: mh.date,
-              type: mh.type
-            })), null, 2))
-            console.log(`[DEBUG] ========================================\n\n`)
-          }
-      
+
       const maintenanceUnit = asset.maintenance_unit || 'hours'
       const currentValue = maintenanceUnit === 'hours' ? asset.current_hours : asset.current_kilometers
 
@@ -649,21 +593,6 @@ export async function POST(req: NextRequest) {
             return intervals.some(interval => interval.id === m.maintenance_plan_id)
           })
           
-          // DEBUG: Log for specific asset
-          if (asset.id === 'f6c24547-3403-47fd-9d2f-e41f9c249745') {
-            console.log(`[DEBUG] Preventive history filtered:`, {
-              total_history: assetMaintenanceHistory.length,
-              preventive_count: preventiveHistory.length,
-              preventive: preventiveHistory.map(m => ({
-                maintenance_plan_id: m.maintenance_plan_id,
-                hours: m.hours,
-                date: m.date,
-                matched_interval: intervals.find(i => i.id === m.maintenance_plan_id)?.interval_value
-              })),
-              intervals_ids: intervals.map(i => i.id)
-            })
-          }
-          
           // Filter maintenance history to current cycle
           // CRITICAL: Only include maintenance performed in the CURRENT cycle for completion/coverage checks
           // Maintenance from previous cycles doesn't cover current cycle intervals
@@ -674,28 +603,6 @@ export async function POST(req: NextRequest) {
             // This matches the asset detail page logic exactly
             return mHours > currentCycleStartHour && mHours < currentCycleEndHour
           })
-          
-          // DEBUG: Log for specific assets
-          if (debugAssetIds.includes(asset.id)) {
-            console.log(`[DEBUG ${asset.asset_code}] Current cycle maintenances:`, {
-              currentCycle,
-              currentCycleStartHour,
-              currentCycleEndHour,
-              currentValue,
-              maxInterval,
-              count: currentCycleMaintenances.length,
-              maintenances: currentCycleMaintenances.map(m => ({
-                maintenance_plan_id: m.maintenance_plan_id,
-                hours: m.hours,
-                interval_value: intervals.find(i => i.id === m.maintenance_plan_id)?.interval_value
-              })),
-              all_preventive_history: preventiveHistory.map(m => ({
-                maintenance_plan_id: m.maintenance_plan_id,
-                hours: m.hours,
-                in_current_cycle: (Number(m.hours) || 0) > currentCycleStartHour && (Number(m.hours) || 0) < currentCycleEndHour
-              }))
-            })
-          }
 
           // Process each interval to determine status
           const intervalStatuses = intervals.map(interval => {
@@ -731,33 +638,6 @@ export async function POST(req: NextRequest) {
                 // maintenance_plan_id IS the interval ID
                 return m.maintenance_plan_id === interval.id
               })
-            
-            // DEBUG: Log for specific assets and key intervals
-            if (debugAssetIds.includes(asset.id) && (interval.interval_value === 300 || interval.interval_value === 600 || interval.interval_value === 3000)) {
-              console.log(`[DEBUG ${asset.asset_code}] ${interval.interval_value}h interval check:`, {
-                interval_id: interval.id,
-                interval_value: interval.interval_value,
-                cycleForService,
-                currentCycle,
-                nextDueHour,
-                currentValue,
-                wasPerformedInCurrentCycle,
-                isCoveredByHigher: cycleForService === currentCycle && currentCycleMaintenances.some((m: any) => {
-                  const performedInterval = intervals.find((i: any) => i.id === m.maintenance_plan_id)
-                  if (!performedInterval) return false
-                  const sameUnit = performedInterval.type === interval.type
-                  const sameCategory = (performedInterval as any).maintenance_category === (interval as any).maintenance_category
-                  const categoryOk = (performedInterval as any).maintenance_category && (interval as any).maintenance_category 
-                    ? sameCategory 
-                    : true
-                  const higherOrEqual = Number(performedInterval.interval_value) >= Number(interval.interval_value)
-                  return sameUnit && categoryOk && higherOrEqual
-                }),
-                status: cycleForService === currentCycle ? 
-                  (currentValue >= nextDueHour ? 'overdue' : 
-                   currentValue >= nextDueHour - 100 ? 'upcoming' : 'scheduled') : 'scheduled'
-              })
-            }
 
             if (wasPerformedInCurrentCycle) {
               return { interval, status: 'completed', nextDueHour }
@@ -789,26 +669,6 @@ export async function POST(req: NextRequest) {
                 
                 return sameUnit && categoryOk && higherOrEqual && performedAfterDue
               })
-            
-            // DEBUG: Log for specific asset and intervals
-            if (asset.id === 'f6c24547-3403-47fd-9d2f-e41f9c249745' && interval.interval_value < 1500) {
-              console.log(`[DEBUG] Coverage check for ${interval.interval_value}h:`, {
-                interval_id: interval.id,
-                interval_value: interval.interval_value,
-                cycleForService,
-                currentCycle,
-                isCoveredByHigher,
-                covering_maintenances: currentCycleMaintenances.map((m: any) => {
-                  const performedInterval = intervals.find((i: any) => i.id === m.maintenance_plan_id)
-                  return {
-                    maintenance_plan_id: m.maintenance_plan_id,
-                    hours: m.hours,
-                    performed_interval_value: performedInterval?.interval_value,
-                    covers: performedInterval && Number(performedInterval.interval_value) >= Number(interval.interval_value)
-                  }
-                })
-              })
-            }
 
             if (isCoveredByHigher) {
               return { interval, status: 'covered', nextDueHour }
@@ -834,26 +694,6 @@ export async function POST(req: NextRequest) {
           const actionableIntervals = intervalStatuses.filter(
             s => s.status !== 'not_applicable' && s.status !== 'completed' && s.status !== 'covered'
           )
-
-          // DEBUG: Log interval statuses for CR-12
-          if (debugAssetIds.includes(asset.id)) {
-            console.log(`[DEBUG ${asset.asset_code}] ========== INTERVAL STATUSES ==========`)
-            console.log(`[DEBUG ${asset.asset_code}] All interval statuses:`, intervalStatuses.map(s => ({
-              interval_value: s.interval.interval_value,
-              status: s.status,
-              nextDueHour: s.nextDueHour,
-              overdue_amount: s.status === 'overdue' ? currentValue - (s.nextDueHour || 0) : null,
-              remaining: s.status === 'upcoming' || s.status === 'scheduled' ? (s.nextDueHour || 0) - currentValue : null
-            })))
-            console.log(`[DEBUG ${asset.asset_code}] Actionable intervals (filtered):`, actionableIntervals.map(s => ({
-              interval_value: s.interval.interval_value,
-              status: s.status,
-              nextDueHour: s.nextDueHour,
-              overdue_amount: s.status === 'overdue' ? currentValue - (s.nextDueHour || 0) : null,
-              remaining: s.status === 'upcoming' || s.status === 'scheduled' ? (s.nextDueHour || 0) - currentValue : null
-            })))
-            console.log(`[DEBUG ${asset.asset_code}] =========================================`)
-          }
 
           // Find last service from ANY preventive maintenance FIRST (regardless of actionable intervals)
           // This ensures we show last service even when all intervals are completed/covered
@@ -897,15 +737,6 @@ export async function POST(req: NextRequest) {
               const overdue = currentValue - (overdueItem?.nextDueHour || 0)
               hoursOverdue = overdue
 
-              // DEBUG: Log selection for CR-12
-              if (debugAssetIds.includes(asset.id)) {
-                console.log(`[DEBUG ${asset.asset_code}] Selected overdue interval:`, {
-                  interval_value: selectedInterval.interval_value,
-                  overdue_hours: overdue,
-                  nextDueHour: overdueItem?.nextDueHour
-                })
-              }
-
               // Update last service to be specific to this selected interval (if it exists AND is more recent)
               // CRITICAL: maintenance_plan_id IS the interval ID
               // Only update if the interval-specific service is more recent than the overall last service
@@ -940,15 +771,6 @@ export async function POST(req: NextRequest) {
                 const upcomingItem = upcomingIntervals.find(item => item.interval.id === selectedInterval.id)
                 const remaining = (upcomingItem?.nextDueHour || 0) - currentValue
                 hoursRemaining = remaining
-
-                // DEBUG: Log selection for CR-12
-                if (debugAssetIds.includes(asset.id)) {
-                  console.log(`[DEBUG ${asset.asset_code}] Selected upcoming interval:`, {
-                    interval_value: selectedInterval.interval_value,
-                    remaining_hours: remaining,
-                    nextDueHour: upcomingItem?.nextDueHour
-                  })
-                }
 
                 // Update last service to be specific to this selected interval (if it exists AND is more recent)
                 // CRITICAL: maintenance_plan_id IS the interval ID
@@ -1177,20 +999,6 @@ export async function POST(req: NextRequest) {
         hours_worked: 0,
         remisiones_count: 0,
         concrete_m3: 0
-      }
-      
-      // DEBUG: Log if asset not found in gerencial data
-      if (!gerencialAssetsMap.has(asset.id)) {
-        console.log(`[SUMMARY API] Asset ${asset.id} (${asset.asset_code}) not found in gerencial data`)
-      } else {
-        // DEBUG: Log diesel and hours for verification
-        if (gerencialAsset.diesel_liters > 0 || gerencialAsset.hours_worked > 0) {
-          console.log(`[SUMMARY API] Asset ${asset.id} (${asset.asset_code}):`, {
-            diesel_liters: gerencialAsset.diesel_liters,
-            hours_worked: gerencialAsset.hours_worked,
-            diesel_cost: gerencialAsset.diesel_cost
-          })
-        }
       }
 
       // Get the nextDueHour/km for the selected interval to show cycle information
