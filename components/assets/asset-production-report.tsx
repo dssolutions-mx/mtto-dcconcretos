@@ -5,6 +5,12 @@ import { es } from "date-fns/locale"
 import { Button } from "@/components/ui/button"
 import { X, Printer, FileDown } from "lucide-react"
 import { useState, useEffect } from "react"
+import jsPDF from "jspdf"
+import { snapdom } from "@zumer/snapdom"
+
+// DC Concretos brand colors (policy_template.js scheme)
+const NAVY = "#1B365D"
+const GREEN = "#00A64F"
 
 /** Compute Asset Health Score (0-100). Heuristic: 100 - (active_incidents*15) - (overdue_maintenance*10), clamped. */
 function computeHealthScore(activeIncidents: number, overdueMaintenance: number): number {
@@ -14,9 +20,9 @@ function computeHealthScore(activeIncidents: number, overdueMaintenance: number)
 
 /** Banded health: Alto (80+), Medio (50-79), Bajo (<50). */
 function getHealthBand(score: number): { band: string; color: string } {
-  if (score >= 80) return { band: "Alto", color: "text-green-600" }
-  if (score >= 50) return { band: "Medio", color: "text-amber-600" }
-  return { band: "Bajo", color: "text-red-600" }
+  if (score >= 80) return { band: "Alto", color: "text-gray-800" }
+  if (score >= 50) return { band: "Medio", color: "text-gray-700" }
+  return { band: "Bajo", color: "text-gray-700" }
 }
 
 interface AssetProductionReportProps {
@@ -87,13 +93,13 @@ export function AssetProductionReport({ assetId, onClose }: AssetProductionRepor
         return (
           <div className="space-y-1">
             {partsData.slice(0, 5).map((part: any, index: number) => (
-              <div key={index} className="text-xs bg-gray-50 p-2 rounded border-l-2 border-blue-200">
+              <div key={index} className="text-xs bg-gray-50 p-2 rounded border-l-2 border-gray-300">
                 <div className="font-medium text-gray-800">{part.name || part.part_name || 'Repuesto sin nombre'}</div>
                 <div className="flex flex-wrap gap-2 text-gray-600 text-xs mt-1">
-                  {part.partNumber && <span className="bg-blue-100 px-1 py-0.5 rounded">P/N: {part.partNumber}</span>}
-                  <span className="bg-green-100 px-1 py-0.5 rounded">Cant: {part.quantity || 1}</span>
-                  {part.unit_price && <span className="bg-yellow-100 px-1 py-0.5 rounded">Precio: {formatCurrency(part.unit_price)}</span>}
-                  {part.total_price && <span className="bg-red-100 px-1 py-0.5 rounded">Total: {formatCurrency(part.total_price)}</span>}
+                  {part.partNumber && <span className="bg-gray-100 px-1 py-0.5 rounded text-gray-700">P/N: {part.partNumber}</span>}
+                  <span className="bg-gray-100 px-1 py-0.5 rounded text-gray-700">Cant: {part.quantity || 1}</span>
+                  {part.unit_price && <span className="bg-gray-100 px-1 py-0.5 rounded text-gray-700">Precio: {formatCurrency(part.unit_price)}</span>}
+                  {part.total_price && <span className="bg-gray-100 px-1 py-0.5 rounded text-gray-700">Total: {formatCurrency(part.total_price)}</span>}
                 </div>
               </div>
             ))}
@@ -139,7 +145,7 @@ export function AssetProductionReport({ assetId, onClose }: AssetProductionRepor
     return {
       isPreventive,
       displayText: isPreventive ? 'Preventivo' : 'Correctivo',
-      colorClass: isPreventive ? 'text-green-600' : 'text-red-600'
+      colorClass: 'text-gray-700'
     }
   }
 
@@ -167,8 +173,49 @@ export function AssetProductionReport({ assetId, onClose }: AssetProductionRepor
   }
 
   const handleDownloadPDF = async () => {
-    // Use the same approach as print for consistency
-    handlePrint()
+    const element = document.querySelector(".print-container") as HTMLElement
+    const noPrint = document.querySelector(".no-print") as HTMLElement
+    if (!element) return
+    try {
+      noPrint?.style.setProperty("display", "none")
+      element.classList.add("pdf-export-mode")
+      element.scrollIntoView({ behavior: "instant" })
+      await new Promise((r) => setTimeout(r, 150))
+
+      const result = await snapdom(element, {
+        scale: 2,
+        backgroundColor: "#ffffff",
+        embedFonts: true,
+        exclude: [".no-print"],
+        width: element.scrollWidth,
+        height: element.scrollHeight,
+      })
+      const canvas = await result.toCanvas()
+      const imgData = canvas.toDataURL("image/png")
+      const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" })
+      const pdfW = pdf.internal.pageSize.getWidth()
+      const pdfH = pdf.internal.pageSize.getHeight()
+      const margin = 5
+      const contentW = pdfW - margin * 2
+      const pageH = pdfH - margin * 2
+      const ratio = contentW / canvas.width
+      const imgH = canvas.height * ratio
+      const totalPages = Math.max(1, Math.ceil(imgH / pageH))
+      let position = margin
+      pdf.addImage(imgData, "PNG", margin, position, contentW, imgH, undefined, "FAST")
+      for (let i = 1; i < totalPages; i++) {
+        position -= pageH
+        pdf.addPage()
+        pdf.addImage(imgData, "PNG", margin, position, contentW, imgH, undefined, "FAST")
+      }
+      pdf.save(`reporte-produccion-${asset?.asset_id || assetId}-${format(new Date(), "yyyy-MM-dd")}.pdf`)
+    } catch (err) {
+      console.error("Error generating PDF:", err)
+      handlePrint()
+    } finally {
+      noPrint?.style.removeProperty("display")
+      element.classList.remove("pdf-export-mode")
+    }
   }
 
   if (loading) {
@@ -242,15 +289,15 @@ export function AssetProductionReport({ assetId, onClose }: AssetProductionRepor
   const getStatusBadgeClass = (status: string) => {
     switch (status) {
       case 'overdue':
-        return 'bg-red-100 text-red-800 border-red-200'
+        return 'bg-gray-200 text-gray-800 border-gray-300 font-medium'
       case 'upcoming':
-        return 'bg-amber-100 text-amber-800 border-amber-200'
+        return 'bg-gray-100 text-gray-800 border-gray-200'
       case 'covered':
-        return 'bg-blue-100 text-blue-800 border-blue-200'
+        return 'bg-gray-100 text-gray-700 border-gray-200'
       case 'scheduled':
-        return 'bg-green-100 text-green-800 border-green-200'
+        return 'bg-gray-100 text-gray-700 border-gray-200'
       case 'completed':
-        return 'bg-emerald-100 text-emerald-800 border-emerald-200'
+        return 'bg-gray-100 text-gray-700 border-gray-200'
       default:
         return 'bg-gray-100 text-gray-600 border-gray-200'
     }
@@ -291,38 +338,32 @@ export function AssetProductionReport({ assetId, onClose }: AssetProductionRepor
         </Button>
       </div>
 
-      {/* Print Content */}
+      {/* Print Content - DC Concretos format (policy_template.js scheme) */}
       <div className="print-container report-content max-w-4xl mx-auto p-8">
         
-        {/* Header */}
-        <div className="text-center mb-8 border-b-2 border-gray-200 pb-6">
-          <div className="flex items-center justify-between mb-4">
-            <div className="w-20 h-20 flex items-center justify-center">
-              <img 
-                src="/logo-dark.svg" 
-                alt="Company Logo" 
-                className="w-full h-full object-contain"
-              />
-            </div>
-            <div className="text-center flex-1">
-              <h1 className="text-3xl font-bold text-gray-800 mb-2">REPORTE DE PRODUCCIÓN DE ACTIVO</h1>
-              <p className="text-lg text-gray-600">Historial Completo de Mantenimiento y Operación</p>
-            </div>
-            <div className="w-20 text-right">
-              <p className="text-xs text-gray-500">Activo:</p>
-              <p className="font-bold text-lg">{asset.asset_id}</p>
-            </div>
+        {/* DC Concretos Header */}
+        <div className="dc-header flex items-stretch mb-6" style={{ borderBottom: `3px solid ${GREEN}` }}>
+          <div className="w-32 flex-shrink-0 flex items-center p-2">
+            <img src="/logo.png" alt="DC Concretos" className="max-h-14 w-auto object-contain" onError={(e) => { (e.target as HTMLImageElement).src = "/placeholder-logo.png" }} />
           </div>
-          <div className="bg-gray-100 rounded p-3">
-            <p className="text-sm text-gray-600">
-              Documento generado el {format(new Date(), "dd 'de' MMMM 'de' yyyy 'a las' HH:mm", { locale: es })}
-            </p>
+          <div className="flex-1 flex flex-col justify-center text-right px-4 py-3" style={{ backgroundColor: NAVY }}>
+            <p className="text-white font-bold text-sm uppercase tracking-wide">DC CONCRETOS, S.A. DE C.V.</p>
+            <p className="text-white/90 text-xs mt-0.5">REP-PROD-001 | Activo: {asset.asset_id}</p>
+            <p className="text-lg font-bold mt-1" style={{ color: GREEN }}>REPORTE DE PRODUCCIÓN DE ACTIVO</p>
           </div>
         </div>
+        
+        {/* Document title and version */}
+        <div className="text-center mb-6">
+          <h1 className="text-2xl font-bold mb-1" style={{ color: NAVY }}>Reporte de Producción</h1>
+          <p className="text-sm" style={{ color: GREEN }}>Historial de Mantenimiento y Operación · {asset.name} · Generado el {format(new Date(), "dd 'de' MMMM 'de' yyyy", { locale: es })}</p>
+        </div>
 
-        {/* Resumen Ejecutivo (Problema → Impacto → Solución → Decisión) */}
-        <div className="mb-8 executive-summary bg-blue-50 rounded-lg p-6 border-l-4 border-blue-500">
-          <h2 className="text-xl font-bold text-gray-800 mb-4">Resumen Ejecutivo</h2>
+        {/* Resumen Ejecutivo (Problema → Impacto → Solución → Decisión) - DC Concretos secHdr style */}
+        <div className="mb-8 executive-summary p-6 rounded bg-gray-50 border-l-4 border-gray-400">
+          <div className="py-2 px-4 mb-4 rounded" style={{ backgroundColor: NAVY }}>
+            <h2 className="text-lg font-bold text-white">Resumen Ejecutivo</h2>
+          </div>
           {/* Compact metrics row */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4 metrics-row">
             <div className="bg-white rounded p-3 border text-center">
@@ -335,11 +376,11 @@ export function AssetProductionReport({ assetId, onClose }: AssetProductionRepor
               <p className="text-xs text-gray-600">Incidentes Activos</p>
             </div>
             <div className="bg-white rounded p-3 border text-center">
-              <p className="text-lg font-bold text-green-600">{preventivePct}%</p>
+              <p className="text-lg font-bold text-gray-800">{preventivePct}%</p>
               <p className="text-xs text-gray-600">Preventivo</p>
             </div>
             <div className="bg-white rounded p-3 border text-center">
-              <p className="text-lg font-bold text-red-600">{correctivePct}%</p>
+              <p className="text-lg font-bold text-gray-800">{correctivePct}%</p>
               <p className="text-xs text-gray-600">Correctivo</p>
             </div>
           </div>
@@ -361,114 +402,70 @@ export function AssetProductionReport({ assetId, onClose }: AssetProductionRepor
         {/* Asset Information Grid */}
         <div className="grid grid-cols-2 gap-8 mb-8">
           <div>
-            <h3 className="text-lg font-semibold text-gray-800 border-b border-gray-200 pb-2 mb-4">
-              Información Técnica del Activo
-            </h3>
-            <div className="space-y-3 text-sm">
-              <div className="flex justify-between">
-                <span className="font-medium">ID de Activo:</span>
-                <span>{asset.asset_id}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="font-medium">Número de Serie:</span>
-                <span>{asset.serial_number || 'N/A'}</span>
-              </div>
-              {asset.equipment_models && (
-                <>
-                  <div className="flex justify-between">
-                    <span className="font-medium">Fabricante:</span>
-                    <span>{asset.equipment_models.manufacturer || 'N/A'}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="font-medium">Modelo:</span>
-                    <span>{asset.equipment_models.name || 'N/A'}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="font-medium">Número de Modelo:</span>
-                    <span>{asset.equipment_models.model_id || 'N/A'}</span>
-                  </div>
-                </>
-              )}
-              <div className="flex justify-between">
-                <span className="font-medium">Fecha de Compra:</span>
-                <span>{formatDate(asset.purchase_date)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="font-medium">Fecha de Instalación:</span>
-                <span>{formatDate(asset.installation_date)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="font-medium">Costo de Compra:</span>
-                <span>{formatCurrency(asset.purchase_cost)}</span>
-              </div>
+            <div className="py-2 px-3 mb-4 rounded" style={{ backgroundColor: NAVY }}>
+              <h3 className="text-base font-bold text-white">Información Técnica del Activo</h3>
             </div>
+            <table className="w-full text-sm border-collapse">
+              <tbody>
+                <tr><td className="font-medium py-1 pr-4 align-top">ID de Activo:</td><td className="py-1 align-top">{asset.asset_id}</td></tr>
+                <tr><td className="font-medium py-1 pr-4 align-top">Número de Serie:</td><td className="py-1 align-top">{asset.serial_number || 'N/A'}</td></tr>
+                {asset.equipment_models && (
+                  <>
+                    <tr><td className="font-medium py-1 pr-4 align-top">Fabricante:</td><td className="py-1 align-top">{asset.equipment_models.manufacturer || 'N/A'}</td></tr>
+                    <tr><td className="font-medium py-1 pr-4 align-top">Modelo:</td><td className="py-1 align-top">{asset.equipment_models.name || 'N/A'}</td></tr>
+                    <tr><td className="font-medium py-1 pr-4 align-top">Número de Modelo:</td><td className="py-1 align-top">{asset.equipment_models.model_id || 'N/A'}</td></tr>
+                  </>
+                )}
+                <tr><td className="font-medium py-1 pr-4 align-top">Fecha de Compra:</td><td className="py-1 align-top">{formatDate(asset.purchase_date)}</td></tr>
+                <tr><td className="font-medium py-1 pr-4 align-top">Fecha de Instalación:</td><td className="py-1 align-top">{formatDate(asset.installation_date)}</td></tr>
+                <tr><td className="font-medium py-1 pr-4 align-top">Costo de Compra:</td><td className="py-1 align-top">{formatCurrency(asset.purchase_cost)}</td></tr>
+              </tbody>
+            </table>
           </div>
 
           <div>
-            <h3 className="text-lg font-semibold text-gray-800 border-b border-gray-200 pb-2 mb-4">
-              Estado Operacional
-            </h3>
-            <div className="space-y-3 text-sm">
-              <div className="flex justify-between">
-                <span className="font-medium">Horas Iniciales:</span>
-                <span>{asset.initial_hours?.toLocaleString() || 0} hrs</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="font-medium">Horas Actuales:</span>
-                <span className="font-bold text-blue-600">{asset.current_hours?.toLocaleString() || 0} hrs</span>
-              </div>
-              {asset.current_kilometers && (
-                <div className="flex justify-between">
-                  <span className="font-medium">Kilómetros Actuales:</span>
-                  <span className="font-bold text-blue-600">{asset.current_kilometers.toLocaleString()} km</span>
-                </div>
-              )}
-              <div className="flex justify-between">
-                <span className="font-medium">Último Mantenimiento:</span>
-                <span>{formatDate(asset.last_maintenance_date)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="font-medium">Tiempo Total de Inactividad:</span>
-                <span>{summary.totalDowntime} horas</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="font-medium">Disponibilidad:</span>
-                <span className="font-bold text-green-600">{summary.availability}%</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="font-medium">Estado de Garantía:</span>
-                <span className={summary.warrantyStatus === 'Active' ? 'text-green-600 font-medium' : 'text-red-600'}>{summary.warrantyStatus}</span>
-              </div>
-              {summary.daysToWarrantyExpiration !== null && summary.warrantyStatus === 'Active' && (
-                <div className="flex justify-between">
-                  <span className="font-medium">Días hasta Vencimiento:</span>
-                  <span className="font-medium">{summary.daysToWarrantyExpiration} días</span>
-                </div>
-              )}
+            <div className="py-2 px-3 mb-4 rounded" style={{ backgroundColor: NAVY }}>
+              <h3 className="text-base font-bold text-white">Estado Operacional</h3>
             </div>
+            <table className="w-full text-sm border-collapse">
+              <tbody>
+                <tr><td className="font-medium py-1 pr-4 align-top">Horas Iniciales:</td><td className="py-1 align-top">{asset.initial_hours?.toLocaleString() || 0} hrs</td></tr>
+                <tr><td className="font-medium py-1 pr-4 align-top">Horas Actuales:</td><td className="py-1 align-top font-bold text-gray-800">{asset.current_hours?.toLocaleString() || 0} hrs</td></tr>
+                {asset.current_kilometers && (
+                  <tr><td className="font-medium py-1 pr-4 align-top">Kilómetros Actuales:</td><td className="py-1 align-top font-bold text-gray-800">{asset.current_kilometers.toLocaleString()} km</td></tr>
+                )}
+                <tr><td className="font-medium py-1 pr-4 align-top">Último Mantenimiento:</td><td className="py-1 align-top">{formatDate(asset.last_maintenance_date)}</td></tr>
+                <tr><td className="font-medium py-1 pr-4 align-top">Tiempo Total de Inactividad:</td><td className="py-1 align-top">{summary.totalDowntime} horas</td></tr>
+                <tr><td className="font-medium py-1 pr-4 align-top">Disponibilidad:</td><td className="py-1 align-top font-bold text-gray-800">{summary.availability}%</td></tr>
+                <tr><td className="font-medium py-1 pr-4 align-top">Estado de Garantía:</td><td className="py-1 align-top font-medium text-gray-800">{summary.warrantyStatus}</td></tr>
+                {summary.daysToWarrantyExpiration !== null && summary.warrantyStatus === 'Active' && (
+                  <tr><td className="font-medium py-1 pr-4 align-top">Días hasta Vencimiento:</td><td className="py-1 align-top font-medium">{summary.daysToWarrantyExpiration} días</td></tr>
+                )}
+              </tbody>
+            </table>
           </div>
         </div>
 
         {/* Maintenance Summary */}
         <div className="mb-8">
-          <h3 className="text-lg font-semibold text-gray-800 border-b border-gray-200 pb-2 mb-4">
-            Resumen de Mantenimiento
-          </h3>
+          <div className="py-2 px-3 mb-4 rounded" style={{ backgroundColor: NAVY }}>
+            <h3 className="text-base font-bold text-white">Resumen de Mantenimiento</h3>
+          </div>
           <div className="grid grid-cols-4 gap-4 mb-6">
-            <div className="bg-green-50 rounded p-4 text-center">
-              <p className="text-2xl font-bold text-green-600">{summary.preventiveMaintenanceCount}</p>
+            <div className="bg-gray-50 rounded p-4 text-center border border-gray-200">
+              <p className="text-2xl font-bold text-gray-800">{summary.preventiveMaintenanceCount}</p>
               <p className="text-sm text-gray-600">Mantenimientos Preventivos</p>
             </div>
-            <div className="bg-red-50 rounded p-4 text-center">
-              <p className="text-2xl font-bold text-red-600">{summary.correctiveMaintenanceCount}</p>
+            <div className="bg-gray-50 rounded p-4 text-center border border-gray-200">
+              <p className="text-2xl font-bold text-gray-800">{summary.correctiveMaintenanceCount}</p>
               <p className="text-sm text-gray-600">Mantenimientos Correctivos</p>
             </div>
-            <div className="bg-blue-50 rounded p-4 text-center">
-              <p className="text-2xl font-bold text-blue-600">{summary.completedChecklistsCount}</p>
+            <div className="bg-gray-50 rounded p-4 text-center border border-gray-200">
+              <p className="text-2xl font-bold text-gray-800">{summary.completedChecklistsCount}</p>
               <p className="text-sm text-gray-600">Checklists Completados</p>
             </div>
-            <div className="bg-yellow-50 rounded p-4 text-center">
-              <p className="text-2xl font-bold text-yellow-600">{summary.openIssuesCount}</p>
+            <div className="bg-gray-50 rounded p-4 text-center border border-gray-200">
+              <p className="text-2xl font-bold text-gray-800">{summary.openIssuesCount}</p>
               <p className="text-sm text-gray-600">Problemas Abiertos</p>
             </div>
           </div>
@@ -493,11 +490,11 @@ export function AssetProductionReport({ assetId, onClose }: AssetProductionRepor
         {/* Maintenance Intervals Analysis */}
         {intervalAnalysis && intervalAnalysis.length > 0 && (
           <div className="mb-8 maintenance-intervals-section">
-            <h3 className="text-lg font-semibold text-gray-800 border-b border-gray-200 pb-2 mb-4">
-              Análisis de Intervalos de Mantenimiento Programados
-            </h3>
-            <div className="bg-blue-50 rounded p-4 mb-4 border-l-4 border-blue-500">
-              <p className="text-sm text-blue-800">
+            <div className="py-2 px-3 mb-4 rounded" style={{ backgroundColor: NAVY }}>
+              <h3 className="text-base font-bold text-white">Análisis de Intervalos de Mantenimiento Programados</h3>
+            </div>
+            <div className="bg-gray-50 rounded p-4 mb-4 border-l-4 border-gray-400">
+              <p className="text-sm text-gray-700">
                 <strong>Estado de Intervalos:</strong> Análisis detallado del cumplimiento de cada intervalo de mantenimiento preventivo 
                 definido para el modelo {asset.equipment_models?.name || 'del equipo'}. 
                 Horas actuales del equipo: <strong>{asset.current_hours?.toLocaleString() || 0} horas</strong>
@@ -520,10 +517,10 @@ export function AssetProductionReport({ assetId, onClose }: AssetProductionRepor
                 <tbody>
                   {intervalAnalysis.map((interval: any, index: number) => (
                     <tr key={interval.id} className={`border-t border-gray-200 ${
-                      interval.analysis.status === 'overdue' ? 'bg-red-50' :
-                      interval.analysis.status === 'upcoming' ? 'bg-amber-50' :
-                      interval.analysis.status === 'covered' ? 'bg-blue-50' :
-                      interval.analysis.status === 'completed' ? 'bg-emerald-50' : 'bg-white'
+                      interval.analysis.status === 'overdue' ? 'bg-gray-100' :
+                      interval.analysis.status === 'upcoming' ? 'bg-gray-50' :
+                      interval.analysis.status === 'covered' ? 'bg-gray-50' :
+                      interval.analysis.status === 'completed' ? 'bg-gray-50' : 'bg-white'
                     }`}>
                       <td className="px-3 py-3 border-r border-gray-200 w-32">
                         <div className="space-y-1">
@@ -555,10 +552,10 @@ export function AssetProductionReport({ assetId, onClose }: AssetProductionRepor
                             {getStatusText(interval.analysis.status)}
                           </span>
                           {interval.analysis.urgencyLevel === 'high' && (
-                            <div className="text-xs text-red-600 font-medium">🚨 URGENTE</div>
+                            <div className="text-xs text-gray-700 font-medium">URGENTE</div>
                           )}
                           {interval.analysis.urgencyLevel === 'medium' && (
-                            <div className="text-xs text-amber-600 font-medium">⚠️ ATENCIÓN</div>
+                            <div className="text-xs text-gray-700 font-medium">ATENCIÓN</div>
                           )}
                         </div>
                       </td>
@@ -567,9 +564,9 @@ export function AssetProductionReport({ assetId, onClose }: AssetProductionRepor
                           <div className="w-full bg-gray-200 rounded-full h-2">
                             <div 
                               className={`h-2 rounded-full ${
-                                interval.analysis.status === 'overdue' ? 'bg-red-600' :
-                                interval.analysis.status === 'upcoming' ? 'bg-amber-500' :
-                                interval.analysis.status === 'covered' ? 'bg-blue-400' : 'bg-green-500'
+                                interval.analysis.status === 'overdue' ? 'bg-gray-600' :
+                                interval.analysis.status === 'upcoming' ? 'bg-gray-500' :
+                                interval.analysis.status === 'covered' ? 'bg-gray-400' : 'bg-gray-500'
                               }`}
                               style={{ width: `${Math.min(interval.analysis.progress, 100)}%` }}
                             ></div>
@@ -578,7 +575,7 @@ export function AssetProductionReport({ assetId, onClose }: AssetProductionRepor
                             {interval.analysis.progress}%
                           </div>
                           {interval.analysis.hoursOverdue > 0 && (
-                            <div className="text-xs text-red-600 font-medium">
+                            <div className="text-xs text-gray-700 font-medium">
                               +{interval.analysis.hoursOverdue}h vencido
                             </div>
                           )}
@@ -596,8 +593,8 @@ export function AssetProductionReport({ assetId, onClose }: AssetProductionRepor
                             <div className="text-xs text-gray-600">
                               Por: {interval.analysis.lastMaintenance.technician}
                             </div>
-                            <div className="text-xs text-green-600 font-medium">
-                              ✅ Completado
+                            <div className="text-xs text-gray-700 font-medium">
+                              Completado
                             </div>
                           </div>
                         ) : (
@@ -606,28 +603,28 @@ export function AssetProductionReport({ assetId, onClose }: AssetProductionRepor
                               Nunca realizado
                             </div>
                             {interval.analysis.status === 'covered' && (
-                              <div className="text-xs text-blue-600">
-                                📋 Cubierto por mantenimiento posterior
+                              <div className="text-xs text-gray-600">
+                                Cubierto por mantenimiento posterior
                               </div>
                             )}
                             {interval.analysis.status === 'overdue' && (
-                              <div className="text-xs text-red-600 font-medium">
-                                🚨 Vencido - Requiere atención inmediata
+                              <div className="text-xs text-gray-700 font-medium">
+                                Vencido - Requiere atención inmediata
                               </div>
                             )}
                             {interval.analysis.status === 'upcoming' && interval.analysis.urgencyLevel === 'high' && (
-                              <div className="text-xs text-red-600 font-medium">
-                                🚨 Urgente - Próximo en ≤100h
+                              <div className="text-xs text-gray-700 font-medium">
+                                Urgente - Próximo en ≤100h
                               </div>
                             )}
                             {interval.analysis.status === 'upcoming' && interval.analysis.urgencyLevel === 'medium' && (
-                              <div className="text-xs text-amber-600 font-medium">
-                                ⚠️ Próximo - En ≤200h
+                              <div className="text-xs text-gray-600 font-medium">
+                                Próximo - En ≤200h
                               </div>
                             )}
                             {interval.analysis.status === 'scheduled' && (
-                              <div className="text-xs text-green-600">
-                                📅 Programado para el futuro
+                              <div className="text-xs text-gray-600">
+                                Programado para el futuro
                               </div>
                             )}
                           </div>
@@ -637,14 +634,14 @@ export function AssetProductionReport({ assetId, onClose }: AssetProductionRepor
                         <div className="space-y-1">
                           {interval.analysis.wasPerformed ? (
                             <>
-                              <div className="text-sm font-medium text-green-600">
+                              <div className="text-sm font-medium text-gray-700">
                                 Completado
                               </div>
                               <div className="text-xs text-gray-600">
                                 Intervalo: {interval.interval_value?.toLocaleString() || 'N/A'} horas
                               </div>
-                              <div className="text-xs text-green-600">
-                                ✅ Mantenimiento realizado
+                              <div className="text-xs text-gray-600">
+                                Mantenimiento realizado
                               </div>
                             </>
                           ) : (
@@ -656,22 +653,22 @@ export function AssetProductionReport({ assetId, onClose }: AssetProductionRepor
                                 Intervalo programado
                               </div>
                               {interval.analysis.status === 'overdue' && (
-                                <div className="text-xs text-red-600 font-medium">
+                                <div className="text-xs text-gray-700 font-medium">
                                   Vencido por {interval.analysis.hoursOverdue || 0} horas
                                 </div>
                               )}
                               {interval.analysis.status === 'upcoming' && (
-                                <div className="text-xs text-amber-600 font-medium">
+                                <div className="text-xs text-gray-600 font-medium">
                                   En {Math.max(0, (interval.interval_value || 0) - (asset.current_hours || 0))} horas
                                 </div>
                               )}
                               {interval.analysis.status === 'scheduled' && (
-                                <div className="text-xs text-green-600">
+                                <div className="text-xs text-gray-600">
                                   En {Math.max(0, (interval.interval_value || 0) - (asset.current_hours || 0))} horas
                                 </div>
                               )}
                               {interval.analysis.status === 'covered' && (
-                                <div className="text-xs text-blue-600">
+                                <div className="text-xs text-gray-600">
                                   Cubierto por mantenimiento posterior
                                 </div>
                               )}
@@ -683,25 +680,25 @@ export function AssetProductionReport({ assetId, onClose }: AssetProductionRepor
                         {interval.maintenance_tasks && interval.maintenance_tasks.length > 0 ? (
                           <div className="space-y-1">
                             {interval.maintenance_tasks.slice(0, 2).map((task: any, taskIndex: number) => (
-                              <div key={task.id} className="text-xs bg-gray-50 p-2 rounded border-l-2 border-blue-200">
+                              <div key={task.id} className="text-xs bg-gray-50 p-2 rounded border-l-2 border-gray-300">
                                 <div className="font-medium text-gray-800 mb-1">
                                   {task.description}
                                 </div>
                                 {task.task_parts && task.task_parts.length > 0 && (
-                                  <div className="text-xs text-blue-600">
-                                    📦 {task.task_parts.length} repuesto(s): {task.task_parts.map((part: any) => part.part_name || part.name).join(', ').substring(0, 50)}{task.task_parts.map((part: any) => part.part_name || part.name).join(', ').length > 50 ? '...' : ''}
+                                  <div className="text-xs text-gray-600">
+                                    {task.task_parts.length} repuesto(s): {task.task_parts.map((part: any) => part.part_name || part.name).join(', ').substring(0, 50)}{task.task_parts.map((part: any) => part.part_name || part.name).join(', ').length > 50 ? '...' : ''}
                                   </div>
                                 )}
                                 {task.estimated_duration && (
                                   <div className="text-xs text-gray-600">
-                                    ⏱️ Duración: {task.estimated_duration}h
+                                    Duración: {task.estimated_duration}h
                                   </div>
                                 )}
                               </div>
                             ))}
                             {interval.maintenance_tasks.length > 2 && (
                               <div className="text-xs text-gray-500 italic bg-gray-100 p-1 rounded">
-                                ➕ {interval.maintenance_tasks.length - 2} tarea(s) adicional(es)
+                                {interval.maintenance_tasks.length - 2} tarea(s) adicional(es)
                               </div>
                             )}
                             <div className="text-xs text-gray-500 font-medium mt-2">
@@ -722,27 +719,27 @@ export function AssetProductionReport({ assetId, onClose }: AssetProductionRepor
             
             <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
               <div className="bg-white border rounded p-3">
-                <div className="font-medium text-red-600">
-                  {intervalAnalysis.filter((i: any) => i.analysis.status === 'overdue').length}
-                </div>
-                <div className="text-xs text-gray-600">Intervalos Vencidos</div>
+              <div className="font-medium text-gray-800">
+                {intervalAnalysis.filter((i: any) => i.analysis.status === 'overdue').length}
               </div>
-              <div className="bg-white border rounded p-3">
-                <div className="font-medium text-amber-600">
-                  {intervalAnalysis.filter((i: any) => i.analysis.status === 'upcoming').length}
-                </div>
-                <div className="text-xs text-gray-600">Próximos a Vencer</div>
+              <div className="text-xs text-gray-600">Intervalos Vencidos</div>
+            </div>
+            <div className="bg-white border rounded p-3">
+              <div className="font-medium text-gray-800">
+                {intervalAnalysis.filter((i: any) => i.analysis.status === 'upcoming').length}
               </div>
-              <div className="bg-white border rounded p-3">
-                <div className="font-medium text-blue-600">
-                  {intervalAnalysis.filter((i: any) => i.analysis.status === 'covered').length}
-                </div>
-                <div className="text-xs text-gray-600">Cubiertos</div>
+              <div className="text-xs text-gray-600">Próximos a Vencer</div>
+            </div>
+            <div className="bg-white border rounded p-3">
+              <div className="font-medium text-gray-800">
+                {intervalAnalysis.filter((i: any) => i.analysis.status === 'covered').length}
               </div>
-              <div className="bg-white border rounded p-3">
-                <div className="font-medium text-green-600">
-                  {intervalAnalysis.filter((i: any) => i.analysis.status === 'scheduled').length}
-                </div>
+              <div className="text-xs text-gray-600">Cubiertos</div>
+            </div>
+            <div className="bg-white border rounded p-3">
+              <div className="font-medium text-gray-800">
+                {intervalAnalysis.filter((i: any) => i.analysis.status === 'scheduled').length}
+              </div>
                 <div className="text-xs text-gray-600">Programados</div>
               </div>
             </div>
@@ -752,9 +749,9 @@ export function AssetProductionReport({ assetId, onClose }: AssetProductionRepor
         {/* Completed Checklists */}
         {completedChecklists.length > 0 && (
           <div className="mb-8">
-            <h3 className="text-lg font-semibold text-gray-800 border-b border-gray-200 pb-2 mb-4">
-              Historial de Checklists Completados
-            </h3>
+            <div className="py-2 px-3 mb-4 rounded" style={{ backgroundColor: NAVY }}>
+              <h3 className="text-base font-bold text-white">Historial de Checklists Completados</h3>
+            </div>
             <div className="overflow-hidden border border-gray-200 rounded">
               <table className="w-full text-sm print-table">
                 <thead className="bg-gray-50">
@@ -784,8 +781,8 @@ export function AssetProductionReport({ assetId, onClose }: AssetProductionRepor
                       <td className="px-4 py-3 text-center border-r border-gray-200">
                         <span className={`px-2 py-1 rounded text-xs font-medium ${
                           checklist.status === 'Completado' 
-                            ? 'bg-green-100 text-green-800' 
-                            : 'bg-red-100 text-red-800'
+                            ? 'bg-gray-100 text-gray-800'
+                            : 'bg-gray-100 text-gray-800'
                         }`}>
                           {checklist.status}
                         </span>
@@ -804,9 +801,9 @@ export function AssetProductionReport({ assetId, onClose }: AssetProductionRepor
         {/* Maintenance History */}
         {maintenanceHistory.length > 0 && (
           <div className="mb-8 maintenance-history-section">
-            <h3 className="text-lg font-semibold text-gray-800 border-b border-gray-200 pb-2 mb-4">
-              Historial de Mantenimiento Detallado
-            </h3>
+            <div className="py-2 px-3 mb-4 rounded" style={{ backgroundColor: NAVY }}>
+              <h3 className="text-base font-bold text-white">Historial de Mantenimiento Detallado</h3>
+            </div>
             {maintenanceHistory.slice(0, 10).map((maintenance: any, index: number) => {
               const maintenanceType = getMaintenanceType(maintenance)
               
@@ -817,7 +814,7 @@ export function AssetProductionReport({ assetId, onClose }: AssetProductionRepor
                     <p className="text-sm"><strong>Fecha:</strong> {formatDate(maintenance.date)}</p>
                     <p className="text-sm"><strong>Tipo:</strong> <span className={`font-medium ${maintenanceType.colorClass}`}>{maintenanceType.displayText}</span></p>
                     {maintenance.maintenance_plan_id && (
-                      <p className="text-xs text-blue-600 mt-1">📋 Asociado a plan de mantenimiento</p>
+                      <p className="text-xs text-gray-600 mt-1">Asociado a plan de mantenimiento</p>
                     )}
                   </div>
                   <div>
@@ -836,13 +833,13 @@ export function AssetProductionReport({ assetId, onClose }: AssetProductionRepor
                 {maintenance.findings && (
                   <div className="mb-3">
                     <p className="text-sm font-medium mb-1">Hallazgos:</p>
-                    <p className="text-sm text-gray-700 bg-blue-50 p-2 rounded">{maintenance.findings}</p>
+                    <p className="text-sm text-gray-700 bg-gray-50 p-2 rounded border border-gray-200">{maintenance.findings}</p>
                   </div>
                 )}
                 {maintenance.actions && (
                   <div className="mb-3">
                     <p className="text-sm font-medium mb-1">Acciones Realizadas:</p>
-                    <p className="text-sm text-gray-700 bg-green-50 p-2 rounded">{maintenance.actions}</p>
+                    <p className="text-sm text-gray-700 bg-gray-50 p-2 rounded border border-gray-200">{maintenance.actions}</p>
                   </div>
                 )}
                 {maintenance.parts && (
@@ -862,9 +859,9 @@ export function AssetProductionReport({ assetId, onClose }: AssetProductionRepor
         {/* Incidents */}
         {incidents.length > 0 && (
           <div className="mb-8">
-            <h3 className="text-lg font-semibold text-gray-800 border-b border-gray-200 pb-2 mb-4">
-              Historial de Incidentes
-            </h3>
+            <div className="py-2 px-3 mb-4 rounded" style={{ backgroundColor: NAVY }}>
+              <h3 className="text-base font-bold text-white">Historial de Incidentes</h3>
+            </div>
             <div className="overflow-hidden border border-gray-200 rounded">
               <table className="w-full text-sm print-table">
                 <thead className="bg-gray-50">
@@ -883,7 +880,7 @@ export function AssetProductionReport({ assetId, onClose }: AssetProductionRepor
                         {formatDate(incident.date)}
                       </td>
                       <td className="px-4 py-3 border-r border-gray-200">
-                        <span className="px-2 py-1 rounded text-xs font-medium bg-red-100 text-red-800">
+                        <span className="px-2 py-1 rounded text-xs font-medium bg-gray-200 text-gray-800">
                           {incident.type}
                         </span>
                       </td>
@@ -907,25 +904,25 @@ export function AssetProductionReport({ assetId, onClose }: AssetProductionRepor
         {/* Work Orders Status */}
         {workOrders.length > 0 && (
           <div className="mb-8">
-            <h3 className="text-lg font-semibold text-gray-800 border-b border-gray-200 pb-2 mb-4">
-              Estado de Órdenes de Trabajo
-            </h3>
+            <div className="py-2 px-3 mb-4 rounded" style={{ backgroundColor: NAVY }}>
+              <h3 className="text-base font-bold text-white">Estado de Órdenes de Trabajo</h3>
+            </div>
             <div className="grid grid-cols-3 gap-4">
-              <div className="bg-green-50 rounded p-4">
-                <h4 className="font-medium text-green-800 mb-2">Completadas</h4>
-                <p className="text-2xl font-bold text-green-600">
+              <div className="bg-gray-50 rounded p-4 border border-gray-200">
+                <h4 className="font-medium text-gray-800 mb-2">Completadas</h4>
+                <p className="text-2xl font-bold text-gray-800">
                   {workOrders.filter((wo: any) => wo.status === 'Completada').length}
                 </p>
               </div>
-              <div className="bg-yellow-50 rounded p-4">
-                <h4 className="font-medium text-yellow-800 mb-2">En Progreso</h4>
-                <p className="text-2xl font-bold text-yellow-600">
+              <div className="bg-gray-50 rounded p-4 border border-gray-200">
+                <h4 className="font-medium text-gray-800 mb-2">En Progreso</h4>
+                <p className="text-2xl font-bold text-gray-800">
                   {workOrders.filter((wo: any) => ['En ejecución', 'Aprobada'].includes(wo.status)).length}
                 </p>
               </div>
-              <div className="bg-blue-50 rounded p-4">
-                <h4 className="font-medium text-blue-800 mb-2">Pendientes</h4>
-                <p className="text-2xl font-bold text-blue-600">
+              <div className="bg-gray-50 rounded p-4 border border-gray-200">
+                <h4 className="font-medium text-gray-800 mb-2">Pendientes</h4>
+                <p className="text-2xl font-bold text-gray-800">
                   {workOrders.filter((wo: any) => ['Pendiente', 'Cotizada'].includes(wo.status)).length}
                 </p>
               </div>
@@ -935,42 +932,48 @@ export function AssetProductionReport({ assetId, onClose }: AssetProductionRepor
 
         {/* Recommendations */}
         <div className="mb-8">
-          <h3 className="text-lg font-semibold text-gray-800 border-b border-gray-200 pb-2 mb-4">
-            Recomendaciones y Observaciones
-          </h3>
-          <div className="bg-amber-50 rounded p-4 border-l-4 border-amber-500">
+          <div className="py-2 px-3 mb-4 rounded" style={{ backgroundColor: NAVY }}>
+            <h3 className="text-base font-bold text-white">Recomendaciones y Observaciones</h3>
+          </div>
+          <div className="bg-gray-50 rounded p-4 border-l-4 border-gray-400">
             <div className="space-y-2 text-sm">
               {summary.availability < 95 && (
-                <p className="text-amber-800">
-                  ⚠️ <strong>Disponibilidad Baja:</strong> La disponibilidad del activo ({summary.availability}%) está por debajo del objetivo del 95%. Considere revisar el programa de mantenimiento preventivo.
+                <p className="text-gray-700">
+                  <strong>Disponibilidad Baja:</strong> La disponibilidad del activo ({summary.availability}%) está por debajo del objetivo del 95%. Considere revisar el programa de mantenimiento preventivo.
                 </p>
               )}
               {summary.warrantyStatus === 'Expired' && (
-                <p className="text-amber-800">
-                  ⚠️ <strong>Garantía Vencida:</strong> La garantía del activo ha vencido. Considere un plan de mantenimiento más intensivo.
+                <p className="text-gray-700">
+                  <strong>Garantía Vencida:</strong> La garantía del activo ha vencido. Considere un plan de mantenimiento más intensivo.
                 </p>
               )}
               {summary.daysToWarrantyExpiration !== null && summary.daysToWarrantyExpiration < 90 && summary.warrantyStatus === 'Active' && (
-                <p className="text-amber-800">
-                  ⚠️ <strong>Garantía por Vencer:</strong> La garantía vence en {summary.daysToWarrantyExpiration} días. Programe mantenimientos preventivos antes del vencimiento.
+                <p className="text-gray-700">
+                  <strong>Garantía por Vencer:</strong> La garantía vence en {summary.daysToWarrantyExpiration} días. Programe mantenimientos preventivos antes del vencimiento.
                 </p>
               )}
               {summary.openIssuesCount > 0 && (
-                <p className="text-amber-800">
-                  ⚠️ <strong>Problemas Pendientes:</strong> Hay {summary.openIssuesCount} problemas sin resolver detectados en checklists.
+                <p className="text-gray-700">
+                  <strong>Problemas Pendientes:</strong> Hay {summary.openIssuesCount} problemas sin resolver detectados en checklists.
                 </p>
               )}
               {summary.correctiveMaintenanceCount > summary.preventiveMaintenanceCount && (
-                <p className="text-amber-800">
-                  ⚠️ <strong>Mantenimiento Reactivo:</strong> Se han realizado más mantenimientos correctivos que preventivos. Considere mejorar el programa preventivo.
+                <p className="text-gray-700">
+                  <strong>Mantenimiento Reactivo:</strong> Se han realizado más mantenimientos correctivos que preventivos. Considere mejorar el programa preventivo.
                 </p>
               )}
             </div>
           </div>
         </div>
 
-        {/* Signatures */}
-        <div className="grid grid-cols-3 gap-8 mt-12 pt-8 border-t-2 border-gray-200">
+        {/* DC Concretos closing block (policy_template) */}
+        <div className="text-center mt-12 mb-6" style={{ borderTop: `2px solid ${GREEN}` }}>
+          <p className="font-bold text-lg mt-6" style={{ color: NAVY }}>DC Concretos, S.A. de C.V.</p>
+          <p className="text-sm mt-1 italic" style={{ color: GREEN }}>"Ayudando a concretar ideas"</p>
+        </div>
+
+        {/* Signatures - sigRow style */}
+        <div className="grid grid-cols-3 gap-8 mt-8 pt-8" style={{ borderTop: `2px solid #333` }}>
           <div>
             <h4 className="font-medium text-gray-700 mb-4">Responsable de Mantenimiento</h4>
             <div className="border-b border-gray-400 mb-2 h-16"></div>
@@ -998,353 +1001,50 @@ export function AssetProductionReport({ assetId, onClose }: AssetProductionRepor
           </div>
         </div>
 
-        {/* Footer */}
-        <div className="mt-8 pt-6 border-t-2 border-gray-300">
-          <div className="bg-gray-100 rounded p-4">
-            <div className="grid grid-cols-3 gap-4 text-xs text-gray-600">
-              <div>
-                <p className="font-medium mb-1">Información del Documento</p>
-                <p>Activo: <strong>{asset.asset_id}</strong></p>
-                <p>Generado: {format(new Date(), "dd/MM/yyyy 'a las' HH:mm")}</p>
-                <p>Versión: 1.0</p>
-              </div>
-              <div>
-                <p className="font-medium mb-1">Sistema de Gestión</p>
-                <p>Plataforma: Sistema de Mantenimiento Industrial</p>
-                <p>Módulo: Reportes de Producción</p>
-                <p>Estado: Documento Oficial</p>
-              </div>
-              <div>
-                <p className="font-medium mb-1">Confidencialidad</p>
-                <p>Clasificación: Uso Interno</p>
-                <p>Distribución: Autorizada</p>
-                <p>Archivo: Departamento de Mantenimiento</p>
-              </div>
-            </div>
-            <div className="text-center mt-4 pt-3 border-t border-gray-300">
-              <p className="text-xs text-gray-500 italic">
-                Este documento constituye un registro oficial de la productividad y estado del activo y debe ser conservado según las políticas de la empresa.
-              </p>
-            </div>
+        {/* DC Concretos Footer (policy_template style) */}
+        <div className="mt-8 pt-4" style={{ borderTop: `3px solid ${GREEN}` }}>
+          <div className="flex flex-wrap justify-center gap-x-6 gap-y-1 text-sm" style={{ color: "#666" }}>
+            <span>rh@dcconcretos.com.mx</span>
+            <span>www.dcconcretos.com.mx</span>
+            <span>Módulo: Reportes de Producción · Activo: {asset.asset_id}</span>
           </div>
+          <p className="text-center text-xs mt-2" style={{ color: "#666" }}>
+            Documento generado el {format(new Date(), "dd 'de' MMMM 'de' yyyy 'a las' HH:mm", { locale: es })} · Clasificación: Uso Interno
+          </p>
         </div>
       </div>
 
-      {/* Print Styles - 1-1.25in margins, clear hierarchy, one-page summary */}
+      {/* PDF export: reduce padding to maximize paper usage */}
       <style jsx global>{`
+        .print-container.pdf-export-mode {
+          padding: 6px !important;
+          max-width: 100% !important;
+        }
         @media print {
-          /* Hide everything except the report content */
-          body > * {
-            visibility: hidden !important;
-          }
-          
-          .print-container, .print-container * {
-            visibility: visible !important;
-          }
-          
           .no-print {
             display: none !important;
-            visibility: hidden !important;
           }
-          
-          /* Hide navigation and headers completely */
-          nav, header, .sidebar, .navigation, .nav, .header, 
-          [role="navigation"], [role="banner"], .navbar, .menu,
-          .breadcrumb, .breadcrumbs {
+          nav, header, .sidebar, [role="navigation"], [role="banner"], .breadcrumb, .breadcrumbs {
             display: none !important;
-            visibility: hidden !important;
           }
-          
-          /* Reset page and body for printing */
           html, body {
-            width: 100% !important;
-            height: auto !important;
             margin: 0 !important;
             padding: 0 !important;
-            font-size: 12px !important;
-            line-height: 1.5 !important;
-            color: black !important;
             background: white !important;
             -webkit-print-color-adjust: exact !important;
-            color-adjust: exact !important;
+            print-color-adjust: exact !important;
           }
-          
-          /* Position the print container - 1 to 1.25in margins */
-          .print-container {
-            position: static !important;
-            display: block !important;
-            width: 100% !important;
-            max-width: 65ch !important;
-            margin: 0 auto !important;
-            padding: 1.25in !important;
-            background: white !important;
-            color: black !important;
-            box-shadow: none !important;
-            border: none !important;
-          }
-          
-          /* Page margins 1-1.25in */
           @page {
-            margin: 1in !important;
-            size: A4 portrait !important;
+            margin: 1.5cm;
+            size: A4 portrait;
           }
-          
-          @page :first {
-            margin: 8mm !important;
+          .print-container {
+            max-width: 100% !important;
           }
-          
-          @page :left {
-            margin: 8mm !important;
+          .executive-summary, .metrics-row {
+            page-break-inside: avoid;
           }
-          
-          @page :right {
-            margin: 8mm !important;
-          }
-          
-          /* Typography for print - clear hierarchy */
-          h1, h2, h3, h4, h5, h6 {
-            page-break-after: avoid !important;
-            color: black !important;
-            margin-top: 0.5em !important;
-            margin-bottom: 0.3em !important;
-          }
-          
-          h1 { font-size: 20px !important; }
-          h2 { font-size: 16px !important; }
-          h3 { font-size: 14px !important; }
-          h4 { font-size: 12px !important; }
-          
-          /* Executive summary: keep on one page when possible */
-          .executive-summary {
-            page-break-inside: avoid !important;
-          }
-          
-          .metrics-row {
-            page-break-inside: avoid !important;
-          }
-          
-          p, div, span {
-            color: black !important;
-            font-size: 11px !important;
-            line-height: 1.3 !important;
-          }
-          
-          /* Section spacing */
-          .mb-8 {
-            margin-bottom: 15px !important;
-            page-break-inside: auto !important;
-          }
-          
-          /* Allow sections to break across pages */
-          .space-y-8 > * {
-            page-break-inside: auto !important;
-          }
-          
-          /* Grid layouts */
-          .grid {
-            display: block !important;
-          }
-          
-          .grid.grid-cols-2 > div {
-            display: inline-block !important;
-            width: 48% !important;
-            vertical-align: top !important;
-            margin-right: 2% !important;
-          }
-          
-          .grid.grid-cols-3 > div {
-            display: inline-block !important;
-            width: 31% !important;
-            vertical-align: top !important;
-            margin-right: 2% !important;
-          }
-          
-          .grid.grid-cols-4 > div {
-            display: inline-block !important;
-            width: 23% !important;
-            vertical-align: top !important;
-            margin-right: 2% !important;
-          }
-          
-          /* Tables */
-          table {
-            page-break-inside: auto !important;
-            border-collapse: collapse !important;
-            width: 100% !important;
-            margin-bottom: 10px !important;
-          }
-          
-          thead {
-            display: table-header-group !important;
-          }
-          
-          tbody {
-            page-break-inside: auto !important;
-          }
-          
-          tr {
-            page-break-inside: auto !important;
-            page-break-after: auto !important;
-          }
-          
-          th, td {
-            border: 1px solid #333 !important;
-            padding: 3px 5px !important;
-            font-size: 9px !important;
-            line-height: 1.2 !important;
-            text-align: left !important;
-            vertical-align: top !important;
-          }
-          
-          th {
-            background-color: #f0f0f0 !important;
-            font-weight: bold !important;
-            font-size: 9px !important;
-          }
-          
-          /* Background colors for print */
-          .bg-blue-50, .bg-blue-100 {
-            background-color: #e6f3ff !important;
-          }
-          
-          .bg-green-50, .bg-green-100 {
-            background-color: #e6f7e6 !important;
-          }
-          
-          .bg-red-50, .bg-red-100 {
-            background-color: #ffe6e6 !important;
-          }
-          
-          .bg-yellow-50, .bg-yellow-100 {
-            background-color: #fff9e6 !important;
-          }
-          
-          .bg-gray-50, .bg-gray-100 {
-            background-color: #f5f5f5 !important;
-          }
-          
-          .bg-amber-50, .bg-amber-100 {
-            background-color: #fff8e6 !important;
-          }
-          
-          /* Borders and rounded corners */
-          .rounded, .rounded-lg {
-            border-radius: 3px !important;
-          }
-          
-          .border {
-            border: 1px solid #ccc !important;
-          }
-          
-          .border-t {
-            border-top: 1px solid #ccc !important;
-          }
-          
-          .border-b {
-            border-bottom: 1px solid #ccc !important;
-          }
-          
-          .border-l-4 {
-            border-left: 3px solid #666 !important;
-          }
-          
-          /* Progress bars */
-          .w-full {
-            width: 100% !important;
-          }
-          
-          /* Badges and status indicators */
-          .px-2 {
-            padding-left: 4px !important;
-            padding-right: 4px !important;
-          }
-          
-          .py-1 {
-            padding-top: 2px !important;
-            padding-bottom: 2px !important;
-          }
-          
-          /* Remove forced page breaks to allow natural flow */
-          .maintenance-intervals-section {
-            page-break-before: auto !important;
-          }
-          
-          .maintenance-history-section {
-            page-break-before: auto !important;
-          }
-          
-          /* Improve page break handling for large content blocks */
-          .overflow-x-auto {
-            overflow: visible !important;
-          }
-          
-          /* Ensure long content doesn't get cut off */
-          .max-w-none {
-            max-width: none !important;
-          }
-          
-          /* Spacing adjustments */
-          .space-y-1 > * + * {
-            margin-top: 2px !important;
-          }
-          
-          .space-y-2 > * + * {
-            margin-top: 4px !important;
-          }
-          
-          .space-y-3 > * + * {
-            margin-top: 6px !important;
-          }
-          
-          /* Text colors for print */
-          .text-green-600, .text-green-800 {
-            color: #166534 !important;
-          }
-          
-          .text-red-600, .text-red-800 {
-            color: #dc2626 !important;
-          }
-          
-          .text-blue-600, .text-blue-800 {
-            color: #2563eb !important;
-          }
-          
-          .text-yellow-600, .text-amber-600 {
-            color: #d97706 !important;
-          }
-          
-          .text-gray-500, .text-gray-600, .text-gray-700 {
-            color: #4b5563 !important;
-          }
-          
-          /* Ensure visibility of important elements */
-          .font-bold, .font-medium {
-            font-weight: bold !important;
-          }
-          
-          .text-center {
-            text-align: center !important;
-          }
-          
-          .text-right {
-            text-align: right !important;
-          }
-          
-          /* Overflow handling */
-          .overflow-hidden {
-            overflow: visible !important;
-          }
-          
-          /* Fixed positioning issues */
-          .fixed, .absolute {
-            position: static !important;
-          }
-          
-          /* Signature section */
-          .border-b.border-gray-400 {
-            border-bottom: 1px solid #333 !important;
-            height: 30px !important;
-          }
+          thead { display: table-header-group; }
         }
       `}</style>
     </div>

@@ -999,13 +999,15 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
           <Tabs defaultValue="status" className="w-full" onValueChange={setActiveTab}>
             <TabsList className="w-full justify-start mb-4 h-auto p-1 flex-wrap gap-1 overflow-x-auto min-w-0">
               <TabsTrigger value="status" className="text-xs sm:text-sm px-3 py-2 cursor-pointer transition-colors duration-200 data-[state=active]:underline data-[state=active]:underline-offset-4">Estado & Mantenimiento</TabsTrigger>
-              <TabsTrigger value="incidents" className="text-xs sm:text-sm px-3 py-2 relative cursor-pointer transition-colors duration-200 data-[state=active]:underline data-[state=active]:underline-offset-4">
-                <span>Incidentes & Checklists</span>
-                {(pendingIncidentsCount > 0 || pendingChecklists.length > 0) && (
-                  <Badge variant="destructive" className="absolute -top-2 -right-2 h-5 w-5 rounded-full p-0 text-xs flex items-center justify-center min-w-[20px]">
-                    {pendingIncidentsCount + pendingChecklists.length}
-                  </Badge>
-                )}
+              <TabsTrigger value="incidents" className="text-xs sm:text-sm px-3 py-2 cursor-pointer transition-colors duration-200 data-[state=active]:underline data-[state=active]:underline-offset-4">
+                <span className="flex items-center gap-2">
+                  Incidentes & Checklists
+                  {(pendingIncidentsCount > 0 || pendingChecklists.length > 0) && (
+                    <Badge variant="destructive" className="h-5 min-w-[20px] rounded-full px-1.5 text-xs shrink-0">
+                      {pendingIncidentsCount + pendingChecklists.length}
+                    </Badge>
+                  )}
+                </span>
               </TabsTrigger>
               <TabsTrigger value="technical" className="text-xs sm:text-sm px-3 py-2 cursor-pointer transition-colors duration-200 data-[state=active]:underline data-[state=active]:underline-offset-4">Información Técnica</TabsTrigger>
               <TabsTrigger value="documentation" className="text-xs sm:text-sm px-3 py-2 cursor-pointer transition-colors duration-200 data-[state=active]:underline data-[state=active]:underline-offset-4">Documentación</TabsTrigger>

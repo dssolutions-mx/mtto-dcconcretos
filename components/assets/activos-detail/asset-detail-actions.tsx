@@ -60,19 +60,6 @@ export function AssetDetailActions({
         asChild
         className="w-full sm:w-auto justify-center min-h-[44px] cursor-pointer transition-colors duration-200"
       >
-        <Link
-          href={`/servicios?assetId=${assetId}&asset=${encodeURIComponent(assetName || "")}`}
-        >
-          <FileText className="h-4 w-4 mr-2" />
-          Órdenes de Servicio
-        </Link>
-      </Button>
-      <Button
-        size="sm"
-        variant="outline"
-        asChild
-        className="w-full sm:w-auto justify-center min-h-[44px] cursor-pointer transition-colors duration-200"
-      >
         <Link href={`/activos/${assetId}/reporte-produccion`}>
           <FileText className="h-4 w-4 mr-2" />
           Reporte Producción
