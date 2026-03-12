@@ -5,6 +5,52 @@ import {
   PurchaseOrderStatus,
 } from "@/types"
 
+/** Tailwind classes for status dot (e.g. "bg-green-500") */
+export function getStatusDotClass(status: string | null): string {
+  switch (status) {
+    case WorkOrderStatus.Completed:
+      return "bg-green-500"
+    case WorkOrderStatus.InProgress:
+      return "bg-blue-500"
+    case WorkOrderStatus.Pending:
+    case WorkOrderStatus.Quoted:
+    case WorkOrderStatus.Approved:
+      return "bg-slate-400"
+    default:
+      return "bg-slate-400"
+  }
+}
+
+/** Tailwind classes for left border by status (e.g. "border-l-green-500") */
+export function getStatusBorderClass(status: string | null): string {
+  switch (status) {
+    case WorkOrderStatus.Completed:
+      return "border-l-green-500"
+    case WorkOrderStatus.InProgress:
+      return "border-l-blue-500"
+    case WorkOrderStatus.Pending:
+    case WorkOrderStatus.Quoted:
+    case WorkOrderStatus.Approved:
+      return "border-l-slate-400"
+    default:
+      return "border-l-slate-400"
+  }
+}
+
+/** Tailwind classes for priority dot/badge: Critical=red, High=orange, Medium=gray */
+export function getPriorityDotClass(priority: string | null): string {
+  switch (priority) {
+    case ServiceOrderPriority.Critical:
+      return "bg-red-500"
+    case ServiceOrderPriority.High:
+      return "bg-amber-500"
+    case ServiceOrderPriority.Medium:
+    case ServiceOrderPriority.Low:
+    default:
+      return "bg-slate-400"
+  }
+}
+
 export function getPriorityVariant(priority: string | null) {
   switch (priority) {
     case ServiceOrderPriority.Critical:
@@ -110,6 +156,28 @@ export function formatDate(dateString: string | null): string {
     }).format(date)
   } catch (error) {
     console.warn("Error formatting date:", dateString, error)
+    return dateString
+  }
+}
+
+/** Relative date for list UX: "Hoy", "Mañana", "Hace 3 días", or short absolute */
+export function formatDateRelative(dateString: string | null): string {
+  if (!dateString) return "—"
+  try {
+    const date = new Date(dateString)
+    date.setHours(0, 0, 0, 0)
+    if (isNaN(date.getTime())) return dateString
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    const diffMs = date.getTime() - today.getTime()
+    const diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24))
+    if (diffDays === 0) return "Hoy"
+    if (diffDays === 1) return "Mañana"
+    if (diffDays === -1) return "Ayer"
+    if (diffDays >= -6 && diffDays <= -2) return `Hace ${Math.abs(diffDays)} días`
+    if (diffDays >= 2 && diffDays <= 6) return `En ${diffDays} días`
+    return new Intl.DateTimeFormat("es-ES", { month: "short", day: "numeric" }).format(date)
+  } catch {
     return dateString
   }
 }

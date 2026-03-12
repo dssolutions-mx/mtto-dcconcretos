@@ -1,12 +1,39 @@
 "use client"
 
+import { useState } from "react"
 import Link from "next/link"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Calendar, Package, ShoppingCart, User } from "lucide-react"
-import { WorkOrderWithAsset } from "@/types"
-import { getStatusVariant, getTypeVariant, getPriorityVariant, getPurchaseOrderStatusVariant, getPurchaseOrderStatusClass, formatDate } from "./work-order-badges"
-import { WorkOrderActionsMenu } from "./work-order-actions-menu"
+import { Button } from "@/components/ui/button"
+import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet"
+import {
+  Calendar,
+  Edit,
+  Eye,
+  MoreHorizontal,
+  ShoppingCart,
+  Trash,
+  Wrench,
+} from "lucide-react"
+import { WorkOrderWithAsset, WorkOrderStatus } from "@/types"
+import {
+  getStatusVariant,
+  getStatusBorderClass,
+  getTypeVariant,
+  getPriorityVariant,
+  getPriorityDotClass,
+  getPurchaseOrderStatusVariant,
+  getPurchaseOrderStatusClass,
+  formatDateRelative,
+} from "./work-order-badges"
+import { cn } from "@/lib/utils"
 
 export interface WorkOrderCardMobileProps {
   order: WorkOrderWithAsset
@@ -25,57 +52,60 @@ export function WorkOrderCardMobile({
   canEdit = true,
   canDelete = true,
 }: WorkOrderCardMobileProps) {
+  const [sheetOpen, setSheetOpen] = useState(false)
+  const techName = getTechnicianName(order.assigned_to)
+  const initials = techName !== "No asignado"
+    ? techName
+        .split(" ")
+        .map((n) => n[0])
+        .join("")
+        .slice(0, 2)
+        .toUpperCase()
+    : "—"
+
   return (
-    <Card className="w-full h-fit hover:shadow-md transition-shadow">
-      <CardHeader className="pb-3">
-        <div className="flex justify-between items-start">
-          <div className="space-y-1 flex-1 min-w-0">
-            <CardTitle className="text-lg font-semibold truncate">
-              {order.order_id}
+    <Card
+      className={cn(
+        "w-full overflow-hidden border-l-4 transition-shadow hover:shadow-md",
+        getStatusBorderClass(order.status)
+      )}
+    >
+      <CardHeader className="pb-2 pt-4 px-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0 flex-1">
+            <CardTitle className="text-lg font-semibold leading-tight truncate text-foreground">
+              {order.asset?.name || "N/A"}
             </CardTitle>
-            <p className="text-sm text-muted-foreground line-clamp-2">
-              {order.description}
+            {order.asset?.asset_id && (
+              <p className="text-xs text-muted-foreground mt-0.5">{order.asset.asset_id}</p>
+            )}
+            <p className="text-sm text-muted-foreground mt-1 line-clamp-2">
+              {order.order_id}
+              {order.description ? ` · ${order.description}` : ""}
             </p>
           </div>
-          <div className="flex items-center gap-2">
-            <Badge variant={getStatusVariant(order.status)} className="shrink-0">
+          <div className="flex items-center gap-2 shrink-0">
+            <Badge variant={getStatusVariant(order.status)} className="text-xs capitalize">
               {order.status || "Pendiente"}
             </Badge>
-            <WorkOrderActionsMenu
-              order={order}
-              getPurchaseOrderStatus={getPurchaseOrderStatus}
-              onDeleteOrder={onDeleteOrder}
-              variant="mobile"
-              canEdit={canEdit}
-              canDelete={canDelete}
-            />
+            <div className="flex items-center gap-1">
+              <span
+                className={cn("h-1.5 w-1.5 rounded-full", getPriorityDotClass(order.priority))}
+                aria-hidden
+              />
+              <Badge variant={getPriorityVariant(order.priority)} className="text-xs capitalize">
+                {order.priority || "Normal"}
+              </Badge>
+            </div>
           </div>
         </div>
       </CardHeader>
 
-      <CardContent className="space-y-4">
-        {/* Asset Info */}
-        <div className="flex items-center gap-2 text-sm">
-          <Package className="h-4 w-4 text-muted-foreground shrink-0" />
-          <div className="flex-1 min-w-0">
-            <p className="font-medium truncate">
-              {order.asset?.name || "N/A"}
-            </p>
-            {order.asset?.asset_id && (
-              <p className="text-xs text-muted-foreground">
-                ID: {order.asset.asset_id}
-              </p>
-            )}
-          </div>
-        </div>
-
-        {/* Type and Priority */}
-        <div className="flex gap-2 flex-wrap items-center">
+      <CardContent className="px-4 pb-4 space-y-4">
+        {/* Type + incident link */}
+        <div className="flex flex-wrap items-center gap-2">
           <Badge variant={getTypeVariant(order.type)} className="text-xs">
             {order.type || "N/A"}
-          </Badge>
-          <Badge variant={getPriorityVariant(order.priority)} className="text-xs">
-            {order.priority || "Normal"}
           </Badge>
           {order.incident_id && order.asset_id && (
             <Badge variant="outline" className="text-xs" asChild>
@@ -86,32 +116,102 @@ export function WorkOrderCardMobile({
           )}
         </div>
 
-        {/* Technician */}
+        {/* Technician with avatar */}
         <div className="flex items-center gap-2 text-sm">
-          <User className="h-4 w-4 text-muted-foreground shrink-0" />
-          <span className="truncate">{getTechnicianName(order.assigned_to)}</span>
+          <Avatar className="h-8 w-8 shrink-0 border border-border">
+            <AvatarFallback className="text-xs bg-muted text-muted-foreground">
+              {initials}
+            </AvatarFallback>
+          </Avatar>
+          <span className="truncate text-muted-foreground">{techName}</span>
         </div>
 
-        {/* Date */}
-        {order.planned_date && (
-          <div className="flex items-center gap-2 text-sm">
-            <Calendar className="h-4 w-4 text-muted-foreground shrink-0" />
-            <span className="truncate">{formatDate(order.planned_date)}</span>
-          </div>
-        )}
+        {/* Date + PO status in one row */}
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-muted-foreground">
+          {order.planned_date && (
+            <span className="flex items-center gap-1.5">
+              <Calendar className="h-4 w-4 shrink-0" />
+              {formatDateRelative(order.planned_date)}
+            </span>
+          )}
+          {order.purchase_order_id && (
+            <span className="flex items-center gap-1.5">
+              <ShoppingCart className="h-4 w-4 shrink-0" />
+              <Badge
+                variant={getPurchaseOrderStatusVariant(getPurchaseOrderStatus(order.purchase_order_id))}
+                className={cn(
+                  "text-xs",
+                  getPurchaseOrderStatusClass(getPurchaseOrderStatus(order.purchase_order_id))
+                )}
+              >
+                OC: {getPurchaseOrderStatus(order.purchase_order_id)}
+              </Badge>
+            </span>
+          )}
+        </div>
 
-        {/* Purchase Order Status */}
-        {order.purchase_order_id && (
-          <div className="flex items-center gap-2 text-sm">
-            <ShoppingCart className="h-4 w-4 text-muted-foreground shrink-0" />
-            <Badge
-              variant={getPurchaseOrderStatusVariant(getPurchaseOrderStatus(order.purchase_order_id))}
-              className={`text-xs ${getPurchaseOrderStatusClass(getPurchaseOrderStatus(order.purchase_order_id))}`}
-            >
-              OC: {getPurchaseOrderStatus(order.purchase_order_id)}
-            </Badge>
-          </div>
-        )}
+        {/* Actions: open bottom sheet */}
+        <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
+          <SheetTrigger asChild>
+            <Button variant="outline" size="sm" className="w-full gap-2">
+              <MoreHorizontal className="h-4 w-4" />
+              Acciones
+            </Button>
+          </SheetTrigger>
+          <SheetContent side="bottom" className="rounded-t-xl">
+            <SheetHeader>
+              <SheetTitle>OT {order.order_id}</SheetTitle>
+            </SheetHeader>
+            <div className="grid gap-1 py-4">
+              <Button variant="ghost" className="justify-start gap-3 h-12" asChild>
+                <Link href={`/ordenes/${order.id}`} onClick={() => setSheetOpen(false)}>
+                  <Eye className="h-4 w-4" />
+                  Ver detalles
+                </Link>
+              </Button>
+              {canEdit && (
+                <Button variant="ghost" className="justify-start gap-3 h-12" asChild>
+                  <Link href={`/ordenes/${order.id}/editar`} onClick={() => setSheetOpen(false)}>
+                    <Edit className="h-4 w-4" />
+                    Editar OT
+                  </Link>
+                </Button>
+              )}
+              {canEdit && order.status !== WorkOrderStatus.Completed && (
+                <Button variant="ghost" className="justify-start gap-3 h-12" asChild>
+                  <Link href={`/ordenes/${order.id}/completar`} onClick={() => setSheetOpen(false)}>
+                    <Wrench className="h-4 w-4" />
+                    Completar OT
+                  </Link>
+                </Button>
+              )}
+              {order.purchase_order_id && (
+                <Button variant="ghost" className="justify-start gap-3 h-12" asChild>
+                  <Link href={`/compras/${order.purchase_order_id}`} onClick={() => setSheetOpen(false)}>
+                    <ShoppingCart className="h-4 w-4" />
+                    Ver OC
+                  </Link>
+                </Button>
+              )}
+              {canDelete && (
+                <>
+                  <div className="my-2 border-t" />
+                  <Button
+                    variant="ghost"
+                    className="justify-start gap-3 h-12 text-red-600 hover:bg-red-50 hover:text-red-700"
+                    onClick={() => {
+                      setSheetOpen(false)
+                      onDeleteOrder(order)
+                    }}
+                  >
+                    <Trash className="h-4 w-4" />
+                    Eliminar OT
+                  </Button>
+                </>
+              )}
+            </div>
+          </SheetContent>
+        </Sheet>
       </CardContent>
     </Card>
   )

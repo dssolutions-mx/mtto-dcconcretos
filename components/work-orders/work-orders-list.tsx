@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardFooter } from "@/components/ui/card"
-import { Search, AlertTriangle } from "lucide-react"
+import { Search, AlertTriangle, Filter, X } from "lucide-react"
 import { createClient } from "@/lib/supabase"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { useAuthZustand } from "@/hooks/use-auth-zustand"
@@ -29,15 +29,25 @@ import { cn } from "@/lib/utils"
 import { PullToRefresh } from "@/components/ui/pull-to-refresh"
 import {
   getStatusVariant,
+  getStatusDotClass,
+  getPriorityDotClass,
   getTypeVariant,
   getPriorityVariant,
   getPurchaseOrderStatusVariant,
   getPurchaseOrderStatusClass,
   formatDate,
+  formatDateRelative,
 } from "./work-order-badges"
 import { WorkOrderActionsMenu } from "./work-order-actions-menu"
 import { WorkOrderCardMobile } from "./work-order-card-mobile"
 import { useDeleteWorkOrder } from "./use-delete-work-order"
+import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible"
+import { Button } from "@/components/ui/button"
 import { WorkOrderDeleteDialog } from "./work-order-delete-dialog"
 import {
   WorkflowSummaryBar,
@@ -303,56 +313,137 @@ export function WorkOrdersList() {
       <PullToRefresh onRefresh={handlePullToRefresh} disabled={isLoading}>
         <Card>
           <CardContent className={cn("pt-6", isMobile && "px-4 pt-4")}>
-            {/* Search and Filters */}
-            <div
-              className={cn(
-                "flex gap-4 mb-4",
-                isMobile ? "flex-col gap-3" : "flex-col md:flex-row md:items-center md:justify-between"
-              )}
-            >
-              <div
-                className={cn(
-                  "flex items-center gap-2",
-                  isMobile ? "flex-col gap-3" : "flex-col md:flex-row"
-                )}
-              >
-                <div className={cn("relative", isMobile ? "w-full" : "w-full md:w-64")}>
-                  <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    type="search"
-                    placeholder="Buscar OT, activo, asignado..."
-                    className={cn("pl-8", isMobile && "h-11")}
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                  />
+            {/* Filter bar: inline on desktop, collapsible on mobile */}
+            {(() => {
+              const activeFilterCount = [
+                searchTerm.trim(),
+                typeFilter !== "all",
+                plantFilter !== "all",
+                workflowFilter !== null,
+              ].filter(Boolean).length
+              const hasFilters = activeFilterCount > 0
+              const clearFilters = () => {
+                setSearchTerm("")
+                setTypeFilter("all")
+                setPlantFilter("all")
+                setWorkflowFilter(null)
+              }
+              return (
+                <div className="mb-4 md:mb-5">
+                  {isMobile ? (
+                    <Collapsible defaultOpen={false}>
+                      <div className="flex items-center gap-2">
+                        <CollapsibleTrigger asChild>
+                          <Button variant="outline" size="sm" className="gap-2">
+                            <Filter className="h-4 w-4" />
+                            Filtros
+                            {activeFilterCount > 0 && (
+                              <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-xs font-medium text-primary-foreground">
+                                {activeFilterCount}
+                              </span>
+                            )}
+                          </Button>
+                        </CollapsibleTrigger>
+                        {hasFilters && (
+                          <Button variant="ghost" size="sm" onClick={clearFilters} className="text-muted-foreground">
+                            <X className="h-4 w-4 mr-1" />
+                            Limpiar
+                          </Button>
+                        )}
+                      </div>
+                      <CollapsibleContent>
+                        <div className="mt-3 flex flex-col gap-3">
+                          <div className="relative">
+                            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                            <Input
+                              type="search"
+                              placeholder="Buscar OT, activo, asignado..."
+                              className="pl-8 h-11"
+                              value={searchTerm}
+                              onChange={(e) => setSearchTerm(e.target.value)}
+                            />
+                          </div>
+                          <Select value={typeFilter} onValueChange={setTypeFilter}>
+                            <SelectTrigger className="w-full h-11">
+                              <SelectValue placeholder="Tipo" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="all">Todos los tipos</SelectItem>
+                              <SelectItem value="preventive">Preventivos</SelectItem>
+                              <SelectItem value="corrective">Correctivos</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          {showPlantFilter && (
+                            <Select value={plantFilter} onValueChange={setPlantFilter}>
+                              <SelectTrigger className="w-full h-11">
+                                <SelectValue placeholder="Planta" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="all">Todas las plantas</SelectItem>
+                                {plants.map((p) => (
+                                  <SelectItem key={p.id} value={p.id}>
+                                    {p.name}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          )}
+                        </div>
+                      </CollapsibleContent>
+                    </Collapsible>
+                  ) : (
+                    <div className="flex flex-wrap items-center gap-3">
+                      <div className="relative w-64">
+                        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                        <Input
+                          type="search"
+                          placeholder="Buscar OT, activo, asignado..."
+                          className="pl-8"
+                          value={searchTerm}
+                          onChange={(e) => setSearchTerm(e.target.value)}
+                        />
+                      </div>
+                      <Select value={typeFilter} onValueChange={setTypeFilter}>
+                        <SelectTrigger className="w-[160px]">
+                          <SelectValue placeholder="Tipo" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">Todos los tipos</SelectItem>
+                          <SelectItem value="preventive">Preventivos</SelectItem>
+                          <SelectItem value="corrective">Correctivos</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      {showPlantFilter && (
+                        <Select value={plantFilter} onValueChange={setPlantFilter}>
+                          <SelectTrigger className="w-[180px]">
+                            <SelectValue placeholder="Planta" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">Todas las plantas</SelectItem>
+                            {plants.map((p) => (
+                              <SelectItem key={p.id} value={p.id}>
+                                {p.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )}
+                      {hasFilters && (
+                        <Button variant="ghost" size="sm" onClick={clearFilters} className="text-muted-foreground gap-1">
+                          <X className="h-4 w-4" />
+                          Limpiar filtros
+                        </Button>
+                      )}
+                      {activeFilterCount > 0 && (
+                        <span className="text-xs text-muted-foreground">
+                          {activeFilterCount} filtro{activeFilterCount !== 1 ? "s" : ""} activo{activeFilterCount !== 1 ? "s" : ""}
+                        </span>
+                      )}
+                    </div>
+                  )}
                 </div>
-                <Select value={typeFilter} onValueChange={setTypeFilter}>
-                  <SelectTrigger className={cn(isMobile ? "w-full h-11" : "w-full md:w-40")}>
-                    <SelectValue placeholder="Filtrar por tipo" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Todos los tipos</SelectItem>
-                    <SelectItem value="preventive">Preventivos</SelectItem>
-                    <SelectItem value="corrective">Correctivos</SelectItem>
-                  </SelectContent>
-                </Select>
-                {showPlantFilter && (
-                  <Select value={plantFilter} onValueChange={setPlantFilter}>
-                    <SelectTrigger className={cn(isMobile ? "w-full h-11" : "w-full md:w-44")}>
-                      <SelectValue placeholder="Planta" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">Todas las plantas</SelectItem>
-                      {plants.map((p) => (
-                        <SelectItem key={p.id} value={p.id}>
-                          {p.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                )}
-              </div>
-            </div>
+              )
+            })()}
 
             <WorkflowSummaryBar
               counts={workflowCounts}
@@ -374,6 +465,7 @@ export function WorkOrdersList() {
               <DesktopView
                 orders={filteredOrders}
                 isLoading={isLoading}
+                technicians={technicians}
                 getTechnicianName={getTechnicianName}
                 getPurchaseOrderStatus={getPurchaseOrderStatus}
                 onDeleteOrder={handleDeleteWorkOrder}
@@ -456,10 +548,11 @@ function MobileView({
   )
 }
 
-// Desktop View Component (existing table)
+// Desktop View Component — scannable table with hierarchy and hover actions
 function DesktopView({
   orders,
   isLoading,
+  technicians,
   getTechnicianName,
   getPurchaseOrderStatus,
   onDeleteOrder,
@@ -468,6 +561,7 @@ function DesktopView({
 }: {
   orders: WorkOrderWithAsset[]
   isLoading: boolean
+  technicians: Record<string, Profile>
   getTechnicianName: (techId: string | null) => string
   getPurchaseOrderStatus: (poId: string | null) => string
   onDeleteOrder: (order: WorkOrderWithAsset) => void
@@ -493,28 +587,49 @@ function DesktopView({
     )
   }
 
+  function TechnicianCell({ techId }: { techId: string | null }) {
+    const name = getTechnicianName(techId)
+    const tech = techId ? technicians[techId] : null
+    const initials = tech?.nombre && tech?.apellido
+      ? `${tech.nombre[0]}${tech.apellido[0]}`.toUpperCase()
+      : name.slice(0, 2).toUpperCase()
+    return (
+      <div className="flex items-center gap-2">
+        <Avatar className="h-7 w-7 flex-shrink-0 border border-border">
+          <AvatarFallback className="text-xs bg-muted text-muted-foreground">
+            {initials}
+          </AvatarFallback>
+        </Avatar>
+        <span className="truncate text-sm">{name}</span>
+      </div>
+    )
+  }
+
   return (
-    <div className="rounded-md border">
+    <div className="rounded-lg border overflow-hidden">
       <Table>
         <TableHeader>
-          <TableRow>
-            <TableHead className="w-[100px]">OT ID</TableHead>
-            <TableHead>Activo</TableHead>
-            <TableHead>Tipo</TableHead>
-            <TableHead>Prioridad</TableHead>
-            <TableHead>Estado</TableHead>
-            <TableHead>OC</TableHead>
-            <TableHead>Fecha Planificada</TableHead>
-            <TableHead>Asignado A</TableHead>
-            <TableHead className="text-right w-[100px]">Acciones</TableHead>
+          <TableRow className="hover:bg-transparent border-b">
+            <TableHead className="w-[100px] font-semibold text-muted-foreground">OT ID</TableHead>
+            <TableHead className="font-semibold text-muted-foreground">Activo</TableHead>
+            <TableHead className="w-[90px] font-semibold text-muted-foreground">Tipo</TableHead>
+            <TableHead className="w-[90px] font-semibold text-muted-foreground">Prioridad</TableHead>
+            <TableHead className="w-[120px] font-semibold text-muted-foreground">Estado</TableHead>
+            <TableHead className="w-[90px] font-semibold text-muted-foreground">OC</TableHead>
+            <TableHead className="w-[100px] text-right font-semibold text-muted-foreground">Fecha</TableHead>
+            <TableHead className="w-[140px] font-semibold text-muted-foreground">Asignado</TableHead>
+            <TableHead className="w-[56px] text-right font-semibold text-muted-foreground" />
           </TableRow>
         </TableHeader>
         <TableBody>
           {orders.map((order) => (
-            <TableRow key={order.id}>
-              <TableCell className="font-medium">
-                <div className="flex flex-col gap-1">
-                  <span>{order.order_id}</span>
+            <TableRow
+              key={order.id}
+              className="group border-b last:border-0 hover:bg-muted/40 transition-colors"
+            >
+              <TableCell className="py-3 align-middle">
+                <div className="flex flex-col gap-0.5">
+                  <span className="font-medium text-foreground">{order.order_id}</span>
                   {order.incident_id && order.asset_id && (
                     <Badge variant="outline" className="w-fit text-xs" asChild>
                       <Link href={`/activos/${order.asset_id}/incidentes`} className="hover:underline">
@@ -524,56 +639,80 @@ function DesktopView({
                   )}
                 </div>
               </TableCell>
-              <TableCell>
-                {order.asset?.name || "N/A"}
-                {order.asset?.asset_id && (
-                  <span className="text-xs text-muted-foreground ml-1">({order.asset.asset_id})</span>
-                )}
+              <TableCell className="py-3 align-middle">
+                <div className="flex flex-col min-w-0">
+                  <span className="font-medium text-foreground truncate">
+                    {order.asset?.name || "N/A"}
+                  </span>
+                  {order.asset?.asset_id && (
+                    <span className="text-xs text-muted-foreground truncate">{order.asset.asset_id}</span>
+                  )}
+                </div>
               </TableCell>
-              <TableCell>
-                <Badge variant={getTypeVariant(order.type)} className="capitalize">
+              <TableCell className="py-3 align-middle">
+                <Badge variant={getTypeVariant(order.type)} className="capitalize text-xs">
                   {order.type || "N/A"}
                 </Badge>
               </TableCell>
-              <TableCell>
-                <Badge variant={getPriorityVariant(order.priority)} className="capitalize">
-                  {order.priority || "N/A"}
-                </Badge>
+              <TableCell className="py-3 align-middle">
+                <div className="flex items-center gap-1.5">
+                  <span
+                    className={cn(
+                      "h-2 w-2 shrink-0 rounded-full",
+                      getPriorityDotClass(order.priority)
+                    )}
+                    aria-hidden
+                  />
+                  <span className="text-sm capitalize text-muted-foreground">
+                    {order.priority || "N/A"}
+                  </span>
+                </div>
               </TableCell>
-              <TableCell>
-                <Badge variant={getStatusVariant(order.status)} className="capitalize">
-                  {order.status || "N/A"}
-                </Badge>
+              <TableCell className="py-3 align-middle">
+                <div className="flex items-center gap-2">
+                  <span
+                    className={cn(
+                      "h-2 w-2 shrink-0 rounded-full",
+                      getStatusDotClass(order.status)
+                    )}
+                    aria-hidden
+                  />
+                  <span className="text-sm capitalize">{order.status || "N/A"}</span>
+                </div>
               </TableCell>
-              <TableCell>
+              <TableCell className="py-3 align-middle">
                 {order.purchase_order_id ? (
                   <Badge
                     variant={getPurchaseOrderStatusVariant(getPurchaseOrderStatus(order.purchase_order_id))}
-                    className={getPurchaseOrderStatusClass(getPurchaseOrderStatus(order.purchase_order_id))}
+                    className={cn("text-xs", getPurchaseOrderStatusClass(getPurchaseOrderStatus(order.purchase_order_id)))}
                   >
                     {getPurchaseOrderStatus(order.purchase_order_id)}
                   </Badge>
                 ) : order.type === MaintenanceType.Preventive && order.required_parts ? (
-                  <Badge variant="outline" className="bg-yellow-50 text-yellow-800">
+                  <Badge variant="outline" className="bg-amber-50 text-amber-800 dark:bg-amber-950/50 dark:text-amber-200 text-xs">
                     Pendiente
                   </Badge>
                 ) : (
-                  <span className="text-xs text-muted-foreground">N/A</span>
+                  <span className="text-xs text-muted-foreground">—</span>
                 )}
               </TableCell>
-              <TableCell>
-                {order.planned_date ? formatDate(order.planned_date) : "No planificada"}
+              <TableCell className="py-3 align-middle text-right tabular-nums text-sm text-muted-foreground">
+                {order.planned_date ? formatDateRelative(order.planned_date) : "—"}
               </TableCell>
-              <TableCell>{getTechnicianName(order.assigned_to)}</TableCell>
-              <TableCell className="text-right">
-                <WorkOrderActionsMenu
-                  order={order}
-                  getPurchaseOrderStatus={getPurchaseOrderStatus}
-                  onDeleteOrder={onDeleteOrder}
-                  variant="desktop"
-                  canEdit={canEdit}
-                  canDelete={canDelete}
-                />
+              <TableCell className="py-3 align-middle">
+                <TechnicianCell techId={order.assigned_to} />
+              </TableCell>
+              <TableCell className="py-3 align-middle text-right">
+                <div className="flex justify-end opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
+                  <WorkOrderActionsMenu
+                    order={order}
+                    getPurchaseOrderStatus={getPurchaseOrderStatus}
+                    onDeleteOrder={onDeleteOrder}
+                    variant="desktop"
+                    canEdit={canEdit}
+                    canDelete={canDelete}
+                  />
+                </div>
               </TableCell>
             </TableRow>
           ))}

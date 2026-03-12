@@ -29,31 +29,47 @@ const cards: {
   key: WorkflowSummaryFilter
   label: string
   icon: typeof Clock
-  accentClass: string
+  /** Left border + icon bg + text: border-l-4, icon container, number/label */
+  borderClass: string
+  iconBgClass: string
+  numberClass: string
+  labelClass: string
 }[] = [
   {
     key: "overdue",
     label: "Vencidas",
     icon: AlertCircle,
-    accentClass: "text-amber-600 bg-amber-50 dark:bg-amber-950/50 ring-amber-400",
+    borderClass: "border-l-4 border-l-red-500",
+    iconBgClass: "bg-red-50 text-red-600 dark:bg-red-950/50 dark:text-red-400",
+    numberClass: "text-red-600 dark:text-red-400",
+    labelClass: "text-red-700/80 dark:text-red-300/80",
   },
   {
     key: "active",
     label: "En curso",
     icon: Clock,
-    accentClass: "text-blue-600 bg-blue-50 dark:bg-blue-950/50 ring-blue-400",
+    borderClass: "border-l-4 border-l-blue-500",
+    iconBgClass: "bg-blue-50 text-blue-600 dark:bg-blue-950/50 dark:text-blue-400",
+    numberClass: "text-blue-600 dark:text-blue-400",
+    labelClass: "text-blue-700/80 dark:text-blue-300/80",
   },
   {
     key: "waiting_po",
     label: "Espera OC",
     icon: Package,
-    accentClass: "text-indigo-600 bg-indigo-50 dark:bg-indigo-950/50 ring-indigo-400",
+    borderClass: "border-l-4 border-l-amber-500",
+    iconBgClass: "bg-amber-50 text-amber-600 dark:bg-amber-950/50 dark:text-amber-400",
+    numberClass: "text-amber-600 dark:text-amber-400",
+    labelClass: "text-amber-700/80 dark:text-amber-300/80",
   },
   {
     key: "today_completed",
     label: "Hoy completadas",
     icon: CheckCircle,
-    accentClass: "text-green-600 bg-green-50 dark:bg-green-950/50 ring-green-400",
+    borderClass: "border-l-4 border-l-green-500",
+    iconBgClass: "bg-green-50 text-green-600 dark:bg-green-950/50 dark:text-green-400",
+    numberClass: "text-green-600 dark:text-green-400",
+    labelClass: "text-green-700/80 dark:text-green-300/80",
   },
 ]
 
@@ -70,20 +86,28 @@ export function WorkflowSummaryBar({
         className
       )}
     >
-      {cards.map(({ key, label, icon: Icon, accentClass }) => {
-        const count = key === "overdue" ? counts.overdue
-          : key === "active" ? counts.active
-          : key === "waiting_po" ? counts.waitingPo
-          : counts.todayCompleted
+      {cards.map(({ key, label, icon: Icon, borderClass, iconBgClass, numberClass, labelClass }) => {
+        const count =
+          key === "overdue"
+            ? counts.overdue
+            : key === "active"
+              ? counts.active
+              : key === "waiting_po"
+                ? counts.waitingPo
+                : counts.todayCompleted
         const isActive = activeFilter === key
+        const isEmpty = count === 0
         return (
           <Card
             key={key}
             role="button"
             tabIndex={0}
             className={cn(
-              "cursor-pointer transition-all hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-              isActive && "ring-2 ring-primary shadow-md"
+              "cursor-pointer transition-all duration-200 overflow-hidden",
+              "hover:shadow-md hover:border-muted-foreground/20",
+              "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+              borderClass,
+              isActive && "ring-2 ring-primary shadow-md border-primary/30"
             )}
             onClick={() => onFilterChange(isActive ? null : key)}
             onKeyDown={(e) => {
@@ -93,23 +117,34 @@ export function WorkflowSummaryBar({
               }
             }}
           >
-            <CardContent className="p-4">
-              <div className="text-center">
+            <CardContent className="p-4 pl-5">
+              <div className="flex items-start gap-4">
                 <div
                   className={cn(
-                    "inline-flex items-center justify-center min-w-[2.5rem] px-2 py-1 rounded-full text-2xl sm:text-3xl font-bold",
-                    count > 0 && key === "overdue"
-                      ? "text-amber-600 bg-amber-50 dark:bg-amber-950/50 ring-2 ring-amber-400"
-                      : count > 0
-                        ? "text-slate-900 dark:text-slate-100"
-                        : "text-slate-400 dark:text-slate-500"
+                    "flex-shrink-0 rounded-lg p-2",
+                    iconBgClass,
+                    isEmpty && "opacity-50"
                   )}
                 >
-                  {count}
+                  <Icon className="h-5 w-5" aria-hidden />
                 </div>
-                <div className="flex items-center justify-center gap-1.5 mt-1.5 text-xs sm:text-sm text-slate-600 dark:text-slate-400">
-                  <Icon className="h-3.5 w-3.5 shrink-0" />
-                  {label}
+                <div className="min-w-0 flex-1">
+                  <div
+                    className={cn(
+                      "text-2xl font-bold tabular-nums tracking-tight",
+                      isEmpty ? "text-muted-foreground" : numberClass
+                    )}
+                  >
+                    {count}
+                  </div>
+                  <p className={cn("text-sm font-medium mt-0.5", isEmpty ? "text-muted-foreground" : labelClass)}>
+                    {label}
+                  </p>
+                  {count > 0 && key === "overdue" && (
+                    <p className="text-xs text-red-600/90 dark:text-red-400/90 mt-1">
+                      Requieren atención
+                    </p>
+                  )}
                 </div>
               </div>
             </CardContent>
