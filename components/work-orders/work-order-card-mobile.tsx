@@ -13,6 +13,8 @@ export interface WorkOrderCardMobileProps {
   getTechnicianName: (techId: string | null) => string
   getPurchaseOrderStatus: (poId: string | null) => string
   onDeleteOrder: (order: WorkOrderWithAsset) => void
+  canEdit?: boolean
+  canDelete?: boolean
 }
 
 export function WorkOrderCardMobile({
@@ -20,6 +22,8 @@ export function WorkOrderCardMobile({
   getTechnicianName,
   getPurchaseOrderStatus,
   onDeleteOrder,
+  canEdit = true,
+  canDelete = true,
 }: WorkOrderCardMobileProps) {
   return (
     <Card className="w-full h-fit hover:shadow-md transition-shadow">
@@ -42,6 +46,8 @@ export function WorkOrderCardMobile({
               getPurchaseOrderStatus={getPurchaseOrderStatus}
               onDeleteOrder={onDeleteOrder}
               variant="mobile"
+              canEdit={canEdit}
+              canDelete={canDelete}
             />
           </div>
         </div>

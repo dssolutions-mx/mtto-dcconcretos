@@ -1,12 +1,10 @@
 import type { Metadata } from "next"
 import { Suspense } from "react"
-import { Button } from "@/components/ui/button"
 import { DashboardHeader } from "@/components/dashboard/dashboard-header"
 import { DashboardShell } from "@/components/dashboard/dashboard-shell"
 import { WorkOrdersList } from "@/components/work-orders/work-orders-list"
+import { WorkOrderCreateButton } from "@/components/work-orders/work-order-create-button"
 import { Skeleton } from "@/components/ui/skeleton"
-import { Plus } from "lucide-react"
-import Link from "next/link"
 
 export const metadata: Metadata = {
   title: "Órdenes de Trabajo | Sistema de Gestión de Mantenimiento",
@@ -21,12 +19,7 @@ export default function WorkOrdersPage() {
         text="Planificación, aprobación y asignación de trabajos"
         id="ordenes-header"
       >
-        <Button asChild>
-          <Link href="/ordenes/crear">
-            <Plus className="mr-2 h-4 w-4" />
-            Nueva OT
-          </Link>
-        </Button>
+        <WorkOrderCreateButton />
       </DashboardHeader>
       <Suspense fallback={
         <div className="space-y-4">

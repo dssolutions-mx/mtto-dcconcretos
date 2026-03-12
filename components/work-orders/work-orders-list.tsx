@@ -9,6 +9,8 @@ import { Card, CardContent, CardFooter } from "@/components/ui/card"
 import { Search, AlertTriangle } from "lucide-react"
 import { createClient } from "@/lib/supabase"
 import { useIsMobile } from "@/hooks/use-mobile"
+import { useAuthZustand } from "@/hooks/use-auth-zustand"
+import { UI_PERMISSIONS } from "@/lib/auth/role-permissions"
 import Link from "next/link"
 import {
   WorkOrderWithAsset,
@@ -92,6 +94,16 @@ interface PlantOption {
 export function WorkOrdersList() {
   const isMobile = useIsMobile()
   const searchParams = useSearchParams()
+  const { profile, roleScope, organizationalContext } = useAuthZustand()
+  const userRole = profile?.business_role ?? profile?.role ?? null
+  const userId = profile?.id ?? null
+  const plantId = organizationalContext?.plantId ?? profile?.plant_id ?? null
+  const isPlantScoped = roleScope === "plant"
+  const isMecanico = userRole === "MECANICO"
+  const canEdit = userRole ? UI_PERMISSIONS.canShowEditButton(userRole, "work_orders") : false
+  const canDelete = userRole ? UI_PERMISSIONS.canShowDeleteButton(userRole, "work_orders") : false
+  const showPlantFilter = !isPlantScoped
+
   const [searchTerm, setSearchTerm] = useState("")
   const [workOrders, setWorkOrders] = useState<WorkOrderWithAsset[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -221,8 +233,15 @@ export function WorkOrdersList() {
     loadWorkOrders()
   }, [])
 
-  // Filter: plant_id, type, search, workflow (bar card)
+  // Filter: role scope (plant), MECANICO (assigned to me), plant_id, type, search, workflow (bar card)
   const filteredOrders = workOrders.filter((order) => {
+    if (isPlantScoped && plantId) {
+      const orderPlantId = getOrderPlantId(order)
+      if (orderPlantId !== plantId) return false
+    }
+    if (isMecanico && userId) {
+      if (order.assigned_to !== userId) return false
+    }
     if (plantFilter !== "all") {
       const orderPlantId = getOrderPlantId(order)
       if (orderPlantId !== plantFilter) return false
@@ -250,7 +269,17 @@ export function WorkOrdersList() {
     return true
   })
 
-  const workflowCounts = computeWorkflowCounts(workOrders)
+  const scopeFilteredOrders = workOrders.filter((order) => {
+    if (isPlantScoped && plantId) {
+      const orderPlantId = getOrderPlantId(order)
+      if (orderPlantId !== plantId) return false
+    }
+    if (isMecanico && userId) {
+      if (order.assigned_to !== userId) return false
+    }
+    return true
+  })
+  const workflowCounts = computeWorkflowCounts(scopeFilteredOrders)
 
   const getTechnicianName = (techId: string | null) => {
     if (!techId) return "No asignado"
@@ -307,19 +336,21 @@ export function WorkOrdersList() {
                     <SelectItem value="corrective">Correctivos</SelectItem>
                   </SelectContent>
                 </Select>
-                <Select value={plantFilter} onValueChange={setPlantFilter}>
-                  <SelectTrigger className={cn(isMobile ? "w-full h-11" : "w-full md:w-44")}>
-                    <SelectValue placeholder="Planta" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Todas las plantas</SelectItem>
-                    {plants.map((p) => (
-                      <SelectItem key={p.id} value={p.id}>
-                        {p.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                {showPlantFilter && (
+                  <Select value={plantFilter} onValueChange={setPlantFilter}>
+                    <SelectTrigger className={cn(isMobile ? "w-full h-11" : "w-full md:w-44")}>
+                      <SelectValue placeholder="Planta" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Todas las plantas</SelectItem>
+                      {plants.map((p) => (
+                        <SelectItem key={p.id} value={p.id}>
+                          {p.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
               </div>
             </div>
 
@@ -336,6 +367,8 @@ export function WorkOrdersList() {
                 getTechnicianName={getTechnicianName}
                 getPurchaseOrderStatus={getPurchaseOrderStatus}
                 onDeleteOrder={handleDeleteWorkOrder}
+                canEdit={canEdit}
+                canDelete={canDelete}
               />
             ) : (
               <DesktopView
@@ -344,13 +377,15 @@ export function WorkOrdersList() {
                 getTechnicianName={getTechnicianName}
                 getPurchaseOrderStatus={getPurchaseOrderStatus}
                 onDeleteOrder={handleDeleteWorkOrder}
+                canEdit={canEdit}
+                canDelete={canDelete}
               />
             )}
           </CardContent>
 
           <CardFooter className={cn(isMobile && "px-4")}>
             <div className="text-xs text-muted-foreground">
-              Mostrando <strong>{filteredOrders.length}</strong> de <strong>{workOrders.length}</strong> órdenes de trabajo.
+              Mostrando <strong>{filteredOrders.length}</strong> de <strong>{scopeFilteredOrders.length}</strong> órdenes de trabajo.
             </div>
           </CardFooter>
         </Card>
@@ -368,18 +403,22 @@ export function WorkOrdersList() {
 }
 
 // Mobile View Component
-function MobileView({ 
-  orders, 
-  isLoading, 
-  getTechnicianName, 
+function MobileView({
+  orders,
+  isLoading,
+  getTechnicianName,
   getPurchaseOrderStatus,
-  onDeleteOrder
+  onDeleteOrder,
+  canEdit,
+  canDelete,
 }: {
   orders: WorkOrderWithAsset[]
   isLoading: boolean
   getTechnicianName: (techId: string | null) => string
   getPurchaseOrderStatus: (poId: string | null) => string
   onDeleteOrder: (order: WorkOrderWithAsset) => void
+  canEdit: boolean
+  canDelete: boolean
 }) {
   if (isLoading) {
     return (
@@ -409,6 +448,8 @@ function MobileView({
           getTechnicianName={getTechnicianName}
           getPurchaseOrderStatus={getPurchaseOrderStatus}
           onDeleteOrder={onDeleteOrder}
+          canEdit={canEdit}
+          canDelete={canDelete}
         />
       ))}
     </div>
@@ -422,12 +463,16 @@ function DesktopView({
   getTechnicianName,
   getPurchaseOrderStatus,
   onDeleteOrder,
+  canEdit,
+  canDelete,
 }: {
   orders: WorkOrderWithAsset[]
   isLoading: boolean
   getTechnicianName: (techId: string | null) => string
   getPurchaseOrderStatus: (poId: string | null) => string
   onDeleteOrder: (order: WorkOrderWithAsset) => void
+  canEdit: boolean
+  canDelete: boolean
 }) {
   if (isLoading) {
     return (
@@ -526,6 +571,8 @@ function DesktopView({
                   getPurchaseOrderStatus={getPurchaseOrderStatus}
                   onDeleteOrder={onDeleteOrder}
                   variant="desktop"
+                  canEdit={canEdit}
+                  canDelete={canDelete}
                 />
               </TableCell>
             </TableRow>

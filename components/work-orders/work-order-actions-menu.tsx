@@ -30,6 +30,8 @@ export interface WorkOrderActionsMenuProps {
   getPurchaseOrderStatus?: (poId: string | null) => string
   onDeleteOrder: (order: WorkOrderWithAsset) => void
   variant: "mobile" | "desktop"
+  canEdit?: boolean
+  canDelete?: boolean
 }
 
 export function WorkOrderActionsMenu({
@@ -37,6 +39,8 @@ export function WorkOrderActionsMenu({
   getPurchaseOrderStatus,
   onDeleteOrder,
   variant,
+  canEdit = true,
+  canDelete = true,
 }: WorkOrderActionsMenuProps) {
   const isMobile = variant === "mobile"
 
@@ -72,13 +76,15 @@ export function WorkOrderActionsMenu({
             </Link>
           </DropdownMenuItem>
         )}
-        <DropdownMenuItem asChild>
-          <Link href={`/ordenes/${order.id}/editar`}>
-            <Edit className="mr-2 h-4 w-4" />
-            <span>Editar OT</span>
-          </Link>
-        </DropdownMenuItem>
-        {!order.purchase_order_id && order.required_parts && !isMobile && (
+        {canEdit && (
+          <DropdownMenuItem asChild>
+            <Link href={`/ordenes/${order.id}/editar`}>
+              <Edit className="mr-2 h-4 w-4" />
+              <span>Editar OT</span>
+            </Link>
+          </DropdownMenuItem>
+        )}
+        {canEdit && !order.purchase_order_id && order.required_parts && !isMobile && (
           <DropdownMenuItem asChild>
             <Link href={`/ordenes/${order.id}/generar-oc`}>
               <ShoppingCart className="mr-2 h-4 w-4" />
@@ -102,7 +108,7 @@ export function WorkOrderActionsMenu({
             </a>
           </DropdownMenuItem>
         )}
-        {order.status !== WorkOrderStatus.Completed && (
+        {canEdit && order.status !== WorkOrderStatus.Completed && (
           <DropdownMenuItem asChild>
             <Link href={`/ordenes/${order.id}/completar`}>
               <Wrench className="mr-2 h-4 w-4" />
@@ -110,7 +116,7 @@ export function WorkOrderActionsMenu({
             </Link>
           </DropdownMenuItem>
         )}
-        {!isMobile && (
+        {canEdit && !isMobile && (
           <>
             <DropdownMenuItem asChild>
               <Link href={`/ordenes/${order.id}/editar`}>
@@ -126,14 +132,18 @@ export function WorkOrderActionsMenu({
             </DropdownMenuItem>
           </>
         )}
-        <DropdownMenuSeparator />
-        <DropdownMenuItem
-          className="text-red-600 hover:bg-red-50 hover:text-red-700"
-          onClick={() => onDeleteOrder(order)}
-        >
-          <Trash className="mr-2 h-4 w-4" />
-          <span>Eliminar OT</span>
-        </DropdownMenuItem>
+        {canDelete && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              className="text-red-600 hover:bg-red-50 hover:text-red-700"
+              onClick={() => onDeleteOrder(order)}
+            >
+              <Trash className="mr-2 h-4 w-4" />
+              <span>Eliminar OT</span>
+            </DropdownMenuItem>
+          </>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   )
