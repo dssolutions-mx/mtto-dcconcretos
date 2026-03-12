@@ -167,6 +167,22 @@ export async function POST(request: NextRequest) {
       }
     })
 
+    // 2d. Fetch incidents for active count (status != Resuelto/resolved)
+    const { data: incidentsData } = await supabase
+      .from('incident_history')
+      .select('id, asset_id, status')
+      .in('asset_id', assetIds)
+
+    const activeIncidentsByAsset = new Map<string, number>()
+    ;(incidentsData || []).forEach((i: any) => {
+      if (i.asset_id) {
+        const s = (i.status || '').toLowerCase()
+        if (s !== 'resuelto' && s !== 'resolved') {
+          activeIncidentsByAsset.set(i.asset_id, (activeIncidentsByAsset.get(i.asset_id) || 0) + 1)
+        }
+      }
+    })
+
     // 3. Fetch maintenance history
     const { data: maintenanceData, error: maintenanceError } = await supabase
       .from('maintenance_history')
@@ -175,6 +191,7 @@ export async function POST(request: NextRequest) {
         asset_id,
         date,
         type,
+        maintenance_plan_id,
         hours,
         kilometers,
         description,
@@ -191,9 +208,11 @@ export async function POST(request: NextRequest) {
     if (maintenanceError) throw maintenanceError
 
     // 4. Process data for analytics
+    const totalActiveIncidents = Array.from(activeIncidentsByAsset.values()).reduce((a, b) => a + b, 0)
     const analytics = {
       summary: {
         totalAssets: assets.length,
+        totalActiveIncidents,
         totalHours: assets.reduce((sum: number, asset: any) => sum + (asset.current_hours || 0), 0),
         totalKilometers: assets.reduce((sum: number, asset: any) => sum + (asset.current_kilometers || 0), 0),
         totalChecklists: checklistsData.length,
@@ -201,6 +220,14 @@ export async function POST(request: NextRequest) {
         totalMaintenanceCost: maintenanceData.reduce((sum: number, m: any) => sum + (m.total_cost || 0), 0),
         averageHoursPerAsset: assets.length > 0 ? assets.reduce((sum: number, asset: any) => sum + (asset.current_hours || 0), 0) / assets.length : 0,
         averageKilometersPerAsset: assets.length > 0 ? assets.reduce((sum: number, asset: any) => sum + (asset.current_kilometers || 0), 0) / assets.length : 0,
+        preventiveCount: maintenanceData.filter((m: any) => {
+          const t = (m.type || '').toLowerCase()
+          return t === 'preventive' || t === 'preventivo' || !!m.maintenance_plan_id
+        }).length,
+        correctiveCount: maintenanceData.filter((m: any) => {
+          const t = (m.type || '').toLowerCase()
+          return t === 'corrective' || t === 'correctivo' || (!m.maintenance_plan_id && t !== 'preventive' && t !== 'preventivo')
+        }).length,
       },
       assetDetails: assets.map((asset: any) => {
         const assetChecklists = checklistsData.filter((c: any) => c.asset_id === asset.id)
@@ -447,6 +474,7 @@ export async function POST(request: NextRequest) {
           dailyKilometersUsage = (lastReading.kilometers - firstReading.kilometers) / daysDiff
         }
 
+        const assetActiveIncidents = activeIncidentsByAsset.get(asset.id) || 0
         return {
           id: asset.id,
           asset_id: asset.asset_id,
@@ -456,6 +484,7 @@ export async function POST(request: NextRequest) {
           location: asset.location,
           department: asset.department,
           status: asset.status,
+          activeIncidents: assetActiveIncidents,
           current_hours: asset.current_hours || 0,
           current_kilometers: asset.current_kilometers || 0,
           last_maintenance_date: asset.last_maintenance_date,

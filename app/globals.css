@@ -35,6 +35,34 @@
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
+
+  .activos-detail-page [data-stagger] {
+    animation: none !important;
+  }
+}
+
+/* Staggered reveal for Assets Detail page */
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.activos-detail-page [data-stagger="0"] {
+  animation: fade-in-up 0.3s ease-out both;
+}
+
+.activos-detail-page [data-stagger="1"] {
+  animation: fade-in-up 0.3s ease-out 75ms both;
+}
+
+.activos-detail-page [data-stagger="2"] {
+  animation: fade-in-up 0.3s ease-out 150ms both;
 }
 
 @layer utilities {

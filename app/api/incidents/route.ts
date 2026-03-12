@@ -23,6 +23,21 @@ export async function GET() {
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
+    // Get work_order order_id for incidents that have work_order_id
+    const workOrderIds = [...new Set((incidents || []).map(i => i.work_order_id).filter(Boolean))] as string[]
+    let workOrderOrderIds: Record<string, string> = {}
+    if (workOrderIds.length > 0) {
+      const { data: workOrders, error: woError } = await supabase
+        .from('work_orders')
+        .select('id, order_id')
+        .in('id', workOrderIds)
+      if (!woError && workOrders) {
+        workOrders.forEach(wo => {
+          workOrderOrderIds[wo.id] = wo.order_id
+        })
+      }
+    }
+
     // Get all unique user IDs that we need to look up
     const userIds = new Set<string>()
     
@@ -100,7 +115,8 @@ export async function GET() {
         reported_by_name: reporterName,
         reported_by_uuid: reporterId,
         asset_display_name: assetDisplayName,
-        asset_code: assetCode
+        asset_code: assetCode,
+        work_order_order_id: incident.work_order_id ? workOrderOrderIds[incident.work_order_id] : null
       }
     }) || []
 

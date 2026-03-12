@@ -1022,7 +1022,7 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
                  </div>
                  <div className="flex items-center gap-2 text-xs">
                    <div className="h-3 w-3 rounded-full bg-amber-500"></div>
-                   <span>Próximo (≤100h)</span>
+                   <span>Próximo (≤100)</span>
                  </div>
                  <div className="flex items-center gap-2 text-xs">
                    <div className="h-3 w-3 rounded-full bg-green-500"></div>
@@ -1059,92 +1059,71 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                                         {cyclicIntervals.map((interval) => {
-                       const isOverdue = interval.status === 'overdue';
-                       const isUpcoming = interval.status === 'upcoming';
-                       const isCovered = interval.status === 'covered';
-                       const isNotApplicable = interval.status === 'not_applicable';
-                       
-                       return (
-                         <TableRow 
-                           key={`${interval.interval_id}-cycle-${interval.current_cycle}`} 
-                           className={
-                             isOverdue ? "bg-red-50" : 
-                             isUpcoming ? "bg-amber-50" : 
-                             isCovered ? "bg-blue-50" :
-                             isNotApplicable ? "bg-gray-50" : "bg-green-50"
-                           }
+                    {cyclicIntervals.map((interval) => {
+                      const isOverdue = interval.status === "overdue";
+                      const isUpcoming = interval.status === "upcoming";
+                      const isCovered = interval.status === "covered";
+                      const isNotApplicable = interval.status === "not_applicable";
+                      const unitLabel = isComposite && (interval as { component_unit?: MaintenanceUnit }).component_unit
+                        ? getUnitLabel((interval as { component_unit: MaintenanceUnit }).component_unit)
+                        : getUnitLabel(maintenanceUnit);
+
+                      return (
+                        <TableRow
+                          key={`${interval.interval_id}-cycle-${interval.current_cycle}`}
+                          className={
+                            isOverdue ? "bg-red-50" :
+                            isUpcoming ? "bg-amber-50" :
+                            isCovered ? "bg-blue-50" :
+                            isNotApplicable ? "bg-gray-50" : "bg-green-50"
+                          }
                         >
                           <TableCell>
                             <div className="flex flex-col gap-1">
-                              <Badge
-                                variant={getStatusBadgeVariant(interval.status)}
-                                className="whitespace-nowrap text-xs inline-flex mb-1"
-                              >
-                                {interval.type} {interval.interval_value}{isComposite && (interval as any).component_unit ? getUnitLabel((interval as any).component_unit) : getUnitLabel(maintenanceUnit)}
+                              <Badge variant={getStatusBadgeVariant(interval.status)} className="whitespace-nowrap text-xs inline-flex mb-1">
+                                {interval.type} {interval.interval_value}{unitLabel}
                               </Badge>
-                              <div className="text-xs font-medium">
-                                Categoría: {interval.maintenance_category}
-                              </div>
+                              <div className="text-xs font-medium">Categoría: {interval.maintenance_category}</div>
                               {interval.current_cycle < currentCycle && (
-                                <Badge variant="destructive" className="text-xs mt-1">
-                                  Ciclo {interval.current_cycle} - ¡ATRASADO!
-                                </Badge>
+                                <Badge variant="destructive" className="text-xs mt-1">Ciclo {interval.current_cycle} - ¡ATRASADO!</Badge>
                               )}
                               {interval.is_first_cycle_only && (
-                                <div className="text-xs text-orange-600">
-                                  Solo primer ciclo
-                                </div>
+                                <div className="text-xs text-orange-600">Solo primer ciclo</div>
                               )}
                             </div>
                           </TableCell>
                           {isComposite && (
                             <TableCell>
-                              <div className="font-medium">{(interval as any).component_name}</div>
+                              <div className="font-medium">{(interval as { component_name?: string }).component_name}</div>
                               <div className="text-xs text-muted-foreground">
-                                {(interval as any).component_value || (interval as any).component_hours || 0}{(interval as any).component_unit ? getUnitLabel((interval as any).component_unit) : getUnitLabel(maintenanceUnit)} actuales
-                                {((interval as any).component_unit && (interval as any).component_unit !== maintenanceUnit) && (
-                                  <span className="ml-1 text-blue-600">({(interval as any).component_unit === 'kilometers' ? 'km' : 'h'})</span>
-                                )}
+                                {((interval as { component_value?: number }).component_value ?? (interval as { component_hours?: number }).component_hours ?? 0)}{unitLabel} actuales
                               </div>
                             </TableCell>
                           )}
                           <TableCell>
                             <div className="font-medium">{interval.name}</div>
                             {interval.description && (
-                              <div className="text-xs text-muted-foreground mt-1">
-                                {interval.description}
-                              </div>
+                              <div className="text-xs text-muted-foreground mt-1">{interval.description}</div>
                             )}
                           </TableCell>
                           <TableCell>
-                            <div className="font-medium">Cada {interval.interval_value} {isComposite && (interval as any).component_unit ? getUnitDisplayName((interval as any).component_unit) : getUnitDisplayName(maintenanceUnit)}</div>
-                            <div className="text-xs text-muted-foreground mt-1">
-                              En ciclo de {interval.cycle_length}{isComposite && (interval as any).component_unit ? getUnitLabel((interval as any).component_unit) : getUnitLabel(maintenanceUnit)}
-                            </div>
+                            <div className="font-medium">Cada {interval.interval_value} {isComposite && (interval as { component_unit?: MaintenanceUnit }).component_unit ? getUnitDisplayName((interval as { component_unit: MaintenanceUnit }).component_unit) : getUnitDisplayName(maintenanceUnit)}</div>
+                            <div className="text-xs text-muted-foreground mt-1">En ciclo de {interval.cycle_length}{unitLabel}</div>
                             <Badge variant="secondary" className="text-xs mt-1">
-                              {interval.is_recurring ? 'Recurrente' : 'Una vez'}
+                              {interval.is_recurring ? "Recurrente" : "Una vez"}
                             </Badge>
                           </TableCell>
                           <TableCell>
                             <div className="space-y-1">
-                              <Badge variant={getStatusBadgeVariant(interval.status)}>
-                                {getStatusLabel(interval.status)}
-                              </Badge>
+                              <Badge variant={getStatusBadgeVariant(interval.status)}>{getStatusLabel(interval.status)}</Badge>
                               {interval.next_due_value && (isComposite ? true : getCurrentValue(asset!, maintenanceUnit) > 0) && (
                                 <div className="text-xs text-muted-foreground">
                                   {(() => {
-                                    const currentVal = isComposite ? ((interval as any).component_value || (interval as any).component_hours || 0) : getCurrentValue(asset!, maintenanceUnit);
+                                    const currentVal = isComposite ? ((interval as { component_value?: number }).component_value ?? (interval as { component_hours?: number }).component_hours ?? 0) : getCurrentValue(asset!, maintenanceUnit);
                                     const dueVal = interval.next_due_value || interval.next_due_hour || 0;
-                                    const unitLabel = isComposite && (interval as any).component_unit ? getUnitLabel((interval as any).component_unit) : getUnitLabel(maintenanceUnit);
-                                    
-                                    if (interval.status === 'overdue') {
-                                      return <span className="text-red-600 font-medium">Vencido por {currentVal - dueVal}{unitLabel}</span>;
-                                    } else if (interval.status === 'upcoming') {
-                                      return <span className="text-amber-600 font-medium">Próximo en {dueVal - currentVal}{unitLabel}</span>;
-                                    } else if (interval.status === 'scheduled') {
-                                      return <span className="text-green-600">Faltan {dueVal - currentVal}{unitLabel}</span>;
-                                    }
+                                    if (interval.status === "overdue") return <span className="text-red-600 font-medium">Vencido por {currentVal - dueVal}{unitLabel}</span>;
+                                    if (interval.status === "upcoming") return <span className="text-amber-600 font-medium">Próximo en {dueVal - currentVal}{unitLabel}</span>;
+                                    if (interval.status === "scheduled") return <span className="text-green-600">Faltan {dueVal - currentVal}{unitLabel}</span>;
                                     return null;
                                   })()}
                                 </div>
@@ -1154,54 +1133,27 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
                           <TableCell>
                             {interval.next_due_value || interval.next_due_hour ? (
                               <div className="space-y-1">
-                                <div className="font-medium">{(interval.next_due_value || interval.next_due_hour || 0)}{isComposite && (interval as any).component_unit ? getUnitLabel((interval as any).component_unit) : getUnitLabel(maintenanceUnit)}</div>
-                                <div className="text-xs text-muted-foreground">
-                                  Ciclo {interval.current_cycle}
-                                  {isComposite && (
-                                    <div className="text-xs">
-                                      {(interval as any).component_value || (interval as any).component_hours || 0}{(interval as any).component_unit ? getUnitLabel((interval as any).component_unit) : getUnitLabel(maintenanceUnit)} actuales
-                                    </div>
-                                  )}
-                                </div>
+                                <div className="font-medium">{(interval.next_due_value || interval.next_due_hour || 0)}{unitLabel}</div>
+                                <div className="text-xs text-muted-foreground">Ciclo {interval.current_cycle}</div>
                               </div>
                             ) : (
-                              <div className="text-sm text-muted-foreground">
-                                No aplicable
-                              </div>
+                              <div className="text-sm text-muted-foreground">No aplicable</div>
                             )}
                           </TableCell>
-                                                     <TableCell>
-                             {interval.status === 'not_applicable' ? (
-                               <Button 
-                                 size="sm" 
-                                 variant="outline"
-                                 disabled
-                                 className="opacity-50"
-                               >
-                                 No aplicable
-                               </Button>
-                             ) : interval.status === 'covered' ? (
-                               <Button 
-                                 size="sm" 
-                                 variant="outline"
-                                 disabled
-                                 className="opacity-50"
-                               >
-                                 Cubierto
-                               </Button>
-                             ) : (
-                               <Button
-                                 size="sm"
-                                 variant={isOverdue ? "destructive" : "default"}
-                                 asChild
-                               >
-                                 <Link href={`/activos/${isComposite ? (interval as any).component_id : assetId}/mantenimiento/nuevo?planId=${interval.interval_id}&cycleHour=${interval.next_due_value || interval.next_due_hour || 0}`}>
-                                   <Wrench className="h-4 w-4 mr-2" />
-                                   {isOverdue ? "¡Urgente!" : isUpcoming ? "Programar" : "Registrar"}
-                                 </Link>
-                               </Button>
-                             )}
-                           </TableCell>
+                          <TableCell>
+                            {interval.status === "not_applicable" ? (
+                              <Button size="sm" variant="outline" disabled className="opacity-50">No aplicable</Button>
+                            ) : interval.status === "covered" ? (
+                              <Button size="sm" variant="outline" disabled className="opacity-50">Cubierto</Button>
+                            ) : (
+                              <Button size="sm" variant={isOverdue ? "destructive" : "default"} asChild>
+                                <Link href={`/activos/${isComposite ? (interval as { component_id?: string }).component_id : assetId}/mantenimiento/nuevo?planId=${interval.interval_id}&cycleHour=${interval.next_due_value || interval.next_due_hour || 0}`}>
+                                  <Wrench className="h-4 w-4 mr-2" />
+                                  {isOverdue ? "¡Urgente!" : isUpcoming ? "Programar" : "Programar"}
+                                </Link>
+                              </Button>
+                            )}
+                          </TableCell>
                         </TableRow>
                       );
                     })}

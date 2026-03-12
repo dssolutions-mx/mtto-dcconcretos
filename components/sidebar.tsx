@@ -22,6 +22,7 @@ import {
   Truck,
   CreditCard,
   CheckCircle,
+  Clock,
   Menu,
   X,
   Wrench,
@@ -112,6 +113,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
   const [operationsOpen, setOperationsOpen] = useState(operationsDefaultOpen)
   const [procurementOpen, setProcurementOpen] = useState(profile?.role === 'AREA_ADMINISTRATIVA')
   const [recordsOpen, setRecordsOpen] = useState(false)
+  const [trabajosOpen, setTrabajosOpen] = useState(operationsDefaultOpen)
   const [organizationOpen, setOrganizationOpen] = useState(false)
   const [hrOpen, setHrOpen] = useState(false)
   const [complianceOpen, setComplianceOpen] = useState(false)
@@ -560,6 +562,55 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
               </div>
             )}
 
+            {/* Trabajos Section - groups OT (pendientes) and OS (ejecutados) */}
+            {ui.shouldShowInNavigation('work_orders') && (
+              <div className="px-4">
+                <Collapsible open={trabajosOpen} onOpenChange={setTrabajosOpen}>
+                  <CollapsibleTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      className="w-full justify-between p-2 h-auto font-medium"
+                    >
+                      <div className="flex items-center">
+                        <Tool className="mr-2 h-4 w-4" />
+                        Trabajos
+                      </div>
+                      {trabajosOpen ? (
+                        <ChevronDown className="h-4 w-4" />
+                      ) : (
+                        <ChevronRight className="h-4 w-4" />
+                      )}
+                    </Button>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent className="space-y-1 mt-2">
+                    <Button
+                      variant={isPathActive("/ordenes") ? "secondary" : "ghost"}
+                      className="w-full justify-start pl-8"
+                      asChild
+                      onClick={handleLinkClick}
+                      data-tour="work-orders-nav"
+                    >
+                      <Link href="/ordenes">
+                        <Clock className="mr-2 h-4 w-4" />
+                        Pendientes (OT)
+                      </Link>
+                    </Button>
+                    <Button
+                      variant={isPathActive("/servicios") ? "secondary" : "ghost"}
+                      className="w-full justify-start pl-8"
+                      asChild
+                      onClick={handleLinkClick}
+                    >
+                      <Link href="/servicios">
+                        <CheckCircle className="mr-2 h-4 w-4" />
+                        Ejecutados (OS)
+                      </Link>
+                    </Button>
+                  </CollapsibleContent>
+                </Collapsible>
+              </div>
+            )}
+
             {/* Operations Section */}
             {(ui.shouldShowInNavigation('work_orders') || ui.shouldShowInNavigation('checklists') || ui.shouldShowInNavigation('maintenance')) && (
               <div className="px-4">
@@ -641,20 +692,6 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                         <Link href="/incidentes">
                           <AlertTriangle className="mr-2 h-4 w-4" />
                           Incidentes
-                        </Link>
-                      </Button>
-                    )}
-                    {ui.shouldShowInNavigation('work_orders') && (
-                      <Button
-                        variant={isPathActive("/ordenes") ? "secondary" : "ghost"}
-                        className="w-full justify-start pl-8"
-                        asChild
-                        onClick={handleLinkClick}
-                        data-tour="work-orders-nav"
-                      >
-                        <Link href="/ordenes">
-                          <Tool className="mr-2 h-4 w-4" />
-                          Órdenes de Trabajo
                         </Link>
                       </Button>
                     )}
@@ -797,19 +834,6 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                 </Button>
               </CollapsibleTrigger>
               <CollapsibleContent className="space-y-1 mt-2">
-                {ui.shouldShowInNavigation('work_orders') && (
-                  <Button
-                    variant={isPathActive("/servicios") ? "secondary" : "ghost"}
-                    className="w-full justify-start pl-8"
-                    asChild
-                    onClick={handleLinkClick}
-                  >
-                    <Link href="/servicios">
-                      <CheckCircle className="mr-2 h-4 w-4" />
-                      Órdenes de Servicio
-                    </Link>
-                  </Button>
-                )}
                 <Button
                   variant={isPathActive("/reportes") ? "secondary" : "ghost"}
                   className="w-full justify-start pl-8"

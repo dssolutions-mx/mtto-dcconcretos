@@ -18,7 +18,7 @@ export default function WorkOrdersPage() {
     <DashboardShell>
       <DashboardHeader
         heading="Órdenes de Trabajo"
-        text="Gestiona las órdenes de trabajo para mantenimientos preventivos, correctivos y reclamos de garantía."
+        text="Planificación, aprobación y asignación de trabajos"
         id="ordenes-header"
       >
         <Button asChild>

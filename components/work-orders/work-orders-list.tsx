@@ -213,13 +213,20 @@ function WorkOrderCard({
         </div>
         
         {/* Type and Priority */}
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap items-center">
           <Badge variant={getTypeVariant(order.type)} className="text-xs">
             {order.type || 'N/A'}
           </Badge>
           <Badge variant={getPriorityVariant(order.priority)} className="text-xs">
             {order.priority || 'Normal'}
           </Badge>
+          {order.incident_id && order.asset_id && (
+            <Badge variant="outline" className="text-xs" asChild>
+              <Link href={`/activos/${order.asset_id}/incidentes`} className="hover:underline">
+                Desde incidente
+              </Link>
+            </Badge>
+          )}
         </div>
         
         {/* Technician */}
@@ -858,7 +865,18 @@ function DesktopView({
         <TableBody>
           {orders.map((order) => (
             <TableRow key={order.id}>
-              <TableCell className="font-medium">{order.order_id}</TableCell>
+              <TableCell className="font-medium">
+                <div className="flex flex-col gap-1">
+                  <span>{order.order_id}</span>
+                  {order.incident_id && order.asset_id && (
+                    <Badge variant="outline" className="w-fit text-xs" asChild>
+                      <Link href={`/activos/${order.asset_id}/incidentes`} className="hover:underline">
+                        Desde incidente
+                      </Link>
+                    </Badge>
+                  )}
+                </div>
+              </TableCell>
               <TableCell>
                 {order.asset?.name || 'N/A'} 
                 {order.asset?.asset_id && <span className="text-xs text-muted-foreground ml-1">({order.asset.asset_id})</span>}
@@ -920,9 +938,9 @@ function DesktopView({
                     </Link>
                   </DropdownMenuItem>
                   {/* Link to Incident if present on order */}
-                  {order.incident_id && (
+                  {order.incident_id && order.asset_id && (
                     <DropdownMenuItem asChild>
-                      <Link href={`/incidentes`}>
+                      <Link href={`/activos/${order.asset_id}/incidentes`}>
                         <AlertTriangle className="mr-2 h-4 w-4" />
                         <span>Incidente</span>
                       </Link>

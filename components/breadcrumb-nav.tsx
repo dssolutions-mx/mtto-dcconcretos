@@ -272,13 +272,15 @@ export function BreadcrumbNav({ className }: BreadcrumbNavProps) {
     }
     if (pathSegments.length > segmentStartIndex) {
       const remainingSegments = pathSegments.slice(segmentStartIndex)
+      const isUuid = (s: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(s)
       
       remainingSegments.forEach((segment, index) => {
         const segmentPath = "/" + pathSegments.slice(0, segmentStartIndex + index + 1).join("/")
         
         // Handle specific sub-page labels
         let label = segment
-        if (segment === "crear") label = "Crear"
+        if (firstSegment === "activos" && isUuid(segment)) label = "Detalle de activo"
+        else if (segment === "crear") label = "Crear"
         else if (segment === "editar") label = "Editar"
         else if (segment === "plantillas") label = "Plantillas"
         else if (segment === "historial") label = "Historial"

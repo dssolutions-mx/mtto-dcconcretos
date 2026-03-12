@@ -230,9 +230,20 @@ export default async function WorkOrderDetailsPage({
   // Fetch related service order (if any) to enable bidirectional navigation
   const { data: relatedServiceOrder } = await supabase
     .from("service_orders")
-    .select("id")
+    .select("id, order_id")
     .eq("work_order_id", id)
     .maybeSingle()
+
+  // Fetch incident if this WO originated from one
+  let incidentAssetId: string | null = null
+  if (extendedWorkOrder.incident_id) {
+    const { data: incident } = await supabase
+      .from("incident_history")
+      .select("asset_id")
+      .eq("id", extendedWorkOrder.incident_id)
+      .single()
+    incidentAssetId = incident?.asset_id ?? null
+  }
   
   // Format dates
   const formatDate = (dateString: string | null) => {
@@ -457,7 +468,37 @@ export default async function WorkOrderDetailsPage({
           <WorkOrderPrintHandler workOrderId={id} />
         </div>
       </div>
-      
+
+      {/* Lifecycle strip and cross-links */}
+      <div className="mb-6 space-y-3 no-print">
+        <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+          <span className={cn(extendedWorkOrder.status !== WorkOrderStatus.Completed && !extendedWorkOrder.purchase_order_id ? "font-medium text-foreground" : "")}>Planificado</span>
+          <span>→</span>
+          <span className={cn(extendedWorkOrder.purchase_order_id && extendedWorkOrder.status !== WorkOrderStatus.Completed ? "font-medium text-foreground" : "")}>En compra</span>
+          <span>→</span>
+          <span className={cn(extendedWorkOrder.status === WorkOrderStatus.InProgress ? "font-medium text-foreground" : "")}>En ejecución</span>
+          <span>→</span>
+          <span className={cn(extendedWorkOrder.status === WorkOrderStatus.Completed ? "font-medium text-foreground" : "")}>Completado</span>
+        </div>
+        <div className="flex flex-wrap gap-3">
+          {relatedServiceOrder && (
+            <Link
+              href={`/servicios/${relatedServiceOrder.id}`}
+              className="text-sm text-primary hover:underline inline-flex items-center gap-1"
+            >
+              Este trabajo fue ejecutado: Ver {relatedServiceOrder.order_id || "OS"}
+            </Link>
+          )}
+          {extendedWorkOrder.incident_id && incidentAssetId && (
+            <Link
+              href={`/activos/${incidentAssetId}`}
+              className="text-sm text-primary hover:underline inline-flex items-center gap-1"
+            >
+              Originado por incidente
+            </Link>
+          )}
+        </div>
+      </div>
       
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="md:col-span-2 space-y-6">

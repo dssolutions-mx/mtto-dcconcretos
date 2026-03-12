@@ -14,7 +14,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Badge } from "@/components/ui/badge"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { 
   Check, CheckCircle, Edit, Eye, FileText, MoreHorizontal, Search,  
@@ -234,7 +234,10 @@ export function ServiceOrdersList() {
       <Card>
         <CardHeader>
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-            <CardTitle>Órdenes de Servicio</CardTitle>
+            <div>
+              <CardTitle>Órdenes de Servicio</CardTitle>
+              <CardDescription className="mt-1">Registro de trabajos ya realizados por técnicos</CardDescription>
+            </div>
             <div className="flex gap-2">
               <Button variant="outline" onClick={clearFilters}>
                 Limpiar Filtros

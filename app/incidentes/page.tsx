@@ -378,7 +378,7 @@ export default function IncidentsPage() {
               <Button variant="default" size="sm" asChild className="flex-1">
                 <Link href={`/ordenes/${incident.work_order_id}`}>
                   <Wrench className="h-4 w-4 mr-1" />
-                  OT
+                  {incident.work_order_order_id ? `Ver OT #${incident.work_order_order_id}` : 'Ver OT'}
                 </Link>
               </Button>
             )}
@@ -524,7 +524,9 @@ export default function IncidentsPage() {
                                 <Button variant="default" size="sm" asChild className="h-8 px-2">
                                   <Link href={`/ordenes/${incident.work_order_id}`}>
                                     <Wrench className="h-3 w-3" />
-                                    <span className="hidden lg:inline ml-1">OT</span>
+                                    <span className="hidden lg:inline ml-1">
+                                      {incident.work_order_order_id ? `Ver OT #${incident.work_order_order_id}` : 'Ver OT'}
+                                    </span>
                                   </Link>
                                 </Button>
                               )}

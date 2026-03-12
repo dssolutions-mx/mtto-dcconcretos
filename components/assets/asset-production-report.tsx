@@ -3,8 +3,21 @@
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
 import { Button } from "@/components/ui/button"
-import { X, Printer, Download } from "lucide-react"
+import { X, Printer, FileDown } from "lucide-react"
 import { useState, useEffect } from "react"
+
+/** Compute Asset Health Score (0-100). Heuristic: 100 - (active_incidents*15) - (overdue_maintenance*10), clamped. */
+function computeHealthScore(activeIncidents: number, overdueMaintenance: number): number {
+  const raw = Math.round(100 - activeIncidents * 15 - overdueMaintenance * 10)
+  return Math.max(0, Math.min(100, raw))
+}
+
+/** Banded health: Alto (80+), Medio (50-79), Bajo (<50). */
+function getHealthBand(score: number): { band: string; color: string } {
+  if (score >= 80) return { band: "Alto", color: "text-green-600" }
+  if (score >= 50) return { band: "Medio", color: "text-amber-600" }
+  return { band: "Bajo", color: "text-red-600" }
+}
 
 interface AssetProductionReportProps {
   assetId: string
@@ -186,6 +199,46 @@ export function AssetProductionReport({ assetId, onClose }: AssetProductionRepor
 
   const { asset, summary, completedChecklists, incidents, maintenanceHistory, workOrders, maintenancePlans, maintenanceIntervals, intervalAnalysis } = reportData
 
+  // Key metrics for executive summary
+  const isResolved = (s: string) => (s || "").toLowerCase() === "resuelto" || (s || "").toLowerCase() === "resolved"
+  const activeIncidentsCount = (incidents || []).filter((i: any) => !isResolved(i.status)).length
+  const overdueMaintenanceCount = (intervalAnalysis || []).filter((i: any) => i.analysis?.status === "overdue").length
+  const totalMaintenance = summary.preventiveMaintenanceCount + summary.correctiveMaintenanceCount || 1
+  const preventivePct = Math.round((summary.preventiveMaintenanceCount / totalMaintenance) * 100)
+  const correctivePct = Math.round((summary.correctiveMaintenanceCount / totalMaintenance) * 100)
+  const healthScore = computeHealthScore(activeIncidentsCount, overdueMaintenanceCount)
+  const healthBand = getHealthBand(healthScore)
+
+  // Auto-generated executive summary (Problema → Impacto → Solución → Decisión), 250-400 words
+  const execSummaryParts: string[] = []
+  const mainNumber = healthScore
+  execSummaryParts.push(`Estado de salud del activo: ${mainNumber}/100 (${healthBand.band}).`)
+  if (activeIncidentsCount > 0) {
+    execSummaryParts.push(`Problema: Hay ${activeIncidentsCount} incidente(s) activo(s) sin resolver que requieren atención.`)
+  }
+  if (overdueMaintenanceCount > 0) {
+    execSummaryParts.push(`Problema: ${overdueMaintenanceCount} intervalo(s) de mantenimiento preventivo vencido(s), incrementando riesgo de fallas.`)
+  }
+  if (activeIncidentsCount === 0 && overdueMaintenanceCount === 0) {
+    execSummaryParts.push(`Problema: Ningún incidente abierto ni intervalos vencidos en este momento.`)
+  }
+  execSummaryParts.push(`Impacto: Disponibilidad ${summary.availability}%; ${summary.totalDowntime} horas de inactividad acumuladas. Mantenimiento: ${preventivePct}% preventivo vs ${correctivePct}% correctivo.`)
+  if (correctivePct > 60) {
+    execSummaryParts.push(`Solución: El alto ratio correctivo sugiere fortalecer el programa preventivo para reducir fallas reactivas.`)
+  } else {
+    execSummaryParts.push(`Solución: El balance preventivo/correctivo se encuentra dentro de rangos aceptables.`)
+  }
+  if (overdueMaintenanceCount > 0) {
+    execSummaryParts.push(`Decisión: Priorizar la ejecución de los ${overdueMaintenanceCount} intervalo(s) vencido(s) para minimizar riesgo.`)
+  }
+  if (activeIncidentsCount > 0) {
+    execSummaryParts.push(`Decisión: Atender los ${activeIncidentsCount} incidente(s) abierto(s) para restaurar operación completa.`)
+  }
+  if (activeIncidentsCount === 0 && overdueMaintenanceCount === 0) {
+    execSummaryParts.push(`Decisión: Mantener el ritmo de mantenimiento preventivo y monitoreo continuo.`)
+  }
+  const executiveSummaryText = execSummaryParts.join(" ")
+
   const getStatusBadgeClass = (status: string) => {
     switch (status) {
       case 'overdue':
@@ -229,8 +282,8 @@ export function AssetProductionReport({ assetId, onClose }: AssetProductionRepor
           Imprimir
         </Button>
         <Button onClick={handleDownloadPDF} className="bg-green-600 hover:bg-green-700">
-          <Download className="h-4 w-4 mr-2" />
-          Imprimir/Guardar PDF
+          <FileDown className="h-4 w-4 mr-2" />
+          Exportar PDF
         </Button>
         <Button variant="outline" onClick={onClose}>
           <X className="h-4 w-4 mr-2" />
@@ -267,45 +320,40 @@ export function AssetProductionReport({ assetId, onClose }: AssetProductionRepor
           </div>
         </div>
 
-        {/* Executive Summary */}
-        <div className="mb-8 bg-blue-50 rounded-lg p-6 border-l-4 border-blue-500">
-          <h3 className="text-lg font-semibold text-gray-800 mb-3">
-            Resumen Ejecutivo del Activo
-          </h3>
-          <div className="grid grid-cols-2 gap-6 text-sm">
+        {/* Resumen Ejecutivo (Problema → Impacto → Solución → Decisión) */}
+        <div className="mb-8 executive-summary bg-blue-50 rounded-lg p-6 border-l-4 border-blue-500">
+          <h2 className="text-xl font-bold text-gray-800 mb-4">Resumen Ejecutivo</h2>
+          {/* Compact metrics row */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4 metrics-row">
+            <div className="bg-white rounded p-3 border text-center">
+              <p className="text-2xl font-bold text-gray-900">{healthScore}</p>
+              <p className="text-xs text-gray-600">Salud del Activo (0-100)</p>
+              <p className={`text-sm font-medium ${healthBand.color}`}>{healthBand.band}</p>
+            </div>
+            <div className="bg-white rounded p-3 border text-center">
+              <p className="text-2xl font-bold text-gray-900">{activeIncidentsCount}</p>
+              <p className="text-xs text-gray-600">Incidentes Activos</p>
+            </div>
+            <div className="bg-white rounded p-3 border text-center">
+              <p className="text-lg font-bold text-green-600">{preventivePct}%</p>
+              <p className="text-xs text-gray-600">Preventivo</p>
+            </div>
+            <div className="bg-white rounded p-3 border text-center">
+              <p className="text-lg font-bold text-red-600">{correctivePct}%</p>
+              <p className="text-xs text-gray-600">Correctivo</p>
+            </div>
+          </div>
+          <p className="text-sm text-gray-700 leading-relaxed max-w-3xl">{executiveSummaryText}</p>
+          <div className="mt-4 grid grid-cols-2 gap-4 text-sm">
             <div>
-              <p className="mb-2">
-                <strong>Nombre del Activo:</strong> {asset.name}
-              </p>
-              <p className="mb-2">
-                <strong>Código de Activo:</strong> {asset.asset_id}
-              </p>
-              <p className="mb-2">
-                <strong>Estado Actual:</strong> <span className={`font-medium ${asset.status === 'operational' ? 'text-green-600' : 'text-red-600'}`}>{asset.status?.toUpperCase()}</span>
-              </p>
-              <p className="mb-2">
-                <strong>Planta:</strong> {(asset as any).plants?.name || asset.location || 'No especificada'}
-              </p>
-              <p className="mb-2">
-                <strong>Departamento:</strong> {(asset as any).departments?.name || asset.department || 'No especificado'}
-              </p>
+              <p className="mb-1"><strong>Activo:</strong> {asset.name} ({asset.asset_id})</p>
+              <p className="mb-1"><strong>Planta:</strong> {(asset as any).plants?.name || asset.location || "N/A"}</p>
+              <p><strong>Inversión Total:</strong> {formatCurrency(summary.totalCost)}</p>
             </div>
             <div>
-              <p className="mb-2">
-                <strong>Disponibilidad:</strong> <span className="text-green-600 font-medium">{summary.availability}%</span>
-              </p>
-              <p className="mb-2">
-                <strong>Días Operativos:</strong> {summary.operatingDays.toLocaleString()} días
-              </p>
-              <p className="mb-2">
-                <strong>Inversión Total en Mantenimiento:</strong> {formatCurrency(summary.totalCost)}
-              </p>
-              <p className="mb-2">
-                <strong>Estado de Garantía:</strong> <span className={`font-medium ${summary.warrantyStatus === 'Active' ? 'text-green-600' : 'text-red-600'}`}>{summary.warrantyStatus}</span>
-              </p>
-              <p className="mb-2">
-                <strong>Checklists Completados:</strong> {summary.completedChecklistsCount}
-              </p>
+              <p className="mb-1"><strong>Disponibilidad:</strong> {summary.availability}%</p>
+              <p className="mb-1"><strong>Tiempo Fuera:</strong> {summary.totalDowntime} hrs</p>
+              <p><strong>Garantía:</strong> {summary.warrantyStatus}</p>
             </div>
           </div>
         </div>
@@ -982,7 +1030,7 @@ export function AssetProductionReport({ assetId, onClose }: AssetProductionRepor
         </div>
       </div>
 
-      {/* Print Styles */}
+      {/* Print Styles - 1-1.25in margins, clear hierarchy, one-page summary */}
       <style jsx global>{`
         @media print {
           /* Hide everything except the report content */
@@ -1014,30 +1062,30 @@ export function AssetProductionReport({ assetId, onClose }: AssetProductionRepor
             margin: 0 !important;
             padding: 0 !important;
             font-size: 12px !important;
-            line-height: 1.3 !important;
+            line-height: 1.5 !important;
             color: black !important;
             background: white !important;
             -webkit-print-color-adjust: exact !important;
             color-adjust: exact !important;
           }
           
-          /* Position the print container correctly */
+          /* Position the print container - 1 to 1.25in margins */
           .print-container {
             position: static !important;
             display: block !important;
             width: 100% !important;
-            max-width: none !important;
-            margin: 0 !important;
-            padding: 15mm !important;
+            max-width: 65ch !important;
+            margin: 0 auto !important;
+            padding: 1.25in !important;
             background: white !important;
             color: black !important;
             box-shadow: none !important;
             border: none !important;
           }
           
-          /* Page configuration */
+          /* Page margins 1-1.25in */
           @page {
-            margin: 8mm !important;
+            margin: 1in !important;
             size: A4 portrait !important;
           }
           
@@ -1053,7 +1101,7 @@ export function AssetProductionReport({ assetId, onClose }: AssetProductionRepor
             margin: 8mm !important;
           }
           
-          /* Typography for print */
+          /* Typography for print - clear hierarchy */
           h1, h2, h3, h4, h5, h6 {
             page-break-after: avoid !important;
             color: black !important;
@@ -1061,10 +1109,19 @@ export function AssetProductionReport({ assetId, onClose }: AssetProductionRepor
             margin-bottom: 0.3em !important;
           }
           
-          h1 { font-size: 18px !important; }
+          h1 { font-size: 20px !important; }
           h2 { font-size: 16px !important; }
           h3 { font-size: 14px !important; }
           h4 { font-size: 12px !important; }
+          
+          /* Executive summary: keep on one page when possible */
+          .executive-summary {
+            page-break-inside: avoid !important;
+          }
+          
+          .metrics-row {
+            page-break-inside: avoid !important;
+          }
           
           p, div, span {
             color: black !important;

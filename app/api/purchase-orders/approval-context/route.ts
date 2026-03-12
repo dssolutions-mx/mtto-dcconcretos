@@ -4,15 +4,16 @@ import { createClient } from '@/lib/supabase-server'
 export const dynamic = 'force-dynamic'
 import {
   loadActorContext,
-  checkTechnicalApprovalAuthority,
-  checkGMEscalationAuthority,
   checkScopeOverBusinessUnit,
-  checkViabilityReviewAuthority,
 } from '@/lib/auth/server-authorization'
 import {
   resolveWorkflowPath,
-  GM_ESCALATION_THRESHOLD_MXN,
+  resolveCurrentStage,
+  canActorApproveAtStage,
+  canActorRecordViabilityAtStage,
+  getStageDisplayInfo,
   getNextStepForAdministration,
+  GM_ESCALATION_THRESHOLD_MXN,
 } from '@/lib/purchase-orders/workflow-policy'
 
 const PurchaseOrderStatus = {
@@ -110,9 +111,7 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    const isTechnicalApprover = checkTechnicalApprovalAuthority(actor)
-    const isGM = checkGMEscalationAuthority(actor)
-    const isViabilityReviewer = checkViabilityReviewAuthority(actor)
+    const actorRole = actor.profile.role
 
     const { data: purchaseOrders, error } = await supabase
       .from('purchase_orders')
@@ -161,64 +160,59 @@ export async function GET(request: NextRequest) {
         policy.requiresGMIfAboveThreshold &&
         amount >= GM_ESCALATION_THRESHOLD_MXN
 
-      const viabilityDone =
-        !!po.viability_state && po.viability_state === 'viable'
-      const viabilityPending =
-        policy.requiresViability &&
-        (!po.viability_state || po.viability_state === 'pending')
+      const stage = resolveCurrentStage({
+        authorizedBy: po.authorized_by ?? null,
+        viabilityState: po.viability_state ?? null,
+        policy,
+        amount,
+      })
 
-      let canApprove = false
-      let canRecordViability = false
+      const stageDisplay = getStageDisplayInfo(stage)
+      const workflowStage = stageDisplay.label
+      const responsibleRole = stageDisplay.responsibleRole
+
+      const hasAuthLimit = actor.authorizationLimit > 0
+      const amountWithinLimit = amount <= actor.authorizationLimit
+
+      const actInput = {
+        stage,
+        actorRole,
+        policy,
+        needsGMEscalation,
+        hasScope,
+        hasAuthLimit,
+        amountWithinLimit,
+      }
+
+      const canApprove = canActorApproveAtStage(actInput)
+      const canRecordViability = canActorRecordViabilityAtStage(actInput)
+
       let reason = ''
       let nextStep = ''
-      let workflowStage = ''
-      let responsibleRole: string | undefined
 
-      if (!po.authorized_by) {
-        workflowStage = 'Validación técnica'
-        responsibleRole = 'Gerente de Mantenimiento'
-        if ((isGM && hasScope) || (isTechnicalApprover && hasScope)) {
-          canApprove = true
-          reason = 'Puede aprobar (validación técnica)'
-          nextStep = 'Listo para tu aprobación'
-        } else {
+      if (canApprove) {
+        reason =
+          stage === 'technical'
+            ? 'Puede aprobar (validación técnica)'
+            : 'Puede aprobar (aprobación final)'
+        nextStep = stage === 'technical' ? 'Listo para tu aprobación' : 'Listo para aprobación final'
+      } else if (canRecordViability) {
+        reason = 'Puede registrar viabilidad'
+        nextStep = 'Registrar viabilidad administrativa'
+      } else {
+        if (stage === 'technical') {
           reason = 'Pendiente validación técnica'
           nextStep = 'Gerente de Mantenimiento debe aprobar primero'
-        }
-      } else if (viabilityPending) {
-        workflowStage = 'Viabilidad administrativa'
-        responsibleRole = 'Área Administrativa'
-        if (isViabilityReviewer || isGM) {
-          canRecordViability = true
-          reason = 'Puede registrar viabilidad'
-          nextStep = 'Registrar viabilidad administrativa'
-        } else {
+        } else if (stage === 'viability') {
           reason = 'Pendiente viabilidad administrativa'
           nextStep = 'Área Administrativa debe registrar viabilidad'
-        }
-      } else {
-        workflowStage = 'Aprobación final'
-        responsibleRole = 'Gerencia General'
-        // ONLY GM or Área Administrativa can approve here—Gerente de Mantenimiento (technical approver) must NEVER get canApprove
-        if (needsGMEscalation) {
-          canApprove = isGM && hasScope
-          if (canApprove) {
-            reason = 'Puede aprobar (aprobación final)'
-            nextStep = 'Listo para aprobación final'
-          } else {
-            reason = 'Pendiente aprobación de Gerencia General'
-            nextStep = 'Gerencia General debe aprobar'
-          }
         } else {
-          const hasAuthLimit = actor.authorizationLimit > 0
-          const withinLimit = amount <= actor.authorizationLimit
-          canApprove = (isViabilityReviewer && hasAuthLimit && withinLimit) || (isGM && hasScope)
-          if (canApprove) {
-            reason = 'Puede aprobar (aprobación final)'
-            nextStep = 'Listo para aprobación final'
-          } else if (isViabilityReviewer && !withinLimit) {
+          if (actorRole === 'AREA_ADMINISTRATIVA' && !amountWithinLimit && hasAuthLimit) {
             reason = `Excede tu límite ($${actor.authorizationLimit.toLocaleString('es-MX')})`
             nextStep = 'Requiere aprobador con mayor autorización'
+          } else if (needsGMEscalation) {
+            reason = 'Pendiente aprobación de Gerencia General'
+            nextStep = 'Gerencia General debe aprobar'
           } else {
             reason = 'Pendiente aprobación final'
             nextStep = getNextStepForAdministration(
@@ -232,19 +226,6 @@ export async function GET(request: NextRequest) {
             )
           }
         }
-      }
-
-      canRecordViability =
-        canRecordViability ||
-        (policy.requiresViability &&
-          !!po.authorized_by &&
-          viabilityPending &&
-          (isViabilityReviewer || isGM))
-
-      // Defensive: GERENTE_MANTENIMIENTO must never approve at Aprobación final (only at Validación técnica).
-      // Use profile.role directly—never trust effectiveBusinessRole/business_role for this guard.
-      if (workflowStage === 'Aprobación final' && actor.profile.role === 'GERENTE_MANTENIMIENTO') {
-        canApprove = false
       }
 
       result[po.id] = {

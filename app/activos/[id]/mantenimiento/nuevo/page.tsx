@@ -84,8 +84,14 @@ export default function NewMaintenancePage({ params }: NewMaintenancePageProps) 
   const assetId = resolvedParams.id;
   const router = useRouter();
   const searchParams = useSearchParams();
-  const planId = searchParams.get('planId');
+  const planIdParam = searchParams.get('planId');
+  const intervalIdParam = searchParams.get('intervalId');
+  // Links pass interval_id as planId; support both planId (maintenance_plans.id) and intervalId (maintenance_intervals.id)
+  const rawParam = intervalIdParam || planIdParam;
   const { toast } = useToast();
+
+  // Resolved maintenance_plans.id for work_orders.maintenance_plan_id FK (must NOT be interval_id)
+  const [resolvedMaintenancePlanId, setResolvedMaintenancePlanId] = useState<string | null>(null);
   
   const { asset, loading: assetLoading, error: assetError } = useAsset(assetId);
   
@@ -147,16 +153,34 @@ export default function NewMaintenancePage({ params }: NewMaintenancePageProps) 
   }, [asset]);
   
   // Cargar el plan de mantenimiento si se proporcionó un ID
+  // URL param may be maintenance_plans.id or maintenance_intervals.id (interval_id); resolve to maintenance_plans.id for WO FK
   useEffect(() => {
     async function fetchMaintenancePlan() {
-      if (!planId) return;
+      if (!rawParam) return;
       
       try {
         setLoading(true);
+        setResolvedMaintenancePlanId(null);
         const supabase = createClient();
         
-        // Obtener el plan de mantenimiento
-        const { data: planData, error: planError } = await supabase
+        // 1) Check if rawParam is already a valid maintenance_plans.id for this asset
+        const { data: existingPlan } = await supabase
+          .from("maintenance_plans")
+          .select("id, interval_id")
+          .eq("id", rawParam)
+          .eq("asset_id", assetId)
+          .single();
+        
+        let planData: any;
+        let intervalIdForFetch = rawParam;
+        
+        if (existingPlan) {
+          setResolvedMaintenancePlanId(existingPlan.id);
+          intervalIdForFetch = existingPlan.interval_id;
+        }
+        
+        // 2) Fetch interval data (from maintenance_intervals) for prefilling - use interval id
+        const { data: intervalData, error: intervalError } = await supabase
           .from("maintenance_intervals")
           .select(`
             *,
@@ -165,18 +189,63 @@ export default function NewMaintenancePage({ params }: NewMaintenancePageProps) 
               task_parts(*)
             )
           `)
-          .eq("id", planId)
+          .eq("id", intervalIdForFetch)
           .single();
           
-        if (planError) throw planError;
+        if (intervalError || !intervalData) {
+          if (!existingPlan) throw intervalError || new Error("Intervalo no encontrado");
+          planData = null; // We have plan but interval not found - resolvedMaintenancePlanId is set, skip prefilling
+        } else {
+          planData = intervalData;
+        }
+        
+        // 3) If we didn't have existingPlan, resolve interval_id -> maintenance_plans.id
+        if (!existingPlan && planData) {
+          const { data: planByAssetInterval } = await supabase
+            .from("maintenance_plans")
+            .select("id")
+            .eq("asset_id", assetId)
+            .eq("interval_id", rawParam)
+            .maybeSingle();
+          
+          if (planByAssetInterval?.id) {
+            setResolvedMaintenancePlanId(planByAssetInterval.id);
+          } else {
+            // Create maintenance_plans row for this asset+interval
+            const { data: insertedPlan, error: insertError } = await supabase
+              .from("maintenance_plans")
+              .insert({
+                asset_id: assetId,
+                interval_id: rawParam,
+                interval_value: planData.interval_value ?? 0,
+                name: planData.name ?? planData.description ?? "Mantenimiento",
+                description: planData.description ?? null,
+                status: "Programado",
+              })
+              .select("id")
+              .single();
+            
+            if (insertError) {
+              console.error("Error creating maintenance_plan:", insertError);
+              throw insertError;
+            }
+            if (insertedPlan?.id) setResolvedMaintenancePlanId(insertedPlan.id);
+          }
+        }
+        
+        if (!planData) {
+          setMaintenancePlan(null);
+          setLoading(false);
+          return;
+        }
         
         setMaintenancePlan(planData);
         
-        // Obtener el último mantenimiento de este tipo
+        // Obtener el último mantenimiento de este tipo (maintenance_history may use interval_id in plan_id; use rawParam)
         const { data: lastMaintenanceData, error: historyError } = await supabase
           .from("maintenance_history")
           .select("*")
-          .eq("maintenance_plan_id", planId)
+          .eq("maintenance_plan_id", rawParam)
           .eq("asset_id", assetId)
           .order("date", { ascending: false })
           .limit(1);
@@ -302,10 +371,10 @@ export default function NewMaintenancePage({ params }: NewMaintenancePageProps) 
       }
     }
     
-    if (planId) {
+    if (rawParam) {
       fetchMaintenancePlan();
     }
-  }, [planId, asset, assetId]);
+  }, [rawParam, asset, assetId]);
   
   const handlePartSelect = (part: PartSuggestion | null) => {
     if (part) {
@@ -407,18 +476,19 @@ export default function NewMaintenancePage({ params }: NewMaintenancePageProps) 
         throw new Error("Usuario no autenticado");
       }
 
+      // FK work_orders.maintenance_plan_id must reference maintenance_plans.id, NOT maintenance_intervals.id
       const workOrderData = {
         asset_id: assetId,
         description: workDescription,
         scope: workScope || null,
-        type: planId ? 'preventive' : 'corrective',
+        type: resolvedMaintenancePlanId || rawParam ? 'preventive' : 'corrective',
         requested_by: user.id,
         assigned_to: user.id,
         planned_date: plannedDate.toISOString(),
         estimated_duration: estimatedDuration ? Number(estimatedDuration) : 0,
         priority: priority,
         status: 'Pendiente',
-        maintenance_plan_id: planId || null,
+        maintenance_plan_id: resolvedMaintenancePlanId || null,
         estimated_cost: estimatedTotalCost ? Number(estimatedTotalCost) : 0,
         creation_photos: planningDocuments.length > 0 ? planningDocuments.map(doc => ({
           url: doc.url,
@@ -453,7 +523,7 @@ export default function NewMaintenancePage({ params }: NewMaintenancePageProps) 
       }
 
       // Agregar tareas requeridas del plan de mantenimiento
-      if (planId && maintenancePlan?.maintenance_tasks && maintenancePlan.maintenance_tasks.length > 0) {
+      if (rawParam && maintenancePlan?.maintenance_tasks && maintenancePlan.maintenance_tasks.length > 0) {
         const tasksData = maintenancePlan.maintenance_tasks.map((task: MaintenanceTask & { type?: string; estimated_time?: number; requires_specialist?: boolean }) => ({
           id: task.id,
           description: task.description,
@@ -482,7 +552,7 @@ export default function NewMaintenancePage({ params }: NewMaintenancePageProps) 
 
       toast({
         title: "¡Orden de Trabajo programada exitosamente!",
-        description: `Se ha generado la Orden de Trabajo ${workOrderResult.order_id} para mantenimiento ${planId ? 'preventivo' : 'correctivo'}. La orden está programada para ${format(plannedDate, "dd/MM/yyyy")} y lista para generar órdenes de compra si es necesario.`,
+        description: `Se ha generado la Orden de Trabajo ${workOrderResult.order_id} para mantenimiento ${resolvedMaintenancePlanId || rawParam ? 'preventivo' : 'correctivo'}. La orden está programada para ${format(plannedDate, "dd/MM/yyyy")} y lista para generar órdenes de compra si es necesario.`,
       });
 
       // Redirigir a la vista de órdenes de trabajo

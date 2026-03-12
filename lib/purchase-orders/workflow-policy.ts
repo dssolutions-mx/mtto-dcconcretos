@@ -35,6 +35,145 @@ export interface WorkflowPolicyResult {
   gmThreshold: number
 }
 
+/** Stage of the approval workflow. Only pending_approval POs are processed. */
+export type WorkflowStage =
+  | 'technical'   // Validación técnica - no authorized_by yet
+  | 'viability'   // Viabilidad administrativa
+  | 'final'       // Aprobación final
+
+/** Roles that can approve at Validación técnica (stage 1). */
+const TECHNICAL_APPROVAL_ROLES = new Set<string>([
+  'GERENTE_MANTENIMIENTO',
+  'GERENCIA_GENERAL',
+])
+
+/** Roles that can record viability (stage 2). */
+const VIABILITY_RECORDING_ROLES = new Set<string>([
+  'AREA_ADMINISTRATIVA',
+  'GERENCIA_GENERAL',
+])
+
+/** Roles that can approve at Aprobación final when GM escalation applies. */
+const FINAL_APPROVAL_ESCALATED_ROLES = new Set<string>(['GERENCIA_GENERAL'])
+
+/** Roles that can approve at Aprobación final when no escalation (AREA_ADMINISTRATIVA needs limit). */
+const FINAL_APPROVAL_NON_ESCALATED_ROLES = new Set<string>([
+  'AREA_ADMINISTRATIVA',
+  'GERENCIA_GENERAL',
+])
+
+export interface ResolveStageInput {
+  authorizedBy: string | null
+  viabilityState: string | null | undefined
+  policy: WorkflowPolicyResult
+  amount: number
+}
+
+const STAGE_DISPLAY: Record<WorkflowStage, { label: string; responsibleRole: string }> = {
+  technical: { label: 'Validación técnica', responsibleRole: 'Gerente de Mantenimiento' },
+  viability: { label: 'Viabilidad administrativa', responsibleRole: 'Área Administrativa' },
+  final: { label: 'Aprobación final', responsibleRole: 'Gerencia General' },
+}
+
+/** Human-readable stage label and responsible role for UI. */
+export function getStageDisplayInfo(stage: WorkflowStage) {
+  return STAGE_DISPLAY[stage]
+}
+
+/**
+ * Resolve the current workflow stage from PO state and policy.
+ * Used by approval-context to determine which action (approve vs record viability) applies.
+ */
+export function resolveCurrentStage(input: ResolveStageInput): WorkflowStage {
+  const { authorizedBy, viabilityState, policy, amount } = input
+
+  if (!authorizedBy) {
+    return 'technical'
+  }
+
+  const viabilityPending =
+    policy.requiresViability &&
+    (!viabilityState || viabilityState === 'pending')
+
+  if (viabilityPending) {
+    return 'viability'
+  }
+
+  return 'final'
+}
+
+export interface CanActorActAtStageInput {
+  stage: WorkflowStage
+  actorRole: string
+  policy: WorkflowPolicyResult
+  needsGMEscalation: boolean
+  hasScope: boolean
+  hasAuthLimit: boolean
+  amountWithinLimit: boolean
+}
+
+/**
+ * Policy-driven check: can the actor approve at the given stage?
+ * Uses explicit role whitelists per stage. Roles not in any set never get canApprove.
+ */
+export function canActorApproveAtStage(input: CanActorActAtStageInput): boolean {
+  const {
+    stage,
+    actorRole,
+    needsGMEscalation,
+    hasScope,
+    hasAuthLimit,
+    amountWithinLimit,
+  } = input
+
+  if (!hasScope) {
+    return false
+  }
+
+  if (stage === 'technical') {
+    return TECHNICAL_APPROVAL_ROLES.has(actorRole)
+  }
+
+  if (stage === 'viability') {
+    return false // Viability stage: record viability, not approve
+  }
+
+  if (stage === 'final') {
+    if (needsGMEscalation) {
+      return FINAL_APPROVAL_ESCALATED_ROLES.has(actorRole)
+    }
+    // Non-escalated: AREA_ADMINISTRATIVA needs limit + within limit; GERENCIA_GENERAL always
+    if (actorRole === 'GERENCIA_GENERAL') {
+      return true
+    }
+    if (actorRole === 'AREA_ADMINISTRATIVA') {
+      return hasAuthLimit && amountWithinLimit
+    }
+    return false
+  }
+
+  return false
+}
+
+/**
+ * Policy-driven check: can the actor record viability at the given stage?
+ */
+export function canActorRecordViabilityAtStage(
+  input: CanActorActAtStageInput
+): boolean {
+  const { stage, actorRole, hasScope } = input
+
+  if (!hasScope) {
+    return false
+  }
+
+  if (stage !== 'viability') {
+    return false
+  }
+
+  return VIABILITY_RECORDING_ROLES.has(actorRole)
+}
+
 const VALID_PURPOSES: readonly POPurpose[] = [
   'work_order_inventory',
   'work_order_cash',

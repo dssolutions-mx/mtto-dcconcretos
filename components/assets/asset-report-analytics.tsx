@@ -19,7 +19,6 @@ import {
   Zap,
   Activity,
   BarChart3,
-  PieChart,
   LineChart,
   Download,
   FileSpreadsheet
@@ -35,9 +34,7 @@ import {
   ResponsiveContainer,
   BarChart as RechartsBarChart,
   Bar,
-  PieChart as RechartsPieChart,
   Cell,
-  Pie,
   Area,
   AreaChart
 } from 'recharts';
@@ -47,6 +44,9 @@ import { es } from 'date-fns/locale';
 interface AnalyticsData {
   summary: {
     totalAssets: number;
+    totalActiveIncidents?: number;
+    preventiveCount?: number;
+    correctiveCount?: number;
     totalHours: number;
     totalKilometers: number;
     totalChecklists: number;
@@ -78,8 +78,31 @@ interface AssetReportAnalyticsProps {
 
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d'];
 
+/** Compute fleet health score (0-100) from active incidents. Simplified when no overdue data. */
+function computeFleetHealthScore(activeIncidents: number): number {
+  const raw = Math.round(100 - activeIncidents * 15)
+  return Math.max(0, Math.min(100, raw))
+}
+
+/** Banded health: Alto (80+), Medio (50-79), Bajo (<50). */
+function getHealthBand(score: number): { band: string; color: string } {
+  if (score >= 80) return { band: 'Alto', color: 'text-green-600' }
+  if (score >= 50) return { band: 'Medio', color: 'text-amber-600' }
+  return { band: 'Bajo', color: 'text-red-600' }
+}
+
 export function AssetReportAnalytics({ data, onBack, customParameters, assetParameters }: AssetReportAnalyticsProps) {
   const [activeTab, setActiveTab] = useState('overview');
+
+  // Executive summary metrics
+  const activeIncidents = data.summary.totalActiveIncidents ?? 0
+  const preventiveCount = data.summary.preventiveCount ?? 0
+  const correctiveCount = data.summary.correctiveCount ?? 0
+  const totalMaint = preventiveCount + correctiveCount || 1
+  const preventivePct = Math.round((preventiveCount / totalMaint) * 100)
+  const correctivePct = Math.round((correctiveCount / totalMaint) * 100)
+  const healthScore = computeFleetHealthScore(activeIncidents)
+  const healthBand = getHealthBand(healthScore)
 
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('es-ES', {
@@ -114,6 +137,15 @@ export function AssetReportAnalytics({ data, onBack, customParameters, assetPara
   const maintenanceTypePieData = Object.entries(maintenanceTypeData).map(([type, count], index) => ({
     name: type,
     value: count,
+    fill: COLORS[index % COLORS.length]
+  }));
+
+  const statusBarData = Object.entries(data.assetDetails.reduce((acc: any, asset) => {
+    acc[asset.status] = (acc[asset.status] || 0) + 1;
+    return acc;
+  }, {})).map(([status, count], index) => ({
+    name: status,
+    count,
     fill: COLORS[index % COLORS.length]
   }));
 
@@ -161,6 +193,47 @@ export function AssetReportAnalytics({ data, onBack, customParameters, assetPara
           Volver a Reportes
         </Button>
       </DashboardHeader>
+
+      {/* Resumen Ejecutivo (Problema → Impacto → Solución → Decisión) */}
+      <Card className="mb-6 border-l-4 border-l-blue-500">
+        <CardHeader>
+          <CardTitle>Resumen Ejecutivo</CardTitle>
+          <CardDescription>
+            Métricas clave para decisión rápida — 30 segundos
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <div className="rounded-lg border p-4 text-center bg-muted/30">
+              <p className="text-2xl font-bold">{healthScore}</p>
+              <p className="text-xs text-muted-foreground">Salud Flota (0-100)</p>
+              <p className={`text-sm font-medium ${healthBand.color}`}>{healthBand.band}</p>
+            </div>
+            <div className="rounded-lg border p-4 text-center bg-muted/30">
+              <p className="text-2xl font-bold">{activeIncidents}</p>
+              <p className="text-xs text-muted-foreground">Incidentes Activos</p>
+            </div>
+            <div className="rounded-lg border p-4 text-center bg-muted/30">
+              <p className="text-xl font-bold text-green-600">{preventivePct}%</p>
+              <p className="text-xs text-muted-foreground">Preventivo</p>
+            </div>
+            <div className="rounded-lg border p-4 text-center bg-muted/30">
+              <p className="text-xl font-bold text-red-600">{correctivePct}%</p>
+              <p className="text-xs text-muted-foreground">Correctivo</p>
+            </div>
+          </div>
+          <p className="text-sm text-muted-foreground max-w-3xl">
+            {activeIncidents > 0
+              ? `Problema: ${activeIncidents} incidente(s) activo(s) requieren atención. `
+              : 'Problema: Sin incidentes abiertos. '}
+            Impacto: {formatCurrency(data.summary.totalMaintenanceCost)} en mantenimiento; {preventivePct}% preventivo vs {correctivePct}% correctivo.
+            {correctivePct > 60
+              ? ' Solución: Fortalecer programa preventivo. '
+              : ' Solución: Balance preventivo/correctivo aceptable. '}
+            Decisión: {activeIncidents > 0 ? `Atender ${activeIncidents} incidente(s) abierto(s).` : 'Mantener monitoreo y preventivo.'}
+          </p>
+        </CardContent>
+      </Card>
 
       {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
@@ -296,40 +369,24 @@ export function AssetReportAnalytics({ data, onBack, customParameters, assetPara
               </CardContent>
             </Card>
 
-            {/* Asset Status Distribution */}
+            {/* Asset Status Distribution - Bar chart (avoid pie per plan) */}
             <Card>
               <CardHeader>
                 <CardTitle>Distribución por Estado</CardTitle>
               </CardHeader>
               <CardContent>
                 <ResponsiveContainer width="100%" height={200}>
-                  <RechartsPieChart>
-                    <Pie
-                      data={Object.entries(data.assetDetails.reduce((acc: any, asset) => {
-                        acc[asset.status] = (acc[asset.status] || 0) + 1;
-                        return acc;
-                      }, {})).map(([status, count], index) => ({
-                        name: status,
-                        value: count,
-                        fill: COLORS[index % COLORS.length]
-                      }))}
-                      cx="50%"
-                      cy="50%"
-                      labelLine={false}
-                      label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                      outerRadius={80}
-                      fill="#8884d8"
-                      dataKey="value"
-                    >
-                      {Object.keys(data.assetDetails.reduce((acc: any, asset) => {
-                        acc[asset.status] = (acc[asset.status] || 0) + 1;
-                        return acc;
-                      }, {})).map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                  <RechartsBarChart data={statusBarData} layout="vertical" margin={{ top: 5, right: 20, left: 60, bottom: 5 }}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis type="number" />
+                    <YAxis dataKey="name" type="category" width={55} />
+                    <Tooltip formatter={(value: number) => [value, 'Cantidad']} />
+                    <Bar dataKey="count" name="Activos" radius={[0, 4, 4, 0]}>
+                      {statusBarData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.fill} />
                       ))}
-                    </Pie>
-                    <Tooltip />
-                  </RechartsPieChart>
+                    </Bar>
+                  </RechartsBarChart>
                 </ResponsiveContainer>
               </CardContent>
             </Card>
@@ -623,30 +680,27 @@ export function AssetReportAnalytics({ data, onBack, customParameters, assetPara
 
         <TabsContent value="maintenance" className="space-y-4">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {/* Maintenance Types */}
+            {/* Maintenance Types - Bar chart (avoid pie per plan) */}
             <Card>
               <CardHeader>
                 <CardTitle>Distribución de Mantenimientos</CardTitle>
               </CardHeader>
               <CardContent>
                 <ResponsiveContainer width="100%" height={250}>
-                  <RechartsPieChart>
-                    <Pie
-                      data={maintenanceTypePieData}
-                      cx="50%"
-                      cy="50%"
-                      labelLine={false}
-                      label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                      outerRadius={80}
-                      fill="#8884d8"
-                      dataKey="value"
-                    >
+                  <RechartsBarChart
+                    data={maintenanceTypePieData.map((d) => ({ ...d, count: d.value }))}
+                    margin={{ top: 5, right: 20, left: 5, bottom: 30 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="name" />
+                    <YAxis />
+                    <Tooltip formatter={(value: number) => [value, 'Cantidad']} />
+                    <Bar dataKey="count" name="Mantenimientos" radius={[4, 4, 0, 0]}>
                       {maintenanceTypePieData.map((entry, index) => (
                         <Cell key={`cell-${index}`} fill={entry.fill} />
                       ))}
-                    </Pie>
-                    <Tooltip />
-                  </RechartsPieChart>
+                    </Bar>
+                  </RechartsBarChart>
                 </ResponsiveContainer>
               </CardContent>
             </Card>
