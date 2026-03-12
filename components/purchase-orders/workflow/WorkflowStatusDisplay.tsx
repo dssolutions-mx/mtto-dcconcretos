@@ -37,6 +37,7 @@ import { usePurchaseOrders } from "@/hooks/usePurchaseOrders"
 import { useAuthZustand } from "@/hooks/use-auth-zustand"
 import { formatCurrency } from "@/lib/utils"
 import { useMobileSessionRecovery } from "@/hooks/use-mobile-session-recovery"
+import { WorkflowStageBadge } from "@/components/purchase-orders/shared/WorkflowStageBadge"
 
 interface WorkflowStatusDisplayProps {
   purchaseOrderId: string
@@ -85,6 +86,7 @@ export function WorkflowStatusDisplay({
     canRecordViability: boolean
     reason: string
     nextStep: string
+    workflowStage: string
     responsibleRole?: string
   } | null>(null)
   
@@ -250,7 +252,7 @@ export function WorkflowStatusDisplay({
       }
     }
     loadApprovalContext()
-  }, [currentStatus, purchaseOrderId])
+  }, [currentStatus, purchaseOrderId, workflowStatus])
 
   // Helper function to upload receipt file
   const uploadReceiptFile = async (file: File): Promise<string | null> => {
@@ -1079,6 +1081,22 @@ export function WorkflowStatusDisplay({
           {/* When pending_approval: Unified 3-step approval chain + compact financial summary */}
           {currentStatus === 'pending_approval' && purchaseOrderAmount > 0 && (
             <>
+              {/* Policy-driven stage badge - consistent with list view */}
+              {approvalContext && (
+                <div className="flex items-center gap-2">
+                  <WorkflowStageBadge
+                    workflowStage={approvalContext.workflowStage}
+                    responsibleRole={
+                      !(approvalContext.canApprove || approvalContext.canRecordViability)
+                        ? approvalContext.responsibleRole
+                        : undefined
+                    }
+                    canAct={approvalContext.canApprove || approvalContext.canRecordViability}
+                    showHelp={true}
+                  />
+                </div>
+              )}
+
               {/* Compact financial summary - one block */}
               <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm p-3 rounded-lg bg-muted/50">
                 <div>
@@ -1242,19 +1260,13 @@ export function WorkflowStatusDisplay({
               })()
               
               // Check if user can perform the action
+              // For approval: trust approvalContext.canApprove (card is already gated by it); only check quotation
               let canPerformAction = true
               
               if (isApprovalAction) {
-                // Asegurar que todos los valores necesarios estén disponibles
-                const hasValidAmount = purchaseOrderAmount > 0
-                const hasValidLimit = effectiveAuthLimit > 0
-                const canAuthorizeAmount = hasValidAmount && hasValidLimit && purchaseOrderAmount <= effectiveAuthLimit
-                
-                // If quotation required: selected already, OR BU selecting as part of approval
-                const quotationRequirementMet = !workflowStatus?.requires_quote || hasSelectedQuotation || 
+                const quotationRequirementMet = !workflowStatus?.requires_quote || hasSelectedQuotation ||
                   (pendingApprovalQuotations.length >= 2 && !!selectedQuotationForApproval)
-                
-                canPerformAction = !isLoadingAuth && !isLoadingQuotations && hasValidAmount && hasValidLimit && canAuthorizeAmount && quotationRequirementMet
+                canPerformAction = !isLoadingQuotations && quotationRequirementMet
               } else if (isValidationAction) {
                 canPerformAction = canValidateReceipts
               }
@@ -1337,21 +1349,6 @@ export function WorkflowStatusDisplay({
                               <strong>Selección de cotización requerida</strong>
                               <p className="text-sm">
                                 Revisa la sección de Cotizaciones arriba para comparar y seleccionar una cotización ganadora.
-                              </p>
-                            </div>
-                          </AlertDescription>
-                        </Alert>
-                      )}
-                      
-                      {/* Show authorization warning if applicable - solo cuando no esté cargando */}
-                      {isApprovalAction && !canPerformAction && !isLoadingAuth && !isLoadingQuotations && effectiveAuthLimit > 0 && hasSelectedQuotation && (
-                        <Alert className="border-orange-200 bg-orange-50">
-                          <Shield className="h-4 w-4 text-orange-600" />
-                          <AlertDescription className="text-orange-700">
-                            <div className="space-y-2">
-                              <strong>Autorización requerida por un superior</strong>
-                              <p className="text-sm">
-                                Esta orden de {formatCurrency(purchaseOrderAmount)} excede tu límite de autorización de {formatCurrency(effectiveAuthLimit)}
                               </p>
                             </div>
                           </AlertDescription>
