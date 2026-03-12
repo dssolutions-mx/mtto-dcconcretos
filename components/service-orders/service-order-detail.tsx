@@ -52,6 +52,7 @@ interface ServiceOrderData {
   created_at: string
   updated_at: string
   asset?: {
+    id?: string
     name: string
     asset_id: string
     location: string | null
@@ -86,6 +87,7 @@ export function ServiceOrderDetail({ id }: ServiceOrderDetailProps) {
           .select(`
             *,
             asset:asset_id (
+              id,
               name,
               asset_id,
               location,
@@ -1344,9 +1346,10 @@ Documento confidencial - Solo para uso interno de la organización
             </CardHeader>
             <CardContent>
               <EntityRelations
-                assetId={serviceOrder.asset_id || serviceOrder.asset?.asset_id}
+                assetId={serviceOrder.asset_id ?? serviceOrder.asset?.id}
                 workOrderId={serviceOrder.work_order_id}
                 serviceOrderId={serviceOrder.id}
+                incidentId={serviceOrder.work_order?.incident_id ?? null}
                 checklistId={serviceOrder.checklist_id}
               />
             </CardContent>

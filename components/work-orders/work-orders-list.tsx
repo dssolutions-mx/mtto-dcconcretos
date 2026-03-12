@@ -1,29 +1,16 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { useSearchParams } from 'next/navigation'
+import { useState, useEffect, useMemo } from "react"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
-import { Badge } from "@/components/ui/badge"
+import { Badge, badgeVariants } from "@/components/ui/badge"
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { 
-  Check, CheckCircle, Edit, Eye, FileText, MoreHorizontal, Search, Trash, User, 
-  AlertTriangle, Wrench, CalendarDays, ListChecks, Plus, ShoppingCart, Filter,
-  ChevronRight, Calendar, Clock, Package
-} from "lucide-react"
+import { User, AlertTriangle, ShoppingCart, Calendar, Package, Repeat } from "lucide-react"
 import { createClient } from "@/lib/supabase"
 import { useIsMobile } from "@/hooks/use-mobile"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 import { WorkOrder, WorkOrderWithAsset, WorkOrderStatus, MaintenanceType, ServiceOrderPriority, Asset, Profile, PurchaseOrderStatus } from "@/types"
 import { 
   Select, 
@@ -32,6 +19,10 @@ import {
   SelectTrigger, 
   SelectValue 
 } from "@/components/ui/select"
+import { useWorkOrderFilters, applyWorkOrderFilters } from "@/hooks/useWorkOrderFilters"
+import { countByStatusSegment } from "@/lib/work-order-status-tabs"
+import { WorkOrdersFilterBar } from "@/components/work-orders/WorkOrdersFilterBar"
+import type { WorkOrderSummaryMetrics } from "@/components/work-orders/WorkOrdersSummaryRibbon"
 import { cn } from "@/lib/utils"
 import { PullToRefresh } from "@/components/ui/pull-to-refresh"
 import {
@@ -100,6 +91,54 @@ function getPurchaseOrderStatusVariant(status: string) {
   }
 }
 
+/** Origin badge: incident_id → "Desde incidente"; checklist_id (no incident) → "Desde checklist"; maintenance_plan_id + preventive → "Preventivo programado"; else "Manual / Ad-hoc" */
+function getOriginBadge(order: WorkOrderWithAsset): { label: string; href?: string } {
+  if (order.incident_id && order.asset_id) {
+    return { label: "Desde incidente", href: `/activos/${order.asset_id}/incidentes` }
+  }
+  if (order.checklist_id) {
+    return { label: "Desde checklist" }
+  }
+  if (order.maintenance_plan_id && order.type === MaintenanceType.Preventive) {
+    return { label: "Preventivo programado" }
+  }
+  return { label: "Manual / Ad-hoc" }
+}
+
+/** Brief summary of what the work order is about (description + tasks/parts count if available) */
+function getWorkOrderScopeSummary(order: WorkOrderWithAsset): { text: string; tasksCount?: number; partsCount?: number } {
+  const desc = order.description?.trim() || ""
+  let tasksCount: number | undefined
+  let partsCount: number | undefined
+  if (order.required_tasks) {
+    try {
+      const tasks = typeof order.required_tasks === "string" ? JSON.parse(order.required_tasks) : order.required_tasks
+      tasksCount = Array.isArray(tasks) ? tasks.length : 0
+    } catch {
+      tasksCount = undefined
+    }
+  }
+  if (order.required_parts) {
+    try {
+      const parts = typeof order.required_parts === "string" ? JSON.parse(order.required_parts) : order.required_parts
+      partsCount = Array.isArray(parts) ? parts.length : 0
+    } catch {
+      partsCount = undefined
+    }
+  }
+  return { text: desc, tasksCount, partsCount }
+}
+
+/** Recurrence count when escalation_count > 0 or related_issues_count > 1; otherwise null */
+function getRecurrenceCount(order: WorkOrderWithAsset): number | null {
+  const esc = order.escalation_count ?? 0
+  const related = order.related_issues_count ?? 1
+  if (esc > 0 || related > 1) {
+    return Math.max(esc, related)
+  }
+  return null
+}
+
 function getPurchaseOrderStatusClass(status: string) {
   switch (status) {
     case PurchaseOrderStatus.Pending:
@@ -115,6 +154,27 @@ function getPurchaseOrderStatusClass(status: string) {
     default:
       return ""
   }
+}
+
+/** Priority rank for sorting: higher = more important */
+function getPriorityRank(priority: string | null): number {
+  switch (priority) {
+    case ServiceOrderPriority.Critical:
+      return 4
+    case ServiceOrderPriority.High:
+      return 3
+    case ServiceOrderPriority.Medium:
+      return 2
+    case ServiceOrderPriority.Low:
+      return 1
+    default:
+      return 2 // treat unknown as Medium
+  }
+}
+
+/** Sort orders by priority: Crítica/Emergencia first, then Alta, Media, Baja */
+function sortByPriority<T extends WorkOrderWithAsset>(orders: T[]): T[] {
+  return [...orders].sort((a, b) => getPriorityRank(b.priority) - getPriorityRank(a.priority))
 }
 
 // Mobile-optimized WorkOrder Card Component
@@ -137,82 +197,59 @@ function WorkOrderCard({
             <CardTitle className="text-lg font-semibold truncate">
               {order.order_id}
             </CardTitle>
-            <p className="text-sm text-muted-foreground line-clamp-2">
-              {order.description}
-            </p>
+            {/* Asset: asset_id only — name is not shown */}
+            <div className="flex items-center gap-2 text-sm">
+              <Package className="h-4 w-4 text-muted-foreground shrink-0" />
+              {order.asset_id ? (
+                <Link
+                  href={`/activos/${order.asset_id}`}
+                  className="font-medium truncate hover:underline text-primary"
+                >
+                  {order.asset?.asset_id || "Activo"}
+                </Link>
+              ) : (
+                <span className="font-medium truncate text-muted-foreground">N/A</span>
+              )}
+            </div>
+            <div className="space-y-0.5">
+              <p className="text-xs font-medium text-slate-600">Qué se hará</p>
+              <p className="text-sm text-foreground line-clamp-3">
+                {order.description || "Sin descripción"}
+              </p>
+              {(() => {
+                const { tasksCount, partsCount } = getWorkOrderScopeSummary(order)
+                if (tasksCount ?? partsCount) {
+                  const parts = []
+                  if (tasksCount) parts.push(`${tasksCount} tarea${tasksCount !== 1 ? "s" : ""}`)
+                  if (partsCount) parts.push(`${partsCount} repuesto${partsCount !== 1 ? "s" : ""}`)
+                  return <p className="text-xs text-muted-foreground">{parts.join(" · ")}</p>
+                }
+                return null
+              })()}
+            </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
             <Badge variant={getStatusVariant(order.status)} className="shrink-0">
               {order.status || "Pendiente"}
             </Badge>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" className="h-8 w-8 p-0">
-                  <span className="sr-only">Abrir menú</span>
-                  <MoreHorizontal className="h-4 w-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuLabel>Acciones</DropdownMenuLabel>
-                <DropdownMenuItem asChild>
-                  <Link href={`/ordenes/${order.id}`}>
-                    <Eye className="mr-2 h-4 w-4" />
-                    <span>Ver Detalles</span>
-                  </Link>
-                </DropdownMenuItem>
-                <DropdownMenuItem asChild>
-                  <Link href={`/ordenes/${order.id}/editar`}>
-                    <Edit className="mr-2 h-4 w-4" />
-                    <span>Editar OT</span>
-                  </Link>
-                </DropdownMenuItem>
-                {order.status !== WorkOrderStatus.Completed && (
-                  <DropdownMenuItem asChild>
-                    <Link href={`/ordenes/${order.id}/completar`}>
-                      <CheckCircle className="mr-2 h-4 w-4" />
-                      <span>Completar OT</span>
-                    </Link>
-                  </DropdownMenuItem>
-                )}
-                {order.purchase_order_id && (
-                  <DropdownMenuItem asChild>
-                    <Link href={`/compras/${order.purchase_order_id}`}>
-                      <ShoppingCart className="mr-2 h-4 w-4" />
-                      <span>Ver OC</span>
-                    </Link>
-                  </DropdownMenuItem>
-                )}
-                <DropdownMenuSeparator />
-                <DropdownMenuItem 
-                  className="text-red-600 hover:bg-red-50 hover:text-red-700"
-                  onClick={() => onDeleteOrder(order)}
-                >
-                  <Trash className="mr-2 h-4 w-4" />
-                  <span>Eliminar OT</span>
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" asChild>
+              <Link href={`/ordenes/${order.id}`} title="Ver OT">
+                <Eye className="h-4 w-4" />
+              </Link>
+            </Button>
+            {order.purchase_order_id ? (
+              <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" asChild>
+                <Link href={`/compras/${order.purchase_order_id}`} title="Ver OC">
+                  <ShoppingCart className="h-4 w-4" />
+                </Link>
+              </Button>
+            ) : null}
           </div>
         </div>
       </CardHeader>
       
       <CardContent className="space-y-4">
-        {/* Asset Info */}
-        <div className="flex items-center gap-2 text-sm">
-          <Package className="h-4 w-4 text-muted-foreground shrink-0" />
-          <div className="flex-1 min-w-0">
-            <p className="font-medium truncate">
-              {order.asset?.name || 'N/A'}
-            </p>
-            {order.asset?.asset_id && (
-              <p className="text-xs text-muted-foreground">
-                ID: {order.asset.asset_id}
-              </p>
-            )}
-          </div>
-        </div>
-        
-        {/* Type and Priority */}
+        {/* Type, Priority, Origin, Recurrence */}
         <div className="flex gap-2 flex-wrap items-center">
           <Badge variant={getTypeVariant(order.type)} className="text-xs">
             {order.type || 'N/A'}
@@ -220,13 +257,29 @@ function WorkOrderCard({
           <Badge variant={getPriorityVariant(order.priority)} className="text-xs">
             {order.priority || 'Normal'}
           </Badge>
-          {order.incident_id && order.asset_id && (
-            <Badge variant="outline" className="text-xs" asChild>
-              <Link href={`/activos/${order.asset_id}/incidentes`} className="hover:underline">
-                Desde incidente
+          {(() => {
+            const origin = getOriginBadge(order)
+            return origin.href ? (
+              <Link href={origin.href} className={cn(badgeVariants({ variant: "outline" }), "text-xs cursor-pointer hover:underline")}>
+                {origin.label}
               </Link>
-            </Badge>
-          )}
+            ) : (
+              <Badge variant="outline" className="text-xs">
+                {origin.label}
+              </Badge>
+            )
+          })()}
+          {(() => {
+            const n = getRecurrenceCount(order)
+            return n !== null ? (
+              <Badge
+                variant="secondary"
+                className="text-xs bg-amber-100 text-amber-800 hover:bg-amber-100"
+              >
+                Recurrente ({n})
+              </Badge>
+            ) : null
+          })()}
         </div>
         
         {/* Technician */}
@@ -284,30 +337,22 @@ const cleanupModalState = (callback: () => void, delay: number = 100) => {
 
 export function WorkOrdersList() {
   const isMobile = useIsMobile()
-  const searchParams = useSearchParams()
-  const [searchTerm, setSearchTerm] = useState("")
+  const { toast } = useToast()
+  const {
+    filters,
+    setFilters,
+    clearAllFilters,
+    hasActiveFilters,
+    activeFilterCount,
+  } = useWorkOrderFilters()
+
   const [workOrders, setWorkOrders] = useState<WorkOrderWithAsset[]>([]) 
   const [isLoading, setIsLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState<string>("all")
-  const [typeFilter, setTypeFilter] = useState<string>("all")
   const [technicians, setTechnicians] = useState<Record<string, Profile>>({})
   const [purchaseOrderStatuses, setPurchaseOrderStatuses] = useState<Record<string, string>>({})
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [orderToDelete, setOrderToDelete] = useState<WorkOrderWithAsset | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
-  const { toast } = useToast()
-
-  // Initialize search term from URL parameters
-  useEffect(() => {
-    const assetName = searchParams.get('asset')
-    const assetId = searchParams.get('assetId')
-    if (assetName) {
-      setSearchTerm(assetName)
-    } else if (assetId) {
-      // If we have assetId but no asset name, we'll use it to filter
-      setSearchTerm(assetId)
-    }
-  }, [searchParams])
 
   // Load work orders function
   const loadWorkOrders = async () => {
@@ -315,7 +360,7 @@ export function WorkOrdersList() {
       setIsLoading(true)
       const supabase = createClient()
 
-      // Load work orders first
+      // Load work orders (incl. escalation_count, related_issues_count, checklist_id, maintenance_plan_id, incident_id for origin/recurrence)
       const { data, error } = await supabase
         .from("work_orders")
         .select(`
@@ -405,39 +450,74 @@ export function WorkOrdersList() {
     loadWorkOrders()
   }, [])
 
-  // Filter logic
-  const filteredOrdersByTab = workOrders.filter(order => {
-    if (activeTab === "all") return true
-    if (activeTab === "pending") return order.status === WorkOrderStatus.Pending || order.status === WorkOrderStatus.Quoted
-    if (activeTab === "approved") return order.status === WorkOrderStatus.Approved
-    if (activeTab === "inprogress") return order.status === WorkOrderStatus.InProgress
-    if (activeTab === "completed") return order.status === WorkOrderStatus.Completed
-    return true
-  }).filter(order => {
-    if (typeFilter === "all") return true
-    if (typeFilter === "preventive") return order.type === MaintenanceType.Preventive
-    if (typeFilter === "corrective") return order.type === MaintenanceType.Corrective
-    return true
-  })
-
-  const filteredOrders = filteredOrdersByTab.filter(
-    (order) => {
-      // If we have a specific assetId in URL params, filter by that first
-      const assetIdParam = searchParams.get('assetId')
-      if (assetIdParam && order.asset_id !== assetIdParam) {
-        return false
+  const assetOptions = useMemo(() => {
+    const map: Record<string, { id: string; label: string }> = {}
+    workOrders.forEach((o) => {
+      if (o.asset_id && o.asset) {
+        const id = o.asset_id
+        const label = o.asset.asset_id || o.asset.name || "Activo"
+        map[id] = { id, label }
       }
-      
-      // Then apply search term filter
-      return (
-        (order.asset?.name?.toLowerCase() || "").includes(searchTerm.toLowerCase()) ||
-        (order.asset?.asset_id?.toLowerCase() || "").includes(searchTerm.toLowerCase()) ||
-        (order.order_id?.toLowerCase() || "").includes(searchTerm.toLowerCase()) || 
-        (order.assigned_to && technicians[order.assigned_to]?.nombre?.toLowerCase().includes(searchTerm.toLowerCase())) ||
-        (order.description?.toLowerCase() || "").includes(searchTerm.toLowerCase())
-      )
+    })
+    return Object.values(map).sort((a, b) => a.label.localeCompare(b.label))
+  }, [workOrders])
+
+  const technicianOptions = useMemo(() => {
+    return Object.entries(technicians).map(([id, t]) => ({
+      id,
+      label: t.nombre && t.apellido ? `${t.nombre} ${t.apellido}` : t.nombre || id,
+    }))
+  }, [technicians])
+
+  const filteredOrders = useMemo(() => {
+    const filtered = applyWorkOrderFilters(workOrders, filters, technicians)
+    return filters.sortBy === "priority" ? sortByPriority(filtered) : filtered
+  }, [workOrders, filters, technicians])
+
+  /** When groupByAsset: group filtered orders by asset_id for UI rendering (grouping is UI-only) */
+  const groupedOrders = useMemo(() => {
+    if (!filters.groupByAsset) return null
+    const map = new Map<string | null, WorkOrderWithAsset[]>()
+    for (const o of filteredOrders) {
+      const key = o.asset_id ?? null
+      const arr = map.get(key) ?? []
+      arr.push(o)
+      map.set(key, arr)
     }
-  )
+    return Array.from(map.entries())
+      .map(([assetId, orders]) => {
+        const first = orders[0]
+        const label =
+          assetId && first?.asset
+            ? (first.asset.asset_id || first.asset.name || "Activo")
+            : "Sin activo"
+        return { assetId, label, orders }
+      })
+      .sort((a, b) => {
+        if (a.assetId == null && b.assetId != null) return 1
+        if (a.assetId != null && b.assetId == null) return -1
+        return a.label.localeCompare(b.label)
+      })
+  }, [filters.groupByAsset, filteredOrders])
+
+  const ribbonMetrics = useMemo<WorkOrderSummaryMetrics>(() => {
+    const pending = countByStatusSegment(workOrders, "pending")
+    const completed = countByStatusSegment(workOrders, "completed")
+    const recurrentes = workOrders.filter(
+      (o) =>
+        (o.escalation_count != null && o.escalation_count > 0) ||
+        (o.related_issues_count != null && o.related_issues_count > 1)
+    ).length
+    return { pending, completed, recurrentes }
+  }, [workOrders])
+
+  const handleRecurrentesClick = () => {
+    if (filters.recurrentesOnly) {
+      setFilters({ recurrentesOnly: false })
+    } else {
+      setFilters({ recurrentesOnly: true, tab: "all" })
+    }
+  }
 
   // Helper functions
   const getTechnicianName = (techId: string | null) => {
@@ -518,124 +598,99 @@ export function WorkOrdersList() {
   return (
     <>
       <PullToRefresh onRefresh={handlePullToRefresh} disabled={isLoading}>
-        <Card>
-          <CardContent className={cn("pt-6", isMobile && "px-4 pt-4")}>
-            {/* Search and Filters */}
-            <div className={cn(
-              "flex gap-4 mb-6",
-              isMobile ? "flex-col gap-3" : "flex-col md:flex-row md:items-center md:justify-between"
-            )}>
-              <div className={cn(
-                "flex items-center gap-2",
-                isMobile ? "flex-col gap-3" : "flex-col md:flex-row"
-              )}>
-                <div className={cn(
-                  "relative",
-                  isMobile ? "w-full" : "w-full md:w-64"
-                )}>
-                  <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    type="search"
-                    placeholder="Buscar OT, activo, asignado..."
+        {/* Apple HIG: Content-first, deference, clarity. Single toolbar + unified segmented control. */}
+        <div className="space-y-6">
+          {/* Toolbar: Search + Filters. Progressive disclosure per HIG. */}
+          <div className="flex flex-col gap-4">
+            <WorkOrdersFilterBar
+              filters={filters}
+              onFiltersChange={setFilters}
+              onClearAll={clearAllFilters}
+              assetOptions={assetOptions}
+              technicianOptions={technicianOptions}
+              hasActiveFilters={hasActiveFilters}
+              activeFilterCount={activeFilterCount}
+            />
+          </div>
+
+          {/* Unified segmented control: replaces redundant ribbon + tabs. Apple-style. */}
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div
+              role="tablist"
+              aria-label="Filtrar por estado"
+              className="inline-flex rounded-[10px] bg-slate-100/80 p-1 border border-border/60"
+            >
+              {[
+                { id: "all", label: "Todas", count: workOrders.length },
+                { id: "pending", label: "Pendientes", count: ribbonMetrics.pending },
+                { id: "completed", label: "Completadas", count: ribbonMetrics.completed },
+              ].map((opt) => {
+                const isActive =
+                  !filters.recurrentesOnly && filters.tab === opt.id
+                return (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={isActive}
+                    aria-label={`${opt.label}: ${opt.count}`}
+                    onClick={() => setFilters({ tab: opt.id })}
                     className={cn(
-                      "pl-8",
-                      isMobile && "h-11" // Better touch target
+                      "min-h-[44px] min-w-[44px] px-5 py-2.5 rounded-lg text-[15px] font-medium transition-all duration-200 cursor-pointer",
+                      isActive
+                        ? "bg-white text-foreground shadow-sm border border-border/40"
+                        : "text-muted-foreground hover:text-foreground"
                     )}
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                  />
-                </div>
-                <Select value={typeFilter} onValueChange={setTypeFilter}>
-                  <SelectTrigger className={cn(
-                    isMobile ? "w-full h-11" : "w-full md:w-40"
-                  )}>
-                    <SelectValue placeholder="Filtrar por tipo" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Todos los tipos</SelectItem>
-                    <SelectItem value="preventive">Preventivos</SelectItem>
-                    <SelectItem value="corrective">Correctivos</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+                  >
+                    <span className="sm:hidden">{opt.label}</span>
+                    <span className="hidden sm:inline">{opt.label} ({opt.count})</span>
+                  </button>
+                )
+              })}
             </div>
-            
-            {/* Tabs */}
-            <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-              <TabsList className={cn(
-                "mb-4 grid w-full",
-                isMobile 
-                  ? "grid-cols-2 h-auto gap-1" // Stack in 2 columns on mobile
-                  : "grid-cols-2 sm:grid-cols-5"
-              )}>
-                <TabsTrigger 
-                  value="all"
-                  className={cn(isMobile && "text-xs px-2 py-2")}
-                >
-                  Todas
-                </TabsTrigger>
-                <TabsTrigger 
-                  value="pending"
-                  className={cn(isMobile && "text-xs px-2 py-2")}
-                >
-                  Pendientes
-                </TabsTrigger>
-                {!isMobile && (
-                  <>
-                    <TabsTrigger value="approved">Aprobadas</TabsTrigger>
-                    <TabsTrigger value="inprogress">En Progreso</TabsTrigger>
-                    <TabsTrigger value="completed">Completadas</TabsTrigger>
-                  </>
-                )}
-              </TabsList>
-              
-              {/* Mobile: Additional tabs in second grid */}
-              {isMobile && (
-                <div className="grid grid-cols-3 gap-1 mb-4">
-                  <Button
-                    variant={activeTab === "approved" ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => setActiveTab("approved")}
-                    className="text-xs h-8"
-                  >
-                    Aprobadas
-                  </Button>
-                  <Button
-                    variant={activeTab === "inprogress" ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => setActiveTab("inprogress")}
-                    className="text-xs h-8"
-                  >
-                    En Progreso
-                  </Button>
-                  <Button
-                    variant={activeTab === "completed" ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => setActiveTab("completed")}
-                    className="text-xs h-8"
-                  >
-                    Completadas
-                  </Button>
-                </div>
+            <button
+              type="button"
+              onClick={handleRecurrentesClick}
+              aria-pressed={filters.recurrentesOnly}
+              aria-label={`Solo recurrentes: ${ribbonMetrics.recurrentes}`}
+              className={cn(
+                "min-h-[44px] px-4 py-2.5 rounded-[10px] text-[15px] font-medium inline-flex items-center gap-2 transition-all duration-200 cursor-pointer",
+                filters.recurrentesOnly
+                  ? "bg-amber-100 text-amber-900 border border-amber-200"
+                  : "bg-muted/50 text-muted-foreground border border-transparent hover:bg-muted"
               )}
+            >
+              <Repeat className="h-4 w-4" />
+              Recurrentes ({ribbonMetrics.recurrentes})
+            </button>
+          </div>
+
+          {/* List content - single view, no duplicate tab content */}
+          <Tabs value={filters.tab} onValueChange={(v) => setFilters({ tab: v })} className="w-full">
               
               {/* Content for each tab */}
               <TabsContent value="all" className="mt-0">
                 {isMobile ? (
                   <MobileView 
                     orders={filteredOrders} 
+                    groupedOrders={groupedOrders}
                     isLoading={isLoading} 
                     getTechnicianName={getTechnicianName}
                     getPurchaseOrderStatus={getPurchaseOrderStatus}
                     onDeleteOrder={handleDeleteWorkOrder}
+                    hasActiveFilters={hasActiveFilters}
+                    onClearFilters={clearAllFilters}
                   />
                 ) : (
                   <DesktopView 
                     orders={filteredOrders} 
+                    groupedOrders={groupedOrders}
                     isLoading={isLoading} 
                     getTechnicianName={getTechnicianName}
                     getPurchaseOrderStatus={getPurchaseOrderStatus}
                     onDeleteOrder={handleDeleteWorkOrder}
+                    hasActiveFilters={hasActiveFilters}
+                    onClearFilters={clearAllFilters}
                   />
                 )}
               </TabsContent>
@@ -644,58 +699,24 @@ export function WorkOrdersList() {
                 {isMobile ? (
                   <MobileView 
                     orders={filteredOrders} 
+                    groupedOrders={groupedOrders}
                     isLoading={isLoading} 
                     getTechnicianName={getTechnicianName}
                     getPurchaseOrderStatus={getPurchaseOrderStatus}
                     onDeleteOrder={handleDeleteWorkOrder}
+                    hasActiveFilters={hasActiveFilters}
+                    onClearFilters={clearAllFilters}
                   />
                 ) : (
                   <DesktopView 
                     orders={filteredOrders} 
+                    groupedOrders={groupedOrders}
                     isLoading={isLoading} 
                     getTechnicianName={getTechnicianName}
                     getPurchaseOrderStatus={getPurchaseOrderStatus}
                     onDeleteOrder={handleDeleteWorkOrder}
-                  />
-                )}
-              </TabsContent>
-              
-              <TabsContent value="approved" className="mt-0">
-                {isMobile ? (
-                  <MobileView 
-                    orders={filteredOrders} 
-                    isLoading={isLoading} 
-                    getTechnicianName={getTechnicianName}
-                    getPurchaseOrderStatus={getPurchaseOrderStatus}
-                    onDeleteOrder={handleDeleteWorkOrder}
-                  />
-                ) : (
-                  <DesktopView 
-                    orders={filteredOrders} 
-                    isLoading={isLoading} 
-                    getTechnicianName={getTechnicianName}
-                    getPurchaseOrderStatus={getPurchaseOrderStatus}
-                    onDeleteOrder={handleDeleteWorkOrder}
-                  />
-                )}
-              </TabsContent>
-              
-              <TabsContent value="inprogress" className="mt-0">
-                {isMobile ? (
-                  <MobileView 
-                    orders={filteredOrders} 
-                    isLoading={isLoading} 
-                    getTechnicianName={getTechnicianName}
-                    getPurchaseOrderStatus={getPurchaseOrderStatus}
-                    onDeleteOrder={handleDeleteWorkOrder}
-                  />
-                ) : (
-                  <DesktopView 
-                    orders={filteredOrders} 
-                    isLoading={isLoading} 
-                    getTechnicianName={getTechnicianName}
-                    getPurchaseOrderStatus={getPurchaseOrderStatus}
-                    onDeleteOrder={handleDeleteWorkOrder}
+                    hasActiveFilters={hasActiveFilters}
+                    onClearFilters={clearAllFilters}
                   />
                 )}
               </TabsContent>
@@ -704,30 +725,34 @@ export function WorkOrdersList() {
                 {isMobile ? (
                   <MobileView 
                     orders={filteredOrders} 
+                    groupedOrders={groupedOrders}
                     isLoading={isLoading} 
                     getTechnicianName={getTechnicianName}
                     getPurchaseOrderStatus={getPurchaseOrderStatus}
                     onDeleteOrder={handleDeleteWorkOrder}
+                    hasActiveFilters={hasActiveFilters}
+                    onClearFilters={clearAllFilters}
                   />
                 ) : (
                   <DesktopView 
                     orders={filteredOrders} 
+                    groupedOrders={groupedOrders}
                     isLoading={isLoading} 
                     getTechnicianName={getTechnicianName}
                     getPurchaseOrderStatus={getPurchaseOrderStatus}
                     onDeleteOrder={handleDeleteWorkOrder}
+                    hasActiveFilters={hasActiveFilters}
+                    onClearFilters={clearAllFilters}
                   />
                 )}
               </TabsContent>
-            </Tabs>
-          </CardContent>
-          
-          <CardFooter className={cn(isMobile && "px-4")}>
-            <div className="text-xs text-muted-foreground">
-              Mostrando <strong>{filteredOrders.length}</strong> de <strong>{workOrders.length}</strong> órdenes de trabajo.
-            </div>
-          </CardFooter>
-        </Card>
+          </Tabs>
+
+          {/* Footer: Results count. Deference - subtle. */}
+          <div className="text-[13px] text-muted-foreground pt-2">
+            {filteredOrders.length} de {workOrders.length} órdenes
+          </div>
+        </div>
       </PullToRefresh>
 
       {/* Delete confirmation dialog */}
@@ -765,19 +790,27 @@ export function WorkOrdersList() {
   )
 }
 
+type GroupedOrdersItem = { assetId: string | null; label: string; orders: WorkOrderWithAsset[] }
+
 // Mobile View Component
 function MobileView({ 
   orders, 
+  groupedOrders,
   isLoading, 
   getTechnicianName, 
   getPurchaseOrderStatus,
-  onDeleteOrder
+  onDeleteOrder,
+  hasActiveFilters,
+  onClearFilters,
 }: {
   orders: WorkOrderWithAsset[]
+  groupedOrders: GroupedOrdersItem[] | null
   isLoading: boolean
   getTechnicianName: (techId: string | null) => string
   getPurchaseOrderStatus: (poId: string | null) => string
   onDeleteOrder: (order: WorkOrderWithAsset) => void
+  hasActiveFilters?: boolean
+  onClearFilters?: () => void
 }) {
   if (isLoading) {
     return (
@@ -790,10 +823,60 @@ function MobileView({
 
   if (orders.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center h-64 rounded-md border border-dashed">
+      <div className="flex flex-col items-center justify-center h-64 rounded-md border border-dashed p-4">
         <AlertTriangle className="h-12 w-12 text-muted-foreground mb-3" />
-        <p className="text-center text-muted-foreground">No se encontraron órdenes de trabajo.</p>
-        <p className="text-sm text-muted-foreground">Intenta ajustar los filtros.</p>
+        <p className="text-center text-muted-foreground">
+          {hasActiveFilters
+            ? "No se encontraron órdenes con estos filtros."
+            : "No se encontraron órdenes de trabajo."}
+        </p>
+        {hasActiveFilters && onClearFilters ? (
+          <Button
+            variant="outline"
+            size="sm"
+            className="mt-3 cursor-pointer"
+            onClick={onClearFilters}
+          >
+            Limpiar filtros
+          </Button>
+        ) : (
+          <p className="text-sm text-muted-foreground mt-1">Intenta ajustar los filtros.</p>
+        )}
+      </div>
+    )
+  }
+
+  if (groupedOrders && groupedOrders.length > 0) {
+    return (
+      <div className="space-y-6">
+        {groupedOrders.map((group) => (
+          <div key={group.assetId ?? "sin-activo"}>
+            <div className="flex items-center gap-2 mb-3 px-1">
+              {group.assetId ? (
+                <Link
+                  href={`/activos/${group.assetId}`}
+                  className="font-semibold text-sm text-primary hover:underline"
+                >
+                  {group.label}
+                </Link>
+              ) : (
+                <span className="font-semibold text-sm text-muted-foreground">{group.label}</span>
+              )}
+              <span className="text-xs text-muted-foreground">({group.orders.length})</span>
+            </div>
+            <div className="space-y-4">
+              {group.orders.map((order) => (
+                <WorkOrderCard
+                  key={order.id}
+                  order={order}
+                  getTechnicianName={getTechnicianName}
+                  getPurchaseOrderStatus={getPurchaseOrderStatus}
+                  onDeleteOrder={onDeleteOrder}
+                />
+              ))}
+            </div>
+          </div>
+        ))}
       </div>
     )
   }
@@ -816,17 +899,24 @@ function MobileView({
 // Desktop View Component (existing table)
 function DesktopView({ 
   orders, 
+  groupedOrders,
   isLoading, 
   getTechnicianName, 
   getPurchaseOrderStatus,
-  onDeleteOrder
+  onDeleteOrder,
+  hasActiveFilters,
+  onClearFilters,
 }: {
   orders: WorkOrderWithAsset[]
+  groupedOrders: GroupedOrdersItem[] | null
   isLoading: boolean
   getTechnicianName: (techId: string | null) => string
   getPurchaseOrderStatus: (poId: string | null) => string
   onDeleteOrder: (order: WorkOrderWithAsset) => void
+  hasActiveFilters?: boolean
+  onClearFilters?: () => void
 }) {
+  const router = useRouter()
   if (isLoading) {
     return (
       <div className="flex justify-center items-center h-64">
@@ -838,171 +928,173 @@ function DesktopView({
 
   if (orders.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center h-64 rounded-md border border-dashed">
+      <div className="flex flex-col items-center justify-center h-64 rounded-md border border-dashed p-4">
         <AlertTriangle className="h-12 w-12 text-muted-foreground mb-3" />
-        <p className="text-center text-muted-foreground">No se encontraron órdenes de trabajo para esta vista.</p>
-        <p className="text-sm text-muted-foreground">Intenta ajustar los filtros o revisa más tarde.</p>
+        <p className="text-center text-muted-foreground">
+          {hasActiveFilters
+            ? "No se encontraron órdenes con estos filtros."
+            : "No se encontraron órdenes de trabajo para esta vista."}
+        </p>
+        {hasActiveFilters && onClearFilters ? (
+          <Button
+            variant="outline"
+            size="sm"
+            className="mt-3 cursor-pointer"
+            onClick={onClearFilters}
+          >
+            Limpiar filtros
+          </Button>
+        ) : (
+          <p className="text-sm text-muted-foreground mt-1">Intenta ajustar los filtros o revisa más tarde.</p>
+        )}
+      </div>
+    )
+  }
+
+  const renderTable = (ordersToRender: WorkOrderWithAsset[]) => (
+    <div className="rounded-xl border border-border/60 overflow-x-auto bg-white">
+    <Table className="w-full min-w-[860px]">
+        <TableHeader>
+          <TableRow className="border-b border-border/60 hover:bg-transparent">
+            <TableHead className="w-[90px] py-3 px-3 text-[13px] font-semibold text-muted-foreground shrink-0">#Orden</TableHead>
+            <TableHead className="w-[85px] py-3 px-3 text-[13px] font-semibold text-muted-foreground shrink-0">Activo</TableHead>
+            <TableHead className="min-w-[220px] py-3 px-3 text-[13px] font-semibold text-muted-foreground">Descripción</TableHead>
+            <TableHead className="w-[88px] py-3 px-3 text-[13px] font-semibold text-muted-foreground shrink-0">Tipo</TableHead>
+            <TableHead className="w-[82px] py-3 px-3 text-[13px] font-semibold text-muted-foreground shrink-0">Prioridad</TableHead>
+            <TableHead className="w-[95px] py-3 px-3 text-[13px] font-semibold text-muted-foreground shrink-0">Estado</TableHead>
+            <TableHead className="w-[110px] py-3 px-3 text-[13px] font-semibold text-muted-foreground shrink-0">Origen</TableHead>
+            <TableHead className="w-[95px] py-3 px-3 text-[13px] font-semibold text-muted-foreground shrink-0">Recurr.</TableHead>
+            <TableHead className="w-[90px] py-3 px-3 text-[13px] font-semibold text-muted-foreground shrink-0">Fecha</TableHead>
+            <TableHead className="w-[110px] py-3 px-3 text-[13px] font-semibold text-muted-foreground shrink-0">Asignado</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {ordersToRender.map((order) => (
+            <TableRow
+              key={order.id}
+              className="border-b border-border/40 last:border-0 transition-colors duration-150 hover:bg-slate-50/50 cursor-pointer"
+              onClick={() => router.push(`/ordenes/${order.id}`)}
+            >
+              <TableCell className="font-semibold text-[15px] py-3 px-3 align-middle text-primary">{order.order_id}</TableCell>
+              <TableCell className="py-3 px-3" onClick={(e) => e.stopPropagation()}>
+                {order.asset_id ? (
+                  <Link
+                    href={`/activos/${order.asset_id}`}
+                    className="font-medium hover:underline text-primary"
+                  >
+                    {order.asset?.asset_id || "Activo"}
+                  </Link>
+                ) : (
+                  <span className="text-muted-foreground">N/A</span>
+                )}
+              </TableCell>
+              <TableCell className="py-3 px-3 align-top">
+                <p className="text-sm text-foreground line-clamp-3 leading-snug" title={order.description || undefined}>
+                  {order.description || "—"}
+                </p>
+                {(() => {
+                  const { tasksCount, partsCount } = getWorkOrderScopeSummary(order)
+                  if (tasksCount ?? partsCount) {
+                    const parts = []
+                    if (tasksCount) parts.push(`${tasksCount} tarea${tasksCount !== 1 ? "s" : ""}`)
+                    if (partsCount) parts.push(`${partsCount} repuesto${partsCount !== 1 ? "s" : ""}`)
+                    return <span className="text-xs text-muted-foreground mt-0.5 block">{parts.join(" · ")}</span>
+                  }
+                  return null
+                })()}
+              </TableCell>
+              <TableCell className="py-3 px-3">
+                <Badge variant={getTypeVariant(order.type)} className="capitalize text-xs font-medium px-1.5 py-0">
+                  {order.type || 'N/A'}
+                </Badge>
+              </TableCell>
+              <TableCell className="py-3 px-3">
+                <Badge variant={getPriorityVariant(order.priority)} className="capitalize text-xs font-medium px-1.5 py-0">
+                  {order.priority || 'N/A'}
+                </Badge>
+              </TableCell>
+              <TableCell className="py-3 px-3">
+                <Badge variant={getStatusVariant(order.status)} className="capitalize text-xs font-medium px-1.5 py-0">
+                  {order.status || 'N/A'}
+                </Badge>
+              </TableCell>
+              <TableCell className="py-3 px-3" onClick={(e) => e.stopPropagation()}>
+                {(() => {
+                  const origin = getOriginBadge(order)
+                  return origin.href ? (
+                    <Link href={origin.href} className={cn(badgeVariants({ variant: "outline" }), "w-fit text-xs cursor-pointer hover:underline")}>
+                      {origin.label}
+                    </Link>
+                  ) : (
+                    <Badge variant="outline" className="text-xs">
+                      {origin.label}
+                    </Badge>
+                  )
+                })()}
+              </TableCell>
+              <TableCell className="py-3 px-3">
+                {(() => {
+                  const n = getRecurrenceCount(order)
+                  return n !== null ? (
+                    <Badge
+                      variant="secondary"
+                      className="text-xs font-medium px-1.5 py-0 bg-amber-100 text-amber-800 hover:bg-amber-100"
+                    >
+                      Recurrente ({n})
+                    </Badge>
+                  ) : (
+                    <span className="text-xs text-muted-foreground">—</span>
+                  )
+                })()}
+              </TableCell>
+              <TableCell className="py-3 px-3 text-xs">{order.planned_date ? formatDate(order.planned_date) : '—'}</TableCell>
+              <TableCell className="py-3 px-3 text-xs" onClick={(e) => e.stopPropagation()}>
+                <div className="flex items-center gap-2">
+                  <span className="truncate max-w-[80px]" title={getTechnicianName(order.assigned_to)}>{getTechnicianName(order.assigned_to)}</span>
+                  {order.purchase_order_id ? (
+                    <Link href={`/compras/${order.purchase_order_id}`} title="Ver OC" className="shrink-0 text-muted-foreground hover:text-foreground">
+                      <ShoppingCart className="h-4 w-4" />
+                    </Link>
+                  ) : null}
+                </div>
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
+  )
+
+  if (groupedOrders && groupedOrders.length > 0) {
+    return (
+      <div className="space-y-6">
+        {groupedOrders.map((group) => (
+          <div key={group.assetId ?? "sin-activo"}>
+            <div className="flex items-center gap-2 mb-2">
+              {group.assetId ? (
+                <Link
+                  href={`/activos/${group.assetId}`}
+                  className="font-semibold text-primary hover:underline"
+                >
+                  {group.label}
+                </Link>
+              ) : (
+                <span className="font-semibold text-muted-foreground">{group.label}</span>
+              )}
+              <span className="text-xs text-muted-foreground">({group.orders.length} órdenes)</span>
+            </div>
+            <div className="rounded-md border">
+              {renderTable(group.orders)}
+            </div>
+          </div>
+        ))}
       </div>
     )
   }
 
   return (
     <div className="rounded-md border">
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead className="w-[100px]">OT ID</TableHead>
-            <TableHead>Activo</TableHead>
-            <TableHead>Tipo</TableHead>
-            <TableHead>Prioridad</TableHead>
-            <TableHead>Estado</TableHead>
-            <TableHead>OC</TableHead>
-            <TableHead>Fecha Planificada</TableHead>
-            <TableHead>Asignado A</TableHead>
-            <TableHead className="text-right w-[100px]">Acciones</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {orders.map((order) => (
-            <TableRow key={order.id}>
-              <TableCell className="font-medium">
-                <div className="flex flex-col gap-1">
-                  <span>{order.order_id}</span>
-                  {order.incident_id && order.asset_id && (
-                    <Badge variant="outline" className="w-fit text-xs" asChild>
-                      <Link href={`/activos/${order.asset_id}/incidentes`} className="hover:underline">
-                        Desde incidente
-                      </Link>
-                    </Badge>
-                  )}
-                </div>
-              </TableCell>
-              <TableCell>
-                {order.asset?.name || 'N/A'} 
-                {order.asset?.asset_id && <span className="text-xs text-muted-foreground ml-1">({order.asset.asset_id})</span>}
-              </TableCell>
-              <TableCell>
-                <Badge variant={getTypeVariant(order.type)} className="capitalize">
-                  {order.type || 'N/A'}
-                </Badge>
-              </TableCell>
-              <TableCell>
-                <Badge variant={getPriorityVariant(order.priority)} className="capitalize">
-                  {order.priority || 'N/A'}
-                </Badge>
-              </TableCell>
-              <TableCell>
-                <Badge variant={getStatusVariant(order.status)} className="capitalize">
-                  {order.status || 'N/A'}
-                </Badge>
-              </TableCell>
-              <TableCell>
-                {order.purchase_order_id ? (
-                  <Badge 
-                    variant={getPurchaseOrderStatusVariant(getPurchaseOrderStatus(order.purchase_order_id))} 
-                    className={getPurchaseOrderStatusClass(getPurchaseOrderStatus(order.purchase_order_id))}
-                  >
-                    {getPurchaseOrderStatus(order.purchase_order_id)}
-                  </Badge>
-                ) : (
-                  order.type === MaintenanceType.Preventive && order.required_parts ? (
-                    <Badge variant="outline" className="bg-yellow-50 text-yellow-800">Pendiente</Badge>
-                  ) : (
-                    <span className="text-xs text-muted-foreground">N/A</span>
-                  )
-                )}
-              </TableCell>
-              <TableCell>{order.planned_date ? formatDate(order.planned_date) : 'No planificada'}</TableCell>
-              <TableCell>{getTechnicianName(order.assigned_to)}</TableCell> 
-              <TableCell className="text-right">
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" className="h-8 w-8 p-0">
-                      <span className="sr-only">Abrir menú</span>
-                      <MoreHorizontal className="h-4 w-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuLabel>Acciones</DropdownMenuLabel>
-                    <DropdownMenuItem asChild>
-                      <Link href={`/ordenes/${order.id}`}>
-                        <Eye className="mr-2 h-4 w-4" />
-                        <span>Ver Detalles</span>
-                      </Link>
-                    </DropdownMenuItem>
-                  {/* Link to Service Order if exists (client-side discovery) */}
-                  <DropdownMenuItem asChild>
-                    <Link href={`/servicios?workOrderId=${order.id}`}>
-                      <FileText className="mr-2 h-4 w-4" />
-                      <span>Ver Servicio</span>
-                    </Link>
-                  </DropdownMenuItem>
-                  {/* Link to Incident if present on order */}
-                  {order.incident_id && order.asset_id && (
-                    <DropdownMenuItem asChild>
-                      <Link href={`/activos/${order.asset_id}/incidentes`}>
-                        <AlertTriangle className="mr-2 h-4 w-4" />
-                        <span>Incidente</span>
-                      </Link>
-                    </DropdownMenuItem>
-                  )}
-                    <DropdownMenuItem asChild>
-                       <Link href={`/ordenes/${order.id}/editar`}> 
-                        <Edit className="mr-2 h-4 w-4" />
-                        <span>Editar OT</span>
-                      </Link>
-                    </DropdownMenuItem>
-                    {!order.purchase_order_id && order.required_parts && (
-                      <DropdownMenuItem asChild>
-                        <Link href={`/ordenes/${order.id}/generar-oc`}>
-                          <ShoppingCart className="mr-2 h-4 w-4" />
-                          <span>Generar OC</span>
-                        </Link>
-                      </DropdownMenuItem>
-                    )}
-                    {order.purchase_order_id && (
-                      <DropdownMenuItem asChild>
-                        <Link href={`/compras/${order.purchase_order_id}`}>
-                          <ShoppingCart className="mr-2 h-4 w-4" />
-                          <span>Ver OC</span>
-                        </Link>
-                      </DropdownMenuItem>
-                    )}
-                    <DropdownMenuItem>
-                      <ListChecks className="mr-2 h-4 w-4" />
-                      <span>Ver Checklist</span> 
-                    </DropdownMenuItem>
-                    {order.status !== WorkOrderStatus.Completed && (
-                      <DropdownMenuItem asChild>
-                        <Link href={`/ordenes/${order.id}/completar`}>
-                          <Wrench className="mr-2 h-4 w-4" />
-                          <span>Registrar Mantenimiento</span>
-                        </Link>
-                      </DropdownMenuItem>
-                    )}
-                    <DropdownMenuItem>
-                      <CalendarDays className="mr-2 h-4 w-4" />
-                      <span>Re-Programar</span>
-                    </DropdownMenuItem>
-                    <DropdownMenuItem>
-                      <CheckCircle className="mr-2 h-4 w-4" />
-                      <span>Cambiar Estado</span>
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem 
-                      className="text-red-600 hover:bg-red-50 hover:text-red-700"
-                      onClick={() => onDeleteOrder(order)}
-                    >
-                      <Trash className="mr-2 h-4 w-4" />
-                      <span>Eliminar OT</span>
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
+      {renderTable(orders)}
     </div>
   )
 }

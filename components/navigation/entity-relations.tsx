@@ -6,7 +6,8 @@ import { Button } from "@/components/ui/button"
 import { AlertTriangle, ClipboardCheck, FileText, PackageSearch, ShoppingCart, Wrench } from "lucide-react"
 
 type EntityRelationsProps = {
-  assetId: string
+  /** Asset UUID for asset-centric links (e.g. incident → /activos/{assetId}/incidentes). When provided, incident link uses asset-scoped URL. */
+  assetId?: string | null
   serviceOrderId?: string | null
   workOrderId?: string | null
   incidentId?: string | null
@@ -30,12 +31,14 @@ export function EntityRelations({
       role="navigation"
       aria-label="Enlaces relacionados"
     >
-      <RelationChip
-        href={`/activos/${assetId}`}
-        icon={<PackageSearch className="h-4 w-4" aria-hidden="true" />}
-        label="Activo"
-        ariaLabel="Ver activo"
-      />
+      {assetId && (
+        <RelationChip
+          href={`/activos/${assetId}`}
+          icon={<PackageSearch className="h-4 w-4" aria-hidden="true" />}
+          label="Activo"
+          ariaLabel="Ver activo"
+        />
+      )}
 
       {workOrderId && (
         <RelationChip
@@ -57,7 +60,7 @@ export function EntityRelations({
 
       {incidentId && (
         <RelationChip
-          href={`/incidentes`}
+          href={assetId ? `/activos/${assetId}/incidentes` : "/incidentes"}
           icon={<AlertTriangle className="h-4 w-4" aria-hidden="true" />}
           label="Incidente"
           ariaLabel="Ver incidente relacionado"

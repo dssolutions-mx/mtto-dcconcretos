@@ -15,7 +15,7 @@ import Link from "next/link"
 import { cn } from "@/lib/utils"
 import { 
   ArrowLeft, ShoppingCart, CalendarCheck, CheckCircle, Edit, Clock, 
-  User, Wrench, Plus, CalendarDays, ChevronDown, Camera, FileText, ClipboardCheck 
+  User, Wrench, Plus, CalendarDays, ChevronDown, Camera, FileText, ClipboardCheck, RefreshCw 
 } from "lucide-react"
 import { 
   MaintenanceType, 
@@ -30,13 +30,16 @@ import { EvidenceViewer, type EvidenceItem } from "@/components/ui/evidence-view
 import { WorkOrderCostDisplay } from "@/components/work-orders/work-order-cost-display"
 import { WorkOrderPrintHandler } from "@/components/work-orders/work-order-print-handler"
 
-// Extended type for work order with completed_at field
+// Extended type for work order with completed_at field and recurrence data
 type ExtendedWorkOrder = WorkOrderComplete & {
-  completed_at: string | null;
+  completed_at?: string | null;
   creation_photos?: string | EvidenceItem[];
   completion_photos?: string | EvidenceItem[];
   progress_photos?: string | EvidenceItem[];
   incident_id?: string | null;
+  escalation_count?: number | null;
+  related_issues_count?: number | null;
+  issue_history?: Array<{ date?: string; checklist?: string; description?: string; notes?: string; status?: string; priority?: string }> | null;
 }
 
 export const metadata: Metadata = {
@@ -119,7 +122,7 @@ export default async function WorkOrderDetailsPage({
   
   const supabase = await createClient();
 
-  // Fetch work order with related data
+  // Fetch work order with related data (incl. escalation_count, related_issues_count, issue_history for recurrence section)
   const { data: workOrder, error } = await supabase
     .from("work_orders")
     .select(`
@@ -602,6 +605,126 @@ export default async function WorkOrderDetailsPage({
               </div>
             </CardContent>
           </Card>
+          
+          {/* Recurrence section: show when related_issues_count > 1 or escalation_count > 0 */}
+          {((extendedWorkOrder.related_issues_count ?? 1) > 1 || (extendedWorkOrder.escalation_count ?? 0) > 0) && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <RefreshCw className="h-5 w-5 text-amber-600" />
+                  Historial de recurrencias
+                </CardTitle>
+                <CardDescription>
+                  Este problema ha aparecido múltiples veces en el mismo activo
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <p className="text-sm">
+                  {(() => {
+                    const recurrenceCount = (extendedWorkOrder.related_issues_count ?? 1) - 1;
+                    const escalationCount = extendedWorkOrder.escalation_count ?? 0;
+                    const vez = (n: number) => (n === 1 ? "vez" : "veces");
+                    if (recurrenceCount > 0 && escalationCount > 0) {
+                      return (
+                        <>
+                          Este problema ha recurrido <strong>{recurrenceCount}</strong> {vez(recurrenceCount)} y ha
+                          sido escalado <strong>{escalationCount}</strong> {vez(escalationCount)}.
+                        </>
+                      );
+                    }
+                    if (recurrenceCount > 0) {
+                      return (
+                        <>
+                          Este problema ha recurrido <strong>{recurrenceCount}</strong> {vez(recurrenceCount)}.
+                        </>
+                      );
+                    }
+                    return (
+                      <>
+                        Este problema ha sido escalado <strong>{escalationCount}</strong> {vez(escalationCount)}.
+                      </>
+                    );
+                  })()}
+                </p>
+                {(() => {
+                  const raw = extendedWorkOrder.issue_history;
+                  const history = Array.isArray(raw)
+                    ? raw
+                    : typeof raw === "string"
+                      ? (() => {
+                          try {
+                            const p = JSON.parse(raw) as unknown;
+                            return Array.isArray(p) ? p : [];
+                          } catch {
+                            return [];
+                          }
+                        })()
+                      : [];
+                  return history.length > 0 && (
+                    <div className="space-y-2">
+                      <p className="text-sm font-medium text-muted-foreground">
+                        Ocurrencias registradas
+                      </p>
+                      <div className="space-y-2 max-h-48 overflow-y-auto">
+                        {([...history] as Array<{
+                          date?: string;
+                          checklist?: string;
+                          description?: string;
+                          notes?: string;
+                          status?: string;
+                        }>)
+                          .sort(
+                            (a, b) =>
+                              new Date(b.date || 0).getTime() -
+                              new Date(a.date || 0).getTime()
+                          )
+                          .map((entry, idx) => (
+                            <div
+                              key={idx}
+                              className="border-l-2 border-amber-200 pl-3 py-1.5 text-sm"
+                            >
+                              <div className="flex flex-wrap items-center gap-2">
+                                {entry.date && (
+                                  <span className="text-muted-foreground font-medium">
+                                    {format(
+                                      new Date(entry.date),
+                                      "d MMM yyyy, HH:mm",
+                                      { locale: es }
+                                    )}
+                                  </span>
+                                )}
+                                {entry.checklist && (
+                                  <Badge variant="outline" className="text-xs">
+                                    {entry.checklist}
+                                  </Badge>
+                                )}
+                                {entry.status && (
+                                  <span className="text-xs text-muted-foreground">
+                                    {entry.status === "fail"
+                                      ? "Falla"
+                                      : "Revisión"}
+                                  </span>
+                                )}
+                              </div>
+                              {entry.description && (
+                                <p className="text-foreground mt-0.5 line-clamp-2">
+                                  {entry.description}
+                                </p>
+                              )}
+                              {entry.notes && (
+                                <p className="text-muted-foreground text-xs mt-1">
+                                  {entry.notes}
+                                </p>
+                              )}
+                            </div>
+                          ))}
+                      </div>
+                    </div>
+                  );
+                })()}
+              </CardContent>
+            </Card>
+          )}
           
           {requiredParts.length > 0 && (
             <Card>
