@@ -40,7 +40,7 @@ export async function GET(
 
       console.error('Error fetching supplier:', error)
       return NextResponse.json(
-        { error: 'Error fetching supplier', details: error.message },
+        { error: 'Error al obtener proveedor' },
         { status: 500 }
       )
     }
@@ -78,14 +78,27 @@ export async function PUT(
 
     const body: UpdateSupplierRequest = await request.json()
 
+    // Allowlist: only update allowed columns (prevents mass assignment)
+    const allowedFields = [
+      'name', 'business_name', 'tax_id', 'contact_person', 'email', 'phone',
+      'mobile_phone', 'address', 'city', 'state', 'postal_code', 'country',
+      'supplier_type', 'industry', 'specialties', 'payment_terms', 'payment_methods',
+      'notes', 'business_unit_id', 'status'
+    ] as const
+    const updateData: Record<string, unknown> = {}
+    for (const key of allowedFields) {
+      const val = body[key as keyof UpdateSupplierRequest]
+      if (val !== undefined && val !== null) {
+        updateData[key] = val
+      }
+    }
     // Normalize specialties and industry if provided
-    const normalized: UpdateSupplierRequest = { ...body }
     if (Array.isArray(body.specialties)) {
-      normalized.specialties = body.specialties.map(s => normalizeSpecialty(String(s)))
+      updateData.specialties = body.specialties.map(s => normalizeSpecialty(String(s)))
     }
     if (typeof body.industry !== 'undefined') {
       const n = normalizeIndustry(body.industry as string)
-      normalized.industry = n || body.industry
+      updateData.industry = n || body.industry
     }
 
     // Check if supplier exists and user has permission
@@ -122,7 +135,7 @@ export async function PUT(
     const { data: supplier, error } = await supabase
       .from('suppliers')
       .update({
-        ...normalized,
+        ...updateData,
         updated_by: user.id
       })
       .eq('id', id)
@@ -132,7 +145,7 @@ export async function PUT(
     if (error) {
       console.error('Error updating supplier:', error)
       return NextResponse.json(
-        { error: 'Error updating supplier', details: error.message },
+        { error: 'Error al actualizar proveedor' },
         { status: 500 }
       )
     }
@@ -214,7 +227,7 @@ export async function DELETE(
     if (error) {
       console.error('Error deactivating supplier:', error)
       return NextResponse.json(
-        { error: 'Error deactivating supplier', details: error.message },
+        { error: 'Error al desactivar proveedor' },
         { status: 500 }
       )
     }

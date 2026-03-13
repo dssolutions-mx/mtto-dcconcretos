@@ -77,7 +77,7 @@ export async function GET(request: NextRequest) {
     if (error) {
       console.error('Error fetching suppliers:', error)
       return NextResponse.json(
-        { error: 'Error fetching suppliers', details: error.message },
+        { error: 'Error al obtener proveedores' },
         { status: 500 }
       )
     }
@@ -132,6 +132,21 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Allowlist: only insert allowed columns (prevents mass assignment)
+    const allowedFields = [
+      'name', 'business_name', 'tax_id', 'contact_person', 'email', 'phone',
+      'mobile_phone', 'address', 'city', 'state', 'postal_code', 'country',
+      'supplier_type', 'industry', 'payment_terms', 'payment_methods', 'notes',
+      'business_unit_id'
+    ] as const
+    const insertData: Record<string, unknown> = {}
+    for (const key of allowedFields) {
+      const val = body[key as keyof CreateSupplierRequest]
+      if (val !== undefined && val !== null) {
+        insertData[key] = val
+      }
+    }
+
     // Normalize specialties and industry
     const normalizedSpecialties = (body.specialties || []).map(s => normalizeSpecialty(String(s)))
     const normalizedIndustry = normalizeIndustry(body.industry) || body.industry
@@ -140,7 +155,7 @@ export async function POST(request: NextRequest) {
     const { data: supplier, error } = await supabase
       .from('suppliers')
       .insert({
-        ...body,
+        ...insertData,
         specialties: normalizedSpecialties,
         industry: normalizedIndustry,
         created_by: user.id,
@@ -152,7 +167,7 @@ export async function POST(request: NextRequest) {
     if (error) {
       console.error('Error creating supplier:', error)
       return NextResponse.json(
-        { error: 'Error creating supplier', details: error.message },
+        { error: 'Error al crear proveedor' },
         { status: 500 }
       )
     }

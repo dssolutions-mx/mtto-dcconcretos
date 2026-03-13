@@ -14,32 +14,11 @@ export async function POST(request: NextRequest) {
   try {
     const supabase = await createClient()
     
-    // Enhanced mobile session handling with retry logic
-    let user = null
-    let authError = null
-    
-    // First attempt to get user
-    const firstAttempt = await supabase.auth.getUser()
-    if (firstAttempt.data.user) {
-      user = firstAttempt.data.user
-    } else if (firstAttempt.error?.message?.includes('Auth session missing')) {
-      console.log('🔄 Mobile session recovery: First attempt failed, trying session refresh')
-      
-      // Try to refresh session
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession()
-      if (session?.user && !sessionError) {
-        console.log('✅ Mobile session recovery: Session refresh successful')
-        user = session.user
-      } else {
-        console.log('❌ Mobile session recovery: Session refresh failed')
-        authError = sessionError || firstAttempt.error
-      }
-    } else {
-      authError = firstAttempt.error
-    }
+    // Use getUser() only — getSession() is not reliable for server-side verification (ASVS V2)
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
 
     if (authError || !user) {
-      console.error('Upload API auth error:', authError)
+      console.error('Upload API auth error:', authError?.message)
       return NextResponse.json(
         { 
           error: 'No autorizado',
@@ -53,13 +32,16 @@ export async function POST(request: NextRequest) {
     const formData = await request.formData()
     const file = formData.get('file') as File
     const bucket = formData.get('bucket') as string || 'asset-photos'
-    const purchaseOrderId = formData.get('purchaseOrderId') as string
+    const purchaseOrderId = formData.get('purchaseOrderId') as string | null
 
-    console.log('=== DEBUG UPLOAD API ===')
-    console.log('purchaseOrderId received:', purchaseOrderId)
-    console.log('purchaseOrderId type:', typeof purchaseOrderId)
-    console.log('purchaseOrderId length:', purchaseOrderId?.length)
-    console.log('========================')
+    // Validate purchaseOrderId as UUID if provided (prevents path traversal / injection)
+    const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+    if (purchaseOrderId && !UUID_REGEX.test(purchaseOrderId)) {
+      return NextResponse.json(
+        { error: 'ID de orden de compra inválido' },
+        { status: 400 }
+      )
+    }
 
     if (!file) {
       return NextResponse.json(
@@ -124,14 +106,7 @@ export async function POST(request: NextRequest) {
         message: error.message
       })
       return NextResponse.json(
-        { 
-          error: `Error al subir archivo: ${error.message}`,
-          details: {
-            bucket: finalBucket,
-            fileName,
-            errorCode: error.statusCode || 'unknown'
-          }
-        },
+        { error: 'Error al subir archivo. Intente de nuevo.' },
         { status: 500 }
       )
     }
@@ -167,12 +142,8 @@ export async function POST(request: NextRequest) {
             hint: insertError.hint
           })
           
-          // Return the error details to help debug
           return NextResponse.json(
-            { 
-              error: `Error al guardar comprobante en base de datos: ${insertError.message}`,
-              details: insertError
-            },
+            { error: 'Error al guardar comprobante. Intente de nuevo.' },
             { status: 500 }
           )
         } else {
@@ -195,10 +166,7 @@ export async function POST(request: NextRequest) {
       } catch (dbError) {
         console.error('Database operation error:', dbError)
         return NextResponse.json(
-          { 
-            error: `Error en operación de base de datos: ${dbError}`,
-            details: dbError
-          },
+          { error: 'Error en operación de base de datos. Intente de nuevo.' },
           { status: 500 }
         )
       }
@@ -212,13 +180,10 @@ export async function POST(request: NextRequest) {
       purchaseOrderId: purchaseOrderId || null
     })
 
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Upload API error:', error)
     return NextResponse.json(
-      { 
-        error: `Error interno del servidor: ${error.message}`,
-        details: error instanceof Error ? error.message : 'Unknown error'
-      },
+      { error: 'Error interno del servidor. Intente de nuevo.' },
       { status: 500 }
     )
   }

@@ -14,29 +14,8 @@ export async function GET(request: NextRequest) {
     const includeSubordinates = searchParams.get('include_subordinates') === 'true'
     const includeInactive = searchParams.get('include_inactive') === 'true'
 
-    // Enhanced mobile session handling with retry logic
-    let user = null
-    let userError = null
-    
-    // First attempt to get user
-    const firstAttempt = await supabase.auth.getUser()
-    if (firstAttempt.data.user) {
-      user = firstAttempt.data.user
-    } else if (firstAttempt.error?.message?.includes('Auth session missing')) {
-      console.log('🔄 Mobile session recovery: First attempt failed, trying session refresh')
-      
-      // Try to refresh session
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession()
-      if (session?.user && !sessionError) {
-        console.log('✅ Mobile session recovery: Session refresh successful')
-        user = session.user
-      } else {
-        console.log('❌ Mobile session recovery: Session refresh failed')
-        userError = sessionError || firstAttempt.error
-      }
-    } else {
-      userError = firstAttempt.error
-    }
+    // Use getUser() only — getSession() is not reliable for server-side verification (ASVS V2)
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
 
     if (userError || !user) {
       console.error('Auth error:', userError)
@@ -264,10 +243,7 @@ export async function GET(request: NextRequest) {
 
   } catch (error) {
     console.error('Unexpected error in GET /api/authorization/summary:', error)
-    return NextResponse.json({ 
-      error: 'Internal server error',
-      details: error instanceof Error ? error.message : 'Unknown error'
-    }, { status: 500 })
+    return NextResponse.json({ error: 'Error interno del servidor' }, { status: 500 })
   }
 }
 

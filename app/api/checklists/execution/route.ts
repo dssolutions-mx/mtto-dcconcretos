@@ -102,7 +102,7 @@ export async function GET(request: Request) {
       details: error.details,
       hint: error.hint
     })
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json({ error: 'Error al obtener checklist' }, { status: 500 })
   }
 
   const executionTime = Date.now() - startTime
@@ -229,15 +229,15 @@ export async function POST(request: Request) {
       return result
     }
     
-  } catch (error: any) {
+  } catch (error: unknown) {
     const executionTime = Date.now() - startTime
     console.error(`[${requestId}] ❌ Error completing checklist (${executionTime}ms):`, {
-      error: error.message,
-      stack: error.stack,
+      error: error instanceof Error ? error.message : error,
+      stack: error instanceof Error ? error.stack : undefined,
       schedule_id,
       completed_items_count: completed_items?.length || 0
     })
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json({ error: 'Error al completar checklist' }, { status: 500 })
   }
 }
 

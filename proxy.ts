@@ -6,6 +6,9 @@ export async function proxy(request: NextRequest) {
     request,
   })
 
+  // Rate limiting: use Vercel Firewall (Project → Settings → Firewall → Rate Limiting)
+  // Configure rules in the dashboard; no code or Upstash required.
+
   // Enforce host allowlist (set ALLOWED_HOSTS="domain.com,www.domain.com" in env)
   const forwardedHost = request.headers.get('x-forwarded-host') || ''
   const hostHeader = request.headers.get('host') || ''
