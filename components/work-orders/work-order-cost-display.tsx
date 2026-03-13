@@ -21,6 +21,7 @@ interface WorkOrderCostDisplayProps {
   purchaseOrders?: PurchaseOrder[];
   workOrderId: string;
   className?: string;
+  compact?: boolean;
 }
 
 function formatCurrency(amount: string | number | null | undefined): string {
@@ -67,7 +68,8 @@ export function WorkOrderCostDisplay({
   requiredPartsCost, 
   purchaseOrders = [], 
   workOrderId,
-  className = "" 
+  className = "",
+  compact = false,
 }: WorkOrderCostDisplayProps) {
   
   // Separate regular and adjustment purchase orders
@@ -126,30 +128,45 @@ export function WorkOrderCostDisplay({
 
   return (
     <div className={`space-y-3 ${className}`}>
-      {/* Primary Cost Display */}
+      {/* Primary Cost Display — avoid showing both "$0.00" and "Sin costo" */}
       <div className="space-y-2">
         <div className="flex items-center justify-between">
-          <p className="text-sm font-medium text-muted-foreground">Costo Total</p>
-          <Badge 
-            variant="outline" 
-            className={confidenceColors[confidence.level]}
-            title={confidence.description}
-          >
-            {confidence.label}
-          </Badge>
+          <p className={`${compact ? "text-xs" : "text-sm"} font-medium text-muted-foreground`}>
+            Costo Total
+          </p>
+          {primaryCost > 0 && (
+            <Badge
+              variant="outline"
+              className={confidenceColors[confidence.level]}
+              title={confidence.description}
+            >
+              {confidence.label}
+            </Badge>
+          )}
         </div>
         <div className="flex items-center gap-2">
-          <span className="text-2xl font-bold">
-            ${formatCurrency(primaryCost)}
-          </span>
-          {confidence.level !== 'high' && (
-            <InfoIcon className="h-4 w-4 text-muted-foreground" />
+          {primaryCost > 0 ? (
+            <>
+              <span className={compact ? "text-base font-semibold" : "text-2xl font-bold"}>
+                ${formatCurrency(primaryCost)}
+              </span>
+              {confidence.level !== "high" && (
+                <InfoIcon className="h-4 w-4 text-muted-foreground" aria-hidden />
+              )}
+            </>
+          ) : (
+            <span
+              className={`${compact ? "text-sm" : "text-lg"} font-medium text-muted-foreground`}
+              title={confidence.description}
+            >
+              Sin costo
+            </span>
           )}
         </div>
       </div>
 
-      {/* Cost Breakdown */}
-      {(hasQuotes || hasEstimate) && (
+      {/* Cost Breakdown — hide when $0 to avoid "Sin costo" + "$0.00" duplication */}
+      {!compact && primaryCost > 0 && (hasQuotes || hasEstimate) && (
         <div className="space-y-2">
           <Separator />
           <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
@@ -191,7 +208,7 @@ export function WorkOrderCostDisplay({
       )}
 
       {/* Related Purchase Orders */}
-      {purchaseOrders.length > 0 && (
+      {!compact && purchaseOrders.length > 0 && (
         <div className="space-y-2">
           <Separator />
           <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">

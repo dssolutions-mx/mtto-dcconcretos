@@ -13,6 +13,14 @@ type EntityRelationsProps = {
   incidentId?: string | null
   checklistId?: string | null
   purchaseOrderId?: string | null
+  /** Optional intent-aware labels (e.g. "Origen: incidente", "OC relacionada") */
+  labels?: {
+    asset?: string
+    incident?: string
+    checklist?: string
+    serviceOrder?: string
+    purchaseOrder?: string
+  }
   className?: string
 }
 
@@ -23,6 +31,7 @@ export function EntityRelations({
   incidentId,
   checklistId,
   purchaseOrderId,
+  labels,
   className,
 }: EntityRelationsProps) {
   return (
@@ -35,7 +44,7 @@ export function EntityRelations({
         <RelationChip
           href={`/activos/${assetId}`}
           icon={<PackageSearch className="h-4 w-4" aria-hidden="true" />}
-          label="Activo"
+          label={labels?.asset ?? "Activo"}
           ariaLabel="Ver activo"
         />
       )}
@@ -53,8 +62,8 @@ export function EntityRelations({
         <RelationChip
           href={`/servicios/${serviceOrderId}`}
           icon={<FileText className="h-4 w-4" aria-hidden="true" />}
-          label="Servicio"
-          ariaLabel="Ver orden de servicio"
+          label={labels?.serviceOrder ?? "Servicio realizado"}
+          ariaLabel={labels?.serviceOrder ?? "Ver orden de servicio"}
         />
       )}
 
@@ -62,8 +71,8 @@ export function EntityRelations({
         <RelationChip
           href={assetId ? `/activos/${assetId}/incidentes` : "/incidentes"}
           icon={<AlertTriangle className="h-4 w-4" aria-hidden="true" />}
-          label="Incidente"
-          ariaLabel="Ver incidente relacionado"
+          label={labels?.incident ?? "Incidente"}
+          ariaLabel={labels?.incident ?? "Ver incidente relacionado"}
         />
       )}
 
@@ -71,8 +80,8 @@ export function EntityRelations({
         <RelationChip
           href={`/checklists/ejecutar/${checklistId}`}
           icon={<ClipboardCheck className="h-4 w-4" aria-hidden="true" />}
-          label="Checklist"
-          ariaLabel="Ver checklist"
+          label={labels?.checklist ?? "Checklist"}
+          ariaLabel={labels?.checklist ?? "Ver checklist"}
         />
       )}
 
@@ -80,8 +89,8 @@ export function EntityRelations({
         <RelationChip
           href={`/compras/${purchaseOrderId}`}
           icon={<ShoppingCart className="h-4 w-4" aria-hidden="true" />}
-          label="OC"
-          ariaLabel="Ver orden de compra"
+          label={labels?.purchaseOrder ?? "OC relacionada"}
+          ariaLabel={labels?.purchaseOrder ?? "Ver orden de compra"}
         />
       )}
     </div>

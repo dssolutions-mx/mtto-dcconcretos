@@ -1,7 +1,6 @@
 import type { Metadata } from "next"
 import { DashboardShell } from "@/components/dashboard/dashboard-shell"
 import { ServiceOrderDetails } from "@/components/work-orders/service-order-details"
-import { EntityRelations } from "@/components/navigation/entity-relations"
 import { BreadcrumbSetter } from "@/components/navigation/breadcrumb-setter"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
@@ -14,12 +13,11 @@ import { notFound } from "next/navigation"
 import Link from "next/link"
 import { cn } from "@/lib/utils"
 import { 
-  ArrowLeft, ShoppingCart, CalendarCheck, CheckCircle, Edit, Clock, 
-  User, Wrench, Plus, CalendarDays, ChevronDown, Camera, FileText, ClipboardCheck, RefreshCw 
+  ShoppingCart, CalendarCheck, CheckCircle, Edit, Clock, 
+  User, Wrench, Plus, CalendarDays, ChevronDown, Camera, FileText, ClipboardCheck
 } from "lucide-react"
 import { 
   MaintenanceType, 
-  ServiceOrderPriority, 
   WorkOrderStatus, 
   WorkOrderComplete, 
   PurchaseOrder,
@@ -27,8 +25,15 @@ import {
   MaintenanceHistory  
 } from "@/types"
 import { EvidenceViewer, type EvidenceItem } from "@/components/ui/evidence-viewer"
-import { WorkOrderCostDisplay } from "@/components/work-orders/work-order-cost-display"
-import { WorkOrderPrintHandler } from "@/components/work-orders/work-order-print-handler"
+import { buildOriginData } from "@/lib/work-orders/build-origin-data"
+import { WorkOrderDetailsHeader } from "@/components/work-orders/details/work-order-details-header"
+import { WorkOrderLifecycleStrip } from "@/components/work-orders/details/work-order-lifecycle-strip"
+import { WorkOrderGeneralInfoCard } from "@/components/work-orders/details/work-order-general-info-card"
+import { WorkOrderScheduleCard } from "@/components/work-orders/details/work-order-schedule-card"
+import { WorkOrderRecurrenceCard } from "@/components/work-orders/details/work-order-recurrence-card"
+import { WorkOrderRelationshipHub } from "@/components/work-orders/details/work-order-relationship-hub"
+import { WorkOrderDetailsRouter } from "@/components/work-orders/work-order-details-router"
+import { WorkOrderContextBand } from "@/components/work-orders/details/work-order-context-band"
 
 // Extended type for work order with completed_at field and recurrence data
 type ExtendedWorkOrder = WorkOrderComplete & {
@@ -51,47 +56,6 @@ interface ServiceOrderPageProps {
   params: Promise<{
     id: string
   }>
-}
-
-// Helper function to get badge variant based on status
-function getStatusVariant(status: string | null) {
-  switch (status) {
-    case WorkOrderStatus.Completed:
-      return "default" 
-    case WorkOrderStatus.InProgress:
-      return "secondary" 
-    case WorkOrderStatus.Pending:
-    case WorkOrderStatus.Quoted:
-      return "outline" 
-    case WorkOrderStatus.Approved:
-      return "outline" 
-    default:
-      return "outline"
-  }
-}
-
-// Helper function to get badge variant based on priority
-function getPriorityVariant(priority: string | null) {
-  switch (priority) {
-    case ServiceOrderPriority.Critical:
-      return "destructive"
-    case ServiceOrderPriority.High:
-      return "secondary" 
-    default:
-      return "outline"
-  }
-}
-
-// Helper function to get badge variant based on type
-function getTypeVariant(type: string | null) {
-  switch (type) {
-    case MaintenanceType.Preventive:
-      return "outline"
-    case MaintenanceType.Corrective:
-      return "destructive"
-    default:
-      return "secondary"
-  }
 }
 
 // Helper function to determine if Generate Purchase Order button should be shown
@@ -237,16 +201,80 @@ export default async function WorkOrderDetailsPage({
     .eq("work_order_id", id)
     .maybeSingle()
 
-  // Fetch incident if this WO originated from one
+  // Fetch incident if this WO originated from one (also for ORIGEN fecha)
   let incidentAssetId: string | null = null
+  let incidentCreatedAt: string | null = null
   if (extendedWorkOrder.incident_id) {
     const { data: incident } = await supabase
       .from("incident_history")
-      .select("asset_id")
+      .select("asset_id, created_at")
       .eq("id", extendedWorkOrder.incident_id)
       .single()
     incidentAssetId = incident?.asset_id ?? null
+    incidentCreatedAt = incident?.created_at ?? null
   }
+
+  // ORIGEN: Fetch checklist name (corrective) or maintenance plan (preventive)
+  let checklistName: string | null = null
+  let maintenancePlanName: string | null = null
+  let maintenancePlanNextDue: string | null = null
+  let maintenancePlanInterval: string | null = null
+  let maintenancePlanIntervalHours: number | null = null
+  let firstIssueDate: string | null = incidentCreatedAt
+
+  if (extendedWorkOrder.checklist_id) {
+    const { data: completed } = await supabase
+      .from("completed_checklists")
+      .select("checklist_id, completion_date")
+      .eq("id", extendedWorkOrder.checklist_id)
+      .maybeSingle()
+    if (completed?.checklist_id) {
+      const { data: checklist } = await supabase
+        .from("checklists")
+        .select("name")
+        .eq("id", completed.checklist_id)
+        .maybeSingle()
+      checklistName = checklist?.name ?? null
+      if (!firstIssueDate) firstIssueDate = completed.completion_date ?? null
+    }
+  }
+
+  if (extendedWorkOrder.maintenance_plan_id) {
+    const { data: plan } = await supabase
+      .from("maintenance_plans")
+      .select("name, next_due, interval_id")
+      .eq("id", extendedWorkOrder.maintenance_plan_id)
+      .maybeSingle()
+    if (plan) {
+      maintenancePlanName = plan.name ?? null
+      maintenancePlanNextDue = plan.next_due ?? null
+      if (plan.interval_id) {
+        const { data: interval } = await supabase
+          .from("maintenance_intervals")
+          .select("interval_value, name")
+          .eq("id", plan.interval_id)
+          .maybeSingle()
+        if (interval) {
+          maintenancePlanInterval = `Intervalo ${interval.interval_value ?? interval.name ?? ""}h`
+          maintenancePlanIntervalHours =
+            typeof interval.interval_value === "number" ? interval.interval_value : null
+        }
+      }
+    }
+  }
+
+  if (extendedWorkOrder.incident_id && !firstIssueDate) {
+    firstIssueDate = incidentCreatedAt
+  }
+
+  const originData = buildOriginData({
+    workOrder: extendedWorkOrder,
+    checklistName,
+    maintenancePlanName,
+    maintenancePlanNextDue,
+    maintenancePlanInterval,
+    firstIssueDate,
+  })
   
   // Format dates
   const formatDate = (dateString: string | null) => {
@@ -395,341 +423,139 @@ export default async function WorkOrderDetailsPage({
   const breadcrumbItems = [
     { label: "Dashboard", href: "/dashboard" },
     { label: "Órdenes de Trabajo", href: "/ordenes" },
-    extendedWorkOrder.asset?.id
-      ? { label: extendedWorkOrder.asset.asset_id || extendedWorkOrder.asset.name || "Activo", href: `/activos/${extendedWorkOrder.asset.id}` }
-      : undefined,
     { label: `OT ${extendedWorkOrder.order_id}` },
   ].filter(Boolean) as { label: string; href?: string }[]
 
+  const targetPOId =
+    (extendedWorkOrder.purchase_order_id || (allPurchaseOrders?.[0] as { id: string } | undefined)?.id) ?? null
+  const hasSidebarContent = Boolean(
+    relatedServiceOrder?.id ||
+      extendedWorkOrder.incident_id ||
+      extendedWorkOrder.purchase_order_id ||
+      purchaseOrder ||
+      isCompleted ||
+      requiredTasks.length > 0
+  )
+
   return (
-    <div className="container mx-auto px-4 md:px-6 lg:px-8 py-4 md:py-8">
-      <BreadcrumbSetter items={breadcrumbItems} />
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="icon" asChild>
-            <Link href="/ordenes">
-              <ArrowLeft className="h-4 w-4" />
-            </Link>
-          </Button>
-          <h1 className="text-2xl font-bold">Orden de Trabajo: {extendedWorkOrder.order_id}</h1>
-          <Badge variant={getStatusVariant(extendedWorkOrder.status)} className="ml-2 capitalize text-sm">
-            {extendedWorkOrder.status || "Pendiente"}
-          </Badge>
-        </div>
-        
-        <div className="flex flex-wrap gap-2 no-print">
-          <Button variant="outline" asChild>
-            <Link href={`/ordenes/${id}/editar`}>
-              <Edit className="mr-2 h-4 w-4" />
-              Editar
-            </Link>
-          </Button>
-          
-          {/* Purchase Order Logic */}
-          {(() => {
-            const hasPOId = !!extendedWorkOrder.purchase_order_id;
-            const hasRelatedPOs = allPurchaseOrders && allPurchaseOrders.length > 0;
-            const shouldShowGenerate = shouldShowGenerateOrderButton(extendedWorkOrder);
-            
-            // Show "Ver OC Existente" if there are any purchase orders
-            if (hasPOId || hasRelatedPOs) {
-              const targetPOId = extendedWorkOrder.purchase_order_id || allPurchaseOrders?.[0]?.id;
-              return (
-                <Button variant="outline" asChild>
-                  <Link href={`/compras/${targetPOId}`}>
-                    <ShoppingCart className="mr-2 h-4 w-4" />
-                    Ver OC Existente
-                  </Link>
-                </Button>
-              );
-            }
-            
-            // Show "Generar OC" only if no POs exist and conditions are met
-            if (!hasPOId && !hasRelatedPOs && shouldShowGenerate) {
-              return (
-                <Button asChild>
-                  <Link href={`/ordenes/${id}/generar-oc`}>
-                    <ShoppingCart className="mr-2 h-4 w-4" />
-                    Generar OC
-                  </Link>
-                </Button>
-              );
-            }
-            
-            return null;
-          })()}
-          
-          {extendedWorkOrder.status !== WorkOrderStatus.Completed && (
-            <Button asChild>
-              <Link href={`/ordenes/${id}/completar`}>
-                <CheckCircle className="mr-2 h-4 w-4" />
-                Completar
-              </Link>
-            </Button>
-          )}
-          
-          <WorkOrderPrintHandler workOrderId={id} />
-        </div>
+    <WorkOrderDetailsRouter>
+      <div className="container mx-auto px-4 md:px-6 lg:px-8 py-4 md:py-8">
+        <BreadcrumbSetter items={breadcrumbItems} />
+      <WorkOrderDetailsHeader
+        orderId={extendedWorkOrder.order_id}
+        status={extendedWorkOrder.status}
+        workOrderId={id}
+        targetPOId={targetPOId}
+        hasPurchaseOrder={!!extendedWorkOrder.purchase_order_id}
+        hasRelatedPOs={(allPurchaseOrders?.length ?? 0) > 0}
+        shouldShowGeneratePO={shouldShowGenerateOrderButton(extendedWorkOrder)}
+        isCompleted={isCompleted}
+      />
+
+      <WorkOrderLifecycleStrip
+        status={extendedWorkOrder.status}
+        hasPurchaseOrder={!!extendedWorkOrder.purchase_order_id}
+        relatedServiceOrder={relatedServiceOrder}
+        incidentId={extendedWorkOrder.incident_id}
+        incidentAssetId={incidentAssetId}
+      />
+
+      <div className="mb-5">
+        <WorkOrderContextBand
+          origin={originData}
+          workOrderType={extendedWorkOrder.type}
+          asset={
+            extendedWorkOrder.asset
+              ? {
+                  id: extendedWorkOrder.asset.id,
+                  asset_id: extendedWorkOrder.asset.asset_id,
+                  name: extendedWorkOrder.asset.name,
+                  location: extendedWorkOrder.asset.location,
+                  current_hours:
+                    extendedWorkOrder.asset.current_hours != null
+                      ? Number(extendedWorkOrder.asset.current_hours)
+                      : null,
+                }
+              : null
+          }
+        />
       </div>
 
-      {/* Lifecycle strip and cross-links */}
-      <div className="mb-6 space-y-3 no-print">
-        <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-          <span className={cn(extendedWorkOrder.status !== WorkOrderStatus.Completed && !extendedWorkOrder.purchase_order_id ? "font-medium text-foreground" : "")}>Planificado</span>
-          <span>→</span>
-          <span className={cn(extendedWorkOrder.purchase_order_id && extendedWorkOrder.status !== WorkOrderStatus.Completed ? "font-medium text-foreground" : "")}>En compra</span>
-          <span>→</span>
-          <span className={cn(extendedWorkOrder.status === WorkOrderStatus.InProgress ? "font-medium text-foreground" : "")}>En ejecución</span>
-          <span>→</span>
-          <span className={cn(extendedWorkOrder.status === WorkOrderStatus.Completed ? "font-medium text-foreground" : "")}>Completado</span>
-        </div>
-        <div className="flex flex-wrap gap-3">
-          {relatedServiceOrder && (
-            <Link
-              href={`/servicios/${relatedServiceOrder.id}`}
-              className="text-sm text-primary hover:underline inline-flex items-center gap-1"
-            >
-              Este trabajo fue ejecutado: Ver {relatedServiceOrder.order_id || "OS"}
-            </Link>
+      <div
+        className={cn(
+          "grid grid-cols-1 gap-5",
+          hasSidebarContent && "xl:grid-cols-[minmax(0,1fr)_20rem]"
+        )}
+      >
+        <div className="flex flex-col gap-5">
+          <WorkOrderGeneralInfoCard
+            type={extendedWorkOrder.type}
+            priority={extendedWorkOrder.priority}
+            description={extendedWorkOrder.description}
+            requestedByName={getProfileName(extendedWorkOrder.requested_by)}
+            assignedToName={getProfileName(extendedWorkOrder.assigned_to)}
+            createdAt={extendedWorkOrder.created_at}
+            plannedDate={extendedWorkOrder.planned_date}
+            estimatedDuration={extendedWorkOrder.estimated_duration}
+            estimatedCost={Number(extendedWorkOrder.estimated_cost) || 0}
+            requiredPartsCost={totalPartsCost}
+            purchaseOrders={allPurchaseOrders || []}
+            workOrderId={id}
+            cycleContext={cycleContext}
+            recurrenceCount={
+              (extendedWorkOrder.related_issues_count ?? 1) > 1 || (extendedWorkOrder.escalation_count ?? 0) > 0
+                ? (extendedWorkOrder.related_issues_count ?? 1)
+                : 0
+            }
+          />
+
+          {/* Schedule card — preventive only (Plan 0.4) */}
+          {(extendedWorkOrder.type === MaintenanceType.Preventive ||
+            extendedWorkOrder.type === "Preventivo" ||
+            extendedWorkOrder.type === "preventive") && (
+            <WorkOrderScheduleCard
+              nextDue={maintenancePlanNextDue}
+              plannedDate={extendedWorkOrder.planned_date}
+              cycle={cycleContext?.cycle ?? null}
+              intervalHours={
+                maintenancePlanIntervalHours ?? cycleContext?.intervalHours ?? null
+              }
+              currentHours={
+                extendedWorkOrder.asset?.current_hours != null
+                  ? Number(extendedWorkOrder.asset.current_hours)
+                  : null
+              }
+              estimated={cycleContext?.estimated}
+            />
           )}
-          {extendedWorkOrder.incident_id && incidentAssetId && (
-            <Link
-              href={`/activos/${incidentAssetId}`}
-              className="text-sm text-primary hover:underline inline-flex items-center gap-1"
-            >
-              Originado por incidente
-            </Link>
-          )}
-        </div>
-      </div>
-      
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="md:col-span-2 space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Información General</CardTitle>
-              <CardDescription>Detalles básicos de la orden de trabajo</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {cycleContext && cycleContext.cycle && (
-                <div className="flex flex-wrap items-center gap-2">
-                  <Badge variant="secondary">Ciclo {cycleContext.cycle}</Badge>
-                  {typeof cycleContext.intervalHours === 'number' && (
-                    <Badge variant="outline">Intervalo {cycleContext.intervalHours}h</Badge>
-                  )}
-                  {cycleContext.estimated && (
-                    <Badge variant="outline">Estimado</Badge>
-                  )}
-                </div>
-              )}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <p className="text-sm font-medium text-muted-foreground">Tipo</p>
-                  <div className="flex items-center">
-                    <Badge variant={getTypeVariant(extendedWorkOrder.type)} className="capitalize mr-2">
-                      {extendedWorkOrder.type || "N/A"}
-                    </Badge>
-                  </div>
-                </div>
-                
-                <div className="space-y-1">
-                  <p className="text-sm font-medium text-muted-foreground">Prioridad</p>
-                  <div className="flex items-center">
-                    <Badge variant={getPriorityVariant(extendedWorkOrder.priority)} className="capitalize mr-2">
-                      {extendedWorkOrder.priority || "N/A"}
-                    </Badge>
-                  </div>
-                </div>
-              </div>
-              
-              <div>
-                <p className="text-sm font-medium text-muted-foreground mb-1">Descripción</p>
-                <p className="text-base whitespace-pre-wrap">{extendedWorkOrder.description}</p>
-              </div>
-              
-              <Separator />
-              
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <p className="text-sm font-medium text-muted-foreground">Solicitado por</p>
-                  <p className="flex items-center">
-                    <User className="h-4 w-4 mr-2 text-muted-foreground" />
-                    {getProfileName(extendedWorkOrder.requested_by)}
-                  </p>
-                </div>
-                
-                <div className="space-y-1">
-                  <p className="text-sm font-medium text-muted-foreground">Técnico asignado</p>
-                  <p className="flex items-center">
-                    <Wrench className="h-4 w-4 mr-2 text-muted-foreground" />
-                    {getProfileName(extendedWorkOrder.assigned_to)}
-                  </p>
-                </div>
-              </div>
-              
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <p className="text-sm font-medium text-muted-foreground">Fecha de creación</p>
-                  <p className="flex items-center">
-                    <CalendarCheck className="h-4 w-4 mr-2 text-muted-foreground" />
-                    {formatDate(extendedWorkOrder.created_at)}
-                  </p>
-                </div>
-                
-                <div className="space-y-1">
-                  <p className="text-sm font-medium text-muted-foreground">Fecha programada</p>
-                  <p className="flex items-center">
-                    <CalendarDays className="h-4 w-4 mr-2 text-muted-foreground" />
-                    {extendedWorkOrder.planned_date ? formatDate(extendedWorkOrder.planned_date) : "No planificada"}
-                  </p>
-                </div>
-              </div>
-              
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <p className="text-sm font-medium text-muted-foreground">Duración estimada</p>
-                  <p className="flex items-center">
-                    <Clock className="h-4 w-4 mr-2 text-muted-foreground" />
-                    {extendedWorkOrder.estimated_duration ? `${Number(extendedWorkOrder.estimated_duration)} horas` : "No especificada"}
-                  </p>
-                </div>
-                
-                <div className="space-y-1">
-                  <WorkOrderCostDisplay
-                    estimatedCost={Number(extendedWorkOrder.estimated_cost) || 0}
-                    requiredPartsCost={totalPartsCost}
-                    purchaseOrders={allPurchaseOrders || []}
-                    workOrderId={id}
-                  />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
           
           {/* Recurrence section: show when related_issues_count > 1 or escalation_count > 0 */}
           {((extendedWorkOrder.related_issues_count ?? 1) > 1 || (extendedWorkOrder.escalation_count ?? 0) > 0) && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <RefreshCw className="h-5 w-5 text-amber-600" />
-                  Historial de recurrencias
-                </CardTitle>
-                <CardDescription>
-                  Este problema ha aparecido múltiples veces en el mismo activo
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <p className="text-sm">
-                  {(() => {
-                    const recurrenceCount = (extendedWorkOrder.related_issues_count ?? 1) - 1;
-                    const escalationCount = extendedWorkOrder.escalation_count ?? 0;
-                    const vez = (n: number) => (n === 1 ? "vez" : "veces");
-                    if (recurrenceCount > 0 && escalationCount > 0) {
-                      return (
-                        <>
-                          Este problema ha recurrido <strong>{recurrenceCount}</strong> {vez(recurrenceCount)} y ha
-                          sido escalado <strong>{escalationCount}</strong> {vez(escalationCount)}.
-                        </>
-                      );
+            <WorkOrderRecurrenceCard
+              relatedIssuesCount={extendedWorkOrder.related_issues_count ?? 1}
+              escalationCount={extendedWorkOrder.escalation_count ?? 0}
+              issueHistory={
+                (() => {
+                  const raw = extendedWorkOrder.issue_history
+                  if (Array.isArray(raw)) return raw
+                  if (typeof raw === "string") {
+                    try {
+                      const p = JSON.parse(raw) as unknown
+                      return Array.isArray(p) ? p : []
+                    } catch {
+                      return []
                     }
-                    if (recurrenceCount > 0) {
-                      return (
-                        <>
-                          Este problema ha recurrido <strong>{recurrenceCount}</strong> {vez(recurrenceCount)}.
-                        </>
-                      );
-                    }
-                    return (
-                      <>
-                        Este problema ha sido escalado <strong>{escalationCount}</strong> {vez(escalationCount)}.
-                      </>
-                    );
-                  })()}
-                </p>
-                {(() => {
-                  const raw = extendedWorkOrder.issue_history;
-                  const history = Array.isArray(raw)
-                    ? raw
-                    : typeof raw === "string"
-                      ? (() => {
-                          try {
-                            const p = JSON.parse(raw) as unknown;
-                            return Array.isArray(p) ? p : [];
-                          } catch {
-                            return [];
-                          }
-                        })()
-                      : [];
-                  return history.length > 0 && (
-                    <div className="space-y-2">
-                      <p className="text-sm font-medium text-muted-foreground">
-                        Ocurrencias registradas
-                      </p>
-                      <div className="space-y-2 max-h-48 overflow-y-auto">
-                        {([...history] as Array<{
-                          date?: string;
-                          checklist?: string;
-                          description?: string;
-                          notes?: string;
-                          status?: string;
-                        }>)
-                          .sort(
-                            (a, b) =>
-                              new Date(b.date || 0).getTime() -
-                              new Date(a.date || 0).getTime()
-                          )
-                          .map((entry, idx) => (
-                            <div
-                              key={idx}
-                              className="border-l-2 border-amber-200 pl-3 py-1.5 text-sm"
-                            >
-                              <div className="flex flex-wrap items-center gap-2">
-                                {entry.date && (
-                                  <span className="text-muted-foreground font-medium">
-                                    {format(
-                                      new Date(entry.date),
-                                      "d MMM yyyy, HH:mm",
-                                      { locale: es }
-                                    )}
-                                  </span>
-                                )}
-                                {entry.checklist && (
-                                  <Badge variant="outline" className="text-xs">
-                                    {entry.checklist}
-                                  </Badge>
-                                )}
-                                {entry.status && (
-                                  <span className="text-xs text-muted-foreground">
-                                    {entry.status === "fail"
-                                      ? "Falla"
-                                      : "Revisión"}
-                                  </span>
-                                )}
-                              </div>
-                              {entry.description && (
-                                <p className="text-foreground mt-0.5 line-clamp-2">
-                                  {entry.description}
-                                </p>
-                              )}
-                              {entry.notes && (
-                                <p className="text-muted-foreground text-xs mt-1">
-                                  {entry.notes}
-                                </p>
-                              )}
-                            </div>
-                          ))}
-                      </div>
-                    </div>
-                  );
-                })()}
-              </CardContent>
-            </Card>
+                  }
+                  return []
+                })() as Array<{ date?: string; checklist?: string; description?: string; notes?: string; status?: string }>
+              }
+            />
           )}
           
           {requiredParts.length > 0 && (
             <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center justify-between">
+              <CardHeader className="pb-2 px-4 pt-4">
+                <CardTitle className="text-base flex items-center justify-between">
                   Repuestos requeridos
                   <Badge variant={
                     partsSource === 'confirmed' ? 'default' : 
@@ -739,13 +565,13 @@ export default async function WorkOrderDetailsPage({
                      partsSource === 'quoted' ? 'Cotizados' : 'Estimados'}
                   </Badge>
                 </CardTitle>
-                <CardDescription>
+                <CardDescription className="text-xs">
                   {partsSource === 'confirmed' ? 'Repuestos confirmados con comprobantes de compra' :
                    partsSource === 'quoted' ? 'Repuestos cotizados por proveedor' :
                    'Materiales y repuestos estimados para esta orden'}
                 </CardDescription>
               </CardHeader>
-              <CardContent>
+              <CardContent className="px-4 pb-4 pt-0">
                 {/* Note: Inventory consumption is handled through Purchase Orders, not directly from Work Orders */}
                 {/* Mobile/Compact View */}
                 <div className="space-y-3 md:hidden">
@@ -852,16 +678,16 @@ export default async function WorkOrderDetailsPage({
           {/* Evidence Section */}
           {allEvidence.length > 0 && (
             <Card className="evidence-section no-print">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Camera className="h-5 w-5" />
+              <CardHeader className="pb-2 px-4 pt-4">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Camera className="h-4 w-4" />
                   Evidencia Fotográfica
                 </CardTitle>
-                <CardDescription>
+                <CardDescription className="text-xs">
                   Documentación visual del proceso de trabajo
                 </CardDescription>
               </CardHeader>
-              <CardContent>
+              <CardContent className="px-4 pb-4 pt-0">
                 <div className="space-y-6">
                   {creationPhotos.length > 0 && (
                     <div>
@@ -906,174 +732,84 @@ export default async function WorkOrderDetailsPage({
             </Card>
           )}
         </div>
-        
-        <div className="space-y-6">
-          {/* Related entities quick access */}
-          {extendedWorkOrder.asset && (
-            <Card className="no-print">
-              <CardHeader>
-                <CardTitle>Relaciones</CardTitle>
-                <CardDescription>Accesos a entidades relacionadas</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <EntityRelations
-                  assetId={extendedWorkOrder.asset.id}
-                  workOrderId={id}
-                  serviceOrderId={relatedServiceOrder?.id || null}
-                  incidentId={extendedWorkOrder.incident_id || null}
-                  purchaseOrderId={extendedWorkOrder.purchase_order_id || null}
-                />
-              </CardContent>
-            </Card>
-          )}
-          <Card>
-            <CardHeader>
-              <CardTitle>Activo</CardTitle>
-              <CardDescription>Información del equipo</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {extendedWorkOrder.asset ? (
-                <>
-                  <div className="space-y-1">
-                    <p className="text-sm font-medium text-muted-foreground">Nombre</p>
-                    <p className="font-medium">{extendedWorkOrder.asset.name}</p>
-                  </div>
-                  
-                  <div className="space-y-1">
-                    <p className="text-sm font-medium text-muted-foreground">ID</p>
-                    <p>{extendedWorkOrder.asset.asset_id}</p>
-                  </div>
-                  
-                  <div className="space-y-1">
-                    <p className="text-sm font-medium text-muted-foreground">Ubicación</p>
-                    <p>{extendedWorkOrder.asset.location || "No especificada"}</p>
-                  </div>
-                  
-                  <div className="space-y-1">
-                    <p className="text-sm font-medium text-muted-foreground">Horas Actuales</p>
-                    <p>{Number(extendedWorkOrder.asset.current_hours) || 0} hrs</p>
-                  </div>
-                  
-                  <Button variant="outline" asChild className="w-full mt-2 no-print">
-                    <Link href={`/activos/${extendedWorkOrder.asset.id}`}>
-                      Ver detalle completo
-                    </Link>
-                  </Button>
-                </>
-              ) : (
-                <p className="text-muted-foreground">No hay activo asignado</p>
-              )}
-            </CardContent>
-          </Card>
-          
-          {purchaseOrder && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Orden de Compra</CardTitle>
-                <CardDescription>OC relacionada a esta orden de trabajo</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-1">
-                  <p className="text-sm font-medium text-muted-foreground">Número</p>
-                  <p className="font-medium">{purchaseOrder.order_id}</p>
-                </div>
-                
-                <div className="space-y-1">
-                  <p className="text-sm font-medium text-muted-foreground">Proveedor</p>
-                  <p>{purchaseOrder.supplier}</p>
-                </div>
-                
-                <div className="space-y-1">
-                  <p className="text-sm font-medium text-muted-foreground">Estado</p>
-                  <Badge>{purchaseOrder.status}</Badge>
-                </div>
-                
-                <div className="space-y-1">
-                  <p className="text-sm font-medium text-muted-foreground">Monto</p>
-                  <p className="font-medium">${Number(purchaseOrder.total_amount).toFixed(2)}</p>
-                </div>
-                
-                <Button variant="outline" asChild className="w-full mt-2 no-print">
-                  <Link href={`/compras/${purchaseOrder.id}`}>
-                    Ver orden de compra
-                  </Link>
-                </Button>
-              </CardContent>
-            </Card>
-          )}
-          
-          {/* Actions card */}
-          <Card className="no-print">
-            <CardHeader>
-              <CardTitle>Acciones</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              {extendedWorkOrder.status !== WorkOrderStatus.Completed && (
-                <Button asChild className="w-full">
-                  <Link href={`/ordenes/${id}/completar`}>
-                    <CheckCircle className="mr-2 h-4 w-4" />
-                    Completar OT
-                  </Link>
-                </Button>
-              )}
-              
-              <Button variant="outline" asChild className="w-full">
-                <Link href={`/ordenes/${id}/editar`}>
-                  <Edit className="mr-2 h-4 w-4" />
-                  Editar
-                </Link>
-              </Button>
 
-              {/* Purchase Order Action Logic */}
-              {(() => {
-                const hasPOId = !!extendedWorkOrder.purchase_order_id;
-                const hasRelatedPOs = allPurchaseOrders && allPurchaseOrders.length > 0;
-                const hasRequiredParts = requiredParts.length > 0;
-                
-                // Show "Ver OC Existente" if there are any purchase orders
-                if (hasPOId || hasRelatedPOs) {
-                  const targetPOId = extendedWorkOrder.purchase_order_id || allPurchaseOrders?.[0]?.id;
-                  return (
-                    <Button variant="outline" asChild className="w-full">
-                      <Link href={`/compras/${targetPOId}`}>
-                        <ShoppingCart className="mr-2 h-4 w-4" />
-                        Ver OC Existente
-                      </Link>
-                    </Button>
-                  );
-                }
-                
-                // Show "Generar OC" only if no POs exist and has required parts
-                if (!hasPOId && !hasRelatedPOs && hasRequiredParts) {
-                  return (
-                    <Button variant="outline" asChild className="w-full">
-                      <Link href={`/ordenes/${id}/generar-oc`}>
-                        <ShoppingCart className="mr-2 h-4 w-4" />
-                        Generar OC
-                      </Link>
-                    </Button>
-                  );
-                }
-                
-                return null;
-              })()}
-              
-              <WorkOrderPrintHandler workOrderId={id} className="w-full" />
-            </CardContent>
-          </Card>
+        {hasSidebarContent && (
+          <div className="flex flex-col gap-5 xl:sticky xl:top-4 xl:self-start">
+            <WorkOrderRelationshipHub
+            assetId={null}
+            workOrderId={null}
+            serviceOrderId={relatedServiceOrder?.id ?? null}
+            incidentId={extendedWorkOrder.incident_id ?? null}
+            checklistId={
+              /* Hide when checklist is the origin — already shown in Origen section */
+              (!!extendedWorkOrder.checklist_id &&
+                !(
+                  extendedWorkOrder.type === MaintenanceType.Preventive ||
+                  extendedWorkOrder.type === "Preventivo" ||
+                  extendedWorkOrder.type === "preventive"
+                ))
+                ? null
+                : (extendedWorkOrder.preventive_checklist_id ?? extendedWorkOrder.checklist_id ?? null)
+            }
+            purchaseOrderId={extendedWorkOrder.purchase_order_id ?? null}
+            isIncidentOrigin={!!extendedWorkOrder.incident_id}
+            isChecklistOrigin={
+              !!extendedWorkOrder.checklist_id &&
+              !(
+                extendedWorkOrder.type === MaintenanceType.Preventive ||
+                extendedWorkOrder.type === "Preventivo" ||
+                extendedWorkOrder.type === "preventive"
+              )
+            }
+            checklistOriginName={originData.originName}
+            />
+
+            {purchaseOrder && (
+              <Card>
+                <CardHeader className="pb-2 px-4 pt-4">
+                  <CardTitle className="text-base">Orden de Compra</CardTitle>
+                  <CardDescription className="text-xs">OC relacionada a esta orden de trabajo</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3 px-4 pb-4 pt-0">
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium text-muted-foreground">Número</p>
+                    <p className="font-medium">{purchaseOrder.order_id}</p>
+                  </div>
+                  
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium text-muted-foreground">Proveedor</p>
+                    <p>{purchaseOrder.supplier}</p>
+                  </div>
+                  
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium text-muted-foreground">Estado</p>
+                    <Badge>{purchaseOrder.status}</Badge>
+                  </div>
+                  
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium text-muted-foreground">Monto</p>
+                    <p className="font-medium">${Number(purchaseOrder.total_amount).toFixed(2)}</p>
+                  </div>
+                  
+                  <Button variant="outline" size="sm" asChild className="w-full no-print">
+                    <Link href={`/compras/${purchaseOrder.id}`}>Ver orden de compra</Link>
+                  </Button>
+                </CardContent>
+              </Card>
+            )}
           
           {/* Completion information card - show if work order is completed */}
           {isCompleted && (
-            <Card className="mt-4">
-              <CardHeader>
-                <CardTitle>Información de completado</CardTitle>
-                <CardDescription>Detalles sobre el cierre de esta OT</CardDescription>
+            <Card>
+              <CardHeader className="pb-2 px-4 pt-4">
+                <CardTitle className="text-base">Información de completado</CardTitle>
+                <CardDescription className="text-xs">Detalles sobre el cierre de esta OT</CardDescription>
               </CardHeader>
-              <CardContent className="space-y-4">
+              <CardContent className="space-y-3 px-4 pb-4 pt-0">
                 {extendedWorkOrder.completed_at && (
                   <div className="space-y-1">
-                    <p className="text-sm font-medium text-muted-foreground">Fecha de completado</p>
-                    <p className="flex items-center">
+                    <p className="text-xs font-medium text-muted-foreground">Fecha de completado</p>
+                    <p className="flex items-center text-sm">
                       <CheckCircle className="h-4 w-4 mr-2 text-green-500" />
                       {formatDate(extendedWorkOrder.completed_at as string)}
                     </p>
@@ -1084,41 +820,41 @@ export default async function WorkOrderDetailsPage({
                   <>
                     {maintenanceHistory.technician && (
                       <div className="space-y-1">
-                        <p className="text-sm font-medium text-muted-foreground">Técnico ejecutor</p>
-                        <p>{maintenanceHistory.technician}</p>
+                        <p className="text-xs font-medium text-muted-foreground">Técnico ejecutor</p>
+                        <p className="text-sm">{maintenanceHistory.technician}</p>
                       </div>
                     )}
                     
                     {maintenanceHistory.actions && (
                       <div className="space-y-1">
-                        <p className="text-sm font-medium text-muted-foreground">Resolución</p>
+                        <p className="text-xs font-medium text-muted-foreground">Resolución</p>
                         <p className="text-sm">{maintenanceHistory.actions}</p>
                       </div>
                     )}
                     
                     {maintenanceHistory.findings && (
                       <div className="space-y-1">
-                        <p className="text-sm font-medium text-muted-foreground">Observaciones</p>
+                        <p className="text-xs font-medium text-muted-foreground">Observaciones</p>
                         <p className="text-sm">{maintenanceHistory.findings}</p>
                       </div>
                     )}
                     
                     {maintenanceHistory.labor_hours && (
                       <div className="space-y-1">
-                        <p className="text-sm font-medium text-muted-foreground">Horas de trabajo</p>
-                        <p>{Number(maintenanceHistory.labor_hours)} hrs</p>
+                        <p className="text-xs font-medium text-muted-foreground">Horas de trabajo</p>
+                        <p className="text-sm">{Number(maintenanceHistory.labor_hours)} hrs</p>
                       </div>
                     )}
                     
                     {maintenanceHistory.total_cost && (
                       <div className="space-y-1">
-                        <p className="text-sm font-medium text-muted-foreground">Costo total</p>
-                        <p className="font-medium">${Number(maintenanceHistory.total_cost).toFixed(2)}</p>
+                        <p className="text-xs font-medium text-muted-foreground">Costo total</p>
+                        <p className="text-sm font-medium">${Number(maintenanceHistory.total_cost).toFixed(2)}</p>
                       </div>
                     )}
                     
                     {extendedWorkOrder.asset && (
-                      <Button variant="outline" asChild className="w-full mt-4 no-print">
+                      <Button variant="outline" size="sm" asChild className="w-full no-print">
                         <Link href={`/activos/${extendedWorkOrder.asset.id}/historial`}>
                           Ver historial completo
                         </Link>
@@ -1132,9 +868,9 @@ export default async function WorkOrderDetailsPage({
 
           {/* Required Tasks Section */}
           {requiredTasks.length > 0 && (
-            <Card className="mt-4">
-              <CardHeader>
-                <CardTitle className="flex items-center justify-between">
+            <Card>
+              <CardHeader className="pb-2 px-4 pt-4">
+                <CardTitle className="text-base flex items-center justify-between">
                   Tareas de Mantenimiento
                   {isCompleted && completedTaskIds.length > 0 && (
                     <Badge variant="default">
@@ -1142,11 +878,11 @@ export default async function WorkOrderDetailsPage({
                     </Badge>
                   )}
                 </CardTitle>
-                <CardDescription>
+                <CardDescription className="text-xs">
                   Tareas requeridas del plan de mantenimiento
                 </CardDescription>
               </CardHeader>
-              <CardContent>
+              <CardContent className="px-4 pb-4 pt-0">
                 <div className="space-y-3">
                   {requiredTasks.map((task: { id: string; description: string; type?: string; estimated_time?: number; requires_specialist?: boolean; parts?: Array<{ name: string; part_number?: string; quantity: number }> }, index: number) => {
                     const taskCompleted = completedTaskIds.includes(task.id)
@@ -1207,10 +943,15 @@ export default async function WorkOrderDetailsPage({
           )}
           
           {/* Additional expenses section */}
-          {workOrder.status === WorkOrderStatus.Completed && (
-            <div className="mt-6">
-              <h2 className="text-lg font-semibold mb-2">Gastos Adicionales</h2>
-              <div className="space-y-4">
+            {workOrder.status === WorkOrderStatus.Completed && (
+              <Card>
+                <CardHeader className="pb-2 px-4 pt-4">
+                  <CardTitle className="text-base">Gastos Adicionales</CardTitle>
+                  <CardDescription className="text-xs">
+                    Costos aprobados o pendientes derivados del cierre de la OT
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4 px-4 pb-4 pt-0">
                 {additionalExpenses && additionalExpenses.length > 0 ? (
                   <>
                     {/* Mobile/Compact View */}
@@ -1334,11 +1075,13 @@ export default async function WorkOrderDetailsPage({
                 ) : (
                   <p className="text-muted-foreground italic">No hay gastos adicionales registrados para esta orden</p>
                 )}
-              </div>
-            </div>
-          )}
-        </div>
+                </CardContent>
+              </Card>
+            )}
+          </div>
+        )}
       </div>
     </div>
+    </WorkOrderDetailsRouter>
   )
 }
