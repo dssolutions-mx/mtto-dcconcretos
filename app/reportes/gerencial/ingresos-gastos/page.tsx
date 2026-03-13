@@ -9,7 +9,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch'
 import { RefreshCw, Download, AlertCircle, Settings, ChevronRight, ChevronDown, Loader2, ArrowUpRight, ArrowDownRight, Minus } from 'lucide-react'
 import { useRouter } from 'next/navigation'
-import * as XLSX from 'xlsx'
 import { useToast } from '@/hooks/use-toast'
 
 type PlantData = {
@@ -312,10 +311,11 @@ export default function IngresosGastosPage() {
     })
   }
 
-  const exportToExcel = () => {
+  const exportToExcel = async () => {
     if (!data || plants.length === 0) return
 
-    const workbook = XLSX.utils.book_new()
+    const ExcelJS = await import('exceljs')
+    const workbook = new ExcelJS.Workbook()
     
     // Prepare data for export
     const exportData: any[] = []
@@ -476,151 +476,142 @@ export default function IngresosGastosPage() {
       addRow('EBITDA con bombeo %', p => p.ebitda_con_bombeo_pct || 0, formatPercent, 'ebitda_con_bombeo_pct')
     }
 
-    // Create worksheet
-    const worksheet = XLSX.utils.aoa_to_sheet(exportData)
-    
+    // Create worksheet with ExcelJS
+    const worksheet = workbook.addWorksheet('Ingresos vs Gastos')
+
+    // Add all rows from exportData
+    exportData.forEach((row) => {
+      worksheet.addRow(row)
+    })
+
     // Set column widths - wider for metric column, narrower for data columns
-    const columnWidths = [
-      { wch: 38 }, // Metric column
-      ...Array(headers.length - 1).fill({ wch: 16 }) // Data columns
+    worksheet.columns = [
+      { width: 38 }, // Metric column
+      ...Array.from({ length: headers.length - 1 }, () => ({ width: 16 }))
     ]
-    worksheet['!cols'] = columnWidths
 
-    // Freeze first row (header) and first column (metrics)
-    worksheet['!freeze'] = { xSplit: 1, ySplit: 4, topLeftCell: 'B5', activePane: 'bottomRight', state: 'frozen' }
+    // Freeze first 4 rows and first column (header + title rows)
+    worksheet.views = [
+      { state: 'frozen', xSplit: 1, ySplit: 4, topLeftCell: 'B5' }
+    ]
 
-    // Default border style
-    const defaultBorder = {
-      top: { style: 'thin', color: { rgb: 'CCCCCC' } },
-      bottom: { style: 'thin', color: { rgb: 'CCCCCC' } },
-      left: { style: 'thin', color: { rgb: 'CCCCCC' } },
-      right: { style: 'thin', color: { rgb: 'CCCCCC' } }
+    // ExcelJS border/color helpers (argb format)
+    const thinBorder = {
+      top: { style: 'thin' as const, color: { argb: 'FFCCCCCC' } },
+      bottom: { style: 'thin' as const, color: { argb: 'FFCCCCCC' } },
+      left: { style: 'thin' as const, color: { argb: 'FFCCCCCC' } },
+      right: { style: 'thin' as const, color: { argb: 'FFCCCCCC' } }
     }
-
     const thickBorder = {
-      top: { style: 'medium', color: { rgb: '000000' } },
-      bottom: { style: 'medium', color: { rgb: '000000' } },
-      left: { style: 'medium', color: { rgb: '000000' } },
-      right: { style: 'medium', color: { rgb: '000000' } }
+      top: { style: 'medium' as const, color: { argb: 'FF000000' } },
+      bottom: { style: 'medium' as const, color: { argb: 'FF000000' } },
+      left: { style: 'medium' as const, color: { argb: 'FF000000' } },
+      right: { style: 'medium' as const, color: { argb: 'FF000000' } }
     }
 
-    // Apply comprehensive styling
-    const range = XLSX.utils.decode_range(worksheet['!ref'] || 'A1')
-    
-    for (let row = 0; row <= range.e.r; row++) {
-      for (let col = 0; col <= range.e.c; col++) {
-        const cellAddress = XLSX.utils.encode_cell({ r: row, c: col })
-        if (!worksheet[cellAddress]) continue
+    // Apply styling per cell (ExcelJS uses 1-based row/col)
+    for (let row = 1; row <= exportData.length; row++) {
+      const rowData = exportData[row - 1]
+      const rowLabel = (rowData?.[0] as string) || ''
+      const metadata = rowMetadata.find(m => m.rowIndex === row - 1)
+      const isHeaderRow = row === 4
+      const isTitleRow = row === 1 || row === 2
+      const isSectionRow = metadata?.type === 'section'
+      const isTotalRow = metadata?.type === 'total'
+      const totalColIndex = hasComparison ? headers.length - 2 : headers.length // 1-based
+      const deltaColIndex = hasComparison ? headers.length - 1 : -1
+      const deltaPctColIndex = hasComparison ? headers.length : -1
 
-        const metadata = rowMetadata.find(m => m.rowIndex === row)
-        const rowLabel = exportData[row]?.[0] || ''
-        const isHeaderRow = row === 3
-        const isTitleRow = row === 0 || row === 1
-        const isSectionRow = metadata?.type === 'section'
-        const isTotalRow = metadata?.type === 'total'
-        const isMetricCol = col === 0
-        const totalColIndex = hasComparison ? headers.length - 3 : headers.length - 1
-        const deltaColIndex = hasComparison ? headers.length - 2 : -1
-        const deltaPctColIndex = hasComparison ? headers.length - 1 : -1
+      for (let col = 1; col <= headers.length; col++) {
+        const cell = worksheet.getCell(row, col)
+        const isMetricCol = col === 1
         const isTotalCol = col === totalColIndex
         const isDeltaCol = col === deltaColIndex
         const isDeltaPctCol = col === deltaPctColIndex
-        const isDataCell = col > 0 && col < headers.length
+        const isDataCell = col > 1 && col < headers.length
 
-        let cellStyle: any = {
-          border: defaultBorder,
-          alignment: { 
-            horizontal: isMetricCol ? 'left' : 'right', 
-            vertical: 'center',
-            wrapText: true
-          }
+        cell.border = thinBorder
+        cell.alignment = {
+          horizontal: isMetricCol ? 'left' : 'right',
+          vertical: 'middle',
+          wrapText: true
         }
 
         // Title rows
         if (isTitleRow) {
-          cellStyle.font = { bold: true, sz: row === 0 ? 16 : 12, color: { rgb: '1F497D' } }
-          cellStyle.fill = { fgColor: { rgb: 'E7F3FF' } }
-          cellStyle.alignment.horizontal = 'left'
-          if (row === 0) {
-            cellStyle.border = thickBorder
-          }
+          cell.font = { bold: true, size: row === 1 ? 16 : 12, color: { argb: 'FF1F497D' } }
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE7F3FF' } }
+          cell.alignment = { ...cell.alignment, horizontal: 'left' }
+          if (row === 1) cell.border = thickBorder
         }
         // Header row
         else if (isHeaderRow) {
-          cellStyle.font = { bold: true, sz: 11, color: { rgb: 'FFFFFF' } }
-          cellStyle.fill = { fgColor: { rgb: '1F497D' } }
-          cellStyle.alignment.horizontal = 'center'
-          cellStyle.border = thickBorder
+          cell.font = { bold: true, size: 11, color: { argb: 'FFFFFFFF' } }
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1F497D' } }
+          cell.alignment = { ...cell.alignment, horizontal: 'center' }
+          cell.border = thickBorder
         }
         // Section headers
         else if (isSectionRow && isMetricCol) {
-          cellStyle.font = { bold: true, sz: 11, color: { rgb: 'FFFFFF' } }
-          cellStyle.fill = { fgColor: { rgb: '4472C4' } }
-          cellStyle.alignment.horizontal = 'left'
-          cellStyle.border = thickBorder
+          cell.font = { bold: true, size: 11, color: { argb: 'FFFFFFFF' } }
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF4472C4' } }
+          cell.alignment = { ...cell.alignment, horizontal: 'left' }
+          cell.border = thickBorder
         }
         // Total rows
         else if (isTotalRow) {
-          cellStyle.font = { bold: true, sz: 11 }
-          if (isMetricCol) {
-            cellStyle.fill = { fgColor: { rgb: 'E2EFDA' } }
-          } else {
-            cellStyle.fill = { fgColor: { rgb: 'FFF2CC' } }
+          cell.font = { bold: true, size: 11 }
+          cell.fill = {
+            type: 'pattern',
+            pattern: 'solid',
+            fgColor: { argb: isMetricCol ? 'FFE2EFDA' : 'FFFFF2CC' }
           }
-          cellStyle.border = thickBorder
+          cell.border = thickBorder
         }
         // Regular metric rows
         else if (isMetricCol && metadata?.type === 'metric') {
-          cellStyle.font = { sz: 10 }
-          cellStyle.fill = { fgColor: { rgb: 'F8F9FA' } }
+          cell.font = { size: 10 }
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF8F9FA' } }
         }
         // Data cells
         else if (isDataCell && metadata?.type === 'metric') {
-          cellStyle.font = { sz: 10 }
-          cellStyle.numFmt = '#,##0.00' // Number format with thousands separator
+          cell.font = { size: 10 }
+          cell.numFmt = '#,##0.00'
         }
-        // Total column cells
+        // Delta/delta % columns
         else if ((isDeltaCol || isDeltaPctCol) && metadata?.type === 'metric') {
-          cellStyle.font = { sz: 10, italic: true }
-          cellStyle.fill = { fgColor: { rgb: 'F3F4F6' } }
-          cellStyle.numFmt = rowLabel.includes('%') || isDeltaPctCol ? '0.00%' : '$#,##0.00'
+          cell.font = { size: 10, italic: true }
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF3F4F6' } }
+          cell.numFmt = rowLabel.includes('%') || isDeltaPctCol ? '0.00%' : '$#,##0.00'
         }
         else if (isTotalCol && metadata?.type === 'metric') {
-          cellStyle.font = { bold: true, sz: 10 }
-          cellStyle.fill = { fgColor: { rgb: 'E7F3FF' } }
-          cellStyle.numFmt = '#,##0.00'
+          cell.font = { bold: true, size: 10 }
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE7F3FF' } }
+          cell.numFmt = '#,##0.00'
         }
 
-        // Apply number formatting based on content
-        const cellValue = worksheet[cellAddress].v
-        if (typeof cellValue === 'number' && !isMetricCol) {
+        // Number format based on row label
+        const cellVal = cell.value
+        if (typeof cellVal === 'number' && !isMetricCol && metadata?.type === 'metric') {
           if (rowLabel.includes('%')) {
-            cellStyle.numFmt = '0.00%'
+            cell.numFmt = '0.00%'
           } else if (rowLabel.includes('m³') || rowLabel.includes('kg') || rowLabel.includes('días') || rowLabel.includes('cm²')) {
-            cellStyle.numFmt = '#,##0.00'
+            cell.numFmt = '#,##0.00'
           } else {
-            cellStyle.numFmt = '$#,##0.00'
+            cell.numFmt = '$#,##0.00'
           }
         }
-
-        worksheet[cellAddress].s = cellStyle
       }
     }
 
-    // Merge title cells
-    const titleRange = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: 0, c: headers.length - 1 } })
-    if (!worksheet['!merges']) worksheet['!merges'] = []
-    worksheet['!merges'].push({ s: { r: 0, c: 0 }, e: { r: 0, c: headers.length - 1 } })
-    worksheet['!merges'].push({ s: { r: 1, c: 0 }, e: { r: 1, c: headers.length - 1 } })
-
-    // Add worksheet to workbook
-    XLSX.utils.book_append_sheet(workbook, worksheet, `Ingresos vs Gastos`)
+    // Merge title cells (ExcelJS: 1-based)
+    worksheet.mergeCells(1, 1, 1, headers.length)
+    worksheet.mergeCells(2, 1, 2, headers.length)
 
     // Generate Excel file
-    const excelBuffer = XLSX.write(workbook, { type: 'array', bookType: 'xlsx' })
-    const blob = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+    const buffer = await workbook.xlsx.writeBuffer()
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
     
-    // Download
     const url = window.URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.style.display = 'none'

@@ -1,7 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
-import * as XLSX from 'xlsx'
+import ExcelJS from 'exceljs'
+
+function addJsonToSheet(worksheet: ExcelJS.Worksheet, data: Record<string, unknown>[]) {
+  if (data.length === 0) return
+  const headers = Object.keys(data[0])
+  worksheet.addRow(headers)
+  data.forEach((row) => worksheet.addRow(headers.map((h) => row[h])))
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -115,7 +122,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Create Excel workbook
-    const workbook = XLSX.utils.book_new()
+    const workbook = new ExcelJS.Workbook()
 
     // 1. Summary Sheet
     const summaryData = assets.map((asset: any) => {
@@ -251,8 +258,8 @@ export async function POST(request: NextRequest) {
       return summary
     })
 
-    const summaryWorksheet = XLSX.utils.json_to_sheet(summaryData)
-    XLSX.utils.book_append_sheet(workbook, summaryWorksheet, 'Resumen')
+    const summaryWorksheet = workbook.addWorksheet('Resumen')
+    addJsonToSheet(summaryWorksheet, summaryData)
 
     // 2. Detailed Checklists Sheet
     if (filters.includeCompletedChecklists && checklistsData.length > 0) {
@@ -275,8 +282,8 @@ export async function POST(request: NextRequest) {
         }
       })
       
-      const checklistsWorksheet = XLSX.utils.json_to_sheet(checklistsDetailData)
-      XLSX.utils.book_append_sheet(workbook, checklistsWorksheet, 'Detalle Checklists')
+      const checklistsWorksheet = workbook.addWorksheet('Detalle Checklists')
+      addJsonToSheet(checklistsWorksheet, checklistsDetailData)
     }
 
     // 3. Maintenance History Sheet
@@ -298,8 +305,8 @@ export async function POST(request: NextRequest) {
         }
       })
       
-      const maintenanceWorksheet = XLSX.utils.json_to_sheet(maintenanceDetailData)
-      XLSX.utils.book_append_sheet(workbook, maintenanceWorksheet, 'Historial Mantenimiento')
+      const maintenanceWorksheet = workbook.addWorksheet('Historial Mantenimiento')
+      addJsonToSheet(maintenanceWorksheet, maintenanceDetailData)
     }
 
     // 4. Analytics Sheet with calculations
@@ -341,8 +348,8 @@ export async function POST(request: NextRequest) {
       }
     })
 
-    const analyticsWorksheet = XLSX.utils.json_to_sheet(analyticsData)
-    XLSX.utils.book_append_sheet(workbook, analyticsWorksheet, 'Análisis')
+    const analyticsWorksheet = workbook.addWorksheet('Análisis')
+    addJsonToSheet(analyticsWorksheet, analyticsData)
 
     // 5. Operational Efficiency Sheet
     const efficiencyData = assets.map((asset: any) => {
@@ -393,8 +400,8 @@ export async function POST(request: NextRequest) {
       }
     })
     
-    const efficiencyWorksheet = XLSX.utils.json_to_sheet(efficiencyData)
-    XLSX.utils.book_append_sheet(workbook, efficiencyWorksheet, 'Eficiencia Operacional')
+    const efficiencyWorksheet = workbook.addWorksheet('Eficiencia Operacional')
+    addJsonToSheet(efficiencyWorksheet, efficiencyData)
 
     // 6. Custom Parameters Sheet
     if (customParameters.length > 0 && assetParameters.length > 0) {
@@ -418,13 +425,13 @@ export async function POST(request: NextRequest) {
       })
 
       if (customParamsData.length > 0) {
-        const customParamsWorksheet = XLSX.utils.json_to_sheet(customParamsData)
-        XLSX.utils.book_append_sheet(workbook, customParamsWorksheet, 'Parámetros Personalizados')
+        const customParamsWorksheet = workbook.addWorksheet('Parámetros Personalizados')
+        addJsonToSheet(customParamsWorksheet, customParamsData)
       }
     }
 
     // Generate Excel buffer
-    const excelBuffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' })
+    const excelBuffer = await workbook.xlsx.writeBuffer()
 
     // Return Excel file
     return new NextResponse(excelBuffer, {

@@ -22,7 +22,6 @@ import {
 import { cn } from "@/lib/utils"
 import { useDieselStore } from '@/store/diesel-store'
 import { DieselExcelRow } from '@/types/diesel'
-import * as XLSX from 'xlsx'
 import DieselPreviewEnhanced from './DieselPreviewEnhanced'
 import { buildEnhancedRow, groupIntoPlantBatches } from '@/lib/diesel-parser-utils'
 import { useAuthZustand } from "@/hooks/use-auth-zustand"
@@ -192,15 +191,21 @@ export function ExcelUploader({ productType, onDataParsed, onBatchCreated }: Exc
     return parsedRows
   }, [expectedProductCode])
 
-  // Parse XLSX (.xlsx/.xls) using SheetJS
+  // Parse XLSX (.xlsx/.xls) using ExcelJS
   const parseXLSXContent = useCallback(async (file: File): Promise<DieselExcelRow[]> => {
     const batchId = generateBatchId()
     const arrayBuffer = await file.arrayBuffer()
-    const workbook = XLSX.read(arrayBuffer, { cellDates: true })
+    const ExcelJS = (await import('exceljs')).default
+    const workbook = new ExcelJS.Workbook()
+    await workbook.xlsx.load(arrayBuffer)
     // Prefer a sheet that mentions diesel, else take first
-    const sheetName = workbook.SheetNames.find(n => normalize(n).includes('diesel')) || workbook.SheetNames[0]
-    const worksheet = workbook.Sheets[sheetName]
-    const rows: any[][] = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' }) as any[][]
+    const worksheet = workbook.worksheets.find(ws => normalize(ws.name).includes('diesel')) ?? workbook.worksheets[0]
+    if (!worksheet) throw new Error('Excel file has no worksheets')
+    const rows: any[][] = []
+    worksheet.eachRow((row, rowNumber) => {
+      const values = row.values as unknown[]
+      rows.push((values?.slice(1) ?? []).map(v => v ?? '')) // ExcelJS 1-indexed, first is empty
+    })
     if (!rows || rows.length < 2) {
       throw new Error('Excel sheet appears to be empty')
     }
