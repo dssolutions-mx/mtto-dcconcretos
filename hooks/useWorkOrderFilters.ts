@@ -4,8 +4,10 @@ import { useState, useCallback, useEffect } from "react"
 import { useSearchParams, useRouter, usePathname } from "next/navigation"
 import { getStatusesForTab, normalizeTab } from "@/lib/work-order-status-tabs"
 
-/** Sort options: default (created_at desc) | priority (by Prioridad field) */
-export type WorkOrderSortBy = "default" | "priority"
+/** Sort options: default (created_at desc) | priority | asset | created | orderId */
+export type WorkOrderSortBy = "default" | "priority" | "asset" | "created" | "orderId"
+
+export type WorkOrderSortDir = "asc" | "desc"
 
 /** Filter values for work orders list */
 export interface WorkOrderFilters {
@@ -21,6 +23,7 @@ export interface WorkOrderFilters {
   toDate: Date | undefined
   groupByAsset: boolean
   sortBy: WorkOrderSortBy
+  sortDir: WorkOrderSortDir
 }
 
 const DEFAULT_FILTERS: WorkOrderFilters = {
@@ -36,6 +39,7 @@ const DEFAULT_FILTERS: WorkOrderFilters = {
   toDate: undefined,
   groupByAsset: false,
   sortBy: "default",
+  sortDir: "desc",
 }
 
 /** Work order shape needed for filtering (extended with origin/recurrence) */
@@ -48,6 +52,8 @@ export interface WorkOrderForFilter {
   priority?: string | null
   description?: string | null
   planned_date?: string | null
+  created_at?: string | null
+  order_id?: string | null
   assigned_to?: string | null
   incident_id?: string | null
   checklist_id?: string | null
@@ -122,11 +128,11 @@ export function applyWorkOrderFilters<T extends WorkOrderForFilter>(
     )
   }
 
-  // Date range
+  // Date range (uses created_at for consistency with Creado column)
   if (filters.fromDate) {
     const from = filters.fromDate.getTime()
     result = result.filter((o) => {
-      const d = o.planned_date ? new Date(o.planned_date).getTime() : 0
+      const d = o.created_at ? new Date(o.created_at).getTime() : 0
       return d >= from
     })
   }
@@ -135,7 +141,7 @@ export function applyWorkOrderFilters<T extends WorkOrderForFilter>(
     to.setHours(23, 59, 59, 999)
     const toTs = to.getTime()
     result = result.filter((o) => {
-      const d = o.planned_date ? new Date(o.planned_date).getTime() : 0
+      const d = o.created_at ? new Date(o.created_at).getTime() : 0
       return d <= toTs
     })
   }
@@ -162,7 +168,8 @@ export function applyWorkOrderFilters<T extends WorkOrderForFilter>(
     })
   }
 
-  // Sort: "priority" = by Prioridad (Crítica, Alta, Media, Baja)
+  // Sort
+  const dir = filters.sortDir === "asc" ? 1 : -1
   if (filters.sortBy === "priority") {
     const priorityOrder: Record<string, number> = {
       Crítica: 4,
@@ -174,7 +181,31 @@ export function applyWorkOrderFilters<T extends WorkOrderForFilter>(
     result.sort((a, b) => {
       const aPri = priorityOrder[a.priority ?? ""] ?? 0
       const bPri = priorityOrder[b.priority ?? ""] ?? 0
-      return bPri - aPri
+      return (bPri - aPri) * dir
+    })
+  } else if (filters.sortBy === "asset") {
+    result.sort((a, b) => {
+      const aVal = (a.asset?.asset_id ?? a.asset_id ?? "").toLowerCase()
+      const bVal = (b.asset?.asset_id ?? b.asset_id ?? "").toLowerCase()
+      return aVal.localeCompare(bVal) * dir
+    })
+  } else if (filters.sortBy === "created") {
+    result.sort((a, b) => {
+      const aTs = a.created_at ? new Date(a.created_at).getTime() : 0
+      const bTs = b.created_at ? new Date(b.created_at).getTime() : 0
+      return (aTs - bTs) * dir
+    })
+  } else if (filters.sortBy === "orderId") {
+    result.sort((a, b) => {
+      const aVal = (a.order_id ?? "").toLowerCase()
+      const bVal = (b.order_id ?? "").toLowerCase()
+      return aVal.localeCompare(bVal) * dir
+    })
+  } else if (filters.sortBy === "default") {
+    result.sort((a, b) => {
+      const aTs = a.created_at ? new Date(a.created_at).getTime() : 0
+      const bTs = b.created_at ? new Date(b.created_at).getTime() : 0
+      return bTs - aTs // newest first
     })
   }
 
@@ -210,7 +241,11 @@ export function useWorkOrderFilters() {
     const toDate = parseDateParam(searchParams.get("to"))
     const group = searchParams.get("group")
     const groupByAsset = group === "1" || group === "true"
-    const sortBy = (searchParams.get("sort") === "priority" ? "priority" : "default") as WorkOrderSortBy
+    const sortParam = searchParams.get("sort")
+    const sortBy = ["priority", "asset", "created", "orderId"].includes(sortParam ?? "")
+      ? (sortParam as WorkOrderSortBy)
+      : "default"
+    const sortDir = searchParams.get("sortDir") === "asc" ? "asc" : "desc"
 
     return {
       ...DEFAULT_FILTERS,
@@ -226,6 +261,7 @@ export function useWorkOrderFilters() {
       toDate,
       groupByAsset,
       sortBy,
+      sortDir,
     }
   })
 
@@ -243,7 +279,11 @@ export function useWorkOrderFilters() {
     const toDate = parseDateParam(searchParams.get("to"))
     const group = searchParams.get("group")
     const groupByAsset = group === "1" || group === "true"
-    const sortBy = (searchParams.get("sort") === "priority" ? "priority" : "default") as WorkOrderSortBy
+    const sortParam = searchParams.get("sort")
+    const sortBy = ["priority", "asset", "created", "orderId"].includes(sortParam ?? "")
+      ? (sortParam as WorkOrderSortBy)
+      : "default"
+    const sortDir = searchParams.get("sortDir") === "asc" ? "asc" : "desc"
 
     setFiltersState((prev) => ({
       ...prev,
@@ -258,6 +298,7 @@ export function useWorkOrderFilters() {
       toDate,
       groupByAsset,
       sortBy,
+      sortDir,
     }))
   }, [searchParams])
 
@@ -282,7 +323,12 @@ export function useWorkOrderFilters() {
       if (next.toDate !== undefined) set("to", dateToParam(next.toDate))
       if (next.groupByAsset !== undefined)
         set("group", next.groupByAsset ? "1" : "")
-      if (next.sortBy !== undefined) set("sort", next.sortBy === "priority" ? "priority" : "")
+      if (next.sortBy !== undefined) {
+        set("sort", next.sortBy !== "default" ? next.sortBy : "")
+        if (next.sortBy === "default") params.delete("sortDir")
+      }
+      if (next.sortDir !== undefined && next.sortBy !== "default")
+        set("sortDir", next.sortDir === "asc" ? "asc" : "")
 
       const qs = params.toString()
       const url = qs ? `${pathname}?${qs}` : pathname
@@ -291,11 +337,32 @@ export function useWorkOrderFilters() {
     [pathname, router, searchParams]
   )
 
+  const URL_KEYS = [
+    "tab",
+    "assetId",
+    "assetName",
+    "technicianId",
+    "typeFilter",
+    "originFilter",
+    "recurrentesOnly",
+    "fromDate",
+    "toDate",
+    "groupByAsset",
+    "sortBy",
+    "sortDir",
+  ] as const
+
   const setFilters = useCallback(
     (patch: Partial<WorkOrderFilters>) => {
       setFiltersState((prev) => {
         const next = { ...prev, ...patch }
-        updateUrl(next)
+        // Only update URL when URL-relevant keys change — avoids router.replace on every search keystroke
+        const hasUrlRelevantChange = (Object.keys(patch) as (keyof WorkOrderFilters)[]).some((k) =>
+          URL_KEYS.includes(k)
+        )
+        if (hasUrlRelevantChange) {
+          updateUrl(next)
+        }
         return next
       })
     },
@@ -313,6 +380,7 @@ export function useWorkOrderFilters() {
   const isTypeAll = !filters.typeFilter || filters.typeFilter === "all"
   const isOriginAll = !filters.originFilter || filters.originFilter === "all"
 
+  // Sort is a view preference, not a filter — exclude from hasActiveFilters
   const hasActiveFilters =
     !!filters.assetId ||
     !!filters.technicianId ||
@@ -321,8 +389,7 @@ export function useWorkOrderFilters() {
     filters.recurrentesOnly ||
     !!filters.fromDate ||
     !!filters.toDate ||
-    filters.groupByAsset ||
-    filters.sortBy === "priority"
+    filters.groupByAsset
 
   const activeFilterCount = [
     filters.assetId,
@@ -332,7 +399,6 @@ export function useWorkOrderFilters() {
     filters.recurrentesOnly,
     filters.fromDate || filters.toDate,
     filters.groupByAsset,
-    filters.sortBy === "priority",
   ].filter(Boolean).length
 
   return {

@@ -440,7 +440,7 @@ function FilterChipsSection({
       filters.technicianId)
 
   return (
-    <div className="flex flex-wrap items-center gap-2" role="status" aria-label={`Filtros aplicados: ${[filters.assetId, filters.technicianId, filters.typeFilter !== "all", filters.originFilter !== "all", filters.recurrentesOnly, filters.fromDate || filters.toDate, filters.groupByAsset, filters.sortBy === "priority"].filter(Boolean).length}`}>
+    <div className="flex flex-wrap items-center gap-2" role="status" aria-label={`Filtros aplicados: ${[filters.assetId, filters.technicianId, filters.typeFilter !== "all", filters.originFilter !== "all", filters.recurrentesOnly, filters.fromDate || filters.toDate, filters.groupByAsset].filter(Boolean).length}`}>
       {assetLabel && (
         <FilterChip
           label={`Activo: ${assetLabel}`}
@@ -490,13 +490,6 @@ function FilterChipsSection({
           label="Agrupar por activo"
           onClear={() => onFiltersChange({ groupByAsset: false })}
           ariaLabel="Quitar agrupación"
-        />
-      )}
-      {filters.sortBy === "priority" && (
-        <FilterChip
-          label="Ordenar: Por prioridad"
-          onClear={() => onFiltersChange({ sortBy: "default" })}
-          ariaLabel="Quitar orden por urgencia"
         />
       )}
     </div>

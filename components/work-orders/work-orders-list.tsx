@@ -4,9 +4,10 @@ import { useState, useEffect, useMemo } from "react"
 import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge, badgeVariants } from "@/components/ui/badge"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { User, AlertTriangle, ShoppingCart, Calendar, Package, Repeat } from "lucide-react"
+import { User, AlertTriangle, ShoppingCart, Calendar, Package, Repeat, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react"
 import { createClient } from "@/lib/supabase"
 import { useIsMobile } from "@/hooks/use-mobile"
 import Link from "next/link"
@@ -23,6 +24,7 @@ import { useWorkOrderFilters, applyWorkOrderFilters } from "@/hooks/useWorkOrder
 import { countByStatusSegment } from "@/lib/work-order-status-tabs"
 import { WorkOrdersFilterBar } from "@/components/work-orders/WorkOrdersFilterBar"
 import type { WorkOrderSummaryMetrics } from "@/components/work-orders/WorkOrdersSummaryRibbon"
+import type { WorkOrderFilters, WorkOrderSortBy, WorkOrderSortDir } from "@/hooks/useWorkOrderFilters"
 import { cn } from "@/lib/utils"
 import { PullToRefresh } from "@/components/ui/pull-to-refresh"
 import {
@@ -156,27 +158,6 @@ function getPurchaseOrderStatusClass(status: string) {
   }
 }
 
-/** Priority rank for sorting: higher = more important */
-function getPriorityRank(priority: string | null): number {
-  switch (priority) {
-    case ServiceOrderPriority.Critical:
-      return 4
-    case ServiceOrderPriority.High:
-      return 3
-    case ServiceOrderPriority.Medium:
-      return 2
-    case ServiceOrderPriority.Low:
-      return 1
-    default:
-      return 2 // treat unknown as Medium
-  }
-}
-
-/** Sort orders by priority: Crítica/Emergencia first, then Alta, Media, Baja */
-function sortByPriority<T extends WorkOrderWithAsset>(orders: T[]): T[] {
-  return [...orders].sort((a, b) => getPriorityRank(b.priority) - getPriorityRank(a.priority))
-}
-
 // Mobile-optimized WorkOrder Card Component
 function WorkOrderCard({ 
   order, 
@@ -288,13 +269,24 @@ function WorkOrderCard({
           <span className="truncate">{getTechnicianName(order.assigned_to)}</span>
         </div>
         
-        {/* Date */}
-        {order.planned_date && (
-          <div className="flex items-center gap-2 text-sm">
-            <Calendar className="h-4 w-4 text-muted-foreground shrink-0" />
-            <span className="truncate">{formatDate(order.planned_date)}</span>
-          </div>
-        )}
+        {/* Creation date + recurrence tooltip */}
+        <div className="flex items-center gap-2 text-sm">
+          <Calendar className="h-4 w-4 text-muted-foreground shrink-0" />
+          {(() => {
+            const created = order.created_at ? formatDate(order.created_at) : '—'
+            const hasRecurrence = getRecurrenceCount(order) !== null
+            const lastRecurrence = order.last_escalation_date ? formatDate(order.last_escalation_date) : null
+            if (hasRecurrence && lastRecurrence) {
+              return (
+                <Tooltip>
+                  <TooltipTrigger asChild><span className="truncate cursor-help">{created}</span></TooltipTrigger>
+                  <TooltipContent side="top" className="text-xs">Última recurrencia: {lastRecurrence}</TooltipContent>
+                </Tooltip>
+              )
+            }
+            return <span className="truncate">{created}</span>
+          })()}
+        </div>
         
         {/* Purchase Order Status */}
         {order.purchase_order_id && (
@@ -346,7 +338,8 @@ export function WorkOrdersList() {
     activeFilterCount,
   } = useWorkOrderFilters()
 
-  const [workOrders, setWorkOrders] = useState<WorkOrderWithAsset[]>([]) 
+  const [workOrders, setWorkOrders] = useState<WorkOrderWithAsset[]>([])
+  const [totalCount, setTotalCount] = useState(0)
   const [isLoading, setIsLoading] = useState(true)
   const [technicians, setTechnicians] = useState<Record<string, Profile>>({})
   const [purchaseOrderStatuses, setPurchaseOrderStatuses] = useState<Record<string, string>>({})
@@ -354,93 +347,28 @@ export function WorkOrdersList() {
   const [orderToDelete, setOrderToDelete] = useState<WorkOrderWithAsset | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
 
-  // Load work orders function
+  // Load work orders — single API call (server does parallel fetches, minimal payload)
   const loadWorkOrders = async () => {
     try {
       setIsLoading(true)
-      const supabase = createClient()
-
-      // Load work orders (incl. escalation_count, related_issues_count, checklist_id, maintenance_plan_id, incident_id for origin/recurrence)
-      const { data, error } = await supabase
-        .from("work_orders")
-        .select(`
-          *,
-          asset:assets (
-            id,
-            name,
-            asset_id
-          )
-        `)
-        .order("created_at", { ascending: false })
-
-      if (error) {
-        console.error("Error al cargar órdenes de trabajo:", error)
-        throw error
+      const res = await fetch("/api/work-orders/list", { cache: "no-store" })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err.error || `HTTP ${res.status}`)
       }
-
-      setWorkOrders(data as WorkOrderWithAsset[])
-
-      // Get unique technician IDs from work orders
-      const assignedIds = data
-        .filter(order => order.assigned_to)
-        .map(order => order.assigned_to as string)
-      const uniqueAssignedIds = [...new Set(assignedIds)]
-
-      // Load technicians: active ones + assigned to work orders (even if inactive) so names always show
-      const techMap: Record<string, Profile> = {}
-
-      const { data: activeTechs, error: activeTechError } = await supabase
-        .from("profiles")
-        .select("id, nombre, apellido")
-        .eq("is_active", true)
-        .limit(500)
-
-      if (!activeTechError && activeTechs) {
-        activeTechs.forEach(tech => {
-          techMap[tech.id] = tech
-        })
-      }
-
-      if (uniqueAssignedIds.length > 0) {
-        const { data: assignedTechs, error: assignedTechError } = await supabase
-          .from("profiles")
-          .select("id, nombre, apellido")
-          .in("id", uniqueAssignedIds)
-
-        if (!assignedTechError && assignedTechs) {
-          assignedTechs.forEach(tech => {
-            techMap[tech.id] = tech
-          })
-        }
-      }
-
-      setTechnicians(techMap)
-
-      // Load purchase order statuses
-      const poIds = data
-        .filter(order => order.purchase_order_id)
-        .map(order => order.purchase_order_id as string)
-      
-      if (poIds.length > 0) {
-        const { data: poData, error: poError } = await supabase
-          .from("purchase_orders")
-          .select("id, status")
-          .in("id", poIds)
-          
-        if (poError) {
-          console.error("Error al cargar estados de órdenes de compra:", poError)
-        } else if (poData) {
-          const statusMap: Record<string, string> = {}
-          poData.forEach(po => {
-            statusMap[po.id] = po.status
-          })
-          setPurchaseOrderStatuses(statusMap)
-        }
-      }
-
+      const {
+        workOrders: workOrdersData,
+        technicians: techMap,
+        purchaseOrderStatuses: statusMap,
+        totalCount: total,
+      } = await res.json()
+      setWorkOrders((workOrdersData ?? []) as WorkOrderWithAsset[])
+      setTechnicians((techMap ?? {}) as Record<string, Profile>)
+      setPurchaseOrderStatuses((statusMap ?? {}) as Record<string, string>)
+      setTotalCount(total ?? workOrdersData?.length ?? 0)
     } catch (error) {
       console.error("Error al cargar órdenes de trabajo:", error)
-      setWorkOrders([]) 
+      setWorkOrders([])
     } finally {
       setIsLoading(false)
     }
@@ -470,8 +398,7 @@ export function WorkOrdersList() {
   }, [technicians])
 
   const filteredOrders = useMemo(() => {
-    const filtered = applyWorkOrderFilters(workOrders, filters, technicians)
-    return filters.sortBy === "priority" ? sortByPriority(filtered) : filtered
+    return applyWorkOrderFilters(workOrders, filters, technicians)
   }, [workOrders, filters, technicians])
 
   /** When groupByAsset: group filtered orders by asset_id for UI rendering (grouping is UI-only) */
@@ -621,7 +548,7 @@ export function WorkOrdersList() {
               className="inline-flex rounded-[10px] bg-slate-100/80 p-1 border border-border/60"
             >
               {[
-                { id: "all", label: "Todas", count: workOrders.length },
+                { id: "all", label: "Todas", count: totalCount || workOrders.length },
                 { id: "pending", label: "Pendientes", count: ribbonMetrics.pending },
                 { id: "completed", label: "Completadas", count: ribbonMetrics.completed },
               ].map((opt) => {
@@ -682,15 +609,17 @@ export function WorkOrdersList() {
                     onClearFilters={clearAllFilters}
                   />
                 ) : (
-                  <DesktopView 
-                    orders={filteredOrders} 
+                  <DesktopView
+                    orders={filteredOrders}
                     groupedOrders={groupedOrders}
-                    isLoading={isLoading} 
+                    isLoading={isLoading}
                     getTechnicianName={getTechnicianName}
                     getPurchaseOrderStatus={getPurchaseOrderStatus}
                     onDeleteOrder={handleDeleteWorkOrder}
                     hasActiveFilters={hasActiveFilters}
                     onClearFilters={clearAllFilters}
+                    filters={filters}
+                    onSortChange={setFilters}
                   />
                 )}
               </TabsContent>
@@ -717,6 +646,8 @@ export function WorkOrdersList() {
                     onDeleteOrder={handleDeleteWorkOrder}
                     hasActiveFilters={hasActiveFilters}
                     onClearFilters={clearAllFilters}
+                    filters={filters}
+                    onSortChange={setFilters}
                   />
                 )}
               </TabsContent>
@@ -743,6 +674,8 @@ export function WorkOrdersList() {
                     onDeleteOrder={handleDeleteWorkOrder}
                     hasActiveFilters={hasActiveFilters}
                     onClearFilters={clearAllFilters}
+                    filters={filters}
+                    onSortChange={setFilters}
                   />
                 )}
               </TabsContent>
@@ -750,7 +683,7 @@ export function WorkOrdersList() {
 
           {/* Footer: Results count. Deference - subtle. */}
           <div className="text-[13px] text-muted-foreground pt-2">
-            {filteredOrders.length} de {workOrders.length} órdenes
+            {filteredOrders.length} de {totalCount || workOrders.length} órdenes
           </div>
         </div>
       </PullToRefresh>
@@ -848,6 +781,7 @@ function MobileView({
 
   if (groupedOrders && groupedOrders.length > 0) {
     return (
+      <TooltipProvider delayDuration={300}>
       <div className="space-y-6">
         {groupedOrders.map((group) => (
           <div key={group.assetId ?? "sin-activo"}>
@@ -878,10 +812,12 @@ function MobileView({
           </div>
         ))}
       </div>
+      </TooltipProvider>
     )
   }
 
   return (
+    <TooltipProvider delayDuration={300}>
     <div className="space-y-4">
       {orders.map((order) => (
         <WorkOrderCard 
@@ -893,6 +829,50 @@ function MobileView({
         />
       ))}
     </div>
+    </TooltipProvider>
+  )
+}
+
+/** Sortable column header - click to cycle sort */
+function SortableTableHead({
+  label,
+  sortKey,
+  filters,
+  onSortChange,
+  className,
+}: {
+  label: string
+  sortKey: WorkOrderSortBy
+  filters: WorkOrderFilters
+  onSortChange: (patch: Partial<WorkOrderFilters>) => void
+  className?: string
+}) {
+  const isActive = filters.sortBy === sortKey
+  const handleClick = () => {
+    if (isActive) {
+      onSortChange({ sortDir: filters.sortDir === "asc" ? "desc" : "asc" })
+    } else {
+      const defaultDir: WorkOrderSortDir =
+        sortKey === "created" || sortKey === "orderId" || sortKey === "priority" ? "desc" : "asc"
+      onSortChange({ sortBy: sortKey, sortDir: defaultDir })
+    }
+  }
+  const Icon = isActive
+    ? filters.sortDir === "asc"
+      ? ArrowUp
+      : ArrowDown
+    : ArrowUpDown
+  return (
+    <TableHead className={cn("py-3 px-3 text-[13px] font-semibold text-muted-foreground shrink-0", className)}>
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); handleClick() }}
+        className="flex items-center gap-1 hover:text-foreground transition-colors cursor-pointer"
+      >
+        {label}
+        <Icon className={cn("h-3.5 w-3.5", isActive && "text-foreground")} />
+      </button>
+    </TableHead>
   )
 }
 
@@ -906,6 +886,8 @@ function DesktopView({
   onDeleteOrder,
   hasActiveFilters,
   onClearFilters,
+  filters,
+  onSortChange,
 }: {
   orders: WorkOrderWithAsset[]
   groupedOrders: GroupedOrdersItem[] | null
@@ -915,6 +897,8 @@ function DesktopView({
   onDeleteOrder: (order: WorkOrderWithAsset) => void
   hasActiveFilters?: boolean
   onClearFilters?: () => void
+  filters: WorkOrderFilters
+  onSortChange: (patch: Partial<WorkOrderFilters>) => void
 }) {
   const router = useRouter()
   if (isLoading) {
@@ -952,19 +936,20 @@ function DesktopView({
   }
 
   const renderTable = (ordersToRender: WorkOrderWithAsset[]) => (
+    <TooltipProvider delayDuration={300}>
     <div className="rounded-xl border border-border/60 overflow-x-auto bg-white">
     <Table className="w-full min-w-[860px]">
         <TableHeader>
           <TableRow className="border-b border-border/60 hover:bg-transparent">
-            <TableHead className="w-[90px] py-3 px-3 text-[13px] font-semibold text-muted-foreground shrink-0">#Orden</TableHead>
-            <TableHead className="w-[85px] py-3 px-3 text-[13px] font-semibold text-muted-foreground shrink-0">Activo</TableHead>
+            <SortableTableHead label="#Orden" sortKey="orderId" filters={filters} onSortChange={onSortChange} className="w-[90px]" />
+            <SortableTableHead label="Activo" sortKey="asset" filters={filters} onSortChange={onSortChange} className="w-[85px]" />
             <TableHead className="min-w-[220px] py-3 px-3 text-[13px] font-semibold text-muted-foreground">Descripción</TableHead>
             <TableHead className="w-[88px] py-3 px-3 text-[13px] font-semibold text-muted-foreground shrink-0">Tipo</TableHead>
-            <TableHead className="w-[82px] py-3 px-3 text-[13px] font-semibold text-muted-foreground shrink-0">Prioridad</TableHead>
+            <SortableTableHead label="Prioridad" sortKey="priority" filters={filters} onSortChange={onSortChange} className="w-[82px]" />
             <TableHead className="w-[95px] py-3 px-3 text-[13px] font-semibold text-muted-foreground shrink-0">Estado</TableHead>
             <TableHead className="w-[110px] py-3 px-3 text-[13px] font-semibold text-muted-foreground shrink-0">Origen</TableHead>
             <TableHead className="w-[95px] py-3 px-3 text-[13px] font-semibold text-muted-foreground shrink-0">Recurr.</TableHead>
-            <TableHead className="w-[90px] py-3 px-3 text-[13px] font-semibold text-muted-foreground shrink-0">Fecha</TableHead>
+            <SortableTableHead label="Creado" sortKey="created" filters={filters} onSortChange={onSortChange} className="w-[88px]" />
             <TableHead className="w-[110px] py-3 px-3 text-[13px] font-semibold text-muted-foreground shrink-0">Asignado</TableHead>
           </TableRow>
         </TableHeader>
@@ -1047,7 +1032,25 @@ function DesktopView({
                   )
                 })()}
               </TableCell>
-              <TableCell className="py-3 px-3 text-xs">{order.planned_date ? formatDate(order.planned_date) : '—'}</TableCell>
+              <TableCell className="py-3 px-3 text-xs">
+                {(() => {
+                  const created = order.created_at ? formatDate(order.created_at) : '—'
+                  const hasRecurrence = getRecurrenceCount(order) !== null
+                  const lastRecurrence = order.last_escalation_date ? formatDate(order.last_escalation_date) : null
+                  const content = <span className={hasRecurrence && lastRecurrence ? "cursor-help" : undefined}>{created}</span>
+                  if (hasRecurrence && lastRecurrence) {
+                    return (
+                      <Tooltip>
+                        <TooltipTrigger asChild>{content}</TooltipTrigger>
+                        <TooltipContent side="top" className="text-xs">
+                          Última recurrencia: {lastRecurrence}
+                        </TooltipContent>
+                      </Tooltip>
+                    )
+                  }
+                  return content
+                })()}
+              </TableCell>
               <TableCell className="py-3 px-3 text-xs" onClick={(e) => e.stopPropagation()}>
                 <div className="flex items-center gap-2">
                   <span className="truncate max-w-[80px]" title={getTechnicianName(order.assigned_to)}>{getTechnicianName(order.assigned_to)}</span>
@@ -1063,6 +1066,7 @@ function DesktopView({
         </TableBody>
       </Table>
     </div>
+    </TooltipProvider>
   )
 
   if (groupedOrders && groupedOrders.length > 0) {
