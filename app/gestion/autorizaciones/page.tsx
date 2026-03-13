@@ -17,6 +17,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { formatCurrency } from '@/lib/utils'
 import { toast } from 'sonner'
 import { useAuthZustand } from '@/hooks/use-auth-zustand'
+import { getRoleDisplayName } from '@/lib/auth/role-permissions'
 
 interface BusinessUnit {
   id: string
@@ -478,7 +479,7 @@ export default function AuthorizationManagementPage() {
   const openUserEditDialog = (user: UserProfile) => {
     setUserEditForm({
       user_id: user.user_id,
-      role: user.business_role || user.role,
+      role: user.role,
       individual_limit: user.individual_limit.toString(),
       business_unit_id: user.business_unit_id || 'unassigned',
       plant_id: user.plant_id || 'unassigned',
@@ -501,23 +502,6 @@ export default function AuthorizationManagementPage() {
       'default': 'bg-gray-100 text-gray-800'
     }
     return colors[role as keyof typeof colors] || colors.default
-  }
-
-  const getRoleDisplayName = (role: string) => {
-    const names = {
-      'OPERADOR': 'Operador',
-      'DOSIFICADOR': 'Dosificador',
-      'COORDINADOR_MANTENIMIENTO': 'Coordinador de Mantenimiento',
-      'JEFE_PLANTA': 'Jefe de Planta',
-      'AREA_ADMINISTRATIVA': 'Área Administrativa',
-      'AUXILIAR_COMPRAS': 'Auxiliar de Compras',
-      'JEFE_UNIDAD_NEGOCIO': 'Gerente de Mantenimiento',
-      'EJECUTIVO': 'Ejecutivo',
-      'GERENCIA_GENERAL': 'Gerencia General',
-      'VISUALIZADOR': 'Visualizador',
-      'RECURSOS_HUMANOS': 'Recursos Humanos'
-    }
-    return names[role as keyof typeof names] || role
   }
 
   if (loading) {
@@ -764,8 +748,8 @@ export default function AuthorizationManagementPage() {
                         </div>
                       </TableCell>
                       <TableCell>
-                        <Badge className={getRoleColor(user.business_role || user.role)} variant="secondary">
-                          {getRoleDisplayName(user.business_role || user.role)}
+                        <Badge className={getRoleColor(user.role)} variant="secondary">
+                          {getRoleDisplayName(user.role)}
                         </Badge>
                       </TableCell>
                       <TableCell>

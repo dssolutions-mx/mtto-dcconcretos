@@ -274,6 +274,35 @@ export interface NormalizedPersistedRole {
   roleScope: RoleScope | null
 }
 
+/**
+ * Legacy roles whose permissions differ from their mapped business role.
+ * For these, we use profile.role (not business_role) for permission checks
+ * so JEFE_PLANTA keeps $50k auth and personnel access (vs COORDINADOR's $0 and none).
+ */
+const LEGACY_ROLES_WITH_DISTINCT_PERMISSIONS = new Set<LegacyDbRole>([
+  'JEFE_PLANTA', // $50k auth, personnel read_write vs COORDINADOR's $0, personnel none
+  'DOSIFICADOR', // inventory read_write vs OPERADOR's inventory none
+])
+
+/**
+ * Returns the role key to use for permission checks (hasModuleAccess, hasWriteAccess, etc.).
+ * For legacy roles with distinct permissions (JEFE_PLANTA, DOSIFICADOR), uses profile.role
+ * so they keep their correct access. Otherwise uses business_role || role.
+ */
+export function effectiveRoleForPermissions(profile: {
+  role?: string | null
+  business_role?: string | null
+} | null | undefined): string | null {
+  if (!profile?.role) return null
+  if (
+    isLegacyDbRole(profile.role) &&
+    LEGACY_ROLES_WITH_DISTINCT_PERMISSIONS.has(profile.role)
+  ) {
+    return profile.role
+  }
+  return profile.business_role || profile.role || null
+}
+
 export function normalizeRoleForPersistence(
   role: string | null | undefined
 ): NormalizedPersistedRole | null {

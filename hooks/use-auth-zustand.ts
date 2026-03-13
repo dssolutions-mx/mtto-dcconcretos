@@ -16,7 +16,7 @@ import {
   type ModulePermissions,
 } from '@/lib/auth/role-permissions'
 import { resolveWarehouseResponsibility } from '@/lib/auth/warehouse-responsibility'
-import { resolveBusinessRole, resolveRoleScope, type RoleScope } from '@/lib/auth/role-model'
+import { resolveBusinessRole, resolveRoleScope, effectiveRoleForPermissions, type RoleScope } from '@/lib/auth/role-model'
 
 /**
  * Direct Zustand-based auth hook - replaces the problematic context-based one
@@ -56,9 +56,10 @@ export function useAuthZustand() {
     })
   }
 
-  // Permission checking functions bound to current user
-  const permissionRoleKey = profile?.business_role || profile?.role || null
-  const metadataRoleKey = profile?.business_role ?? profile?.role ?? null
+  // Permission checking: use effective role so JEFE_PLANTA etc. keep distinct permissions
+  // (business_role would map them to COORDINADOR/OPERADOR with stricter access)
+  const permissionRoleKey = effectiveRoleForPermissions(profile)
+  const metadataRoleKey = permissionRoleKey ?? profile?.business_role ?? profile?.role ?? null
   const resolvedBusinessRole = profile?.business_role ?? resolveBusinessRole(profile?.role)
   const resolvedRoleScope: RoleScope | null =
     profile?.role_scope ?? resolveRoleScope(profile?.business_role ?? profile?.role)
