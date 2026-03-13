@@ -19,7 +19,6 @@ import {
   Settings,
   ShoppingCart,
   PenToolIcon as Tool,
-  Truck,
   CreditCard,
   CheckCircle,
   Clock,
@@ -49,10 +48,15 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { BreadcrumbNav } from "@/components/breadcrumb-nav"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { Badge } from "@/components/ui/badge"
+import type { ModulePermissions } from "@/lib/auth/role-permissions"
 
 interface SidebarProps extends React.HTMLAttributes<HTMLDivElement> {
   onLinkClick?: () => void
 }
+
+// Shared nav styles per Apple HIG: transitions, touch targets, reduced-motion support
+const navItemClasses = "transition-colors duration-200 motion-reduce:transition-none"
+const navSectionTriggerClasses = "font-semibold"
 
 // Enhanced Logo Component that acts as toggle button
 function AppLogo({ 
@@ -172,18 +176,18 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
   }
 
   return (
-    <div className={cn("pb-12", className)}>
+    <div className={cn("pb-12", className)} role="navigation" aria-label="Navegación principal">
       <div className="space-y-4 py-4" data-tour="sidebar" id="sidebar-nav">
         {/* Dashboard */}
         <div className="px-4 py-2" data-tour="sidebar-first-item">
           <div className="space-y-1">
             <Button
               variant={pathname === "/dashboard" ? "secondary" : "ghost"}
-              className="w-full justify-start"
+              className={cn("w-full justify-start", navItemClasses)}
               asChild
               onClick={handleLinkClick}
             >
-              <Link href={isOperator ? "/dashboard/operator" : "/dashboard"}>
+              <Link href={isOperator ? "/dashboard/operator" : "/dashboard"} aria-current={pathname === "/dashboard" || pathname === "/dashboard/operator" ? "page" : undefined}>
                 <Home className="mr-2 h-4 w-4" />
                 Dashboard
               </Link>
@@ -196,11 +200,11 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
           <div className="space-y-1">
             <Button
               variant={pathname === "/credencial" ? "secondary" : "ghost"}
-              className="w-full justify-start"
+              className={cn("w-full justify-start", navItemClasses)}
               asChild
               onClick={handleLinkClick}
             >
-              <Link href="/credencial">
+              <Link href="/credencial" aria-current={pathname === "/credencial" ? "page" : undefined}>
                 <IdCard className="mr-2 h-4 w-4" />
                 Mi Credencial
               </Link>
@@ -217,7 +221,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                 <CollapsibleTrigger asChild>
                   <Button
                     variant="ghost"
-                    className="w-full justify-between p-2 h-auto font-medium"
+                    className={cn("w-full justify-between p-2 h-auto", navSectionTriggerClasses, navItemClasses)}
                   >
                     <div className="flex items-center">
                       <ClipboardCheck className="mr-2 h-4 w-4" />
@@ -230,10 +234,10 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                     )}
                   </Button>
                 </CollapsibleTrigger>
-                <CollapsibleContent className="space-y-1 mt-2">
+                <CollapsibleContent className="space-y-1 mt-2 transition-all duration-200 ease-in-out motion-reduce:transition-none">
                   <Button
                     variant={isPathActive("/checklists") ? "secondary" : "ghost"}
-                    className="w-full justify-start pl-8"
+                    className={cn("w-full justify-start pl-8", navItemClasses)}
                     asChild
                     onClick={handleLinkClick}
                     data-tour="checklists-nav"
@@ -241,17 +245,6 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                     <Link href="/checklists">
                       <ClipboardCheck className="mr-2 h-4 w-4" />
                       Checklists
-                    </Link>
-                  </Button>
-                  <Button
-                    variant={isPathActive("/checklists/problemas-pendientes") ? "secondary" : "ghost"}
-                    className="w-full justify-start pl-8"
-                    asChild
-                    onClick={handleLinkClick}
-                  >
-                    <Link href="/checklists/problemas-pendientes">
-                      <AlertTriangle className="mr-2 h-4 w-4" />
-                      Problemas Pendientes
                     </Link>
                   </Button>
                 </CollapsibleContent>
@@ -270,7 +263,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                   <CollapsibleTrigger asChild>
                     <Button
                       variant="ghost"
-                      className="w-full justify-between p-2 h-auto font-medium"
+                      className={cn("w-full justify-between p-2 h-auto", navSectionTriggerClasses, navItemClasses)}
                     >
                       <div className="flex items-center">
                         <ShoppingCart className="mr-2 h-4 w-4" />
@@ -283,11 +276,11 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                       )}
                     </Button>
                   </CollapsibleTrigger>
-                  <CollapsibleContent className="space-y-1 mt-2">
+                  <CollapsibleContent className="space-y-1 mt-2 transition-all duration-200 ease-in-out motion-reduce:transition-none">
                     {ui.shouldShowInNavigation('purchases') && (
                       <Button
                         variant={isPathActive("/compras") ? "secondary" : "ghost"}
-                        className="w-full justify-start pl-8"
+                        className={cn("w-full justify-start pl-8", navItemClasses)}
                         asChild
                         onClick={handleLinkClick}
                       >
@@ -300,7 +293,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                     {ui.shouldShowInNavigation('inventory') && (
                       <Button
                         variant={isPathActive("/inventario") ? "secondary" : "ghost"}
-                        className="w-full justify-start pl-8"
+                        className={cn("w-full justify-start pl-8", navItemClasses)}
                         asChild
                         onClick={handleLinkClick}
                         data-tour="warehouse-nav"
@@ -313,7 +306,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                     )}
                     <Button
                       variant={isPathActive("/diesel") ? "secondary" : "ghost"}
-                      className="w-full justify-start pl-8"
+                      className={cn("w-full justify-start pl-8", navItemClasses)}
                       asChild
                       onClick={handleLinkClick}
                     >
@@ -324,7 +317,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                     </Button>
                     <Button
                       variant={isPathActive("/urea") ? "secondary" : "ghost"}
-                      className="w-full justify-start pl-8"
+                      className={cn("w-full justify-start pl-8", navItemClasses)}
                       asChild
                       onClick={handleLinkClick}
                     >
@@ -335,7 +328,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                     </Button>
                     <Button
                       variant={isPathActive("/suppliers") ? "secondary" : "ghost"}
-                      className="w-full justify-start pl-8"
+                      className={cn("w-full justify-start pl-8", navItemClasses)}
                       asChild
                       onClick={handleLinkClick}
                     >
@@ -346,7 +339,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                     </Button>
                     <Button
                       variant={isPathActive("/suppliers/analytics") ? "secondary" : "ghost"}
-                      className="w-full justify-start pl-8"
+                      className={cn("w-full justify-start pl-8", navItemClasses)}
                       asChild
                       onClick={handleLinkClick}
                     >
@@ -367,7 +360,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                   <CollapsibleTrigger asChild>
                     <Button
                       variant="ghost"
-                      className="w-full justify-between p-2 h-auto font-medium"
+                      className={cn("w-full justify-between p-2 h-auto", navSectionTriggerClasses, navItemClasses)}
                       data-tour="gestion-organizacional-nav"
                     >
                       <div className="flex items-center">
@@ -381,7 +374,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                       )}
                     </Button>
                   </CollapsibleTrigger>
-                  <CollapsibleContent className="space-y-1 mt-2">
+                  <CollapsibleContent className="space-y-1 mt-2 transition-all duration-200 ease-in-out motion-reduce:transition-none">
                     <Button
                       variant={isPathActive("/gestion/asignaciones") ? "secondary" : "ghost"}
                       className="w-full justify-start pl-8 font-semibold"
@@ -400,7 +393,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                     </div>
                     <Button
                       variant={isPathActive("/personal") ? "secondary" : "ghost"}
-                      className="w-full justify-start pl-8"
+                      className={cn("w-full justify-start pl-8", navItemClasses)}
                       asChild
                       onClick={handleLinkClick}
                     >
@@ -413,7 +406,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                       <>
                         <Button
                           variant={isPathActive("/gestion/activos/asignacion-plantas") ? "secondary" : "ghost"}
-                          className="w-full justify-start pl-8"
+                          className={cn("w-full justify-start pl-8", navItemClasses)}
                           asChild
                           onClick={handleLinkClick}
                         >
@@ -424,7 +417,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                         </Button>
                         <Button
                           variant={isPathActive("/activos/asignacion") ? "secondary" : "ghost"}
-                          className="w-full justify-start pl-8"
+                          className={cn("w-full justify-start pl-8", navItemClasses)}
                           asChild
                           onClick={handleLinkClick}
                         >
@@ -438,7 +431,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                     {['GERENCIA_GENERAL', 'AREA_ADMINISTRATIVA'].includes(profile.role) && (
                       <Button
                         variant={isPathActive("/plantas") ? "secondary" : "ghost"}
-                        className="w-full justify-start pl-8"
+                        className={cn("w-full justify-start pl-8", navItemClasses)}
                         asChild
                         onClick={handleLinkClick}
                       >
@@ -460,7 +453,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                   <CollapsibleTrigger asChild>
                     <Button
                       variant="ghost"
-                      className="w-full justify-between p-2 h-auto font-medium"
+                      className={cn("w-full justify-between p-2 h-auto", navSectionTriggerClasses, navItemClasses)}
                     >
                       <div className="flex items-center">
                         <Wrench className="mr-2 h-4 w-4" />
@@ -473,11 +466,11 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                       )}
                     </Button>
                   </CollapsibleTrigger>
-                  <CollapsibleContent className="space-y-1 mt-2">
+                  <CollapsibleContent className="space-y-1 mt-2 transition-all duration-200 ease-in-out motion-reduce:transition-none">
                     {ui.canShowCreateButton('maintenance') && (
                       <Button
                         variant={isPathActive("/modelos") ? "secondary" : "ghost"}
-                        className="w-full justify-start pl-8"
+                        className={cn("w-full justify-start pl-8", navItemClasses)}
                         asChild
                         onClick={handleLinkClick}
                       >
@@ -490,7 +483,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                     {ui.shouldShowInNavigation('assets') && (
                       <Button
                         variant={isPathActive("/activos") ? "secondary" : "ghost"}
-                        className="w-full justify-start pl-8"
+                        className={cn("w-full justify-start pl-8", navItemClasses)}
                         asChild
                         onClick={handleLinkClick}
                         data-tour="assets-nav"
@@ -516,7 +509,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                   <CollapsibleTrigger asChild>
                     <Button
                       variant="ghost"
-                      className="w-full justify-between p-2 h-auto font-medium"
+                      className={cn("w-full justify-between p-2 h-auto", navSectionTriggerClasses, navItemClasses)}
                     >
                       <div className="flex items-center">
                         <Wrench className="mr-2 h-4 w-4" />
@@ -529,11 +522,11 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                       )}
                     </Button>
                   </CollapsibleTrigger>
-                  <CollapsibleContent className="space-y-1 mt-2">
+                  <CollapsibleContent className="space-y-1 mt-2 transition-all duration-200 ease-in-out motion-reduce:transition-none">
                     {ui.canShowCreateButton('maintenance') && (
                       <Button
                         variant={isPathActive("/modelos") ? "secondary" : "ghost"}
-                        className="w-full justify-start pl-8"
+                        className={cn("w-full justify-start pl-8", navItemClasses)}
                         asChild
                         onClick={handleLinkClick}
                       >
@@ -546,7 +539,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                     {ui.shouldShowInNavigation('assets') && (
                       <Button
                         variant={isPathActive("/activos") ? "secondary" : "ghost"}
-                        className="w-full justify-start pl-8"
+                        className={cn("w-full justify-start pl-8", navItemClasses)}
                         asChild
                         onClick={handleLinkClick}
                         data-tour="assets-nav"
@@ -569,7 +562,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                   <CollapsibleTrigger asChild>
                     <Button
                       variant="ghost"
-                      className="w-full justify-between p-2 h-auto font-medium"
+                      className={cn("w-full justify-between p-2 h-auto", navSectionTriggerClasses, navItemClasses)}
                     >
                       <div className="flex items-center">
                         <Tool className="mr-2 h-4 w-4" />
@@ -582,43 +575,56 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                       )}
                     </Button>
                   </CollapsibleTrigger>
-                  <CollapsibleContent className="space-y-1 mt-2">
+                  <CollapsibleContent className="space-y-1 mt-2 transition-all duration-200 ease-in-out motion-reduce:transition-none">
                     <Button
                       variant={isPathActive("/ordenes") ? "secondary" : "ghost"}
-                      className="w-full justify-start pl-8"
+                      className={cn("w-full justify-start pl-8", navItemClasses)}
                       asChild
                       onClick={handleLinkClick}
                       data-tour="work-orders-nav"
                     >
                       <Link href="/ordenes">
                         <Clock className="mr-2 h-4 w-4" />
-                        Pendientes (OT)
+                        Órdenes Pendientes
                       </Link>
                     </Button>
                     <Button
                       variant={isPathActive("/servicios") ? "secondary" : "ghost"}
-                      className="w-full justify-start pl-8"
+                      className={cn("w-full justify-start pl-8", navItemClasses)}
                       asChild
                       onClick={handleLinkClick}
                     >
                       <Link href="/servicios">
                         <CheckCircle className="mr-2 h-4 w-4" />
-                        Ejecutados (OS)
+                        Órdenes Ejecutadas
                       </Link>
                     </Button>
+                    {ui.shouldShowInNavigation('maintenance') && (
+                      <Button
+                        variant={isPathActive("/incidentes") ? "secondary" : "ghost"}
+                        className={cn("w-full justify-start pl-8", navItemClasses)}
+                        asChild
+                        onClick={handleLinkClick}
+                      >
+                        <Link href="/incidentes">
+                          <AlertTriangle className="mr-2 h-4 w-4" />
+                          Incidentes
+                        </Link>
+                      </Button>
+                    )}
                   </CollapsibleContent>
                 </Collapsible>
               </div>
             )}
 
-            {/* Operations Section */}
-            {(ui.shouldShowInNavigation('work_orders') || ui.shouldShowInNavigation('checklists') || ui.shouldShowInNavigation('maintenance')) && (
+            {/* Operations Section - Checklists y Calendario */}
+            {(ui.shouldShowInNavigation('checklists') || ui.shouldShowInNavigation('maintenance')) && (
               <div className="px-4">
                 <Collapsible open={operationsOpen} onOpenChange={setOperationsOpen}>
                   <CollapsibleTrigger asChild>
                     <Button
                       variant="ghost"
-                      className="w-full justify-between p-2 h-auto font-medium"
+                      className={cn("w-full justify-between p-2 h-auto", navSectionTriggerClasses, navItemClasses)}
                     >
                       <div className="flex items-center">
                         <ClipboardCheck className="mr-2 h-4 w-4" />
@@ -631,74 +637,26 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                       )}
                     </Button>
                   </CollapsibleTrigger>
-                  <CollapsibleContent className="space-y-1 mt-2">
+                  <CollapsibleContent className="space-y-1 mt-2 transition-all duration-200 ease-in-out motion-reduce:transition-none">
                     {ui.shouldShowInNavigation('checklists') && (
-                      <>
-                        <Button
-                          variant={pathname === "/checklists" ? "secondary" : "ghost"}
-                          className="w-full justify-start pl-8"
-                          asChild
-                          onClick={handleLinkClick}
-                          data-tour="checklists-nav"
-                          id="checklists-nav-manager"
-                        >
-                          <Link href="/checklists">
-                            <Truck className="mr-2 h-4 w-4" />
-                            Por Activos
-                          </Link>
-                        </Button>
-                        <Button
-                          variant={pathname === "/checklists/programar" ? "secondary" : "ghost"}
-                          className="w-full justify-start pl-8"
-                          asChild
-                          onClick={handleLinkClick}
-                        >
-                          <Link href="/checklists/programar">
-                            <ClipboardCheck className="mr-2 h-4 w-4" />
-                            Programar
-                          </Link>
-                        </Button>
-                        <Button
-                          variant={pathname === "/checklists/problemas-pendientes" ? "secondary" : "ghost"}
-                          className="w-full justify-start pl-8"
-                          asChild
-                          onClick={handleLinkClick}
-                        >
-                          <Link href="/checklists/problemas-pendientes">
-                            <AlertTriangle className="mr-2 h-4 w-4" />
-                            Problemas Pendientes
-                          </Link>
-                        </Button>
-                        <Button
-                          variant={pathname?.startsWith("/checklists/plantillas") ? "secondary" : "ghost"}
-                          className="w-full justify-start pl-8"
-                          asChild
-                          onClick={handleLinkClick}
-                        >
-                          <Link href="/checklists/plantillas">
-                            <FileText className="mr-2 h-4 w-4" />
-                            Plantillas
-                          </Link>
-                        </Button>
-                      </>
-                    )}
-                    {ui.shouldShowInNavigation('maintenance') && (
                       <Button
-                        variant={isPathActive("/incidentes") ? "secondary" : "ghost"}
-                        className="w-full justify-start pl-8"
+                        variant={pathname === "/checklists" ? "secondary" : "ghost"}
+                        className={cn("w-full justify-start pl-8", navItemClasses)}
                         asChild
                         onClick={handleLinkClick}
+                        data-tour="checklists-nav"
+                        id="checklists-nav-manager"
                       >
-                        <Link href="/incidentes">
-                          <AlertTriangle className="mr-2 h-4 w-4" />
-                          Incidentes
+                        <Link href="/checklists">
+                          <ClipboardCheck className="mr-2 h-4 w-4" />
+                          Checklists
                         </Link>
                       </Button>
                     )}
                     {ui.shouldShowInNavigation('maintenance') && (
                       <Button
                         variant={isPathActive("/calendario") ? "secondary" : "ghost"}
-                        className="w-full justify-start pl-8"
+                        className={cn("w-full justify-start pl-8", navItemClasses)}
                         asChild
                         onClick={handleLinkClick}
                       >
@@ -720,7 +678,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                   <CollapsibleTrigger asChild>
                     <Button
                       variant="ghost"
-                      className="w-full justify-between p-2 h-auto font-medium"
+                      className={cn("w-full justify-between p-2 h-auto", navSectionTriggerClasses, navItemClasses)}
                     >
                       <div className="flex items-center">
                         <ShoppingCart className="mr-2 h-4 w-4" />
@@ -733,11 +691,11 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                       )}
                     </Button>
                   </CollapsibleTrigger>
-                  <CollapsibleContent className="space-y-1 mt-2">
+                  <CollapsibleContent className="space-y-1 mt-2 transition-all duration-200 ease-in-out motion-reduce:transition-none">
                     {ui.shouldShowInNavigation('purchases') && (
                       <Button
                         variant={isPathActive("/compras") ? "secondary" : "ghost"}
-                        className="w-full justify-start pl-8"
+                        className={cn("w-full justify-start pl-8", navItemClasses)}
                         asChild
                         onClick={handleLinkClick}
                       >
@@ -750,7 +708,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                     {ui.shouldShowInNavigation('inventory') && (
                       <Button
                         variant={isPathActive("/inventario") ? "secondary" : "ghost"}
-                        className="w-full justify-start pl-8"
+                        className={cn("w-full justify-start pl-8", navItemClasses)}
                         asChild
                         onClick={handleLinkClick}
                       >
@@ -762,7 +720,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                     )}
                     <Button
                       variant={isPathActive("/diesel") ? "secondary" : "ghost"}
-                      className="w-full justify-start pl-8"
+                      className={cn("w-full justify-start pl-8", navItemClasses)}
                       asChild
                       onClick={handleLinkClick}
                     >
@@ -773,7 +731,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                     </Button>
                     <Button
                       variant={isPathActive("/urea") ? "secondary" : "ghost"}
-                      className="w-full justify-start pl-8"
+                      className={cn("w-full justify-start pl-8", navItemClasses)}
                       asChild
                       onClick={handleLinkClick}
                     >
@@ -784,7 +742,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                     </Button>
                     <Button
                       variant={isPathActive("/suppliers") ? "secondary" : "ghost"}
-                      className="w-full justify-start pl-8"
+                      className={cn("w-full justify-start pl-8", navItemClasses)}
                       asChild
                       onClick={handleLinkClick}
                     >
@@ -795,7 +753,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                     </Button>
                     <Button
                       variant={isPathActive("/suppliers/analytics") ? "secondary" : "ghost"}
-                      className="w-full justify-start pl-8"
+                      className={cn("w-full justify-start pl-8", navItemClasses)}
                       asChild
                       onClick={handleLinkClick}
                     >
@@ -820,7 +778,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
               <CollapsibleTrigger asChild>
                 <Button
                   variant="ghost"
-                  className="w-full justify-between p-2 h-auto font-medium"
+                  className={cn("w-full justify-between p-2 h-auto", navSectionTriggerClasses, navItemClasses)}
                 >
                   <div className="flex items-center">
                     <FileText className="mr-2 h-4 w-4" />
@@ -833,10 +791,10 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                   )}
                 </Button>
               </CollapsibleTrigger>
-              <CollapsibleContent className="space-y-1 mt-2">
+              <CollapsibleContent className="space-y-1 mt-2 transition-all duration-200 ease-in-out motion-reduce:transition-none">
                 <Button
                   variant={isPathActive("/reportes") ? "secondary" : "ghost"}
-                  className="w-full justify-start pl-8"
+                  className={cn("w-full justify-start pl-8", navItemClasses)}
                   asChild
                   onClick={handleLinkClick}
                 >
@@ -857,7 +815,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
               <CollapsibleTrigger asChild>
                 <Button
                   variant="ghost"
-                  className="w-full justify-between p-2 h-auto font-medium"
+                  className={cn("w-full justify-between p-2 h-auto", navSectionTriggerClasses, navItemClasses)}
                   data-tour="gestion-organizacional-nav"
                 >
                   <div className="flex items-center">
@@ -871,7 +829,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                   )}
                 </Button>
               </CollapsibleTrigger>
-              <CollapsibleContent className="space-y-1 mt-2">
+              <CollapsibleContent className="space-y-1 mt-2 transition-all duration-200 ease-in-out motion-reduce:transition-none">
                 <Button
                   variant={isPathActive("/gestion/asignaciones") ? "secondary" : "ghost"}
                   className="w-full justify-start pl-8 font-semibold"
@@ -890,7 +848,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                 </div>
                 <Button
                   variant={isPathActive("/personal") ? "secondary" : "ghost"}
-                  className="w-full justify-start pl-8"
+                  className={cn("w-full justify-start pl-8", navItemClasses)}
                   asChild
                   onClick={handleLinkClick}
                 >
@@ -903,7 +861,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                   <>
                     <Button
                       variant={isPathActive("/gestion/activos/asignacion-plantas") ? "secondary" : "ghost"}
-                      className="w-full justify-start pl-8"
+                      className={cn("w-full justify-start pl-8", navItemClasses)}
                       asChild
                       onClick={handleLinkClick}
                     >
@@ -914,7 +872,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                     </Button>
                     <Button
                       variant={isPathActive("/activos/asignacion") ? "secondary" : "ghost"}
-                      className="w-full justify-start pl-8"
+                      className={cn("w-full justify-start pl-8", navItemClasses)}
                       asChild
                       onClick={handleLinkClick}
                     >
@@ -928,7 +886,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                 {['GERENCIA_GENERAL', 'AREA_ADMINISTRATIVA'].includes(profile.role) && (
                   <Button
                     variant={isPathActive("/plantas") ? "secondary" : "ghost"}
-                    className="w-full justify-start pl-8"
+                    className={cn("w-full justify-start pl-8", navItemClasses)}
                     asChild
                     onClick={handleLinkClick}
                   >
@@ -941,7 +899,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                 {(profile.role === 'GERENCIA_GENERAL' || profile.business_role === 'RECURSOS_HUMANOS') && (
                   <Button
                     variant={isPathActive("/gestion/autorizaciones") ? "secondary" : "ghost"}
-                    className="w-full justify-start pl-8"
+                    className={cn("w-full justify-start pl-8", navItemClasses)}
                     asChild
                     onClick={handleLinkClick}
                   >
@@ -954,7 +912,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                 {['GERENCIA_GENERAL', 'AREA_ADMINISTRATIVA', 'JEFE_UNIDAD_NEGOCIO'].includes(profile.role) && (
                   <Button
                     variant={isPathActive("/gestion/credenciales") ? "secondary" : "ghost"}
-                    className="w-full justify-start pl-8"
+                    className={cn("w-full justify-start pl-8", navItemClasses)}
                     asChild
                     onClick={handleLinkClick}
                   >
@@ -967,7 +925,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                 {!isComplianceSystemEnabled && ['GERENCIA_GENERAL', 'AREA_ADMINISTRATIVA'].includes(profile?.role || '') && (
                   <Button
                     variant={isPathActive("/compliance/configuracion") ? "secondary" : "ghost"}
-                    className="w-full justify-start pl-8"
+                    className={cn("w-full justify-start pl-8", navItemClasses)}
                     asChild
                     onClick={handleLinkClick}
                   >
@@ -988,7 +946,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
             <CollapsibleTrigger asChild>
               <Button
                 variant="ghost"
-                className="w-full justify-between p-2 h-auto font-medium"
+                className={cn("w-full justify-between p-2 h-auto", navSectionTriggerClasses, navItemClasses)}
               >
                 <div className="flex items-center">
                   <Users className="mr-2 h-4 w-4" />
@@ -1001,10 +959,10 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                 )}
               </Button>
             </CollapsibleTrigger>
-            <CollapsibleContent className="space-y-1 mt-2">
+            <CollapsibleContent className="space-y-1 mt-2 transition-all duration-200 ease-in-out motion-reduce:transition-none">
               <Button
                 variant={isPathActive("/rh/limpieza") ? "secondary" : "ghost"}
-                className="w-full justify-start pl-8"
+                className={cn("w-full justify-start pl-8", navItemClasses)}
                 asChild
                 onClick={handleLinkClick}
               >
@@ -1015,7 +973,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
               </Button>
               <Button
                 variant={isPathActive("/rh/cumplimiento-checklists") ? "secondary" : "ghost"}
-                className="w-full justify-start pl-8"
+                className={cn("w-full justify-start pl-8", navItemClasses)}
                 asChild
                 onClick={handleLinkClick}
               >
@@ -1035,7 +993,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
               <CollapsibleTrigger asChild>
                 <Button
                   variant="ghost"
-                  className="w-full justify-between p-2 h-auto font-medium"
+                  className={cn("w-full justify-between p-2 h-auto", navSectionTriggerClasses, navItemClasses)}
                 >
                   <div className="flex items-center">
                     <Shield className="mr-2 h-4 w-4" />
@@ -1048,10 +1006,10 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                   )}
                 </Button>
               </CollapsibleTrigger>
-              <CollapsibleContent className="space-y-1 mt-2">
+              <CollapsibleContent className="space-y-1 mt-2 transition-all duration-200 ease-in-out motion-reduce:transition-none">
                 <Button
                   variant={isPathActive("/compliance") ? "secondary" : "ghost"}
-                  className="w-full justify-start pl-8"
+                  className={cn("w-full justify-start pl-8", navItemClasses)}
                   asChild
                   onClick={handleLinkClick}
                 >
@@ -1062,7 +1020,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                 </Button>
                 <Button
                   variant={isPathActive("/compliance/activos-olvidados") ? "secondary" : "ghost"}
-                  className="w-full justify-start pl-8"
+                  className={cn("w-full justify-start pl-8", navItemClasses)}
                   asChild
                   onClick={handleLinkClick}
                   data-tour="forgotten-assets-link"
@@ -1074,7 +1032,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                 </Button>
                 <Button
                   variant={isPathActive("/compliance/incidentes") ? "secondary" : "ghost"}
-                  className="w-full justify-start pl-8"
+                  className={cn("w-full justify-start pl-8", navItemClasses)}
                   asChild
                   onClick={handleLinkClick}
                 >
@@ -1086,7 +1044,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                 {['GERENCIA_GENERAL', 'AREA_ADMINISTRATIVA'].includes(profile?.role || '') && (
                   <Button
                     variant={isPathActive("/compliance/configuracion") ? "secondary" : "ghost"}
-                    className="w-full justify-start pl-8"
+                    className={cn("w-full justify-start pl-8", navItemClasses)}
                     asChild
                     onClick={handleLinkClick}
                   >
@@ -1105,10 +1063,187 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
   )
 }
 
+// Shared navigation config builder - single source of truth for both Sidebar and CollapsedSidebar
+type NavItem = { href: string; icon: React.ComponentType<{ className?: string }>; label: string; active: boolean; badge?: string }
+type NavSection = 
+  | { id: string; icon: React.ComponentType<{ className?: string }>; label: string; href: string; active: boolean; items?: never }
+  | { id: string; icon: React.ComponentType<{ className?: string }>; label: string; active: boolean; items: NavItem[]; href?: never }
+
+function buildNavigationSections(
+  profile: { role?: string },
+  ui: { shouldShowInNavigation: (m: keyof ModulePermissions) => boolean; canShowCreateButton?: (m: keyof ModulePermissions) => boolean },
+  pathname: string,
+  isPathActive: (path: string) => boolean,
+  isSectionActive: (paths: string[]) => boolean,
+  isComplianceSystemEnabled: boolean
+): NavSection[] {
+  const sections: NavSection[] = [
+    { id: "dashboard", icon: Home, label: "Dashboard", href: "/dashboard", active: pathname === "/dashboard" },
+    { id: "credential", icon: IdCard, label: "Mi Credencial", href: "/credencial", active: pathname === "/credencial" },
+  ]
+
+  // Equipment - filtered by ui
+  if (ui.shouldShowInNavigation('assets') || ui.shouldShowInNavigation('maintenance')) {
+    const equipmentItems: NavItem[] = []
+    if (ui.canShowCreateButton?.('maintenance')) {
+      equipmentItems.push({ href: "/modelos", icon: Settings, label: "Modelos", active: isPathActive("/modelos") })
+    }
+    if (ui.shouldShowInNavigation('assets')) {
+      equipmentItems.push({ href: "/activos", icon: Package, label: "Activos", active: isPathActive("/activos") })
+    }
+    if (equipmentItems.length > 0) {
+      sections.push({
+        id: "equipment",
+        icon: Wrench,
+        label: "Equipos",
+        active: isSectionActive(["/modelos", "/activos"]),
+        items: equipmentItems,
+      })
+    }
+  }
+
+  // Trabajos - work orders + incidentes (Incidentes relacionado con órdenes de trabajo)
+  if (ui.shouldShowInNavigation('work_orders') || ui.shouldShowInNavigation('maintenance')) {
+    const trabajosItems: NavItem[] = []
+    if (ui.shouldShowInNavigation('work_orders')) {
+      trabajosItems.push(
+        { href: "/ordenes", icon: Clock, label: "Órdenes Pendientes", active: isPathActive("/ordenes") },
+        { href: "/servicios", icon: CheckCircle, label: "Órdenes Ejecutadas", active: isPathActive("/servicios") }
+      )
+    }
+    if (ui.shouldShowInNavigation('maintenance')) {
+      trabajosItems.push({ href: "/incidentes", icon: AlertTriangle, label: "Incidentes", active: isPathActive("/incidentes") })
+    }
+    if (trabajosItems.length > 0) {
+      sections.push({
+        id: "trabajos",
+        icon: Tool,
+        label: "Trabajos",
+        active: isSectionActive(["/ordenes", "/servicios", "/incidentes"]),
+        items: trabajosItems,
+      })
+    }
+  }
+
+  // Operaciones - solo Checklists y Calendario (sub-páginas de checklist se acceden desde el dashboard)
+  if (ui.shouldShowInNavigation('checklists') || ui.shouldShowInNavigation('maintenance')) {
+    const operationsItems: NavItem[] = []
+    if (ui.shouldShowInNavigation('checklists')) {
+      operationsItems.push({ href: "/checklists", icon: ClipboardCheck, label: "Checklists", active: isPathActive("/checklists") })
+    }
+    if (ui.shouldShowInNavigation('maintenance')) {
+      operationsItems.push({ href: "/calendario", icon: Calendar, label: "Calendario", active: isPathActive("/calendario") })
+    }
+    if (operationsItems.length > 0) {
+      sections.push({
+        id: "operations",
+        icon: ClipboardCheck,
+        label: "Operaciones",
+        active: isSectionActive(["/checklists", "/calendario"]),
+        items: operationsItems,
+      })
+    }
+  }
+
+  // Procurement
+  if (ui.shouldShowInNavigation('purchases') || ui.shouldShowInNavigation('inventory')) {
+    const procurementItems: NavItem[] = []
+    if (ui.shouldShowInNavigation('purchases')) {
+      procurementItems.push({ href: "/compras", icon: CreditCard, label: "Órdenes de Compra", active: isPathActive("/compras") })
+    }
+    if (ui.shouldShowInNavigation('inventory')) {
+      procurementItems.push({ href: "/inventario", icon: Boxes, label: "Inventario", active: isPathActive("/inventario") })
+    }
+    procurementItems.push(
+      { href: "/diesel", icon: Fuel, label: "Gestión de Diesel", active: isPathActive("/diesel") },
+      { href: "/urea", icon: Droplet, label: "Gestión de UREA", active: isPathActive("/urea") },
+      { href: "/suppliers", icon: Users, label: "Padrón de Proveedores", active: isPathActive("/suppliers") },
+      { href: "/suppliers/analytics", icon: BarChart3, label: "Análisis de Proveedores", active: isPathActive("/suppliers/analytics") }
+    )
+    sections.push({
+      id: "procurement",
+      icon: ShoppingCart,
+      label: "Compras",
+      active: isSectionActive(["/compras", "/inventario", "/diesel", "/urea", "/suppliers"]),
+      items: procurementItems,
+    })
+  }
+
+  // Records (Históricos)
+  if (ui.shouldShowInNavigation('reports')) {
+    sections.push({
+      id: "records",
+      icon: FileText,
+      label: "Históricos",
+      active: isSectionActive(["/reportes"]),
+      items: [
+        { href: "/reportes", icon: BarChart3, label: "Reportes", active: isPathActive("/reportes") },
+      ],
+    })
+  }
+
+  // Organization
+  if (ui.shouldShowInNavigation('personnel')) {
+    const orgItems: NavItem[] = [
+      { href: "/gestion/asignaciones", icon: Target, label: "Asignaciones Organizacionales", active: isPathActive("/gestion/asignaciones"), badge: "Nuevo" },
+      { href: "/personal", icon: Users, label: "Gestión de Personal", active: isPathActive("/personal") },
+    ]
+    if (ui.canShowCreateButton?.('assets') || profile.role === 'AREA_ADMINISTRATIVA') {
+      orgItems.push(
+        { href: "/gestion/activos/asignacion-plantas", icon: Package, label: "Activos a Plantas", active: isPathActive("/gestion/activos/asignacion-plantas") },
+        { href: "/activos/asignacion", icon: UserCheck, label: "Asignación de Activos", active: isPathActive("/activos/asignacion") }
+      )
+    }
+    if (['GERENCIA_GENERAL', 'AREA_ADMINISTRATIVA'].includes(profile.role || '')) {
+      orgItems.push({ href: "/plantas", icon: Building2, label: "Configuración de Plantas", active: isPathActive("/plantas") })
+    }
+    orgItems.push(
+      { href: "/gestion/autorizaciones", icon: Shield, label: "Gestión de Autorizaciones", active: isPathActive("/gestion/autorizaciones") },
+      { href: "/gestion/credenciales", icon: IdCard, label: "Credenciales de Empleados", active: isPathActive("/gestion/credenciales") }
+    )
+    sections.push({
+      id: "organization",
+      icon: Building2,
+      label: "Organización",
+      active: isSectionActive(["/gestion/asignaciones", "/personal", "/activos/asignacion", "/gestion/activos/asignacion-plantas", "/plantas", "/gestion/autorizaciones", "/gestion/credenciales"]),
+      items: orgItems,
+    })
+  }
+
+  // HR
+  sections.push({
+    id: "hr",
+    icon: Users,
+    label: "Recursos Humanos",
+    active: isSectionActive(["/rh/limpieza", "/rh/cumplimiento-checklists"]),
+    items: [
+      { href: "/rh/limpieza", icon: Sparkles, label: "Reportes de Limpieza", active: isPathActive("/rh/limpieza") },
+      { href: "/rh/cumplimiento-checklists", icon: ClipboardCheck, label: "Cumplimiento de Checklists", active: isPathActive("/rh/cumplimiento-checklists") },
+    ],
+  })
+
+  // Compliance
+  if (isComplianceSystemEnabled) {
+    sections.push({
+      id: "compliance",
+      icon: Shield,
+      label: "Cumplimiento",
+      active: isSectionActive(["/compliance"]),
+      items: [
+        { href: "/compliance", icon: Shield, label: "Dashboard de Cumplimiento", active: isPathActive("/compliance") },
+        { href: "/compliance/activos-olvidados", icon: AlertTriangle, label: "Activos Olvidados", active: isPathActive("/compliance/activos-olvidados") },
+        { href: "/compliance/incidentes", icon: FileText, label: "Incidentes", active: isPathActive("/compliance/incidentes") },
+      ],
+    })
+  }
+
+  return sections
+}
+
 // Enhanced Collapsed Sidebar with better tooltips
 export function CollapsedSidebar({ className, onLinkClick }: SidebarProps) {
   const pathname = usePathname()
-  const { profile } = useAuthZustand()
+  const { profile, ui } = useAuthZustand()
   const { isComplianceSystemEnabled } = useSystemSettings()
   const [openTooltips, setOpenTooltips] = useState<Record<string, boolean>>({})
 
@@ -1126,18 +1261,14 @@ export function CollapsedSidebar({ className, onLinkClick }: SidebarProps) {
   }
 
   const isPathActive = (path: string) => {
-    // Special handling for /suppliers to avoid matching /suppliers/analytics
     if (path === "/suppliers") {
       return pathname === path || (pathname.startsWith(path + "/") && !pathname.startsWith("/suppliers/analytics"))
     }
     return pathname === path || pathname.startsWith(path + "/")
   }
 
-  const isSectionActive = (paths: string[]) => {
-    return paths.some(path => isPathActive(path))
-  }
+  const isSectionActive = (paths: string[]) => paths.some(path => isPathActive(path))
 
-  // Return loading state if no profile yet
   if (!profile) {
     return (
       <div className={cn("pb-12", className)}>
@@ -1148,140 +1279,30 @@ export function CollapsedSidebar({ className, onLinkClick }: SidebarProps) {
     )
   }
 
-  const baseNavigationSections = [
-    {
-      id: "dashboard",
-      icon: Home,
-      label: "Dashboard",
-      href: "/dashboard",
-      active: pathname === "/dashboard"
-    },
-    {
-      id: "credential",
-      icon: IdCard,
-      label: "Mi Credencial",
-      href: "/credencial",
-      active: pathname === "/credencial"
-    },
-    {
-      id: "equipment",
-      icon: Wrench,
-      label: "Equipos",
-      active: isSectionActive(["/modelos", "/activos"]),
-      items: [
-        { href: "/modelos", icon: Settings, label: "Modelos", active: isPathActive("/modelos") },
-        { href: "/activos", icon: Package, label: "Activos", active: isPathActive("/activos") }
-      ]
-    },
-    {
-      id: "operations",
-      icon: ClipboardCheck,
-      label: "Operaciones",
-      active: isSectionActive(["/checklists", "/incidentes", "/ordenes", "/calendario"]),
-      items: [
-        { href: "/checklists", icon: ClipboardCheck, label: "Checklists", active: isPathActive("/checklists") },
-        { href: "/incidentes", icon: AlertTriangle, label: "Incidentes", active: isPathActive("/incidentes") },
-        { href: "/ordenes", icon: Tool, label: "Órdenes de Trabajo", active: isPathActive("/ordenes") },
-        { href: "/calendario", icon: Calendar, label: "Calendario", active: isPathActive("/calendario") }
-      ]
-    },
-    {
-      id: "procurement",
-      icon: ShoppingCart,
-      label: "Compras",
-      active: isSectionActive(["/compras", "/inventario", "/diesel", "/urea", "/suppliers"]),
-      items: [
-        { href: "/compras", icon: CreditCard, label: "Órdenes de Compra", active: isPathActive("/compras") },
-        { href: "/inventario", icon: Boxes, label: "Inventario", active: isPathActive("/inventario") },
-        { href: "/diesel", icon: Fuel, label: "Gestión de Diesel", active: isPathActive("/diesel") },
-        { href: "/urea", icon: Droplet, label: "Gestión de UREA", active: isPathActive("/urea") },
-        { href: "/suppliers", icon: Users, label: "Padrón de Proveedores", active: isPathActive("/suppliers") },
-        { href: "/suppliers/analytics", icon: BarChart3, label: "Análisis de Proveedores", active: isPathActive("/suppliers/analytics") }
-      ]
-    },
-    {
-      id: "records",
-      icon: FileText,
-      label: "Históricos",
-      active: isSectionActive(["/servicios", "/reportes"]),
-      items: [
-        { href: "/servicios", icon: CheckCircle, label: "Órdenes de Servicio", active: isPathActive("/servicios") },
-        { href: "/reportes", icon: BarChart3, label: "Reportes", active: isPathActive("/reportes") }
-      ]
-    },
-    {
-      id: "organization",
-      icon: Building2,
-      label: "Organización",
-      active: isSectionActive(["/gestion/asignaciones", "/personal", "/activos/asignacion", "/gestion/activos/asignacion-plantas", "/plantas", "/gestion/autorizaciones", "/gestion/credenciales"]),
-      items: [
-        { href: "/gestion/asignaciones", icon: Target, label: "Asignaciones Organizacionales", active: isPathActive("/gestion/asignaciones"), badge: "Nuevo" },
-        { href: "/personal", icon: Users, label: "Gestión de Personal", active: isPathActive("/personal") },
-        { href: "/activos/asignacion", icon: UserCheck, label: "Asignación de Activos", active: isPathActive("/activos/asignacion") },
-        { href: "/gestion/activos/asignacion-plantas", icon: Package, label: "Activos a Plantas", active: isPathActive("/gestion/activos/asignacion-plantas") },
-        { href: "/plantas", icon: Building2, label: "Configuración de Plantas", active: isPathActive("/plantas") },
-        { href: "/gestion/autorizaciones", icon: Shield, label: "Gestión de Autorizaciones", active: isPathActive("/gestion/autorizaciones") },
-        { href: "/gestion/credenciales", icon: IdCard, label: "Credenciales de Empleados", active: isPathActive("/gestion/credenciales") }
-      ]
-    },
-    {
-      id: "hr",
-      icon: Users,
-      label: "Recursos Humanos",
-      active: isSectionActive(["/rh/limpieza", "/rh/cumplimiento-checklists"]),
-      items: [
-        { href: "/rh/limpieza", icon: Sparkles, label: "Reportes de Limpieza", active: isPathActive("/rh/limpieza") },
-        { href: "/rh/cumplimiento-checklists", icon: ClipboardCheck, label: "Cumplimiento de Checklists", active: isPathActive("/rh/cumplimiento-checklists") }
-      ]
-    },
-    {
-      id: "compliance",
-      icon: Shield,
-      label: "Cumplimiento",
-      active: isSectionActive(["/compliance"]),
-      items: [
-        { href: "/compliance", icon: Shield, label: "Dashboard de Cumplimiento", active: isPathActive("/compliance") },
-        { href: "/compliance/activos-olvidados", icon: AlertTriangle, label: "Activos Olvidados", active: isPathActive("/compliance/activos-olvidados") },
-        { href: "/compliance/incidentes", icon: FileText, label: "Incidentes", active: isPathActive("/compliance/incidentes") }
-      ]
-    }
-  ]
-
-  // Filter and reorder sections based on user role
-  let navigationSections = baseNavigationSections
-    .filter(section => isComplianceSystemEnabled || section.id !== 'compliance')
-  
-  // Check if user is an operator
   const isOperator = profile.role && ['OPERADOR', 'DOSIFICADOR'].includes(profile.role)
-  
+
+  // Build navigation from shared config with ui filtering
+  let navigationSections: NavSection[]
   if (isOperator) {
-    // For operators, only show checklists section
     navigationSections = [
-      {
-        id: "checklists",
-        icon: ClipboardCheck,
-        label: "Mis Checklists",
-        href: "/checklists",
-        active: isPathActive("/checklists")
-      }
+      { id: "checklists", icon: ClipboardCheck, label: "Mis Checklists", href: "/checklists", active: isPathActive("/checklists") },
     ]
   } else if (profile.role === 'AREA_ADMINISTRATIVA') {
-    // Remove operations section and reorder to prioritize procurement
-    navigationSections = baseNavigationSections
-      .filter(section => section.id !== 'operations' && (isComplianceSystemEnabled || section.id !== 'compliance'))
+    navigationSections = buildNavigationSections(profile, ui, pathname, isPathActive, isSectionActive, isComplianceSystemEnabled)
+      .filter(section => section.id !== 'operations')
       .sort((a, b) => {
-        // Dashboard always first
         if (a.id === 'dashboard') return -1
         if (b.id === 'dashboard') return 1
-        // Procurement second for AREA_ADMINISTRATIVA
+        if (a.id === 'credential') return -1
+        if (b.id === 'credential') return 1
         if (a.id === 'procurement') return -1
         if (b.id === 'procurement') return 1
-        // Organization third for AREA_ADMINISTRATIVA  
         if (a.id === 'organization') return -1
         if (b.id === 'organization') return 1
-        // Everything else maintains order
         return 0
       })
+  } else {
+    navigationSections = buildNavigationSections(profile, ui, pathname, isPathActive, isSectionActive, isComplianceSystemEnabled)
   }
 
   // Add Configuración del Sistema to Organization when compliance is hidden (for admins)
@@ -1303,7 +1324,7 @@ export function CollapsedSidebar({ className, onLinkClick }: SidebarProps) {
   }
 
   return (
-    <div className={cn("pb-12", className)}>
+    <div className={cn("pb-12", className)} role="navigation" aria-label="Navegación principal">
       <TooltipProvider>
         <div className="space-y-1 py-4">
           {navigationSections.map((section, index) => {
@@ -1318,12 +1339,12 @@ export function CollapsedSidebar({ className, onLinkClick }: SidebarProps) {
                         <Button
                           variant={section.active ? "secondary" : "ghost"}
                           size="icon"
-                          className="w-10 h-10 mx-auto"
+                          className={cn("w-11 h-11 min-w-[44px] min-h-[44px] mx-auto", navItemClasses)}
                           asChild
                           onClick={handleLinkClick}
                         >
-                          <Link href={section.href}>
-                            <Icon className="h-4 w-4" />
+                          <Link href={section.href} aria-current={section.active ? "page" : undefined}>
+                            <Icon className="h-5 w-5" />
                             <span className="sr-only">{section.label}</span>
                           </Link>
                         </Button>
@@ -1350,7 +1371,7 @@ export function CollapsedSidebar({ className, onLinkClick }: SidebarProps) {
                       <Button
                         variant={section.active ? "secondary" : "ghost"}
                         size="icon"
-                        className="w-10 h-10 mx-auto group relative hover:scale-105 transition-all duration-200"
+                        className={cn("w-11 h-11 min-w-[44px] min-h-[44px] mx-auto", navItemClasses)}
                         onClick={(e) => {
                           e.preventDefault()
                           toggleTooltip(section.id)
@@ -1358,7 +1379,7 @@ export function CollapsedSidebar({ className, onLinkClick }: SidebarProps) {
                         onMouseEnter={() => {}} // Disable hover
                         onMouseLeave={() => {}} // Disable hover
                       >
-                        <Icon className="h-4 w-4" />
+                        <Icon className="h-5 w-5" />
                         <span className="sr-only">{section.label}</span>
                       </Button>
                     </TooltipTrigger>
@@ -1390,11 +1411,14 @@ export function CollapsedSidebar({ className, onLinkClick }: SidebarProps) {
                               asChild
                               onClick={handleLinkClick}
                             >
-                              <Link href={item.href}>
-                                <ItemIcon className="mr-2 h-4 w-4" />
-                                {item.label}
+                              <Link href={item.href} className="flex items-center w-full" aria-current={item.active ? "page" : undefined}>
+                                <ItemIcon className="mr-2 h-4 w-4 shrink-0" />
+                                <span className="flex-1">{item.label}</span>
+                                {item.badge && (
+                                  <Badge variant="secondary" className="ml-auto text-xs">{item.badge}</Badge>
+                                )}
                                 {item.active && (
-                                  <div className="ml-auto w-1.5 h-1.5 bg-primary rounded-full" />
+                                  <div className={cn("w-1.5 h-1.5 bg-primary rounded-full", item.badge ? "ml-1" : "ml-auto")} />
                                 )}
                               </Link>
                             </Button>

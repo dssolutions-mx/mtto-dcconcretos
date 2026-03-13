@@ -96,13 +96,35 @@ export function BreadcrumbNav({ className }: BreadcrumbNavProps) {
         })
       }
     }
-    // Operations section
-    else if (["checklists", "ordenes", "calendario"].includes(firstSegment)) {
+    // Trabajos section (work orders + incidentes)
+    else if (["ordenes", "servicios", "incidentes"].includes(firstSegment)) {
+      items.push({
+        label: "Trabajos",
+        href: "#"
+      })
+      if (firstSegment === "ordenes") {
+        items.push({
+          label: "Órdenes Pendientes",
+          href: "/ordenes"
+        })
+      } else if (firstSegment === "servicios") {
+        items.push({
+          label: "Órdenes Ejecutadas",
+          href: "/servicios"
+        })
+      } else if (firstSegment === "incidentes") {
+        items.push({
+          label: "Incidentes",
+          href: "/incidentes"
+        })
+      }
+    }
+    // Operations section (checklists, calendario)
+    else if (["checklists", "calendario"].includes(firstSegment)) {
       items.push({
         label: "Operaciones",
         href: "#"
       })
-      
       if (firstSegment === "checklists") {
         items.push({
           label: "Checklists",
@@ -113,12 +135,17 @@ export function BreadcrumbNav({ className }: BreadcrumbNavProps) {
             label: "Plantillas",
             href: "/checklists/plantillas"
           })
+        } else if (pathSegments.length > 1 && pathSegments[1] === "programar") {
+          items.push({
+            label: "Programar",
+            href: "/checklists/programar"
+          })
+        } else if (pathSegments.length > 1 && pathSegments[1] === "problemas-pendientes") {
+          items.push({
+            label: "Problemas Pendientes",
+            href: "/checklists/problemas-pendientes"
+          })
         }
-      } else if (firstSegment === "ordenes") {
-        items.push({
-          label: "Órdenes de Trabajo",
-          href: "/ordenes"
-        })
       } else if (firstSegment === "calendario") {
         items.push({
           label: "Calendario",
@@ -245,24 +272,16 @@ export function BreadcrumbNav({ className }: BreadcrumbNavProps) {
         }
       }
     }
-    // Records section
-    else if (["servicios", "reportes"].includes(firstSegment)) {
+    // Records section (Históricos)
+    else if (firstSegment === "reportes") {
       items.push({
         label: "Históricos",
         href: "#"
       })
-      
-      if (firstSegment === "servicios") {
-        items.push({
-          label: "Órdenes de Servicio",
-          href: "/servicios"
-        })
-      } else if (firstSegment === "reportes") {
-        items.push({
-          label: "Reportes",
-          href: "/reportes"
-        })
-      }
+      items.push({
+        label: "Reportes",
+        href: "/reportes"
+      })
     }
 
     // Add additional path segments for sub-pages (skip segments already handled above)
