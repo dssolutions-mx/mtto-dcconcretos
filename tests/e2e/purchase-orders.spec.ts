@@ -6,9 +6,9 @@ test.describe('Purchase Orders flows', () => {
     await expect(page.getByRole('heading', { name: 'Órdenes de Compra' })).toBeVisible()
   })
 
-  test('Services page loads and lists service orders table', async ({ page }) => {
-    await page.goto('/servicios')
-    await expect(page.getByText('Órdenes de Servicio')).toBeVisible()
+  test('Work orders page loads and shows header', async ({ page }) => {
+    await page.goto('/ordenes')
+    await expect(page.getByText('Órdenes de Trabajo')).toBeVisible()
   })
 
   test('PO details page renders if TEST_PO_ID set', async ({ page }) => {

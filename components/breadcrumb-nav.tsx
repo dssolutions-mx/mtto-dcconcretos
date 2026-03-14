@@ -104,13 +104,13 @@ export function BreadcrumbNav({ className }: BreadcrumbNavProps) {
       })
       if (firstSegment === "ordenes") {
         items.push({
-          label: "Órdenes Pendientes",
+          label: "Órdenes de Trabajo",
           href: "/ordenes"
         })
       } else if (firstSegment === "servicios") {
         items.push({
-          label: "Órdenes Ejecutadas",
-          href: "/servicios"
+          label: "Órdenes de Trabajo",
+          href: "/ordenes"
         })
       } else if (firstSegment === "incidentes") {
         items.push({

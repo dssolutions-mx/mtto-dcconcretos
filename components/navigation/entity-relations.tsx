@@ -3,12 +3,11 @@
 import Link from "next/link"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
-import { AlertTriangle, ClipboardCheck, FileText, PackageSearch, ShoppingCart, Wrench } from "lucide-react"
+import { AlertTriangle, ClipboardCheck, PackageSearch, ShoppingCart, Wrench } from "lucide-react"
 
 type EntityRelationsProps = {
   /** Asset UUID for asset-centric links (e.g. incident → /activos/{assetId}/incidentes). When provided, incident link uses asset-scoped URL. */
   assetId?: string | null
-  serviceOrderId?: string | null
   workOrderId?: string | null
   incidentId?: string | null
   checklistId?: string | null
@@ -18,7 +17,6 @@ type EntityRelationsProps = {
     asset?: string
     incident?: string
     checklist?: string
-    serviceOrder?: string
     purchaseOrder?: string
   }
   className?: string
@@ -26,7 +24,6 @@ type EntityRelationsProps = {
 
 export function EntityRelations({
   assetId,
-  serviceOrderId,
   workOrderId,
   incidentId,
   checklistId,
@@ -55,15 +52,6 @@ export function EntityRelations({
           icon={<Wrench className="h-4 w-4" aria-hidden="true" />}
           label="OT"
           ariaLabel="Ver orden de trabajo"
-        />
-      )}
-
-      {serviceOrderId && (
-        <RelationChip
-          href={`/servicios/${serviceOrderId}`}
-          icon={<FileText className="h-4 w-4" aria-hidden="true" />}
-          label={labels?.serviceOrder ?? "Servicio realizado"}
-          ariaLabel={labels?.serviceOrder ?? "Ver orden de servicio"}
         />
       )}
 

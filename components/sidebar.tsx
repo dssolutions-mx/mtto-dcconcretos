@@ -20,7 +20,6 @@ import {
   ShoppingCart,
   PenToolIcon as Tool,
   CreditCard,
-  CheckCircle,
   Clock,
   Menu,
   X,
@@ -585,18 +584,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                     >
                       <Link href="/ordenes">
                         <Clock className="mr-2 h-4 w-4" />
-                        Órdenes Pendientes
-                      </Link>
-                    </Button>
-                    <Button
-                      variant={isPathActive("/servicios") ? "secondary" : "ghost"}
-                      className={cn("w-full justify-start pl-8", navItemClasses)}
-                      asChild
-                      onClick={handleLinkClick}
-                    >
-                      <Link href="/servicios">
-                        <CheckCircle className="mr-2 h-4 w-4" />
-                        Órdenes Ejecutadas
+                        Órdenes de Trabajo
                       </Link>
                     </Button>
                     {ui.shouldShowInNavigation('maintenance') && (
@@ -1107,8 +1095,7 @@ function buildNavigationSections(
     const trabajosItems: NavItem[] = []
     if (ui.shouldShowInNavigation('work_orders')) {
       trabajosItems.push(
-        { href: "/ordenes", icon: Clock, label: "Órdenes Pendientes", active: isPathActive("/ordenes") },
-        { href: "/servicios", icon: CheckCircle, label: "Órdenes Ejecutadas", active: isPathActive("/servicios") }
+        { href: "/ordenes", icon: Clock, label: "Órdenes de Trabajo", active: isPathActive("/ordenes") }
       )
     }
     if (ui.shouldShowInNavigation('maintenance')) {
@@ -1119,7 +1106,7 @@ function buildNavigationSections(
         id: "trabajos",
         icon: Tool,
         label: "Trabajos",
-        active: isSectionActive(["/ordenes", "/servicios", "/incidentes"]),
+        active: isSectionActive(["/ordenes", "/incidentes"]),
         items: trabajosItems,
       })
     }

@@ -194,13 +194,6 @@ export default async function WorkOrderDetailsPage({
     }
   }
 
-  // Fetch related service order (if any) to enable bidirectional navigation
-  const { data: relatedServiceOrder } = await supabase
-    .from("service_orders")
-    .select("id, order_id")
-    .eq("work_order_id", id)
-    .maybeSingle()
-
   // Fetch incident if this WO originated from one (also for ORIGEN fecha)
   let incidentAssetId: string | null = null
   let incidentCreatedAt: string | null = null
@@ -429,8 +422,7 @@ export default async function WorkOrderDetailsPage({
   const targetPOId =
     (extendedWorkOrder.purchase_order_id || (allPurchaseOrders?.[0] as { id: string } | undefined)?.id) ?? null
   const hasSidebarContent = Boolean(
-    relatedServiceOrder?.id ||
-      extendedWorkOrder.incident_id ||
+    extendedWorkOrder.incident_id ||
       extendedWorkOrder.purchase_order_id ||
       purchaseOrder ||
       isCompleted ||
@@ -455,7 +447,6 @@ export default async function WorkOrderDetailsPage({
       <WorkOrderLifecycleStrip
         status={extendedWorkOrder.status}
         hasPurchaseOrder={!!extendedWorkOrder.purchase_order_id}
-        relatedServiceOrder={relatedServiceOrder}
         incidentId={extendedWorkOrder.incident_id}
         incidentAssetId={incidentAssetId}
       />
@@ -738,7 +729,6 @@ export default async function WorkOrderDetailsPage({
             <WorkOrderRelationshipHub
             assetId={null}
             workOrderId={null}
-            serviceOrderId={relatedServiceOrder?.id ?? null}
             incidentId={extendedWorkOrder.incident_id ?? null}
             checklistId={
               /* Hide when checklist is the origin — already shown in Origen section */

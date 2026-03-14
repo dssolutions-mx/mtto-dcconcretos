@@ -6,7 +6,6 @@ import { EntityRelations } from "@/components/navigation/entity-relations"
 export interface WorkOrderRelationshipHubProps {
   assetId: string | null
   workOrderId: string | null
-  serviceOrderId: string | null
   incidentId: string | null
   checklistId: string | null
   purchaseOrderId: string | null
@@ -20,7 +19,6 @@ export interface WorkOrderRelationshipHubProps {
 export function WorkOrderRelationshipHub({
   assetId,
   workOrderId,
-  serviceOrderId,
   incidentId,
   checklistId,
   purchaseOrderId,
@@ -36,12 +34,11 @@ export function WorkOrderRelationshipHub({
         : isChecklistOrigin
           ? "Origen: checklist"
           : undefined,
-    serviceOrder: serviceOrderId ? "Servicio realizado" : undefined,
     purchaseOrder: purchaseOrderId ? "OC relacionada" : undefined,
   }
 
   const hasRelations =
-    assetId || workOrderId || serviceOrderId || incidentId || checklistId || purchaseOrderId
+    assetId || workOrderId || incidentId || checklistId || purchaseOrderId
 
   if (!hasRelations) return null
 
@@ -55,7 +52,6 @@ export function WorkOrderRelationshipHub({
         <EntityRelations
           assetId={assetId}
           workOrderId={workOrderId}
-          serviceOrderId={serviceOrderId}
           incidentId={incidentId}
           checklistId={checklistId}
           purchaseOrderId={purchaseOrderId}

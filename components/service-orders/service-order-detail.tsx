@@ -1098,8 +1098,8 @@ Documento confidencial - Solo para uso interno de la organización
           <div className="flex flex-col items-center justify-center py-8 text-destructive">
             <AlertTriangle className="h-12 w-12 mb-4" />
             <p className="text-lg font-medium">{error || "No se pudo encontrar la orden de servicio"}</p>
-            <Button onClick={() => router.push("/servicios")} variant="outline" className="mt-4">
-              Volver a la lista
+            <Button onClick={() => router.push("/ordenes")} variant="outline" className="mt-4">
+              Volver a órdenes
             </Button>
           </div>
         </CardContent>
@@ -1123,7 +1123,7 @@ Documento confidencial - Solo para uso interno de la organización
       <BreadcrumbSetter
         items={[
           { label: "Dashboard", href: "/dashboard" },
-          { label: "Órdenes de Servicio", href: "/servicios" },
+          { label: "Órdenes de Trabajo", href: "/ordenes" },
           serviceOrder.asset_id
             ? {
                 label: (serviceOrder.asset as any)?.asset_id || serviceOrder.asset_name || "Detalle",
@@ -1141,7 +1141,7 @@ Documento confidencial - Solo para uso interno de la organización
             <Button 
               variant="outline" 
               size="icon" 
-              onClick={() => router.push("/servicios")}
+              onClick={() => router.push("/ordenes")}
             >
               <ArrowLeft className="h-4 w-4" />
             </Button>
@@ -1348,7 +1348,6 @@ Documento confidencial - Solo para uso interno de la organización
               <EntityRelations
                 assetId={serviceOrder.asset_id ?? serviceOrder.asset?.id}
                 workOrderId={serviceOrder.work_order_id}
-                serviceOrderId={serviceOrder.id}
                 incidentId={serviceOrder.work_order?.incident_id ?? null}
                 checklistId={serviceOrder.checklist_id}
               />

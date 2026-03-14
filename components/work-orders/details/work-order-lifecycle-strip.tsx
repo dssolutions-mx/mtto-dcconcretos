@@ -7,7 +7,6 @@ import { WorkOrderStatus } from "@/types"
 export interface WorkOrderLifecycleStripProps {
   status: string | null
   hasPurchaseOrder: boolean
-  relatedServiceOrder: { id: string; order_id?: string | null } | null
   incidentId: string | null
   incidentAssetId: string | null
 }
@@ -15,7 +14,6 @@ export interface WorkOrderLifecycleStripProps {
 export function WorkOrderLifecycleStrip({
   status,
   hasPurchaseOrder,
-  relatedServiceOrder,
   incidentId,
   incidentAssetId,
 }: WorkOrderLifecycleStripProps) {
@@ -48,14 +46,6 @@ export function WorkOrderLifecycleStrip({
         </span>
       </div>
       <div className="flex flex-wrap gap-3">
-        {relatedServiceOrder && (
-          <Link
-            href={`/servicios/${relatedServiceOrder.id}`}
-            className="text-sm text-primary hover:underline inline-flex items-center gap-1"
-          >
-            Este trabajo fue ejecutado: Ver {relatedServiceOrder.order_id || "OS"}
-          </Link>
-        )}
         {incidentId && incidentAssetId && (
           <Link
             href={`/activos/${incidentAssetId}`}

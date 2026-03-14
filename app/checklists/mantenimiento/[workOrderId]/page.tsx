@@ -6,14 +6,15 @@ export const metadata: Metadata = {
   description: "Completar checklist de mantenimiento preventivo",
 }
 
-export default function MaintenanceChecklistPage({
+export default async function MaintenanceChecklistPage({
   params,
 }: {
-  params: { workOrderId: string }
+  params: Promise<{ workOrderId: string }>
 }) {
+  const { workOrderId } = await params
   return (
     <div className="container mx-auto py-6">
-      <MaintenanceChecklistExecution workOrderId={params.workOrderId} />
+      <MaintenanceChecklistExecution workOrderId={workOrderId} />
     </div>
   )
 } 

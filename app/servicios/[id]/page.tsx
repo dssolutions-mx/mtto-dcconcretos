@@ -7,19 +7,14 @@ export const metadata: Metadata = {
   description: "Información detallada de una orden de servicio",
 }
 
-interface ServiceOrderPageProps {
-  params: {
-    id: string
-  }
-}
-
-export default function ServiceOrderPage({ params }: ServiceOrderPageProps) {
+export default async function ServiceOrderPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
   return (
     <div className="container py-8">
       <BreadcrumbSetter
-        items={[{ label: "Dashboard", href: "/dashboard" }, { label: "Órdenes de Servicio", href: "/servicios" }]}
+        items={[{ label: "Dashboard", href: "/dashboard" }, { label: "Órdenes de Trabajo", href: "/ordenes" }]}
       />
-      <ServiceOrderDetail id={params.id} />
+      <ServiceOrderDetail id={id} />
     </div>
   )
 } 
