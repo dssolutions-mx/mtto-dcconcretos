@@ -117,8 +117,9 @@ await updateWorkOrderStatus(workOrderId, {
 - Parts and labor costs
 
 ### Incident Management
-- [app/incidentes/page.tsx](mdc:app/incidentes/page.tsx)
-- Links to generated work orders
+- [app/incidentes/page.tsx](mdc:app/incidentes/page.tsx) - Triage inbox for all incidents
+- [app/incidentes/[id]/page.tsx](mdc:app/incidentes/[id]/page.tsx) - First-class incident review surface
+- Links to generated work orders via Ver OT / Generar OT
 - Incident resolution tracking
 
 ## Data Relationships

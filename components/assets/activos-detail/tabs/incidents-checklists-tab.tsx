@@ -13,6 +13,7 @@ import {
   ClipboardCheck,
   Clock,
   ExternalLink,
+  Eye,
   Gauge,
   Plus,
 } from "lucide-react"
@@ -113,14 +114,22 @@ export function IncidentsChecklistsTab({
                   </div>
                   <p className="text-sm text-muted-foreground">{incident.reported_by}</p>
                   <p className="text-sm mt-1 line-clamp-2">{incident.description}</p>
-                  {incident.work_order_id && (
-                    <Button variant="outline" size="sm" className="mt-2 cursor-pointer" asChild>
-                      <Link href={`/ordenes/${incident.work_order_id}`}>
-                        <ExternalLink className="h-3 w-3 mr-1" />
-                        Ver OT {incident.work_order?.order_id ?? "..."}
+                  <div className="flex gap-2 mt-2">
+                    <Button variant="outline" size="sm" className="cursor-pointer" asChild>
+                      <Link href={`/incidentes/${incident.id}`}>
+                        <Eye className="h-3 w-3 mr-1" />
+                        Ver
                       </Link>
                     </Button>
-                  )}
+                    {incident.work_order_id && (
+                      <Button variant="default" size="sm" className="cursor-pointer" asChild>
+                        <Link href={`/ordenes/${incident.work_order_id}`}>
+                          <ExternalLink className="h-3 w-3 mr-1" />
+                          Ver OT {incident.work_order?.order_id ?? "..."}
+                        </Link>
+                      </Button>
+                    )}
+                  </div>
                 </div>
               ))}
               {incidents.length > 3 && (

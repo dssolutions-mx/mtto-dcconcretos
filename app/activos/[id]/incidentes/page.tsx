@@ -8,14 +8,12 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { ArrowLeft, Plus, AlertTriangle, CheckCircle, AlertCircle, Eye, FileText, Camera } from "lucide-react";
+import { ArrowLeft, Plus, CheckCircle, AlertCircle, Eye, FileText, Camera } from "lucide-react";
 import Link from "next/link";
 import { useAsset, useIncidents } from "@/hooks/useSupabase";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { IncidentRegistrationDialog } from "@/components/assets/dialogs/incident-registration-dialog";
-import { EvidenceViewer, type EvidenceItem } from "@/components/ui/evidence-viewer";
 import { useToast } from "@/hooks/use-toast";
 
 interface IncidentPageProps {
@@ -32,8 +30,6 @@ export default function IncidentPage({ params }: IncidentPageProps) {
   const { asset, loading: assetLoading, error: assetError } = useAsset(assetId);
   const { incidents, loading: incidentsLoading, error: incidentsError, refetch } = useIncidents(assetId);
   const [showIncidentDialog, setShowIncidentDialog] = useState(false);
-  const [selectedIncident, setSelectedIncident] = useState<any>(null);
-  const [showIncidentDetails, setShowIncidentDetails] = useState(false);
 
   const formatDate = (dateString: string | null) => {
     if (!dateString) return "No disponible";
@@ -84,45 +80,13 @@ export default function IncidentPage({ params }: IncidentPageProps) {
     }
   }
 
-  const getIncidentEvidence = (incident: any): EvidenceItem[] => {
-    if (!incident.documents) return [];
-    
-    try {
-      // Handle both old format (string[]) and new format (EvidenceItem[])
-      if (Array.isArray(incident.documents)) {
-        if (typeof incident.documents[0] === 'string') {
-          // Old format: array of URLs
-          return incident.documents.map((url: string, index: number) => ({
-            id: `${incident.id}_${index}`,
-            url,
-            description: `Evidencia del incidente ${index + 1}`,
-            category: 'documentacion_soporte',
-            uploaded_at: incident.created_at || new Date().toISOString()
-          }));
-        } else {
-          // New format: array of evidence objects
-          return incident.documents;
-        }
-      }
-      return [];
-    } catch (error) {
-      console.error('Error parsing incident evidence:', error);
-      return [];
-    }
-  };
-
-  const handleViewIncident = (incident: any) => {
-    setSelectedIncident(incident);
-    setShowIncidentDetails(true);
-  };
-
   const isLoading = assetLoading || incidentsLoading;
   const anyError = assetError || incidentsError;
 
   return (
     <DashboardShell>
       <DashboardHeader
-        heading={isLoading ? "Cargando incidentes..." : `Gestión de Incidentes: ${asset?.name || ""}`}
+        heading={isLoading ? "Cargando incidentes..." : `Incidentes: ${asset?.name || ""}`}
         text={isLoading ? "" : `Registro y seguimiento de incidentes para ${asset?.asset_id || ""}`}
       >
         <div className="flex gap-2">
@@ -298,18 +262,22 @@ export default function IncidentPage({ params }: IncidentPageProps) {
                               <Button
                                 variant="outline"
                                 size="sm"
-                                onClick={() => handleViewIncident(incident)}
+                                asChild
                               >
-                                <Eye className="h-4 w-4 mr-1" />
-                                Ver Detalles
+                                <Link href={`/incidentes/${incident.id}`}>
+                                  <Eye className="h-4 w-4 mr-1" />
+                                  Ver Detalles
+                                </Link>
                               </Button>
                               {incident.work_order_id && (
                                 <Button
                                   variant="default"
                                   size="sm"
-                                  onClick={() => window.open(`/ordenes/${incident.work_order_id}`, '_blank')}
+                                  asChild
                                 >
-                                  Ver OT
+                                  <Link href={`/ordenes/${incident.work_order_id}`}>
+                                    Ver OT
+                                  </Link>
                                 </Button>
                               )}
                             </div>
@@ -374,216 +342,6 @@ export default function IncidentPage({ params }: IncidentPageProps) {
           refetch();
         }}
       />
-
-      <Dialog open={showIncidentDetails} onOpenChange={setShowIncidentDetails}>
-        <DialogContent className="sm:max-w-[800px] max-h-[80vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Detalles del Incidente</DialogTitle>
-            <DialogDescription>
-              Información completa del incidente y evidencia asociada
-            </DialogDescription>
-          </DialogHeader>
-          
-          {selectedIncident && (
-            <div className="space-y-6">
-              {/* Información básica del incidente */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <Card>
-                  <CardHeader className="pb-3">
-                    <CardTitle className="text-sm">Información General</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-2">
-                    <div>
-                      <span className="text-sm font-medium">Fecha:</span>
-                      <p className="text-sm text-muted-foreground">{formatDate(selectedIncident.date)}</p>
-                    </div>
-                    <div>
-                      <span className="text-sm font-medium">Tipo:</span>
-                      <div className="mt-1">{getTypeBadge(selectedIncident.type)}</div>
-                    </div>
-                    <div>
-                      <span className="text-sm font-medium">Estado:</span>
-                      <div className="mt-1">{getStatusBadge(selectedIncident.status || "")}</div>
-                    </div>
-                    <div>
-                      <span className="text-sm font-medium">Reportado por:</span>
-                      <p className="text-sm text-muted-foreground">{selectedIncident.reported_by}</p>
-                    </div>
-                  </CardContent>
-                </Card>
-
-                <Card>
-                  <CardHeader className="pb-3">
-                    <CardTitle className="text-sm">Impacto y Costos</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-2">
-                    <div>
-                      <span className="text-sm font-medium">Tiempo Inactivo:</span>
-                      <p className="text-sm text-muted-foreground">
-                        {selectedIncident.downtime ? `${selectedIncident.downtime} hrs` : "No especificado"}
-                      </p>
-                    </div>
-                    <div>
-                      <span className="text-sm font-medium">Horas de Trabajo:</span>
-                      <p className="text-sm text-muted-foreground">
-                        {selectedIncident.labor_hours ? `${selectedIncident.labor_hours} hrs` : "No especificado"}
-                      </p>
-                    </div>
-                    <div>
-                      <span className="text-sm font-medium">Costo Total:</span>
-                      <p className="text-sm text-muted-foreground">
-                        {selectedIncident.total_cost ? `$${selectedIncident.total_cost}` : "No especificado"}
-                      </p>
-                    </div>
-                    {selectedIncident.work_order_text && (
-                      <div>
-                        <span className="text-sm font-medium">Orden de Trabajo:</span>
-                        <p className="text-sm text-muted-foreground">{selectedIncident.work_order_text}</p>
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-              </div>
-
-              {/* Descripción e impacto */}
-              <Card>
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-sm">Descripción del Incidente</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-sm">{selectedIncident.description}</p>
-                  {selectedIncident.impact && (
-                    <div className="mt-4">
-                      <span className="text-sm font-medium">Impacto:</span>
-                      <p className="text-sm text-muted-foreground mt-1">{selectedIncident.impact}</p>
-                    </div>
-                  )}
-                  {selectedIncident.resolution && (
-                    <div className="mt-4">
-                      <span className="text-sm font-medium">Resolución:</span>
-                      <p className="text-sm text-muted-foreground mt-1">{selectedIncident.resolution}</p>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-
-              {/* Repuestos utilizados */}
-              {selectedIncident.parts && (
-                <Card>
-                  <CardHeader className="pb-3">
-                    <CardTitle className="text-sm">Repuestos Utilizados</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-2">
-                      {JSON.parse(selectedIncident.parts).map((part: any, index: number) => (
-                        <div key={index} className="flex justify-between items-center p-2 bg-muted rounded">
-                          <div>
-                            <span className="text-sm font-medium">{part.name}</span>
-                            {part.partNumber && (
-                              <span className="text-xs text-muted-foreground ml-2">({part.partNumber})</span>
-                            )}
-                          </div>
-                          <div className="text-right">
-                            <span className="text-sm">Cant: {part.quantity}</span>
-                            {part.cost && (
-                              <span className="text-xs text-muted-foreground ml-2">${part.cost}</span>
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
-
-              {/* Evidencia del incidente */}
-              <Card>
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-sm">Evidencia del Incidente</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <EvidenceViewer 
-                    evidence={getIncidentEvidence(selectedIncident)}
-                    title=""
-                    showCategories={true}
-                  />
-                </CardContent>
-              </Card>
-              
-              {/* Acciones para el incidente */}
-              <Card>
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-sm">Acciones</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  {selectedIncident.work_order_id ? (
-                    <div className="flex flex-col gap-2">
-                      <Button 
-                        className="w-full"
-                        onClick={() => window.open(`/ordenes/${selectedIncident.work_order_id}`, '_blank')}
-                      >
-                        Ver Orden de Trabajo
-                      </Button>
-                      {selectedIncident.purchase_order_id && (
-                        <Button 
-                          variant="outline"
-                          className="w-full"
-                          onClick={() => window.open(`/compras/${selectedIncident.purchase_order_id}`, '_blank')}
-                        >
-                          Ver Orden de Compra
-                        </Button>
-                      )}
-                    </div>
-                  ) : (
-                    <Button 
-                      variant="outline"
-                      className="w-full"
-                      onClick={async () => {
-                        try {
-                          const response = await fetch('/api/work-orders/generate-from-incident', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                              incident_id: selectedIncident.id,
-                              priority: selectedIncident.type?.toLowerCase().includes('crítica') || 
-                                       selectedIncident.type?.toLowerCase().includes('falla') ||
-                                       selectedIncident.type?.toLowerCase().includes('accidente') ? 'Alta' : 'Media'
-                            }),
-                          });
-                          
-                          if (response.ok) {
-                            // Cerrar el diálogo y recargar los datos
-                            setShowIncidentDetails(false);
-                            refetch();
-                            toast({
-                              title: "Orden de trabajo generada",
-                              description: "Se ha creado una orden de trabajo a partir del incidente.",
-                            });
-                          } else {
-                            toast({
-                              title: "Error",
-                              description: "No se pudo generar la orden de trabajo.",
-                              variant: "destructive"
-                            });
-                          }
-                        } catch (error) {
-                          toast({
-                            title: "Error",
-                            description: "Ocurrió un error al generar la orden de trabajo.",
-                            variant: "destructive"
-                          });
-                        }
-                      }}
-                    >
-                      Generar Orden de Trabajo
-                    </Button>
-                  )}
-                </CardContent>
-              </Card>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
     </DashboardShell>
   );
 } 

@@ -582,7 +582,7 @@ export function StatusMaintenanceTab({
                           </Badge>
                           {workOrder.incident_id && (
                             <Badge variant="secondary" className="mb-1" asChild>
-                              <Link href={`/activos/${assetId}/incidentes`} className="cursor-pointer hover:underline">
+                              <Link href={`/incidentes/${workOrder.incident_id}`} className="cursor-pointer hover:underline">
                                 <Link2 className="h-3 w-3 mr-1" />
                                 Desde incidente
                               </Link>

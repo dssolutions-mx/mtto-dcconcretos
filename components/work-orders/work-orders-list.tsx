@@ -7,7 +7,7 @@ import { Badge, badgeVariants } from "@/components/ui/badge"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { User, AlertTriangle, ShoppingCart, Calendar, Package, Repeat, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react"
+import { User, AlertTriangle, ShoppingCart, Calendar, Package, Repeat, ArrowUpDown, ArrowUp, ArrowDown, Eye } from "lucide-react"
 import { createClient } from "@/lib/supabase"
 import { useIsMobile } from "@/hooks/use-mobile"
 import Link from "next/link"
@@ -96,7 +96,7 @@ function getPurchaseOrderStatusVariant(status: string) {
 /** Origin badge: incident_id → "Desde incidente"; checklist_id (no incident) → "Desde checklist"; maintenance_plan_id + preventive → "Preventivo programado"; else "Manual / Ad-hoc" */
 function getOriginBadge(order: WorkOrderWithAsset): { label: string; href?: string } {
   if (order.incident_id && order.asset_id) {
-    return { label: "Desde incidente", href: `/activos/${order.asset_id}/incidentes` }
+    return { label: "Desde incidente", href: `/incidentes/${order.incident_id}` }
   }
   if (order.checklist_id) {
     return { label: "Desde checklist" }
