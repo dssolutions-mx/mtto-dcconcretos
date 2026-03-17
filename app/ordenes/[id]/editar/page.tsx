@@ -20,7 +20,7 @@ export default function EditWorkOrderPage({
 async function EditWorkOrderContent({ id }: { id: string }) {
   const supabase = await createClient();
   
-  // Check if work order exists
+  // Check if work order exists (explicit select ensures creation_photos included)
   const { data: workOrder, error } = await supabase
     .from("work_orders")
     .select(`
@@ -34,10 +34,18 @@ async function EditWorkOrderContent({ id }: { id: string }) {
     // Work order not found, redirect to work orders list
     redirect("/ordenes");
   }
+
+  // Parse creation_photos on server (same as details page) so it reliably reaches the client
+  const creationPhotos = workOrder.creation_photos
+    ? typeof workOrder.creation_photos === "string"
+      ? JSON.parse(workOrder.creation_photos)
+      : workOrder.creation_photos
+    : [];
+  const initialCreationPhotos = Array.isArray(creationPhotos) ? creationPhotos : [];
   
   return (
     <div className="container py-4 md:py-8">
-      <WorkOrderEditForm workOrder={workOrder} />
+      <WorkOrderEditForm workOrder={workOrder} initialCreationPhotos={initialCreationPhotos} />
     </div>
   );
 } 

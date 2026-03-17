@@ -39,6 +39,14 @@
   .activos-detail-page [data-stagger] {
     animation: none !important;
   }
+
+  .work-order-form-module *,
+  .work-order-form-module *::before,
+  .work-order-form-module *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 /* Staggered reveal for Assets Detail page */

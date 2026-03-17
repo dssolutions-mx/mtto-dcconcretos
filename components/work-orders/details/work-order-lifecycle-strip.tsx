@@ -18,31 +18,26 @@ export function WorkOrderLifecycleStrip({
   incidentAssetId,
 }: WorkOrderLifecycleStripProps) {
   const isCompleted = status === WorkOrderStatus.Completed
-  const isInProgress = status === WorkOrderStatus.InProgress
+  const isProgrammed = status === WorkOrderStatus.Programmed
+  const isWaitingParts = status === WorkOrderStatus.WaitingParts
 
   return (
     <div className="mb-6 space-y-3 no-print">
       <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-        <span
-          className={cn(
-            !isCompleted && !hasPurchaseOrder && "font-medium text-foreground"
-          )}
-        >
-          Planificado
+        <span className={cn(status === WorkOrderStatus.Pending && "font-medium text-foreground")}>
+          Pendiente
         </span>
         <span aria-hidden>→</span>
-        <span
-          className={cn(hasPurchaseOrder && !isCompleted && "font-medium text-foreground")}
-        >
-          En compra
+        <span className={cn(isProgrammed && "font-medium text-foreground")}>
+          Programada
         </span>
         <span aria-hidden>→</span>
-        <span className={cn(isInProgress && "font-medium text-foreground")}>
-          En ejecución
+        <span className={cn(isWaitingParts && "font-medium text-foreground")}>
+          Esperando repuestos
         </span>
         <span aria-hidden>→</span>
         <span className={cn(isCompleted && "font-medium text-foreground")}>
-          Completado
+          Completada
         </span>
       </div>
       <div className="flex flex-wrap gap-3">

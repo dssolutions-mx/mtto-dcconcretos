@@ -245,9 +245,8 @@ export enum ServiceOrderStatus {
 
 export enum WorkOrderStatus {
   Pending = 'Pendiente',
-  Quoted = 'Cotizada',
-  Approved = 'Aprobada',
-  InProgress = 'En ejecución',
+  Programmed = 'Programada',
+  WaitingParts = 'Esperando repuestos',
   Completed = 'Completada'
 }
 

@@ -10,7 +10,7 @@ import Link from "next/link"
 
 export const metadata: Metadata = {
   title: "Crear Orden de Trabajo | Sistema de Gestión de Mantenimiento",
-  description: "Crear una nueva orden de trabajo",
+  description: "Crear una orden de trabajo correctiva. Para mantenimiento preventivo, vaya al activo → Mantenimiento → Programar.",
 }
 
 export default function CreateWorkOrderPage() {
@@ -18,7 +18,7 @@ export default function CreateWorkOrderPage() {
     <DashboardShell>
       <DashboardHeader
         heading="Crear Orden de Trabajo"
-        text="Crea una nueva orden de trabajo para mantenimiento preventivo o correctivo."
+        text="Orden correctiva manual. Para preventivo: Activos → seleccione activo → Mantenimiento → Programar."
       >
         <Button variant="outline" asChild>
           <Link href="/ordenes">

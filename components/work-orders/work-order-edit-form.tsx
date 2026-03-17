@@ -1,20 +1,18 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { useRouter } from "next/navigation"
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Checkbox } from "@/components/ui/checkbox"
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Calendar } from "@/components/ui/calendar"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
-import { CalendarIcon, Save, Plus, Trash2, ArrowLeft, Camera, FileText } from "lucide-react"
+import { CalendarIcon, Save, Plus, Trash2, ArrowLeft, Camera, FileText, Check, CheckCircle2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { createClient } from "@/lib/supabase"
 import { UpdateWorkOrder, MaintenanceType, ServiceOrderPriority, WorkOrderStatus, Profile, PurchaseOrderItem } from "@/types"
@@ -33,16 +31,54 @@ interface AssetForSelect {
   asset_id: string | null;
 }
 
-interface ChecklistForSelect {
-  id: string;
-  name: string | null;
-}
-
 interface WorkOrderEditFormProps {
   workOrder: any; // Work order with asset relation
+  /** Parsed creation_photos from server (same flow as details page) - ensures evidence reaches client */
+  initialCreationPhotos?: unknown[];
 }
 
-export function WorkOrderEditForm({ workOrder }: WorkOrderEditFormProps) {
+/** Normalizes creation_photos from any format (string array, photo_url, etc.) into EvidencePhoto[] */
+function parseCreationPhotos(raw: unknown): EvidencePhoto[] {
+  if (raw === null || raw === undefined) return []
+  let parsed: unknown
+  try {
+    parsed = typeof raw === 'string' ? JSON.parse(raw) : raw
+  } catch {
+    return []
+  }
+  if (!Array.isArray(parsed)) {
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      const maybeData = (parsed as Record<string, unknown>).data
+      if (Array.isArray(maybeData)) parsed = maybeData
+      else return []
+    } else return []
+  }
+  return parsed
+    .map((item: unknown, index: number) => {
+      if (typeof item === 'string') {
+        return {
+          id: crypto.randomUUID(),
+          url: item,
+          description: `Foto ${index + 1}`,
+          category: 'general',
+          uploaded_at: new Date().toISOString(),
+        }
+      }
+      const obj = item as Record<string, unknown>
+      const url = (obj.url as string) || (obj.photo_url as string) || (obj.photo as string) || ''
+      return {
+        id: (obj.id as string) || crypto.randomUUID(),
+        url,
+        description: (obj.description as string) || (obj.caption as string) || `Foto ${index + 1}`,
+        category: (obj.category as string) || 'general',
+        uploaded_at: (obj.uploaded_at as string) || new Date().toISOString(),
+        bucket_path: obj.bucket_path as string | undefined,
+      }
+    })
+    .filter((e) => e.url)
+}
+
+export function WorkOrderEditForm({ workOrder, initialCreationPhotos }: WorkOrderEditFormProps) {
   const router = useRouter()
   const supabase = createClient()
 
@@ -60,15 +96,15 @@ export function WorkOrderEditForm({ workOrder }: WorkOrderEditFormProps) {
   
   const [assets, setAssets] = useState<AssetForSelect[]>([])
   const [technicians, setTechnicians] = useState<Profile[]>([])
-  const [checklists, setChecklists] = useState<ChecklistForSelect[]>([])
   const [currentUser, setCurrentUser] = useState<Profile | null>(null)
 
   const [plannedDate, setPlannedDate] = useState<Date | undefined>(
     workOrder.planned_date ? new Date(workOrder.planned_date) : undefined
   )
-  const [isFromChecklist, setIsFromChecklist] = useState(!!workOrder.checklist_id)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const footerRef = useRef<HTMLDivElement | null>(null)
+  const [showStickyFooter, setShowStickyFooter] = useState(false)
 
   // Add state for parts - parse existing required_parts
   const [requiredParts, setRequiredParts] = useState<PurchaseOrderItem[]>(() => {
@@ -97,25 +133,57 @@ export function WorkOrderEditForm({ workOrder }: WorkOrderEditFormProps) {
     total_price: 0
   })
 
-  // Add state for evidence - parse existing creation_photos
+  // Prefer server-parsed initialCreationPhotos (same flow as details page); fallback to workOrder.creation_photos
   const [creationEvidence, setCreationEvidence] = useState<EvidencePhoto[]>(() => {
-    if (workOrder.creation_photos) {
-      try {
-        const parsed = typeof workOrder.creation_photos === 'string' 
-          ? JSON.parse(workOrder.creation_photos)
-          : workOrder.creation_photos
-        return Array.isArray(parsed) ? parsed.map((evidence: any) => ({
-          ...evidence,
-          id: evidence.id || crypto.randomUUID() // Ensure each evidence has an ID
-        })) : []
-      } catch {
-        return []
-      }
-    }
-    return []
+    const fromServer = Array.isArray(initialCreationPhotos) && initialCreationPhotos.length > 0
+      ? parseCreationPhotos(initialCreationPhotos)
+      : []
+    if (fromServer.length > 0) return fromServer
+    return parseCreationPhotos(workOrder?.creation_photos)
   })
   
   const [showEvidenceDialog, setShowEvidenceDialog] = useState(false)
+  const evidenceModifiedRef = useRef(false)
+
+  // Fallback: fetch creation_photos client-side if both server props and workOrder had none
+  useEffect(() => {
+    if (creationEvidence.length > 0 || !workOrder?.id) return
+    supabase
+      .from("work_orders")
+      .select("creation_photos")
+      .eq("id", workOrder.id)
+      .single()
+      .then(({ data }) => {
+        if (data?.creation_photos) {
+          const parsed = parseCreationPhotos(data.creation_photos)
+          if (parsed.length > 0) setCreationEvidence(parsed)
+        }
+      })
+      .catch(() => {})
+  }, [workOrder?.id])
+
+  // Wrap setCreationEvidence to track when user modifies evidence (add/remove in dialog)
+  const setCreationEvidenceTracked = (value: EvidencePhoto[] | ((prev: EvidencePhoto[]) => EvidencePhoto[])) => {
+    evidenceModifiedRef.current = true
+    setCreationEvidence(value)
+  }
+
+  // Origin-aware planning gaps for auto-created WOs (incident or checklist)
+  const isAutoCreated = !!(workOrder.incident_id || workOrder.checklist_id)
+  const planningGaps = (() => {
+    if (!isAutoCreated) return []
+    const gaps: { id: string; label: string; done: boolean }[] = []
+    const hasPlannedDate = !!(plannedDate || formData.planned_date)
+    const hasAssignedTo = !!formData.assigned_to
+    const hasRequiredParts = requiredParts.length > 0
+    if (!hasPlannedDate) gaps.push({ id: 'planned_date', label: 'Fecha programada para revisión', done: false })
+    else gaps.push({ id: 'planned_date', label: 'Fecha programada para revisión', done: true })
+    if (!hasAssignedTo) gaps.push({ id: 'assigned_to', label: 'Asignar técnico', done: false })
+    else gaps.push({ id: 'assigned_to', label: 'Asignar técnico', done: true })
+    if (!hasRequiredParts) gaps.push({ id: 'required_parts', label: 'Agregar repuestos (si aplica)', done: false })
+    else gaps.push({ id: 'required_parts', label: 'Agregar repuestos (si aplica)', done: true })
+    return gaps
+  })()
 
   useEffect(() => {
     const fetchData = async () => {
@@ -156,20 +224,22 @@ export function WorkOrderEditForm({ workOrder }: WorkOrderEditFormProps) {
         fetchError = true;
       } else setTechnicians(techniciansData || [])
       
-      const { data: checklistsData, error: checklistsError } = await supabase
-        .from("checklists")
-        .select("id, name")
-        .order("name")
-      if (checklistsError) {
-        console.error("Error fetching checklists:", checklistsError)
-        fetchError = true;
-      } else setChecklists(checklistsData || [])
-      
       if(fetchError) setError("Hubo un error al cargar datos iniciales. Intenta de nuevo.")
       setIsLoading(false)
     }
     fetchData()
   }, [supabase])
+
+  useEffect(() => {
+    const el = footerRef.current
+    if (!el) return
+    const obs = new IntersectionObserver(
+      ([e]) => setShowStickyFooter(!e?.isIntersecting),
+      { threshold: 0, rootMargin: "0px 0px -80px 0px" }
+    )
+    obs.observe(el)
+    return () => obs.disconnect()
+  }, [isLoading])
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { id, value } = e.target
@@ -179,10 +249,6 @@ export function WorkOrderEditForm({ workOrder }: WorkOrderEditFormProps) {
   const handleSelectChange = (id: keyof UpdateWorkOrder, value: string | null) => {
     setFormData(prev => ({ ...prev, [id]: value }))
   }
-  
-  const handleRadioChange = (value: string) => {
-    setFormData(prev => ({ ...prev, type: value as MaintenanceType }))
-  }
 
   const handleDateChange = (date: Date | undefined) => {
     setPlannedDate(date)
@@ -191,16 +257,6 @@ export function WorkOrderEditForm({ workOrder }: WorkOrderEditFormProps) {
 
   const handleAssetChange = (assetId: string | null) => {
     handleSelectChange('asset_id', assetId)
-    if (!isFromChecklist) {
-        setFormData(prev => ({ ...prev, checklist_id: null }));
-    }
-  }
-  
-  const handleChecklistToggle = (checked: boolean) => {
-    setIsFromChecklist(checked)
-    if (!checked) {
-      setFormData(prev => ({ ...prev, checklist_id: null }))
-    }
   }
 
   // Add function to handle adding a new part
@@ -312,18 +368,24 @@ export function WorkOrderEditForm({ workOrder }: WorkOrderEditFormProps) {
     }
 
     try {
-      const updateData = {
+      const updateData: Record<string, unknown> = {
         ...formData,
         required_parts: requiredParts.length > 0 ? JSON.parse(JSON.stringify(requiredParts)) : null,
         estimated_cost: requiredParts.reduce((total, part) => total + part.total_price, 0).toString(),
-        creation_photos: creationEvidence.length > 0 ? creationEvidence.map(evidence => ({
-          url: evidence.url,
-          description: evidence.description,
-          category: evidence.category,
-          uploaded_at: evidence.uploaded_at,
-          bucket_path: evidence.bucket_path
-        })) : null
-      };
+      }
+      // Only update creation_photos if user modified evidence (prevents overwriting existing when parse failed)
+      if (evidenceModifiedRef.current) {
+        updateData.creation_photos =
+          creationEvidence.length > 0
+            ? creationEvidence.map((evidence) => ({
+                url: evidence.url || (evidence as Record<string, unknown>).photo_url as string,
+                description: evidence.description,
+                category: evidence.category,
+                uploaded_at: evidence.uploaded_at,
+                bucket_path: evidence.bucket_path,
+              }))
+            : []
+      }
       
       console.log("Updating work order:", updateData);
       
@@ -361,52 +423,108 @@ export function WorkOrderEditForm({ workOrder }: WorkOrderEditFormProps) {
     );
   }
 
+  const originLabel = workOrder.incident_id ? "Incidente" : workOrder.checklist_id ? "Checklist" : "Manual"
+  const pendingCount = planningGaps.filter((g) => !g.done).length
+
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="icon" asChild>
+          <Button variant="outline" size="icon" asChild aria-label="Volver a detalles de la orden">
             <Link href={`/ordenes/${workOrder.id}`}>
-              <ArrowLeft className="h-4 w-4" />
+              <ArrowLeft className="h-4 w-4" aria-hidden />
             </Link>
           </Button>
-          <h1 className="text-2xl font-bold">Editar Orden de Trabajo: {workOrder.order_id}</h1>
+          <div>
+            <h1 className="text-2xl font-bold">Editar Orden de Trabajo: {workOrder.order_id}</h1>
+            <Badge variant="secondary" className="mt-1.5 font-normal">
+              Origen: {originLabel}
+            </Badge>
+          </div>
         </div>
       </div>
 
-      <form onSubmit={handleSubmit} className="space-y-6 pb-16">
+      <div className="flex items-center gap-3">
+        <span className="text-sm text-muted-foreground">Estado actual:</span>
+        <Select
+          value={formData.status || WorkOrderStatus.Pending}
+          onValueChange={(value) => handleSelectChange('status', value as WorkOrderStatus)}
+        >
+          <SelectTrigger id="status" className="w-[180px] cursor-pointer transition-colors duration-200">
+            <SelectValue placeholder="Seleccionar estado" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={WorkOrderStatus.Pending} className="cursor-pointer">Pendiente</SelectItem>
+            <SelectItem value={WorkOrderStatus.Programmed} className="cursor-pointer">Programada</SelectItem>
+            <SelectItem value={WorkOrderStatus.WaitingParts} className="cursor-pointer">Esperando repuestos</SelectItem>
+            <SelectItem value={WorkOrderStatus.Completed} className="cursor-pointer">Completada</SelectItem>
+          </SelectContent>
+        </Select>
+        <span className="text-xs text-muted-foreground">Actualice al avanzar el trabajo</span>
+      </div>
+
+      <form onSubmit={handleSubmit} className="work-order-form-module space-y-6 pb-24">
+        {isAutoCreated && planningGaps.some((g) => !g.done) && (
+          <div className="rounded-r-lg border-l-4 border-primary bg-primary/5 px-4 py-3" role="region" aria-label="Completar planificación">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-sm font-semibold">Completar planificación</p>
+              <span className="text-xs bg-primary/10 text-primary rounded-full px-2 py-0.5">
+                {pendingCount} de 3 pendientes
+              </span>
+            </div>
+            <ul className="space-y-1.5 text-sm">
+              {planningGaps.map((g) => (
+                <li key={g.id}>
+                  <button
+                    type="button"
+                    onClick={() => document.getElementById(`edit-${g.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })}
+                    className="flex items-center gap-2 text-left w-full cursor-pointer hover:bg-primary/10 rounded px-2 py-1.5 -mx-2 transition-colors duration-200"
+                  >
+                    {g.done ? (
+                      <CheckCircle2 className="h-4 w-4 text-primary shrink-0" aria-hidden />
+                    ) : (
+                      <div className="h-2 w-2 rounded-full bg-muted-foreground/40 shrink-0" aria-hidden />
+                    )}
+                    <span className={g.done ? "text-muted-foreground line-through" : ""}>{g.label}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
         <Card>
-          <CardHeader>
-            <CardTitle>Información General</CardTitle>
-            <CardDescription>Edita la información básica de la orden de trabajo</CardDescription>
+          <CardHeader className="pb-2 px-4 pt-4">
+            <CardTitle className="text-base">Resumen de la orden</CardTitle>
+            <CardDescription className="text-xs">Información básica de la orden de trabajo</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="description">Problema reportado <span className="text-red-500">*</span></Label>
+              <Textarea 
+                id="description" 
+                placeholder="Describa el trabajo a realizar o el problema identificado" 
+                rows={3} 
+                value={formData.description || ""}
+                onChange={handleInputChange}
+                required
+              />
+            </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="workOrderType">Tipo de Orden de Trabajo</Label>
-                <RadioGroup
-                  value={formData.type || MaintenanceType.Preventive}
-                  onValueChange={handleRadioChange}
-                  className="flex flex-col space-y-1"
-                >
-                  <div className="flex items-center space-x-2">
-                    <RadioGroupItem value={MaintenanceType.Preventive} id="preventive" />
-                    <Label htmlFor="preventive">Mantenimiento Preventivo</Label>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <RadioGroupItem value={MaintenanceType.Corrective} id="corrective" />
-                    <Label htmlFor="corrective">Mantenimiento Correctivo</Label>
-                  </div>
-                </RadioGroup>
+                <Label>Tipo de Orden</Label>
+                <div>
+                  <Badge variant="outline" className="capitalize font-normal">
+                    {formData.type === MaintenanceType.Preventive ? "Preventivo" : "Correctivo"}
+                  </Badge>
+                </div>
               </div>
-
               <div className="space-y-2">
                 <Label htmlFor="priority">Prioridad</Label>
                 <Select 
                   value={formData.priority || ServiceOrderPriority.Medium} 
                   onValueChange={(value) => handleSelectChange('priority', value as ServiceOrderPriority)}
                 >
-                  <SelectTrigger id="priority">
+                  <SelectTrigger id="priority" className="cursor-pointer">
                     <SelectValue placeholder="Seleccionar prioridad" />
                   </SelectTrigger>
                   <SelectContent>
@@ -418,73 +536,66 @@ export function WorkOrderEditForm({ workOrder }: WorkOrderEditFormProps) {
                 </Select>
               </div>
             </div>
-
             <div className="space-y-2">
-              <Label htmlFor="description">Descripción / Título <span className="text-red-500">*</span></Label>
-              <Textarea 
-                id="description" 
-                placeholder="Describa el trabajo a realizar o ingrese un título descriptivo" 
-                rows={3} 
-                value={formData.description || ""}
-                onChange={handleInputChange}
+              <Label htmlFor="asset_id">Activo <span className="text-red-500">*</span></Label>
+              <Select 
+                value={formData.asset_id || "none"} 
+                onValueChange={(value) => handleAssetChange(value === "none" ? null : value)}
+                name="asset_id"
                 required
-              />
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="asset_id">Activo <span className="text-red-500">*</span></Label>
-                <Select 
-                  value={formData.asset_id || "none"} 
-                  onValueChange={(value) => handleAssetChange(value === "none" ? null : value)}
-                  name="asset_id"
-                  required
-                >
-                  <SelectTrigger id="asset_id">
-                    <SelectValue placeholder="Seleccionar activo" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {assets.map((asset) => (
-                      <SelectItem key={asset.id} value={asset.id}>
-                        {asset.name} ({asset.asset_id})
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="planned_date">Fecha Programada</Label>
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <Button
-                      variant={"outline"}
-                      className={cn("w-full justify-start text-left font-normal", !plannedDate && "text-muted-foreground")}
-                      id="planned_date_button"
-                    >
-                      <CalendarIcon className="mr-2 h-4 w-4" />
-                      {plannedDate ? format(plannedDate, "PPP", { locale: es }) : "Seleccionar fecha"}
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0">
-                    <Calendar mode="single" selected={plannedDate} onSelect={handleDateChange} initialFocus />
-                  </PopoverContent>
-                </Popover>
-              </div>
+              >
+                <SelectTrigger id="asset_id" className="cursor-pointer">
+                  <SelectValue placeholder="Seleccionar activo" />
+                </SelectTrigger>
+                <SelectContent>
+                  {assets.map((asset) => (
+                    <SelectItem key={asset.id} value={asset.id}>
+                      {asset.name} ({asset.asset_id})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </CardContent>
         </Card>
 
         <Card>
-          <CardHeader>
-            <CardTitle>Asignación y Recursos</CardTitle>
-            <CardDescription>Edita responsables y recursos para la orden de trabajo</CardDescription>
+          <CardHeader className="pb-2 px-4 pt-4">
+            <CardTitle className="text-base">Programación</CardTitle>
+            <CardDescription className="text-xs">Fecha programada para la revisión</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div id="edit-planned_date" className="space-y-2">
+              <Label htmlFor="planned_date">Fecha Programada</Label>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant={"outline"}
+                    className={cn("w-full justify-start text-left font-normal transition-colors duration-200 cursor-pointer", !plannedDate && "text-muted-foreground")}
+                    id="planned_date_button"
+                  >
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {plannedDate ? format(plannedDate, "PPP", { locale: es }) : "Seleccionar fecha"}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0">
+                  <Calendar mode="single" selected={plannedDate} onSelect={handleDateChange} initialFocus />
+                </PopoverContent>
+              </Popover>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2 px-4 pt-4">
+            <CardTitle className="text-base">Asignación y recursos</CardTitle>
+            <CardDescription className="text-xs">Responsables y recursos para la orden</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
+              <div id="edit-assigned_to" className="space-y-2">
                 <Label htmlFor="assigned_to">Técnico Responsable</Label>
-                <Select 
+                <Select
                   value={formData.assigned_to || "none"}
                   onValueChange={(value) => handleSelectChange('assigned_to', value === "none" ? null : value)}
                 >
@@ -514,66 +625,13 @@ export function WorkOrderEditForm({ workOrder }: WorkOrderEditFormProps) {
               </div>
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="status">Estado</Label>
-              <Select 
-                value={formData.status || WorkOrderStatus.Pending} 
-                onValueChange={(value) => handleSelectChange('status', value as WorkOrderStatus)}
-              >
-                <SelectTrigger id="status">
-                  <SelectValue placeholder="Seleccionar estado" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={WorkOrderStatus.Pending}>Pendiente</SelectItem>
-                  <SelectItem value={WorkOrderStatus.Quoted}>Cotizada</SelectItem>
-                  <SelectItem value={WorkOrderStatus.Approved}>Aprobada</SelectItem>
-                  <SelectItem value={WorkOrderStatus.InProgress}>En ejecución</SelectItem>
-                  <SelectItem value={WorkOrderStatus.Completed}>Completada</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-4 pt-4 border-t mt-4">
-              <div className="flex items-center space-x-2">
-                <Checkbox
-                  id="fromChecklistCheckbox"
-                  checked={isFromChecklist}
-                  onCheckedChange={(checked) => handleChecklistToggle(checked as boolean)}
-                />
-                <Label htmlFor="fromChecklistCheckbox">Asociado a un checklist</Label>
-              </div>
-
-              {isFromChecklist && (
-                <div className="space-y-2">
-                  <Label htmlFor="checklist_id">Checklist</Label>
-                  <Select 
-                      value={formData.checklist_id || "none"}
-                      onValueChange={(value) => handleSelectChange('checklist_id', value === "none" ? null : value)}
-                      disabled={!isFromChecklist || checklists.length === 0}
-                  >
-                    <SelectTrigger id="checklist_id">
-                      <SelectValue placeholder={checklists.length === 0 ? "No hay checklists disponibles" : "Seleccionar checklist"} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">Remover checklist</SelectItem>
-                      {checklists.map((checklist) => (
-                        <SelectItem key={checklist.id} value={checklist.id}>
-                          {checklist.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              )}
-            </div>
           </CardContent>
         </Card>
 
-        {/* Parts Required Card */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Repuestos Requeridos</CardTitle>
-            <CardDescription>Edita los repuestos necesarios para esta orden de trabajo</CardDescription>
+        <Card id="edit-required_parts">
+          <CardHeader className="pb-2 px-4 pt-4">
+            <CardTitle className="text-base">Repuestos requeridos</CardTitle>
+            <CardDescription className="text-xs">Repuestos necesarios para esta orden</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -682,9 +740,9 @@ export function WorkOrderEditForm({ workOrder }: WorkOrderEditFormProps) {
 
         {/* Evidence Section */}
         <Card>
-          <CardHeader>
-            <CardTitle>Evidencia de Creación</CardTitle>
-            <CardDescription>
+          <CardHeader className="pb-2 px-4 pt-4">
+            <CardTitle className="text-base">Evidencia de Creación</CardTitle>
+            <CardDescription className="text-xs">
               Modifica las fotografías que documentan el estado inicial del equipo y el problema identificado
             </CardDescription>
           </CardHeader>
@@ -708,12 +766,15 @@ export function WorkOrderEditForm({ workOrder }: WorkOrderEditFormProps) {
 
             {creationEvidence.length > 0 && (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {creationEvidence.map((evidence) => (
+                {creationEvidence.map((evidence) => {
+                  const imageUrl = evidence.url || (evidence as Record<string, unknown>).photo_url as string | undefined
+                  const isImage = imageUrl && (imageUrl.includes('image') || imageUrl.match(/\.(jpeg|jpg|gif|png|webp)$/i))
+                  return (
                   <Card key={evidence.id} className="overflow-hidden">
                     <div className="aspect-video relative bg-muted">
-                      {evidence.url.includes('image') || evidence.url.match(/\.(jpeg|jpg|gif|png|webp)$/i) ? (
+                      {isImage ? (
                         <img
-                          src={evidence.url}
+                          src={imageUrl}
                           alt={evidence.description}
                           className="w-full h-full object-cover"
                         />
@@ -738,7 +799,8 @@ export function WorkOrderEditForm({ workOrder }: WorkOrderEditFormProps) {
                       </p>
                     </CardContent>
                   </Card>
-                ))}
+                  )
+                })}
               </div>
             )}
 
@@ -768,7 +830,7 @@ export function WorkOrderEditForm({ workOrder }: WorkOrderEditFormProps) {
           open={showEvidenceDialog}
           onOpenChange={setShowEvidenceDialog}
           evidence={creationEvidence}
-          setEvidence={setCreationEvidence}
+          setEvidence={setCreationEvidenceTracked}
           context="creation"
           workOrderId={workOrder.id}
           assetId={formData.asset_id || undefined}
@@ -776,14 +838,33 @@ export function WorkOrderEditForm({ workOrder }: WorkOrderEditFormProps) {
           description="Suba fotografías del problema identificado, estado del equipo y cualquier documentación relevante"
         />
 
-        <CardFooter className="flex justify-end space-x-2 fixed bottom-0 right-0 w-full bg-background p-4 border-t md:relative md:bg-transparent md:p-0 md:border-none">
-          <Button type="button" variant="outline" asChild disabled={isLoading}>
+        <div ref={footerRef} className="flex justify-end gap-2 pt-6 pb-4">
+          <Button type="button" variant="outline" asChild disabled={isLoading} className="cursor-pointer transition-colors duration-200">
             <Link href={`/ordenes/${workOrder.id}`}>Cancelar</Link>
           </Button>
-          <Button type="submit" disabled={isLoading}>
+          <Button type="submit" disabled={isLoading} className="cursor-pointer transition-colors duration-200">
             {isLoading ? "Guardando..." : <><Save className="mr-2 h-4 w-4" /> Guardar Cambios</>}
           </Button>
-        </CardFooter>
+        </div>
+
+        {showStickyFooter && (
+          <div className="fixed bottom-0 left-0 right-0 z-10 bg-background/95 backdrop-blur border-t px-4 py-3 flex items-center justify-between gap-4 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)]">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="text-sm text-muted-foreground truncate">{workOrder.order_id}</span>
+              <Badge variant="outline" className="shrink-0 capitalize">
+                {formData.status || "Pendiente"}
+              </Badge>
+            </div>
+            <div className="flex gap-2 shrink-0">
+              <Button type="button" variant="outline" asChild disabled={isLoading} className="cursor-pointer transition-colors duration-200">
+                <Link href={`/ordenes/${workOrder.id}`}>Cancelar</Link>
+              </Button>
+              <Button type="submit" disabled={isLoading} className="cursor-pointer transition-colors duration-200">
+                {isLoading ? "Guardando..." : <><Save className="mr-2 h-4 w-4" /> Guardar Cambios</>}
+              </Button>
+            </div>
+          </div>
+        )}
       </form>
     </div>
   )

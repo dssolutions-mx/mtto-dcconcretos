@@ -25,24 +25,19 @@ export async function POST(
       );
     }
 
-    // Map purchase order status to work order status
-    let newWorkOrderStatus;
-    
+    // Map purchase order status to work order status (simplified: Pendiente, Programada, Esperando repuestos, Completada)
+    let newWorkOrderStatus: string;
+
     switch (purchaseOrderStatus) {
       case PurchaseOrderStatus.Pending:
-        newWorkOrderStatus = WorkOrderStatus.Quoted;
-        break;
       case PurchaseOrderStatus.Approved:
-        newWorkOrderStatus = WorkOrderStatus.Approved;
+      case PurchaseOrderStatus.Rejected:
+        newWorkOrderStatus = WorkOrderStatus.Pending;
         break;
       case PurchaseOrderStatus.Ordered:
-        newWorkOrderStatus = "Esperando Partes"; // Could be added to WorkOrderStatus enum
+        newWorkOrderStatus = WorkOrderStatus.WaitingParts;
         break;
       case PurchaseOrderStatus.Received:
-        newWorkOrderStatus = WorkOrderStatus.InProgress;
-        break;
-      case PurchaseOrderStatus.Rejected:
-        // If PO is rejected, revert to Pending status
         newWorkOrderStatus = WorkOrderStatus.Pending;
         break;
       default:

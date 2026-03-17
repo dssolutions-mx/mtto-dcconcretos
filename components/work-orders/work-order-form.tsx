@@ -1,20 +1,18 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Checkbox } from "@/components/ui/checkbox"
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Calendar } from "@/components/ui/calendar"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
-import { CalendarIcon, Save, Plus, Trash2, Camera, FileText, CheckCircle, Package, AlertCircle, Loader2 } from "lucide-react"
+import { CalendarIcon, Save, Plus, Trash2, Camera, FileText, Package, AlertCircle, Loader2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { createClient } from "@/lib/supabase"
 import { InsertWorkOrder, MaintenanceType, ServiceOrderPriority, WorkOrderStatus, Profile, PurchaseOrderItem } from "@/types"
@@ -23,21 +21,18 @@ import { EvidenceUpload, type EvidencePhoto } from "@/components/ui/evidence-upl
 import { Separator } from "@/components/ui/separator"
 import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { SupplierSuggestionPanel } from "./SupplierSuggestionPanel"
-import { SupplierSuggestionPanelMobile } from "./SupplierSuggestionPanelMobile"
-import { Supplier } from "@/types/suppliers"
 import { PartAutocomplete, PartSuggestion } from "@/components/inventory/part-autocomplete"
+import Link from "next/link"
 
 // Simpler types for select dropdowns
 interface AssetForSelect {
   id: string;
   name: string | null;
   asset_id: string | null;
-}
-
-interface ChecklistForSelect {
-  id: string;
-  name: string | null;
+  plant_id?: string | null;
+  location?: string | null;
+  current_hours?: number | null;
+  current_kilometers?: number | null;
 }
 
 export function WorkOrderForm() {
@@ -46,23 +41,17 @@ export function WorkOrderForm() {
   const supabase = createClient()
 
   const [formData, setFormData] = useState<Partial<InsertWorkOrder>>({
-    type: MaintenanceType.Preventive,
+    type: MaintenanceType.Corrective,
     priority: ServiceOrderPriority.Medium,
     status: WorkOrderStatus.Pending,
     estimated_duration: 2,
   })
 
-  // Supplier management
-  const [assignedSupplier, setAssignedSupplier] = useState<Supplier | null>(null)
-  const [supplierNotes, setSupplierNotes] = useState("")
-  
   const [assets, setAssets] = useState<AssetForSelect[]>([])
   const [technicians, setTechnicians] = useState<Profile[]>([])
-  const [checklists, setChecklists] = useState<ChecklistForSelect[]>([])
   const [currentUser, setCurrentUser] = useState<Profile | null>(null)
 
   const [plannedDate, setPlannedDate] = useState<Date | undefined>()
-  const [isFromChecklist, setIsFromChecklist] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -94,6 +83,23 @@ export function WorkOrderForm() {
   const [creationEvidence, setCreationEvidence] = useState<EvidencePhoto[]>([])
   const [showEvidenceDialog, setShowEvidenceDialog] = useState(false)
 
+  // Progressive disclosure for repuestos: show input row only when expanding or when parts exist
+  const [showPartInput, setShowPartInput] = useState(false)
+
+  // Sticky footer visibility: show when natural footer is scrolled out of view
+  const [showStickyFooter, setShowStickyFooter] = useState(false)
+  const footerRef = useRef<HTMLDivElement | null>(null)
+  useEffect(() => {
+    const el = footerRef.current
+    if (!el) return
+    const obs = new IntersectionObserver(
+      ([e]) => setShowStickyFooter(!e?.isIntersecting),
+      { threshold: 0, rootMargin: "0px 0px -80px 0px" }
+    )
+    obs.observe(el)
+    return () => obs.disconnect()
+  }, [isLoading])
+
   useEffect(() => {
     const fetchData = async () => {
       setIsLoading(true)
@@ -119,7 +125,7 @@ export function WorkOrderForm() {
 
       const { data: assetsData, error: assetsError } = await supabase
         .from("assets")
-        .select("id, name, asset_id, plant_id")
+        .select("id, name, asset_id, plant_id, location, current_hours, current_kilometers")
         .order("name")
       if (assetsError) {
         console.error("Error fetching assets:", assetsError)
@@ -134,15 +140,6 @@ export function WorkOrderForm() {
         console.error("Error fetching technicians:", techniciansError)
         fetchError = true;
       } else setTechnicians(techniciansData || [])
-      
-      const { data: checklistsData, error: checklistsError } = await supabase
-        .from("checklists")
-        .select("id, name")
-        .order("name")
-      if (checklistsError) {
-        console.error("Error fetching checklists:", checklistsError)
-        fetchError = true;
-      } else setChecklists(checklistsData || [])
       
       if(fetchError) setError("Hubo un error al cargar datos iniciales. Intenta de nuevo.")
       setIsLoading(false)
@@ -185,10 +182,6 @@ export function WorkOrderForm() {
     setFormData(prev => ({ ...prev, [id]: value }))
   }
   
-  const handleRadioChange = (value: string) => {
-    setFormData(prev => ({ ...prev, type: value as MaintenanceType }))
-  }
-
   const handleDateChange = (date: Date | undefined) => {
     setPlannedDate(date)
     setFormData(prev => ({ ...prev, planned_date: date ? date.toISOString() : null }))
@@ -229,9 +222,6 @@ export function WorkOrderForm() {
 
   const handleAssetChange = async (assetId: string | null) => {
     handleSelectChange('asset_id', assetId)
-    if (!isFromChecklist) {
-        setFormData(prev => ({ ...prev, checklist_id: null }));
-    }
     
     // Fetch plant_id from asset
     if (assetId) {
@@ -255,13 +245,6 @@ export function WorkOrderForm() {
     }
   }
   
-  const handleChecklistToggle = (checked: boolean) => {
-    setIsFromChecklist(checked)
-    if (!checked) {
-      setFormData(prev => ({ ...prev, checklist_id: null }))
-    }
-  }
-
   // Add function to handle adding a new part
   const handleAddPart = async () => {
     if (!newPart.name) {
@@ -342,10 +325,6 @@ export function WorkOrderForm() {
           : (prev.unit_price || 0)
         const totalPrice = unitPrice * currentQuantity
         
-        console.log('handlePartSelect - part:', part)
-        console.log('handlePartSelect - default_unit_cost:', part.default_unit_cost)
-        console.log('handlePartSelect - calculated unitPrice:', unitPrice)
-        console.log('handlePartSelect - totalPrice:', totalPrice)
         
         const updated = {
           name: part.name,
@@ -355,7 +334,6 @@ export function WorkOrderForm() {
           unit_price: unitPrice,  // Auto-fill unit price if available
           total_price: totalPrice
         }
-        console.log('handlePartSelect - updated state:', updated)
         return updated
       })
       
@@ -427,11 +405,6 @@ export function WorkOrderForm() {
         setIsLoading(false);
         return;
     }
-    if (!formData.type) {
-        setError("Por favor, selecciona un tipo de orden de trabajo.");
-        setIsLoading(false);
-        return;
-    }
     if (!currentUser?.id && !formData.requested_by) {
         setError("No se pudo identificar al solicitante. Por favor, recarga la página.");
         setIsLoading(false);
@@ -440,113 +413,35 @@ export function WorkOrderForm() {
 
     try {
       const requestedBy = formData.requested_by || currentUser?.id;
-      let data;
-      let error;
+      const workOrderData = {
+        asset_id: formData.asset_id,
+        plant_id: selectedAssetPlantId ?? assets.find((a) => a.id === formData.asset_id)?.plant_id ?? null,
+        description: formData.description,
+        type: MaintenanceType.Corrective,
+        requested_by: requestedBy,
+        assigned_to: formData.assigned_to,
+        planned_date: formData.planned_date || null,
+        estimated_duration: formData.estimated_duration ? Number(formData.estimated_duration) : null,
+        priority: formData.priority || ServiceOrderPriority.Medium,
+        status: WorkOrderStatus.Pending,
+        required_parts: requiredParts.length > 0 ? JSON.parse(JSON.stringify(requiredParts)) : null,
+        estimated_cost: requiredParts.reduce((total, part) => total + part.total_price, 0).toString(),
+        creation_photos: creationEvidence.length > 0 ? creationEvidence.map(evidence => ({
+          url: evidence.url,
+          description: evidence.description,
+          category: evidence.category,
+          uploaded_at: evidence.uploaded_at,
+          bucket_path: evidence.bucket_path
+        })) : []
+      };
 
-      // If coming from a checklist, use the function to generate a corrective work order
-      if (isFromChecklist && formData.checklist_id) {
-        // Call the generate_corrective_work_order function
-        const { data: result, error: functionError } = await supabase
-          .rpc('generate_corrective_work_order', {
-            p_checklist_id: formData.checklist_id
-          });
-          
-        data = result;
-        error = functionError;
-        
-        if (functionError) {
-          console.error("Error executing generate_corrective_work_order:", functionError);
-          throw functionError;
-        }
-        
-        // If successful, get the created work order
-        if (result) {
-          const { data: workOrderData, error: fetchError } = await supabase
-            .from("work_orders")
-            .select()
-            .eq("id", result)
-            .single();
-            
-          if (fetchError) throw fetchError;
-          data = workOrderData;
-        }
-      } 
-      // If it's a preventive work order and we have a maintenance plan in the future,
-      // we would use generate_preventive_work_order here
-      // For now, we'll use direct insert with our trigger for ID generation
-      else {
-        const workOrderData = {
-          asset_id: formData.asset_id,
-          description: formData.description,
-          type: formData.type,
-          requested_by: requestedBy,
-          assigned_to: formData.assigned_to,
-          planned_date: formData.planned_date || null,
-          estimated_duration: formData.estimated_duration ? Number(formData.estimated_duration) : null,
-          priority: formData.priority || ServiceOrderPriority.Medium,
-          status: WorkOrderStatus.Pending,
-          checklist_id: formData.checklist_id || null,
-          required_parts: requiredParts.length > 0 ? JSON.parse(JSON.stringify(requiredParts)) : null, // Convert to JSON
-          estimated_cost: requiredParts.reduce((total, part) => total + part.total_price, 0).toString(), // Calculate estimated cost
-          creation_photos: creationEvidence.length > 0 ? creationEvidence.map(evidence => ({
-            url: evidence.url,
-            description: evidence.description,
-            category: evidence.category,
-            uploaded_at: evidence.uploaded_at,
-            bucket_path: evidence.bucket_path
-          })) : []
-        };
-        
-        console.log("Submitting work order:", workOrderData);
+      const { data: insertedWorkOrder, error: insertError } = await supabase
+        .from("work_orders")
+        .insert(workOrderData)
+        .select()
+        .single()
 
-        // Insert the work order - this will use our trigger for ID generation
-        const { data: insertedWorkOrder, error: insertError } = await supabase
-          .from("work_orders")
-          .insert(workOrderData)
-          .select()
-          .single()
-
-        if (insertError) {
-          throw insertError
-        }
-
-        // If supplier is assigned, update the work order with supplier information
-        if (assignedSupplier && insertedWorkOrder) {
-          await supabase
-            .from("work_orders")
-            .update({
-              assigned_supplier_id: assignedSupplier.id,
-              supplier_notes: supplierNotes,
-              supplier_assignment_date: new Date().toISOString(),
-              supplier_assignment_by: currentUser?.id,
-              updated_by: currentUser?.id
-            })
-            .eq('id', insertedWorkOrder.id)
-
-          // Log the supplier assignment in work history
-          await supabase
-            .from('supplier_work_history')
-            .insert({
-              supplier_id: assignedSupplier.id,
-              work_order_id: insertedWorkOrder.id,
-              work_type: formData.type || 'maintenance',
-              total_cost: 0, // Will be updated when work is completed
-              created_at: new Date().toISOString()
-            })
-        }
-
-        const result = insertedWorkOrder
-      }
-        
-      if (error) throw error;
-      
-      // After saving successfully, check if we need to generate a purchase order
-      if (data && formData.type === MaintenanceType.Preventive && requiredParts.length > 0) {
-        // In the future, we'll implement automatic purchase order generation
-        console.log("Would generate purchase order for preventive maintenance with parts:", requiredParts);
-      }
-      
-      console.log("Work order created successfully:", data);
+      if (insertError) throw insertError
       router.push("/ordenes");
     } catch (error: any) {
       console.error("Error creating work order:", error);
@@ -565,112 +460,121 @@ export function WorkOrderForm() {
     );
   }
 
+  const selectedAsset = formData.asset_id ? assets.find((a) => a.id === formData.asset_id) : null
+
   return (
-    <form onSubmit={handleSubmit} className="space-y-6 pb-16">
+    <form onSubmit={handleSubmit} className="work-order-form-module space-y-6 pb-16">
+      {selectedAsset && (
+        <div className="rounded-lg border bg-muted/30 pb-2 px-4 pt-4 text-sm">
+          <p className="font-medium text-base mb-1">{selectedAsset.asset_id || selectedAsset.name} — {selectedAsset.name}</p>
+          {(selectedAsset.location || selectedAsset.current_hours != null || selectedAsset.current_kilometers != null) && (
+            <p className="text-muted-foreground text-xs">
+              {[selectedAsset.location && `Ubicación: ${selectedAsset.location}`, selectedAsset.current_hours != null && `Horas: ${selectedAsset.current_hours}`, selectedAsset.current_kilometers != null && `Km: ${selectedAsset.current_kilometers}`].filter(Boolean).join(" • ")}
+            </p>
+          )}
+        </div>
+      )}
+
       <Card>
-        <CardHeader>
-          <CardTitle>Información General</CardTitle>
-          <CardDescription>Ingresa la información básica para la orden de trabajo</CardDescription>
+        <CardHeader className="pb-2 px-4 pt-4">
+          <CardTitle className="text-base">Resumen de la orden</CardTitle>
+          <CardDescription className="text-xs">Paso 1 · Información básica de la orden de trabajo</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="workOrderType">Tipo de Orden de Trabajo</Label>
-              <RadioGroup
-                value={formData.type || MaintenanceType.Preventive}
-                onValueChange={handleRadioChange}
-                className="flex flex-col space-y-1"
-              >
-                <div className="flex items-center space-x-2">
-                  <RadioGroupItem value={MaintenanceType.Preventive} id="preventive" />
-                  <Label htmlFor="preventive">Mantenimiento Preventivo</Label>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <RadioGroupItem value={MaintenanceType.Corrective} id="corrective" />
-                  <Label htmlFor="corrective">Mantenimiento Correctivo</Label>
-                </div>
-              </RadioGroup>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="priority">Prioridad</Label>
-              <Select 
-                value={formData.priority || ServiceOrderPriority.Medium} 
-                onValueChange={(value) => handleSelectChange('priority', value as ServiceOrderPriority)}
-              >
-                <SelectTrigger id="priority">
-                  <SelectValue placeholder="Seleccionar prioridad" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={ServiceOrderPriority.Low}>Baja</SelectItem>
-                  <SelectItem value={ServiceOrderPriority.Medium}>Media</SelectItem>
-                  <SelectItem value={ServiceOrderPriority.High}>Alta</SelectItem>
-                  <SelectItem value={ServiceOrderPriority.Critical}>Crítica</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
           <div className="space-y-2">
-            <Label htmlFor="description">Descripción / Título <span className="text-red-500">*</span></Label>
+            <Label htmlFor="asset_id">Activo <span className="text-red-500">*</span></Label>
+            <Select 
+              value={formData.asset_id || "none"} 
+              onValueChange={(value) => handleAssetChange(value === "none" ? null : value)}
+              name="asset_id"
+              required
+            >
+              <SelectTrigger id="asset_id" className="cursor-pointer transition-colors duration-200">
+                <SelectValue placeholder="Seleccionar activo" />
+              </SelectTrigger>
+              <SelectContent>
+                {assets.map((asset) => (
+                  <SelectItem key={asset.id} value={asset.id} className="cursor-pointer">
+                    {asset.name} ({asset.asset_id})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="description">Problema reportado <span className="text-red-500">*</span></Label>
             <Textarea 
               id="description" 
-              placeholder="Describa el trabajo a realizar o ingrese un título descriptivo" 
+              placeholder="Describa el trabajo a realizar o el problema identificado" 
               rows={3} 
               value={formData.description || ""}
               onChange={handleInputChange}
               required
             />
           </div>
-
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="asset_id">Activo <span className="text-red-500">*</span></Label>
+              <Label htmlFor="priority">Prioridad</Label>
               <Select 
-                value={formData.asset_id || "none"} 
-                onValueChange={(value) => handleAssetChange(value === "none" ? null : value)}
-                name="asset_id"
-                required
+                value={formData.priority || ServiceOrderPriority.Medium} 
+                onValueChange={(value) => handleSelectChange('priority', value as ServiceOrderPriority)}
               >
-                <SelectTrigger id="asset_id">
-                  <SelectValue placeholder="Seleccionar activo" />
+                <SelectTrigger id="priority" className="cursor-pointer transition-colors duration-200">
+                  <SelectValue placeholder="Seleccionar prioridad" />
                 </SelectTrigger>
                 <SelectContent>
-                  {assets.map((asset) => (
-                    <SelectItem key={asset.id} value={asset.id}>
-                      {asset.name} ({asset.asset_id})
-                    </SelectItem>
-                  ))}
+                  <SelectItem value={ServiceOrderPriority.Low} className="cursor-pointer">Baja</SelectItem>
+                  <SelectItem value={ServiceOrderPriority.Medium} className="cursor-pointer">Media</SelectItem>
+                  <SelectItem value={ServiceOrderPriority.High} className="cursor-pointer">Alta</SelectItem>
+                  <SelectItem value={ServiceOrderPriority.Critical} className="cursor-pointer">Crítica</SelectItem>
                 </SelectContent>
               </Select>
             </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="planned_date">Fecha Programada</Label>
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button
-                    variant={"outline"}
-                    className={cn("w-full justify-start text-left font-normal", !plannedDate && "text-muted-foreground")}
-                    id="planned_date_button"
-                  >
-                    <CalendarIcon className="mr-2 h-4 w-4" />
-                    {plannedDate ? format(plannedDate, "PPP", { locale: es }) : "Seleccionar fecha"}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0">
-                  <Calendar mode="single" selected={plannedDate} onSelect={handleDateChange} initialFocus />
-                </PopoverContent>
-              </Popover>
-            </div>
+          </div>
+          <div className="rounded-md border border-muted/60 bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
+            <span>Orden correctiva manual. </span>
+            {formData.asset_id ? (
+              <Link href={`/activos/${formData.asset_id}/mantenimiento/nuevo`} className="text-primary underline hover:no-underline cursor-pointer transition-colors duration-200">
+                ¿Mantenimiento preventivo? Programar para este activo →
+              </Link>
+            ) : (
+              <span>¿Mantenimiento preventivo? Selecciona primero el activo.</span>
+            )}
           </div>
         </CardContent>
       </Card>
 
       <Card>
-        <CardHeader>
-          <CardTitle>Asignación y Recursos</CardTitle>
-          <CardDescription>Asigna responsables y recursos para la orden de trabajo</CardDescription>
+        <CardHeader className="pb-2 px-4 pt-4">
+          <CardTitle className="text-base">Programación</CardTitle>
+          <CardDescription className="text-xs">Paso 2 · Fecha programada para la revisión</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-2">
+            <Label htmlFor="planned_date">Fecha Programada</Label>
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  variant={"outline"}
+                  className={cn("w-full justify-start text-left font-normal cursor-pointer transition-colors duration-200", !plannedDate && "text-muted-foreground")}
+                  id="planned_date_button"
+                >
+                  <CalendarIcon className="mr-2 h-4 w-4" />
+                  {plannedDate ? format(plannedDate, "PPP", { locale: es }) : "Seleccionar fecha"}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0">
+                <Calendar mode="single" selected={plannedDate} onSelect={handleDateChange} initialFocus />
+              </PopoverContent>
+            </Popover>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="pb-2 px-4 pt-4">
+          <CardTitle className="text-base">Asignación y recursos</CardTitle>
+          <CardDescription className="text-xs">Paso 3 · Responsables y recursos para la orden</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -680,7 +584,7 @@ export function WorkOrderForm() {
                 value={formData.assigned_to || "none"}
                 onValueChange={(value) => handleSelectChange('assigned_to', value === "none" ? null : value)}
               >
-                <SelectTrigger id="assigned_to">
+                <SelectTrigger id="assigned_to" className="cursor-pointer transition-colors duration-200">
                   <SelectValue placeholder="Seleccionar técnico" />
                 </SelectTrigger>
                 <SelectContent>
@@ -698,7 +602,8 @@ export function WorkOrderForm() {
               <Input 
                 id="estimated_duration" 
                 type="number" 
-                min="0" 
+                min={0} 
+                max={999}
                 step="0.5" 
                 value={formData.estimated_duration === null ? "" : formData.estimated_duration}
                 onChange={handleInputChange} 
@@ -706,48 +611,17 @@ export function WorkOrderForm() {
             </div>
           </div>
 
-          <div className="space-y-4 pt-4 border-t mt-4">
-            <div className="flex items-center space-x-2">
-              <Checkbox
-                id="fromChecklistCheckbox"
-                checked={isFromChecklist}
-                onCheckedChange={(checked) => handleChecklistToggle(checked as boolean)}
-              />
-              <Label htmlFor="fromChecklistCheckbox">Generar a partir de un checklist</Label>
-            </div>
-
-            {isFromChecklist && (
-              <div className="space-y-2">
-                <Label htmlFor="checklist_id">Checklist</Label>
-                <Select 
-                    value={formData.checklist_id || "none"}
-                    onValueChange={(value) => handleSelectChange('checklist_id', value === "none" ? null : value)}
-                    disabled={!isFromChecklist || checklists.length === 0}
-                >
-                  <SelectTrigger id="checklist_id">
-                    <SelectValue placeholder={checklists.length === 0 ? "No hay checklists disponibles" : "Seleccionar checklist"} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {checklists.map((checklist) => (
-                      <SelectItem key={checklist.id} value={checklist.id}>
-                        {checklist.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
-          </div>
         </CardContent>
       </Card>
 
-      {/* Add new Parts Required Card */}
       <Card>
-        <CardHeader>
-          <CardTitle>Repuestos Requeridos</CardTitle>
-          <CardDescription>Agrega los repuestos necesarios para esta orden de trabajo</CardDescription>
+        <CardHeader className="pb-2 px-4 pt-4">
+          <CardTitle className="text-base">Repuestos requeridos</CardTitle>
+          <CardDescription className="text-xs">Paso 4 · Repuestos necesarios para esta orden</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          {(showPartInput || requiredParts.length > 0) ? (
+          <>
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div className="md:col-span-2 space-y-2">
               <Label htmlFor="partName">Buscar Parte del Catálogo</Label>
@@ -824,11 +698,22 @@ export function WorkOrderForm() {
             <Button 
               type="button" 
               onClick={handleAddPart}
-              className="mt-2"
+              className="mt-2 cursor-pointer transition-colors duration-200"
             >
               <Plus className="h-4 w-4 mr-2" /> Agregar Repuesto
             </Button>
           </div>
+          </>
+          ) : (
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={() => setShowPartInput(true)}
+            className="cursor-pointer transition-colors duration-200"
+          >
+            <Plus className="h-4 w-4 mr-2" /> Agregar repuesto
+          </Button>
+          )}
 
           {requiredParts.length > 0 && (
             <div className="mt-4 space-y-2">
@@ -923,10 +808,10 @@ export function WorkOrderForm() {
 
       {/* Evidence Section */}
       <Card>
-        <CardHeader>
-          <CardTitle>Evidencia Inicial</CardTitle>
-          <CardDescription>
-            Suba fotografías que documenten el estado inicial del equipo y el problema identificado
+        <CardHeader className="pb-2 px-4 pt-4">
+          <CardTitle className="text-base">Evidencia de Creación</CardTitle>
+          <CardDescription className="text-xs">
+            Paso 5 · Fotografías que documenten el estado inicial del equipo y el problema identificado
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -940,7 +825,7 @@ export function WorkOrderForm() {
               type="button"
               variant="outline"
               onClick={() => setShowEvidenceDialog(true)}
-              className="flex items-center gap-2"
+              className="flex items-center gap-2 cursor-pointer transition-colors duration-200"
             >
               <Camera className="h-4 w-4" />
               Agregar Evidencia
@@ -987,7 +872,7 @@ export function WorkOrderForm() {
             <div className="border-2 border-dashed border-muted-foreground/25 rounded-lg p-8 text-center">
               <Camera className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
               <p className="text-sm text-muted-foreground">
-                No se ha agregado evidencia inicial
+                No se ha agregado evidencia de creación
               </p>
               <p className="text-xs text-muted-foreground">
                 Opcional: Agregue fotos para documentar el estado inicial
@@ -1012,109 +897,25 @@ export function WorkOrderForm() {
         setEvidence={setCreationEvidence}
         context="creation"
         assetId={formData.asset_id || undefined}
-        title="Evidencia Inicial"
+        title="Evidencia de Creación"
         description="Suba fotografías del problema identificado, estado del equipo y cualquier documentación relevante"
       />
 
-      {/* Supplier Suggestions - Only show when form has enough data and is not initial load */}
-      {formData.asset_id && formData.description && formData.description.length > 10 && !isLoading && (
-        <>
-          <div className="hidden md:block">
-            <SupplierSuggestionPanel
-              workOrderId={formData.id}
-              assetId={formData.asset_id}
-              problemDescription={formData.description}
-              urgency={formData.priority}
-              onSupplierAssign={(supplier) => {
-                setAssignedSupplier(supplier)
-                setSupplierNotes(`Proveedor asignado automáticamente basado en recomendaciones del sistema`)
-              }}
-            />
-          </div>
-          <div className="md:hidden">
-            <SupplierSuggestionPanelMobile
-              workOrderId={formData.id}
-              assetId={formData.asset_id}
-              problemDescription={formData.description}
-              urgency={formData.priority}
-              onSupplierAssign={(supplier) => {
-                setAssignedSupplier(supplier)
-                setSupplierNotes(`Proveedor asignado automáticamente basado en recomendaciones del sistema`)
-              }}
-            />
-          </div>
-        </>
-      )}
-
-      {/* Assigned Supplier Display */}
-      {assignedSupplier && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <CheckCircle className="w-5 h-5 text-green-500" />
-              Proveedor Asignado
-            </CardTitle>
-            <CardDescription>
-              Proveedor seleccionado para esta orden de trabajo
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="flex items-center gap-2 mb-1">
-                  <h4 className="font-semibold">{assignedSupplier.name}</h4>
-                  <Badge className="bg-green-50 text-green-700 border-green-200">
-                    Asignado
-                  </Badge>
-                </div>
-                {assignedSupplier.business_name && (
-                  <p className="text-sm text-muted-foreground">
-                    {assignedSupplier.business_name}
-                  </p>
-                )}
-                <div className="flex items-center gap-3 text-xs text-muted-foreground mt-1">
-                  {assignedSupplier.rating && (
-                    <span>Calificación: {assignedSupplier.rating}/5</span>
-                  )}
-                  {assignedSupplier.reliability_score && (
-                    <span>Confiabilidad: {assignedSupplier.reliability_score}%</span>
-                  )}
-                </div>
-              </div>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  setAssignedSupplier(null)
-                  setSupplierNotes("")
-                }}
-              >
-                Cambiar
-              </Button>
-            </div>
-
-            {/* Supplier Notes */}
-            <div className="mt-4 space-y-2">
-              <Label htmlFor="supplier_notes">Notas del Proveedor</Label>
-              <Textarea
-                id="supplier_notes"
-                placeholder="Notas sobre la selección del proveedor, consideraciones especiales, etc."
-                value={supplierNotes}
-                onChange={(e) => setSupplierNotes(e.target.value)}
-                rows={2}
-              />
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      <CardFooter className="flex justify-end space-x-2 fixed bottom-0 right-0 w-full bg-background p-4 border-t md:relative md:bg-transparent md:p-0 md:border-none">
-        <Button type="button" variant="outline" onClick={() => router.back()} disabled={isLoading}>Cancelar</Button>
-        <Button type="submit" disabled={isLoading || (isLoading && assets.length === 0 && technicians.length === 0)}>
+      <div ref={footerRef} className="flex justify-end gap-2 pt-6 pb-4">
+        <Button type="button" variant="outline" onClick={() => router.back()} disabled={isLoading} className="cursor-pointer transition-colors duration-200">Cancelar</Button>
+        <Button type="submit" disabled={isLoading || (assets.length === 0 && technicians.length === 0)} className="cursor-pointer transition-colors duration-200">
           {isLoading ? "Guardando..." : <><Save className="mr-2 h-4 w-4" /> Guardar Orden de Trabajo</>}
         </Button>
-      </CardFooter>
+      </div>
+
+      {showStickyFooter && (
+        <div className="fixed bottom-0 left-0 right-0 z-10 bg-background/95 backdrop-blur border-t px-4 py-3 flex justify-end gap-2 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)]">
+          <Button type="button" variant="outline" onClick={() => router.back()} disabled={isLoading} className="cursor-pointer transition-colors duration-200">Cancelar</Button>
+          <Button type="submit" disabled={isLoading || (assets.length === 0 && technicians.length === 0)} className="cursor-pointer transition-colors duration-200">
+            {isLoading ? "Guardando..." : <><Save className="mr-2 h-4 w-4" /> Guardar Orden de Trabajo</>}
+          </Button>
+        </div>
+      )}
     </form>
   )
 }

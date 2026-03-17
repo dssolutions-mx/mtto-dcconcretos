@@ -11,11 +11,10 @@ function getStatusVariant(status: string | null): "default" | "secondary" | "out
   switch (status) {
     case WorkOrderStatus.Completed:
       return "default"
-    case WorkOrderStatus.InProgress:
+    case WorkOrderStatus.WaitingParts:
       return "secondary"
     case WorkOrderStatus.Pending:
-    case WorkOrderStatus.Quoted:
-    case WorkOrderStatus.Approved:
+    case WorkOrderStatus.Programmed:
       return "outline"
     default:
       return "outline"

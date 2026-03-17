@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useEffect } from "react"
 import { useSearchParams, useRouter, usePathname } from "next/navigation"
-import { getStatusesForTab, normalizeTab } from "@/lib/work-order-status-tabs"
+import { getStatusesForTab, normalizeTab, isPendingStatus } from "@/lib/work-order-status-tabs"
 
 /** Sort options: default (created_at desc) | priority | asset | created | orderId */
 export type WorkOrderSortBy = "default" | "priority" | "asset" | "created" | "orderId"
@@ -77,9 +77,15 @@ export function applyWorkOrderFilters<T extends WorkOrderForFilter>(
 
   // Tab (status) — uses WorkOrderStatus enum via work-order-status-tabs
   if (filters.tab !== "all") {
-    const statuses = getStatusesForTab(filters.tab)
-    if (statuses.length > 0) {
-      result = result.filter((o) => o.status && statuses.includes(o.status))
+    if (filters.tab === "pending") {
+      result = result.filter((o) => isPendingStatus(o.status))
+    } else if (filters.tab === "completed") {
+      result = result.filter((o) => o.status === "Completada")
+    } else {
+      const statuses = getStatusesForTab(filters.tab)
+      if (statuses.length > 0) {
+        result = result.filter((o) => o.status && statuses.includes(o.status))
+      }
     }
   }
 

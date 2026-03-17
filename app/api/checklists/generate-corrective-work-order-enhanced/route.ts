@@ -451,11 +451,25 @@ ORIGEN:
           let retryCount = 0
           const maxRetries = 3
 
+          // Fetch asset plant_id for reporting
+          const { data: assetRow } = await supabase
+            .from('assets')
+            .select('plant_id')
+            .eq('id', asset_id)
+            .single();
+
+          // Build creation_photos from issue photo
+          const issuePhotoUrl = issue.photo_url ?? issue.photo
+          const creationPhotos = issuePhotoUrl
+            ? [{ url: typeof issuePhotoUrl === 'string' ? issuePhotoUrl : (issuePhotoUrl as { url?: string })?.url ?? '', description: issue.description ?? '', category: 'checklist', uploaded_at: new Date().toISOString() }]
+            : []
+
           while (retryCount < maxRetries) {
             const { data: workOrderData, error: workOrderInsertError } = await supabase
               .from('work_orders')
               .insert({
                 asset_id: asset_id,
+                plant_id: assetRow?.plant_id ?? null,
                 description: workOrderDescription.trim(),
                 type: 'corrective',
                 priority: workOrderPriority,
@@ -465,6 +479,7 @@ ORIGEN:
                 requested_by: user.id,
                 original_priority: workOrderPriority,
                 related_issues_count: 1,
+                creation_photos: creationPhotos,
                 created_at: new Date().toISOString()
               })
               .select('id, order_id, description, status, priority')
@@ -513,6 +528,7 @@ ORIGEN:
                   .insert({
                     order_id: explicitOrderId,
                     asset_id: asset_id,
+                    plant_id: assetRow?.plant_id ?? null,
                     description: workOrderDescription.trim(),
                     type: 'corrective',
                     priority: workOrderPriority,
@@ -522,6 +538,7 @@ ORIGEN:
                     requested_by: user.id,
                     original_priority: workOrderPriority,
                     related_issues_count: 1,
+                    creation_photos: creationPhotos,
                     created_at: new Date().toISOString()
                   })
                   .select('id, order_id, description, status, priority')

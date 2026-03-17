@@ -49,11 +49,10 @@ function getStatusVariant(status: string | null) {
   switch (status) {
     case WorkOrderStatus.Completed:
       return "default" 
-    case WorkOrderStatus.InProgress:
+    case WorkOrderStatus.WaitingParts:
       return "secondary" 
     case WorkOrderStatus.Pending:
-    case WorkOrderStatus.Quoted:
-    case WorkOrderStatus.Approved:
+    case WorkOrderStatus.Programmed:
       return "outline" 
     default:
       return "outline"
@@ -327,9 +326,7 @@ export function WorkOrdersList() {
   // Filter logic
   const filteredOrdersByTab = workOrders.filter(order => {
     if (activeTab === "all") return true
-    if (activeTab === "pending") return order.status === WorkOrderStatus.Pending || order.status === WorkOrderStatus.Quoted
-    if (activeTab === "approved") return order.status === WorkOrderStatus.Approved
-    if (activeTab === "inprogress") return order.status === WorkOrderStatus.InProgress
+  if (activeTab === "pending") return [WorkOrderStatus.Pending, WorkOrderStatus.Programmed, WorkOrderStatus.WaitingParts].includes(order.status as WorkOrderStatus)
     if (activeTab === "completed") return order.status === WorkOrderStatus.Completed
     return true
   }).filter(order => {
@@ -415,10 +412,7 @@ export function WorkOrdersList() {
           {/* Tabs */}
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
             <TabsList className={cn(
-              "mb-4 grid w-full",
-              isMobile 
-                ? "grid-cols-2 h-auto gap-1" // Stack in 2 columns on mobile
-                : "grid-cols-2 sm:grid-cols-5"
+              "mb-4 grid w-full grid-cols-3"
             )}>
               <TabsTrigger 
                 value="all"
@@ -432,44 +426,13 @@ export function WorkOrdersList() {
               >
                 Pendientes
               </TabsTrigger>
-              {!isMobile && (
-                <>
-                  <TabsTrigger value="approved">Aprobadas</TabsTrigger>
-                  <TabsTrigger value="inprogress">En Progreso</TabsTrigger>
-                  <TabsTrigger value="completed">Completadas</TabsTrigger>
-                </>
-              )}
+              <TabsTrigger 
+                value="completed"
+                className={cn(isMobile && "text-xs px-2 py-2")}
+              >
+                Completadas
+              </TabsTrigger>
             </TabsList>
-            
-            {/* Mobile: Additional tabs in second grid */}
-            {isMobile && (
-              <div className="grid grid-cols-3 gap-1 mb-4">
-                <Button
-                  variant={activeTab === "approved" ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setActiveTab("approved")}
-                  className="text-xs h-8"
-                >
-                  Aprobadas
-                </Button>
-                <Button
-                  variant={activeTab === "inprogress" ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setActiveTab("inprogress")}
-                  className="text-xs h-8"
-                >
-                  En Progreso
-                </Button>
-                <Button
-                  variant={activeTab === "completed" ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setActiveTab("completed")}
-                  className="text-xs h-8"
-                >
-                  Completadas
-                </Button>
-              </div>
-            )}
             
             {/* Content for each tab */}
             <TabsContent value="all" className="mt-0">
@@ -491,42 +454,6 @@ export function WorkOrdersList() {
             </TabsContent>
             
             <TabsContent value="pending" className="mt-0">
-              {isMobile ? (
-                <MobileView 
-                  orders={filteredOrders} 
-                  isLoading={isLoading} 
-                  getTechnicianName={getTechnicianName}
-                  getPurchaseOrderStatus={getPurchaseOrderStatus}
-                />
-              ) : (
-                <DesktopView 
-                  orders={filteredOrders} 
-                  isLoading={isLoading} 
-                  getTechnicianName={getTechnicianName}
-                  getPurchaseOrderStatus={getPurchaseOrderStatus}
-                />
-              )}
-            </TabsContent>
-            
-            <TabsContent value="approved" className="mt-0">
-              {isMobile ? (
-                <MobileView 
-                  orders={filteredOrders} 
-                  isLoading={isLoading} 
-                  getTechnicianName={getTechnicianName}
-                  getPurchaseOrderStatus={getPurchaseOrderStatus}
-                />
-              ) : (
-                <DesktopView 
-                  orders={filteredOrders} 
-                  isLoading={isLoading} 
-                  getTechnicianName={getTechnicianName}
-                  getPurchaseOrderStatus={getPurchaseOrderStatus}
-                />
-              )}
-            </TabsContent>
-            
-            <TabsContent value="inprogress" className="mt-0">
               {isMobile ? (
                 <MobileView 
                   orders={filteredOrders} 

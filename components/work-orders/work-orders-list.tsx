@@ -53,13 +53,12 @@ function getPriorityVariant(priority: string | null) {
 function getStatusVariant(status: string | null) {
   switch (status) {
     case WorkOrderStatus.Completed:
-      return "default" 
-    case WorkOrderStatus.InProgress:
-      return "secondary" 
+      return "default"
+    case WorkOrderStatus.Programmed:
+    case WorkOrderStatus.WaitingParts:
+      return "secondary"
     case WorkOrderStatus.Pending:
-    case WorkOrderStatus.Quoted:
-    case WorkOrderStatus.Approved:
-      return "outline" 
+      return "outline"
     default:
       return "outline"
   }

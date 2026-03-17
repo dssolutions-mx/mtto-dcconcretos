@@ -917,13 +917,13 @@ export function AssetProductionReport({ assetId, onClose }: AssetProductionRepor
               <div className="bg-gray-50 rounded p-4 border border-gray-200">
                 <h4 className="font-medium text-gray-800 mb-2">En Progreso</h4>
                 <p className="text-2xl font-bold text-gray-800">
-                  {workOrders.filter((wo: any) => ['En ejecución', 'Aprobada'].includes(wo.status)).length}
+                  {workOrders.filter((wo: any) => ['Programada', 'Esperando repuestos'].includes(wo.status)).length}
                 </p>
               </div>
               <div className="bg-gray-50 rounded p-4 border border-gray-200">
                 <h4 className="font-medium text-gray-800 mb-2">Pendientes</h4>
                 <p className="text-2xl font-bold text-gray-800">
-                  {workOrders.filter((wo: any) => ['Pendiente', 'Cotizada'].includes(wo.status)).length}
+                  {workOrders.filter((wo: any) => wo.status === 'Pendiente').length}
                 </p>
               </div>
             </div>

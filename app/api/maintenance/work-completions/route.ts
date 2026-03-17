@@ -97,7 +97,7 @@ export async function POST(request: Request) {
     // Verificar que la orden existe y no está ya completada
     const { data: existingOrder, error: checkError } = await supabase
       .from("work_orders")
-      .select("id, status, asset_id, purchase_order_id, description, assigned_to")
+      .select("id, status, asset_id, maintenance_plan_id, purchase_order_id, description, assigned_to")
       .eq("id", workOrderId)
       .single()
       
@@ -215,6 +215,36 @@ export async function POST(request: Request) {
       }
       
       console.log("API: Orden de trabajo actualizada correctamente");
+
+      // Update maintenance_plans.next_due when completing a preventive WO
+      if (existingOrder.maintenance_plan_id && existingOrder.asset_id) {
+        try {
+          const { data: plan, error: planError } = await supabase
+            .from("maintenance_plans")
+            .select("asset_id, interval_value")
+            .eq("id", existingOrder.maintenance_plan_id)
+            .single();
+
+          if (!planError && plan?.asset_id != null && plan?.interval_value != null) {
+            const completionDate = completionData.completion_date
+              ? new Date(completionData.completion_date).toISOString()
+              : new Date().toISOString();
+            const { error: rpcError } = await supabase.rpc("update_maintenance_plan_after_completion", {
+              p_asset_id: plan.asset_id,
+              p_interval_value: plan.interval_value,
+              p_completion_date: completionDate,
+            });
+            if (rpcError) {
+              console.error("API: Error updating maintenance_plan next_due:", rpcError);
+            } else {
+              console.log("API: maintenance_plans.next_due updated successfully");
+            }
+          }
+        } catch (planUpdateError) {
+          console.error("API: Error in update_maintenance_plan_after_completion:", planUpdateError);
+          // Do not fail the completion; plan update is best-effort
+        }
+      }
     } catch (error) {
       console.error("Error inesperado al actualizar la orden:", error);
       return NextResponse.json(
