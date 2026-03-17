@@ -16,28 +16,30 @@ interface DashboardModuleLinksProps {
 }
 
 /**
- * Muted module links - no rainbow colors. Premium corporate.
+ * Compact module chip row — de-emphasized navigation supplement.
+ * Pill-shaped, monochrome. The KPI content above is the hero.
  */
 export function DashboardModuleLinks({ modules }: DashboardModuleLinksProps) {
+  const accessible = modules.filter((m) => m.hasAccess)
+  if (accessible.length === 0) return null
+
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-      {modules.map((m) => {
+    <div className="flex flex-wrap gap-2">
+      {accessible.map((m) => {
         const Icon = m.icon
         return (
           <Link
             key={m.href}
-            href={m.hasAccess ? m.href : "#"}
+            href={m.href}
             className={cn(
-              "flex items-center gap-3 rounded-lg border border-border/50 bg-card/50 px-4 py-3 transition-colors",
-              m.hasAccess
-                ? "hover:bg-muted/50 hover:border-border"
-                : "opacity-50 pointer-events-none"
+              "inline-flex items-center gap-2 rounded-full border border-border/60 bg-background",
+              "px-3.5 py-2 text-sm font-medium text-muted-foreground",
+              "transition-colors hover:border-border hover:text-foreground hover:bg-muted/30",
+              "min-h-[36px]"
             )}
           >
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-muted/80 text-muted-foreground">
-              <Icon className="h-4 w-4" />
-            </div>
-            <span className="text-sm font-medium truncate">{m.title}</span>
+            <Icon className="h-3.5 w-3.5 shrink-0" />
+            {m.title}
           </Link>
         )
       })}

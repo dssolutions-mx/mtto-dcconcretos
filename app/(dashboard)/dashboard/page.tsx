@@ -33,12 +33,10 @@ import { PullToRefresh } from "@/components/ui/pull-to-refresh"
 import { RestartOnboardingButton } from "@/components/onboarding/restart-onboarding-button"
 import { GettingStartedCard } from "@/components/onboarding/GettingStartedCard"
 import { UserSanctionsWidget } from "@/components/compliance/user-sanctions-widget"
-import { DashboardPOActionStrip } from "@/components/dashboard/dashboard-po-action-strip"
-import { DashboardCoordinatorActionStrip } from "@/components/dashboard/dashboard-coordinator-action-strip"
-import { DashboardJefePlantaActionStrip } from "@/components/dashboard/dashboard-jefe-planta-action-strip"
 import { DashboardExecutiveLayout } from "@/components/dashboard/dashboard-executive-layout"
 import { DashboardModuleLinks } from "@/components/dashboard/dashboard-module-links"
 import { DashboardExecutiveKPIs } from "@/components/dashboard/dashboard-executive-kpis"
+import { DashboardExecutiveHero } from "@/components/dashboard/dashboard-executive-hero"
 
 function DashboardContent() {
   const { 
@@ -102,6 +100,10 @@ function DashboardContent() {
       router.push('/dashboard/jun')
     } else if (profile.role === 'RECURSOS_HUMANOS') {
       router.push('/dashboard/rh')
+    } else if (profile.role === 'COORDINADOR_MANTENIMIENTO') {
+      router.push('/dashboard/coordinador')
+    } else if (profile.role === 'JEFE_PLANTA') {
+      router.push('/dashboard/jefe-planta')
     }
   }, [isInitialized, isLoading, profile?.role, router])
 
@@ -331,7 +333,12 @@ function DashboardContent() {
       {/* Executive layout: Gerencia General, Administración, Gerente Mantenimiento */}
       {useExecutiveLayout && (
         <DashboardExecutiveLayout
-          hero={<DashboardPOActionStrip role={profile.role} />}
+          hero={
+            <DashboardExecutiveHero
+              name={`${profile.nombre} ${profile.apellido}`.trim()}
+              role={getRoleDisplayName(profile.role)}
+            />
+          }
           userName={`${profile.nombre} ${profile.apellido}`.trim()}
           userRole={getRoleDisplayName(profile.role)}
           authLimit={showAuthLimit ? authorizationLimit : undefined}
@@ -390,13 +397,6 @@ function DashboardContent() {
           userName={profile.nombre}
           userRole={profile.role}
         />
-      )}
-
-      {profile.role === 'COORDINADOR_MANTENIMIENTO' && (
-        <DashboardCoordinatorActionStrip />
-      )}
-      {profile.role === 'JEFE_PLANTA' && (
-        <DashboardJefePlantaActionStrip />
       )}
 
       {/* User Info Header - Mobile Optimized */}
@@ -514,23 +514,21 @@ function DashboardContent() {
             ? "grid-cols-2 gap-3" // 2 columns on mobile for better accessibility
             : "grid-cols-1 md:grid-cols-2 lg:grid-cols-4"
         )}>
-          {moduleCards.map((card) => {
-            const hasAccess = ui.shouldShowInNavigation(card.module)
+          {moduleCards.filter((card) => ui.shouldShowInNavigation(card.module)).map((card) => {
+            const hasAccess = true
             const Icon = card.icon
 
             return (
-              <Card 
-                key={card.href} 
+              <Card
+                key={card.href}
                 data-tour={card.module === 'checklists' ? 'checklists' : card.module === 'assets' ? 'assets' : undefined}
                 className={cn(
-                  "relative overflow-hidden transition-all",
-                  hasAccess ? 'cursor-pointer hover:shadow-md' : 'opacity-50',
-                  isMobile 
-                    ? "min-h-[140px] active:scale-95 transition-transform" // Better mobile feedback
+                  "relative overflow-hidden transition-all cursor-pointer hover:shadow-md",
+                  isMobile
+                    ? "min-h-[140px] active:scale-95 transition-transform"
                     : "hover:scale-[1.02]",
-                  !hasAccess && "pointer-events-none"
                 )}
-                onClick={() => hasAccess && router.push(card.href)}
+                onClick={() => router.push(card.href)}
               >
                 <CardHeader className={cn(
                   isMobile ? "pb-2 px-3 pt-3" : "pb-3"
@@ -589,14 +587,6 @@ function DashboardContent() {
                       </div>
                     )}
                   </CardContent>
-                )}
-
-                {!hasAccess && (
-                  <div className="absolute inset-0 bg-black bg-opacity-20 flex items-center justify-center">
-                    <div className="bg-white rounded-full p-2">
-                      <Shield className={cn(isMobile ? "h-4 w-4" : "h-6 w-6", "text-red-500")} />
-                    </div>
-                  </div>
                 )}
 
                 {/* Mobile: Arrow indicator for navigation */}

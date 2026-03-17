@@ -10,13 +10,13 @@ interface DashboardExecutiveLayoutProps {
   shortcuts: { label: string; href: string; icon?: React.ReactNode }[]
   modules: React.ReactNode
   actions?: React.ReactNode
-  /** KPI section (cost, WO status, compliance, alerts, etc.) - shown between shortcuts and modules */
   kpis?: React.ReactNode
 }
 
 /**
- * Premium corporate layout: hero above fold, KPIs, shortcuts, modules.
- * Generous space. Calm authority. Real executive content.
+ * Executive dashboard shell.
+ * Hero (greeting) → shortcuts bar → KPIs → modules.
+ * Full-width, no max-width cap.
  */
 export function DashboardExecutiveLayout({
   hero,
@@ -29,53 +29,54 @@ export function DashboardExecutiveLayout({
   kpis,
 }: DashboardExecutiveLayoutProps) {
   return (
-    <div className="w-full">
-      {/* Above the fold: hero + minimal context + shortcuts */}
-      <div className="mx-auto w-full max-w-6xl px-4 pt-8 pb-8 md:px-6 md:pt-12 md:pb-10">
-        {hero}
+    <div className="w-full pb-12">
 
-        <div className="mt-10 flex flex-col gap-6">
-          {/* One-line context */}
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <p className="text-sm text-muted-foreground">
-              {userName} · {userRole}
-              {authLimit != null && authLimit > 0 && (
-                <span className="ml-2 text-foreground">· ${authLimit.toLocaleString()} autorización</span>
-              )}
-            </p>
-            {actions}
-          </div>
+      {/* ── Hero zone ──────────────────────────────────────────────────────── */}
+      <div className="w-full px-4 pt-7 sm:px-6 lg:px-8">
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex-1 min-w-0">{hero}</div>
+          {actions && (
+            <div className="shrink-0 flex items-center gap-2">{actions}</div>
+          )}
+        </div>
 
-          {/* Shortcuts: minimal text links */}
-          <div className="flex flex-wrap gap-x-8 gap-y-2 border-t border-border/50 pt-6">
-            {shortcuts.map((s) => (
-              <Link
-                key={s.href}
-                href={s.href}
-                className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors inline-flex items-center gap-2"
-              >
-                {s.icon}
-                {s.label}
-              </Link>
-            ))}
-          </div>
+        {/* ── Shortcuts bar ──────────────────────────────────────────────── */}
+        <div className="mt-6 flex flex-wrap items-center gap-x-6 gap-y-1 border-t border-border/40 pt-4">
+          {shortcuts.map((s) => (
+            <Link
+              key={s.href}
+              href={s.href}
+              className="inline-flex items-center gap-1.5 py-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground min-h-[44px]"
+            >
+              {s.icon}
+              {s.label}
+            </Link>
+          ))}
+
+          {/* Auth limit — only show if meaningful (not unlimited / not zero) */}
+          {authLimit != null && authLimit > 0 && authLimit < 10_000_000 && (
+            <span className="ml-auto text-xs text-muted-foreground tabular-num">
+              Límite: ${authLimit.toLocaleString("es-MX")}
+            </span>
+          )}
         </div>
       </div>
 
-      {/* KPIs: role-specific content */}
+      {/* ── KPIs ──────────────────────────────────────────────────────────── */}
       {kpis && (
-        <div className="mx-auto w-full max-w-6xl px-4 mt-8 md:px-6">
+        <div className="w-full px-4 mt-8 sm:px-6 lg:px-8">
           {kpis}
         </div>
       )}
 
-      {/* Below: modules - de-emphasized, generous spacing */}
-      <div className="mx-auto w-full max-w-6xl px-4 mt-12 pt-10 border-t border-border/40 md:px-6">
-        <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground mb-6">
+      {/* ── Modules ───────────────────────────────────────────────────────── */}
+      <div className="w-full px-4 mt-10 pt-8 border-t border-border/40 sm:px-6 lg:px-8">
+        <p className="mb-4 text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
           Módulos
         </p>
         {modules}
       </div>
+
     </div>
   )
 }

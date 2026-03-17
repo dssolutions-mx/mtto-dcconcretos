@@ -3,6 +3,32 @@
 @tailwind utilities;
 
 /* Font: SF Pro on Apple, Segoe UI on Windows, system UI elsewhere */
+/* Tailwind font-sans already maps to SF Pro stack via tailwind.config.ts */
+
+/* Dashboard utility classes */
+@layer utilities {
+  /* Tabular numbers for metric displays */
+  .tabular-num {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum";
+  }
+
+  /* Attention callout strip (amber) */
+  .callout-attention {
+    background: #FFFBEB;
+    border-left: 3px solid #D97706;
+    border-radius: 8px;
+    padding: 12px 16px;
+  }
+
+  /* Critical/liability warning strip (charcoal) */
+  .callout-critical {
+    background: #1C1917;
+    color: #F5F5F4;
+    border-radius: 10px;
+    padding: 14px 18px;
+  }
+}
 
 /* Touch targets: min 44x44px per Apple HIG */
 @layer utilities {
