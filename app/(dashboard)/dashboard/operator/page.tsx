@@ -112,7 +112,7 @@ export default function OperatorDashboard() {
       </DashboardHeader>
 
       {/* Stats Overview */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 md:gap-6">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Activos Asignados</CardTitle>
@@ -189,9 +189,9 @@ export default function OperatorDashboard() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="space-y-3">
+            <div className="space-y-4">
               {overdue_checklists.slice(0, 5).map((checklist) => (
-                <div key={checklist.id} className="flex items-center justify-between p-3 bg-white rounded-lg border border-red-200">
+                <div key={checklist.id} className="flex items-center justify-between p-4 bg-white rounded-lg border border-red-200">
                   <div className="flex-1">
                     <div className="flex items-center gap-2">
                       <Badge variant="destructive">Atrasado</Badge>
@@ -238,9 +238,9 @@ export default function OperatorDashboard() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="space-y-3">
+            <div className="space-y-4">
               {today_checklists.slice(0, 5).map((checklist) => (
-                <div key={checklist.id} className="flex items-center justify-between p-3 bg-white rounded-lg border border-blue-200">
+                <div key={checklist.id} className="flex items-center justify-between p-4 bg-white rounded-lg border border-blue-200">
                   <div className="flex-1">
                     <div className="flex items-center gap-2">
                       <Badge variant="secondary" className="bg-blue-100 text-blue-800">Hoy</Badge>
@@ -287,7 +287,7 @@ export default function OperatorDashboard() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 md:gap-6">
               {assigned_assets.map((asset) => (
                 <div key={asset.id} className="p-4 border rounded-lg">
                   <div className="flex items-center justify-between mb-2">
@@ -330,7 +330,7 @@ export default function OperatorDashboard() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 md:gap-6">
             <Button asChild className="h-auto flex flex-col p-4">
               <Link href="/checklists">
                 <ClipboardCheck className="h-6 w-6 mb-2" />

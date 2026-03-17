@@ -5,17 +5,15 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
-import { Separator } from "@/components/ui/separator"
 import { 
   ShoppingCart, 
   FileText, 
   Users, 
   Package, 
-  TrendingUp, 
   Shield,
   AlertCircle, 
+  AlertTriangle,
   CheckCircle,
-  Calendar,
   Wrench,
   ClipboardList,
   BarChart3,
@@ -27,7 +25,6 @@ import {
 import { useAuthZustand } from "@/hooks/use-auth-zustand"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { useSystemSettings } from "@/hooks/use-system-settings"
-import { RoleGuard, AdminOnlyGuard, AuthorizedOnlyGuard } from "@/components/auth/role-guard"
 import { useRouter, useSearchParams } from "next/navigation"
 import Link from "next/link"
 import { getRoleDisplayName, type ModulePermissions } from "@/lib/auth/role-permissions"
@@ -36,6 +33,12 @@ import { PullToRefresh } from "@/components/ui/pull-to-refresh"
 import { RestartOnboardingButton } from "@/components/onboarding/restart-onboarding-button"
 import { GettingStartedCard } from "@/components/onboarding/GettingStartedCard"
 import { UserSanctionsWidget } from "@/components/compliance/user-sanctions-widget"
+import { DashboardPOActionStrip } from "@/components/dashboard/dashboard-po-action-strip"
+import { DashboardCoordinatorActionStrip } from "@/components/dashboard/dashboard-coordinator-action-strip"
+import { DashboardJefePlantaActionStrip } from "@/components/dashboard/dashboard-jefe-planta-action-strip"
+import { DashboardExecutiveLayout } from "@/components/dashboard/dashboard-executive-layout"
+import { DashboardModuleLinks } from "@/components/dashboard/dashboard-module-links"
+import { DashboardExecutiveKPIs } from "@/components/dashboard/dashboard-executive-kpis"
 
 function DashboardContent() {
   const { 
@@ -88,10 +91,17 @@ function DashboardContent() {
     }
   }, [searchParams])
 
-  // Check if user is an operator and redirect to operator dashboard
+  // Role-specific dashboard redirects
   useEffect(() => {
-    if (isInitialized && !isLoading && profile?.role && ['OPERADOR', 'DOSIFICADOR'].includes(profile.role)) {
+    if (!isInitialized || isLoading || !profile?.role) return
+    if (['OPERADOR', 'DOSIFICADOR'].includes(profile.role)) {
       router.push('/dashboard/operator')
+    } else if (profile.role === 'MECANICO') {
+      router.push('/dashboard/mechanic')
+    } else if (profile.role === 'JEFE_UNIDAD_NEGOCIO') {
+      router.push('/dashboard/jun')
+    } else if (profile.role === 'RECURSOS_HUMANOS') {
+      router.push('/dashboard/rh')
     }
   }, [isInitialized, isLoading, profile?.role, router])
 
@@ -181,6 +191,9 @@ function DashboardContent() {
       </div>
     )
   }
+
+  const EXEC_ROLES = ['GERENCIA_GENERAL', 'AREA_ADMINISTRATIVA', 'GERENTE_MANTENIMIENTO']
+  const useExecutiveLayout = profile && EXEC_ROLES.includes(profile.role)
 
   const moduleCards = [
     {
@@ -295,31 +308,16 @@ function DashboardContent() {
     await new Promise(resolve => setTimeout(resolve, 1000))
   }
 
+  // Límite de Autorización only for roles that can authorize
+  const AUTHORIZING_ROLES = ['GERENCIA_GENERAL', 'JEFE_UNIDAD_NEGOCIO', 'AREA_ADMINISTRATIVA', 'JEFE_PLANTA']
+  const showAuthLimit = profile && AUTHORIZING_ROLES.includes(profile.role)
+
   return (
     <PullToRefresh onRefresh={handlePullToRefresh} disabled={isRefreshing}>
       <div className={cn(
-        "space-y-6",
-        isMobile ? "p-4" : "p-6"
+        "space-y-8",
+        isMobile ? "px-4 py-6" : "px-6 py-8"
       )}>
-        {/* Success indicator for Zustand implementation */}
-      <div className={cn(
-        "bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-lg",
-        isMobile ? "p-3" : "p-3"
-      )}>
-        <div className="flex items-center gap-2 text-green-800">
-          <CheckCircle className={cn(isMobile ? "h-4 w-4" : "h-4 w-4")} />
-          <span className={cn(
-            "font-medium",
-            isMobile ? "text-sm" : "text-sm"
-          )}>
-            🎉 Dashboard migrado a Zustand - Funcionando correctamente
-          </span>
-          <Badge variant="secondary" className="ml-2">
-            Pure Zustand
-          </Badge>
-        </div>
-      </div>
-
       {/* Access Denied Alert */}
       {showAccessAlert && (
         <Alert variant="destructive" className={cn(isMobile && "mx-0")}>
@@ -330,17 +328,78 @@ function DashboardContent() {
         </Alert>
       )}
 
-      {/* Getting Started Card for new users */}
-      {showGettingStarted && (
-        <div className="mb-6">
-          <GettingStartedCard 
-            userName={profile.nombre}
-            userRole={profile.role}
-          />
-        </div>
+      {/* Executive layout: Gerencia General, Administración, Gerente Mantenimiento */}
+      {useExecutiveLayout && (
+        <DashboardExecutiveLayout
+          hero={<DashboardPOActionStrip role={profile.role} />}
+          userName={`${profile.nombre} ${profile.apellido}`.trim()}
+          userRole={getRoleDisplayName(profile.role)}
+          authLimit={showAuthLimit ? authorizationLimit : undefined}
+          shortcuts={
+            profile.role === 'GERENCIA_GENERAL'
+              ? [
+                  { label: 'Reporte Gerencial', href: '/reportes/gerencial', icon: <BarChart3 className="h-4 w-4" /> },
+                  { label: 'Compras Alto Valor', href: '/compras?tab=pending', icon: <ShoppingCart className="h-4 w-4" /> },
+                  { label: 'Configuración Sistema', href: '/gestion', icon: <Shield className="h-4 w-4" /> },
+                ]
+              : profile.role === 'AREA_ADMINISTRATIVA'
+              ? [
+                  { label: 'Compras Pendientes', href: '/compras?tab=pending', icon: <ShoppingCart className="h-4 w-4" /> },
+                  { label: 'Gestionar Personal', href: '/gestion/personal', icon: <Users className="h-4 w-4" /> },
+                  { label: 'Reportes Administrativos', href: '/reportes?type=admin', icon: <BarChart3 className="h-4 w-4" /> },
+                ]
+              : [
+                  { label: 'Incidentes activos', href: '/incidentes', icon: <AlertTriangle className="h-4 w-4" /> },
+                  { label: 'Activos', href: '/activos', icon: <Package className="h-4 w-4" /> },
+                  { label: 'Plan preventivo', href: '/preventivo', icon: <Wrench className="h-4 w-4" /> },
+                ]
+          }
+          modules={
+            <DashboardModuleLinks
+              modules={moduleCards.map((c) => ({
+                title: c.title,
+                href: c.href,
+                icon: c.icon,
+                hasAccess: ui.shouldShowInNavigation(c.module),
+              }))}
+            />
+          }
+          kpis={<DashboardExecutiveKPIs role={profile.role} />}
+          actions={
+            <div className="flex items-center gap-2">
+              <RestartOnboardingButton />
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleRefreshProfile}
+                disabled={isRefreshing}
+              >
+                {isRefreshing ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3 mr-1" />}
+                Actualizar
+              </Button>
+            </div>
+          }
+        />
       )}
 
-      {/* User Info Header (Zustand-powered) - Mobile Optimized */}
+      {/* Non-exec: Getting Started, action strips, Panel card, shortcuts, modules */}
+      {!useExecutiveLayout && (
+        <>
+      {showGettingStarted && (
+        <GettingStartedCard
+          userName={profile.nombre}
+          userRole={profile.role}
+        />
+      )}
+
+      {profile.role === 'COORDINADOR_MANTENIMIENTO' && (
+        <DashboardCoordinatorActionStrip />
+      )}
+      {profile.role === 'JEFE_PLANTA' && (
+        <DashboardJefePlantaActionStrip />
+      )}
+
+      {/* User Info Header - Mobile Optimized */}
       <Card className={cn(isMobile && "shadow-sm")} id="dashboard-header">
         <CardHeader className={cn(isMobile && "pb-3")}>
           <div className={cn(
@@ -356,12 +415,6 @@ function DashboardContent() {
                 <span className={cn(isMobile && "break-words")}>
                   Panel de Control - {getRoleDisplayName(profile.role)}
                 </span>
-                <Badge variant="default" className={cn(
-                  "bg-green-600",
-                  isMobile && "text-xs"
-                )}>
-                  Zustand
-                </Badge>
               </CardTitle>
               <CardDescription className={cn(isMobile && "text-sm mt-1")}>
                 Bienvenido, {profile.nombre} {profile.apellido}
@@ -375,12 +428,14 @@ function DashboardContent() {
                 "flex items-center gap-2",
                 isMobile ? "justify-center flex-col gap-1" : "justify-end"
               )}>
-                <div className={cn(
-                  "text-muted-foreground",
-                  isMobile ? "text-sm text-center" : "text-sm"
-                )}>
-                  Límite de Autorización
-                </div>
+                {showAuthLimit && (
+                  <div className={cn(
+                    "text-muted-foreground",
+                    isMobile ? "text-sm text-center" : "text-sm"
+                  )}>
+                    Límite de Autorización
+                  </div>
+                )}
                 <div className="flex items-center gap-2">
                   <RestartOnboardingButton />
                   <Button
@@ -405,12 +460,14 @@ function DashboardContent() {
                   </Button>
                 </div>
               </div>
-              <div className={cn(
-                "font-bold text-green-600",
-                isMobile ? "text-xl" : "text-2xl"
-              )}>
-                ${authorizationLimit.toLocaleString()}
-              </div>
+              {showAuthLimit && (
+                <div className={cn(
+                  "font-bold text-green-600",
+                  isMobile ? "text-xl" : "text-2xl"
+                )}>
+                  ${authorizationLimit.toLocaleString()}
+                </div>
+              )}
             </div>
           </div>
         </CardHeader>
@@ -440,396 +497,6 @@ function DashboardContent() {
           </div>
         </CardContent>
       </Card>
-
-      {/* Role-Specific Features */}
-      
-      {/* GERENCIA GENERAL - Full Access Dashboard - Mobile Optimized */}
-      {profile?.role === 'GERENCIA_GENERAL' && (
-        <Card className="border-purple-200 bg-gradient-to-r from-purple-50 to-pink-50">
-          <CardHeader className={cn(isMobile && "pb-3")}>
-            <CardTitle className={cn(
-              "flex items-center gap-2 text-purple-800",
-              isMobile ? "text-lg flex-wrap" : "text-xl"
-            )}>
-              <Shield className={cn(isMobile ? "h-4 w-4" : "h-5 w-5")} />
-              <span className={cn(isMobile && "break-words")}>
-                Panel de Gerencia General
-              </span>
-            </CardTitle>
-            <CardDescription className={cn(
-              "text-purple-700",
-              isMobile && "text-sm"
-            )}>
-              Acceso completo a todos los módulos del sistema
-            </CardDescription>
-          </CardHeader>
-          <CardContent className={cn(
-            "space-y-4",
-            isMobile && "space-y-3"
-          )}>
-            <div className={cn(
-              "grid gap-4",
-              isMobile ? "grid-cols-1 gap-3" : "grid-cols-1 md:grid-cols-3"
-            )}>
-              <Card className="bg-white">
-                <CardContent className={cn(
-                  isMobile ? "p-4" : "pt-6"
-                )}>
-                  <div className={cn(
-                    "flex items-center gap-2",
-                    isMobile && "flex-col text-center"
-                  )}>
-                    <TrendingUp className={cn(
-                      "text-green-500",
-                      isMobile ? "h-4 w-4" : "h-5 w-5"
-                    )} />
-                    <span className={cn(
-                      "font-medium",
-                      isMobile ? "text-sm" : "text-base"
-                    )}>
-                      Sin Límite de Autorización
-                    </span>
-                  </div>
-                  <p className={cn(
-                    "text-muted-foreground mt-2",
-                    isMobile ? "text-xs text-center" : "text-sm"
-                  )}>
-                    Autorización ilimitada para todas las operaciones
-                  </p>
-                </CardContent>
-              </Card>
-              
-              <Card className="bg-white">
-                <CardContent className={cn(
-                  isMobile ? "p-4" : "pt-6"
-                )}>
-                  <div className={cn(
-                    "flex items-center gap-2",
-                    isMobile && "flex-col text-center"
-                  )}>
-                    <BarChart3 className={cn(
-                      "text-blue-500",
-                      isMobile ? "h-4 w-4" : "h-5 w-5"
-                    )} />
-                    <span className={cn(
-                      "font-medium",
-                      isMobile ? "text-sm" : "text-base"
-                    )}>
-                      Reportes Ejecutivos
-                    </span>
-                  </div>
-                  <p className={cn(
-                    "text-muted-foreground mt-2",
-                    isMobile ? "text-xs text-center" : "text-sm"
-                  )}>
-                    Acceso a todos los reportes y análisis
-                  </p>
-                </CardContent>
-              </Card>
-              
-              <Card className="bg-white">
-                <CardContent className={cn(
-                  isMobile ? "p-4" : "pt-6"
-                )}>
-                  <div className={cn(
-                    "flex items-center gap-2",
-                    isMobile && "flex-col text-center"
-                  )}>
-                    <Users className={cn(
-                      "text-purple-500",
-                      isMobile ? "h-4 w-4" : "h-5 w-5"
-                    )} />
-                    <span className={cn(
-                      "font-medium",
-                      isMobile ? "text-sm" : "text-base"
-                    )}>
-                      Gestión Global
-                    </span>
-                  </div>
-                  <p className={cn(
-                    "text-muted-foreground mt-2",
-                    isMobile ? "text-xs text-center" : "text-sm"
-                  )}>
-                    Control total de todas las unidades
-                  </p>
-                </CardContent>
-              </Card>
-            </div>
-
-            <Separator />
-
-            <div className={cn(
-              "flex gap-2",
-              isMobile ? "flex-col gap-3" : "flex-wrap"
-            )}>
-              <Button 
-                asChild 
-                size={isMobile ? "default" : "sm"}
-                className={cn(
-                  "bg-purple-600 hover:bg-purple-700",
-                  isMobile && "w-full min-h-[44px]"
-                )}
-              >
-                <Link href="/reportes?type=executive">
-                  <BarChart3 className={cn(
-                    isMobile ? "h-4 w-4 mr-2" : "mr-1"
-                  )} />
-                  Dashboard Ejecutivo
-                  {isMobile && (
-                    <ChevronRight className="h-4 w-4 ml-auto" />
-                  )}
-                </Link>
-              </Button>
-              <Button 
-                asChild 
-                size={isMobile ? "default" : "sm"}
-                variant="outline"
-                className={cn(
-                  isMobile && "w-full min-h-[44px]"
-                )}
-              >
-                <Link href="/compras?status=high_value">
-                  <ShoppingCart className={cn(
-                    isMobile ? "h-4 w-4 mr-2" : "mr-1"
-                  )} />
-                  Compras Alto Valor
-                  {isMobile && (
-                    <ChevronRight className="h-4 w-4 ml-auto" />
-                  )}
-                </Link>
-              </Button>
-              <Button 
-                asChild 
-                size={isMobile ? "default" : "sm"}
-                variant="outline"
-                className={cn(
-                  isMobile && "w-full min-h-[44px]"
-                )}
-              >
-                <Link href="/gestion">
-                  <Shield className={cn(
-                    isMobile ? "h-4 w-4 mr-2" : "mr-1"
-                  )} />
-                  Configuración Sistema
-                  {isMobile && (
-                    <ChevronRight className="h-4 w-4 ml-auto" />
-                  )}
-                </Link>
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* COORDINADOR MANTENIMIENTO - Maintenance Focus */}
-      {profile?.role === 'COORDINADOR_MANTENIMIENTO' && (
-        <Card className="border-green-200 bg-gradient-to-r from-green-50 to-emerald-50">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-green-800">
-              <Wrench className="h-5 w-5" />
-              Panel de Mantenimiento
-            </CardTitle>
-            <CardDescription className="text-green-700">
-              Gestión completa de mantenimiento en tu planta
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <Card className="bg-white">
-                <CardContent className="pt-6">
-                  <div className="flex items-center gap-2">
-                    <Wrench className="h-5 w-5 text-green-500" />
-                    <span className="font-medium">Control Total Mantenimiento</span>
-                  </div>
-                  <p className="text-sm text-muted-foreground mt-2">
-                    Gestión completa de activos y planes
-                  </p>
-                </CardContent>
-              </Card>
-              
-              <Card className="bg-white">
-                <CardContent className="pt-6">
-                  <div className="flex items-center gap-2">
-                    <ShoppingCart className="h-5 w-5 text-orange-500" />
-                    <span className="font-medium">Compras de Mantenimiento</span>
-                  </div>
-                  <p className="text-sm text-muted-foreground mt-2">
-                    Crear y gestionar órdenes de compra
-                  </p>
-                </CardContent>
-              </Card>
-              
-              <Card className="bg-white">
-                <CardContent className="pt-6">
-                  <div className="flex items-center gap-2">
-                    <ClipboardList className="h-5 w-5 text-blue-500" />
-                    <span className="font-medium">Checklists Completos</span>
-                  </div>
-                  <p className="text-sm text-muted-foreground mt-2">
-                    Crear, editar y ejecutar checklists
-                  </p>
-                </CardContent>
-              </Card>
-            </div>
-
-            <Separator />
-
-            <div className="flex gap-2 flex-wrap">
-              <Button asChild size="sm" className="bg-green-600 hover:bg-green-700">
-                <Link href="/ordenes?filter=pending">
-                  Órdenes Pendientes
-                </Link>
-              </Button>
-              <Button asChild size="sm" variant="outline">
-                <Link href="/preventivo">
-                  Plan de Mantenimiento
-                </Link>
-              </Button>
-              <Button asChild size="sm" variant="outline">
-                <Link href="/checklists/plantillas/crear">
-                  Nuevo Checklist
-                </Link>
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* JEFE_PLANTA - Plant Management */}
-      {profile?.role === 'JEFE_PLANTA' && (
-        <Card className="border-blue-200 bg-gradient-to-r from-blue-50 to-cyan-50">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-blue-800">
-              <Package className="h-5 w-5" />
-              Panel de Jefe de Planta
-            </CardTitle>
-            <CardDescription className="text-blue-700">
-              Supervisión completa de {organizationalContext.plantName || 'tu planta'}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <Card className="bg-white">
-                <CardContent className="pt-6">
-                  <div className="flex items-center gap-2">
-                    <Package className="h-5 w-5 text-blue-500" />
-                    <span className="font-medium">Gestión de Planta</span>
-                  </div>
-                  <p className="text-sm text-muted-foreground mt-2">
-                    Control de activos y personal
-                  </p>
-                </CardContent>
-              </Card>
-              
-              <Card className="bg-white">
-                <CardContent className="pt-6">
-                  <div className="flex items-center gap-2">
-                    <ShoppingCart className="h-5 w-5 text-green-500" />
-                    <span className="font-medium">Autorización $50,000</span>
-                  </div>
-                  <p className="text-sm text-muted-foreground mt-2">
-                    Aprobar compras de tu planta
-                  </p>
-                </CardContent>
-              </Card>
-              
-              <Card className="bg-white">
-                <CardContent className="pt-6">
-                  <div className="flex items-center gap-2">
-                    <Users className="h-5 w-5 text-purple-500" />
-                    <span className="font-medium">Personal de Planta</span>
-                  </div>
-                  <p className="text-sm text-muted-foreground mt-2">
-                    Gestión de operadores
-                  </p>
-                </CardContent>
-              </Card>
-            </div>
-
-            <Separator />
-
-            <div className="flex gap-2 flex-wrap">
-              <Button asChild size="sm" className="bg-blue-600 hover:bg-blue-700">
-                <Link href="/activos?plant={organizationalContext.plantId}">
-                  Activos de Planta
-                </Link>
-              </Button>
-              <Button asChild size="sm" variant="outline">
-                <Link href="/compras?plant={organizationalContext.plantId}&requires_approval=true">
-                  Aprobar Compras
-                </Link>
-              </Button>
-              <Button asChild size="sm" variant="outline">
-                <Link href="/personal?plant={organizationalContext.plantId}">
-                  Personal
-                </Link>
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* AREA_ADMINISTRATIVA - Administrative Features */}
-      {profile?.role === 'AREA_ADMINISTRATIVA' && (
-        <Card className="border-orange-200 bg-gradient-to-r from-orange-50 to-amber-50">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-orange-800">
-              <Users className="h-5 w-5" />
-              Panel Área Administrativa
-            </CardTitle>
-            <CardDescription className="text-orange-700">
-              Funciones exclusivas para roles administrativos
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <Card className="bg-white">
-                  <CardContent className="pt-6">
-                    <div className="flex items-center gap-2">
-                      <CheckCircle className="h-5 w-5 text-green-500" />
-                      <span className="font-medium">Autorización de Compras</span>
-                    </div>
-                    <p className="text-sm text-muted-foreground mt-2">
-                      Puedes autorizar compras hasta ${authorizationLimit.toLocaleString()}
-                    </p>
-                  </CardContent>
-                </Card>
-              
-              <Card className="bg-white">
-                <CardContent className="pt-6">
-                  <div className="flex items-center gap-2">
-                    <Users className="h-5 w-5 text-blue-500" />
-                    <span className="font-medium">Gestión de Personal</span>
-                  </div>
-                  <p className="text-sm text-muted-foreground mt-2">
-                    Acceso completo a recursos humanos
-                  </p>
-                </CardContent>
-              </Card>
-            </div>
-
-            <Separator />
-
-            <div className="flex gap-2">
-              <Button asChild size="sm" variant="outline">
-                <Link href="/compras?filter=pending_approval">
-                  Compras Pendientes
-                </Link>
-              </Button>
-              <Button asChild size="sm" variant="outline">
-                <Link href="/gestion/personal">
-                  Gestionar Personal
-                </Link>
-              </Button>
-              <Button asChild size="sm" variant="outline">
-                <Link href="/reportes?type=admin">
-                  Reportes Administrativos
-                </Link>
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      )}
 
       {/* Modules Grid - Mobile Optimized */}
       <div>
@@ -943,130 +610,8 @@ function DashboardContent() {
           })}
         </div>
       </div>
-
-      {/* Quick Actions for AREA_ADMINISTRATIVA - Mobile Optimized */}
-      <RoleGuard module="purchases" requireAuth>
-        <Card>
-          <CardHeader className={cn(isMobile && "pb-3")}>
-            <CardTitle className={cn(
-              "flex items-center gap-2",
-              isMobile ? "text-lg" : "text-xl"
-            )}>
-              <Calendar className={cn(isMobile ? "h-4 w-4" : "h-5 w-5")} />
-              <span className={cn(isMobile && "text-base")}>
-                Acciones Rápidas - Área Administrativa
-              </span>
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className={cn(
-              "grid gap-4",
-              isMobile ? "grid-cols-1 gap-3" : "grid-cols-1 md:grid-cols-3"
-            )}>
-              <Button 
-                asChild 
-                variant="outline" 
-                className={cn(
-                  "h-auto flex flex-col",
-                  isMobile 
-                    ? "p-4 min-h-[80px] active:scale-95 transition-transform"
-                    : "p-4"
-                )}
-              >
-                <Link href="/compras?status=pending">
-                  <ShoppingCart className={cn(
-                    "mb-2",
-                    isMobile ? "h-5 w-5" : "h-6 w-6"
-                  )} />
-                  <span className={cn(
-                    "font-medium",
-                    isMobile ? "text-sm" : "text-base"
-                  )}>
-                    Revisar Compras
-                  </span>
-                  <span className={cn(
-                    "text-muted-foreground",
-                    isMobile ? "text-xs" : "text-xs"
-                  )}>
-                    Pendientes de aprobación
-                  </span>
-                  {isMobile && (
-                    <ChevronRight className="h-3 w-3 mt-1 text-muted-foreground" />
-                  )}
-                </Link>
-              </Button>
-
-              
-              <Button 
-                asChild 
-                variant="outline" 
-                className={cn(
-                  "h-auto flex flex-col",
-                  isMobile 
-                    ? "p-4 min-h-[80px] active:scale-95 transition-transform"
-                    : "p-4"
-                )}
-              >
-                <Link href="/gestion/personal?action=new">
-                  <Users className={cn(
-                    "mb-2",
-                    isMobile ? "h-5 w-5" : "h-6 w-6"
-                  )} />
-                  <span className={cn(
-                    "font-medium",
-                    isMobile ? "text-sm" : "text-base"
-                  )}>
-                    Nuevo Personal
-                  </span>
-                  <span className={cn(
-                    "text-muted-foreground",
-                    isMobile ? "text-xs" : "text-xs"
-                  )}>
-                    Registrar empleado
-                  </span>
-                  {isMobile && (
-                    <ChevronRight className="h-3 w-3 mt-1 text-muted-foreground" />
-                  )}
-                </Link>
-              </Button>
-              
-              <Button 
-                asChild 
-                variant="outline" 
-                data-tour="reports"
-                className={cn(
-                  "h-auto flex flex-col",
-                  isMobile 
-                    ? "p-4 min-h-[80px] active:scale-95 transition-transform"
-                    : "p-4"
-                )}
-              >
-                <Link href="/reportes?type=financial">
-                  <BarChart3 className={cn(
-                    "mb-2",
-                    isMobile ? "h-5 w-5" : "h-6 w-6"
-                  )} />
-                  <span className={cn(
-                    "font-medium",
-                    isMobile ? "text-sm" : "text-base"
-                  )}>
-                    Reportes Financieros
-                  </span>
-                  <span className={cn(
-                    "text-muted-foreground",
-                    isMobile ? "text-xs" : "text-xs"
-                  )}>
-                    Análisis de gastos
-                  </span>
-                  {isMobile && (
-                    <ChevronRight className="h-3 w-3 mt-1 text-muted-foreground" />
-                  )}
-                </Link>
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      </RoleGuard>
+        </>
+      )}
 
       {/* Role Limitation Notice for checklists */}
       {profile.role === 'AREA_ADMINISTRATIVA' && (
