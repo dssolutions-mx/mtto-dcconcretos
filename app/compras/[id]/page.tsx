@@ -463,6 +463,8 @@ async function PurchaseOrderDetailsContent({ id }: { id: string }) {
               purchaseOrderId={order.id}
               poType={order.po_type as PurchaseOrderType}
               currentStatus={order.status}
+              totalAmount={order.approval_amount ?? order.total_amount}
+              workOrderType={order.work_order_type}
             />
           ) : (
             /* Legacy PO fallback */

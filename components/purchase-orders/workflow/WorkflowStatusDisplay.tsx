@@ -43,14 +43,20 @@ interface WorkflowStatusDisplayProps {
   purchaseOrderId: string
   poType: PurchaseOrderType
   currentStatus: string
+  /** Canonical approval amount from server (approval_amount ?? total_amount). Available immediately — no async dependency. */
+  totalAmount?: number | string | null
+  /** work_order_type from server — used to determine isPreventivePO without waiting for workflowStatus. */
+  workOrderType?: string | null
   className?: string
   onStatusChange?: () => void
 }
 
-export function WorkflowStatusDisplay({ 
-  purchaseOrderId, 
-  poType, 
+export function WorkflowStatusDisplay({
+  purchaseOrderId,
+  poType,
   currentStatus,
+  totalAmount,
+  workOrderType,
   className = "",
   onStatusChange
 }: WorkflowStatusDisplayProps) {
@@ -90,8 +96,17 @@ export function WorkflowStatusDisplay({
     responsibleRole?: string
   } | null>(null)
   
-  // Get PO amount from workflowStatus (always fresh)
-  const purchaseOrderAmount = parseFloat(workflowStatus?.purchase_order?.total_amount || '0')
+  // Get PO amount using the canonical pattern (mirrors all API endpoints):
+  // approval_amount is the authoritative routing field; total_amount is the fallback.
+  // Props come from the server component synchronously — workflowStatus enriches on load.
+  const purchaseOrderAmount = parseFloat(
+    String(
+      totalAmount ??
+      workflowStatus?.purchase_order?.approval_amount ??
+      workflowStatus?.purchase_order?.total_amount ??
+      0
+    )
+  )
 
 
   // Load workflow status on mount and fetch existing receipt if any
@@ -1058,7 +1073,21 @@ export function WorkflowStatusDisplay({
   const viabilityState = workflowStatus?.purchase_order?.viability_state
   const hasTechnicalApproval = !!workflowStatus?.purchase_order?.authorized_by
   const hasViability = viabilityState === 'viable'
-  const needsGMEscalation = purchaseOrderAmount >= 7000 && workflowStatus?.purchase_order?.workflow_policy?.requires_gm_if_above_threshold
+  // Mirrors normalizeWorkOrderType() in workflow-policy.ts: accepts 'preventive' and 'preventivo'.
+  // Use server-side prop first (available immediately); fall back to workflowStatus once loaded.
+  const rawWorkOrderType = workOrderType ?? workflowStatus?.purchase_order?.work_order_type
+  const isPreventivePO =
+    rawWorkOrderType === 'preventive' || rawWorkOrderType === 'preventivo'
+
+  // Three-tier escalation check — most authoritative wins:
+  // 1. Server-computed policy flag (authoritative once workflowStatus loads — uses approval_amount + full path logic)
+  // 2. Client-side policy math from server-provided props (available immediately on first render)
+  // 3. Approval-context stage fallback (if we're already AT the GG stage, it must require it)
+  const serverRequiresGM = workflowStatus?.purchase_order?.workflow_policy?.requires_gm_if_above_threshold
+  const needsGMEscalation =
+    serverRequiresGM === true ||
+    (!isPreventivePO && purchaseOrderAmount >= 7000) ||
+    approvalContext?.workflowStage === "Aprobación final"
 
   return (
     <div className={`space-y-6 ${className}`}>
@@ -1093,7 +1122,7 @@ export function WorkflowStatusDisplay({
           </div>
 
           {/* When pending_approval: Unified 3-step approval chain + compact financial summary */}
-          {currentStatus === 'pending_approval' && purchaseOrderAmount > 0 && (
+          {currentStatus === 'pending_approval' && (
             <>
               {/* Policy-driven stage badge - consistent with list view */}
               {approvalContext && (
@@ -1111,34 +1140,26 @@ export function WorkflowStatusDisplay({
                 </div>
               )}
 
-              {/* Compact financial summary - one block */}
-              <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm p-3 rounded-lg bg-muted/50">
-                <div>
-                  <span className="text-muted-foreground">Monto</span>
-                  <p className="font-semibold">{formatCurrency(purchaseOrderAmount)}</p>
-                </div>
-                {profile && (
+              {/* Compact financial summary */}
+              <div className="space-y-2 text-sm p-3 rounded-lg bg-muted/50">
+                <div className="flex items-center justify-between gap-4">
                   <div>
-                    <span className="text-muted-foreground">Tu límite</span>
-                    <p className={`font-semibold ${purchaseOrderAmount <= effectiveAuthLimit ? 'text-green-600' : ''}`}>
-                      {isLoadingAuth ? '...' : effectiveAuthLimit === Number.MAX_SAFE_INTEGER ? 'Sin límite' : formatCurrency(effectiveAuthLimit)}
-                    </p>
+                    <span className="text-muted-foreground text-xs">Monto</span>
+                    <p className="font-semibold tabular-num">{formatCurrency(purchaseOrderAmount)}</p>
                   </div>
-                )}
-                {workflowStatus?.purchase_order?.payment_condition && workflowStatus.purchase_order.po_purpose !== 'work_order_inventory' && (
-                  <div className="col-span-2">
-                    <span className="text-muted-foreground">Condición: </span>
-                    <span className="font-medium">{workflowStatus.purchase_order.payment_condition === 'credit' ? 'Crédito' : 'Contado'}</span>
-                    {workflowStatus.purchase_order.payment_condition === 'credit' && (
-                      <span className="text-muted-foreground text-xs ml-1">(Admin debe revisar viabilidad)</span>
-                    )}
-                  </div>
-                )}
-                {workflowStatus?.purchase_order?.po_purpose && workflowStatus.purchase_order.po_purpose !== 'work_order_inventory' && (
-                  <div className="col-span-2">
-                    <span className="text-muted-foreground">Impacto efectivo: </span>
-                    <span className={`font-medium ${workflowStatus.purchase_order.po_purpose === 'work_order_inventory' ? 'text-green-600' : ''}`}>
-                      {workflowStatus.purchase_order.po_purpose === 'work_order_inventory' ? '$0' : formatCurrency(workflowStatus.purchase_order.total_amount || 0)}
+                  {workflowStatus?.purchase_order?.payment_condition && workflowStatus.purchase_order.po_purpose !== 'work_order_inventory' && (
+                    <div className="text-right">
+                      <span className="text-muted-foreground text-xs">Condición</span>
+                      <p className="font-medium">
+                        {workflowStatus.purchase_order.payment_condition === 'credit' ? 'Crédito' : 'Contado'}
+                      </p>
+                    </div>
+                  )}
+                </div>
+                {needsGMEscalation && approvalContext?.workflowStage !== "Aprobación final" && (
+                  <div className="flex items-center gap-2 pt-1 border-t border-border/40">
+                    <span className="text-[10px] font-semibold text-amber-700">
+                      Este monto supera el umbral de $7,000 MXN — se requerirá aprobación de Gerencia General como paso final.
                     </span>
                   </div>
                 )}
@@ -1175,19 +1196,27 @@ export function WorkflowStatusDisplay({
                   {requiresViability && (() => {
                     const isActive = approvalContext?.workflowStage === "Viabilidad administrativa"
                     const isDone = hasViability
-                    const isLocked = !hasTechnicalApproval && !isDone
+                    const isPending = !isActive && !isDone
                     const stepNum = 2
                     return (
                       <div className="flex items-center gap-3">
                         <div className={`h-6 w-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
-                          isDone ? 'bg-green-100 text-green-700' : isActive ? 'bg-amber-100 text-amber-700 ring-2 ring-amber-300' : isLocked ? 'bg-muted/50 text-muted-foreground/50' : 'bg-muted text-muted-foreground'
+                          isDone ? 'bg-green-100 text-green-700'
+                          : isActive ? 'bg-amber-100 text-amber-700 ring-2 ring-amber-300'
+                          : isPending ? 'bg-muted/40 text-muted-foreground/60 border border-dashed border-muted-foreground/30'
+                          : 'bg-muted text-muted-foreground'
                         }`}>
                           {isDone ? '✓' : stepNum}
                         </div>
                         <div className="flex-1 min-w-0">
-                          <span className={`text-sm font-medium ${isActive ? 'text-amber-700' : ''}`}>Área Administrativa</span>
+                          <span className={`text-sm font-medium ${isActive ? 'text-amber-700' : isPending ? 'text-muted-foreground' : ''}`}>
+                            Área Administrativa
+                          </span>
                           <span className="text-xs text-muted-foreground block">
-                            {isDone ? 'Viable' : viabilityState === 'not_viable' ? 'No viable' : isActive ? 'Etapa actual — registrar viabilidad' : isLocked ? 'Bloqueado' : 'Pendiente'}
+                            {isDone ? 'Viable'
+                            : viabilityState === 'not_viable' ? 'No viable'
+                            : isActive ? 'Etapa actual — registrar viabilidad'
+                            : 'Pendiente de etapa anterior'}
                           </span>
                         </div>
                         {isDone && <CheckCircle className="h-4 w-4 text-green-600 shrink-0" />}
@@ -1195,23 +1224,40 @@ export function WorkflowStatusDisplay({
                     )
                   })()}
 
-                  {/* Final step: GM approval — only when amount triggers escalation */}
+                  {/* Final step: GM approval — shown whenever amount ≥ $7k triggers escalation */}
                   {needsGMEscalation && (() => {
                     const isActive = approvalContext?.workflowStage === "Aprobación final"
                     const prerequisiteMet = requiresViability ? hasViability : hasTechnicalApproval
-                    const isLocked = !prerequisiteMet && !isActive
+                    const isPending = !isActive && !prerequisiteMet
                     const stepNum = requiresViability ? 3 : 2
                     return (
-                      <div className="flex items-center gap-3">
-                        <div className={`h-6 w-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
-                          isActive ? 'bg-emerald-100 text-emerald-700 ring-2 ring-emerald-300' : isLocked ? 'bg-muted/50 text-muted-foreground/50' : 'bg-muted text-muted-foreground'
+                      <div className="flex items-start gap-3">
+                        <div className={`h-6 w-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0 mt-0.5 ${
+                          isActive
+                            ? 'bg-emerald-100 text-emerald-700 ring-2 ring-emerald-300'
+                            : isPending
+                            ? 'bg-muted/40 text-muted-foreground/60 border border-dashed border-muted-foreground/30'
+                            : 'bg-muted text-muted-foreground'
                         }`}>
                           {stepNum}
                         </div>
                         <div className="flex-1 min-w-0">
-                          <span className={`text-sm font-medium ${isActive ? 'text-emerald-700' : ''}`}>Gerencia General</span>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className={`text-sm font-medium ${isActive ? 'text-emerald-700' : isPending ? 'text-muted-foreground' : ''}`}>
+                              Gerencia General
+                            </span>
+                            {isPending && (
+                              <span className="rounded-full border border-dashed border-amber-400 bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">
+                                Requerida · monto ≥ $7k
+                              </span>
+                            )}
+                          </div>
                           <span className="text-xs text-muted-foreground block">
-                            {isActive ? 'Etapa actual — aprobación final' : isLocked ? 'Bloqueado' : 'Pendiente aprobación final'}
+                            {isActive
+                              ? 'Etapa actual — aprobación final'
+                              : isPending
+                              ? 'Pendiente de etapas anteriores'
+                              : 'Pendiente aprobación final'}
                           </span>
                         </div>
                       </div>
@@ -1324,16 +1370,6 @@ export function WorkflowStatusDisplay({
 
                                 return (
                     <div className="space-y-4">
-                      {/* Loading authorization info */}
-                      {isApprovalAction && isLoadingAuth && (
-                        <Alert className="border-blue-200 bg-blue-50">
-                          <Clock className="h-4 w-4 text-blue-600" />
-                          <AlertDescription className="text-blue-700">
-                            Verificando límite de autorización...
-                          </AlertDescription>
-                        </Alert>
-                      )}
-                      
                       {/* Loading quotation status */}
                       {isApprovalAction && isLoadingQuotations && (
                         <Alert className="border-blue-200 bg-blue-50">

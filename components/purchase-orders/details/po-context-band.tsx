@@ -54,6 +54,8 @@ interface POContextBandProps {
     supplier?: string | null
     service_provider?: string | null
     store_location?: string | null
+    /** Canonical routing amount. Preferred over total_amount for display. */
+    approval_amount?: number | string | null
     total_amount?: string | null
     payment_method?: string | null
     payment_condition?: string | null
@@ -114,7 +116,7 @@ export function POContextBand({ order, workOrder }: POContextBandProps) {
             className="font-bold tabular-num leading-none text-foreground"
             style={{ fontSize: "clamp(1.35rem, 4vw, 1.75rem)" }}
           >
-            {formatCurrency(order.total_amount ?? 0)}
+            {formatCurrency(order.approval_amount ?? order.total_amount ?? 0)}
           </p>
         </div>
 
