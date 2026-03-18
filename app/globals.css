@@ -39,6 +39,35 @@
     align-items: center;
     justify-content: center;
   }
+
+  /* Hide scrollbar while keeping scroll functionality */
+  .scrollbar-none {
+    scrollbar-width: none; /* Firefox */
+    -ms-overflow-style: none; /* IE/Edge */
+  }
+  .scrollbar-none::-webkit-scrollbar {
+    display: none; /* Chrome/Safari */
+  }
+
+  /* Tabular number rendering for financial data */
+  .tabular-num {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum";
+  }
+
+  /* Dashboard callouts */
+  .callout-attention {
+    background: #FFFBEB;
+    border-left: 3px solid #D97706;
+    border-radius: 8px;
+    padding: 12px 16px;
+  }
+  .callout-critical {
+    background: #1C1917;
+    color: #F5F5F4;
+    border-radius: 10px;
+    padding: 14px 18px;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

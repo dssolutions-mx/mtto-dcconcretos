@@ -310,29 +310,34 @@ function DashboardContent() {
     await new Promise(resolve => setTimeout(resolve, 1000))
   }
 
-  // Límite de Autorización only for roles that can authorize
-  const AUTHORIZING_ROLES = ['GERENCIA_GENERAL', 'JEFE_UNIDAD_NEGOCIO', 'AREA_ADMINISTRATIVA', 'JEFE_PLANTA']
+  // Límite de Autorización: show only for limited-authority roles (not GG — GG has unlimited authority)
+  const AUTHORIZING_ROLES = ['JEFE_UNIDAD_NEGOCIO', 'AREA_ADMINISTRATIVA', 'JEFE_PLANTA']
   const showAuthLimit = profile && AUTHORIZING_ROLES.includes(profile.role)
 
   return (
     <PullToRefresh onRefresh={handlePullToRefresh} disabled={isRefreshing}>
-      <div className={cn(
-        "space-y-8",
-        isMobile ? "px-4 py-6" : "px-6 py-8"
-      )}>
-      {/* Access Denied Alert */}
-      {showAccessAlert && (
-        <Alert variant="destructive" className={cn(isMobile && "mx-0")}>
-          <AlertCircle className="h-4 w-4" />
-          <AlertDescription className={cn(isMobile && "text-sm")}>
-            <strong>Acceso denegado:</strong> Tu rol {profile.role} no tiene permisos para acceder al módulo "{searchParams.get('module')}".
-          </AlertDescription>
-        </Alert>
-      )}
 
-      {/* Executive layout: Gerencia General, Administración, Gerente Mantenimiento */}
+      {/*
+        ── Executive layout ─────────────────────────────────────────────────────
+        IMPORTANT: DashboardExecutiveLayout manages its own horizontal padding
+        (px-4 sm:px-6 lg:px-8) on every section. It must NOT be wrapped in an
+        extra padding container or the KPI grid will double-pad and overflow.
+      */}
       {useExecutiveLayout && (
-        <DashboardExecutiveLayout
+        <>
+          {/* Access Denied Alert inside exec — own padding row */}
+          {showAccessAlert && (
+            <div className="px-4 pb-0 pt-4 sm:px-6">
+              <Alert variant="destructive">
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription className="text-sm">
+                  <strong>Acceso denegado:</strong> Tu rol {profile.role} no tiene permisos para acceder al módulo "{searchParams.get('module')}".
+                </AlertDescription>
+              </Alert>
+            </div>
+          )}
+
+          <DashboardExecutiveLayout
           hero={
             <DashboardExecutiveHero
               name={`${profile.nombre} ${profile.apellido}`.trim()}
@@ -371,27 +376,53 @@ function DashboardContent() {
               }))}
             />
           }
-          kpis={<DashboardExecutiveKPIs role={profile.role} />}
+          kpis={<DashboardExecutiveKPIs role={profile.role as import("@/components/dashboard/dashboard-executive-kpis").ExecutiveKpiRole} />}
           actions={
-            <div className="flex items-center gap-2">
-              <RestartOnboardingButton />
+            <div className="flex items-center gap-1.5">
+              {/* RestartOnboarding — hidden on mobile to save hero space */}
+              <span className="hidden sm:block">
+                <RestartOnboardingButton />
+              </span>
+              {/* Refresh — icon-only on mobile, label on desktop */}
               <Button
                 size="sm"
                 variant="outline"
                 onClick={handleRefreshProfile}
                 disabled={isRefreshing}
+                className="h-8 w-8 p-0 sm:w-auto sm:px-3"
+                aria-label="Actualizar perfil"
               >
-                {isRefreshing ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3 mr-1" />}
-                Actualizar
+                {isRefreshing
+                  ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  : <RefreshCw className="h-3.5 w-3.5" />
+                }
+                <span className="hidden sm:inline ml-1.5 text-xs">Actualizar</span>
               </Button>
             </div>
           }
-        />
+          />
+
+          {/* Compliance widget for exec roles */}
+          {isComplianceSystemEnabled && (
+            <div className="px-4 pb-4 sm:px-6">
+              <UserSanctionsWidget maxItems={3} showOnlyActive={true} />
+            </div>
+          )}
+        </>
       )}
 
       {/* Non-exec: Getting Started, action strips, Panel card, shortcuts, modules */}
       {!useExecutiveLayout && (
-        <>
+        <div className={cn("space-y-8", isMobile ? "px-4 py-6" : "px-6 py-8")}>
+          {/* Access Denied Alert */}
+          {showAccessAlert && (
+            <Alert variant="destructive">
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription className={cn(isMobile && "text-sm")}>
+                <strong>Acceso denegado:</strong> Tu rol {profile.role} no tiene permisos para acceder al módulo "{searchParams.get('module')}".
+              </AlertDescription>
+            </Alert>
+          )}
       {showGettingStarted && (
         <GettingStartedCard
           userName={profile.nombre}
@@ -600,23 +631,22 @@ function DashboardContent() {
           })}
         </div>
       </div>
-        </>
-      )}
 
-      {/* Role Limitation Notice for checklists */}
-      {profile.role === 'AREA_ADMINISTRATIVA' && (
-        <Alert>
-          <AlertCircle className="h-4 w-4" />
-          <AlertDescription>
-            <strong>Nota:</strong> Tu rol de Área Administrativa no incluye acceso al módulo de Checklists. 
-            Este módulo está destinado a roles operativos y de mantenimiento.
-          </AlertDescription>
-        </Alert>
-      )}
+          {/* Role Limitation Notice for checklists */}
+          {profile.role === 'AREA_ADMINISTRATIVA' && (
+            <Alert>
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription>
+                <strong>Nota:</strong> Tu rol de Área Administrativa no incluye acceso al módulo de Checklists.
+                Este módulo está destinado a roles operativos y de mantenimiento.
+              </AlertDescription>
+            </Alert>
+          )}
 
-      {/* User Sanctions Widget - Show when compliance system is enabled */}
-      {isComplianceSystemEnabled && <UserSanctionsWidget maxItems={3} showOnlyActive={true} />}
-      </div>
+          {/* Compliance widget for non-exec roles */}
+          {isComplianceSystemEnabled && <UserSanctionsWidget maxItems={3} showOnlyActive={true} />}
+        </div>
+      )}
     </PullToRefresh>
   )
 }
