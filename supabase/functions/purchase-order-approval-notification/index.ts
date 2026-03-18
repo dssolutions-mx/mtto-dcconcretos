@@ -280,7 +280,9 @@ serve(async (req) => {
 
     // Workflow policy: GM escalation threshold 7000 MXN, path-based skip GM (Task 5)
     const GM_ESCALATION_THRESHOLD_MXN = 7000
-    const amount = Number(po.approval_amount ?? po.total_amount ?? 0)
+    const amount = Number(po.approval_amount) > 0
+      ? Number(po.approval_amount)
+      : Number(po.total_amount ?? 0)
     const purpose = (po.po_purpose || '').toString().trim().toLowerCase()
     const workOrderType = (po.work_order_type || '').toString().trim().toLowerCase()
     const woType = workOrderType === 'preventive' || workOrderType === 'preventivo' ? 'preventive' : workOrderType === 'corrective' || workOrderType === 'correctivo' ? 'corrective' : null
@@ -363,21 +365,46 @@ serve(async (req) => {
       }
     }
 
-    // Fetch Administration profiles for viability notification (Via 3 and Via 4)
-    const { data: adminProfiles } = await supabase
-      .from('profiles')
-      .select('id, nombre, apellido, email')
-      .eq('role', 'AREA_ADMINISTRATIVA')
-      .eq('status', 'active')
+    // Fetch Administration recipient(s) for viability notification (Via 3 and Via 4)
+    // If po_admin_approval_email is set in app_settings, use only that address.
+    // Otherwise fall back to all AREA_ADMINISTRATIVA profiles (legacy).
+    const { data: adminEmailSetting } = await supabase
+      .from('app_settings')
+      .select('value')
+      .eq('key', 'po_admin_approval_email')
+      .maybeSingle()
+    const designatedAdminEmail = (adminEmailSetting?.value as string)?.trim() || null
+
     let adminRecipients: Array<{ userId: string; email: string; name: string }> = []
-    if (adminProfiles && adminProfiles.length) {
-      adminRecipients = (adminProfiles as { id: string; nombre: string; apellido: string; email: string | null }[])
-        .map((p) => {
-          const email = (p.email && p.email.trim()) || null
-          if (!email) return null
-          return { userId: p.id, email, name: `${p.nombre || ''} ${p.apellido || ''}`.trim() || 'Área Administrativa' }
-        })
-        .filter(Boolean) as any
+    if (designatedAdminEmail) {
+      const { data: adminProfile } = await supabase
+        .from('profiles')
+        .select('id, nombre, apellido, email')
+        .eq('email', designatedAdminEmail)
+        .eq('status', 'active')
+        .maybeSingle()
+      if (adminProfile?.email) {
+        adminRecipients = [{
+          userId: adminProfile.id,
+          email: (adminProfile.email as string).trim(),
+          name: `${(adminProfile as any).nombre || ''} ${(adminProfile as any).apellido || ''}`.trim() || 'Área Administrativa'
+        }]
+      }
+    } else {
+      const { data: adminProfiles } = await supabase
+        .from('profiles')
+        .select('id, nombre, apellido, email')
+        .eq('role', 'AREA_ADMINISTRATIVA')
+        .eq('status', 'active')
+      if (adminProfiles && adminProfiles.length) {
+        adminRecipients = (adminProfiles as { id: string; nombre: string; apellido: string; email: string | null }[])
+          .map((p) => {
+            const email = (p.email && p.email.trim()) || null
+            if (!email) return null
+            return { userId: p.id, email, name: `${p.nombre || ''} ${p.apellido || ''}`.trim() || 'Área Administrativa' }
+          })
+          .filter(Boolean) as any
+      }
     }
 
     // Workflow stage detection: determine who to notify next

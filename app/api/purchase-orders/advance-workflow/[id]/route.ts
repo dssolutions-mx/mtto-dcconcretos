@@ -99,9 +99,11 @@ export async function PUT(
         .single()
 
       if (purchaseOrder) {
-        const amount = Number(
-          purchaseOrder.approval_amount ?? purchaseOrder.total_amount ?? 0
-        )
+        // approval_amount may be stored as 0.00 (not null) when unset — fall through to total_amount
+        const amount =
+          Number(purchaseOrder.approval_amount) > 0
+            ? Number(purchaseOrder.approval_amount)
+            : Number(purchaseOrder.total_amount ?? 0)
 
         let resolvedPlantId: string | null = purchaseOrder.plant_id ?? null
         if (!resolvedPlantId && purchaseOrder.work_order_id) {
@@ -157,6 +159,7 @@ export async function PUT(
           }
 
           if (needsGMEscalation && !isGM) {
+            // Corrective PO ≥$7k: register tech approval, stay pending, escalate to GG
             const { error: escalationError } = await supabase
               .from('purchase_orders')
               .update({
@@ -179,11 +182,48 @@ export async function PUT(
               message: 'Autorización registrada. Se ha escalado a Gerencia General para aprobación final.',
               escalated_to_gm: true
             })
-          }
 
-          recordAuthorizationAfterWorkflow = true
+          } else if (policy.requiresViability && !isGM) {
+            // Viability-required path (preventive or corrective <$7k): register tech approval,
+            // stay pending — Área Administrativa must record viability before final approval.
+            // This prevents skipping step 2 of the protocol.
+            const { error: authError } = await supabase
+              .from('purchase_orders')
+              .update({
+                authorized_by: user.id,
+                authorization_date: new Date().toISOString(),
+                status: 'pending_approval',
+                updated_at: new Date().toISOString(),
+              })
+              .eq('id', id)
+
+            if (authError) {
+              return NextResponse.json({ error: 'No se pudo registrar la validación técnica' }, { status: 500 })
+            }
+
+            void notifyNextApprover(id)
+
+            return NextResponse.json({
+              success: true,
+              message: 'Validación técnica registrada. Área Administrativa debe revisar la viabilidad financiera antes de la aprobación final.',
+              awaiting_viability: true
+            })
+
+          } else {
+            // GM bypass OR simple path (no viability required, no GM escalation): advance directly
+            recordAuthorizationAfterWorkflow = true
+          }
         } else {
           // Second/final approval: only GM (when escalated) or Área Administrativa (when not)—Gerente de Mantenimiento cannot approve here
+
+          // Self-approval guard: the same person who gave technical approval (authorized_by)
+          // can NEVER be the final approver — except GG who has explicit bypass authority.
+          if (!isGM && purchaseOrder.authorized_by && purchaseOrder.authorized_by === user.id) {
+            return NextResponse.json({
+              error: 'No puedes dar la aprobación final en una orden que tú mismo validaste técnicamente. La aprobación final debe ser realizada por otra persona con autoridad.',
+            }, { status: 403 })
+          }
+
           const isViabilityReviewer = checkViabilityReviewAuthority(actor)
           const hasAuthLimit = actor.authorizationLimit > 0
           const withinLimit = amount <= actor.authorizationLimit
@@ -231,7 +271,9 @@ export async function PUT(
       const policy = resolveWorkflowPath({
         poPurpose: purchaseOrder?.po_purpose ?? null,
         workOrderType: purchaseOrder?.work_order_type ?? null,
-        approvalAmount: Number(purchaseOrder?.approval_amount ?? purchaseOrder?.total_amount ?? 0),
+        approvalAmount: Number(purchaseOrder?.approval_amount) > 0
+          ? Number(purchaseOrder?.approval_amount)
+          : Number(purchaseOrder?.total_amount ?? 0),
       })
 
       if (policy.requiresViability) {

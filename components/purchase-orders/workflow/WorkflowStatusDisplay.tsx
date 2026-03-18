@@ -98,15 +98,15 @@ export function WorkflowStatusDisplay({
   
   // Get PO amount using the canonical pattern (mirrors all API endpoints):
   // approval_amount is the authoritative routing field; total_amount is the fallback.
-  // Props come from the server component synchronously — workflowStatus enriches on load.
-  const purchaseOrderAmount = parseFloat(
-    String(
-      totalAmount ??
-      workflowStatus?.purchase_order?.approval_amount ??
-      workflowStatus?.purchase_order?.total_amount ??
-      0
-    )
-  )
+  // IMPORTANT: approval_amount may be stored as 0 (not null) when unset — treat 0 as "not set"
+  // and fall through to total_amount. Props from server component are available immediately.
+  const purchaseOrderAmount = (() => {
+    const fromProp = Number(totalAmount ?? 0)
+    if (fromProp > 0) return fromProp
+    const fromApproval = Number(workflowStatus?.purchase_order?.approval_amount ?? 0)
+    if (fromApproval > 0) return fromApproval
+    return Number(workflowStatus?.purchase_order?.total_amount ?? 0)
+  })()
 
 
   // Load workflow status on mount and fetch existing receipt if any
@@ -464,13 +464,19 @@ export function WorkflowStatusDisplay({
     return buttonTexts[poType]?.[action] || `Avanzar a ${action}`
   }
 
-  // Stage-aware label for the "approve" action — used in button + action card header
+  // Stage-aware label for the "approve" action — used in button + action card header.
+  // GG can bypass directly at the technical stage; their label reflects their role, not the Gerente's.
   const getStageAwareApprovalLabel = (workflowStage: string): { label: string; description: string } => {
+    const isGG = profile?.role === 'GERENCIA_GENERAL'
     switch (workflowStage) {
       case "Validación técnica":
-        return { label: "Dar validación técnica", description: "Como Gerente de Mantenimiento" }
+        return isGG
+          ? { label: "Aprobar directamente", description: "Como Gerencia General — aprobación directa (bypass)" }
+          : { label: "Dar validación técnica", description: "Como Gerente de Mantenimiento" }
       case "Viabilidad administrativa":
-        return { label: "Registrar viabilidad", description: "Como Área Administrativa" }
+        return isGG
+          ? { label: "Registrar viabilidad", description: "Como Gerencia General" }
+          : { label: "Registrar viabilidad", description: "Como Área Administrativa" }
       case "Aprobación final":
         return { label: "Dar aprobación final", description: "Como Gerencia General — aprobación final" }
       default:
@@ -808,17 +814,12 @@ export function WorkflowStatusDisplay({
       if (fileInput) fileInput.value = ''
       // Update receipt URL state
       if (fileUrl) setReceiptUrl(fileUrl)
-      
-      // Show success toast with appropriate message
-      if (newStatus === 'approved') {
-        // Check if response indicates escalation
-        toast({
-          title: "Autorización Registrada",
-          description: "La orden ha sido procesada correctamente.",
-        })
-      }
-      
-      // Reload workflow status
+
+      // Note: usePurchaseOrders.advanceWorkflow already shows the descriptive API toast
+      // (e.g. "Validación técnica registrada..." or "Autorización escalada...").
+      // Do NOT add a second generic toast here — it creates confusing duplicate notifications.
+
+      // Reload workflow status to reflect authorized_by / viability_state changes
       await loadWorkflowStatus(purchaseOrderId)
       if (onStatusChange) {
         onStatusChange()

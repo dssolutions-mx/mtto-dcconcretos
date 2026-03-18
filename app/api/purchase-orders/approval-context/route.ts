@@ -146,7 +146,11 @@ export async function GET(request: NextRequest) {
         continue
       }
 
-      const amount = Number(po.approval_amount ?? po.total_amount ?? 0)
+      // approval_amount may be stored as 0.00 (not null) when unset — fall through to total_amount
+      const amount =
+        Number(po.approval_amount) > 0
+          ? Number(po.approval_amount)
+          : Number(po.total_amount ?? 0)
       const buId = resolveBuId(po)
       const hasScope = checkScopeOverBusinessUnit(actor, buId)
 

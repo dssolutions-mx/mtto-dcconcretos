@@ -116,7 +116,9 @@ export function POContextBand({ order, workOrder }: POContextBandProps) {
             className="font-bold tabular-num leading-none text-foreground"
             style={{ fontSize: "clamp(1.35rem, 4vw, 1.75rem)" }}
           >
-            {formatCurrency(order.approval_amount ?? order.total_amount ?? 0)}
+            {formatCurrency(
+              Number(order.approval_amount) > 0 ? order.approval_amount : (order.total_amount ?? 0)
+            )}
           </p>
         </div>
 

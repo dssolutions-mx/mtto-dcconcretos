@@ -304,7 +304,11 @@ export class PurchaseOrderService {
       }
 
       // App-layer workflow policy enrichment (Task 4: authoritative before SQL migration)
-      const approvalAmount = Number(po.approval_amount ?? po.total_amount ?? 0)
+      // approval_amount may be stored as 0.00 (not null) when unset — fall through to total_amount
+      const approvalAmount =
+        Number(po.approval_amount) > 0
+          ? Number(po.approval_amount)
+          : Number(po.total_amount ?? 0)
       const policyInput = {
         poPurpose: po.po_purpose ?? null,
         workOrderType: po.work_order_type ?? null,
