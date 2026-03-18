@@ -8,12 +8,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { ArrowLeft, Plus, CheckCircle, AlertCircle, Eye, FileText, Camera } from "lucide-react";
+import { ArrowLeft, Plus, CheckCircle, AlertCircle, AlertTriangle, Eye, FileText, Camera } from "lucide-react";
 import Link from "next/link";
 import { useAsset, useIncidents } from "@/hooks/useSupabase";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { IncidentRegistrationDialog } from "@/components/assets/dialogs/incident-registration-dialog";
+import { getIncidentEvidence } from "@/components/incidents/incident-utils";
 import { useToast } from "@/hooks/use-toast";
 
 interface IncidentPageProps {
