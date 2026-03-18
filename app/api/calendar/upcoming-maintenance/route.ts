@@ -544,7 +544,7 @@ export async function GET(request: Request) {
         .gte('planned_date', rangeStart.toISOString())
         .lte('planned_date', rangeEnd.toISOString())
         .order('planned_date', { ascending: true })
-      const asset = (wo: any) => wo.assets as { name?: string; asset_id?: string } | null
+      const asset = (wo: any) => (wo.asset || wo.assets) as { name?: string; asset_id?: string } | null
       workOrderEvents = (workOrders || []).map((wo: any) => ({
         id: wo.id,
         orderId: wo.order_id,
