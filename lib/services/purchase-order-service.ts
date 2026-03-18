@@ -230,7 +230,7 @@ export class PurchaseOrderService {
           p_purchase_order_id: id,
           p_new_status: new_status,
           p_user_id: user_id,
-          p_notes: notes
+          p_notes: notes ?? null
         })
       
       if (error) {

@@ -1017,7 +1017,10 @@ export function PurchaseOrdersListMobile({ effectiveAuthLimitFromParent, isLoadi
           <AlertDialogFooter>
             <AlertDialogCancel disabled={isDeleting}>Cancelar</AlertDialogCancel>
             <AlertDialogAction
-              onClick={confirmDelete}
+              onClick={(e) => {
+                e.preventDefault()
+                confirmDelete()
+              }}
               disabled={isDeleting}
               className="bg-red-600 hover:bg-red-700"
             >
@@ -1084,7 +1087,10 @@ export function PurchaseOrdersListMobile({ effectiveAuthLimitFromParent, isLoadi
           <AlertDialogFooter>
             <AlertDialogCancel disabled={isApproving}>Cancelar</AlertDialogCancel>
             <AlertDialogAction
-              onClick={confirmApproval}
+              onClick={(e) => {
+                e.preventDefault()
+                confirmApproval()
+              }}
               disabled={isApproving}
               className={approvalAction === 'approve' ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'}
             >
