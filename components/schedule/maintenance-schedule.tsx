@@ -1,254 +1,106 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Calendar } from "@/components/ui/calendar"
-import { Badge } from "@/components/ui/badge"
+import { useState, useMemo } from "react"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Skeleton } from "@/components/ui/skeleton"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import {
-  AlertCircle,
-  CalendarIcon,
-  ChevronLeft,
-  ChevronRight,
-  Clock,
-  Filter,
-  PenToolIcon as Tool,
-  Wrench,
-  AlertTriangle,
-  CheckCircle2,
-  ExternalLink,
-  Info,
-} from "lucide-react"
-import { format, isToday, isSameDay, differenceInDays } from "date-fns"
-import { es } from "date-fns/locale"
-import Link from "next/link"
-
-interface UpcomingMaintenance {
-  id: string
-  assetId: string
-  assetName: string
-  assetCode: string
-  intervalId: string
-  intervalName: string
-  intervalType: string
-  targetValue: number
-  currentValue: number
-  valueRemaining: number
-  unit: string
-  estimatedDate: string
-  status: 'overdue' | 'upcoming' | 'covered' | 'scheduled'
-  urgency: 'low' | 'medium' | 'high'
-  lastMaintenance?: {
-    date: string
-    value: number
-  }
-}
-
-interface MaintenanceSummary {
-  overdue: number
-  upcoming: number
-  covered: number
-  scheduled: number
-  highUrgency: number
-  mediumUrgency: number
-}
+import { AlertTriangle, CheckCircle2 } from "lucide-react"
+import { format } from "date-fns"
+import type { UpcomingMaintenance } from "@/types/calendar"
+import { useCalendarMaintenance } from "@/hooks/useCalendarMaintenance"
+import { CalendarHero } from "@/components/schedule/calendar-hero"
+import { CalendarShortcuts } from "@/components/schedule/calendar-shortcuts"
+import { CalendarKPIs } from "@/components/schedule/calendar-kpis"
+import { CalendarFilters } from "@/components/schedule/calendar-filters"
+import { CalendarGrid } from "@/components/schedule/calendar-grid"
+import { CalendarDayDetail } from "@/components/schedule/calendar-day-detail"
+import { CalendarLegend } from "@/components/schedule/calendar-legend"
+import { DashboardModuleLinks } from "@/components/dashboard/dashboard-module-links"
+import { useAuthZustand } from "@/hooks/use-auth-zustand"
+import { Fuel, Package, Wrench, ClipboardList, BarChart3 } from "lucide-react"
 
 export function MaintenanceSchedule() {
-  const [date, setDate] = useState<Date | undefined>(new Date())
+  const [currentMonth, setCurrentMonth] = useState(() => new Date())
+  const [selectedDate, setSelectedDate] = useState<Date | undefined>(new Date())
   const [selectedMaintenance, setSelectedMaintenance] = useState<UpcomingMaintenance | null>(null)
-  const [upcomingMaintenances, setUpcomingMaintenances] = useState<UpcomingMaintenance[]>([])
-  const [summary, setSummary] = useState<MaintenanceSummary>({ 
-    overdue: 0, 
-    upcoming: 0, 
-    covered: 0, 
-    scheduled: 0,
-    highUrgency: 0, 
-    mediumUrgency: 0 
+
+  const monthStr = format(currentMonth, "yyyy-MM")
+  const {
+    items,
+    warrantyEvents,
+    summary,
+    loading,
+    error,
+    refetch,
+    statusFilter,
+    setStatusFilter,
+    sortBy,
+    setSortBy,
+    totalCount
+  } = useCalendarMaintenance({
+    month: monthStr,
+    includeWarranties: true
   })
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const [page, setPage] = useState(1)
-  const [totalPages, setTotalPages] = useState(1)
-  const [totalCount, setTotalCount] = useState(0)
-  const itemsPerPage = 50
-  const [statusFilter, setStatusFilter] = useState<string | null>(null)
-  const [sortBy, setSortBy] = useState<string>('default')
 
-  useEffect(() => {
-    fetchUpcomingMaintenances()
-  }, [page, statusFilter, sortBy])
+  const maintenancesByDate = useMemo(() => {
+    return items.reduce((acc, m) => {
+      const key = m.estimatedDate.split("T")[0]
+      if (!acc[key]) acc[key] = []
+      acc[key].push(m)
+      return acc
+    }, {} as Record<string, typeof items>)
+  }, [items])
 
-  const fetchUpcomingMaintenances = async () => {
-    try {
-      setLoading(true)
-      setError(null)
-      
-      // Construir URL con todos los parámetros
-      let url = `/api/calendar/upcoming-maintenance?page=${page}&limit=${itemsPerPage}`
-      if (statusFilter) {
-        url += `&status=${statusFilter}`
-      }
-      if (sortBy && sortBy !== 'default') {
-        url += `&sortBy=${sortBy}`
-      }
-      
-      const response = await fetch(url)
-      if (!response.ok) {
-        throw new Error('Error al cargar los mantenimientos')
-      }
-      
-      const data = await response.json()
-      setUpcomingMaintenances(data.upcomingMaintenances || [])
-      setSummary(data.summary || { overdue: 0, upcoming: 0, covered: 0, scheduled: 0, highUrgency: 0, mediumUrgency: 0 })
-      setTotalCount(data.totalCount || 0)
-      setTotalPages(Math.ceil((data.totalCount || 0) / itemsPerPage))
-    } catch (err) {
-      console.error('Error fetching maintenance data:', err)
-      setError(err instanceof Error ? err.message : 'Error desconocido')
-    } finally {
-      setLoading(false)
-    }
+  const maintenancesForSelectedDate = selectedDate
+    ? maintenancesByDate[format(selectedDate, "yyyy-MM-dd")] ?? []
+    : []
+
+  const todayStr = format(new Date(), "yyyy-MM-dd")
+  const todayCount = (workOrderEvents?.filter((wo) => wo.plannedDate.startsWith(todayStr)).length ?? 0) +
+    (maintenancesByDate[todayStr]?.length ?? 0)
+
+  const handleDateSelect = (d: Date) => {
+    setSelectedDate(d)
+    const key = format(d, "yyyy-MM-dd")
+    const list = maintenancesByDate[key] ?? []
+    setSelectedMaintenance(list[0] ? { ...list[0] } : null)
   }
 
-  // Agrupar mantenimientos por fecha estimada
-  const maintenancesByDate = upcomingMaintenances.reduce((acc, maintenance) => {
-    const dateKey = maintenance.estimatedDate.split('T')[0]
-    if (!acc[dateKey]) {
-      acc[dateKey] = []
-    }
-    acc[dateKey].push(maintenance)
-    return acc
-  }, {} as Record<string, UpcomingMaintenance[]>)
-
-  // Función para manejar el clic en un día
-  const handleDayClick = (day: Date | undefined) => {
-    if (!day) return
-
-    const dateKey = format(day, 'yyyy-MM-dd')
-    const maintenancesOnDay = maintenancesByDate[dateKey] || []
-
-    if (maintenancesOnDay.length > 0) {
-      setSelectedMaintenance(maintenancesOnDay[0])
-    } else {
-      setSelectedMaintenance(null)
-    }
+  const handleMaintenanceSelect = (m: (typeof items)[0]) => {
+    setSelectedMaintenance({ ...m })
   }
 
-  const getStatusBadge = (status: string, urgency: string) => {
-    switch (status) {
-      case 'overdue':
-        return <Badge variant="destructive" className="flex items-center gap-1">
-          <AlertTriangle className="h-3 w-3" />
-          {urgency === 'high' ? 'Muy Vencido' : 'Vencido'}
-        </Badge>
-      case 'upcoming':
-        return <Badge variant="default" className="flex items-center gap-1">
-          <AlertCircle className="h-3 w-3" />
-          Próximo
-        </Badge>
-      case 'covered':
-        return <Badge variant="outline" className="flex items-center gap-1 text-blue-600 border-blue-600">
-          <Info className="h-3 w-3" />
-          Cubierto
-        </Badge>
-      case 'scheduled':
-        return <Badge variant="outline" className="flex items-center gap-1 text-green-600 border-green-600">
-          <CheckCircle2 className="h-3 w-3" />
-          Programado
-        </Badge>
-      default:
-        return <Badge variant="secondary" className="flex items-center gap-1">
-          <Clock className="h-3 w-3" />
-          Sin Estado
-        </Badge>
-    }
-  }
-
-  const getUrgencyBadge = (urgency: string, status: string) => {
-    if (status === 'overdue') {
-      return getStatusBadge(status, urgency)
-    }
-    
-    switch (urgency) {
-      case 'high':
-        return <Badge variant="default" className="flex items-center gap-1">
-          <AlertCircle className="h-3 w-3" />
-          Alta
-        </Badge>
-      case 'medium':
-        return <Badge variant="secondary" className="flex items-center gap-1">
-          <Clock className="h-3 w-3" />
-          Media
-        </Badge>
-      default:
-        return <Badge variant="outline" className="flex items-center gap-1">
-          <CheckCircle2 className="h-3 w-3" />
-          Baja
-        </Badge>
-    }
-  }
-
-  const formatDate = (dateString: string) => {
-    return format(new Date(dateString), "dd 'de' MMMM 'de' yyyy", { locale: es })
-  }
-
-  const getDaysUntilDue = (dateString: string, status: string) => {
-    if (status === 'covered') {
-      return 'Cubierto por mantenimientos posteriores'
-    }
-    
-    const dueDate = new Date(dateString)
-    const today = new Date()
-    const days = differenceInDays(dueDate, today)
-    
-    if (days < 0) {
-      return `${Math.abs(days)} días vencido`
-    } else if (days === 0) {
-      return 'Hoy'
-    } else {
-      return `En ${days} días`
-    }
-  }
-
-  const getProgressBarColor = (status: string, urgency: string) => {
-    if (status === 'overdue') {
-      return urgency === 'high' ? 'bg-red-600' : 'bg-orange-500'
-    }
-    if (status === 'upcoming') {
-      return 'bg-amber-500'
-    }
-    if (status === 'covered') {
-      return 'bg-blue-400'
-    }
-    return 'bg-gray-400'
-  }
+  const { ui } = useAuthZustand()
+  const moduleCards = [
+    { title: "Calendario", href: "/calendario", icon: ClipboardList, module: "checklists" as const },
+    { title: "Activos", href: "/activos", icon: Package, module: "assets" as const },
+    { title: "Mantenimiento", href: "/preventivo", icon: Wrench, module: "maintenance" as const },
+    { title: "Diésel", href: "/diesel", icon: Fuel, module: "inventory" as const },
+    { title: "Reportes", href: "/reportes", icon: BarChart3, module: "reports" as const }
+  ]
+  const moduleLinks = moduleCards
+    .filter((c) => ui.shouldShowInNavigation(c.module))
+    .map((c) => ({
+      title: c.title,
+      href: c.href,
+      icon: c.icon,
+      hasAccess: true
+    }))
 
   if (loading) {
     return (
-      <div className="grid gap-4 md:grid-cols-7">
-        <Card className="md:col-span-5">
-          <CardHeader>
-            <Skeleton className="h-8 w-64" />
-            <Skeleton className="h-4 w-96" />
-          </CardHeader>
-          <CardContent>
-            <Skeleton className="h-64 w-full" />
-          </CardContent>
-        </Card>
-        <Card className="md:col-span-2">
-          <CardHeader>
-            <Skeleton className="h-6 w-32" />
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              <Skeleton className="h-20 w-full" />
-              <Skeleton className="h-20 w-full" />
-            </div>
-          </CardContent>
-        </Card>
+      <div className="space-y-6 pb-16 sm:pb-12">
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-3">
+          {[0, 1, 2, 3, 4].map((i) => (
+            <div
+              key={i}
+              className="h-[100px] sm:h-[120px] rounded-2xl bg-muted/30 animate-pulse"
+            />
+          ))}
+        </div>
+        <div className="rounded-2xl border border-border/60 bg-card p-6">
+          <div className="h-[400px] rounded-xl bg-muted/30 animate-pulse" />
+        </div>
       </div>
     )
   }
@@ -257,775 +109,104 @@ export function MaintenanceSchedule() {
     return (
       <Alert variant="destructive">
         <AlertTriangle className="h-4 w-4" />
-        <AlertDescription>
-          {error}
-        </AlertDescription>
+        <AlertDescription>{error}</AlertDescription>
       </Alert>
     )
   }
 
   return (
-    <div className="space-y-4">
-      {/* Summary Cards */}
-      <div className="grid gap-4 grid-cols-2 md:grid-cols-5">
-        <Card className="p-4">
-          <div className="text-center">
-            <div className="text-2xl font-bold text-red-600">{summary.overdue}</div>
-            <div className="text-sm text-gray-600">Vencidos</div>
+    <div className="space-y-6 pb-16 sm:pb-12">
+      {/* Hero + Shortcuts */}
+      <div>
+        <div className="flex items-center justify-between gap-3 min-w-0">
+          <div className="flex-1 min-w-0">
+            <CalendarHero />
           </div>
-        </Card>
-        <Card className="p-4">
-          <div className="text-center">
-            <div className="text-2xl font-bold text-orange-600">{summary.upcoming}</div>
-            <div className="text-sm text-gray-600">Próximos</div>
-          </div>
-        </Card>
-        <Card className="p-4">
-          <div className="text-center">
-            <div className="text-2xl font-bold text-blue-600">{summary.covered}</div>
-            <div className="text-sm text-gray-600">Cubiertos</div>
-          </div>
-        </Card>
-        <Card className="p-4">
-          <div className="text-center">
-            <div className="text-2xl font-bold text-green-600">{summary.scheduled}</div>
-            <div className="text-sm text-gray-600">Programados</div>
-          </div>
-        </Card>
-        <Card className="p-4">
-          <div className="text-center">
-            <div className="text-2xl font-bold text-gray-600">{totalCount}</div>
-            <div className="text-sm text-gray-600">Total</div>
-          </div>
-        </Card>
+        </div>
+        <div className="mt-5">
+          <CalendarShortcuts
+            urgentCount={summary.highUrgency}
+            onRefresh={refetch}
+            isRefreshing={loading}
+          />
+        </div>
       </div>
-      
-      <div className="grid gap-4 md:grid-cols-7">
-        <Card className="md:col-span-5">
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle>Calendario de Mantenimientos Proyectados</CardTitle>
-            <div className="flex items-center gap-2">
-              <Button variant="outline" size="sm" onClick={fetchUpcomingMaintenances}>
-                <Clock className="mr-2 h-4 w-4" />
-                Actualizar
-              </Button>
-              <div className="flex">
-                <Button variant="outline" size="icon" className="rounded-r-none">
-                  <ChevronLeft className="h-4 w-4" />
-                </Button>
-                <Button variant="outline" size="icon" className="rounded-l-none">
-                  <ChevronRight className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-          </div>
-          <CardDescription>
-            Mantenimientos calculados según la misma lógica de la página individual de cada activo. Incluye todos los mantenimientos: vencidos, próximos, cubiertos y programados.
-          </CardDescription>
-          
-          {/* Filtros */}
-          <div className="flex flex-wrap gap-2 mt-4">
-            <Button 
-              variant={statusFilter === null ? "default" : "outline"}
-              size="sm"
-              onClick={() => setStatusFilter(null)}
-            >
-              Todos ({totalCount})
-            </Button>
-            <Button 
-              variant={statusFilter === 'overdue' ? "destructive" : "outline"}
-              size="sm"
-              onClick={() => setStatusFilter('overdue')}
-            >
-              Vencidos ({summary.overdue})
-            </Button>
-            <Button 
-              variant={statusFilter === 'upcoming' ? "default" : "outline"}
-              size="sm"
-              onClick={() => setStatusFilter('upcoming')}
-            >
-              Próximos ({summary.upcoming})
-            </Button>
-            <Button 
-              variant={statusFilter === 'covered' ? "outline" : "outline"}
-              size="sm"
-              onClick={() => setStatusFilter('covered')}
-              className={statusFilter === 'covered' ? 'text-blue-600 border-blue-600' : ''}
-            >
-              Cubiertos ({summary.covered})
-            </Button>
-            <Button 
-              variant={statusFilter === 'scheduled' ? "outline" : "outline"}
-              size="sm"
-              onClick={() => setStatusFilter('scheduled')}
-              className={statusFilter === 'scheduled' ? 'text-green-600 border-green-600' : ''}
-            >
-              Programados ({summary.scheduled})
-            </Button>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-4">
-            {/* Calendario con mantenimientos directamente visualizados */}
-            <div className="border rounded-md p-3">
-              <div className="mb-4 flex items-center justify-between">
-                <h3 className="font-medium">Calendario de Mantenimientos</h3>
-                <div className="flex items-center gap-2">
-                  <Button 
-                    variant="outline" 
-                    size="sm" 
-                    onClick={() => {
-                      const prevMonth = new Date(date || new Date())
-                      prevMonth.setMonth(prevMonth.getMonth() - 1)
-                      setDate(prevMonth)
-                    }}
-                  >
-                    <ChevronLeft className="h-4 w-4" />
-                    Mes anterior
-                  </Button>
-                  <Button 
-                    variant="outline" 
-                    size="sm" 
-                    onClick={() => {
-                      const nextMonth = new Date(date || new Date())
-                      nextMonth.setMonth(nextMonth.getMonth() + 1)
-                      setDate(nextMonth)
-                    }}
-                  >
-                    Mes siguiente
-                    <ChevronRight className="h-4 w-4 ml-1" />
-                  </Button>
-                </div>
-              </div>
-              
-              <div className="grid grid-cols-7 gap-1">
-                {/* Nombres de días */}
-                {['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'].map(day => (
-                  <div key={day} className="text-center py-2 font-medium text-sm">
-                    {day}
-                  </div>
-                ))}
-                
-                {/* Días del mes actual con indicadores de mantenimiento */}
-                {(() => {
-                  // Generar los días del mes actual
-                  const currentDate = date || new Date();
-                  const firstDay = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
-                  const lastDay = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0);
-                  
-                  // Ajustar al primer día de la semana (lunes = 1)
-                  let firstDayOfGrid = new Date(firstDay);
-                  const dayOfWeek = firstDay.getDay(); // 0 = domingo, 1 = lunes, ..., 6 = sábado
-                  const daysToPrepend = dayOfWeek === 0 ? 6 : dayOfWeek - 1; // Si es domingo, retroceder 6 días
-                  firstDayOfGrid.setDate(firstDayOfGrid.getDate() - daysToPrepend);
-                  
-                  // Total de días a mostrar (42 = 6 semanas completas)
-                  const totalDays = 42;
-                  const days = [];
-                  
-                  for (let i = 0; i < totalDays; i++) {
-                    const currentDay = new Date(firstDayOfGrid);
-                    currentDay.setDate(firstDayOfGrid.getDate() + i);
-                    
-                    // Verificar si es del mes actual
-                    const isCurrentMonth = currentDay.getMonth() === currentDate.getMonth();
-                    
-                    // Verificar si es hoy
-                    const isToday = currentDay.toDateString() === new Date().toDateString();
-                    
-                    // Mantenimientos para este día
-                    const dateKey = format(currentDay, 'yyyy-MM-dd');
-                    const maintenancesOnDay = maintenancesByDate[dateKey] || [];
-                    
-                    days.push(
-                      <div 
-                        key={i} 
-                        className={`
-                          relative p-1 min-h-[100px] border rounded 
-                          ${isCurrentMonth ? '' : 'opacity-50 bg-gray-50'}
-                          ${isToday ? 'border-blue-500 ring-1 ring-blue-500' : ''}
-                          ${maintenancesOnDay.length > 0 ? 'cursor-pointer hover:bg-gray-50' : ''}
-                          ${date && isSameDay(currentDay, date) ? 'bg-blue-50' : ''}
-                        `}
-                        onClick={() => maintenancesOnDay.length > 0 && setDate(currentDay)}
-                      >
-                        <div className={`text-right text-sm ${isToday ? 'font-bold text-blue-600' : 'font-medium'}`}>
-                          {currentDay.getDate()}
-                        </div>
-                        
-                        {/* Mostrar mantenimientos del día */}
-                        <div className="mt-1 text-xs overflow-y-auto max-h-[80px]">
-                          {maintenancesOnDay.slice(0, 3).map((maintenance, idx) => (
-                            <div 
-                              key={maintenance.id} 
-                              className={`mb-1 px-1 py-0.5 rounded truncate border-l-2 ${
-                                maintenance.status === 'overdue' ? 'bg-red-50 border-l-red-500' :
-                                maintenance.status === 'upcoming' ? 'bg-amber-50 border-l-amber-500' :
-                                maintenance.status === 'scheduled' ? 'bg-green-50 border-l-green-500' :
-                                'bg-blue-50 border-l-blue-500'
-                              }`}
-                              title={`[${maintenance.assetCode}] ${maintenance.assetName} - ${maintenance.intervalType} (${maintenance.targetValue}${maintenance.unit})`}
-                            >
-                              <div className="font-semibold">{maintenance.assetCode}</div>
-                              <div className="text-gray-600 truncate">
-                                {maintenance.intervalType.substring(0, 8)}{maintenance.intervalType.length > 8 ? '...' : ''}
-                              </div>
-                            </div>
-                          ))}
-                          
-                          {/* Indicador de más mantenimientos */}
-                          {maintenancesOnDay.length > 3 && (
-                            <div className="text-xs text-center text-gray-500">
-                              + {maintenancesOnDay.length - 3} más
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  }
-                  
-                  return days;
-                })()}
-              </div>
-            </div>
-            
-            {/* Detalles del día seleccionado */}
-            {date && (() => {
-              const dateKey = format(date, 'yyyy-MM-dd');
-              const maintenancesOnDay = maintenancesByDate[dateKey] || [];
-              
-              if (maintenancesOnDay.length === 0) {
-                return (
-                  <div className="border rounded-lg p-4 text-center">
-                    <h3 className="font-medium mb-2">
-                      {format(date, "d 'de' MMMM 'de' yyyy", { locale: es })}
-                    </h3>
-                    <p className="text-gray-500">No hay mantenimientos programados para este día</p>
-                  </div>
-                );
-              }
-              
-              return (
-                <div className="border rounded-lg p-3">
-                  <h3 className="font-medium mb-3 border-b pb-2">
-                    Mantenimientos para el {format(date, "d 'de' MMMM 'de' yyyy", { locale: es })}
-                  </h3>
-                  
-                  <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
-                    {maintenancesOnDay.map(maintenance => (
-                      <div 
-                        key={maintenance.id} 
-                        className={`p-3 rounded-md border-l-4 cursor-pointer hover:shadow-md transition-shadow ${
-                          maintenance.status === 'overdue' ? 'bg-red-50 border-l-red-500' :
-                          maintenance.status === 'upcoming' ? 'bg-amber-50 border-l-amber-500' :
-                          maintenance.status === 'scheduled' ? 'bg-green-50 border-l-green-500' :
-                          'bg-blue-50 border-l-blue-500'
-                        }`}
-                        onClick={() => setSelectedMaintenance(maintenance)}
-                      >
-                        <div className="flex justify-between items-start mb-2">
-                          <div>
-                            <div className="font-bold text-lg text-blue-700">{maintenance.assetCode}</div>
-                            <div className="font-medium text-gray-700">{maintenance.assetName}</div>
-                          </div>
-                          {getStatusBadge(maintenance.status, maintenance.urgency)}
-                        </div>
-                        <div className="flex justify-between text-sm text-gray-600 mb-1">
-                          <span>Meta: {maintenance.targetValue} {maintenance.unit}</span>
-                          <span>Actual: {maintenance.currentValue} {maintenance.unit}</span>
-                        </div>
-                        <div className="text-sm font-medium text-gray-800">{maintenance.intervalType}</div>
-                        <div className="mt-2 flex justify-end">
-                          <Button 
-                            size="sm" 
-                            variant={maintenance.status === 'covered' ? "outline" : "default"}
-                            disabled={maintenance.status === 'covered'}
-                            asChild
-                          >
-                            <Link href={`/activos/${maintenance.assetId}/mantenimiento/nuevo?planId=${maintenance.intervalId}`}>
-                              <Wrench className="h-3 w-3 mr-2" />
-                              {maintenance.status === 'covered' ? 'Cubierto' : 
-                               maintenance.status === 'overdue' ? "Registrar" : "Programar"}
-                            </Link>
-                          </Button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              );
-            })()}
-            
-            {/* Leyenda para el calendario */}
-            <div className="flex flex-wrap gap-4 text-xs justify-center p-2 border rounded-lg">
-              <div className="flex items-center gap-2">
-                <div className="h-4 w-4 flex items-center justify-center">
-                  <span className="h-2 w-2 rounded-full bg-red-500"></span>
-                </div>
-                <span>Vencidos</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="h-4 w-4 flex items-center justify-center">
-                  <span className="h-2 w-2 rounded-full bg-amber-500"></span>
-                </div>
-                <span>Próximos</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="h-4 w-4 flex items-center justify-center">
-                  <span className="h-2 w-2 rounded-full bg-blue-500"></span>
-                </div>
-                <span>Cubiertos</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="h-4 w-4 flex items-center justify-center">
-                  <span className="h-2 w-2 rounded-full bg-green-500"></span>
-                </div>
-                <span>Programados</span>
-              </div>
-              
-              <div className="flex items-center ml-4 text-xs text-gray-500 w-full mt-2 justify-center">
-                <Info className="h-3 w-3 mr-1" /> Haz clic en un día para ver detalles de los mantenimientos programados
-              </div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-      
-      <Card className="md:col-span-2">
-        <CardHeader>
-          <CardTitle>Resumen</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-2 gap-2">
-            <div className="text-center p-3 border rounded-lg">
-              <div className="text-2xl font-bold text-red-600">{summary.overdue}</div>
-              <div className="text-xs text-muted-foreground">Vencidos</div>
-            </div>
-            <div className="text-center p-3 border rounded-lg">
-              <div className="text-2xl font-bold text-orange-600">{summary.upcoming}</div>
-              <div className="text-xs text-muted-foreground">Próximos</div>
-            </div>
-            <div className="text-center p-3 border rounded-lg">
-              <div className="text-2xl font-bold text-blue-600">{summary.covered}</div>
-              <div className="text-xs text-muted-foreground">Cubiertos</div>
-            </div>
-            <div className="text-center p-3 border rounded-lg">
-              <div className="text-2xl font-bold text-amber-600">{summary.highUrgency}</div>
-              <div className="text-xs text-muted-foreground">Urgentes</div>
-            </div>
-          </div>
 
-          {selectedMaintenance && (
-            <div className="mt-6 p-4 border rounded-lg">
-              <h3 className="font-semibold text-sm mb-2">Mantenimiento Seleccionado</h3>
-              <div className="space-y-2">
-                <div>
-                  <div className="font-medium">{selectedMaintenance.assetName}</div>
-                  <div className="text-sm text-muted-foreground">{selectedMaintenance.assetCode}</div>
-                </div>
-                <div>
-                  <Badge 
-                    variant={
-                      selectedMaintenance.status === 'overdue' && selectedMaintenance.urgency === 'high' ? "destructive" :
-                      selectedMaintenance.status === 'overdue' ? "default" :
-                      selectedMaintenance.status === 'upcoming' ? "default" : 
-                      selectedMaintenance.status === 'covered' ? "secondary" : "outline"
-                    }
-                    className="whitespace-nowrap"
-                  >
-                    {selectedMaintenance.intervalType}
-                    {selectedMaintenance.unit === 'hours' && ` ${selectedMaintenance.targetValue}h`}
-                    {selectedMaintenance.unit === 'kilometers' && ` ${selectedMaintenance.targetValue}km`}
-                  </Badge>
-                  <div className="text-sm font-medium mt-1">{selectedMaintenance.intervalName}</div>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">Intervalo:</span>
-                  <span className="text-sm font-medium">
-                    Cada {selectedMaintenance.targetValue} {selectedMaintenance.unit}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">Estado:</span>
-                  {getStatusBadge(selectedMaintenance.status, selectedMaintenance.urgency)}
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">Progreso:</span>
-                  <span className="text-sm font-medium">
-                    {selectedMaintenance.currentValue}/{selectedMaintenance.targetValue} {selectedMaintenance.unit}
-                  </span>
-                </div>
-                <div className="w-full bg-gray-200 rounded-full h-2.5 mb-1">
-                  <div 
-                    className={`h-2.5 rounded-full ${
-                      selectedMaintenance.status === 'overdue' && selectedMaintenance.urgency === 'high' ? 'bg-red-600' :
-                      selectedMaintenance.status === 'overdue' ? 'bg-orange-500' :
-                      selectedMaintenance.status === 'upcoming' ? 'bg-amber-500' : 
-                      selectedMaintenance.status === 'covered' ? 'bg-blue-400' : 'bg-gray-400'
-                    }`}
-                    style={{ width: `${Math.min(Math.round((selectedMaintenance.currentValue / selectedMaintenance.targetValue) * 100), 100)}%` }}
-                  ></div>
-                </div>
-                {selectedMaintenance.status === 'covered' && (
-                  <div className="text-xs text-blue-600">
-                    📋 No realizado, pero cubierto por mantenimiento posterior
-                  </div>
-                )}
-                <div>
-                  {selectedMaintenance.valueRemaining > 0 && (
-                    <div className="text-xs text-green-600">
-                      Faltan: {selectedMaintenance.valueRemaining} {selectedMaintenance.unit === 'hours' ? 'horas' : 'km'}
-                    </div>
-                  )}
-                  {selectedMaintenance.valueRemaining <= 0 && selectedMaintenance.status !== 'covered' && (
-                    <div className="text-xs text-red-600 font-medium">
-                      ¡{Math.abs(selectedMaintenance.valueRemaining)} {selectedMaintenance.unit === 'hours' ? 'horas' : 'km'} vencido!
-                    </div>
-                  )}
-                  {!selectedMaintenance.lastMaintenance && selectedMaintenance.status !== 'covered' && (
-                    <div className="text-xs text-orange-600">
-                      ⚠️ Nunca realizado
-                    </div>
-                  )}
-                </div>
-                <Button 
-                  variant={selectedMaintenance.status === 'covered' ? "outline" : "default"} 
-                  size="sm" 
-                  className="w-full mt-2" 
-                  asChild
-                  disabled={selectedMaintenance.status === 'covered'}
-                >
-                  <Link href={`/activos/${selectedMaintenance.assetId}/mantenimiento/nuevo?planId=${selectedMaintenance.intervalId}`}>
-                    <Wrench className="mr-2 h-4 w-4" />
-                    {selectedMaintenance.status === 'covered' ? 'Cubierto' : 
-                     selectedMaintenance.status === 'overdue' && selectedMaintenance.urgency === 'high' ? "¡Urgente!" :
-                     selectedMaintenance.status === 'overdue' ? "Registrar" : 
-                     selectedMaintenance.status === 'upcoming' ? "Programar" : "Registrar"}
-                  </Link>
-                </Button>
-              </div>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      {/* Section: KPIs */}
+      <div id="urgentes" className="scroll-mt-4">
+        <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground mb-3">
+          Resumen Estratégico
+        </p>
+        <CalendarKPIs summary={summary} totalCount={totalCount} />
+      </div>
 
-      <Card className="md:col-span-7">
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle>Mantenimientos que Requieren Atención</CardTitle>
-            <div className="flex items-center gap-2">
-              <select 
-                className="border rounded px-2 py-1 text-sm"
-                value={statusFilter || ''}
-                onChange={(e) => {
-                  setStatusFilter(e.target.value || null)
-                  setPage(1) // Reiniciar paginación al cambiar filtro
-                }}
-              >
-                <option value="">Todos los estados</option>
-                <option value="overdue">Vencidos</option>
-                <option value="upcoming">Próximos</option>
-                <option value="covered">Cubiertos</option>
-                <option value="scheduled">Programados</option>
-              </select>
-              
-              <select 
-                className="border rounded px-2 py-1 text-sm"
-                value={sortBy}
-                onChange={(e) => {
-                  setSortBy(e.target.value)
-                  setPage(1) // Reiniciar paginación al cambiar filtro
-                }}
-              >
-                <option value="default">Ordenar por prioridad</option>
-                <option value="urgency">Ordenar por urgencia</option>
-                <option value="date">Ordenar por fecha estimada</option>
-                <option value="asset">Ordenar por activo</option>
-              </select>
-            </div>
-          </div>
-          <CardDescription>
-            Lista de mantenimientos vencidos, próximos a vencer y cubiertos por mantenimientos posteriores
-          </CardDescription>
+      {/* Filters */}
+      <div>
+        <CalendarFilters
+          statusFilter={statusFilter}
+          onStatusFilterChange={setStatusFilter}
+          summary={summary}
+          totalCount={totalCount}
+        />
+      </div>
+
+      {/* Calendar + Day Detail */}
+      <Card className="relative rounded-2xl border border-border/60 bg-card overflow-hidden">
+        <div className="absolute inset-x-0 top-0 h-[3px] rounded-t-2xl bg-gradient-to-r from-slate-400 to-slate-300" aria-hidden />
+        <CardHeader className="pb-4">
+          <CardTitle className="text-lg">Calendario de Mantenimientos Proyectados</CardTitle>
+          <p className="text-sm text-muted-foreground mt-1">
+            Mantenimientos calculados según la lógica cíclica de cada activo. Incluye vencidos, próximos, cubiertos y programados.
+          </p>
         </CardHeader>
-        <CardContent>
-          {upcomingMaintenances.length === 0 ? (
-            <div className="text-center py-8">
-              <CheckCircle2 className="mx-auto h-12 w-12 text-green-500 mb-2" />
-              {statusFilter ? (
-                <>
-                  <h3 className="text-lg font-medium">No hay mantenimientos {
-                    statusFilter === 'overdue' ? 'vencidos' : 
-                    statusFilter === 'upcoming' ? 'próximos' : 
-                    statusFilter === 'covered' ? 'cubiertos' :
-                    statusFilter === 'scheduled' ? 'programados' : 'de este tipo'
-                  }</h3>
-                  <p className="text-muted-foreground">Prueba con un filtro diferente o verifica otro activo</p>
-                </>
-              ) : (
-                <>
-                  <h3 className="text-lg font-medium">¡Todos los mantenimientos al día!</h3>
-                  <p className="text-muted-foreground">No hay mantenimientos que requieran atención inmediata</p>
-                </>
+        <CardContent className="space-y-6">
+          <CalendarGrid
+            items={items}
+            warrantyEvents={warrantyEvents}
+            currentMonth={currentMonth}
+            onMonthChange={setCurrentMonth}
+            selectedDate={selectedDate}
+            onDateSelect={handleDateSelect}
+            onMaintenanceSelect={handleMaintenanceSelect}
+          />
+
+          {/* Day detail - replaces sidebar + table */}
+          <div className="border-t border-border/40 pt-4">
+            <CalendarDayDetail
+              date={selectedDate ?? new Date()}
+              maintenances={maintenancesForSelectedDate}
+              warrantyEvents={warrantyEvents.filter(
+                (w) => w.warrantyExpiration.startsWith(format(selectedDate ?? new Date(), "yyyy-MM-dd"))
               )}
-            </div>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Activo (ID/Nombre)</TableHead>
-                  <TableHead>Checkpoint</TableHead>
-                  <TableHead>Descripción</TableHead>
-                  <TableHead>Intervalo</TableHead>
-                  <TableHead>Estado</TableHead>
-                  <TableHead>Próximo a las</TableHead>
-                  <TableHead>Acciones</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {upcomingMaintenances.map((maintenance) => (
-                  <TableRow key={maintenance.id} className={
-                    maintenance.status === 'overdue' && maintenance.urgency === 'high' ? "bg-red-50" : 
-                    maintenance.status === 'overdue' ? "bg-orange-50" :
-                    maintenance.status === 'upcoming' ? "bg-amber-50" : 
-                    maintenance.status === 'covered' ? "bg-blue-50" : 
-                    maintenance.status === 'scheduled' ? "bg-green-50" : ""
-                  }>
-                    <TableCell>
-                      <div>
-                        <div className="font-bold text-lg text-blue-700">{maintenance.assetCode}</div>
-                        <div className="font-medium text-gray-700">{maintenance.assetName}</div>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <Badge 
-                        variant={
-                          maintenance.status === 'overdue' && maintenance.urgency === 'high' ? "destructive" :
-                          maintenance.status === 'overdue' ? "default" :
-                          maintenance.status === 'upcoming' ? "default" : 
-                          maintenance.status === 'covered' ? "secondary" : 
-                          maintenance.status === 'scheduled' ? "outline" : "outline"
-                        }
-                        className="whitespace-nowrap"
-                      >
-                        {maintenance.intervalType}
-                        {maintenance.unit === 'hours' && ` ${maintenance.targetValue}h`}
-                        {maintenance.unit === 'kilometers' && ` ${maintenance.targetValue}km`}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <div className="font-medium">{maintenance.intervalName}</div>
-                      {maintenance.lastMaintenance && (
-                        <div className="text-xs text-muted-foreground mt-1">
-                          Último: {format(new Date(maintenance.lastMaintenance.date), "dd 'de' MMMM 'de' yyyy", { locale: es })} a las {maintenance.lastMaintenance.value} {maintenance.unit}
-                        </div>
-                      )}
-                      {!maintenance.lastMaintenance && maintenance.status === 'covered' && (
-                        <div className="text-xs text-blue-600 mt-1">
-                          📋 No realizado, pero cubierto por mantenimiento posterior
-                        </div>
-                      )}
-                      {!maintenance.lastMaintenance && maintenance.status !== 'covered' && (
-                        <div className="text-xs text-orange-600 mt-1">
-                          ⚠️ Nunca realizado
-                        </div>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <div className="font-medium">
-                        Cada {maintenance.targetValue} {maintenance.unit}
-                      </div>
-                      {maintenance.lastMaintenance ? (
-                        <div className="text-xs text-muted-foreground">
-                          Desde las {maintenance.lastMaintenance.value}{maintenance.unit} hasta las {maintenance.targetValue}{maintenance.unit}
-                        </div>
-                      ) : (
-                        <div className="text-xs text-muted-foreground">
-                          {maintenance.status === 'covered' 
-                            ? `Cubierto por mantenimientos posteriores`
-                            : `Desde 0${maintenance.unit} hasta las ${maintenance.targetValue}${maintenance.unit}`
-                          }
-                        </div>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <div className="w-full bg-gray-200 rounded-full h-2.5 mb-1">
-                        <div 
-                          className={`h-2.5 rounded-full ${
-                            maintenance.status === 'overdue' && maintenance.urgency === 'high' ? 'bg-red-600' :
-                            maintenance.status === 'overdue' ? 'bg-orange-500' :
-                            maintenance.status === 'upcoming' ? 'bg-amber-500' : 
-                            maintenance.status === 'covered' ? 'bg-blue-400' : 
-                            maintenance.status === 'scheduled' ? 'bg-green-400' : 'bg-gray-400'
-                          }`}
-                          style={{ width: `${Math.min(Math.round((maintenance.currentValue / maintenance.targetValue) * 100), 100)}%` }}
-                        ></div>
-                      </div>
-                      <div className="text-xs">
-                        {maintenance.status === 'covered' ? 'Cubierto' : `${Math.round((maintenance.currentValue / maintenance.targetValue) * 100)}% completado`}
-                      </div>
-                      <div className="text-xs text-muted-foreground">
-                        {maintenance.unit === 'hours' ? 'Horas actuales: ' : 'Kilómetros actuales: '}{maintenance.currentValue}{maintenance.unit === 'hours' ? 'h' : 'km'}
-                      </div>
-                      {maintenance.status === 'overdue' && (
-                        <div className="text-xs text-red-600 font-medium mt-1">
-                          {maintenance.urgency === 'high' ? '🚨 Muy vencido' : '⚠️ Vencido'}
-                        </div>
-                      )}
-                      {maintenance.status === 'covered' && (
-                        <div className="text-xs text-blue-600 font-medium mt-1">
-                          ℹ️ Cubierto por mantenimiento posterior
-                        </div>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <div className="space-y-1">
-                        <div className="font-medium">
-                          {maintenance.targetValue} {maintenance.unit === 'hours' ? 'horas' : 'km'}
-                        </div>
-                        {maintenance.valueRemaining > 0 && (
-                          <div className="text-xs text-green-600">
-                            Faltan: {maintenance.valueRemaining} {maintenance.unit === 'hours' ? 'horas' : 'km'}
-                          </div>
-                        )}
-                        {maintenance.valueRemaining <= 0 && maintenance.status !== 'covered' && (
-                          <div className="text-xs text-red-600 font-medium">
-                            ¡{Math.abs(maintenance.valueRemaining)} {maintenance.unit === 'hours' ? 'horas' : 'km'} vencido!
-                          </div>
-                        )}
-                        {maintenance.status === 'covered' && (
-                          <div className="text-xs text-blue-600">
-                            Cubierto por mantenimiento posterior
-                          </div>
-                        )}
-                        {!maintenance.lastMaintenance && maintenance.status !== 'covered' && (
-                          <div className="text-xs text-orange-600">
-                            Nunca realizado
-                          </div>
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      {maintenance.status === 'covered' ? (
-                        <Button 
-                          size="sm" 
-                          variant="outline"
-                          disabled
-                          className="opacity-50"
-                        >
-                          Cubierto
-                        </Button>
-                      ) : (
-                        <Button 
-                          size="sm" 
-                          variant={
-                            maintenance.status === 'overdue' && maintenance.urgency === 'high' ? "destructive" :
-                            maintenance.status === 'overdue' || maintenance.status === 'upcoming' ? "default" : "outline"
-                          }
-                          asChild
-                        >
-                          <Link href={`/activos/${maintenance.assetId}/mantenimiento/nuevo?planId=${maintenance.intervalId}`}>
-                            <Wrench className="h-4 w-4 mr-2" />
-                            {maintenance.status === 'overdue' && maintenance.urgency === 'high' ? "¡Urgente!" :
-                            maintenance.status === 'overdue' ? "Registrar" : 
-                            maintenance.status === 'upcoming' ? "Programar" : 
-                            maintenance.status === 'scheduled' ? "Programar" : "Registrar"}
-                          </Link>
-                        </Button>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
-          
-          {/* Paginación */}
-          {totalPages > 1 && (
-            <div className="flex items-center justify-between mt-6">
-              <div className="text-sm text-muted-foreground">
-                Mostrando página {page} de {totalPages} ({totalCount} mantenimientos)
-              </div>
-              <div className="flex gap-2">
-                <Button 
-                  variant="outline" 
-                  size="sm" 
-                  onClick={() => setPage(p => Math.max(1, p - 1))}
-                  disabled={page === 1}
-                >
-                  <ChevronLeft className="h-4 w-4 mr-1" />
-                  Anterior
-                </Button>
-                <Button 
-                  variant="outline" 
-                  size="sm" 
-                  onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-                  disabled={page === totalPages}
-                >
-                  Siguiente
-                  <ChevronRight className="h-4 w-4 ml-1" />
-                </Button>
-              </div>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+              onSelectMaintenance={handleMaintenanceSelect}
+              selectedMaintenance={selectedMaintenance}
+            />
+          </div>
 
-      {/* Leyenda explicativa */}
-      <Card className="md:col-span-7">
-        <CardHeader>
-          <CardTitle className="text-lg">Explicación de Estados</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-sm">
-            <div className="space-y-2">
-              <div className="flex items-center gap-2">
-                <Badge variant="destructive" className="flex items-center gap-1">
-                  <AlertTriangle className="h-3 w-3" />
-                  Vencido
-                </Badge>
-              </div>
-              <p className="text-muted-foreground">
-                Mantenimientos que ya deberían haberse realizado según las horas actuales del equipo.
-              </p>
-            </div>
-            <div className="space-y-2">
-              <div className="flex items-center gap-2">
-                <Badge variant="default" className="flex items-center gap-1">
-                  <AlertCircle className="h-3 w-3" />
-                  Próximo
-                </Badge>
-              </div>
-              <p className="text-muted-foreground">
-                Mantenimientos que están cerca de su fecha programada (dentro de 30 días estimados).
-              </p>
-            </div>
-            <div className="space-y-2">
-              <div className="flex items-center gap-2">
-                <Badge variant="outline" className="flex items-center gap-1 text-blue-600 border-blue-600">
-                  <Info className="h-3 w-3" />
-                  Cubierto
-                </Badge>
-              </div>
-              <p className="text-muted-foreground">
-                Mantenimientos que nunca se realizaron individualmente, pero fueron cubiertos por un mantenimiento posterior de mayor intervalo.
-              </p>
-            </div>
-            <div className="space-y-2">
-              <div className="flex items-center gap-2">
-                <Badge variant="outline" className="flex items-center gap-1 text-green-600 border-green-600">
-                  <CheckCircle2 className="h-3 w-3" />
-                  Programado
-                </Badge>
-              </div>
-              <p className="text-muted-foreground">
-                Mantenimientos futuros que están programados para realizarse en el futuro según el plan de mantenimiento.
-              </p>
-            </div>
+          <div className="pt-2">
+            <CalendarLegend />
           </div>
         </CardContent>
       </Card>
+
+      {/* Empty state when no items in month */}
+      {items.length === 0 && (
+        <div className="flex items-center gap-3 py-5 rounded-2xl border border-border/60 bg-card">
+          <CheckCircle2 className="h-4 w-4 text-green-600 shrink-0" />
+          <span className="text-sm text-muted-foreground">
+            {statusFilter
+              ? `Sin mantenimientos ${statusFilter === "urgent" ? "urgentes" : statusFilter} en este mes`
+              : "Sin mantenimientos programados para este mes · Todo al día"}
+          </span>
+        </div>
+      )}
+
+      {/* Module chips */}
+      <div className="mt-10 border-t border-border/40 pt-6">
+        <p className="mb-3 text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+          Módulos
+        </p>
+        <DashboardModuleLinks modules={moduleLinks} />
       </div>
     </div>
   )

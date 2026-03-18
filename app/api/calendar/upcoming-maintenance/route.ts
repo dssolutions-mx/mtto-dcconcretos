@@ -36,6 +36,11 @@ export async function GET(request: Request) {
     const statusFilter = searchParams.get('status')
     const sortBy = searchParams.get('sortBy') || 'default'
     const assetIdFilter = searchParams.get('assetId')
+    const monthParam = searchParams.get('month') // YYYY-MM
+    const dateFromParam = searchParams.get('dateFrom') // ISO date
+    const dateToParam = searchParams.get('dateTo') // ISO date
+    const includeWarranties = searchParams.get('includeWarranties') === 'true'
+    const includeWorkOrders = searchParams.get('includeWorkOrders') !== 'false' // default true
     
     const cookieStore = await cookies()
     
@@ -371,10 +376,42 @@ export async function GET(request: Request) {
       }
     }
 
-    // Filtrar por status si se especificó
+    // Summary MUST be computed from full dataset (before filtering)
+    const summary = {
+      overdue: upcomingMaintenances.filter(m => m.status === 'overdue').length,
+      upcoming: upcomingMaintenances.filter(m => m.status === 'upcoming').length,
+      covered: upcomingMaintenances.filter(m => m.status === 'covered').length,
+      scheduled: upcomingMaintenances.filter(m => m.status === 'scheduled').length,
+      highUrgency: upcomingMaintenances.filter(m => m.urgency === 'high').length,
+      mediumUrgency: upcomingMaintenances.filter(m => m.urgency === 'medium').length
+    }
+
+    // Filter by status if specified (urgent = high urgency cross-cutting)
     let filteredMaintenances = upcomingMaintenances
     if (statusFilter) {
-      filteredMaintenances = upcomingMaintenances.filter(m => m.status === statusFilter)
+      if (statusFilter === 'urgent') {
+        filteredMaintenances = upcomingMaintenances.filter(m => m.urgency === 'high')
+      } else {
+        filteredMaintenances = upcomingMaintenances.filter(m => m.status === statusFilter)
+      }
+    }
+
+    // Filter by date range when month or dateFrom/dateTo provided
+    if (monthParam || dateFromParam || dateToParam) {
+      let rangeStart: Date
+      let rangeEnd: Date
+      if (monthParam) {
+        const [y, m] = monthParam.split('-').map(Number)
+        rangeStart = new Date(y, m - 1, 1)
+        rangeEnd = new Date(y, m, 0, 23, 59, 59)
+      } else {
+        rangeStart = dateFromParam ? new Date(dateFromParam) : new Date(0)
+        rangeEnd = dateToParam ? new Date(dateToParam) : new Date(8640000000000000)
+      }
+      filteredMaintenances = filteredMaintenances.filter(m => {
+        const d = new Date(m.estimatedDate)
+        return d >= rangeStart && d <= rangeEnd
+      })
     }
 
     // Ordenar según el criterio seleccionado
@@ -424,17 +461,110 @@ export async function GET(request: Request) {
         })
     }
 
-    return NextResponse.json({
-      upcomingMaintenances: filteredMaintenances.slice(offset, offset + limit),
-      totalCount: filteredMaintenances.length,
-      summary: {
-        overdue: filteredMaintenances.filter(m => m.status === 'overdue').length,
-        upcoming: filteredMaintenances.filter(m => m.status === 'upcoming').length,
-        covered: filteredMaintenances.filter(m => m.status === 'covered').length,
-        scheduled: filteredMaintenances.filter(m => m.status === 'scheduled').length,
-        highUrgency: filteredMaintenances.filter(m => m.urgency === 'high').length,
-        mediumUrgency: filteredMaintenances.filter(m => m.urgency === 'medium').length
+    // When month/date range specified, return all in range for calendar; otherwise paginate
+    const usePagination = !monthParam && !dateFromParam && !dateToParam
+    const paginated = usePagination
+      ? filteredMaintenances.slice(offset, offset + limit)
+      : filteredMaintenances
+
+    // Fetch warranty events when requested
+    let warrantyEvents: Array<{
+      id: string
+      assetId: string
+      assetName: string
+      assetCode: string
+      warrantyExpiration: string
+      status: 'expired' | 'expiring_soon' | 'active'
+    }> = []
+    if (includeWarranties) {
+      const { data: warrantyAssets } = await supabase
+        .from('assets')
+        .select('id, name, asset_id, warranty_expiration')
+        .eq('status', 'operational')
+        .not('warranty_expiration', 'is', null)
+      const now = new Date()
+      const soonThreshold = new Date(now)
+      soonThreshold.setDate(soonThreshold.getDate() + 90)
+      for (const a of warrantyAssets || []) {
+        const exp = new Date(a.warranty_expiration!)
+        const status = exp < now ? 'expired' : exp <= soonThreshold ? 'expiring_soon' : 'active'
+        warrantyEvents.push({
+          id: `warranty-${a.id}`,
+          assetId: a.id,
+          assetName: a.name,
+          assetCode: a.asset_id || '-',
+          warrantyExpiration: exp.toISOString(),
+          status
+        })
       }
+    }
+
+    // Fetch work orders with planned_date in range (most actionable: actual scheduled work)
+    let workOrderEvents: Array<{
+      id: string
+      orderId: string
+      assetId: string | null
+      assetName: string | null
+      assetCode: string | null
+      plannedDate: string
+      type: string
+      priority: string
+      status: string
+      description: string | null
+    }> = []
+    if (includeWorkOrders && (monthParam || dateFromParam || dateToParam)) {
+      let rangeStart: Date
+      let rangeEnd: Date
+      if (monthParam) {
+        const [y, m] = monthParam.split('-').map(Number)
+        rangeStart = new Date(y, m - 1, 1)
+        rangeEnd = new Date(y, m, 0, 23, 59, 59)
+      } else {
+        rangeStart = dateFromParam ? new Date(dateFromParam) : new Date(new Date().getFullYear(), new Date().getMonth(), 1)
+        rangeEnd = dateToParam ? new Date(dateToParam) : new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0, 23, 59, 59)
+      }
+      const { data: workOrders } = await supabase
+        .from('work_orders')
+        .select(`
+          id,
+          order_id,
+          asset_id,
+          planned_date,
+          type,
+          priority,
+          status,
+          description,
+          assets (
+            name,
+            asset_id
+          )
+        `)
+        .not('planned_date', 'is', null)
+        .not('status', 'eq', 'Completada')
+        .gte('planned_date', rangeStart.toISOString())
+        .lte('planned_date', rangeEnd.toISOString())
+        .order('planned_date', { ascending: true })
+      const asset = (wo: any) => wo.assets as { name?: string; asset_id?: string } | null
+      workOrderEvents = (workOrders || []).map((wo: any) => ({
+        id: wo.id,
+        orderId: wo.order_id,
+        assetId: wo.asset_id,
+        assetName: asset(wo)?.name ?? null,
+        assetCode: asset(wo)?.asset_id ?? null,
+        plannedDate: wo.planned_date,
+        type: wo.type || 'corrective',
+        priority: wo.priority || 'Media',
+        status: wo.status || 'Pendiente',
+        description: wo.description
+      }))
+    }
+
+    return NextResponse.json({
+      upcomingMaintenances: paginated,
+      totalCount: filteredMaintenances.length,
+      summary,
+      warrantyEvents: includeWarranties ? warrantyEvents : undefined,
+      workOrderEvents: includeWorkOrders ? workOrderEvents : undefined
     })
 
   } catch (error) {

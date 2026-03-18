@@ -6,7 +6,6 @@ interface PhotoData {
   itemId: string
   sectionId?: string
   category?: string
-  originalFile: Blob
   compressedFile: Blob
   preview: string // base64 data URL
   fileName: string
@@ -72,6 +71,8 @@ class PhotoStorageService {
     if (this.isClient) {
       this.initializeDB()
       this.startUploadWorker()
+      // Purge old uploaded records on every app load (deferred to not block startup)
+      setTimeout(() => this.cleanupOldPhotos(), 5000)
     }
   }
 
@@ -118,9 +119,9 @@ class PhotoStorageService {
     metadata: any
   }> {
     const {
-      quality = 0.8,
-      maxWidth = 1920,
-      maxHeight = 1080
+      quality = 0.75,
+      maxWidth = 1280,
+      maxHeight = 960
     } = options
 
     return new Promise((resolve, reject) => {
@@ -205,7 +206,6 @@ class PhotoStorageService {
         itemId,
         sectionId: options.category,
         category: options.category,
-        originalFile: file,
         compressedFile: compressed,
         preview,
         fileName: file.name,
@@ -292,12 +292,10 @@ class PhotoStorageService {
           const uploadResult = await this.uploadPhotoToServer(photo)
           
           if (uploadResult.success) {
-            // Mark as uploaded
-            photo.uploaded = true
-            photo.uploadUrl = uploadResult.url
-            await db.put('photos', photo)
+            // Delete from IndexedDB — blob no longer needed once server has the file
+            await db.delete('photos', queueItem.photoId)
             await db.delete('upload-queue', queueItem.photoId)
-            
+
             // Emit success event
             this.emitUploadEvent(photo.id, 'uploaded', uploadResult.url)
           } else {
@@ -317,7 +315,9 @@ class PhotoStorageService {
           if (queueItem.retryCount < 5) {
             await db.put('upload-queue', queueItem)
           } else {
+            // Remove both queue entry and photo blob — no point keeping it if we can't upload
             await db.delete('upload-queue', queueItem.photoId)
+            await db.delete('photos', queueItem.photoId)
             this.emitUploadEvent(photo.id, 'failed', undefined, error instanceof Error ? error.message : 'Max retries exceeded')
           }
         }
@@ -391,16 +391,15 @@ class PhotoStorageService {
   async getPhoto(photoId: string): Promise<PhotoUploadResult | null> {
     const db = await this.getDB()
     if (!db) return null
-    
+
     const photo = await db.get('photos', photoId)
-    if (!photo) return null
-    
+    // Photo not in IndexedDB means it was already uploaded and cleaned up
+    if (!photo) return { id: photoId, preview: '', status: 'uploaded' }
+
     return {
       id: photo.id,
       preview: photo.preview,
-      status: photo.uploaded ? 'uploaded' : 
-              photo.uploadAttempts > 0 ? 'uploading' : 'stored',
-      url: photo.uploadUrl,
+      status: photo.uploadAttempts > 0 ? 'uploading' : 'stored',
       error: photo.uploadError
     }
   }

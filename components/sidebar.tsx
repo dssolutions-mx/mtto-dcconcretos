@@ -78,7 +78,7 @@ function AppLogo({
       {!isCollapsed && (
         <div className="flex flex-col">
           <span className="text-sm font-bold tracking-tight">MantenPro</span>
-          <span className="text-xs text-muted-foreground -mt-0.5">Sistema de Gesti?n</span>
+          <span className="text-xs text-muted-foreground -mt-0.5">Sistema de Gestión</span>
         </div>
       )}
     </div>
@@ -175,7 +175,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
   }
 
   return (
-    <div className={cn("pb-12", className)} role="navigation" aria-label="Navegaci?n principal">
+    <div className={cn("pb-12", className)} role="navigation" aria-label="Navegación principal">
       <div className="space-y-4 py-4" data-tour="sidebar" id="sidebar-nav">
         {/* Dashboard */}
         <div className="px-4 py-2" data-tour="sidebar-first-item">
@@ -285,7 +285,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                       >
                         <Link href="/compras">
                           <CreditCard className="mr-2 h-4 w-4" />
-                          ?rdenes de Compra
+                          Órdenes de Compra
                         </Link>
                       </Button>
                     )}
@@ -311,7 +311,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                     >
                       <Link href="/diesel">
                         <Fuel className="mr-2 h-4 w-4" />
-                        Gesti?n de Diesel
+                        Gestión de Diesel
                       </Link>
                     </Button>
                     <Button
@@ -322,7 +322,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                     >
                       <Link href="/urea">
                         <Droplet className="mr-2 h-4 w-4" />
-                        Gesti?n de UREA
+                        Gestión de UREA
                       </Link>
                     </Button>
                     <Button
@@ -333,7 +333,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                     >
                       <Link href="/suppliers">
                         <Users className="mr-2 h-4 w-4" />
-                        Padr?n de Proveedores
+                        Padrón de Proveedores
                       </Link>
                     </Button>
                     <Button
@@ -344,7 +344,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                     >
                       <Link href="/suppliers/analytics">
                         <BarChart3 className="mr-2 h-4 w-4" />
-                        An?lisis de Proveedores
+                        Análisis de Proveedores
                       </Link>
                     </Button>
                   </CollapsibleContent>
@@ -364,7 +364,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                     >
                       <div className="flex items-center">
                         <Building2 className="mr-2 h-4 w-4" />
-                        Organizaci?n
+                        Organización
                       </div>
                       {organizationOpen ? (
                         <ChevronDown className="h-4 w-4" />
@@ -388,7 +388,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                       </Link>
                     </Button>
                     <div className="pl-8 pt-1 pb-2">
-                      <p className="text-xs text-gray-500 mb-2">P?ginas individuales:</p>
+                      <p className="text-xs text-gray-500 mb-2">Páginas individuales:</p>
                     </div>
                     <Button
                       variant={isPathActive("/personal") ? "secondary" : "ghost"}
@@ -398,7 +398,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                     >
                       <Link href="/personal">
                         <Users className="mr-2 h-4 w-4" />
-                        Gesti?n de Personal
+                        Gestión de Personal
                       </Link>
                     </Button>
                     {(ui.canShowEditButton('assets') || profile.role === 'AREA_ADMINISTRATIVA') && (
@@ -422,7 +422,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                         >
                           <Link href="/activos/asignacion">
                             <UserCheck className="mr-2 h-4 w-4" />
-                            Asignaci?n de Activos
+                            Asignación de Activos
                           </Link>
                         </Button>
                       </>
@@ -436,7 +436,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                       >
                         <Link href="/plantas">
                           <Building2 className="mr-2 h-4 w-4" />
-                          Configuraci?n de Plantas
+                          Configuración de Plantas
                         </Link>
                       </Button>
                     )}
@@ -584,7 +584,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                     >
                       <Link href="/ordenes">
                         <Clock className="mr-2 h-4 w-4" />
-                        ?rdenes de Trabajo
+                        Órdenes de Trabajo
                       </Link>
                     </Button>
                     {ui.shouldShowInNavigation('maintenance') && (
@@ -689,7 +689,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                       >
                         <Link href="/compras">
                           <CreditCard className="mr-2 h-4 w-4" />
-                          ?rdenes de Compra
+                          Órdenes de Compra
                         </Link>
                       </Button>
                     )}
@@ -714,7 +714,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                     >
                       <Link href="/diesel">
                         <Fuel className="mr-2 h-4 w-4" />
-                        Gesti?n de Diesel
+                        Gestión de Diesel
                       </Link>
                     </Button>
                     <Button
@@ -725,7 +725,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                     >
                       <Link href="/urea">
                         <Droplet className="mr-2 h-4 w-4" />
-                        Gesti?n de UREA
+                        Gestión de UREA
                       </Link>
                     </Button>
                     <Button
@@ -736,7 +736,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                     >
                       <Link href="/suppliers">
                         <Users className="mr-2 h-4 w-4" />
-                        Padr?n de Proveedores
+                        Padrón de Proveedores
                       </Link>
                     </Button>
                     <Button
@@ -747,7 +747,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                     >
                       <Link href="/suppliers/analytics">
                         <BarChart3 className="mr-2 h-4 w-4" />
-                        An?lisis de Proveedores
+                        Análisis de Proveedores
                       </Link>
                     </Button>
                   </CollapsibleContent>
@@ -770,7 +770,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                 >
                   <div className="flex items-center">
                     <FileText className="mr-2 h-4 w-4" />
-                    Hist?ricos
+                    Históricos
                   </div>
                   {recordsOpen ? (
                     <ChevronDown className="h-4 w-4" />
@@ -808,7 +808,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                 >
                   <div className="flex items-center">
                     <Building2 className="mr-2 h-4 w-4" />
-                    Organizaci?n
+                    Organización
                   </div>
                   {organizationOpen ? (
                     <ChevronDown className="h-4 w-4" />
@@ -832,7 +832,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                   </Link>
                 </Button>
                 <div className="pl-8 pt-1 pb-2">
-                  <p className="text-xs text-gray-500 mb-2">P?ginas individuales:</p>
+                  <p className="text-xs text-gray-500 mb-2">Páginas individuales:</p>
                 </div>
                 <Button
                   variant={isPathActive("/personal") ? "secondary" : "ghost"}
@@ -842,7 +842,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                 >
                   <Link href="/personal">
                     <Users className="mr-2 h-4 w-4" />
-                    Gesti?n de Personal
+                    Gestión de Personal
                   </Link>
                 </Button>
                 {(ui.canShowEditButton('assets') || profile.role === 'AREA_ADMINISTRATIVA') && (
@@ -866,7 +866,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                     >
                       <Link href="/activos/asignacion">
                         <UserCheck className="mr-2 h-4 w-4" />
-                        Asignaci?n de Activos
+                        Asignación de Activos
                       </Link>
                     </Button>
                   </>
@@ -880,7 +880,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                   >
                     <Link href="/plantas">
                       <Building2 className="mr-2 h-4 w-4" />
-                      Configuraci?n de Plantas
+                      Configuración de Plantas
                     </Link>
                   </Button>
                 )}
@@ -893,7 +893,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                   >
                     <Link href="/gestion/autorizaciones">
                       <Shield className="mr-2 h-4 w-4" />
-                      Gesti?n de Autorizaciones
+                      Gestión de Autorizaciones
                     </Link>
                   </Button>
                 )}
@@ -919,7 +919,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                   >
                     <Link href="/compliance/configuracion">
                       <Settings className="mr-2 h-4 w-4" />
-                      Configuraci?n del Sistema
+                      Configuración del Sistema
                     </Link>
                   </Button>
                 )}
@@ -1038,7 +1038,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                   >
                     <Link href="/compliance/configuracion">
                       <Settings className="mr-2 h-4 w-4" />
-                      Configuraci?n
+                      Configuración
                     </Link>
                   </Button>
                 )}
@@ -1090,12 +1090,12 @@ function buildNavigationSections(
     }
   }
 
-  // Trabajos - work orders + incidentes (Incidentes relacionado con ?rdenes de trabajo)
+  // Trabajos - work orders + incidentes (Incidentes relacionado con Órdenes de trabajo)
   if (ui.shouldShowInNavigation('work_orders') || ui.shouldShowInNavigation('maintenance')) {
     const trabajosItems: NavItem[] = []
     if (ui.shouldShowInNavigation('work_orders')) {
       trabajosItems.push(
-        { href: "/ordenes", icon: Clock, label: "?rdenes de Trabajo", active: isPathActive("/ordenes") }
+        { href: "/ordenes", icon: Clock, label: "Órdenes de Trabajo", active: isPathActive("/ordenes") }
       )
     }
     if (ui.shouldShowInNavigation('maintenance')) {
@@ -1112,7 +1112,7 @@ function buildNavigationSections(
     }
   }
 
-  // Operaciones - solo Checklists y Calendario (sub-p?ginas de checklist se acceden desde el dashboard)
+  // Operaciones - solo Checklists y Calendario (sub-páginas de checklist se acceden desde el dashboard)
   if (ui.shouldShowInNavigation('checklists') || ui.shouldShowInNavigation('maintenance')) {
     const operationsItems: NavItem[] = []
     if (ui.shouldShowInNavigation('checklists')) {
@@ -1136,16 +1136,16 @@ function buildNavigationSections(
   if (ui.shouldShowInNavigation('purchases') || ui.shouldShowInNavigation('inventory')) {
     const procurementItems: NavItem[] = []
     if (ui.shouldShowInNavigation('purchases')) {
-      procurementItems.push({ href: "/compras", icon: CreditCard, label: "?rdenes de Compra", active: isPathActive("/compras") })
+      procurementItems.push({ href: "/compras", icon: CreditCard, label: "Órdenes de Compra", active: isPathActive("/compras") })
     }
     if (ui.shouldShowInNavigation('inventory')) {
       procurementItems.push({ href: "/inventario", icon: Boxes, label: "Inventario", active: isPathActive("/inventario") })
     }
     procurementItems.push(
-      { href: "/diesel", icon: Fuel, label: "Gesti?n de Diesel", active: isPathActive("/diesel") },
-      { href: "/urea", icon: Droplet, label: "Gesti?n de UREA", active: isPathActive("/urea") },
-      { href: "/suppliers", icon: Users, label: "Padr?n de Proveedores", active: isPathActive("/suppliers") },
-      { href: "/suppliers/analytics", icon: BarChart3, label: "An?lisis de Proveedores", active: isPathActive("/suppliers/analytics") }
+      { href: "/diesel", icon: Fuel, label: "Gestión de Diesel", active: isPathActive("/diesel") },
+      { href: "/urea", icon: Droplet, label: "Gestión de UREA", active: isPathActive("/urea") },
+      { href: "/suppliers", icon: Users, label: "Padrón de Proveedores", active: isPathActive("/suppliers") },
+      { href: "/suppliers/analytics", icon: BarChart3, label: "Análisis de Proveedores", active: isPathActive("/suppliers/analytics") }
     )
     sections.push({
       id: "procurement",
@@ -1156,12 +1156,12 @@ function buildNavigationSections(
     })
   }
 
-  // Records (Hist?ricos)
+  // Records (Históricos)
   if (ui.shouldShowInNavigation('reports')) {
     sections.push({
       id: "records",
       icon: FileText,
-      label: "Hist?ricos",
+      label: "Históricos",
       active: isSectionActive(["/reportes"]),
       items: [
         { href: "/reportes", icon: BarChart3, label: "Reportes", active: isPathActive("/reportes") },
@@ -1173,25 +1173,25 @@ function buildNavigationSections(
   if (ui.shouldShowInNavigation('personnel')) {
     const orgItems: NavItem[] = [
       { href: "/gestion/asignaciones", icon: Target, label: "Asignaciones Organizacionales", active: isPathActive("/gestion/asignaciones"), badge: "Nuevo" },
-      { href: "/personal", icon: Users, label: "Gesti?n de Personal", active: isPathActive("/personal") },
+      { href: "/personal", icon: Users, label: "Gestión de Personal", active: isPathActive("/personal") },
     ]
     if (ui.canShowCreateButton?.('assets') || profile.role === 'AREA_ADMINISTRATIVA') {
       orgItems.push(
         { href: "/gestion/activos/asignacion-plantas", icon: Package, label: "Activos a Plantas", active: isPathActive("/gestion/activos/asignacion-plantas") },
-        { href: "/activos/asignacion", icon: UserCheck, label: "Asignaci?n de Activos", active: isPathActive("/activos/asignacion") }
+        { href: "/activos/asignacion", icon: UserCheck, label: "Asignación de Activos", active: isPathActive("/activos/asignacion") }
       )
     }
     if (['GERENCIA_GENERAL', 'AREA_ADMINISTRATIVA'].includes(profile.role || '')) {
-      orgItems.push({ href: "/plantas", icon: Building2, label: "Configuraci?n de Plantas", active: isPathActive("/plantas") })
+      orgItems.push({ href: "/plantas", icon: Building2, label: "Configuración de Plantas", active: isPathActive("/plantas") })
     }
     orgItems.push(
-      { href: "/gestion/autorizaciones", icon: Shield, label: "Gesti?n de Autorizaciones", active: isPathActive("/gestion/autorizaciones") },
+      { href: "/gestion/autorizaciones", icon: Shield, label: "Gestión de Autorizaciones", active: isPathActive("/gestion/autorizaciones") },
       { href: "/gestion/credenciales", icon: IdCard, label: "Credenciales de Empleados", active: isPathActive("/gestion/credenciales") }
     )
     sections.push({
       id: "organization",
       icon: Building2,
-      label: "Organizaci?n",
+      label: "Organización",
       active: isSectionActive(["/gestion/asignaciones", "/personal", "/activos/asignacion", "/gestion/activos/asignacion-plantas", "/plantas", "/gestion/autorizaciones", "/gestion/credenciales"]),
       items: orgItems,
     })
@@ -1292,7 +1292,7 @@ export function CollapsedSidebar({ className, onLinkClick }: SidebarProps) {
     navigationSections = buildNavigationSections(profile, ui, pathname, isPathActive, isSectionActive, isComplianceSystemEnabled)
   }
 
-  // Add Configuraci?n del Sistema to Organization when compliance is hidden (for admins)
+  // Add Configuración del Sistema to Organization when compliance is hidden (for admins)
   const isAdmin = ['GERENCIA_GENERAL', 'AREA_ADMINISTRATIVA'].includes(profile?.role || '')
   if (!isComplianceSystemEnabled && isAdmin) {
     navigationSections = navigationSections.map((section) => {
@@ -1302,7 +1302,7 @@ export function CollapsedSidebar({ className, onLinkClick }: SidebarProps) {
           active: section.active || isPathActive('/compliance/configuracion'),
           items: [
             ...section.items,
-            { href: '/compliance/configuracion', icon: Settings, label: 'Configuraci?n del Sistema', active: isPathActive('/compliance/configuracion') }
+            { href: '/compliance/configuracion', icon: Settings, label: 'Configuración del Sistema', active: isPathActive('/compliance/configuracion') }
           ]
         }
       }
@@ -1311,7 +1311,7 @@ export function CollapsedSidebar({ className, onLinkClick }: SidebarProps) {
   }
 
   return (
-    <div className={cn("pb-12", className)} role="navigation" aria-label="Navegaci?n principal">
+    <div className={cn("pb-12", className)} role="navigation" aria-label="Navegación principal">
       <TooltipProvider>
         <div className="space-y-1 py-4">
           {navigationSections.map((section, index) => {

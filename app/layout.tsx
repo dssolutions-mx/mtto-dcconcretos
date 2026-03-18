@@ -10,6 +10,7 @@ import { OnboardingProvider } from "@/components/onboarding/onboarding-provider"
 import { ProductTour } from "@/components/onboarding/ProductTour"
 import { Toaster } from "@/components/ui/toaster"
 import { CacheConsoleLoader } from "@/components/cache-console-loader"
+import { StorageManager } from "@/components/storage-manager"
 import { Analytics } from "@vercel/analytics/next"
 
 export const metadata: Metadata = {
@@ -37,6 +38,7 @@ export default function RootLayout({
           </RoleProvider>
           <Toaster />
           <CacheConsoleLoader />
+          <StorageManager />
           <Analytics />
         </ThemeProvider>
       </body>
