@@ -3,6 +3,7 @@
 import { Info } from "lucide-react"
 
 const LEGEND_ITEMS = [
+  { color: "bg-violet-600", label: "OT programadas" },
   { color: "bg-red-500", label: "Vencidos" },
   { color: "bg-amber-500", label: "Próximos" },
   { color: "bg-blue-500", label: "Cubiertos" },

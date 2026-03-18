@@ -28,6 +28,7 @@ export function MaintenanceSchedule() {
   const {
     items,
     warrantyEvents,
+    workOrderEvents,
     summary,
     loading,
     error,
@@ -126,8 +127,14 @@ export function MaintenanceSchedule() {
         <div className="mt-5">
           <CalendarShortcuts
             urgentCount={summary.highUrgency}
+            todayCount={todayCount}
             onRefresh={refetch}
             isRefreshing={loading}
+            onGoToToday={() => {
+              const today = new Date()
+              setCurrentMonth(today)
+              setSelectedDate(today)
+            }}
           />
         </div>
       </div>
@@ -137,7 +144,12 @@ export function MaintenanceSchedule() {
         <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground mb-3">
           Resumen Estratégico
         </p>
-        <CalendarKPIs summary={summary} totalCount={totalCount} />
+        <CalendarKPIs
+          summary={summary}
+          totalCount={totalCount}
+          workOrderEvents={workOrderEvents}
+          todayCount={todayCount}
+        />
       </div>
 
       {/* Filters */}
@@ -154,15 +166,16 @@ export function MaintenanceSchedule() {
       <Card className="relative rounded-2xl border border-border/60 bg-card overflow-hidden">
         <div className="absolute inset-x-0 top-0 h-[3px] rounded-t-2xl bg-gradient-to-r from-slate-400 to-slate-300" aria-hidden />
         <CardHeader className="pb-4">
-          <CardTitle className="text-lg">Calendario de Mantenimientos Proyectados</CardTitle>
+          <CardTitle className="text-lg">Calendario de Mantenimiento</CardTitle>
           <p className="text-sm text-muted-foreground mt-1">
-            Mantenimientos calculados según la lógica cíclica de cada activo. Incluye vencidos, próximos, cubiertos y programados.
+            OT programadas, mantenimientos proyectados y garantías. Haz clic en un día para ver el detalle.
           </p>
         </CardHeader>
         <CardContent className="space-y-6">
           <CalendarGrid
             items={items}
             warrantyEvents={warrantyEvents}
+            workOrderEvents={workOrderEvents}
             currentMonth={currentMonth}
             onMonthChange={setCurrentMonth}
             selectedDate={selectedDate}
@@ -175,9 +188,8 @@ export function MaintenanceSchedule() {
             <CalendarDayDetail
               date={selectedDate ?? new Date()}
               maintenances={maintenancesForSelectedDate}
-              warrantyEvents={warrantyEvents.filter(
-                (w) => w.warrantyExpiration.startsWith(format(selectedDate ?? new Date(), "yyyy-MM-dd"))
-              )}
+              warrantyEvents={warrantyEvents}
+              workOrderEvents={workOrderEvents}
               onSelectMaintenance={handleMaintenanceSelect}
               selectedMaintenance={selectedMaintenance}
             />

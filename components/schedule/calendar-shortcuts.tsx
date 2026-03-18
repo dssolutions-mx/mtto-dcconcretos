@@ -7,14 +7,18 @@ import { cn } from "@/lib/utils"
 
 interface CalendarShortcutsProps {
   urgentCount?: number
+  todayCount?: number
   onRefresh?: () => void
   isRefreshing?: boolean
+  onGoToToday?: () => void
 }
 
 export function CalendarShortcuts({
   urgentCount = 0,
+  todayCount = 0,
   onRefresh,
-  isRefreshing = false
+  isRefreshing = false,
+  onGoToToday
 }: CalendarShortcutsProps) {
   return (
     <div className="relative border-t border-border/40">
@@ -26,6 +30,15 @@ export function CalendarShortcuts({
             Programar
           </Link>
         </Button>
+        {todayCount > 0 && onGoToToday && (
+          <button
+            type="button"
+            onClick={onGoToToday}
+            className="inline-flex shrink-0 items-center gap-1.5 min-h-[44px] py-2 px-3 rounded-lg border border-primary/30 bg-primary/5 text-primary text-sm font-medium hover:bg-primary/10 transition-colors"
+          >
+            Hoy ({todayCount})
+          </button>
+        )}
         {urgentCount > 0 && (
           <a
             href="#urgentes"

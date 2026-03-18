@@ -534,7 +534,7 @@ export async function GET(request: Request) {
           priority,
           status,
           description,
-          assets (
+          asset:assets (
             name,
             asset_id
           )
