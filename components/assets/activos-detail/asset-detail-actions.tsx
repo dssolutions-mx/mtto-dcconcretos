@@ -14,6 +14,7 @@ interface AssetDetailActionsProps {
   assetName: string
   hasComposite: boolean
   setOpenCreateComposite: (open: boolean) => void
+  onReportIncidentClick?: () => void
   ui: {
     shouldShowInNavigation: (module: string) => boolean
     canShowEditButton?: (module: string) => boolean
@@ -25,6 +26,7 @@ export function AssetDetailActions({
   assetName,
   hasComposite,
   setOpenCreateComposite,
+  onReportIncidentClick,
   ui,
 }: AssetDetailActionsProps) {
   return (
@@ -45,13 +47,11 @@ export function AssetDetailActions({
         <Button
           size="sm"
           variant="outline"
-          asChild
           className="w-full sm:w-auto justify-center min-h-[44px] cursor-pointer transition-colors duration-200"
+          onClick={() => onReportIncidentClick?.()}
         >
-          <Link href={`/activos/${assetId}/incidentes`}>
-            <AlertTriangle className="h-4 w-4 mr-2" />
-            Reportar Incidente
-          </Link>
+          <AlertTriangle className="h-4 w-4 mr-2" />
+          Reportar Incidente
         </Button>
       )}
       <Button

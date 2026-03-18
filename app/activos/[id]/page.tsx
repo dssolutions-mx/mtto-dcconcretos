@@ -19,6 +19,7 @@ import { es } from "date-fns/locale";
 import { AssetWithModel, EquipmentModel } from "@/types";
 import { createClient } from "@/lib/supabase";
 import { CreateCompositeAssetDialog } from "@/components/assets/dialogs/create-composite-asset-dialog"
+import { IncidentRegistrationDialog } from "@/components/assets/dialogs/incident-registration-dialog"
 import {
   AssetDetailHeader,
   AssetDetailKpis,
@@ -44,7 +45,7 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
   
   const { asset: rawAsset, loading, error } = useAsset(assetId);
   const { history: maintenanceHistory, loading: maintenanceLoading } = useMaintenanceHistory(assetId);
-  const { incidents, loading: incidentsLoading } = useIncidents(assetId);
+  const { incidents, loading: incidentsLoading, refetch: refetchIncidents } = useIncidents(assetId);
   const { ui } = useAuthZustand();
   const [activeTab, setActiveTab] = useState("status");
   const [upcomingMaintenances, setUpcomingMaintenances] = useState<any[]>([]);
@@ -64,6 +65,7 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
   const [compositeContext, setCompositeContext] = useState<{ composite: any | null; components: any[] }>({ composite: null, components: [] });
   const [compositeLoading, setCompositeLoading] = useState(false);
   const [openCreateComposite, setOpenCreateComposite] = useState(false);
+  const [reportIncidentOpen, setReportIncidentOpen] = useState(false);
   const [maintenanceUnit, setMaintenanceUnit] = useState<MaintenanceUnit>('hours');
   
   // Map the asset with equipment_models to use model property
@@ -942,6 +944,7 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
                 assetName={asset?.name || ""}
                 hasComposite={!!compositeContext.composite}
                 setOpenCreateComposite={setOpenCreateComposite}
+                onReportIncidentClick={() => setReportIncidentOpen(true)}
                 ui={ui as { shouldShowInNavigation: (m: string) => boolean; canShowEditButton: (m: string) => boolean }}
               />
             }
@@ -994,6 +997,15 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
           })()}
 
           <CreateCompositeAssetDialog open={openCreateComposite} onOpenChange={setOpenCreateComposite} currentAssetId={assetId} />
+          <IncidentRegistrationDialog
+            isOpen={reportIncidentOpen}
+            onClose={() => setReportIncidentOpen(false)}
+            assetId={assetId}
+            onSuccess={() => {
+              refetchIncidents();
+              setReportIncidentOpen(false);
+            }}
+          />
 
           <div data-stagger="2">
           <Tabs defaultValue="status" className="w-full" onValueChange={setActiveTab}>
@@ -1045,6 +1057,7 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
                 checklistsLoading={checklistsLoading}
                 isPendingIncident={isPendingIncident}
                 formatDate={formatDate}
+                onReportIncidentClick={() => setReportIncidentOpen(true)}
               />
             </TabsContent>
             <TabsContent value="technical" className="space-y-4 mt-4">

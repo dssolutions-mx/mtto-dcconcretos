@@ -30,6 +30,7 @@ interface IncidentsChecklistsTabProps {
   checklistsLoading: boolean
   isPendingIncident: (incident: any) => boolean
   formatDate: (date: string | null) => string
+  onReportIncidentClick?: () => void
 }
 
 export function IncidentsChecklistsTab({
@@ -43,6 +44,7 @@ export function IncidentsChecklistsTab({
   checklistsLoading,
   isPendingIncident,
   formatDate,
+  onReportIncidentClick,
 }: IncidentsChecklistsTabProps) {
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -67,11 +69,17 @@ export function IncidentsChecklistsTab({
               <p className="mt-2 text-sm text-muted-foreground">
                 No hay incidentes registrados para este activo.
               </p>
-              <Button variant="outline" className="mt-4 cursor-pointer" asChild>
-                <Link href={`/activos/${assetId}/incidentes`}>
+              {onReportIncidentClick ? (
+                <Button variant="outline" className="mt-4 cursor-pointer" onClick={onReportIncidentClick}>
                   Reportar incidente
-                </Link>
-              </Button>
+                </Button>
+              ) : (
+                <Button variant="outline" className="mt-4 cursor-pointer" asChild>
+                  <Link href={`/activos/${assetId}/incidentes`}>
+                    Reportar incidente
+                  </Link>
+                </Button>
+              )}
             </div>
           ) : (
             <div className="space-y-3">
@@ -135,7 +143,7 @@ export function IncidentsChecklistsTab({
               {incidents.length > 3 && (
                 <div className="mt-2 text-center">
                   <Button variant="outline" size="sm" asChild className="cursor-pointer">
-                    <Link href={`/activos/${assetId}/incidentes`}>
+                    <Link href={`/incidentes?assetId=${assetId}`}>
                       Ver todos ({incidents.length})
                     </Link>
                   </Button>

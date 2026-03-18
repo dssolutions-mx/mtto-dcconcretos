@@ -5,8 +5,8 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { Separator } from "@/components/ui/separator"
-import { 
-  ArrowLeft, FileCheck, Package, ShoppingCart, FileText, ExternalLink, 
+import {
+  ArrowLeft, FileCheck, Package, ShoppingCart, FileText, ExternalLink,
   Store, Wrench, Building2, Receipt, DollarSign, Calendar, User,
   Clock, MapPin, ChevronDown
 } from "lucide-react"
@@ -19,6 +19,7 @@ import { QuotationComparisonManager } from "@/components/purchase-orders/quotati
 import { ReceiptDisplaySection } from "@/components/purchase-orders/ReceiptDisplaySection"
 import { POInventoryActions } from "@/components/purchase-orders/inventory-actions"
 import { EditPOButton } from "@/components/purchase-orders/EditPOButton"
+import { getPOStatusLabel } from "@/lib/purchase-orders/status-labels"
 
 interface PurchaseOrderDetailsMobileProps {
   order: any
@@ -103,7 +104,7 @@ export function PurchaseOrderDetailsMobile({
                 <p className="text-sm text-muted-foreground">Estado Actual</p>
                 <div className="flex items-center space-x-2 mt-1">
                   <Badge variant="secondary" className="text-sm">
-                    {order.status || "Pendiente"}
+                    {getPOStatusLabel(order.status)}
                   </Badge>
                 </div>
               </div>
@@ -241,10 +242,22 @@ export function PurchaseOrderDetailsMobile({
 
                 {authorizerName && (
                   <div className="flex items-start space-x-3">
-                    <FileCheck className="h-4 w-4 text-blue-600 mt-0.5 shrink-0" />
+                    <FileCheck className="h-4 w-4 text-sky-600 mt-0.5 shrink-0" />
                     <div className="flex-1">
-                      <p className="text-xs font-medium text-muted-foreground">Autorizado por (Gerente de Mantenimiento)</p>
+                      <p className="text-xs font-medium text-muted-foreground">Validación técnica</p>
                       <p className="text-sm">{authorizerName}</p>
+                    </div>
+                  </div>
+                )}
+
+                {order.viability_state && order.viability_state !== 'not_required' && (
+                  <div className="flex items-start space-x-3">
+                    <FileCheck className={`h-4 w-4 mt-0.5 shrink-0 ${order.viability_state === 'viable' ? 'text-green-600' : order.viability_state === 'not_viable' ? 'text-destructive' : 'text-amber-600'}`} />
+                    <div className="flex-1">
+                      <p className="text-xs font-medium text-muted-foreground">Viabilidad administrativa</p>
+                      <p className="text-sm">
+                        {order.viability_state === 'viable' ? 'Viable' : order.viability_state === 'not_viable' ? 'No viable' : 'Pendiente'}
+                      </p>
                     </div>
                   </div>
                 )}
@@ -305,7 +318,7 @@ export function PurchaseOrderDetailsMobile({
       {/* Workflow - collapsible, after Resumen */}
       {order.po_type && (
         <Card>
-          <Collapsible defaultOpen={false}>
+          <Collapsible defaultOpen={order.status === 'pending_approval'}>
             <CollapsibleTrigger asChild>
               <CardHeader className="p-5 md:p-6 pb-2 cursor-pointer hover:bg-muted/30 transition-colors rounded-t-lg group/trigger">
                 <div className="flex items-center justify-between">
@@ -315,7 +328,7 @@ export function PurchaseOrderDetailsMobile({
                       Workflow y acciones
                     </CardTitle>
                     <CardDescription className="text-sm mt-1">
-                      Estado actual: {order.status?.replace('_', ' ')}
+                      Estado: {getPOStatusLabel(order.status)}
                     </CardDescription>
                   </div>
                   <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200 group-data-[state=open]/trigger:rotate-180" />

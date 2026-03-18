@@ -1,6 +1,7 @@
 "use client"
 
-import { useState, useEffect, useMemo } from "react"
+import { Suspense, useState, useEffect, useMemo } from "react"
+import { useSearchParams, useRouter } from "next/navigation"
 import { DashboardHeader } from "@/components/dashboard/dashboard-header"
 import { DashboardShell } from "@/components/dashboard/dashboard-shell"
 import { Button } from "@/components/ui/button"
@@ -12,7 +13,12 @@ import Link from "next/link"
 import { IncidentsOTLookup } from "@/components/incidents/incidents-ot-lookup"
 import { getAssetName, getAssetFullName, getReporterName } from "@/components/incidents/incidents-list-utils"
 
-export default function IncidentsPage() {
+function IncidentsPageContent() {
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const assetIdFromUrl = searchParams.get("assetId")
+  const assetFromUrl = searchParams.get("asset")
+
   const [incidents, setIncidents] = useState<Record<string, unknown>[]>([])
   const [assets, setAssets] = useState<Record<string, unknown>[]>([])
   const [loading, setLoading] = useState(true)
@@ -20,6 +26,13 @@ export default function IncidentsPage() {
   const [searchTerm, setSearchTerm] = useState("")
   const [statusFilter, setStatusFilter] = useState("all")
   const [typeFilter, setTypeFilter] = useState("all")
+
+  // Initialize search from ?asset= param (used by coordinator dashboard)
+  useEffect(() => {
+    if (assetFromUrl && !searchTerm) {
+      setSearchTerm(assetFromUrl)
+    }
+  }, [assetFromUrl])
 
   useEffect(() => {
     const fetchIncidents = async () => {
@@ -92,6 +105,7 @@ export default function IncidentsPage() {
 
   const filteredIncidents = useMemo(() => {
     return incidents.filter((incident) => {
+      if (assetIdFromUrl && incident.asset_id !== assetIdFromUrl) return false
       if (statusFilter !== "all" && String(incident.status ?? "") !== statusFilter) return false
       if (typeFilter !== "all" && String(incident.type ?? "") !== typeFilter) return false
       if (searchTerm.trim()) {
@@ -111,13 +125,22 @@ export default function IncidentsPage() {
       }
       return true
     })
-  }, [incidents, statusFilter, typeFilter, searchTerm, assets])
+  }, [incidents, statusFilter, typeFilter, searchTerm, assets, assetIdFromUrl])
 
   const clearFilters = () => {
     setSearchTerm("")
     setStatusFilter("all")
     setTypeFilter("all")
+    if (assetIdFromUrl || assetFromUrl) {
+      router.replace("/incidentes")
+    }
   }
+
+  const prefilledAssetName = useMemo(() => {
+    if (!assetIdFromUrl || assets.length === 0) return null
+    const asset = assets.find((a: Record<string, unknown>) => a.id === assetIdFromUrl) as Record<string, unknown> | undefined
+    return asset ? String(asset.name ?? asset.asset_id ?? "Activo") : "Activo"
+  }, [assetIdFromUrl, assets])
 
   if (loading) {
     return (
@@ -199,7 +222,7 @@ export default function IncidentsPage() {
               ))}
             </SelectContent>
           </Select>
-          {(searchTerm || statusFilter !== "all" || typeFilter !== "all") && (
+          {(searchTerm || statusFilter !== "all" || typeFilter !== "all" || assetIdFromUrl || assetFromUrl) && (
             <button
               type="button"
               onClick={clearFilters}
@@ -211,9 +234,42 @@ export default function IncidentsPage() {
           )}
         </div>
 
+        {prefilledAssetName && (
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={clearFilters}
+              className="inline-flex items-center gap-1 rounded-md border px-2.5 py-0.5 text-xs font-medium transition-colors hover:bg-muted cursor-pointer"
+            >
+              Filtro por activo: {prefilledAssetName}
+              <X className="h-3 w-3" />
+            </button>
+          </div>
+        )}
+
         {/* Lista agrupada por activo */}
         <IncidentsOTLookup incidents={filteredIncidents} assets={assets} />
       </div>
     </DashboardShell>
+  )
+}
+
+export default function IncidentsPage() {
+  return (
+    <Suspense
+      fallback={
+        <DashboardShell>
+          <DashboardHeader heading="Incidentes" text="" />
+          <div className="space-y-3">
+            <div className="h-10 w-full max-w-xl rounded-lg bg-muted animate-pulse" />
+            {[...Array(6)].map((_, i) => (
+              <div key={i} className="h-12 rounded-lg bg-muted animate-pulse" />
+            ))}
+          </div>
+        </DashboardShell>
+      }
+    >
+      <IncidentsPageContent />
+    </Suspense>
   )
 }

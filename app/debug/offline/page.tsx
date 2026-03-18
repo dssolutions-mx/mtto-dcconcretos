@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useAuthZustand } from '@/hooks/use-auth-zustand'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -8,13 +8,19 @@ import { Badge } from '@/components/ui/badge'
 
 export default function OfflineTestPage() {
   const { user, profile, isAuthenticated, isLoading, signOut } = useAuthZustand()
-  const [offlineStatus, setOfflineStatus] = useState(navigator?.onLine ?? true)
-  
-  // Listen to online/offline events
-  if (typeof window !== 'undefined') {
-    window.addEventListener('online', () => setOfflineStatus(true))
-    window.addEventListener('offline', () => setOfflineStatus(false))
-  }
+  const [offlineStatus, setOfflineStatus] = useState(true)
+
+  useEffect(() => {
+    setOfflineStatus(navigator.onLine)
+    const handleOnline = () => setOfflineStatus(true)
+    const handleOffline = () => setOfflineStatus(false)
+    window.addEventListener('online', handleOnline)
+    window.addEventListener('offline', handleOffline)
+    return () => {
+      window.removeEventListener('online', handleOnline)
+      window.removeEventListener('offline', handleOffline)
+    }
+  }, [])
 
   const simulateOfflineWork = () => {
     alert('Simulating offline work completion...\n\nIn a real scenario, this would:\n1. Queue the operation\n2. Show success message\n3. Sync when online')

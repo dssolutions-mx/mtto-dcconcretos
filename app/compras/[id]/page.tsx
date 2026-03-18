@@ -3,50 +3,57 @@ import { PurchaseOrderType, EnhancedPOStatus } from "@/types/purchase-orders"
 import { cn } from "@/lib/utils"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
-import { ArrowLeft, FileCheck, Package, ShoppingCart, Truck, FileText, Download, ExternalLink, Store, Wrench, Building2, Receipt, AlertCircle, DollarSign, Calendar, User, Warehouse } from "lucide-react"
-import { Alert, AlertDescription } from "@/components/ui/alert"
+import {
+  ArrowLeft, FileText, ShoppingCart, Package,
+  ExternalLink, Store, Wrench, Building2, Warehouse,
+  User, Calendar, FileCheck, Receipt
+} from "lucide-react"
 import Link from "next/link"
 import { notFound } from "next/navigation"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
-import { ReactNode, use } from "react"
-import { ReceiptSection } from "@/components/work-orders/receipt-section"
+import { use, Suspense } from "react"
 import { WorkflowStatusDisplay } from "@/components/purchase-orders/workflow/WorkflowStatusDisplay"
 import { TypeBadge } from "@/components/purchase-orders/shared/TypeBadge"
 import { ReceiptDisplaySection } from "@/components/purchase-orders/ReceiptDisplaySection"
 import { PurchaseOrderDetailsRouter } from "@/components/purchase-orders/purchase-order-details-router"
 import { PurchaseOrderWorkOrderLink } from "@/components/purchase-orders/purchase-order-work-order-link"
-import { Suspense } from "react"
 import { EditPOButton } from "@/components/purchase-orders/EditPOButton"
 import { QuotationComparisonManager } from "@/components/purchase-orders/quotations/QuotationComparisonManager"
 import { ReportIssueButton } from "@/components/purchase-orders/ReportIssueButton"
 import { POInventoryActions } from "@/components/purchase-orders/inventory-actions"
+import { POLifecycleStrip } from "@/components/purchase-orders/details/po-lifecycle-strip"
+import { POContextBand } from "@/components/purchase-orders/details/po-context-band"
+import { ReceiptSection } from "@/components/work-orders/receipt-section"
 
-// Helper function to format currency
-function formatCurrency(amount: string | null): string {
-  if (!amount) return "$0.00"
-  return new Intl.NumberFormat('es-MX', {
-    style: 'currency',
-    currency: 'MXN',
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+import { getPOStatusLabel } from "@/lib/purchase-orders/status-labels"
+
+function formatCurrency(amount: string | null | number): string {
+  if (amount === null || amount === undefined || amount === "") return "$0.00"
+  return new Intl.NumberFormat("es-MX", {
+    style: "currency",
+    currency: "MXN",
   }).format(Number(amount))
 }
 
-// Helper function to format date
-function formatDate(dateString: string | null, formatStr: string = 'PP'): string {
+function formatDate(dateString: string | null, formatStr = "PP"): string {
   if (!dateString) return "N/A"
   try {
     const date = new Date(dateString)
     if (isNaN(date.getTime())) return dateString
     return format(date, formatStr, { locale: es })
-  } catch (error) {
+  } catch {
     return dateString
   }
 }
 
-// Helper function to get badge variant based on status
-function getStatusVariant(status: string | null): "outline" | "secondary" | "default" | "destructive" | undefined {
+function getStatusBadgeVariant(
+  status: string | null
+): "outline" | "secondary" | "default" | "destructive" {
   switch (status) {
     case EnhancedPOStatus.PENDING_APPROVAL:
       return "outline"
@@ -57,6 +64,7 @@ function getStatusVariant(status: string | null): "outline" | "secondary" | "def
     case EnhancedPOStatus.RECEIVED:
     case EnhancedPOStatus.RECEIPT_UPLOADED:
     case EnhancedPOStatus.VALIDATED:
+    case EnhancedPOStatus.FULFILLED:
       return "default"
     case EnhancedPOStatus.REJECTED:
       return "destructive"
@@ -65,159 +73,68 @@ function getStatusVariant(status: string | null): "outline" | "secondary" | "def
   }
 }
 
-// Helper function to get file extension from URL
-function getFileExtension(url: string): string {
-  if (!url) return '';
-  return url.split('.').pop()?.toLowerCase() || '';
-}
-
-// Helper function to check if a file is an image
-function isImageFile(url: string): boolean {
-  const imageExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'];
-  const extension = getFileExtension(url);
-  return imageExtensions.includes(extension);
-}
-
-// Helper function to check if a file is a PDF
-function isPdfFile(url: string): boolean {
-  return getFileExtension(url) === 'pdf';
-}
+// ─── Entry point ─────────────────────────────────────────────────────────────
 
 export default function PurchaseOrderDetailsPage({
   params,
 }: {
-  params: Promise<{ id: string }>;
+  params: Promise<{ id: string }>
 }) {
-  // Unwrap params using React.use()
-  const resolvedParams = use(params);
-  const id = resolvedParams.id;
-  
-  // Return the content component with the id
-  return <PurchaseOrderDetailsContent id={id} />;
+  const { id } = use(params)
+  return <PurchaseOrderDetailsContent id={id} />
 }
 
-// Client wrapper component for mobile detection
-function PurchaseOrderDetailsClientWrapper({ 
-  id, 
-  order, 
-  workOrder, 
-  requesterName, 
-  approverName,
-  items 
-}: { 
-  id: string
-  order: any
-  workOrder: any
-  requesterName: string
-  approverName: string
-  items: any[]
-}) {
-  return (
-    <Suspense fallback={<div>Cargando...</div>}>
-      <PurchaseOrderDetailsClient 
-        id={id}
-        order={order}
-        workOrder={workOrder}
-        requesterName={requesterName}
-        approverName={approverName}
-        items={items}
-      />
-    </Suspense>
-  )
-}
+// ─── Server component (data fetching) ────────────────────────────────────────
 
-// Client component that uses hooks
-function PurchaseOrderDetailsClient({ 
-  id, 
-  order, 
-  workOrder, 
-  requesterName, 
-  approverName,
-  items 
-}: { 
-  id: string
-  order: any
-  workOrder: any
-  requesterName: string
-  approverName: string
-  items: any[]
-}) {
-  // We'll add mobile detection here but for now, let's focus on the server content
-  // This would require 'use client' directive which we'll add in a follow-up
-  
-  // For now, return the mobile component based on a simple user agent check
-  // We'll improve this in the next iteration
-  // This would require client-side logic for mobile detection
-  // For now, returning null since the main content is handled server-side
-  return null;
-}
-
-// Create an async server component for the content
 async function PurchaseOrderDetailsContent({ id }: { id: string }) {
-  const supabase = await createClient();
-  
-  // Get the purchase order details
+  const supabase = await createClient()
+
   const { data: order, error } = await supabase
     .from("purchase_orders")
     .select("*")
     .eq("id", id)
-    .single();
-    
-  if (error || !order) {
-    notFound();
-  }
-  
-  // Get work order if it exists
-  let workOrder = null;
+    .single()
+
+  if (error || !order) notFound()
+
+  // Work order + asset
+  let workOrder: any = null
   if (order.work_order_id) {
-    const { data: workOrderData, error: workOrderError } = await supabase
+    const { data } = await supabase
       .from("work_orders")
-      .select(`
-        *,
-        asset:assets (
-          id,
-          name,
-          asset_id
-        )
-      `)
+      .select(`*, asset:assets(id, name, asset_id, location)`)
       .eq("id", order.work_order_id)
-      .single();
-      
-    if (!workOrderError && workOrderData) {
-      workOrder = workOrderData;
-    }
+      .single()
+    if (data) workOrder = data
   }
-  
-  // Parse JSON items if it's a string
-  const rawItems = typeof order.items === 'string' 
-    ? JSON.parse(order.items) 
-    : order.items
+
+  // Items
+  const rawItems =
+    typeof order.items === "string" ? JSON.parse(order.items) : order.items
   const poItems = Array.isArray(rawItems) ? rawItems : []
-  
-  // Fetch selected quotation items when PO has quotations (purchase items may come from quotation)
+
+  // Quotation items
   let quotationItems: any[] = []
   if (order.selected_quotation_id) {
-    const { data: quotation } = await supabase
+    const { data: q } = await supabase
       .from("purchase_order_quotations")
       .select("quotation_items")
       .eq("id", order.selected_quotation_id)
       .single()
-    if (quotation?.quotation_items) {
-      quotationItems = Array.isArray(quotation.quotation_items) 
-        ? quotation.quotation_items 
-        : typeof quotation.quotation_items === 'string' 
-          ? JSON.parse(quotation.quotation_items) 
-          : []
+    if (q?.quotation_items) {
+      quotationItems = Array.isArray(q.quotation_items)
+        ? q.quotation_items
+        : typeof q.quotation_items === "string"
+        ? JSON.parse(q.quotation_items)
+        : []
     }
   }
-  
-  // Build unified display: PO items (inventory + any purchase) with source, plus quotation items as purchase
-  const hasInventoryItems = poItems.some((i: any) => i.fulfill_from === 'inventory')
+
+  const hasInventoryItems = poItems.some((i: any) => i.fulfill_from === "inventory")
   const hasQuotationItems = quotationItems.length > 0
-  const inventoryItems = poItems.filter((i: any) => i.fulfill_from === 'inventory')
-  const purchaseItemsFromPO = poItems.filter((i: any) => i.fulfill_from !== 'inventory')
-  // When we have quotation items, purchase comes from quotation; otherwise from PO items
-  const purchaseItems = hasQuotationItems 
+  const inventoryItems = poItems.filter((i: any) => i.fulfill_from === "inventory")
+  const purchaseItemsFromPO = poItems.filter((i: any) => i.fulfill_from !== "inventory")
+  const purchaseItems = hasQuotationItems
     ? quotationItems.map((q: any) => ({
         name: q.description,
         description: q.description,
@@ -225,161 +142,69 @@ async function PurchaseOrderDetailsContent({ id }: { id: string }) {
         quantity: q.quantity,
         unit_price: q.unit_price,
         total_price: q.total_price,
-        _source: 'quotation' as const
+        _source: "quotation" as const,
       }))
-    : purchaseItemsFromPO.map((i: any) => ({ ...i, _source: 'po' as const }))
-  
-  const items = [...inventoryItems.map((i: any) => ({ ...i, _source: 'inventory' as const })), ...purchaseItems]
-  
-  // Get requestor information
-  let requesterName = "No especificado"
-  if (order.requested_by) {
-    const { data: requesterData } = await supabase
+    : purchaseItemsFromPO.map((i: any) => ({ ...i, _source: "po" as const }))
+
+  const items = [
+    ...inventoryItems.map((i: any) => ({ ...i, _source: "inventory" as const })),
+    ...purchaseItems,
+  ]
+
+  // People
+  const fetchName = async (userId: string | null): Promise<string | null> => {
+    if (!userId) return null
+    const { data } = await supabase
       .from("profiles")
       .select("nombre, apellido")
-      .eq("id", order.requested_by)
+      .eq("id", userId)
       .single()
-      
-    if (requesterData && requesterData.nombre) {
-      requesterName = `${requesterData.nombre || ''} ${requesterData.apellido || ''}`.trim()
-    }
-  }
-  
-  // Get the approver name if available (final approval)
-  let approverName = "No aprobado"
-  if (order.approved_by) {
-    const { data: approverData } = await supabase
-      .from("profiles")
-      .select("nombre, apellido")
-      .eq("id", order.approved_by)
-      .single()
-      
-    if (approverData && approverData.nombre) {
-      approverName = `${approverData.nombre || ''} ${approverData.apellido || ''}`.trim()
-    }
+    return data?.nombre
+      ? `${data.nombre} ${data.apellido ?? ""}`.trim()
+      : null
   }
 
-  // Get the authorizer name (first/technical approval - Task 4: workflow state visibility)
-  let authorizerName: string | null = null
-  if (order.authorized_by) {
-    const { data: authorizerData } = await supabase
-      .from("profiles")
-      .select("nombre, apellido")
-      .eq("id", order.authorized_by)
-      .single()
-    if (authorizerData && authorizerData.nombre) {
-      authorizerName = `${authorizerData.nombre || ''} ${authorizerData.apellido || ''}`.trim()
-    }
-  }
-  
-  // Get action buttons based on status
-  function getActionButtons(order: any): ReactNode {
-    if (!order) return null
-    
-    // Check if this is an enhanced purchase order with po_type
-    if (order.po_type) {
-      // For enhanced purchase orders, let the WorkflowStatusDisplay handle actions
-      return null
-    }
-    
-    // Legacy purchase order status handling (fallback for very old orders)
-    switch (order.status) {
-      case 'pending_approval':
-        return (
-          <>
-            <Button asChild variant="secondary">
-              <Link href={`/compras/${order.id}/aprobar`}>
-                <FileCheck className="mr-2 h-4 w-4" />
-                Aprobar Orden
-              </Link>
-            </Button>
-            <Button asChild variant="destructive">
-              <Link href={`/compras/${order.id}/rechazar`}>
-                Rechazar Orden
-              </Link>
-            </Button>
-          </>
-        )
-      case 'approved':
-        return (
-          <Button asChild>
-            <Link href={`/compras/${order.id}/pedido`}>
-              <ShoppingCart className="mr-2 h-4 w-4" />
-              Marcar como Pedida
-            </Link>
-          </Button>
-        )
-      case 'ordered':
-        return (
-          <Button asChild>
-            <Link href={`/compras/${order.id}/recibido`}>
-              <Package className="mr-2 h-4 w-4" />
-              Registrar Recepción
-            </Link>
-          </Button>
-        )
-      default:
-        return null
-    }
-  }
+  const [requesterName, authorizerName, approverName] = await Promise.all([
+    fetchName(order.requested_by),
+    fetchName(order.authorized_by),
+    fetchName(order.approved_by),
+  ])
 
-  // Helper function to get purchase order type display info
-  function getPurchaseOrderTypeInfo(poType: string | null) {
-    switch (poType) {
-      case PurchaseOrderType.DIRECT_PURCHASE:
-        return {
-          label: "Compra Directa",
-          description: "Ferretería, tienda local",
-          icon: Store,
-          color: "bg-blue-100 text-blue-700"
-        }
-      case PurchaseOrderType.DIRECT_SERVICE:
-        return {
-          label: "Servicio Directo", 
-          description: "Técnico especialista",
-          icon: Wrench,
-          color: "bg-green-100 text-green-700"
-        }
-      case PurchaseOrderType.SPECIAL_ORDER:
-        return {
-          label: "Pedido Especial",
-          description: "Proveedor formal",
-          icon: Building2,
-          color: "bg-purple-100 text-purple-700"
-        }
-      default:
-        return null
-    }
-  }
+  // ── Desktop layout ─────────────────────────────────────────────────────────
+  const hasCatalogItems = items.some((i: any) => i.part_id || i.partNumber)
+  const showReceiptsCard = order.status &&
+    ["approved", "purchased", "ordered", "receipt_uploaded", "fulfilled", "validated"].includes(order.status)
 
   const desktopContent = (
-    <div className="container mx-auto px-6 py-4 md:py-8">
-      {/* Escalation/Approval banners */}
-      {order?.status === 'pending_approval' && order?.authorized_by && (
-        <Alert className="mb-6 border-blue-200 bg-blue-50">
-          <AlertDescription>
-            Esta orden ya fue autorizada por el Gerente de Mantenimiento y se ha escalado a Gerencia General para aprobación final.
-          </AlertDescription>
-        </Alert>
-      )}
-      {order?.status === 'approved' && (
-        <Alert className="mb-6 border-green-200 bg-green-50">
-          <AlertDescription>
-            Orden aprobada. Puede proceder con la compra o el siguiente paso del flujo.
-          </AlertDescription>
-        </Alert>
-      )}
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold">Orden de Compra: {order.order_id}</h1>
-                     {order.po_type && (
-             <div className="mt-2">
-               <TypeBadge type={order.po_type as PurchaseOrderType} />
-             </div>
-           )}
+    <div className="px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+
+      {/* ── Header ──────────────────────────────────────────────────────────── */}
+      <div className="flex items-start gap-3">
+        <Button variant="outline" size="icon" asChild className="shrink-0 mt-0.5">
+          <Link href="/compras">
+            <ArrowLeft className="h-4 w-4" />
+          </Link>
+        </Button>
+
+        <div className="flex-1 min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className="text-xl font-semibold sm:text-2xl tracking-tight">
+              {order.order_id}
+            </h1>
+            {order.po_type && (
+              <TypeBadge type={order.po_type as PurchaseOrderType} size="default" />
+            )}
+            <Badge
+              variant={getStatusBadgeVariant(order.status)}
+              className="rounded-full text-[11px] font-semibold"
+            >
+              {getPOStatusLabel(order.status)}
+            </Badge>
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          {/* Report Issue Button - only show if supplier_id exists */}
+
+        {/* Actions */}
+        <div className="flex items-center gap-2 shrink-0">
           {order.supplier_id && (
             <ReportIssueButton
               purchaseOrderId={order.id}
@@ -388,8 +213,7 @@ async function PurchaseOrderDetailsContent({ id }: { id: string }) {
               supplierName={order.supplier}
             />
           )}
-          {/* Edit button only when order is not validated */}
-          {order.status !== 'validated' && (
+          {order.status !== "validated" && (
             <EditPOButton
               id={order.id}
               initialData={{
@@ -402,433 +226,289 @@ async function PurchaseOrderDetailsContent({ id }: { id: string }) {
                 quotation_url: order.quotation_url,
                 purchase_date: order.purchase_date,
                 max_payment_date: order.max_payment_date,
-                items: poItems
+                items: poItems,
               }}
             />
           )}
-          <Button variant="outline" size="icon" asChild>
-            <Link href="/compras">
-              <ArrowLeft className="h-4 w-4" />
-            </Link>
-          </Button>
         </div>
       </div>
-      
-      <div className="grid gap-8 md:grid-cols-2">
-        {/* Order Information */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center justify-between">
-              Información General
-              <Badge variant={getStatusVariant(order.status)}>
-                {order.status}
-              </Badge>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {/* Purchase Order Type - only show for enhanced orders */}
-            {order.po_type && (
-              <div>
-                <dt className="font-medium text-sm text-muted-foreground">Tipo de Orden</dt>
-                <dd className="mt-1">
-                  <div className="flex items-center space-x-2">
-                    {(() => {
-                      const typeInfo = getPurchaseOrderTypeInfo(order.po_type)
-                      if (!typeInfo) return <span>{order.po_type}</span>
-                      
-                      const Icon = typeInfo.icon
-                      return (
-                        <>
-                          <div className={`p-1 rounded ${typeInfo.color.replace('text-', 'bg-').replace('-700', '-200')}`}>
-                            <Icon className="h-4 w-4" />
-                          </div>
-                          <div>
-                            <span className="font-medium">{typeInfo.label}</span>
-                            <span className="text-sm text-muted-foreground ml-2">
-                              {typeInfo.description}
-                            </span>
-                          </div>
-                        </>
-                      )
-                    })()}
-                  </div>
-                </dd>
-              </div>
-            )}
 
-            {/* Enhanced order specific fields */}
-            {order.store_location && (
-              <div>
-                <dt className="font-medium text-sm text-muted-foreground">Tienda/Ubicación</dt>
-                <dd className="mt-1">{order.store_location}</dd>
-              </div>
-            )}
+      {/* ── Lifecycle strip ─────────────────────────────────────────────────── */}
+      <POLifecycleStrip status={order.status ?? "draft"} />
 
-            {order.service_provider && (
-              <div>
-                <dt className="font-medium text-sm text-muted-foreground">Proveedor de Servicio</dt>
-                <dd className="mt-1">{order.service_provider}</dd>
-              </div>
-            )}
+      {/* ── Context band ────────────────────────────────────────────────────── */}
+      <POContextBand order={order} workOrder={workOrder} />
 
-            {order.payment_method && (
-              <div>
-                <dt className="font-medium text-sm text-muted-foreground">Forma de Pago</dt>
-                <dd className="mt-1 capitalize">{order.payment_method}</dd>
-              </div>
-            )}
+      {/* ── Main grid: 2/3 left + 1/3 sidebar ──────────────────────────────── */}
+      <div className="grid gap-8 lg:grid-cols-3">
 
-            {order.requires_quote !== undefined && (
-              <div>
-                <dt className="font-medium text-sm text-muted-foreground">Requiere Cotización</dt>
-                <dd className="mt-1">
-                  <Badge variant={order.requires_quote ? "default" : "secondary"}>
-                    {order.requires_quote ? "Sí" : "No"}
-                  </Badge>
-                </dd>
-              </div>
-            )}
+        {/* Left column */}
+        <div className="lg:col-span-2 space-y-6">
 
-            <div>
-              <dt className="font-medium text-sm text-muted-foreground">Proveedor</dt>
-              <dd className="mt-1">{order.supplier || "No especificado"}</dd>
-            </div>
-
-            <div>
-              <dt className="font-medium text-sm text-muted-foreground">Monto Total</dt>
-              <dd className="mt-1 text-lg font-semibold">{formatCurrency(order.total_amount)}</dd>
-            </div>
-
-            {order.actual_amount && (
-              <div>
-                <dt className="font-medium text-sm text-muted-foreground">Monto Real Gastado</dt>
-                <dd className="mt-1 text-lg font-semibold text-green-600">{formatCurrency(order.actual_amount.toString())}</dd>
-              </div>
-            )}
-
-            <div>
-              <dt className="font-medium text-sm text-muted-foreground">Solicitado por</dt>
-              <dd className="mt-1">{requesterName}</dd>
-            </div>
-
-            {authorizerName && (
-              <div>
-                <dt className="font-medium text-sm text-muted-foreground">Autorizado por (Gerente de Mantenimiento)</dt>
-                <dd className="mt-1">{authorizerName}</dd>
-              </div>
-            )}
-            {order.approved_by && (
-              <div>
-                <dt className="font-medium text-sm text-muted-foreground">Aprobado por</dt>
-                <dd className="mt-1">{approverName}</dd>
-              </div>
-            )}
-
-            <div>
-              <dt className="font-medium text-sm text-muted-foreground">Fecha de Creación</dt>
-              <dd className="mt-1">{formatDate(order.created_at)}</dd>
-            </div>
-
-            {order.purchase_date && (
-              <div>
-                <dt className="font-medium text-sm text-muted-foreground">Fecha de Compra</dt>
-                <dd className="mt-1 font-semibold text-blue-600">{formatDate(order.purchase_date)}</dd>
-              </div>
-            )}
-
-            {order.approval_date && (
-              <div>
-                <dt className="font-medium text-sm text-muted-foreground">Fecha de Aprobación</dt>
-                <dd className="mt-1">{formatDate(order.approval_date)}</dd>
-              </div>
-            )}
-
-            {order.purchased_at && (
-              <div>
-                <dt className="font-medium text-sm text-muted-foreground">Fecha de Compra</dt>
-                <dd className="mt-1">{formatDate(order.purchased_at)}</dd>
-              </div>
-            )}
-
-            {order.notes && (
-              <div>
-                <dt className="font-medium text-sm text-muted-foreground">Notas</dt>
-                <dd className="mt-1 break-words whitespace-pre-wrap">{order.notes}</dd>
-              </div>
-            )}
-
-            {order.quotation_url && (
-              <div>
-                <dt className="font-medium text-sm text-muted-foreground">Cotización</dt>
-                <dd className="mt-1">
-                  <div className="flex items-center space-x-2">
-                    <Badge variant="outline" className="text-green-600 border-green-200">
-                      <FileText className="h-3 w-3 mr-1" />
-                      Cotización Disponible
-                    </Badge>
-                    <Button asChild variant="outline" size="sm">
-                      <a 
-                        href={order.quotation_url} 
-                        target="_blank" 
-                        rel="noopener noreferrer"
-                        className="flex items-center space-x-1"
-                      >
-                        <Download className="h-4 w-4" />
-                        <span>Ver Cotización</span>
-                        <ExternalLink className="h-3 w-3" />
-                      </a>
-                    </Button>
-                  </div>
-                </dd>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Receipt/Comprobante Section - Only show after approval */}
-        {order.status &&
-          ['approved', 'purchased', 'receipt_uploaded', 'completed', 'validated'].includes(order.status) && (
-            <ReceiptDisplaySection purchaseOrderId={order.id} poType={order.po_type} />
-          )}
-
-        {/* Quotation Section - Show for enhanced orders except inventory-only POs */}
-        {order.po_type && order.po_purpose !== 'work_order_inventory' && (
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center space-x-2">
-                <FileText className="h-5 w-5" />
-                <span>Cotización</span>
-                {order.requires_quote && (
-                  <Badge variant={order.quotation_url ? "default" : "destructive"}>
-                    {order.quotation_url ? "Completada" : "Requerida"}
-                  </Badge>
+          {/* General Info card */}
+          <Card className="rounded-2xl border border-border/60">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">Información General</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-0">
+              {/* People */}
+              <div className="space-y-3 py-3">
+                <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+                  Responsables
+                </p>
+                <InfoRow
+                  icon={User}
+                  label="Solicitado por"
+                  value={requesterName ?? "No especificado"}
+                />
+                {authorizerName && (
+                  <InfoRow
+                    icon={FileCheck}
+                    label="Validación técnica"
+                    value={authorizerName}
+                    valueClass="text-sky-700"
+                  />
                 )}
-              </CardTitle>
-            {order.requires_quote && (
-              <CardDescription>
-                {order.po_type === PurchaseOrderType.DIRECT_SERVICE
-                  ? `Esta orden de servicio por ${formatCurrency(order.total_amount)} requiere cotización por ser mayor o igual a $5,000 MXN`
-                  : "Esta orden requiere cotización antes de ser aprobada"
-                }
-              </CardDescription>
-            )}
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <QuotationComparisonManager 
-                purchaseOrderId={order.id}
-                workOrderId={order.work_order_id}
-                quotationSelectionRequired={order.quotation_selection_required || false}
-                quotationSelectionStatus={order.quotation_selection_status}
-                poPurpose={order.po_purpose}
-              />
-            </CardContent>
-          </Card>
-        )}
+                {approverName && (
+                  <InfoRow
+                    icon={FileCheck}
+                    label="Aprobado por"
+                    value={approverName}
+                    valueClass="text-green-700"
+                  />
+                )}
+                {order.viability_state && order.viability_state !== "not_required" && (
+                  <InfoRow
+                    icon={Receipt}
+                    label="Viabilidad"
+                    value={
+                      order.viability_state === "viable"
+                        ? "Viable"
+                        : order.viability_state === "not_viable"
+                        ? "No viable"
+                        : "Pendiente"
+                    }
+                    valueClass={
+                      order.viability_state === "viable"
+                        ? "text-green-700"
+                        : order.viability_state === "not_viable"
+                        ? "text-destructive"
+                        : "text-amber-700"
+                    }
+                  />
+                )}
+              </div>
 
-        {/* Work Order Information */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Relación con Orden de Trabajo</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <PurchaseOrderWorkOrderLink 
-              workOrder={workOrder}
-              isAdjustment={order.is_adjustment || false}
-            />
-          </CardContent>
-        </Card>
-      </div>
+              <Separator />
 
-      {/* Inventory Actions - Show if PO has any catalog items with part_id */}
-      {(() => {
-        const hasCatalogItems = items && items.some((item: any) => item.part_id || item.partNumber)
-        return hasCatalogItems && (
-          <Card className="mt-8">
-            <CardHeader>
-              <CardTitle>Gestión de Inventario</CardTitle>
-              <CardDescription>
-                Recibe items a inventario o cumple la orden desde inventario existente
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <POInventoryActions
-                purchaseOrderId={order.id}
-                receivedToInventory={order.received_to_inventory || false}
-                inventoryFulfilled={order.inventory_fulfilled || false}
-              />
-            </CardContent>
-          </Card>
-        )
-      })()}
+              {/* Dates */}
+              <div className="space-y-3 py-3">
+                <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+                  Fechas
+                </p>
+                <InfoRow
+                  icon={Calendar}
+                  label="Creación"
+                  value={formatDate(order.created_at)}
+                />
+                {order.purchase_date && (
+                  <InfoRow
+                    icon={Calendar}
+                    label="Fecha planeada de compra"
+                    value={formatDate(order.purchase_date)}
+                    valueClass="text-sky-700 font-semibold"
+                  />
+                )}
+                {order.approval_date && (
+                  <InfoRow
+                    icon={Calendar}
+                    label="Fecha de aprobación"
+                    value={formatDate(order.approval_date)}
+                  />
+                )}
+                {order.purchased_at && (
+                  <InfoRow
+                    icon={Calendar}
+                    label="Fecha de compra"
+                    value={formatDate(order.purchased_at)}
+                  />
+                )}
+              </div>
 
-      {/* Items/Services */}
-      {items && items.length > 0 && (
-        <Card className="mt-8">
-          <CardHeader>
-            <CardTitle>
-              {order.po_type === PurchaseOrderType.DIRECT_SERVICE 
-                ? "Servicios Solicitados" 
-                : order.po_type === PurchaseOrderType.DIRECT_PURCHASE 
-                ? "Productos Solicitados"
-                : "Artículos Solicitados"
-              }
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="overflow-x-auto">
-              {/* Direct Service Display */}
-              {order.po_type === PurchaseOrderType.DIRECT_SERVICE ? (
-                <table className="w-full border-collapse">
-                  <thead>
-                    <tr className="border-b">
-                      <th className="text-left p-2">Descripción del Servicio</th>
-                      <th className="text-left p-2">Categoría</th>
-                      <th className="text-right p-2">Horas Estimadas</th>
-                      <th className="text-right p-2">Tarifa por Hora</th>
-                      <th className="text-right p-2">Costo Total</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {items.map((service: any, index: number) => (
-                      <tr key={index} className="border-b">
-                        <td className="p-2">
-                          <div>
-                            <p className="font-medium">{service.description || "Sin descripción"}</p>
-                            {service.specialist_required && (
-                              <Badge variant="secondary" className="text-xs mt-1">
-                                Especialista Requerido
-                              </Badge>
-                            )}
-                          </div>
-                        </td>
-                        <td className="p-2">{service.category || "General"}</td>
-                        <td className="p-2 text-right">
-                          {service.estimated_hours ? `${Number(service.estimated_hours).toFixed(1)}h` : "N/A"}
-                        </td>
-                        <td className="p-2 text-right">
-                          {formatCurrency(service.hourly_rate?.toString() || "0")}
-                        </td>
-                        <td className="p-2 text-right font-medium">
-                          {formatCurrency(service.total_cost?.toString() || "0")}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              ) : (
-                /* Generic Items Display - with Fuente (Inventario vs A Comprar) when mixed */
+              {/* Notes */}
+              {order.notes && (
                 <>
-                  {(hasInventoryItems || hasQuotationItems) && (
-                    <div className="mb-4 p-3 rounded-lg bg-muted/50 text-sm">
-                      {inventoryItems.length > 0 && (
-                        <p className="flex items-center gap-2">
-                          <Warehouse className="h-4 w-4 text-green-600" />
-                          <strong>{inventoryItems.length} artículo(s) de inventario</strong> — no se compran, se cumplen desde almacén
-                        </p>
-                      )}
-                      {purchaseItems.length > 0 && (
-                        <p className="flex items-center gap-2 mt-1">
-                          <ShoppingCart className="h-4 w-4 text-orange-600" />
-                          <strong>{purchaseItems.length} artículo(s) a comprar</strong> — requieren compra a proveedor
-                        </p>
-                      )}
-                    </div>
-                  )}
-                  <table className="w-full border-collapse">
-                    <thead>
-                      <tr className="border-b">
-                        <th className="text-left p-2">Descripción</th>
-                        <th className="text-left p-2">Parte/Código</th>
-                        {inventoryItems.length > 0 ? (
-                          <th className="text-left p-2">Fuente</th>
-                        ) : null}
-                        <th className="text-right p-2">Cantidad</th>
-                        <th className="text-right p-2">Precio Unitario</th>
-                        <th className="text-right p-2">Total</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {items.map((item: any, index: number) => {
-                        const isInventory = item._source === 'inventory' || item.fulfill_from === 'inventory'
-                        return (
-                          <tr key={index} className={cn("border-b", isInventory && "bg-green-50/50")}>
-                            <td className="p-2">{item.description || item.item || item.name || "Sin descripción"}</td>
-                            <td className="p-2">{item.part_number || item.partNumber || item.code || "N/A"}</td>
-                            {inventoryItems.length > 0 ? (
-                              <td className="p-2">
-                                {isInventory ? (
-                                  <Badge variant="secondary" className="gap-1 bg-green-100 text-green-800 border-green-200">
-                                    <Warehouse className="h-3 w-3" />
-                                    De Inventario
-                                  </Badge>
-                                ) : (
-                                  <Badge variant="outline" className="gap-1 text-orange-700 border-orange-200">
-                                    <ShoppingCart className="h-3 w-3" />
-                                    A Comprar
-                                  </Badge>
-                                )}
-                              </td>
-                            ) : null}
-                            <td className="p-2 text-right">{item.quantity || 1}</td>
-                            <td className="p-2 text-right">
-                              {isInventory ? (
-                                <span className="text-muted-foreground text-sm">N/A</span>
-                              ) : (
-                                formatCurrency(item.unit_price?.toString() || item.price?.toString() || "0")
-                              )}
-                            </td>
-                            <td className="p-2 text-right">
-                              {isInventory ? (
-                                <span className="text-green-700 font-medium">
-                                  {formatCurrency(item.total_price?.toString() || (item.quantity * (item.unit_price || item.price || 0)).toString())}
-                                  <span className="text-xs text-muted-foreground ml-1">(sin impacto efectivo)</span>
-                                </span>
-                              ) : (
-                                formatCurrency(item.total_price?.toString() || (item.quantity * (item.unit_price || item.price || 0)).toString())
-                              )}
-                            </td>
-                          </tr>
-                        )
-                      })}
-                    </tbody>
-                  </table>
+                  <Separator />
+                  <div className="py-3 space-y-1.5">
+                    <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+                      Notas
+                    </p>
+                    <p className="text-sm whitespace-pre-wrap break-words">{order.notes}</p>
+                  </div>
                 </>
               )}
-            </div>
-          </CardContent>
-        </Card>
-      )}
 
-      {/* Enhanced Workflow Status Display */}
-      {order.po_type && (
-        <div className="mt-8">
-          <WorkflowStatusDisplay
-            purchaseOrderId={order.id}
-            poType={order.po_type as PurchaseOrderType}
-            currentStatus={order.status}
-          />
-        </div>
-      )}
+              {/* Quotation URL (legacy) */}
+              {order.quotation_url && (
+                <>
+                  <Separator />
+                  <div className="py-3">
+                    <a
+                      href={order.quotation_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 text-sm text-primary hover:underline"
+                    >
+                      <FileText className="h-4 w-4" />
+                      Ver cotización adjunta
+                      <ExternalLink className="h-3 w-3" />
+                    </a>
+                  </div>
+                </>
+              )}
 
-      {/* Legacy Action Buttons and Receipt Section for old system */}
-      {!order.po_type && (
-        <>
-          <Card className="mt-8">
-            <CardHeader>
-              <CardTitle>Acciones</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="flex gap-4">
-                {getActionButtons(order)}
-              </div>
+              {/* Actual amount */}
+              {order.actual_amount && (
+                <>
+                  <Separator />
+                  <div className="py-3">
+                    <InfoRow
+                      icon={Receipt}
+                      label="Monto real gastado"
+                      value={formatCurrency(order.actual_amount)}
+                      valueClass="text-green-700 font-semibold tabular-num"
+                    />
+                  </div>
+                </>
+              )}
             </CardContent>
           </Card>
-          
-          {/* Receipt Section - only for legacy orders */}
-          <div className="mt-8">
-            <ReceiptSection purchaseOrderId={order.id} isAdjustment={order.is_adjustment || false} />
-          </div>
-        </>
+
+          {/* Items / Services card */}
+          {items.length > 0 && (
+            <Card className="rounded-2xl border border-border/60">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base">
+                  {order.po_type === PurchaseOrderType.DIRECT_SERVICE
+                    ? "Servicios Solicitados"
+                    : order.po_type === PurchaseOrderType.DIRECT_PURCHASE
+                    ? "Productos Solicitados"
+                    : "Artículos Solicitados"}
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {order.po_type === PurchaseOrderType.DIRECT_SERVICE ? (
+                  <ServiceItemsTable items={items} formatCurrency={formatCurrency} />
+                ) : (
+                  <ProductItemsTable
+                    items={items}
+                    inventoryItems={inventoryItems}
+                    purchaseItems={purchaseItems}
+                    hasQuotationItems={hasQuotationItems}
+                    formatCurrency={formatCurrency}
+                  />
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Quotation card */}
+          {order.po_type && order.po_purpose !== "work_order_inventory" && (
+            <Card className="rounded-2xl border border-border/60">
+              <CardHeader className="pb-2">
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <FileText className="h-4 w-4" />
+                  Cotización
+                  {order.requires_quote && (
+                    <Badge
+                      variant={order.quotation_url || order.selected_quotation_id ? "default" : "destructive"}
+                      className="rounded-full text-[10px]"
+                    >
+                      {order.quotation_url || order.selected_quotation_id ? "Completada" : "Requerida"}
+                    </Badge>
+                  )}
+                </CardTitle>
+                {order.requires_quote && (
+                  <CardDescription className="text-xs">
+                    {order.po_type === PurchaseOrderType.DIRECT_SERVICE
+                      ? `Servicio por ${formatCurrency(order.total_amount)} — requiere cotización (≥$5,000 MXN)`
+                      : "Esta orden requiere cotización antes de ser aprobada"}
+                  </CardDescription>
+                )}
+              </CardHeader>
+              <CardContent>
+                <QuotationComparisonManager
+                  purchaseOrderId={order.id}
+                  workOrderId={order.work_order_id}
+                  quotationSelectionRequired={order.quotation_selection_required || false}
+                  quotationSelectionStatus={order.quotation_selection_status}
+                  poPurpose={order.po_purpose}
+                />
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Receipts / Comprobantes card */}
+          {showReceiptsCard && (
+            <ReceiptDisplaySection purchaseOrderId={order.id} poType={order.po_type} />
+          )}
+        </div>
+
+        {/* ── Right sidebar (sticky on xl) ──────────────────────────────────── */}
+        <div className="lg:col-span-1 space-y-6 xl:sticky xl:top-4 xl:self-start">
+
+          {/* Workflow + Actions — PRIMARY */}
+          {order.po_type ? (
+            <WorkflowStatusDisplay
+              purchaseOrderId={order.id}
+              poType={order.po_type as PurchaseOrderType}
+              currentStatus={order.status}
+            />
+          ) : (
+            /* Legacy PO fallback */
+            <LegacyActionCard order={order} />
+          )}
+
+          {/* Work order relationship */}
+          <Card className="rounded-2xl border border-border/60">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm text-muted-foreground font-semibold uppercase tracking-widest">
+                Orden de Trabajo
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <PurchaseOrderWorkOrderLink
+                workOrder={workOrder}
+                isAdjustment={order.is_adjustment || false}
+              />
+            </CardContent>
+          </Card>
+
+          {/* Inventory actions */}
+          {hasCatalogItems && (
+            <Card className="rounded-2xl border border-border/60">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm text-muted-foreground font-semibold uppercase tracking-widest">
+                  Gestión de Inventario
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <POInventoryActions
+                  purchaseOrderId={order.id}
+                  receivedToInventory={order.received_to_inventory || false}
+                  inventoryFulfilled={order.inventory_fulfilled || false}
+                />
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      </div>
+
+      {/* Legacy receipt section */}
+      {!order.po_type && (
+        <div className="mt-2">
+          <ReceiptSection purchaseOrderId={order.id} isAdjustment={order.is_adjustment || false} />
+        </div>
       )}
     </div>
   )
@@ -838,12 +518,268 @@ async function PurchaseOrderDetailsContent({ id }: { id: string }) {
       <PurchaseOrderDetailsRouter
         order={order}
         workOrder={workOrder}
-        requesterName={requesterName}
-        approverName={approverName}
+        requesterName={requesterName ?? "No especificado"}
+        approverName={approverName ?? "No aprobado"}
         authorizerName={authorizerName}
         items={items}
         desktopContent={desktopContent}
       />
     </Suspense>
   )
+}
+
+// ─── Sub-components ───────────────────────────────────────────────────────────
+
+function InfoRow({
+  icon: Icon,
+  label,
+  value,
+  valueClass,
+}: {
+  icon: React.ElementType
+  label: string
+  value: string
+  valueClass?: string
+}) {
+  return (
+    <div className="flex items-start gap-3">
+      <Icon className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
+      <div className="flex-1 min-w-0">
+        <p className="text-xs text-muted-foreground">{label}</p>
+        <p className={cn("text-sm", valueClass)}>{value}</p>
+      </div>
+    </div>
+  )
+}
+
+function ServiceItemsTable({
+  items,
+  formatCurrency,
+}: {
+  items: any[]
+  formatCurrency: (v: string | null | number) => string
+}) {
+  return (
+    <div className="overflow-x-auto -mx-6 px-6">
+      <table className="w-full text-sm border-collapse">
+        <thead>
+          <tr className="border-b text-left">
+            <th className="pb-2 pr-4 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Descripción
+            </th>
+            <th className="pb-2 pr-4 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Categoría
+            </th>
+            <th className="pb-2 pr-4 text-xs font-semibold uppercase tracking-wider text-muted-foreground text-right">
+              Horas
+            </th>
+            <th className="pb-2 pr-4 text-xs font-semibold uppercase tracking-wider text-muted-foreground text-right">
+              Tarifa/h
+            </th>
+            <th className="pb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground text-right">
+              Total
+            </th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-border/40">
+          {items.map((s: any, i: number) => (
+            <tr key={i} className="hover:bg-muted/20 transition-colors">
+              <td className="py-2.5 pr-4">
+                <p className="font-medium">{s.description || "Sin descripción"}</p>
+                {s.specialist_required && (
+                  <Badge variant="secondary" className="mt-1 text-[10px]">
+                    Especialista
+                  </Badge>
+                )}
+              </td>
+              <td className="py-2.5 pr-4 text-muted-foreground">{s.category || "General"}</td>
+              <td className="py-2.5 pr-4 text-right tabular-num">
+                {s.estimated_hours ? `${Number(s.estimated_hours).toFixed(1)}h` : "—"}
+              </td>
+              <td className="py-2.5 pr-4 text-right tabular-num">
+                {formatCurrency(s.hourly_rate?.toString() || "0")}
+              </td>
+              <td className="py-2.5 text-right font-semibold tabular-num">
+                {formatCurrency(s.total_cost?.toString() || "0")}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+function ProductItemsTable({
+  items,
+  inventoryItems,
+  purchaseItems,
+  hasQuotationItems,
+  formatCurrency,
+}: {
+  items: any[]
+  inventoryItems: any[]
+  purchaseItems: any[]
+  hasQuotationItems: boolean
+  formatCurrency: (v: string | null | number) => string
+}) {
+  const hasMixed = inventoryItems.length > 0 || hasQuotationItems
+  return (
+    <div className="space-y-4">
+      {hasMixed && (
+        <div className="rounded-xl bg-muted/30 px-3 py-2.5 text-xs space-y-1">
+          {inventoryItems.length > 0 && (
+            <p className="flex items-center gap-2 text-muted-foreground">
+              <Warehouse className="h-3.5 w-3.5 text-green-600 shrink-0" />
+              <strong className="text-foreground">{inventoryItems.length} artículo(s) de inventario</strong>{" "}
+              — se cumplen desde almacén, sin impacto financiero directo
+            </p>
+          )}
+          {purchaseItems.length > 0 && (
+            <p className="flex items-center gap-2 text-muted-foreground">
+              <ShoppingCart className="h-3.5 w-3.5 text-orange-600 shrink-0" />
+              <strong className="text-foreground">{purchaseItems.length} artículo(s) a comprar</strong>{" "}
+              — requieren compra a proveedor
+            </p>
+          )}
+        </div>
+      )}
+      <div className="overflow-x-auto -mx-6 px-6">
+        <table className="w-full text-sm border-collapse">
+          <thead>
+            <tr className="border-b text-left">
+              <th className="pb-2 pr-4 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Descripción
+              </th>
+              <th className="pb-2 pr-4 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Código
+              </th>
+              {hasMixed && (
+                <th className="pb-2 pr-4 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  Fuente
+                </th>
+              )}
+              <th className="pb-2 pr-4 text-xs font-semibold uppercase tracking-wider text-muted-foreground text-right">
+                Cant.
+              </th>
+              <th className="pb-2 pr-4 text-xs font-semibold uppercase tracking-wider text-muted-foreground text-right">
+                P. Unit.
+              </th>
+              <th className="pb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground text-right">
+                Total
+              </th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border/40">
+            {items.map((item: any, i: number) => {
+              const isInv = item._source === "inventory" || item.fulfill_from === "inventory"
+              return (
+                <tr
+                  key={i}
+                  className={cn(
+                    "hover:bg-muted/20 transition-colors",
+                    isInv && "bg-green-50/40"
+                  )}
+                >
+                  <td className="py-2.5 pr-4 font-medium">
+                    {item.description || item.item || item.name || "Sin descripción"}
+                  </td>
+                  <td className="py-2.5 pr-4 text-muted-foreground text-xs">
+                    {item.part_number || item.partNumber || item.code || "—"}
+                  </td>
+                  {hasMixed && (
+                    <td className="py-2.5 pr-4">
+                      {isInv ? (
+                        <Badge
+                          variant="secondary"
+                          className="gap-1 rounded-full text-[10px] bg-green-100 text-green-800 border border-green-200"
+                        >
+                          <Warehouse className="h-2.5 w-2.5" />
+                          Inventario
+                        </Badge>
+                      ) : (
+                        <Badge
+                          variant="outline"
+                          className="gap-1 rounded-full text-[10px] text-orange-700 border-orange-200"
+                        >
+                          <ShoppingCart className="h-2.5 w-2.5" />
+                          Compra
+                        </Badge>
+                      )}
+                    </td>
+                  )}
+                  <td className="py-2.5 pr-4 text-right tabular-num">{item.quantity || 1}</td>
+                  <td className="py-2.5 pr-4 text-right tabular-num text-muted-foreground">
+                    {isInv ? "—" : formatCurrency(item.unit_price?.toString() || item.price?.toString() || "0")}
+                  </td>
+                  <td className={cn("py-2.5 text-right font-semibold tabular-num", isInv && "text-green-700")}>
+                    {formatCurrency(
+                      item.total_price?.toString() ||
+                        (item.quantity * (item.unit_price || item.price || 0)).toString()
+                    )}
+                    {isInv && (
+                      <span className="text-[10px] text-muted-foreground font-normal ml-1">
+                        (sin impacto)
+                      </span>
+                    )}
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+function LegacyActionCard({ order }: { order: any }) {
+  switch (order.status) {
+    case "pending_approval":
+      return (
+        <Card className="rounded-2xl border border-border/60">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm text-muted-foreground font-semibold uppercase tracking-widest">
+              Acciones
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-3">
+            <Button asChild variant="secondary" className="w-full">
+              <Link href={`/compras/${order.id}/aprobar`}>Aprobar Orden</Link>
+            </Button>
+            <Button asChild variant="destructive" className="w-full">
+              <Link href={`/compras/${order.id}/rechazar`}>Rechazar Orden</Link>
+            </Button>
+          </CardContent>
+        </Card>
+      )
+    case "approved":
+      return (
+        <Card className="rounded-2xl border border-border/60">
+          <CardContent className="pt-4">
+            <Button asChild className="w-full">
+              <Link href={`/compras/${order.id}/pedido`}>
+                <ShoppingCart className="mr-2 h-4 w-4" />
+                Marcar como Pedida
+              </Link>
+            </Button>
+          </CardContent>
+        </Card>
+      )
+    case "ordered":
+      return (
+        <Card className="rounded-2xl border border-border/60">
+          <CardContent className="pt-4">
+            <Button asChild className="w-full">
+              <Link href={`/compras/${order.id}/recibido`}>
+                <Package className="mr-2 h-4 w-4" />
+                Registrar Recepción
+              </Link>
+            </Button>
+          </CardContent>
+        </Card>
+      )
+    default:
+      return null
+  }
 }

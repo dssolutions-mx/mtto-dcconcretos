@@ -449,6 +449,20 @@ export function WorkflowStatusDisplay({
     return buttonTexts[poType]?.[action] || `Avanzar a ${action}`
   }
 
+  // Stage-aware label for the "approve" action — used in button + action card header
+  const getStageAwareApprovalLabel = (workflowStage: string): { label: string; description: string } => {
+    switch (workflowStage) {
+      case "Validación técnica":
+        return { label: "Dar validación técnica", description: "Como Gerente de Mantenimiento" }
+      case "Viabilidad administrativa":
+        return { label: "Registrar viabilidad", description: "Como Área Administrativa" }
+      case "Aprobación final":
+        return { label: "Dar aprobación final", description: "Como Gerencia General — aprobación final" }
+      default:
+        return { label: "Aprobar", description: "Continuar con la aprobación" }
+    }
+  }
+
   // Helper function to get notes placeholder
   const getNotesPlaceholder = (action: string): string => {
     const placeholders: Record<string, string> = {
@@ -1130,66 +1144,87 @@ export function WorkflowStatusDisplay({
                 )}
               </div>
 
-              {/* 3-step approval chain - only when amount requires GM (2-step) or path has viability */}
-              {(needsGMEscalation || requiresViability) && (
-                <div className="space-y-2 pt-2 border-t">
-                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Pasos de aprobación</p>
-                  <div className="space-y-2">
-                    {/* Step 1: Technical (Gerente Mantenimiento) */}
-                    <div className="flex items-center gap-3">
-                      <div className={`h-6 w-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
-                        hasTechnicalApproval ? 'bg-green-100 text-green-700' : 'bg-muted text-muted-foreground'
-                      }`}>
-                        {hasTechnicalApproval ? '✓' : '1'}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <span className="text-sm font-medium">Gerente de Mantenimiento</span>
-                        <span className="text-xs text-muted-foreground block">{hasTechnicalApproval ? 'Completado' : 'Pendiente'}</span>
-                      </div>
-                      {hasTechnicalApproval && <CheckCircle className="h-4 w-4 text-green-600 shrink-0" />}
-                    </div>
-
-                    {/* Step 2: Viability - only when path requires it */}
-                    {requiresViability && (
+              {/* Approval chain — always visible so users know exactly where this PO is in the flow */}
+              <div className="space-y-2 pt-2 border-t">
+                <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">Pasos de aprobación</p>
+                <div className="space-y-2.5">
+                  {/* Step 1: Technical (Gerente Mantenimiento) */}
+                  {(() => {
+                    const isActive = approvalContext?.workflowStage === "Validación técnica"
+                    const isDone = hasTechnicalApproval
+                    const stepNum = 1
+                    return (
                       <div className="flex items-center gap-3">
                         <div className={`h-6 w-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
-                          hasViability ? 'bg-green-100 text-green-700' : hasTechnicalApproval ? 'bg-muted text-muted-foreground' : 'bg-muted/50 text-muted-foreground/50'
+                          isDone ? 'bg-green-100 text-green-700' : isActive ? 'bg-sky-100 text-sky-700 ring-2 ring-sky-300' : 'bg-muted text-muted-foreground'
                         }`}>
-                          {hasViability ? '✓' : '2'}
+                          {isDone ? '✓' : stepNum}
                         </div>
                         <div className="flex-1 min-w-0">
-                          <span className="text-sm font-medium">Viabilidad administrativa</span>
+                          <span className={`text-sm font-medium ${isActive ? 'text-sky-700' : ''}`}>Gerente de Mantenimiento</span>
                           <span className="text-xs text-muted-foreground block">
-                            {hasViability ? 'Viable' : viabilityState === 'not_viable' ? 'No viable' : 'Pendiente'}
+                            {isDone ? 'Completado' : isActive ? 'Etapa actual' : 'Pendiente'}
                           </span>
                         </div>
-                        {hasViability && <CheckCircle className="h-4 w-4 text-green-600 shrink-0" />}
+                        {isDone && <CheckCircle className="h-4 w-4 text-green-600 shrink-0" />}
                       </div>
-                    )}
+                    )
+                  })()}
 
-                    {/* Final step: GM approval (step 3 if viability required, else step 2) */}
-                    <div className="flex items-center gap-3">
-                      <div className={`h-6 w-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
-                        (requiresViability ? hasViability : hasTechnicalApproval) ? 'bg-blue-100 text-blue-700' : 'bg-muted/50 text-muted-foreground/50'
-                      }`}>
-                        {requiresViability ? '3' : '2'}
+                  {/* Step 2: Viability — only when path requires it */}
+                  {requiresViability && (() => {
+                    const isActive = approvalContext?.workflowStage === "Viabilidad administrativa"
+                    const isDone = hasViability
+                    const isLocked = !hasTechnicalApproval && !isDone
+                    const stepNum = 2
+                    return (
+                      <div className="flex items-center gap-3">
+                        <div className={`h-6 w-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
+                          isDone ? 'bg-green-100 text-green-700' : isActive ? 'bg-amber-100 text-amber-700 ring-2 ring-amber-300' : isLocked ? 'bg-muted/50 text-muted-foreground/50' : 'bg-muted text-muted-foreground'
+                        }`}>
+                          {isDone ? '✓' : stepNum}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <span className={`text-sm font-medium ${isActive ? 'text-amber-700' : ''}`}>Área Administrativa</span>
+                          <span className="text-xs text-muted-foreground block">
+                            {isDone ? 'Viable' : viabilityState === 'not_viable' ? 'No viable' : isActive ? 'Etapa actual — registrar viabilidad' : isLocked ? 'Bloqueado' : 'Pendiente'}
+                          </span>
+                        </div>
+                        {isDone && <CheckCircle className="h-4 w-4 text-green-600 shrink-0" />}
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <span className="text-sm font-medium">Gerencia General</span>
-                        <span className="text-xs text-muted-foreground block">
-                          {(requiresViability && !hasViability) || (!requiresViability && !hasTechnicalApproval) ? 'Bloqueado' : 'Pendiente aprobación final'}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
+                    )
+                  })()}
 
-                  {profile?.role === 'GERENCIA_GENERAL' && !hasTechnicalApproval && (
-                    <p className="text-xs text-muted-foreground mt-2">
-                      Puedes aprobar directamente, pero se recomienda esperar al Gerente de Mantenimiento.
-                    </p>
-                  )}
+                  {/* Final step: GM approval — only when amount triggers escalation */}
+                  {needsGMEscalation && (() => {
+                    const isActive = approvalContext?.workflowStage === "Aprobación final"
+                    const prerequisiteMet = requiresViability ? hasViability : hasTechnicalApproval
+                    const isLocked = !prerequisiteMet && !isActive
+                    const stepNum = requiresViability ? 3 : 2
+                    return (
+                      <div className="flex items-center gap-3">
+                        <div className={`h-6 w-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
+                          isActive ? 'bg-emerald-100 text-emerald-700 ring-2 ring-emerald-300' : isLocked ? 'bg-muted/50 text-muted-foreground/50' : 'bg-muted text-muted-foreground'
+                        }`}>
+                          {stepNum}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <span className={`text-sm font-medium ${isActive ? 'text-emerald-700' : ''}`}>Gerencia General</span>
+                          <span className="text-xs text-muted-foreground block">
+                            {isActive ? 'Etapa actual — aprobación final' : isLocked ? 'Bloqueado' : 'Pendiente aprobación final'}
+                          </span>
+                        </div>
+                      </div>
+                    )
+                  })()}
                 </div>
-              )}
+
+                {profile?.role === 'GERENCIA_GENERAL' && !hasTechnicalApproval && (
+                  <p className="text-xs text-muted-foreground mt-2">
+                    Puedes aprobar directamente, pero se recomienda esperar al Gerente de Mantenimiento.
+                  </p>
+                )}
+              </div>
             </>
           )}
         </CardContent>
@@ -1391,22 +1426,29 @@ export function WorkflowStatusDisplay({
                         </Alert>
                       )}
 
-                      {/* Action Button */}
-                      <Card className="border-2 border-primary/20 bg-primary/5">
-                        <CardContent className="p-4">
-                          <div className="flex items-center space-x-3">
-                            <div className={`p-3 rounded-lg ${actionConfig.color.replace('text-', 'bg-').replace('-700', '-200')}`}>
-                              <ActionIcon className="h-6 w-6" />
-                            </div>
-                            <div className="flex-1">
-                              <h4 className="font-semibold text-lg">{actionConfig.label}</h4>
-                              <p className="text-sm text-muted-foreground">
-                                {actionConfig.description}
-                              </p>
-                            </div>
-                          </div>
-                        </CardContent>
-                      </Card>
+                      {/* Action Card — stage-aware for approval steps */}
+                      {(() => {
+                        const stageLabel = isApprovalAction && approvalContext?.workflowStage
+                          ? getStageAwareApprovalLabel(approvalContext.workflowStage)
+                          : null
+                        const displayLabel = stageLabel?.label ?? actionConfig.label
+                        const displayDesc = stageLabel?.description ?? actionConfig.description
+                        return (
+                          <Card className="border-2 border-primary/20 bg-primary/5">
+                            <CardContent className="p-4">
+                              <div className="flex items-center space-x-3">
+                                <div className={`p-3 rounded-lg ${actionConfig.color.replace('text-', 'bg-').replace('-700', '-200')}`}>
+                                  <ActionIcon className="h-6 w-6" />
+                                </div>
+                                <div className="flex-1">
+                                  <h4 className="font-semibold text-base">{displayLabel}</h4>
+                                  <p className="text-xs text-muted-foreground mt-0.5">{displayDesc}</p>
+                                </div>
+                              </div>
+                            </CardContent>
+                          </Card>
+                        )
+                      })()}
 
                   {/* File upload and amount update section for receipt (not for inventory POs) */}
                   {primaryAction === 'receipt_uploaded' && poPurpose !== 'work_order_inventory' && (
@@ -1548,7 +1590,9 @@ export function WorkflowStatusDisplay({
                           </>
                         ) : (
                           <>
-                            {getActionButtonText(primaryAction, poType, poPurpose)}
+                            {isApprovalAction && approvalContext?.workflowStage
+                              ? getStageAwareApprovalLabel(approvalContext.workflowStage).label
+                              : getActionButtonText(primaryAction, poType, poPurpose)}
                             <ArrowRight className="ml-2 h-4 w-4" />
                           </>
                         )}
@@ -1615,26 +1659,27 @@ export function WorkflowStatusDisplay({
         </Card>
       )}
 
-      {/* Pending approval but user cannot act - show who is responsible (same as mobile list) */}
+      {/* Pending approval but user cannot act — clear waiting state */}
       {currentStatus === 'pending_approval' &&
        approvalContext &&
        !approvalContext.canApprove &&
        !approvalContext.canRecordViability && (
         <Card>
-          <CardContent className="py-6">
-            <Alert className="border-amber-200 bg-amber-50">
-              <Clock className="h-4 w-4 text-amber-600" />
-              <AlertDescription>
-                <span className="font-medium text-amber-900">
-                  {approvalContext.responsibleRole
-                    ? `En espera de ${approvalContext.responsibleRole}`
-                    : approvalContext.nextStep || 'No hay acciones disponibles para ti en este momento.'}
-                </span>
-                {approvalContext.reason && (
-                  <p className="mt-1 text-sm text-amber-800">{approvalContext.reason}</p>
+          <CardContent className="p-4">
+            <div className="flex items-start gap-3 rounded-xl bg-amber-50 border border-amber-200 px-4 py-3.5">
+              <Clock className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-amber-900">En espera de acción externa</p>
+                {approvalContext.responsibleRole && (
+                  <p className="text-xs text-amber-800 mt-0.5">
+                    Pendiente de: <span className="font-medium">{approvalContext.responsibleRole}</span>
+                  </p>
                 )}
-              </AlertDescription>
-            </Alert>
+                {approvalContext.reason && (
+                  <p className="text-xs text-amber-700 mt-1">{approvalContext.reason}</p>
+                )}
+              </div>
+            </div>
           </CardContent>
         </Card>
       )}
