@@ -1,59 +1,30 @@
-# Weekly release habit (semver + GitHub Releases)
+# Release rhythm (one semver line on `main`)
 
-Ship a **versioned** GitHub Release each week so the **Releases** page matches common industry practice: [Semantic Versioning](https://semver.org/), [Keep a Changelog](https://keepachangelog.com/) in [`CHANGELOG.md`](../CHANGELOG.md), and structured sections (**Added** / **Changed** / **Fixed** / **Security** / …).
+Everything public uses **normal SemVer** on the **`0.x.0` minor line**: **`v0.1.0`** was the first full month on `main` (May 2025), and each following month through **`v0.11.0`** (March 2026) is the next minor. **Patch** (`0.11.1`, …) is for intra-month fixes if you ever need it.
 
-## 1. Update the changelog
+**Why `0.10.0` and not `0.1` vs `0.01`?** SemVer compares **numeric** components: **`0.10.0` comes after `0.9.0`**. A string like `0.09` is ambiguous and sorts wrong in tooling—three-part versions keep GitHub, npm, and `sort -V` aligned.
 
-Edit [`CHANGELOG.md`](../CHANGELOG.md):
+[`CHANGELOG.md`](../CHANGELOG.md) is the source of truth: each version has a **short narrative summary** (what moved for the *product*) plus grouped **Added / Changed / Fixed / Security**—not a raw commit dump.
 
-1. Move content from `[Unreleased]` into a new section `## [0.x.y] - YYYY-MM-DD`.
-2. Group bullets under the standard headings (Added, Changed, Fixed, Deprecated, Removed, Security).
-3. Add compare links at the bottom (`[0.x.y]: …compare/v…`).
-
-Bump **`package.json`** `version` to match the release you are cutting (same `0.x.y`).
-
-## 2. Commit
+## Cut a new month (after the month closes on `main`)
 
 ```bash
+git fetch origin main
+# 1) Edit CHANGELOG.md — new ## [0.12.0] - YYYY-MM-DD with Summary + sections
+# 2) Bump package.json version to match
 git add CHANGELOG.md package.json
-git commit -m "chore(release): v0.x.y"
+git commit -m "chore(release): v0.12.0"
+git tag -a v0.12.0 -m "Release v0.12.0"
+git push origin main && git push origin v0.12.0
+python3 scripts/extract-changelog-section.py 0.12.0 > /tmp/notes.md
+gh release create v0.12.0 \
+  --title "v0.12.0 — <one-line story>" \
+  --notes-file /tmp/notes.md \
+  --latest
 ```
 
-## 3. Tag (annotated) at that commit
+Optional: prepend a **compare link** to the notes file (`v0.11.0…v0.12.0`).
 
-```bash
-git tag -a v0.x.y -m "Release v0.x.y"
-git push origin v0.x.y
-```
+## Published range (backfill on GitHub)
 
-## 4. Publish the GitHub Release (structured notes from CHANGELOG)
-
-```bash
-python3 scripts/extract-changelog-section.py 0.x.y > /tmp/release-notes.md
-gh release create "v0.x.y" \
-  --title "v0.x.y — <short product headline>" \
-  --notes-file /tmp/release-notes.md
-```
-
-GitHub attaches the release to tag `v0.x.y` (create the tag first, as above).
-
----
-
-## Published versions (backfill)
-
-| Version | Week (end) | Compare |
-|--------|------------|---------|
-| [v0.2.0](https://github.com/dssolutions-mx/mtto-dcconcretos/releases/tag/v0.2.0) | 2026-03-05 | tooling / scripts |
-| [v0.3.0](https://github.com/dssolutions-mx/mtto-dcconcretos/releases/tag/v0.3.0) | 2026-03-12 | PO workflow, RLS, checklists, activos, WO page |
-| [v0.4.0](https://github.com/dssolutions-mx/mtto-dcconcretos/releases/tag/v0.4.0) | 2026-03-19 | WO/incidents, security, PO UX, calendar |
-
-Short celebratory line for yourself: three minors in a row is a lot of surface area shipped—keep the changelog honest and you’ll see the arc.
-
----
-
-## Monthly snapshots (full history on `main`)
-
-Tags **`monthly-YYYY-MM`** mark the **last commit on `main`** inside each calendar month (America/Chicago `-06:00` month boundaries). Each has a GitHub Release titled **Monthly · May 2025** style (full month name + year) with **Added / Changed / Fixed / Security / Removed** bullets derived from commit subjects (heuristic — good for archaeology, not a substitute for semver notes).
-
-- **Living document:** [`docs/release-history-monthly.md`](release-history-monthly.md) (regenerate anytime with `python3 scripts/monthly-release-history.py --write-docs` after `git fetch origin main`).
-- **Script:** [`scripts/monthly-release-history.py`](../scripts/monthly-release-history.py) (`--tip YYYY-MM`, `--print-notes YYYY-MM`).
+Releases **`v0.1.0` … `v0.11.0`** on GitHub match the tags on **`main`** at each month-end snapshot (same commits the old `monthly-*` tags used). **Latest** should stay on the highest minor unless you ship a pre-release.
