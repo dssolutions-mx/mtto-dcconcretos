@@ -1,43 +1,50 @@
-# Weekly release log
+# Weekly release habit (semver + GitHub Releases)
 
-**What shows up under GitHub → Releases** is a *GitHub Release*, not the tag list. Tags are just the pointer GitHub attaches each release to (you can create both in one go — see below).
+Ship a **versioned** GitHub Release each week so the **Releases** page matches common industry practice: [Semantic Versioning](https://semver.org/), [Keep a Changelog](https://keepachangelog.com/) in [`CHANGELOG.md`](../CHANGELOG.md), and structured sections (**Added** / **Changed** / **Fixed** / **Security** / …).
 
-This file is your **in-repo scrapbook**: same energy as the release notes, plus a place to skim past weeks without opening the browser.
+## 1. Update the changelog
 
-## Rhythm (end of each week)
+Edit [`CHANGELOG.md`](../CHANGELOG.md):
 
-**One command** — creates the tag on GitHub *and* publishes the release (replace date, title, notes, and target commit):
+1. Move content from `[Unreleased]` into a new section `## [0.x.y] - YYYY-MM-DD`.
+2. Group bullets under the standard headings (Added, Changed, Fixed, Deprecated, Removed, Security).
+3. Add compare links at the bottom (`[0.x.y]: …compare/v…`).
 
-```bash
-gh release create release-2026-03-26 \
-  --target "$(git rev-parse HEAD)" \
-  --title "Weekly release · week ending 2026-03-26 — <short vibe>" \
-  --notes "<Celebratory paragraph: what shipped, why it matters.>"
-```
+Bump **`package.json`** `version` to match the release you are cutting (same `0.x.y`).
 
-Then optionally append a new section below for that week so the repo stays a readable diary.
-
-**If you already created the tag locally:**
+## 2. Commit
 
 ```bash
-git push origin release-YYYY-MM-DD
-gh release create release-YYYY-MM-DD --title "…" --notes "…"
+git add CHANGELOG.md package.json
+git commit -m "chore(release): v0.x.y"
 ```
 
+## 3. Tag (annotated) at that commit
+
+```bash
+git tag -a v0.x.y -m "Release v0.x.y"
+git push origin v0.x.y
+```
+
+## 4. Publish the GitHub Release (structured notes from CHANGELOG)
+
+```bash
+python3 scripts/extract-changelog-section.py 0.x.y > /tmp/release-notes.md
+gh release create "v0.x.y" \
+  --title "v0.x.y — <short product headline>" \
+  --notes-file /tmp/release-notes.md
+```
+
+GitHub attaches the release to tag `v0.x.y` (create the tag first, as above).
+
 ---
 
-## 2026-03-05 — week Feb 27 → Mar 5 ([Release](https://github.com/dssolutions-mx/mtto-dcconcretos/releases/tag/release-2026-03-05))
+## Published versions (backfill)
 
-**You turned ambiguity into scripts.** Diesel audit for P004 / P004P, BP04 asset analysis tooling, and a classify-February-expenses script — not flashy in the UI, but exactly the kind of work that stops spreadsheets from living rent-free in your head. That counts.
+| Version | Week (end) | Compare |
+|--------|------------|---------|
+| [v0.2.0](https://github.com/dssolutions-mx/mtto-dcconcretos/releases/tag/v0.2.0) | 2026-03-05 | tooling / scripts |
+| [v0.3.0](https://github.com/dssolutions-mx/mtto-dcconcretos/releases/tag/v0.3.0) | 2026-03-12 | PO workflow, RLS, checklists, activos, WO page |
+| [v0.4.0](https://github.com/dssolutions-mx/mtto-dcconcretos/releases/tag/v0.4.0) | 2026-03-19 | WO/incidents, security, PO UX, calendar |
 
----
-
-## 2026-03-12 — week Mar 6 → Mar 12 ([Release](https://github.com/dssolutions-mx/mtto-dcconcretos/releases/tag/release-2026-03-12))
-
-**This is a “everything moved” week.** Roles and PO routing aligned with a real workflow engine; supplier depth (contacts, banking, multi-BU); warehouse responsibility + RLS where it hurts; approval batch mode that actually feels fast; compras and PO mobile polish; checklist dashboards and a full template-creation wizard; preventive maintenance ported; activos went through real mobile phases; production report and the work orders page landed. If you were tired at the end of this week, it’s because you earned it.
-
----
-
-## 2026-03-19 — week Mar 13 → Mar 19 ([Release](https://github.com/dssolutions-mx/mtto-dcconcretos/releases/tag/release-2026-03-19))
-
-**Security, structure, and operator-visible wins.** Authorization refactors, risky dependency cleanup, work-order list API + indexes, work-order refactor and print polish, incidents page and API, breadcrumb/sidebar improvements, calendar and storage work, richer PO UI with status labels, workflow fixes, and a **ready-to-pay** signal so finance moments aren’t guesswork. You’re shipping the boring-critical stuff *and* the features people notice.
+Short celebratory line for yourself: three minors in a row is a lot of surface area shipped—keep the changelog honest and you’ll see the arc.
