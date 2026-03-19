@@ -540,7 +540,7 @@ serve(async (req) => {
         expires_at: new Date(Date.now() + 24 * 3600 * 1000).toISOString(),
       })
       const rejectUrl = `${baseUrl}/api/purchase-order-actions/direct-action?po=${po.id}&action=reject&email=${encodeURIComponent(r.email)}`
-      const viewUrl = `${baseUrl}/compras?po=${po.id}`
+      const viewUrl = `${baseUrl}/compras/${po.id}`
 
       let approveUrl = `${baseUrl}/api/purchase-order-actions/direct-action?po=${po.id}&action=approve&email=${encodeURIComponent(r.email)}`
       const approveByQuotation: Array<{ quotationId: string; supplierName: string; url: string }> = []

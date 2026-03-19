@@ -20,6 +20,14 @@ function ResultContent() {
         color: 'border-green-200 bg-green-50'
       }
     }
+    if (action === 'viability_recorded') {
+      return {
+        title: 'Viabilidad financiera registrada',
+        subtitle: `La viabilidad financiera de la orden${po ? ` ${po}` : ''} fue confirmada. Se notificará al siguiente nivel de aprobación.`,
+        icon: <CheckCircle size={48} className="text-green-600" />,
+        color: 'border-green-200 bg-green-50'
+      }
+    }
     if (action === 'rejected') {
       return {
         title: 'Orden de compra rechazada',

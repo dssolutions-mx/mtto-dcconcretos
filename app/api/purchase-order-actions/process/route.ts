@@ -47,7 +47,7 @@ export async function GET(request: NextRequest) {
 
     // Allow different shapes from the RPC result
     const result: any = data
-    const success: boolean = result === true || result?.success === true || (typeof result?.status === 'string' && ['approved','rejected'].includes(result.status))
+    const success: boolean = result === true || result?.success === true || (typeof result?.status === 'string' && ['approved','rejected','viability_recorded','pending_approval'].includes(result.status))
     const po_id: string | undefined = result?.po_id || tokenPoId
     const status: string | undefined = result?.status
     const message: string | undefined = result?.message || result?.error
@@ -55,8 +55,11 @@ export async function GET(request: NextRequest) {
     const dest = new URL('/compras/accion-po', url.origin)
     if (success) {
       if (po_id) dest.searchParams.set('po', po_id)
-      if (status === 'approved' || status === 'rejected') dest.searchParams.set('action', status)
-      else dest.searchParams.set('action', 'ok')
+      if (status === 'approved' || status === 'rejected' || status === 'viability_recorded') {
+        dest.searchParams.set('action', status)
+      } else {
+        dest.searchParams.set('action', 'ok')
+      }
       return NextResponse.redirect(dest)
     }
 

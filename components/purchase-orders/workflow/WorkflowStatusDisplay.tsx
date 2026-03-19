@@ -1080,15 +1080,17 @@ export function WorkflowStatusDisplay({
   const isPreventivePO =
     rawWorkOrderType === 'preventive' || rawWorkOrderType === 'preventivo'
 
-  // Three-tier escalation check — most authoritative wins:
+  // Two-tier escalation check — most authoritative wins:
   // 1. Server-computed policy flag (authoritative once workflowStatus loads — uses approval_amount + full path logic)
   // 2. Client-side policy math from server-provided props (available immediately on first render)
-  // 3. Approval-context stage fallback (if we're already AT the GG stage, it must require it)
+  //
+  // NOTE: We intentionally do NOT use workflowStage === "Aprobación final" here.
+  // "Aprobación final" applies to BOTH <$7k POs (Admin/CxP) AND ≥$7k POs (GG).
+  // Using the stage alone would incorrectly mark every final-step PO as requiring GG.
   const serverRequiresGM = workflowStatus?.purchase_order?.workflow_policy?.requires_gm_if_above_threshold
   const needsGMEscalation =
     serverRequiresGM === true ||
-    (!isPreventivePO && purchaseOrderAmount >= 7000) ||
-    approvalContext?.workflowStage === "Aprobación final"
+    (!isPreventivePO && purchaseOrderAmount >= 7000)
 
   return (
     <div className={`space-y-6 ${className}`}>
