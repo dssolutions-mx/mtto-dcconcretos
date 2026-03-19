@@ -95,4 +95,4 @@ Weekly milestone: operational data scripts and audits (tooling-first).
 [Unreleased]: https://github.com/dssolutions-mx/mtto-dcconcretos/compare/v0.4.0...HEAD
 [0.4.0]: https://github.com/dssolutions-mx/mtto-dcconcretos/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/dssolutions-mx/mtto-dcconcretos/compare/v0.2.0...v0.3.0
-[0.2.0]: https://github.com/dssolutions-mx/mtto-dcconcretos/releases/tag/v0.2.0
+[0.2.0]: https://github.com/dssolutions-mx/mtto-dcconcretos/compare/7b975e30fd675794c8d5e5bf723b83bac8f3c74e...v0.2.0
