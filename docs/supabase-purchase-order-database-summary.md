@@ -1,196 +1,181 @@
 # Supabase Purchase Order & Email System — Database Summary
 
-**Project:** mantenimiento (`txapndpstzcspgxlybll`)  
-**Generated:** 2025-03-18
+**Project (live):** mantenimiento — Supabase ref `txapndpstzcspgxlybll`  
+**Verified:** metadata queried directly from this project’s Postgres (`pg_trigger`, `pg_get_functiondef`, `information_schema`, `pg_constraint`, `app_settings`).  
+**Verified at:** 2026-03-19 (America/Mexico City)
+
+**Narrative workflow (OT → OC → aprobaciones → inventario):** [INVENTORY_PO_WORKFLOW_SOURCE_OF_TRUTH.md](./INVENTORY_PO_WORKFLOW_SOURCE_OF_TRUTH.md)
+
+**Note:** The git repo’s `migrations/sql/` folder can lag behind or diverge from this database (e.g. quotation triggers exist **here** but are not all checked into that folder). **This document reflects the live database only.**
 
 ---
 
-## 1. Database Objects Overview
+## 1. Tables (scope of this summary)
 
-### Tables Related to Purchase Orders / Compras
-
-| Table | Purpose |
-|-------|---------|
-| `purchase_orders` | Main PO table; workflow status, approval chain, payment tracking |
-| `purchase_order_quotations` | Supplier quotations linked to a PO; selection/approval flow |
-| `po_action_tokens` | JWT tokens for email-based approve/reject actions |
-| `notifications` | In-app notifications and email send audit logs |
-
----
-
-## 2. Purchase Order Schema (Status & Approval Columns)
-
-### `purchase_orders`
-
-| Column | Type | Purpose |
-|--------|------|---------|
-| `id` | uuid | PK |
-| `order_id` | text | Human-readable PO number |
-| `status` | text | Workflow status (default: `'Pendiente'`) |
-| `viability_state` | text | Admin viability confirmation (`'viable'` = approved) |
-| `viability_checked_by` | uuid | Admin who confirmed viability |
-| `authorized_by` | uuid | BU/technical approver (Gerente Mantenimiento) |
-| `authorization_date` | timestamptz | When BU authorized |
-| `approved_by` | uuid | Final approver (Gerencia General) |
-| `approval_date` | timestamptz | When final approval occurred |
-| `approval_amount` | numeric | Amount used for approval threshold |
-| `approval_amount_source` | text | Source of approval amount |
-| `requested_by` | uuid | Requester |
-| `requires_approval` | boolean | Whether approval is needed |
-| `requires_quote` | boolean | Whether quotation is required |
-| `quotation_selection_required` | boolean | Multiple quotes need selection |
-| `quotation_selection_status` | text | `'not_required'`, `'pending'`, etc. |
-| `selected_quotation_id` | uuid | FK to chosen quotation |
-| `payment_status` | text | `'paid'`, `'pending'`, `'overdue'`, etc. |
-| `enhanced_status` | text | Extended status label |
-
-Other columns: `total_amount`, `supplier`, `supplier_id`, `items` (jsonb), `po_type`, `po_purpose`, `work_order_type`, `plant_id`, etc.
-
-### `purchase_order_quotations`
-
-| Column | Type | Purpose |
-|--------|------|---------|
-| `id` | uuid | PK |
-| `purchase_order_id` | uuid | FK to `purchase_orders` |
-| `status` | text | `'pending'`, `'selected'`, `'rejected'` (default: `'pending'`) |
-| `selected_at` | timestamptz | When selected |
-| `selected_by` | uuid | Who selected |
-| `selection_reason` | text | Reason for selection |
-| `rejection_reason` | text | Reason if rejected |
-
-Other columns: `supplier_name`, `supplier_id`, `quoted_amount`, `quotation_items` (jsonb), etc.
-
-### `po_action_tokens`
-
-| Column | Type | Purpose |
-|--------|------|---------|
-| `purchase_order_id` | uuid | PO reference |
-| `recipient_email` | text | Email recipient |
-| `recipient_user_id` | uuid | Optional user ID |
-| `action` | text | `'approve'` or `'reject'` |
-| `quotation_id` | uuid | For approve-with-quotation |
-| `jwt_token` | text | Signed token for link |
-| `expires_at` | timestamptz | Token expiry |
+| Table | Role |
+|-------|------|
+| `purchase_orders` | OC principal |
+| `purchase_order_quotations` | Cotizaciones estructuradas |
+| `po_action_tokens` | Tokens para acciones por correo |
+| `notifications` | Auditoría / notificaciones (incl. encolado de Edge Functions) |
+| `app_settings` | URLs y secretos para `pg_net` → Edge Functions |
 
 ---
 
-## 3. Triggers on Purchase Order Tables
+## 2. `purchase_orders` — constraints and defaults (live)
 
-### Triggers firing on status / approval changes
+- **`status` default:** `'Pendiente'::text` (`information_schema.columns`).
+- **`quotation_selection_status` CHECK** (`purchase_orders_quotation_selection_status_check`):  
+  allowed values — `not_required`, `pending_quotations`, `pending_selection`, `selected`.
 
-| Trigger | Table | Fires On | Function | Purpose |
-|---------|-------|----------|----------|---------|
-| **`trg_notify_po_pending_approval`** | `purchase_orders` | `AFTER INSERT OR UPDATE OF status, authorized_by, viability_state` | `notify_po_pending_approval` | Calls Edge Function to send approval emails |
-| **`trigger_notify_purchase_order_update`** | `purchase_orders` | `AFTER INSERT OR UPDATE OF status` | `notify_purchase_order_update` | Inserts in-app notification for requester |
-| **`trigger_po_quotations_status_update`** | `purchase_order_quotations` | `AFTER INSERT OR DELETE OR UPDATE` | `trigger_update_quotation_selection_status` | Updates PO `quotation_selection_status` |
-
-### Other purchase-order-related triggers
-
-| Trigger | Table | Fires On | Function | Purpose |
-|---------|-------|----------|----------|---------|
-| `trigger_validate_po_status` | `purchase_orders` | `BEFORE UPDATE` | `validate_po_status` | Validates quotation requirements |
-| `trigger_set_requires_quote` | `purchase_orders` | `BEFORE INSERT OR UPDATE` | `set_requires_quote` | Sets `requires_quote` based on po_type/amount |
-| `trigger_update_payment_status` | `purchase_orders` | `BEFORE INSERT OR UPDATE` | `update_payment_status` | Derives `payment_status` from payment fields |
-| `trigger_auto_select_single_quotation` | `purchase_order_quotations` | `AFTER INSERT` | `auto_select_single_quotation` | Auto-selects when only 1 quotation |
-| `trigger_notify_quotation_selection` | `purchase_order_quotations` | `AFTER INSERT` | `notify_quotation_selection_required` | When 2 quotations exist, invokes quotation-selection Edge Function |
-| `set_user_fields` | `purchase_orders` | `BEFORE INSERT OR UPDATE` | `set_user_tracking_fields` | Sets `updated_by` |
-| `trg_generate_purchase_order_id` | `purchase_orders` | `BEFORE INSERT` | `generate_purchase_order_id_trigger` | Generates `order_id` |
-| `set_purchase_order_id_trigger` | `purchase_orders` | `BEFORE INSERT` | `set_purchase_order_id` | Sets PO id |
-| `po_delete_inventory_check` | `purchase_orders` | `BEFORE DELETE` | `prevent_po_delete_with_inventory` | Blocks delete if inventory fulfilled |
+Other columns (approval routing, amounts, `po_purpose`, `work_order_type`, inventory flags, etc.) follow the same semantics as in [INVENTORY_PO_WORKFLOW_SOURCE_OF_TRUTH.md](./INVENTORY_PO_WORKFLOW_SOURCE_OF_TRUTH.md); use `information_schema.columns` for exact types.
 
 ---
 
-## 4. Function Logic Summary
+## 3. Triggers on `public.purchase_orders` (live)
 
-### `notify_po_pending_approval` (SECURITY DEFINER)
-
-**Logic:**  
-- Reads `edge_po_notify_url` and `edge_bearer` from `app_settings`.  
-- **Triggers notification when:**
-  - INSERT with `status = 'pending_approval'`
-  - UPDATE: `authorized_by` set and `status = 'pending_approval'` and `total_amount > 5000` (escalation to GM)
-  - UPDATE: `viability_state = 'viable'` and `authorized_by` set and `status = 'pending_approval'`
-  - UPDATE: `status` changes to `'pending_approval'`  
-- **Action:** Calls Edge Function via `net.http_post`; inserts audit row in `notifications` (success or failure).
-
-### `notify_purchase_order_update` (in-database only)
-
-**Logic:**  
-- On `status` change, creates an in-app notification for `requested_by`:
-  - `pending_approval` → "Orden de Compra Pendiente de Aprobación"
-  - `approved` → "Orden de Compra Aprobada"
-  - `rejected` → "Orden de Compra Rechazada"  
-- Does not send email; writes to `notifications` table.
-
-### `notify_quotation_selection_required` (SECURITY DEFINER)
-
-**Logic:**  
-- Runs on INSERT of a quotation.  
-- If total quotations for that PO = 2, invokes `edge_quotation_selection_url` Edge Function via `net.http_post`.  
-- Inserts audit row in `notifications` (success or failure).
-
-### `process_po_email_action(p_token text)` (RPC, SECURITY DEFINER)
-
-**Logic:**  
-- Validates JWT from `po_action_tokens`, resolves user.  
-- Performs approve/reject via `po_action_tokens.action`:
-  - **Approve:** Role-based: GERENCIA_GENERAL (final approve), GERENTE_MANTENIMIENTO (technical), AREA_ADMINISTRATIVA (viability).  
-  - **Reject:** Sets `status = 'rejected'`.  
-- Supports approve-with-specific-quotation via `quotation_id`.  
-- Applies GM escalation threshold ($7,000) and viability path logic.  
-- Does **not** send email; used by API when user clicks email link.
+| Trigger | Timing | Function |
+|---------|--------|----------|
+| `po_delete_inventory_check` | `BEFORE DELETE` | `prevent_po_delete_with_inventory()` |
+| `set_purchase_order_id_trigger` | `BEFORE INSERT` | `set_purchase_order_id()` |
+| `set_user_fields` | `BEFORE INSERT OR UPDATE` | `set_user_tracking_fields()` |
+| `trg_generate_purchase_order_id` | `BEFORE INSERT` | `generate_purchase_order_id_trigger()` |
+| **`trg_notify_po_pending_approval`** | **`AFTER INSERT OR UPDATE OF status, authorized_by, viability_state`** | **`notify_po_pending_approval()`** |
+| `trg_notify_po_ready_to_pay` | `AFTER UPDATE OF status` | `notify_po_ready_to_pay()` |
+| `trigger_notify_purchase_order_update` | `AFTER INSERT OR UPDATE OF status` | `notify_purchase_order_update()` |
+| `trigger_set_requires_quote` | `BEFORE INSERT OR UPDATE` | `set_requires_quote()` |
+| `trigger_update_payment_status` | `BEFORE INSERT OR UPDATE` | `update_payment_status()` |
+| `trigger_validate_po_status` | `BEFORE UPDATE` | `validate_po_status()` |
 
 ---
 
-## 5. Edge Functions That Send Emails
+## 4. Triggers on `public.purchase_order_quotations` (live)
 
-| Edge Function | Triggered By | Recipients | Purpose |
-|---------------|--------------|------------|---------|
-| **`purchase-order-approval-notification`** | Trigger `trg_notify_po_pending_approval` | GERENTE_MANTENIMIENTO, AREA_ADMINISTRATIVA, GERENCIA_GENERAL | Sends approval emails with approve/reject links |
-| **`quotation-selection-notification`** | Trigger `trigger_notify_quotation_selection` | `requested_by` (requester) | Notifies when 2+ quotations exist; asks to select one |
-
-### Email mechanics
-
-- **Provider:** SendGrid (`SENDGRID_API_KEY`, `SENDGRID_FROM`).  
-- **Links:** JWT tokens in `po_action_tokens`; processed by `process_po_email_action` RPC via API route.  
-- **App settings:** `edge_po_notify_url`, `edge_quotation_selection_url`, `edge_bearer` (in `app_settings`).
+| Trigger | Timing | Function |
+|---------|--------|----------|
+| **`trigger_auto_select_single_quotation`** | **`AFTER INSERT`** | **`auto_select_single_quotation()`** |
+| **`trigger_notify_quotation_selection`** | **`AFTER INSERT`** | **`notify_quotation_selection_required()`** |
+| `trigger_po_quotations_status_update` | `AFTER INSERT OR DELETE OR UPDATE` | `trigger_update_quotation_selection_status()` |
+| `update_po_quotations_updated_at` | `BEFORE UPDATE` | `update_updated_at_column()` |
 
 ---
 
-## 6. RPC Functions Related to Email / Notifications
+## 5. `notify_po_pending_approval()` — behavior (live function body)
 
-| Function | Sends Email? | Purpose |
-|----------|--------------|---------|
-| `process_po_email_action(p_token)` | No | Executes approve/reject from email link token |
-| `notify_po_pending_approval` | No (calls Edge Function) | Enqueues approval Edge Function |
-| `notify_quotation_selection_required` | No (calls Edge Function) | Enqueues quotation-selection Edge Function |
-| `notify_purchase_order_update` | No | In-app notification only |
+- Reads `edge_po_notify_url` and `edge_bearer` from `app_settings` (with GUC fallback). Missing URL → **`RAISE EXCEPTION`** (blocks the triggering statement).
+- Sets `v_should_notify` when:
+  - **INSERT:** `NEW.status = 'pending_approval'`
+  - **UPDATE:** `authorized_by` goes from NULL to set, and `NEW.status = 'pending_approval'`
+  - **UPDATE:** `viability_state` becomes `'viable'` (from a non-viable prior value), and `authorized_by` is set, and `status = 'pending_approval'`
+  - **UPDATE:** `status` becomes `'pending_approval'` and differs from old `status`
+- On notify: `net.http_post(url, body: {"po_id": new.id}, …)` and insert into `notifications` with type `PURCHASE_ORDER_APPROVAL_ENQUEUE` or `PURCHASE_ORDER_APPROVAL_ERROR`.
 
----
+Because the trigger includes **`viability_state`**, an update that **only** records viability (e.g. Admin via email RPC) **does** fire this trigger when the viability branch matches—no longer dependent on `status`/`authorized_by` changing in the same statement for that case.
 
-## 7. App Settings (Edge Function URLs)
-
-| Key | Value (example) |
-|-----|------------------|
-| `edge_po_notify_url` | `https://txapndpstzcspgxlybll.supabase.co/functions/v1/purchase-order-approval-notification` |
-| `edge_quotation_selection_url` | `https://txapndpstzcspgxlybll.supabase.co/functions/v1/quotation-selection-notification` |
-| `edge_bearer` | JWT for Edge Function auth (configured in `app_settings`) |
+**Application duplication:** The Next.js app may also call the same Edge Function via `notifyNextApprover(poId)` (`lib/purchase-orders/notify-approver.ts`).
 
 ---
 
-## 8. Workflow Summary
+## 6. `notify_quotation_selection_required()` — behavior (live)
 
-1. **PO created** → `trg_generate_purchase_order_id`, `set_requires_quote`, `set_user_fields`.
-2. **Quotation added:**
-   - 1 quotation → `auto_select_single_quotation` (auto-select, PO → `pending_approval`).
-   - 2 quotations → `notify_quotation_selection_required` → Edge Function emails requester to select.
-3. **PO status → pending_approval** → `trg_notify_po_pending_approval` → Edge Function sends approval emails.
-4. **Approver clicks link** → API calls `process_po_email_action` → updates PO (authorized_by, viability_state, approved_by, status).
+- Runs on **INSERT** on `purchase_order_quotations`.
+- Counts quotations for `NEW.purchase_order_id`.
+- When count **equals 2**, POSTs to `app_settings.edge_quotation_selection_url` with `{"po_id": <purchase_order_id>}` and `Authorization: Bearer <edge_bearer>`.
+- Missing URL → `RAISE WARNING`, does not block insert.
+- Audit rows: `QUOTATION_SELECTION_ENQUEUE` / `QUOTATION_SELECTION_ERROR`.
 
 ---
 
-## 9. Related Support Functions
+## 7. `auto_select_single_quotation()` — behavior (live)
 
-- `update_quotation_selection_status(po_id)` — Called by `trigger_update_quotation_selection_status`.
-- `requires_quotation(po_type, total_amount, po_purpose)` — Used by `set_requires_quote`.
-- `select_quotation(quotation_id, actor_id, reason)` — Used by `process_po_email_action` for approve-with-quotation.
+- Runs on **INSERT** on `purchase_order_quotations`.
+- After insert, if total quotations for that PO **= 1**:
+  - Marks the quotation `selected`, reason `Auto-seleccionada (única cotización)`.
+  - Updates `purchase_orders`: `selected_quotation_id`, `supplier`, `supplier_id`, `total_amount` from quote, builds `items` from `quotation_items` when present, sets **`status = 'pending_approval'`**.
+
+When a **second** quotation is added, this branch does not run (`count = 2`); the selection-notification trigger handles the “two options” case.
+
+---
+
+## 8. `notify_po_ready_to_pay()` — behavior (live)
+
+- **`AFTER UPDATE OF status`** on `purchase_orders`.
+- If `status` transitions **to** `approved`: POST `edge_po_ready_to_pay_url` with `{"po_id": NEW.id}`.
+- If URL empty: returns without error (no enqueue).
+- Audit: `PO_READY_TO_PAY_ENQUEUE` / `PO_READY_TO_PAY_ERROR`.
+
+**Duplication:** The app can also invoke `po-ready-to-pay-notification` from `notifyReadyToPay` when advancing workflow.
+
+---
+
+## 9. `po_action_tokens` — RLS (live)
+
+- Policy **`deny all`**: `USING (false)` for all commands — clients cannot read/write tokens directly; use **SECURITY DEFINER** RPCs / service role (e.g. `process_po_email_action`, Edge Function with service key).
+
+---
+
+## 10. `app_settings` keys present (live)
+
+Keys observed for this project (values are operational secrets or URLs; **do not commit** `edge_bearer` to git):
+
+| Key | Purpose |
+|-----|---------|
+| `edge_po_notify_url` | `purchase-order-approval-notification` |
+| `edge_quotation_selection_url` | `quotation-selection-notification` |
+| `edge_po_ready_to_pay_url` | `po-ready-to-pay-notification` |
+| `edge_bearer` | Bearer token for `pg_net` calls to Edge Functions |
+| `po_admin_approval_email` | Designated admin inbox for viability / approval emails (Edge Function reads this) |
+
+---
+
+## 11. Edge Functions (repo + live wiring)
+
+These functions exist under `supabase/functions/` and are referenced by the URLs above:
+
+| Function | Live enqueue path |
+|----------|-------------------|
+| `purchase-order-approval-notification` | Trigger `trg_notify_po_pending_approval` + optional app `notifyNextApprover` |
+| `quotation-selection-notification` | Trigger `trigger_notify_quotation_selection` when 2 quotations exist |
+| `po-ready-to-pay-notification` | Trigger `trg_notify_po_ready_to_pay` + optional app `notifyReadyToPay` |
+
+---
+
+## 12. RPCs used from the app (email clicks)
+
+| RPC | Role |
+|-----|------|
+| `get_po_action_token` | Resolves stored JWT for `direct-action` links |
+| `process_po_email_action` | Applies approve/reject / viability from token |
+
+Exact branching (roles, GM threshold, quotation id) matches the migration history applied **to this database**; compare with `pg_get_functiondef('process_po_email_action')` if you change SQL.
+
+---
+
+## 13. Re-verification queries (copy/paste)
+
+```sql
+-- Triggers on purchase_orders
+SELECT t.tgname, pg_get_triggerdef(t.oid, true)
+FROM pg_trigger t
+JOIN pg_class c ON c.oid = t.tgrelid
+JOIN pg_namespace n ON n.oid = c.relnamespace
+WHERE n.nspname = 'public' AND c.relname = 'purchase_orders' AND NOT t.tgisinternal
+ORDER BY 1;
+
+-- Triggers on purchase_order_quotations
+SELECT t.tgname, pg_get_triggerdef(t.oid, true)
+FROM pg_trigger t
+JOIN pg_class c ON c.oid = t.tgrelid
+JOIN pg_namespace n ON n.oid = c.relnamespace
+WHERE n.nspname = 'public' AND c.relname = 'purchase_order_quotations' AND NOT t.tgisinternal
+ORDER BY 1;
+
+-- notify_po_pending_approval source
+SELECT pg_get_functiondef('public.notify_po_pending_approval()'::regprocedure);
+```
+
+---
+
+## 14. Repo vs database
+
+Some objects above (e.g. `trigger_notify_quotation_selection`, `trigger_auto_select_single_quotation`, **`viability_state` on `trg_notify_po_pending_approval`**) may **not** appear in `migrations/sql/` in this workspace. Treat **this file** as the snapshot of **Supabase project `txapndpstzcspgxlybll`** at verification time; export or add migrations if you need the repo to match production.

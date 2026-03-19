@@ -268,12 +268,15 @@ export async function PUT(
         .eq('id', id)
         .maybeSingle()
 
+      const amountForViability =
+        Number(purchaseOrder?.approval_amount) > 0
+          ? Number(purchaseOrder?.approval_amount)
+          : Number(purchaseOrder?.total_amount ?? 0)
+
       const policy = resolveWorkflowPath({
         poPurpose: purchaseOrder?.po_purpose ?? null,
         workOrderType: purchaseOrder?.work_order_type ?? null,
-        approvalAmount: Number(purchaseOrder?.approval_amount) > 0
-          ? Number(purchaseOrder?.approval_amount)
-          : Number(purchaseOrder?.total_amount ?? 0),
+        approvalAmount: amountForViability,
       })
 
       if (policy.requiresViability) {
@@ -287,7 +290,9 @@ export async function PUT(
         }
 
         // Determine if GG final approval is still needed after viability
-        const needsGMAfterViability = policy.requiresGMIfAboveThreshold && amount >= GM_ESCALATION_THRESHOLD_MXN
+        const needsGMAfterViability =
+          policy.requiresGMIfAboveThreshold &&
+          amountForViability >= GM_ESCALATION_THRESHOLD_MXN
 
         if (!needsGMAfterViability) {
           // Preventive POs and corrective <$7k: viability is the last step — auto-approve immediately
