@@ -14,7 +14,7 @@ import {
   resolveWorkflowPath,
   GM_ESCALATION_THRESHOLD_MXN,
 } from '@/lib/purchase-orders/workflow-policy'
-import { notifyNextApprover } from '@/lib/purchase-orders/notify-approver'
+import { notifyNextApprover, notifyReadyToPay } from '@/lib/purchase-orders/notify-approver'
 
 export async function PUT(
   request: NextRequest,
@@ -286,6 +286,38 @@ export async function PUT(
           }, { status: 403 })
         }
 
+        // Determine if GG final approval is still needed after viability
+        const needsGMAfterViability = policy.requiresGMIfAboveThreshold && amount >= GM_ESCALATION_THRESHOLD_MXN
+
+        if (!needsGMAfterViability) {
+          // Preventive POs and corrective <$7k: viability is the last step — auto-approve immediately
+          const { error: viabilityError } = await supabase
+            .from('purchase_orders')
+            .update({
+              viability_state: 'viable',
+              viability_checked_by: user.id,
+              status: 'approved',
+              approved_by: user.id,
+              approval_date: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', id)
+
+          if (viabilityError) {
+            return NextResponse.json({ error: 'No se pudo registrar la viabilidad y aprobar la orden' }, { status: 500 })
+          }
+
+          void notifyReadyToPay(id)
+
+          return NextResponse.json({
+            success: true,
+            message: 'Viabilidad registrada. Orden aprobada — lista para compra.',
+            workflow_advanced: true,
+            viability_recorded: true,
+          })
+        }
+
+        // Corrective ≥$7k: viability done, GG final approval still required
         const { error: viabilityError } = await supabase
           .from('purchase_orders')
           .update({
@@ -299,12 +331,12 @@ export async function PUT(
           return NextResponse.json({ error: 'No se pudo registrar la viabilidad administrativa' }, { status: 500 })
         }
 
-        // Notify GM to do final approval if path requires escalation
+        // Notify GM to do final approval
         void notifyNextApprover(id)
 
         return NextResponse.json({
           success: true,
-          message: 'Viabilidad administrativa registrada correctamente.',
+          message: 'Viabilidad administrativa registrada. Gerencia General debe dar la aprobación final.',
           workflow_advanced: false,
           viability_recorded: true,
         })
@@ -334,6 +366,11 @@ export async function PUT(
       }
     }
     
+    // Notify Administration that this PO is fully approved and ready to purchase/pay
+    if (body.new_status === 'approved') {
+      void notifyReadyToPay(id)
+    }
+
     return NextResponse.json({
       success: result.success,
       message: result.message,

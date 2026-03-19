@@ -32,3 +32,39 @@ export async function notifyNextApprover(poId: string): Promise<void> {
     console.error(`[notify-approver] Failed to call notification function for PO ${poId}:`, err)
   }
 }
+
+/**
+ * Fire-and-forget helper: triggers the po-ready-to-pay-notification edge function.
+ * Called when a PO reaches fully-approved status (all workflow steps complete) so that
+ * Administration is notified it can proceed with payment or purchase.
+ * Errors are logged but never propagated — a notification failure must never block the workflow.
+ */
+export async function notifyReadyToPay(poId: string): Promise<void> {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+
+  if (!supabaseUrl || !anonKey) {
+    console.warn('[notify-ready-to-pay] Missing Supabase env vars — skipping notification')
+    return
+  }
+
+  const fnBase = `${supabaseUrl.replace(/\/$/, '')}/functions/v1`
+
+  try {
+    const res = await fetch(`${fnBase}/po-ready-to-pay-notification`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${anonKey}`,
+      },
+      body: JSON.stringify({ po_id: poId }),
+    })
+
+    if (!res.ok) {
+      const text = await res.text().catch(() => '(unreadable)')
+      console.error(`[notify-ready-to-pay] Edge function returned ${res.status} for PO ${poId}:`, text)
+    }
+  } catch (err) {
+    console.error(`[notify-ready-to-pay] Failed to call notification function for PO ${poId}:`, err)
+  }
+}
