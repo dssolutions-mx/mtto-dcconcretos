@@ -48,3 +48,12 @@ GitHub attaches the release to tag `v0.x.y` (create the tag first, as above).
 | [v0.4.0](https://github.com/dssolutions-mx/mtto-dcconcretos/releases/tag/v0.4.0) | 2026-03-19 | WO/incidents, security, PO UX, calendar |
 
 Short celebratory line for yourself: three minors in a row is a lot of surface area shipped—keep the changelog honest and you’ll see the arc.
+
+---
+
+## Monthly snapshots (full history on `main`)
+
+Tags **`monthly-YYYY-MM`** mark the **last commit on `main`** inside each calendar month (America/Chicago `-06:00` month boundaries). Each has a GitHub Release titled **Monthly · May 2025** style (full month name + year) with **Added / Changed / Fixed / Security / Removed** bullets derived from commit subjects (heuristic — good for archaeology, not a substitute for semver notes).
+
+- **Living document:** [`docs/release-history-monthly.md`](release-history-monthly.md) (regenerate anytime with `python3 scripts/monthly-release-history.py --write-docs` after `git fetch origin main`).
+- **Script:** [`scripts/monthly-release-history.py`](../scripts/monthly-release-history.py) (`--tip YYYY-MM`, `--print-notes YYYY-MM`).

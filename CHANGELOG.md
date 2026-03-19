@@ -5,6 +5,8 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+**Release channels:** **Semver** (`v0.x.y`) — curated milestones in this file. **Monthly** (`monthly-YYYY-MM`) — calendar snapshots of `main` since repo creation, documented in [`docs/release-history-monthly.md`](docs/release-history-monthly.md) and as separate GitHub Releases.
+
 ## [Unreleased]
 
 ### Added
