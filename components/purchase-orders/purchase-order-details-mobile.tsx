@@ -14,7 +14,10 @@ import Link from "next/link"
 import { ReactNode } from "react"
 import { PurchaseOrderType } from "@/types/purchase-orders"
 import { TypeBadge } from "@/components/purchase-orders/shared/TypeBadge"
-import { WorkflowStatusDisplay } from "@/components/purchase-orders/workflow/WorkflowStatusDisplay"
+import {
+  WorkflowStatusDisplay,
+  type POFulfillmentHints,
+} from "@/components/purchase-orders/workflow/WorkflowStatusDisplay"
 import { QuotationComparisonManager } from "@/components/purchase-orders/quotations/QuotationComparisonManager"
 import { ReceiptDisplaySection } from "@/components/purchase-orders/ReceiptDisplaySection"
 import { POInventoryActions } from "@/components/purchase-orders/inventory-actions"
@@ -34,6 +37,7 @@ interface PurchaseOrderDetailsMobileProps {
   getPurchaseOrderTypeInfo: (poType: string | null) => any
   isImageFile: (url: string) => boolean
   isPdfFile: (url: string) => boolean
+  fulfillmentHints?: POFulfillmentHints | null
 }
 
 export function PurchaseOrderDetailsMobile({
@@ -48,7 +52,8 @@ export function PurchaseOrderDetailsMobile({
   getActionButtons,
   getPurchaseOrderTypeInfo,
   isImageFile,
-  isPdfFile
+  isPdfFile,
+  fulfillmentHints,
 }: PurchaseOrderDetailsMobileProps) {
   
   return (
@@ -343,6 +348,7 @@ export function PurchaseOrderDetailsMobile({
                   currentStatus={order.status}
                   totalAmount={Number(order.approval_amount) > 0 ? order.approval_amount : order.total_amount}
                   workOrderType={order.work_order_type}
+                  fulfillmentHints={fulfillmentHints}
                 />
               </CardContent>
             </CollapsibleContent>
@@ -521,7 +527,7 @@ export function PurchaseOrderDetailsMobile({
                           <p className="text-muted-foreground">Total</p>
                           <p className={`font-semibold ${isInventory ? 'text-green-700' : ''}`}>
                             {formatCurrency(item.total_price?.toString() || (item.quantity * (item.unit_price || item.price || 0)).toString())}
-                            {isInventory && <span className="text-muted-foreground font-normal ml-1">(sin impacto efectivo)</span>}
+                            {isInventory && <span className="text-muted-foreground font-normal ml-1">(desde almacén)</span>}
                           </p>
                         </div>
                       </div>
@@ -543,11 +549,13 @@ export function PurchaseOrderDetailsMobile({
 
       {/* Inventory actions - when PO has catalog items */}
       {order.po_type && items && items.some((item: any) => item.part_id || item.partNumber) && (
-        <Card>
+        <Card id="po-gestion-inventario" className="rounded-2xl border border-border/60 scroll-mt-24">
           <CardHeader className="p-5 md:p-6">
-            <CardTitle className="text-lg">Gestión de Inventario</CardTitle>
-            <CardDescription>
-              Recibe items a inventario o cumple la orden desde inventario existente
+            <CardTitle className="text-sm font-semibold uppercase tracking-widest text-muted-foreground">
+              Gestión de inventario
+            </CardTitle>
+            <CardDescription className="text-sm">
+              Recibir mercancía al almacén o registrar surtido desde existencias (según la orden).
             </CardDescription>
           </CardHeader>
           <CardContent className="p-5 md:p-6 pt-0">

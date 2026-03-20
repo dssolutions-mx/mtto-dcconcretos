@@ -646,7 +646,7 @@ export default async function WorkOrderDetailsPage({
                     <Button asChild>
                       <Link href={`/ordenes/${id}/generar-oc`}>
                         <ShoppingCart className="mr-2 h-4 w-4" />
-                        Generar orden de compra
+                        Solicitar refacciones
                       </Link>
                     </Button>
                   </div>

@@ -39,6 +39,37 @@ function renderQuotationItems(quotation: any): string {
   return `<table style="width:100%; border-collapse:collapse; margin-top:6px; font-size:12px"><thead><tr style="background:#f1f5f9"><th style="padding:6px 8px; text-align:left; border:1px solid #e2e8f0">Descripción</th><th style="padding:6px 8px; text-align:center; border:1px solid #e2e8f0">Cant.</th><th style="padding:6px 8px; text-align:right; border:1px solid #e2e8f0">Precio unit.</th><th style="padding:6px 8px; text-align:right; border:1px solid #e2e8f0">Total</th></tr></thead><tbody>${rows}</tbody></table>`
 }
 
+function lineTotal(item: Record<string, unknown>): number {
+  const tp = item.total_price
+  if (tp != null && tp !== '') {
+    const n = Number(tp)
+    if (!Number.isNaN(n)) return n
+  }
+  const q = Number(item.quantity) || 0
+  const u = Number(item.unit_price ?? item.price ?? item.unitPrice ?? 0) || 0
+  return q * u
+}
+
+function splitLineTotalsByFulfillFrom(items: unknown): { inventoryTotal: number; purchaseTotal: number } {
+  let inventoryTotal = 0
+  let purchaseTotal = 0
+  let arr: unknown
+  try {
+    arr = typeof items === 'string' ? JSON.parse(items as string) : items
+  } catch {
+    return { inventoryTotal: 0, purchaseTotal: 0 }
+  }
+  if (!Array.isArray(arr)) return { inventoryTotal: 0, purchaseTotal: 0 }
+  for (const raw of arr) {
+    if (!raw || typeof raw !== 'object') continue
+    const item = raw as Record<string, unknown>
+    const t = lineTotal(item)
+    if (item.fulfill_from === 'inventory') inventoryTotal += t
+    else purchaseTotal += t
+  }
+  return { inventoryTotal, purchaseTotal }
+}
+
 type QuotationAction = { quotationId: string; supplierName: string; url: string; isSelected?: boolean }
 
 function buildEmailHtml(
@@ -54,7 +85,14 @@ function buildEmailHtml(
   const { isTest = false, variantLabel = '', hideSelectedState = false, selectedByPersonName = '', approvalChainHtml = '' } = opts
   const totalAmount = Number(po.total_amount || 0)
   const poPurpose = po.po_purpose || 'work_order_cash'
-  const cashImpact = (poPurpose === 'work_order_inventory' || poPurpose === 'inventory_restock') ? 0 : totalAmount
+  const lineSplit = splitLineTotalsByFulfillFrom(po.items)
+  let supplierImpact = totalAmount
+  if (poPurpose === 'work_order_inventory' || poPurpose === 'inventory_restock') {
+    supplierImpact = 0
+  } else if (poPurpose === 'mixed') {
+    supplierImpact = lineSplit.purchaseTotal
+  }
+  const cashImpact = supplierImpact
   // When hideSelectedState (BU selecting): no quotation is "selected" yet — BU will choose
   const selectedQuotation = hideSelectedState ? null : quotations.find((q: any) => q.status === 'selected')
   const hasQuotations = quotations.length > 0
@@ -125,8 +163,8 @@ function buildEmailHtml(
     .muted { color: #64748b; font-size: 12px; margin-top: 16px; }
     .purpose-badge { display:inline-block; padding: 6px 14px; border-radius: 4px; font-size: 12px; font-weight: 600; color: #fff; margin-bottom: 12px; background: ${purposeColor}; }
     .alert-box { padding: 14px 18px; margin: 16px 0; border-radius: 6px; border-left: 4px solid; font-size: 13px; }
-    .cash-zero { color: #0d9488; font-weight: 600; }
-    .cash-required { color: #b91c1c; font-weight: 600; }
+    .supplier-impact-none { color: #0d9488; font-weight: 600; }
+    .supplier-impact-yes { color: #b91c1c; font-weight: 600; }
     .comparison-table { width:100%; border-collapse:collapse; margin-top: 12px; font-size: 13px; }
     .comparison-table th { background: #f1f5f9; padding: 10px 12px; text-align:left; border: 1px solid #e2e8f0; font-weight: 600; color: #334155; }
     .comparison-table td { padding: 10px 12px; border: 1px solid #e2e8f0; }
@@ -157,10 +195,19 @@ function buildEmailHtml(
         </div>
         ` : `
         <div class="alert-box" style="background:#fef2f2; border-left-color:#b91c1c;">
-          <div style="font-weight:600; margin-bottom:4px;">Partes no disponibles en inventario — requiere compra a proveedor: $${cashImpact.toLocaleString('es-MX', { minimumFractionDigits: 2 })} MXN</div>
+          <div style="font-weight:600; margin-bottom:4px;">${poPurpose === 'mixed' ? 'Incluye compra a proveedor por' : 'Requiere compra a proveedor'}: $${cashImpact.toLocaleString('es-MX', { minimumFractionDigits: 2 })} MXN</div>
           <div style="color:#7f1d1d;">${purposeExplanation}</div>
         </div>
         `}
+
+    ${poPurpose === 'mixed' && (lineSplit.inventoryTotal > 0 || lineSplit.purchaseTotal > 0) ? `
+    <div class="meta" style="margin: 16px 0;">
+      <div style="font-weight:700; margin-bottom:8px; color:#334155;">Desglose por origen</div>
+      <div class="row"><div>Referencia almacén (surtido)</div><div><strong>$${lineSplit.inventoryTotal.toLocaleString('es-MX', { minimumFractionDigits: 2 })} MXN</strong></div></div>
+      <div class="row"><div>Compra a proveedor</div><div><strong>$${lineSplit.purchaseTotal.toLocaleString('es-MX', { minimumFractionDigits: 2 })} MXN</strong></div></div>
+      <div class="row"><div>Total en orden (cabecera)</div><div><strong>$${totalAmount.toLocaleString('es-MX', { minimumFractionDigits: 2 })} MXN</strong></div></div>
+    </div>
+    ` : ''}
 
     ${showComparison ? `
     <div style="margin-top:16px; padding:12px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px">
@@ -193,9 +240,9 @@ function buildEmailHtml(
       })()}
       ` : ''}
       <div class="row">
-        <div>Requiere compra a proveedor</div>
-        <div class="${cashImpact === 0 ? 'cash-zero' : 'cash-required'}">
-          ${cashImpact === 0 ? 'No (partes en inventario)' : `Sí — $${cashImpact.toLocaleString('es-MX', { minimumFractionDigits: 2 })} MXN`}
+        <div>Monto en compra a proveedor (esta OC)</div>
+        <div class="${cashImpact === 0 ? 'supplier-impact-none' : 'supplier-impact-yes'}">
+          ${cashImpact === 0 ? 'No aplica — uso desde almacén' : `Sí — $${cashImpact.toLocaleString('es-MX', { minimumFractionDigits: 2 })} MXN`}
         </div>
       </div>
       <div class="row"><div>Tipo</div><div><strong>${po.po_type || 'N/A'}</strong></div></div>
@@ -273,7 +320,7 @@ serve(async (req) => {
 
     const { data: po, error: poErr } = await supabase
       .from('purchase_orders')
-      .select('id, order_id, total_amount, approval_amount, supplier, po_type, po_purpose, work_order_type, plant_id, requested_by, work_order_id, notes, quotation_url, viability_state')
+      .select('id, order_id, total_amount, approval_amount, supplier, po_type, po_purpose, work_order_type, plant_id, requested_by, work_order_id, notes, quotation_url, viability_state, items')
       .eq('id', id)
       .single()
     if (poErr || !po) return new Response(JSON.stringify({ error: poErr?.message || 'PO not found' }), { status: 404 })

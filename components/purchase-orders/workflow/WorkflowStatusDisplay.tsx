@@ -39,6 +39,15 @@ import { formatCurrency } from "@/lib/utils"
 import { useMobileSessionRecovery } from "@/hooks/use-mobile-session-recovery"
 import { WorkflowStageBadge } from "@/components/purchase-orders/shared/WorkflowStageBadge"
 
+/** Server-derived hints for post-approval UX (surtido vs compra a proveedor). */
+export interface POFulfillmentHints {
+  poPurpose?: string | null
+  inventoryFulfilled: boolean
+  receivedToInventory?: boolean
+  hasInventoryLines: boolean
+  hasPurchaseLines: boolean
+}
+
 interface WorkflowStatusDisplayProps {
   purchaseOrderId: string
   poType: PurchaseOrderType
@@ -47,6 +56,8 @@ interface WorkflowStatusDisplayProps {
   totalAmount?: number | string | null
   /** work_order_type from server — used to determine isPreventivePO without waiting for workflowStatus. */
   workOrderType?: string | null
+  /** Optional: qué falta después de aprobar (alinear con bloque Inventario en detalle OC). */
+  fulfillmentHints?: POFulfillmentHints | null
   className?: string
   onStatusChange?: () => void
 }
@@ -57,6 +68,7 @@ export function WorkflowStatusDisplay({
   currentStatus,
   totalAmount,
   workOrderType,
+  fulfillmentHints,
   className = "",
   onStatusChange
 }: WorkflowStatusDisplayProps) {
@@ -1123,6 +1135,59 @@ export function WorkflowStatusDisplay({
               />
             </div>
           </div>
+
+          {/* Post-approval: claridad surtido vs compra (ancla al bloque Inventario en la misma página) */}
+          {fulfillmentHints &&
+            [
+              "approved",
+              "purchased",
+              "ordered",
+              "received",
+              "receipt_uploaded",
+              "fulfilled",
+            ].includes(currentStatus) &&
+            (() => {
+              const h = fulfillmentHints
+              const needSurtido = h.hasInventoryLines && !h.inventoryFulfilled
+              const needCompraORecepcion =
+                h.hasPurchaseLines && h.poPurpose !== "work_order_inventory"
+              if (!needSurtido && !needCompraORecepcion) return null
+              return (
+                <div className="rounded-lg border border-amber-200 bg-amber-50/90 border-l-[3px] border-l-amber-500 p-3 space-y-2">
+                  <p className="text-[11px] font-semibold uppercase tracking-widest text-amber-900/90">
+                    Próximos pasos
+                  </p>
+                  <ul className="text-sm text-amber-950 space-y-2 list-none pl-0">
+                    {needSurtido && (
+                      <li className="flex gap-2 items-start">
+                        <Package className="h-4 w-4 shrink-0 mt-0.5 text-amber-800" />
+                        <span>
+                          Falta registrar el{" "}
+                          <strong>surtido desde almacén</strong> para las partidas con origen
+                          almacén. El inventario baja al confirmar surtido, no al aprobar.{" "}
+                          <a
+                            href="#po-gestion-inventario"
+                            className="font-medium text-foreground underline underline-offset-2 hover:text-foreground/80"
+                          >
+                            Ir a inventario
+                          </a>
+                        </span>
+                      </li>
+                    )}
+                    {needCompraORecepcion && (
+                      <li className="flex gap-2 items-start">
+                        <ShoppingCart className="h-4 w-4 shrink-0 mt-0.5 text-amber-800" />
+                        <span>
+                          {h.poPurpose === "inventory_restock"
+                            ? "Cuando reciba la mercancía, registre la entrada al almacén desde el bloque Inventario o avance el flujo según corresponda."
+                            : "Complete la compra a proveedor con los botones del flujo y cargue el comprobante cuando aplique."}
+                        </span>
+                      </li>
+                    )}
+                  </ul>
+                </div>
+              )
+            })()}
 
           {/* When pending_approval: Unified 3-step approval chain + compact financial summary */}
           {currentStatus === 'pending_approval' && (

@@ -26,6 +26,22 @@ export interface FulfillmentResult {
   error_message?: string
 }
 
+/**
+ * Only PO lines intended for warehouse issue may be fulfilled from stock.
+ * Mixed POs: require fulfill_from === 'inventory' per line.
+ * Legacy work_order_inventory rows may omit fulfill_from — treat as inventory-eligible.
+ */
+export function isPoItemEligibleForInventoryFulfillment(
+  item: Record<string, unknown>,
+  poPurpose: string | null | undefined
+): boolean {
+  const ff = item.fulfill_from as string | undefined
+  if (ff === 'purchase') return false
+  if (ff === 'inventory') return true
+  const p = (poPurpose || '').toLowerCase()
+  return p === 'work_order_inventory'
+}
+
 export class InventoryFulfillmentService {
   /**
    * Fulfill purchase order from inventory
@@ -59,6 +75,32 @@ export class InventoryFulfillmentService {
       // Process each fulfillment
       for (const fulfillment of request.fulfillments) {
         try {
+          const matchedPoItem = poItems.find((item: any) => {
+            if (item.id && item.id === fulfillment.po_item_id) return true
+            if (item.part_id && item.part_id === fulfillment.part_id) return true
+            if (item.partNumber && item.partNumber === fulfillment.po_item_id) return true
+            if (item.name && item.name === fulfillment.po_item_id) return true
+            return false
+          })
+          if (
+            !matchedPoItem ||
+            !isPoItemEligibleForInventoryFulfillment(
+              matchedPoItem as Record<string, unknown>,
+              po.po_purpose
+            )
+          ) {
+            results.push({
+              movement_id: '',
+              part_id: fulfillment.part_id,
+              warehouse_id: fulfillment.warehouse_id,
+              quantity: fulfillment.quantity,
+              success: false,
+              error_message:
+                'Esta línea no está marcada para surtido desde almacén (solo aplica a partidas con origen inventario).',
+            })
+            continue
+          }
+
           // Get stock
           const stock = await StockService.getOrCreateStock(
             fulfillment.part_id,
@@ -260,7 +302,7 @@ export class InventoryFulfillmentService {
       // Get purchase order
       const { data: po, error: poError } = await supabase
         .from('purchase_orders')
-        .select('items, plant_id')
+        .select('items, plant_id, po_purpose')
         .eq('id', purchase_order_id)
         .single()
       
@@ -270,6 +312,15 @@ export class InventoryFulfillmentService {
       const results = []
       
       for (const item of items) {
+        if (
+          !isPoItemEligibleForInventoryFulfillment(
+            item as Record<string, unknown>,
+            po.po_purpose
+          )
+        ) {
+          continue
+        }
+
         // Try to match part - check both part_id directly and part_number
         let part_id: string | undefined = item.part_id
         let part_number = item.part_number || item.partNumber

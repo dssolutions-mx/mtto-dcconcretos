@@ -159,7 +159,7 @@ export function FulfillFromInventoryDialog({
 
   const handleSubmit = async () => {
     if (fulfillments.length === 0) {
-      toast.error('Debes seleccionar al menos un item para cumplir desde inventario')
+      toast.error('Selecciona al menos una partida para surtir desde almacén')
       return
     }
 
@@ -202,18 +202,20 @@ export function FulfillFromInventoryDialog({
 
       const result = await response.json()
       if (result.success) {
-        toast.success(`${result.data.items_fulfilled} items cumplidos desde inventario`)
+        toast.success(
+          `${result.data.items_fulfilled} partida(s) surtida(s) desde almacén — inventario actualizado`
+        )
         if (result.data.remaining_items > 0) {
-          toast.info(`${result.data.remaining_items} items aún requieren compra`)
+          toast.info(`${result.data.remaining_items} partida(s) siguen por compra a proveedor`)
         }
         onSuccess?.()
         onOpenChange(false)
       } else {
-        toast.error(result.error || 'Error al cumplir desde inventario')
+        toast.error(result.error || 'Error al registrar el surtido desde almacén')
       }
     } catch (error) {
       console.error('Error fulfilling from inventory:', error)
-      toast.error('Error al cumplir desde inventario')
+      toast.error('Error al registrar el surtido desde almacén')
     } finally {
       setLoading(false)
     }
@@ -227,14 +229,24 @@ export function FulfillFromInventoryDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
         <DialogHeader>
-          <DialogTitle>Cumplir Orden de Compra desde Inventario</DialogTitle>
+          <DialogTitle>Surtido desde almacén</DialogTitle>
           <DialogDescription>
-            Selecciona los items que se cumplirán desde el inventario disponible
+            Registra la salida de existencias vinculada a esta orden. Solo aparecen partidas con origen
+            almacén; el inventario se descuenta al confirmar.
           </DialogDescription>
         </DialogHeader>
         <div className="flex-1 overflow-y-auto min-h-0 pr-2">
           {loadingAvailability ? (
             <div className="p-4 text-center">Verificando disponibilidad...</div>
+          ) : availability.length === 0 ? (
+            <Alert>
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription>
+                No hay partidas marcadas para surtir desde almacén en esta orden (o todas van por compra a
+                proveedor). El inventario solo se descuenta al confirmar surtido en líneas con origen
+                almacén.
+              </AlertDescription>
+            </Alert>
           ) : (
             <div className="space-y-4">
               <div className="rounded-md border">
@@ -245,7 +257,7 @@ export function FulfillFromInventoryDialog({
                       <TableHead>Requerido</TableHead>
                       <TableHead>Disponibilidad</TableHead>
                       <TableHead>Almacén</TableHead>
-                      <TableHead>Cantidad Cumplir</TableHead>
+                      <TableHead>Cantidad a surtir</TableHead>
                       <TableHead>Acción</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -356,7 +368,7 @@ export function FulfillFromInventoryDialog({
                                     })
                                   }}
                                 >
-                                  Cumplir
+                                  Surtir
                                 </Button>
                               ) : (
                                 <Badge variant="secondary">Sin Stock</Badge>
@@ -373,8 +385,8 @@ export function FulfillFromInventoryDialog({
                 <Alert>
                   <Package className="h-4 w-4" />
                   <AlertDescription>
-                    {fulfillments.length} item(s) se cumplirán desde inventario. 
-                    Los items restantes requerirán compra.
+                    {fulfillments.length} partida(s) se surtirán desde almacén. Las demás líneas de la
+                    orden siguen por compra a proveedor si aplica.
                   </AlertDescription>
                 </Alert>
               )}
@@ -383,7 +395,7 @@ export function FulfillFromInventoryDialog({
                 <Textarea
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
-                  placeholder="Notas adicionales sobre el cumplimiento..."
+                  placeholder="Notas sobre el surtido (opcional)…"
                   rows={3}
                 />
               </div>
@@ -395,7 +407,7 @@ export function FulfillFromInventoryDialog({
             Cancelar
           </Button>
           <Button onClick={handleSubmit} disabled={loading || fulfillments.length === 0}>
-            {loading ? 'Cumpliendo...' : 'Confirmar Cumplimiento'}
+            {loading ? 'Registrando…' : 'Confirmar surtido'}
           </Button>
         </DialogFooter>
       </DialogContent>

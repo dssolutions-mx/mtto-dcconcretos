@@ -1,6 +1,6 @@
 import type { Metadata } from "next"
-import { DashboardHeader } from "@/components/dashboard/dashboard-header"
 import { DashboardShell } from "@/components/dashboard/dashboard-shell"
+import { InventoryModuleChrome } from "@/components/inventory/inventory-module-chrome"
 import { PartsCatalog } from "@/components/inventory/parts-catalog"
 
 export const metadata: Metadata = {
@@ -11,12 +11,13 @@ export const metadata: Metadata = {
 export default function PartsCatalogPage() {
   return (
     <DashboardShell>
-      <DashboardHeader
-        heading="Catálogo de Partes"
-        text="Administra el catálogo maestro de partes, repuestos y consumibles."
-        id="parts-catalog-header"
-      />
-      <PartsCatalog />
+      <InventoryModuleChrome
+        title="Catálogo de partes"
+        description="Alta, edición y búsqueda en el catálogo maestro de repuestos y consumibles."
+        activeHref="/inventario/catalogo"
+      >
+        <PartsCatalog />
+      </InventoryModuleChrome>
     </DashboardShell>
   )
 }

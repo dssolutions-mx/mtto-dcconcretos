@@ -24,7 +24,7 @@ export default async function CreateTypedPurchaseOrderPage({ searchParams }: Pag
     <DashboardShell>
       <DashboardHeader
         heading="Crear Orden de Compra"
-        text="Sistema inteligente de órdenes de compra basado en 3 tipos: Compra Directa, Servicio Directo y Pedido Especial."
+        text="Elige tipo de compra y, si viene de una orden de trabajo, indica si las refacciones salen del almacén o van con proveedor."
       />
       <EnhancedPurchaseOrderCreationForm 
         workOrderId={workOrderId}

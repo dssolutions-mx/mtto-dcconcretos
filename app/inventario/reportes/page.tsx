@@ -1,6 +1,6 @@
 import type { Metadata } from "next"
-import { DashboardHeader } from "@/components/dashboard/dashboard-header"
 import { DashboardShell } from "@/components/dashboard/dashboard-shell"
+import { InventoryModuleChrome } from "@/components/inventory/inventory-module-chrome"
 import { InventoryReports } from "@/components/inventory/inventory-reports"
 
 export const metadata: Metadata = {
@@ -11,12 +11,13 @@ export const metadata: Metadata = {
 export default function InventoryReportsPage() {
   return (
     <DashboardShell>
-      <DashboardHeader
-        heading="Reportes de Inventario"
-        text="Reportes de stock bajo, reservas antiguas y valoración de inventario."
-        id="inventory-reports-header"
-      />
-      <InventoryReports />
+      <InventoryModuleChrome
+        title="Reportes"
+        description="Stock bajo, reservas y valoración para decisiones operativas."
+        activeHref="/inventario/reportes"
+      >
+        <InventoryReports />
+      </InventoryModuleChrome>
     </DashboardShell>
   )
 }

@@ -38,7 +38,7 @@ export function POInventoryActions({
         {inventoryFulfilled && (
           <Badge variant="secondary" className="gap-1">
             <Warehouse className="h-3 w-3" />
-            Cumplido desde Inventario
+            Surtido desde almacén
           </Badge>
         )}
         {!receivedToInventory && wr?.canReceiveInventory && (
@@ -56,7 +56,7 @@ export function POInventoryActions({
             onClick={() => setFulfillDialogOpen(true)}
           >
             <Warehouse className="mr-2 h-4 w-4" />
-            Cumplir desde Inventario
+            Surtir desde almacén
           </Button>
         )}
       </div>

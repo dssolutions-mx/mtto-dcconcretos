@@ -12,10 +12,9 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { AlertCircle, Check, Edit, Eye, FileText, MoreHorizontal, Search, ShoppingCart, Trash, Package } from "lucide-react"
+import { AlertCircle, Eye, FileText, MoreHorizontal, Search, Package } from "lucide-react"
 import Link from "next/link"
 
 interface StockItem {
@@ -87,22 +86,45 @@ export function InventoryList() {
     const reorder = item.reorder_point || minLevel
 
     if (available <= 0) {
-      return { label: "Sin Stock", variant: "destructive" as const }
+      return {
+        label: "Sin stock",
+        className: "rounded-full text-[10px] font-semibold border border-red-200 bg-red-50 text-red-700",
+      }
     }
     if (available < reorder) {
-      return { label: "Bajo", variant: "destructive" as const }
+      return {
+        label: "Bajo",
+        className: "rounded-full text-[10px] font-semibold border border-amber-200 bg-amber-50 text-amber-800",
+      }
     }
     if (available < minLevel * 2) {
-      return { label: "Adecuado", variant: "secondary" as const }
+      return {
+        label: "Adecuado",
+        className: "rounded-full text-[10px] font-semibold border border-border/60 bg-muted/40 text-muted-foreground",
+      }
     }
-    return { label: "Óptimo", variant: "default" as const }
+    return {
+      label: "Óptimo",
+      className: "rounded-full text-[10px] font-semibold border border-green-200 bg-green-50 text-green-800",
+    }
   }
 
   if (isLoading) {
     return (
-      <Card>
-        <CardContent className="p-6">
-          <div className="text-center">Cargando inventario...</div>
+      <Card className="rounded-2xl border border-border/60 bg-card transition-all hover:border-border/80">
+        <CardHeader className="pb-2">
+          <div className="h-5 w-48 rounded bg-muted/60 animate-pulse" />
+        </CardHeader>
+        <CardContent className="space-y-0 divide-y divide-border/40">
+          {[0, 1, 2, 3, 4].map((i) => (
+            <div key={i} className="flex items-center gap-4 px-4 py-4 animate-pulse">
+              <div className="flex-1 space-y-2">
+                <div className="h-3 w-32 rounded bg-muted/60" />
+                <div className="h-2.5 w-48 rounded bg-muted/40" />
+              </div>
+              <div className="h-4 w-16 rounded bg-muted/60 shrink-0" />
+            </div>
+          ))}
         </CardContent>
       </Card>
     )
@@ -110,10 +132,16 @@ export function InventoryList() {
 
   if (error) {
     return (
-      <Card>
-        <CardContent className="p-6">
-          <div className="text-center text-destructive">
-            Error al cargar inventario. Por favor, intenta nuevamente.
+      <Card className="rounded-2xl border border-border/60 bg-card">
+        <CardContent className="p-5 sm:p-6">
+          <div className="flex items-start gap-3">
+            <AlertCircle className="h-4 w-4 text-destructive shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-medium text-foreground">No se pudo cargar el inventario</p>
+              <p className="text-sm text-muted-foreground mt-1">
+                Revisa tu conexión e intenta de nuevo.
+              </p>
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -121,46 +149,65 @@ export function InventoryList() {
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-          <CardTitle>Inventario de Repuestos y Consumibles</CardTitle>
-          <div className="relative w-full md:w-64">
-            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input
-              type="search"
-              placeholder="Buscar en inventario..."
-              className="pl-8"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
+    <Card className="rounded-2xl border border-border/60 bg-card transition-all hover:border-border hover:shadow-sm overflow-hidden">
+      <Tabs value={selectedCategory} onValueChange={setSelectedCategory} className="w-full">
+        <CardHeader className="p-5 sm:p-6 pb-3 sm:pb-4 space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
+            <div>
+              <CardTitle className="text-base sm:text-lg font-semibold tracking-tight">
+                Por almacén y parte
+              </CardTitle>
+              <p className="text-xs text-muted-foreground mt-1">
+                Cantidades disponibles después de reservas. Use el catálogo para altas y edición de partes.
+              </p>
+            </div>
+            <div className="relative w-full sm:w-72 shrink-0">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+              <Input
+                type="search"
+                placeholder="Buscar parte, código, almacén…"
+                className="pl-9 min-h-[44px] rounded-xl border-border/60 bg-muted/20"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
+            </div>
           </div>
-        </div>
-      </CardHeader>
-      <CardContent>
-        <Tabs value={selectedCategory} onValueChange={setSelectedCategory} className="w-full">
-          <TabsList className="mb-4">
-            <TabsTrigger value="all">Todos</TabsTrigger>
-            <TabsTrigger value="repuestos">Repuestos</TabsTrigger>
-            <TabsTrigger value="consumibles">Consumibles</TabsTrigger>
+          <TabsList className="h-auto min-h-[40px] flex-wrap gap-1 rounded-xl bg-muted/30 p-1 w-full sm:w-auto justify-start">
+            <TabsTrigger value="all" className="rounded-lg min-h-[36px]">
+              Todos
+            </TabsTrigger>
+            <TabsTrigger value="repuestos" className="rounded-lg min-h-[36px]">
+              Repuestos
+            </TabsTrigger>
+            <TabsTrigger value="consumibles" className="rounded-lg min-h-[36px]">
+              Consumibles
+            </TabsTrigger>
           </TabsList>
-          <TabsContent value={selectedCategory}>
+        </CardHeader>
+        <CardContent className="px-0 sm:px-6 pb-0">
+          <TabsContent value={selectedCategory} className="mt-0">
             {filteredItems.length === 0 ? (
-              <div className="text-center p-8 text-muted-foreground">
-                <Package className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                <p>No se encontraron items en el inventario</p>
-                <Link href="/inventario/catalogo">
-                  <Button className="mt-4" variant="outline">
-                    Agregar Parte al Catálogo
-                  </Button>
-                </Link>
+              <div className="flex items-start gap-3 px-4 sm:px-6 py-6 border-t border-border/40">
+                <Package className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
+                <div className="space-y-2">
+                  <p className="text-sm text-muted-foreground">
+                    Sin resultados con los filtros actuales.
+                  </p>
+                  <Link href="/inventario/catalogo">
+                    <Button variant="outline" size="sm" className="min-h-[44px] rounded-xl cursor-pointer">
+                      Ir al catálogo
+                    </Button>
+                  </Link>
+                </div>
               </div>
             ) : (
-              <div className="rounded-md border">
-                <Table>
+              <div className="overflow-x-auto border-t border-border/40">
+                <Table className="min-w-[880px]">
                   <TableHeader>
-                    <TableRow>
-                      <TableHead>Número de Parte</TableHead>
+                    <TableRow className="hover:bg-transparent border-border/40">
+                      <TableHead className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground whitespace-nowrap">
+                        Número de Parte
+                      </TableHead>
                       <TableHead>Nombre</TableHead>
                       <TableHead>Categoría</TableHead>
                       <TableHead>Almacén</TableHead>
@@ -180,24 +227,30 @@ export function InventoryList() {
                           <TableCell className="font-medium">{item.part_number}</TableCell>
                           <TableCell>{item.part_name}</TableCell>
                           <TableCell>
-                            <Badge variant="outline">{item.category}</Badge>
+                            <span className="inline-flex rounded-full text-[10px] font-semibold border border-border/60 px-2 py-0.5 text-muted-foreground">
+                              {item.category}
+                            </span>
                           </TableCell>
                           <TableCell>{item.warehouse_name}</TableCell>
                           <TableCell>{item.current_quantity}</TableCell>
                           <TableCell>
                             {item.reserved_quantity > 0 ? (
-                              <Badge variant="secondary">{item.reserved_quantity}</Badge>
+                              <span className="inline-flex rounded-full text-[10px] font-semibold border border-border/60 bg-muted/30 tabular-num px-2 py-0.5">
+                                {item.reserved_quantity}
+                              </span>
                             ) : (
                               <span className="text-muted-foreground">-</span>
                             )}
                           </TableCell>
                           <TableCell>{item.available_quantity}</TableCell>
                           <TableCell>
-                            <Badge variant={status.variant}>{status.label}</Badge>
+                            <span className={`inline-flex items-center px-2 py-0.5 ${status.className}`}>
+                              {status.label}
+                            </span>
                           </TableCell>
                           <TableCell>
                             {item.total_value > 0 ? (
-                              <span className="text-sm">${item.total_value.toFixed(2)}</span>
+                              <span className="text-sm tabular-num">${item.total_value.toFixed(2)}</span>
                             ) : (
                               <span className="text-muted-foreground">-</span>
                             )}
@@ -242,26 +295,26 @@ export function InventoryList() {
               </div>
             )}
           </TabsContent>
-        </Tabs>
-      </CardContent>
-      <CardFooter className="flex justify-between">
-        <div className="text-sm text-muted-foreground">
-          Mostrando {filteredItems.length} de {stockData?.length || 0} ítems
-        </div>
-        <div className="flex items-center gap-2">
-          <Link href="/inventario/catalogo">
-            <Button variant="outline" size="sm">
-              <Package className="mr-2 h-4 w-4" />
-              Gestionar Catálogo
-            </Button>
-          </Link>
-          <Link href="/inventario/movimientos">
-            <Button variant="outline" size="sm">
-              Ver Movimientos
-            </Button>
-          </Link>
-        </div>
-      </CardFooter>
+        </CardContent>
+        <CardFooter className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-5 sm:px-6 py-4 border-t border-border/40 bg-muted/10">
+          <div className="text-xs sm:text-sm text-muted-foreground tabular-num">
+            Mostrando {filteredItems.length} de {stockData?.length || 0} filas
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Link href="/inventario/catalogo">
+              <Button variant="outline" size="sm" className="min-h-[40px] rounded-xl cursor-pointer">
+                <Package className="mr-2 h-4 w-4" />
+                Catálogo
+              </Button>
+            </Link>
+            <Link href="/inventario/movimientos">
+              <Button variant="outline" size="sm" className="min-h-[40px] rounded-xl cursor-pointer">
+                Movimientos
+              </Button>
+            </Link>
+          </div>
+        </CardFooter>
+      </Tabs>
     </Card>
   )
 }

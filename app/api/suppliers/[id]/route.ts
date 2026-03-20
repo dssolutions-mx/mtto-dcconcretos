@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import { UpdateSupplierRequest } from '@/types/suppliers'
 import { normalizeIndustry, normalizeSpecialty } from '@/lib/suppliers/taxonomy'
+import {
+  isSupplierNameBusinessUnitUniqueViolation,
+  supplierDuplicateNameBuResponse,
+} from '@/lib/suppliers/supplier-write-errors'
 
 interface RouteParams {
   params: {
@@ -88,9 +92,22 @@ export async function PUT(
     const updateData: Record<string, unknown> = {}
     for (const key of allowedFields) {
       const val = body[key as keyof UpdateSupplierRequest]
-      if (val !== undefined && val !== null) {
+      if (val !== undefined && val !== null && val !== '') {
         updateData[key] = val
       }
+    }
+    if (body.name !== undefined) {
+      const trimmed = typeof body.name === 'string' ? body.name.trim() : ''
+      if (!trimmed) {
+        return NextResponse.json({ error: 'Name cannot be empty' }, { status: 400 })
+      }
+      updateData.name = trimmed
+    }
+    if (
+      'business_unit_id' in body &&
+      (body.business_unit_id === '' || body.business_unit_id === null)
+    ) {
+      updateData.business_unit_id = null
     }
     // Normalize specialties and industry if provided
     if (Array.isArray(body.specialties)) {
@@ -144,6 +161,9 @@ export async function PUT(
 
     if (error) {
       console.error('Error updating supplier:', error)
+      if (isSupplierNameBusinessUnitUniqueViolation(error)) {
+        return supplierDuplicateNameBuResponse()
+      }
       return NextResponse.json(
         { error: 'Error al actualizar proveedor' },
         { status: 500 }

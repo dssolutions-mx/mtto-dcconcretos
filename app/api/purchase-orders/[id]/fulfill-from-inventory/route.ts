@@ -68,10 +68,21 @@ export async function POST(
       ...body
     }, user.id)
 
+    if (result.items_fulfilled === 0 && body.fulfillments.length > 0) {
+      const firstErr =
+        result.results.find((r) => !r.success && r.error_message)?.error_message ||
+        'No se pudo registrar ningún surtido desde almacén.'
+      return NextResponse.json({
+        success: false,
+        error: firstErr,
+        data: result,
+      }, { status: 400 })
+    }
+
     return NextResponse.json({
       success: true,
       data: result,
-      message: `${result.items_fulfilled} items fulfilled from inventory`
+      message: `${result.items_fulfilled} partida(s) surtida(s) desde almacén`,
     })
   } catch (error) {
     console.error('Error fulfilling from inventory:', error)

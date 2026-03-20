@@ -7,6 +7,7 @@ import { format } from "date-fns"
 import { es } from "date-fns/locale"
 import { ReactNode } from "react"
 import { PurchaseOrderType } from "@/types/purchase-orders"
+import type { POFulfillmentHints } from "@/components/purchase-orders/workflow/WorkflowStatusDisplay"
 import { FileCheck, Package, ShoppingCart, Store, Building2, Wrench } from "lucide-react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
@@ -120,6 +121,7 @@ interface PurchaseOrderDetailsRouterProps {
   authorizerName?: string | null
   items: any[]
   desktopContent: ReactNode
+  fulfillmentHints?: POFulfillmentHints | null
 }
 
 export function PurchaseOrderDetailsRouter({
@@ -130,6 +132,7 @@ export function PurchaseOrderDetailsRouter({
   authorizerName,
   items,
   desktopContent,
+  fulfillmentHints,
 }: PurchaseOrderDetailsRouterProps) {
   const isMobile = useIsMobile()
   const searchParams = useSearchParams()
@@ -150,6 +153,7 @@ export function PurchaseOrderDetailsRouter({
         getPurchaseOrderTypeInfo={getPurchaseOrderTypeInfo}
         isImageFile={isImageFile}
         isPdfFile={isPdfFile}
+        fulfillmentHints={fulfillmentHints}
       />
     )
   }

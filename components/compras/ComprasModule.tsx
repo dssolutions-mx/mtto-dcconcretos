@@ -19,13 +19,13 @@ import {
   Check,
   AlertTriangle,
   Clock,
-  DollarSign,
   Package,
   ShoppingCart,
   Trash2,
   X,
   Warehouse,
   Building2,
+  Layers,
 } from "lucide-react"
 import { createClient } from "@/lib/supabase"
 import { PurchaseOrderStatus } from "@/types"
@@ -33,6 +33,7 @@ import { PurchaseOrderType } from "@/types/purchase-orders"
 import { useToast } from "@/hooks/use-toast"
 import { useAuthZustand } from "@/hooks/use-auth-zustand"
 import { formatCurrency, cn } from "@/lib/utils"
+import { splitPoLineTotalsByFulfillFrom } from "@/lib/purchase-orders/po-line-amounts"
 import { Separator } from "@/components/ui/separator"
 import { ComprasSummaryRibbon } from "./ComprasSummaryRibbon"
 import { ComprasFilterBar } from "./ComprasFilterBar"
@@ -486,44 +487,114 @@ export function ComprasModule({
                 <div
                   className={cn(
                     "p-3 rounded-lg border-2",
-                    orderToApprove.po_purpose === "work_order_inventory" && "border-blue-500 bg-blue-50",
+                    orderToApprove.po_purpose === "work_order_inventory" && "border-sky-200 bg-sky-50",
                     orderToApprove.po_purpose === "inventory_restock" && "border-purple-500 bg-purple-50",
-                    orderToApprove.po_purpose === "work_order_cash" && "border-orange-500 bg-orange-50"
+                    orderToApprove.po_purpose === "work_order_cash" && "border-orange-200 bg-orange-50",
+                    orderToApprove.po_purpose === "mixed" && "border-amber-200 bg-amber-50"
                   )}
                 >
-                  <div className="flex items-center gap-2 mb-2">
+                  <div className="flex flex-wrap items-center gap-2 mb-2">
                     {orderToApprove.po_purpose === "work_order_inventory" && (
-                      <Badge variant="default" className="gap-1">
-                        <Package className="h-3 w-3" /> Desde Inventario
+                      <Badge variant="default" className="gap-1 rounded-full text-[10px] font-semibold border border-sky-200">
+                        <Package className="h-3 w-3" /> Desde almacén
                       </Badge>
                     )}
                     {orderToApprove.po_purpose === "inventory_restock" && (
-                      <Badge variant="secondary" className="gap-1">
+                      <Badge variant="secondary" className="gap-1 rounded-full text-[10px] font-semibold">
                         <Warehouse className="h-3 w-3" /> Reabastecimiento
                       </Badge>
                     )}
                     {orderToApprove.po_purpose === "work_order_cash" && (
-                      <Badge variant="destructive" className="gap-1">
-                        <DollarSign className="h-3 w-3" /> Compra con Efectivo
+                      <Badge variant="outline" className="gap-1 rounded-full text-[10px] font-semibold border-orange-200 bg-orange-50 text-orange-900">
+                        <ShoppingCart className="h-3 w-3" /> Compra a proveedor
+                      </Badge>
+                    )}
+                    {orderToApprove.po_purpose === "mixed" && (
+                      <Badge variant="outline" className="gap-1 rounded-full text-[10px] font-semibold border-amber-200 bg-amber-50 text-amber-900">
+                        <Layers className="h-3 w-3" /> Mixto: almacén y proveedor
                       </Badge>
                     )}
                   </div>
-                  <div className="grid grid-cols-2 gap-2 text-sm">
-                    <div>
-                      <span className="text-muted-foreground">Impacto en Efectivo:</span>
-                      <div className={cn("font-bold", orderToApprove.po_purpose === "work_order_inventory" ? "text-green-600" : "text-orange-600")}>
-                        {orderToApprove.po_purpose === "work_order_inventory" ? "$0" : formatCurrencyLocal(orderToApprove.total_amount || "0")}
+                  {(() => {
+                    const split = splitPoLineTotalsByFulfillFrom(orderToApprove.items)
+                    const headerTotal = Number(orderToApprove.total_amount) || 0
+                    const sumLines = split.inventoryTotal + split.purchaseTotal
+                    const sumMismatch =
+                      split.inventoryLineCount + split.purchaseLineCount > 0 &&
+                      Math.abs(sumLines - headerTotal) > 0.05
+
+                    if (orderToApprove.po_purpose === "mixed") {
+                      return (
+                        <div className="space-y-2 text-sm">
+                          <div className="flex justify-between gap-3 border-b border-border/40 pb-2">
+                            <span className="text-muted-foreground shrink-0">Desde almacén (ref.)</span>
+                            <span className="font-semibold tabular-num text-green-800 text-right">
+                              {formatCurrencyLocal(split.inventoryTotal)}
+                            </span>
+                          </div>
+                          <div className="flex justify-between gap-3 border-b border-border/40 pb-2">
+                            <span className="text-muted-foreground shrink-0">Compra a proveedor</span>
+                            <span className="font-semibold tabular-num text-orange-800 text-right">
+                              {formatCurrencyLocal(split.purchaseTotal)}
+                            </span>
+                          </div>
+                          <div className="flex justify-between gap-3 pt-0.5">
+                            <span className="text-muted-foreground shrink-0">Total OC (cabecera)</span>
+                            <span className="font-medium tabular-num text-right">
+                              {formatCurrencyLocal(orderToApprove.total_amount || "0")}
+                            </span>
+                          </div>
+                          {sumMismatch && (
+                            <p className="text-[11px] text-muted-foreground leading-snug">
+                              La suma de líneas no coincide exactamente con el total de la orden; usa el total de
+                              cabecera para autorización.
+                            </p>
+                          )}
+                          <div className="pt-1 border-t border-border/40">
+                            <span className="text-muted-foreground text-xs">Clasificación: </span>
+                            <span className="font-medium text-xs">Mixto (almacén + proveedor)</span>
+                          </div>
+                        </div>
+                      )
+                    }
+
+                    const purchaseFromLines =
+                      split.purchaseLineCount > 0 ? split.purchaseTotal : headerTotal
+                    const compraLabelMonto =
+                      orderToApprove.po_purpose === "work_order_inventory"
+                        ? "No aplica"
+                        : formatCurrencyLocal(
+                            orderToApprove.po_purpose === "work_order_cash"
+                              ? String(purchaseFromLines || headerTotal)
+                              : orderToApprove.total_amount || "0"
+                          )
+
+                    return (
+                      <div className="grid grid-cols-2 gap-2 text-sm">
+                        <div>
+                          <span className="text-muted-foreground">Monto en compra a proveedor</span>
+                          <div
+                            className={cn(
+                              "font-bold tabular-num",
+                              orderToApprove.po_purpose === "work_order_inventory"
+                                ? "text-green-700"
+                                : "text-orange-700"
+                            )}
+                          >
+                            {compraLabelMonto}
+                          </div>
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground">Clasificación</span>
+                          <div className="font-medium">
+                            {orderToApprove.po_purpose === "work_order_inventory" && "Solo surtido interno"}
+                            {orderToApprove.po_purpose === "inventory_restock" && "Inversión en stock"}
+                            {orderToApprove.po_purpose === "work_order_cash" && "Compra operativa"}
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                    <div>
-                      <span className="text-muted-foreground">Tipo de Gasto:</span>
-                      <div className="font-medium">
-                        {orderToApprove.po_purpose === "work_order_inventory" && "Inventario"}
-                        {orderToApprove.po_purpose === "inventory_restock" && "Inversión"}
-                        {orderToApprove.po_purpose === "work_order_cash" && "Efectivo"}
-                      </div>
-                    </div>
-                  </div>
+                    )
+                  })()}
                 </div>
               )}
               <div className="p-4 bg-muted rounded-lg space-y-2">

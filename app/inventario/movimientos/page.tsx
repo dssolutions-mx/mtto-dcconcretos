@@ -1,6 +1,6 @@
 import type { Metadata } from "next"
-import { DashboardHeader } from "@/components/dashboard/dashboard-header"
 import { DashboardShell } from "@/components/dashboard/dashboard-shell"
+import { InventoryModuleChrome } from "@/components/inventory/inventory-module-chrome"
 import { MovementHistory } from "@/components/inventory/movement-history"
 
 export const metadata: Metadata = {
@@ -11,12 +11,13 @@ export const metadata: Metadata = {
 export default function MovementsPage() {
   return (
     <DashboardShell>
-      <DashboardHeader
-        heading="Historial de Movimientos"
-        text="Consulta el historial completo de todos los movimientos de inventario."
-        id="movements-header"
-      />
-      <MovementHistory />
+      <InventoryModuleChrome
+        title="Movimientos"
+        description="Entradas, salidas y ajustes registrados en inventario, incluido surtido vinculado a órdenes de compra."
+        activeHref="/inventario/movimientos"
+      >
+        <MovementHistory />
+      </InventoryModuleChrome>
     </DashboardShell>
   )
 }

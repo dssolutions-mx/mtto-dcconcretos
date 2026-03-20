@@ -24,11 +24,14 @@ import {
   BankAccountInfo,
 } from "@/types/suppliers"
 import { createClient } from "@/lib/supabase"
+import { useToast } from "@/hooks/use-toast"
 
 interface SupplierFormProps {
   supplier?: Supplier
   onSuccess?: (supplier: Supplier) => void
   onCancel?: () => void
+  /** When create is blocked (e.g. duplicate name + BU), parent can close inline create UI and focus search */
+  onDuplicateBlocked?: (searchedName: string) => void
 }
 
 const SUPPLIER_TYPES: { value: SupplierType; label: string }[] = [
@@ -84,7 +87,8 @@ const emptyContact = (): ContactRow => ({
   is_primary: false,
 })
 
-export function SupplierForm({ supplier, onSuccess, onCancel }: SupplierFormProps) {
+export function SupplierForm({ supplier, onSuccess, onCancel, onDuplicateBlocked }: SupplierFormProps) {
+  const { toast } = useToast()
   const [formData, setFormData] = useState<SupplierFormData & { bank_account_info: BankAccountInfo }>({
     name: supplier?.name || '',
     business_name: supplier?.business_name || '',
@@ -254,7 +258,20 @@ export function SupplierForm({ supplier, onSuccess, onCancel }: SupplierFormProp
 
       const result = await response.json()
       if (!response.ok) {
-        alert('Error al guardar el proveedor: ' + result.error)
+        if (
+          response.status === 409 &&
+          result?.code === 'DUPLICATE_SUPPLIER_NAME_BU' &&
+          typeof result?.error === 'string'
+        ) {
+          toast({
+            variant: 'destructive',
+            title: 'El proveedor ya existe',
+            description: result.error,
+          })
+          onDuplicateBlocked?.(formData.name.trim())
+          return
+        }
+        alert('Error al guardar el proveedor: ' + (result.error || response.statusText))
         return
       }
 

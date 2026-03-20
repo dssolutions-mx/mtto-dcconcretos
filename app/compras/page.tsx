@@ -147,7 +147,7 @@ function PurchaseOrdersPageContent() {
             <div className="min-w-0 flex-1">
               <h1 className="text-lg font-semibold truncate">Órdenes de Compra</h1>
               <p className="text-xs text-muted-foreground truncate">
-                Gestiona las órdenes generadas a partir de órdenes de trabajo
+                Compras a proveedor, surtido desde almacén y aprobaciones en un solo lugar
               </p>
             </div>
             <ComprasMobileInfoDrawer
@@ -182,7 +182,7 @@ function PurchaseOrdersPageContent() {
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-6">
         <DashboardHeader
           heading="Órdenes de Compra"
-          text="Gestiona las órdenes de compra generadas a partir de órdenes de trabajo."
+          text="Gestiona compras a proveedor y el surtido desde almacén vinculado a órdenes de trabajo."
           id="compras-header"
         />
         <div className="flex flex-col sm:flex-row sm:flex-wrap gap-2 w-full md:w-auto items-stretch sm:items-center">

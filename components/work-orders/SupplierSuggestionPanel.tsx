@@ -336,7 +336,7 @@ export function SupplierSuggestionPanel({
                     router.push(url)
                   }}
                 >
-                  Crear OC
+                  Crear solicitud
                 </Button>
               )}
             </div>

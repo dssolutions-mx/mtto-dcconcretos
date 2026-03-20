@@ -10,7 +10,10 @@ import {
   Store, 
   Wrench, 
   Building2,
-  CheckCircle
+  CheckCircle,
+  Package,
+  ShoppingCart,
+  Layers
 } from "lucide-react"
 import { PurchaseOrderType } from "@/types/purchase-orders"
 import { useIsMobile } from "@/hooks/use-mobile"
@@ -26,9 +29,12 @@ interface EnhancedPurchaseOrderCreationFormProps {
 
 enum CreationStep {
   SELECT_TYPE = 'select-type',
+  WO_LINE_INTENT = 'wo-line-intent',
   FILL_FORM = 'fill-form',
   SUCCESS = 'success'
 }
+
+type WoLineSourceIntent = 'inventory' | 'mixed' | 'purchase'
 
 export function EnhancedPurchaseOrderCreationForm({ 
   workOrderId, 
@@ -42,6 +48,7 @@ export function EnhancedPurchaseOrderCreationForm({
   const [selectedType, setSelectedType] = useState<PurchaseOrderType | null>(null)
   const [workOrderIdState, setWorkOrderIdState] = useState<string>("")
   const [prefillSupplier, setPrefillSupplier] = useState<string>("")
+  const [woLineSourceIntent, setWoLineSourceIntent] = useState<WoLineSourceIntent | null>(null)
 
   useEffect(() => {
     if (initialType && Object.values(PurchaseOrderType).includes(initialType as PurchaseOrderType)) {
@@ -64,12 +71,42 @@ export function EnhancedPurchaseOrderCreationForm({
 
   const handleTypeSelected = (type: PurchaseOrderType) => {
     setSelectedType(type)
+    setWoLineSourceIntent(null)
+    const needsLineIntent =
+      !!workOrderIdState &&
+      (type === PurchaseOrderType.DIRECT_PURCHASE || type === PurchaseOrderType.SPECIAL_ORDER)
+    setCurrentStep(needsLineIntent ? CreationStep.WO_LINE_INTENT : CreationStep.FILL_FORM)
+  }
+
+  const handleWoLineIntentConfirm = (intent: WoLineSourceIntent) => {
+    setWoLineSourceIntent(intent)
     setCurrentStep(CreationStep.FILL_FORM)
   }
 
   const handleBackToTypeSelection = () => {
     setSelectedType(null)
+    setWoLineSourceIntent(null)
     setCurrentStep(CreationStep.SELECT_TYPE)
+  }
+
+  const handleBackFromWoLineIntent = () => {
+    setSelectedType(null)
+    setWoLineSourceIntent(null)
+    setCurrentStep(CreationStep.SELECT_TYPE)
+  }
+
+  const handleBackFromForm = () => {
+    if (
+      workOrderIdState &&
+      selectedType &&
+      (selectedType === PurchaseOrderType.DIRECT_PURCHASE ||
+        selectedType === PurchaseOrderType.SPECIAL_ORDER)
+    ) {
+      setWoLineSourceIntent(null)
+      setCurrentStep(CreationStep.WO_LINE_INTENT)
+    } else {
+      handleBackToTypeSelection()
+    }
   }
 
   const handleFormSuccess = (purchaseOrderId: string) => {
@@ -117,7 +154,7 @@ export function EnhancedPurchaseOrderCreationForm({
 
   return (
     <div className="space-y-6">
-      {currentStep !== CreationStep.SELECT_TYPE && (
+      {currentStep !== CreationStep.SELECT_TYPE && currentStep !== CreationStep.WO_LINE_INTENT && (
         <Card>
           <CardContent className={isMobile ? "py-3 px-4" : "py-4"}>
             <div className="flex items-center justify-between gap-3">
@@ -125,9 +162,9 @@ export function EnhancedPurchaseOrderCreationForm({
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={handleBackToTypeSelection}
+                  onClick={handleBackFromForm}
                   className={isMobile ? "h-10 w-10 p-0 shrink-0" : "h-8 w-8 p-0"}
-                  aria-label="Volver al selector de tipo"
+                  aria-label="Volver al paso anterior"
                 >
                   <ArrowLeft className="h-4 w-4" />
                 </Button>
@@ -179,12 +216,77 @@ export function EnhancedPurchaseOrderCreationForm({
         />
       )}
 
+      {currentStep === CreationStep.WO_LINE_INTENT && selectedType && (
+        <Card>
+          <CardContent className={isMobile ? "py-4 px-4 space-y-4" : "py-6 space-y-4"}>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleBackFromWoLineIntent}
+                className={isMobile ? "h-10 w-10 p-0 shrink-0" : "h-8 w-8 p-0"}
+                aria-label="Volver al tipo de orden"
+              >
+                <ArrowLeft className="h-4 w-4" />
+              </Button>
+              <div>
+                <h3 className="font-medium text-sm md:text-base">Origen de las refacciones</h3>
+                <p className="text-xs md:text-sm text-muted-foreground">
+                  Esto solo precarga las partidas; puedes ajustar cada línea después. El inventario baja al
+                  registrar el surtido, no al aprobar.
+                </p>
+              </div>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <Button
+                type="button"
+                variant="outline"
+                className="h-auto min-h-[100px] flex flex-col items-start justify-start text-left py-4 px-4 gap-1 whitespace-normal"
+                onClick={() => handleWoLineIntentConfirm('inventory')}
+              >
+                <Package className="h-5 w-5 shrink-0 text-green-700" />
+                <span className="font-medium">Todo desde almacén</span>
+                <span className="text-xs text-muted-foreground font-normal leading-snug">
+                  Partidas con surtido interno cuando haya existencias.
+                </span>
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                className="h-auto min-h-[100px] flex flex-col items-start justify-start text-left py-4 px-4 gap-1 whitespace-normal"
+                onClick={() => handleWoLineIntentConfirm('mixed')}
+              >
+                <Layers className="h-5 w-5 shrink-0 text-amber-700" />
+                <span className="font-medium">Combinado</span>
+                <span className="text-xs text-muted-foreground font-normal leading-snug">
+                  El sistema sugerirá almacén cuando haya stock; el resto va por compra.
+                </span>
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                className="h-auto min-h-[100px] flex flex-col items-start justify-start text-left py-4 px-4 gap-1 whitespace-normal"
+                onClick={() => handleWoLineIntentConfirm('purchase')}
+              >
+                <ShoppingCart className="h-5 w-5 shrink-0 text-sky-700" />
+                <span className="font-medium">Todo por compra</span>
+                <span className="text-xs text-muted-foreground font-normal leading-snug">
+                  Proveedor / cotización; sin surtido desde almacén por defecto.
+                </span>
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {currentStep === CreationStep.FILL_FORM && selectedType && (
         <div>
           {selectedType === PurchaseOrderType.DIRECT_PURCHASE && (
             <DirectPurchaseForm
+              key={`dp-${workOrderIdState || 'x'}-${woLineSourceIntent ?? 'na'}`}
               workOrderId={workOrderIdState || undefined}
               prefillSupplier={prefillSupplier || undefined}
+              woLineSourceIntent={woLineSourceIntent ?? undefined}
               onSuccess={handleFormSuccess}
               onCancel={handleFormCancel}
             />
@@ -201,8 +303,10 @@ export function EnhancedPurchaseOrderCreationForm({
 
           {selectedType === PurchaseOrderType.SPECIAL_ORDER && (
             <SpecialOrderForm
+              key={`so-${workOrderIdState || 'x'}-${woLineSourceIntent ?? 'na'}`}
               workOrderId={workOrderIdState || undefined}
               prefillSupplier={prefillSupplier || undefined}
+              woLineSourceIntent={woLineSourceIntent ?? undefined}
               onSuccess={handleFormSuccess}
               onCancel={handleFormCancel}
             />

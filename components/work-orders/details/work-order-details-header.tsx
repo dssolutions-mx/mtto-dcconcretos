@@ -65,7 +65,7 @@ export function WorkOrderDetailsHeader({
           <Button asChild>
             <Link href={`/ordenes/${workOrderId}/generar-oc`}>
               <ShoppingCart className="mr-2 h-4 w-4" />
-              Generar OC
+              Solicitar refacciones
             </Link>
           </Button>
         )}
@@ -99,7 +99,7 @@ export function WorkOrderDetailsHeader({
           <Button variant="outline" asChild>
             <Link href={`/ordenes/${workOrderId}/generar-oc`}>
               <ShoppingCart className="mr-2 h-4 w-4" />
-              Generar OC
+              Solicitar refacciones
             </Link>
           </Button>
         )}

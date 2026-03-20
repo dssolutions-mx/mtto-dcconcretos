@@ -45,8 +45,21 @@ import { useIsMobile } from "@/hooks/use-mobile"
 interface SpecialOrderFormProps {
   workOrderId?: string
   prefillSupplier?: string
+  woLineSourceIntent?: 'inventory' | 'mixed' | 'purchase'
   onSuccess?: (purchaseOrderId: string) => void
   onCancel?: () => void
+}
+
+function pickWarehouseForIssueSpecial(
+  warehouses: Array<{ warehouse_id: string; available_quantity: number }>,
+  qty: number
+): string | undefined {
+  if (!warehouses?.length) return undefined
+  const qtyN = Number(qty) || 0
+  const best = warehouses
+    .filter((w) => w.available_quantity >= qtyN)
+    .sort((a, b) => b.available_quantity - a.available_quantity)[0]
+  return (best ?? warehouses[0]).warehouse_id
 }
 
 interface OrderItem {
@@ -110,6 +123,7 @@ const COMMON_SUPPLIERS = [
 export function SpecialOrderForm({ 
   workOrderId,
   prefillSupplier,
+  woLineSourceIntent,
   onSuccess, 
   onCancel 
 }: SpecialOrderFormProps) {
@@ -317,7 +331,10 @@ export function SpecialOrderForm({
                 lead_time_days: Number(partRecord.lead_time_days) || 15,
                 is_special_order: true,
                 part_id,
-                fulfill_from: 'purchase' as const
+                fulfill_from:
+                  woLineSourceIntent === 'inventory'
+                    ? ('inventory' as const)
+                    : ('purchase' as const)
               }
             }))
           } catch (e) {
@@ -364,7 +381,7 @@ export function SpecialOrderForm({
       // No work order - just load suppliers
       setIsLoadingWorkOrder(false)
     }
-  }, [workOrderId])
+  }, [workOrderId, woLineSourceIntent])
 
   // Calculate total amount whenever items change
   useEffect(() => {
@@ -439,7 +456,7 @@ export function SpecialOrderForm({
         // Update item with availability
         setItems(prev => prev.map(i => {
           if (i.id !== item.id) return i
-          const updated = {
+          const updated: OrderItem = {
             ...i,
             availability: {
               sufficient: data.sufficient,
@@ -447,9 +464,18 @@ export function SpecialOrderForm({
               available_by_warehouse: data.available_by_warehouse || []
             }
           }
-          // Auto-suggest inventory if available and not already set
           if (data.sufficient && !updated.fulfill_from) {
             updated.fulfill_from = 'inventory'
+          }
+          if (
+            updated.fulfill_from === 'inventory' &&
+            updated.availability.available_by_warehouse?.length &&
+            !updated.warehouse_id
+          ) {
+            updated.warehouse_id = pickWarehouseForIssueSpecial(
+              updated.availability.available_by_warehouse,
+              Number(updated.quantity) || 0
+            )
           }
           return updated
         }))
@@ -1386,7 +1412,7 @@ export function SpecialOrderForm({
                 <Alert className="border-green-500 bg-green-50">
                   <CheckCircle2 className="h-4 w-4 text-green-600" />
                   <AlertDescription className="text-green-800">
-                    <strong>Esta orden utilizará solo inventario interno.</strong> No requiere efectivo este mes, solo autorización para usar el inventario.
+                    <strong>Esta orden usará solo existencias del almacén.</strong> No implica compra a proveedor en esta OC; sigue el flujo de autorización habitual.
                   </AlertDescription>
                 </Alert>
               )
@@ -1395,7 +1421,7 @@ export function SpecialOrderForm({
                 <Alert className="border-yellow-500 bg-yellow-50">
                   <AlertCircle className="h-4 w-4 text-yellow-600" />
                   <AlertDescription className="text-yellow-800">
-                    <strong>Esta orden incluye items de inventario y compras.</strong> Items de inventario: ${inventoryTotalSum.toFixed(2)} (sin efectivo). Items a comprar: ${purchaseTotalSum.toFixed(2)}. Las cotizaciones se pre-llenarán con los items a comprar.
+                    <strong>Esta orden mezcla surtido desde almacén y compra a proveedor.</strong> Desde almacén: ${inventoryTotalSum.toFixed(2)}. Compra a proveedor: ${purchaseTotalSum.toFixed(2)}. Las cotizaciones se orientan a las partidas de compra.
                   </AlertDescription>
                 </Alert>
               )
@@ -1404,7 +1430,7 @@ export function SpecialOrderForm({
                 <Alert className="border-blue-500 bg-blue-50">
                   <ShoppingCart className="h-4 w-4 text-blue-600" />
                   <AlertDescription className="text-blue-800">
-                    <strong>Esta orden requiere efectivo:</strong> ${purchaseTotalSum.toFixed(2)}. Las cotizaciones se pre-llenarán con estos items.
+                    <strong>Esta orden va principalmente por compra a proveedor:</strong> ${purchaseTotalSum.toFixed(2)}. Las cotizaciones se pre-llenarán con estas partidas.
                   </AlertDescription>
                 </Alert>
               )

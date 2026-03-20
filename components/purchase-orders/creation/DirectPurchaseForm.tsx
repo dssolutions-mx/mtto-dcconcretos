@@ -44,8 +44,22 @@ import { useIsMobile } from "@/hooks/use-mobile"
 interface DirectPurchaseFormProps {
   workOrderId?: string
   prefillSupplier?: string
+  /** Desde flujo OT: cómo precargar origen por partida (mixed = comportamiento previo). */
+  woLineSourceIntent?: 'inventory' | 'mixed' | 'purchase'
   onSuccess?: (purchaseOrderId: string) => void
   onCancel?: () => void
+}
+
+function pickWarehouseForIssue(
+  warehouses: Array<{ warehouse_id: string; available_quantity: number }>,
+  qty: number
+): string | undefined {
+  if (!warehouses?.length) return undefined
+  const qtyN = Number(qty) || 0
+  const best = warehouses
+    .filter((w) => w.available_quantity >= qtyN)
+    .sort((a, b) => b.available_quantity - a.available_quantity)[0]
+  return (best ?? warehouses[0]).warehouse_id
 }
 
 interface PurchaseOrderItem {
@@ -91,6 +105,7 @@ interface WorkOrderData {
 export function DirectPurchaseForm({ 
   workOrderId,
   prefillSupplier,
+  woLineSourceIntent,
   onSuccess, 
   onCancel 
 }: DirectPurchaseFormProps) {
@@ -275,6 +290,11 @@ export function DirectPurchaseForm({
                   }
                 }
                 
+                const initialFulfillFrom =
+                  woLineSourceIntent === 'inventory'
+                    ? ('inventory' as const)
+                    : ('purchase' as const)
+
                 const item: PurchaseOrderItem = {
                   id: `wo-part-${index}`,
                   name:
@@ -291,7 +311,7 @@ export function DirectPurchaseForm({
                     Number(partRecord.total_price) ||
                     (Number(partRecord.quantity) || 1) *
                       (Number(partRecord.unit_price) || Number(partRecord.price) || 0),
-                  fulfill_from: 'purchase'  // Default to purchase, will be checked later
+                  fulfill_from: initialFulfillFrom
                 }
                 
                 return item
@@ -340,7 +360,7 @@ export function DirectPurchaseForm({
       // No work order - just load suppliers
       setIsLoadingWorkOrder(false)
     }
-  }, [workOrderId])
+  }, [workOrderId, woLineSourceIntent])
 
   // Check availability for an item
   const checkItemAvailability = useCallback(async (item: PurchaseOrderItem) => {
@@ -359,7 +379,7 @@ export function DirectPurchaseForm({
         // Update item with availability
         setItems(prev => prev.map(i => {
           if (i.id !== item.id) return i
-          const updated = {
+          const updated: PurchaseOrderItem = {
             ...i,
             availability: {
               sufficient: data.sufficient,
@@ -367,9 +387,19 @@ export function DirectPurchaseForm({
               available_by_warehouse: data.available_by_warehouse || []
             }
           }
-          // Auto-suggest inventory if available and not already set
+          // Auto-suggest inventory if available and not already set (mixed / sin intención explícita)
           if (data.sufficient && !updated.fulfill_from) {
             updated.fulfill_from = 'inventory'
+          }
+          if (
+            updated.fulfill_from === 'inventory' &&
+            updated.availability.available_by_warehouse?.length &&
+            !updated.warehouse_id
+          ) {
+            updated.warehouse_id = pickWarehouseForIssue(
+              updated.availability.available_by_warehouse,
+              Number(updated.quantity) || 0
+            )
           }
           return updated
         }))
@@ -1328,7 +1358,7 @@ export function DirectPurchaseForm({
             <Alert className="border-green-500 bg-green-50">
               <CheckCircle2 className="h-4 w-4 text-green-600" />
               <AlertDescription className="text-green-800">
-                <strong>Esta orden utilizará solo inventario interno.</strong> No requiere efectivo este mes, solo autorización para usar el inventario.
+                <strong>Esta orden usará solo existencias del almacén.</strong> No implica compra a proveedor en esta OC; sigue el flujo de autorización habitual.
               </AlertDescription>
             </Alert>
           )
@@ -1337,7 +1367,7 @@ export function DirectPurchaseForm({
             <Alert className="border-yellow-500 bg-yellow-50">
               <AlertCircle className="h-4 w-4 text-yellow-600" />
               <AlertDescription className="text-yellow-800">
-                <strong>Esta orden incluye items de inventario y compras.</strong> Items de inventario: ${inventoryTotal.toFixed(2)} (sin efectivo). Items a comprar: ${purchaseTotal.toFixed(2)}. Impacto en efectivo: ${purchaseTotal.toFixed(2)}
+                <strong>Esta orden mezcla surtido desde almacén y compra a proveedor.</strong> Desde almacén: ${inventoryTotal.toFixed(2)}. Compra a proveedor: ${purchaseTotal.toFixed(2)} (monto sujeto a cotización o aprobación según reglas).
               </AlertDescription>
             </Alert>
           )
@@ -1346,7 +1376,7 @@ export function DirectPurchaseForm({
             <Alert className="border-blue-500 bg-blue-50">
               <ShoppingCart className="h-4 w-4 text-blue-600" />
               <AlertDescription className="text-blue-800">
-                <strong>Esta orden requiere efectivo:</strong> ${purchaseTotal.toFixed(2)}
+                <strong>Esta orden va principalmente por compra a proveedor:</strong> ${purchaseTotal.toFixed(2)}
               </AlertDescription>
             </Alert>
           )
@@ -1357,9 +1387,10 @@ export function DirectPurchaseForm({
       {/* Items Section - Always show (items pre-loaded from WO; user decides inventory vs purchase per item) */}
       <Card>
         <CardHeader className={isMobile ? "p-5 md:p-6" : ""}>
-          <CardTitle className="text-lg">Artículos a Comprar</CardTitle>
+          <CardTitle className="text-lg">Refacciones y materiales</CardTitle>
           <CardDescription>
-            Agregue los artículos que necesita comprar. Seleccione la fuente (inventario o compra) para cada item.
+            Indique si cada partida sale del almacén o se compra a proveedor. El inventario solo baja al
+            registrar el surtido cuando la OC esté en el estado adecuado.
           </CardDescription>
         </CardHeader>
         <CardContent className={`space-y-4 ${isMobile ? "p-5 md:p-6 pt-0" : ""}`}>
@@ -1747,7 +1778,7 @@ export function DirectPurchaseForm({
                             Total Items de Inventario:
                           </span>
                           <span className="font-medium text-green-600">
-                            ${inventoryTotal.toFixed(2)} (sin impacto en efectivo)
+                            ${inventoryTotal.toFixed(2)} (desde almacén)
                           </span>
                         </div>
                       )}
@@ -1758,7 +1789,7 @@ export function DirectPurchaseForm({
                             Total Items a Comprar:
                           </span>
                           <span className="font-medium text-orange-600">
-                            ${purchaseTotal.toFixed(2)} (requiere efectivo)
+                            ${purchaseTotal.toFixed(2)} (compra a proveedor)
                           </span>
                         </div>
                       )}

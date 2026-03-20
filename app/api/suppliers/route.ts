@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import { SupplierSearchRequest, CreateSupplierRequest, SUPPLIER_SPECIALTIES } from '@/types/suppliers'
 import { normalizeIndustry, normalizeSpecialty } from '@/lib/suppliers/taxonomy'
+import {
+  isSupplierNameBusinessUnitUniqueViolation,
+  supplierDuplicateNameBuResponse,
+} from '@/lib/suppliers/supplier-write-errors'
 
 export async function GET(request: NextRequest) {
   try {
@@ -124,8 +128,8 @@ export async function POST(request: NextRequest) {
 
     const body: CreateSupplierRequest = await request.json()
 
-    // Validate required fields
-    if (!body.name || !body.supplier_type) {
+    const name = typeof body.name === 'string' ? body.name.trim() : ''
+    if (!name || !body.supplier_type) {
       return NextResponse.json(
         { error: 'Name and supplier_type are required' },
         { status: 400 }
@@ -139,12 +143,16 @@ export async function POST(request: NextRequest) {
       'supplier_type', 'industry', 'payment_terms', 'payment_methods', 'notes',
       'business_unit_id'
     ] as const
-    const insertData: Record<string, unknown> = {}
+    const insertData: Record<string, unknown> = { name }
     for (const key of allowedFields) {
+      if (key === 'name') continue
       const val = body[key as keyof CreateSupplierRequest]
-      if (val !== undefined && val !== null) {
+      if (val !== undefined && val !== null && val !== '') {
         insertData[key] = val
       }
+    }
+    if (body.business_unit_id === '' || body.business_unit_id === undefined) {
+      insertData.business_unit_id = null
     }
 
     // Normalize specialties and industry
@@ -166,6 +174,9 @@ export async function POST(request: NextRequest) {
 
     if (error) {
       console.error('Error creating supplier:', error)
+      if (isSupplierNameBusinessUnitUniqueViolation(error)) {
+        return supplierDuplicateNameBuResponse()
+      }
       return NextResponse.json(
         { error: 'Error al crear proveedor' },
         { status: 500 }

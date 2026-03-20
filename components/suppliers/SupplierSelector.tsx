@@ -417,6 +417,10 @@ export function SupplierSelector({
                     </Button>
                   </div>
                   <SupplierForm
+                    onDuplicateBlocked={(searchedName) => {
+                      setShowCreateForm(false)
+                      if (searchedName) setSearchTerm(searchedName)
+                    }}
                     onSuccess={(supplier) => {
                       setShowCreateForm(false)
                       setSelectedSupplier(supplier)

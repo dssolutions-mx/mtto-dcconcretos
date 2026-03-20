@@ -15,7 +15,10 @@ import { notFound } from "next/navigation"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
 import { use, Suspense } from "react"
-import { WorkflowStatusDisplay } from "@/components/purchase-orders/workflow/WorkflowStatusDisplay"
+import {
+  WorkflowStatusDisplay,
+  type POFulfillmentHints,
+} from "@/components/purchase-orders/workflow/WorkflowStatusDisplay"
 import { TypeBadge } from "@/components/purchase-orders/shared/TypeBadge"
 import { ReceiptDisplaySection } from "@/components/purchase-orders/ReceiptDisplaySection"
 import { PurchaseOrderDetailsRouter } from "@/components/purchase-orders/purchase-order-details-router"
@@ -150,6 +153,14 @@ async function PurchaseOrderDetailsContent({ id }: { id: string }) {
     ...inventoryItems.map((i: any) => ({ ...i, _source: "inventory" as const })),
     ...purchaseItems,
   ]
+
+  const workflowFulfillmentHints: POFulfillmentHints = {
+    poPurpose: order.po_purpose ?? null,
+    inventoryFulfilled: !!order.inventory_fulfilled,
+    receivedToInventory: !!order.received_to_inventory,
+    hasInventoryLines: hasInventoryItems,
+    hasPurchaseLines: purchaseItems.length > 0,
+  }
 
   // People
   const fetchName = async (userId: string | null): Promise<string | null> => {
@@ -465,6 +476,7 @@ async function PurchaseOrderDetailsContent({ id }: { id: string }) {
               currentStatus={order.status}
               totalAmount={Number(order.approval_amount) > 0 ? order.approval_amount : order.total_amount}
               workOrderType={order.work_order_type}
+              fulfillmentHints={workflowFulfillmentHints}
             />
           ) : (
             /* Legacy PO fallback */
@@ -488,7 +500,7 @@ async function PurchaseOrderDetailsContent({ id }: { id: string }) {
 
           {/* Inventory actions */}
           {hasCatalogItems && (
-            <Card className="rounded-2xl border border-border/60">
+            <Card id="po-gestion-inventario" className="rounded-2xl border border-border/60 scroll-mt-24">
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm text-muted-foreground font-semibold uppercase tracking-widest">
                   Gestión de Inventario
@@ -525,6 +537,7 @@ async function PurchaseOrderDetailsContent({ id }: { id: string }) {
         authorizerName={authorizerName}
         items={items}
         desktopContent={desktopContent}
+        fulfillmentHints={workflowFulfillmentHints}
       />
     </Suspense>
   )
