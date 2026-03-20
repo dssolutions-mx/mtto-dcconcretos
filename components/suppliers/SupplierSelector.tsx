@@ -1,24 +1,17 @@
 "use client"
 
-import { useState, useEffect, useMemo } from "react"
+import { useState, useEffect, useMemo, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog"
 import {
   Search,
@@ -29,6 +22,7 @@ import {
   TrendingUp,
   AlertTriangle,
   ShieldCheck,
+  CircleAlert,
 } from "lucide-react"
 import { Supplier, SupplierType } from "@/types/suppliers"
 import { SupplierForm } from "@/components/suppliers/SupplierForm"
@@ -73,6 +67,8 @@ export function SupplierSelector({
   const [suggestions, setSuggestions] = useState<SupplierSuggestion[]>([])
   const [manualName, setManualName] = useState<string>("")
   const [showCreateForm, setShowCreateForm] = useState<boolean>(false)
+  const [duplicateBanner, setDuplicateBanner] = useState<string | null>(null)
+  const searchInputRef = useRef<HTMLInputElement>(null)
 
   // Load suppliers
   useEffect(() => {
@@ -125,6 +121,12 @@ export function SupplierSelector({
       loadSuggestions()
     }
   }, [showDialog, suppliers])
+
+  useEffect(() => {
+    if (showDialog) {
+      setDuplicateBanner(null)
+    }
+  }, [showDialog])
 
   const loadSuggestions = async () => {
     try {
@@ -191,9 +193,20 @@ export function SupplierSelector({
   const isCertified = (supplier: Supplier) => supplier.status === 'active_certified'
 
   const handleSupplierSelect = (supplier: Supplier) => {
+    setDuplicateBanner(null)
     setSelectedSupplier(supplier)
     onChange(supplier)
     setShowDialog(false)
+  }
+
+  const handleDuplicateBlocked = (payload: { message: string; searchedName: string }) => {
+    setShowCreateForm(false)
+    setDuplicateBanner(payload.message)
+    if (payload.searchedName) setSearchTerm(payload.searchedName)
+    requestAnimationFrame(() => {
+      searchInputRef.current?.focus()
+      searchInputRef.current?.scrollIntoView({ behavior: "smooth", block: "center" })
+    })
   }
 
   const handleClearSelection = () => {
@@ -364,97 +377,68 @@ export function SupplierSelector({
       <Dialog open={showDialog} onOpenChange={setShowDialog}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Seleccionar Proveedor</DialogTitle>
+            <DialogTitle>Seleccionar proveedor</DialogTitle>
             <DialogDescription>
-              Elige un proveedor de la lista o busca uno específico
+              Busca en el padrón primero; solo agrega uno nuevo si no aparece en la lista.
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4">
-            {allowManualInput && (
-              <Card>
-                <CardContent className="p-4 space-y-2">
-                  <h4 className="font-medium text-sm">Escribir nombre manualmente</h4>
-                  <div className="flex gap-2">
-                    <Input
-                      placeholder="Nombre del proveedor (libre)"
-                      value={manualName}
-                      onChange={(e) => setManualName(e.target.value)}
-                    />
-                    <Button
-                      type="button"
-                      onClick={() => {
-                        onManualInputChange?.(manualName)
-                        setSelectedSupplier(null)
-                        onChange(null)
-                        setShowDialog(false)
-                      }}
-                      disabled={!manualName.trim()}
-                    >
-                      Usar este nombre
-                    </Button>
-                  </div>
-                  <p className="text-xs text-muted-foreground">Se guardará solo el nombre en la orden.</p>
-                </CardContent>
-              </Card>
+            {duplicateBanner && (
+              <Alert
+                variant="destructive"
+                className="border-destructive/40 bg-destructive/5"
+              >
+                <CircleAlert className="h-4 w-4" aria-hidden />
+                <AlertTitle>Proveedor duplicado</AlertTitle>
+                <AlertDescription className="space-y-2">
+                  <p>{duplicateBanner}</p>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="mt-1 border-destructive/40 bg-background"
+                    onClick={() => setDuplicateBanner(null)}
+                  >
+                    Entendido, ocultar aviso
+                  </Button>
+                </AlertDescription>
+              </Alert>
             )}
 
-            {creationEnabled && !showCreateForm && (
-              <div>
-                <Button type="button" variant="outline" onClick={() => setShowCreateForm(true)}>
-                  <Plus className="w-4 h-4 mr-2" /> Agregar nuevo proveedor al padrón
-                </Button>
-              </div>
-            )}
-
-            {showCreateForm && (
-              <Card>
-                <CardContent className="p-4">
-                  <div className="flex items-center justify-between mb-3">
-                    <h4 className="font-medium text-sm">Nuevo Proveedor</h4>
-                    <Button type="button" variant="ghost" size="sm" onClick={() => setShowCreateForm(false)}>
-                      Cancelar
-                    </Button>
-                  </div>
-                  <SupplierForm
-                    onDuplicateBlocked={(searchedName) => {
-                      setShowCreateForm(false)
-                      if (searchedName) setSearchTerm(searchedName)
-                    }}
-                    onSuccess={(supplier) => {
-                      setShowCreateForm(false)
-                      setSelectedSupplier(supplier)
-                      onChange(supplier)
-                      setShowDialog(false)
-                    }}
-                  />
-                </CardContent>
-              </Card>
-            )}
-
-            {/* Search */}
+            {/* Search first — primary action after duplicate */}
             <div className="relative">
-              <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+              <label htmlFor="supplier-selector-search" className="sr-only">
+                Buscar en el padrón de proveedores
+              </label>
+              <Search
+                className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none"
+                aria-hidden
+              />
               <Input
-                placeholder="Buscar proveedores..."
+                id="supplier-selector-search"
+                ref={searchInputRef}
+                placeholder="Buscar por nombre comercial, razón social o contacto…"
                 value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+                onChange={(e) => {
+                  setSearchTerm(e.target.value)
+                  if (duplicateBanner) setDuplicateBanner(null)
+                }}
                 className="pl-10"
+                autoComplete="off"
               />
             </div>
 
-            {/* Filter */}
             {filterByType && (
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-medium">Filtrando por:</span>
+              <div className="flex items-center gap-2 text-sm">
+                <span className="font-medium text-muted-foreground">Filtrando por tipo:</span>
                 {getTypeBadge(filterByType)}
               </div>
             )}
 
-            {/* Suggestions */}
-            {suggestions.length > 0 && (
+            {suggestions.length > 0 && searchTerm.trim() === "" && (
               <div className="space-y-2">
-                <h4 className="font-medium text-sm">Proveedores Recomendados</h4>
+                <h4 className="font-medium text-sm text-foreground">Sugeridos</h4>
                 <div className="grid gap-3">
                   {suggestions.map(({ supplier, score, reasoning }) => (
                     <SupplierCard
@@ -467,31 +451,123 @@ export function SupplierSelector({
               </div>
             )}
 
-            {/* All Suppliers */}
             <div className="space-y-2">
               <h4 className="font-medium text-sm">
-                Proveedores Disponibles
+                Padrón
                 <span className="text-xs font-normal text-muted-foreground ml-2">
-                  (certificados ordenados primero)
+                  certificados primero
                 </span>
               </h4>
               {loading ? (
-                <div className="flex items-center justify-center py-8">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-                  <span className="ml-2">Cargando proveedores...</span>
+                <div
+                  className="flex items-center justify-center py-10 text-sm text-muted-foreground"
+                  role="status"
+                  aria-live="polite"
+                >
+                  <div
+                    className="animate-spin rounded-full h-8 w-8 border-2 border-muted-foreground/20 border-t-primary mr-3"
+                    aria-hidden
+                  />
+                  Cargando proveedores…
                 </div>
               ) : filteredSuppliers.length > 0 ? (
-                <div className="grid gap-3 max-h-96 overflow-y-auto">
-                  {filteredSuppliers.map(supplier => (
-                    <SupplierCard key={supplier.id} supplier={supplier} />
+                <div className="grid gap-3 max-h-[min(24rem,50vh)] overflow-y-auto rounded-md border border-border/60 bg-muted/20 p-2">
+                  {filteredSuppliers.map((s) => (
+                    <SupplierCard key={s.id} supplier={s} />
                   ))}
                 </div>
               ) : (
-                <p className="text-center text-muted-foreground py-8">
-                  No se encontraron proveedores
-                </p>
+                <div className="rounded-md border border-dashed border-border/80 bg-muted/10 px-4 py-8 text-center text-sm text-muted-foreground">
+                  <p className="font-medium text-foreground/90">
+                    {searchTerm.trim()
+                      ? "Ningún resultado con ese criterio"
+                      : "Escribe en el buscador o revisa la lista"}
+                  </p>
+                  {duplicateBanner && searchTerm.trim() !== "" && (
+                    <p className="mt-2 text-xs leading-relaxed">
+                      Si el proveedor ya existe pero no lo ves, puede estar en otra unidad de negocio o
+                      con otro nombre en el padrón. Prueba otra búsqueda o quita filtros del listado
+                      cargado.
+                    </p>
+                  )}
+                </div>
               )}
             </div>
+
+            <div className="h-px w-full bg-border/60" aria-hidden />
+
+            {allowManualInput && (
+              <Card className="border-border/80 shadow-none">
+                <CardContent className="p-4 space-y-2">
+                  <h4 className="font-medium text-sm">Solo nombre en la orden</h4>
+                  <p className="text-xs text-muted-foreground">
+                    Sin registrar en el padrón; útil para compras puntuales.
+                  </p>
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                    <Input
+                      placeholder="Nombre del proveedor"
+                      value={manualName}
+                      onChange={(e) => setManualName(e.target.value)}
+                    />
+                    <Button
+                      type="button"
+                      className="shrink-0"
+                      onClick={() => {
+                        onManualInputChange?.(manualName)
+                        setSelectedSupplier(null)
+                        onChange(null)
+                        setShowDialog(false)
+                      }}
+                      disabled={!manualName.trim()}
+                    >
+                      Usar este nombre
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {creationEnabled && (
+              <Card className="border-border/80 shadow-none">
+                <CardContent className="p-4 space-y-3">
+                  {!showCreateForm ? (
+                    <>
+                      <p className="text-xs text-muted-foreground">
+                        Registra al proveedor en el padrón solo si no aparece arriba.
+                      </p>
+                      <Button type="button" variant="outline" onClick={() => setShowCreateForm(true)}>
+                        <Plus className="w-4 h-4 mr-2" />
+                        Registrar nuevo proveedor en el padrón
+                      </Button>
+                    </>
+                  ) : (
+                    <>
+                      <div className="flex items-center justify-between gap-2">
+                        <h4 className="font-medium text-sm">Nuevo proveedor</h4>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setShowCreateForm(false)}
+                        >
+                          Volver al buscador
+                        </Button>
+                      </div>
+                      <SupplierForm
+                        onDuplicateBlocked={handleDuplicateBlocked}
+                        onSuccess={(supplier) => {
+                          setShowCreateForm(false)
+                          setDuplicateBanner(null)
+                          setSelectedSupplier(supplier)
+                          onChange(supplier)
+                          setShowDialog(false)
+                        }}
+                      />
+                    </>
+                  )}
+                </CardContent>
+              </Card>
+            )}
           </div>
         </DialogContent>
       </Dialog>

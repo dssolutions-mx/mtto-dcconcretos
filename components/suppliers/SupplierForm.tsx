@@ -7,9 +7,10 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Checkbox } from "@/components/ui/checkbox"
-import { X, Plus, UserPlus, Trash2, CreditCard, Users, Building2 } from "lucide-react"
+import { X, Plus, UserPlus, Trash2, CreditCard, Users, Building2, CircleAlert } from "lucide-react"
 import {
   Supplier,
   SupplierFormData,
@@ -24,14 +25,13 @@ import {
   BankAccountInfo,
 } from "@/types/suppliers"
 import { createClient } from "@/lib/supabase"
-import { useToast } from "@/hooks/use-toast"
 
 interface SupplierFormProps {
   supplier?: Supplier
   onSuccess?: (supplier: Supplier) => void
   onCancel?: () => void
-  /** When create is blocked (e.g. duplicate name + BU), parent can close inline create UI and focus search */
-  onDuplicateBlocked?: (searchedName: string) => void
+  /** When create is blocked (e.g. duplicate name + BU), parent can show banner + focus search */
+  onDuplicateBlocked?: (payload: { message: string; searchedName: string }) => void
 }
 
 const SUPPLIER_TYPES: { value: SupplierType; label: string }[] = [
@@ -88,7 +88,7 @@ const emptyContact = (): ContactRow => ({
 })
 
 export function SupplierForm({ supplier, onSuccess, onCancel, onDuplicateBlocked }: SupplierFormProps) {
-  const { toast } = useToast()
+  const [createDuplicateMessage, setCreateDuplicateMessage] = useState<string | null>(null)
   const [formData, setFormData] = useState<SupplierFormData & { bank_account_info: BankAccountInfo }>({
     name: supplier?.name || '',
     business_name: supplier?.business_name || '',
@@ -185,6 +185,10 @@ export function SupplierForm({ supplier, onSuccess, onCancel, onDuplicateBlocked
     load()
   }, [supplier?.id])
 
+  useEffect(() => {
+    if (!supplier) setCreateDuplicateMessage(null)
+  }, [formData.name, selectedBUs, supplier])
+
   // Contact management
   const addContact = () => setContacts(prev => [...prev, emptyContact()])
 
@@ -232,6 +236,7 @@ export function SupplierForm({ supplier, onSuccess, onCancel, onDuplicateBlocked
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsSubmitting(true)
+    setCreateDuplicateMessage(null)
 
     try {
       const supabase = createClient()
@@ -263,12 +268,12 @@ export function SupplierForm({ supplier, onSuccess, onCancel, onDuplicateBlocked
           result?.code === 'DUPLICATE_SUPPLIER_NAME_BU' &&
           typeof result?.error === 'string'
         ) {
-          toast({
-            variant: 'destructive',
-            title: 'El proveedor ya existe',
-            description: result.error,
-          })
-          onDuplicateBlocked?.(formData.name.trim())
+          const searchedName = formData.name.trim()
+          if (onDuplicateBlocked) {
+            onDuplicateBlocked({ message: result.error, searchedName })
+          } else {
+            setCreateDuplicateMessage(result.error)
+          }
           return
         }
         alert('Error al guardar el proveedor: ' + (result.error || response.statusText))
@@ -332,6 +337,13 @@ export function SupplierForm({ supplier, onSuccess, onCancel, onDuplicateBlocked
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
+      {!supplier && createDuplicateMessage && (
+        <Alert variant="destructive" className="border-destructive/40 bg-destructive/5">
+          <CircleAlert className="h-4 w-4" aria-hidden />
+          <AlertTitle>Ya existe este proveedor</AlertTitle>
+          <AlertDescription>{createDuplicateMessage}</AlertDescription>
+        </Alert>
+      )}
       {/* 1. Datos Fiscales y Generales */}
       <Card>
         <CardHeader>
