@@ -5,6 +5,15 @@ import { useRouter, usePathname } from "next/navigation"
 import { useAuthZustand } from "@/hooks/use-auth-zustand"
 import { canAccessRoute } from "@/lib/auth/role-permissions"
 
+/** Routes where we must not require a loaded profile (password recovery, etc.). */
+function isAuthFlowRoute(pathname: string): boolean {
+  if (pathname.startsWith("/login")) return true
+  if (pathname.startsWith("/forgot-password")) return true
+  if (pathname.startsWith("/register")) return true
+  if (pathname.startsWith("/auth/")) return true
+  return false
+}
+
 export function RoleProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter()
   const pathname = usePathname()
@@ -14,9 +23,8 @@ export function RoleProvider({ children }: { children: React.ReactNode }) {
     // Skip checking during loading or if no user
     if (loading || !user) return
 
-    // Skip checking for public routes
-    const publicRoutes = ["/login", "/auth/callback"]
-    if (publicRoutes.some(route => pathname.startsWith(route))) return
+    // Skip role/profile enforcement on auth and recovery flows (session may exist without profile yet)
+    if (isAuthFlowRoute(pathname)) return
 
     // If we have a user but no profile, there's an issue
     if (user && !profile) {

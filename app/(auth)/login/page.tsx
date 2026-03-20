@@ -1,5 +1,7 @@
 import type { Metadata } from "next"
+import { Suspense } from "react"
 import { AuthForm } from "@/components/auth/auth-form"
+import { Loader2 } from "lucide-react"
 
 export const metadata: Metadata = {
   title: "Iniciar Sesión | Sistema de Gestión de Mantenimiento",
@@ -18,7 +20,15 @@ export default function LoginPage() {
           <h1 className="text-2xl font-semibold tracking-tight">Iniciar Sesión</h1>
           <p className="text-sm text-muted-foreground mt-2">Ingrese sus credenciales para acceder al sistema</p>
         </div>
-        <AuthForm mode="login" />
+        <Suspense
+          fallback={
+            <div className="flex justify-center py-12 text-muted-foreground">
+              <Loader2 className="h-8 w-8 animate-spin" aria-hidden />
+            </div>
+          }
+        >
+          <AuthForm mode="login" />
+        </Suspense>
       </div>
     </div>
   )

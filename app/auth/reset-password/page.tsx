@@ -59,25 +59,49 @@ export default function ResetPasswordPage() {
 
   useEffect(() => {
     const supabase = createClient()
-    
+
     // Listen for the PASSWORD_RECOVERY event
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       console.log("Auth event:", event, "Session:", session)
-      
+
       if (event === "PASSWORD_RECOVERY") {
         console.log("Password recovery event detected")
         setIsValidToken(true)
         setCheckingToken(false)
       } else if (event === "SIGNED_IN" && session) {
-        // This happens after successful password reset
         console.log("User signed in after password reset")
       }
     })
 
-    // Check if we already have a session (user clicked the link and is authenticated)
+    const tryRecoveryFromHash = async (): Promise<boolean> => {
+      if (typeof window === "undefined") return false
+      const raw = window.location.hash?.replace(/^#/, "")
+      if (!raw) return false
+      const hp = new URLSearchParams(raw)
+      if (hp.get("type") !== "recovery") return false
+      const access_token = hp.get("access_token")
+      const refresh_token = hp.get("refresh_token")
+      if (!access_token || !refresh_token) return false
+
+      const { error } = await supabase.auth.setSession({ access_token, refresh_token })
+      if (error) {
+        console.error("Hash recovery setSession error:", error)
+        return false
+      }
+      window.history.replaceState(null, "", window.location.pathname + window.location.search)
+      return true
+    }
+
     const checkSession = async () => {
+      const fromHash = await tryRecoveryFromHash()
+      if (fromHash) {
+        setIsValidToken(true)
+        setCheckingToken(false)
+        return
+      }
+
       const { data: { session }, error } = await supabase.auth.getSession()
-      
+
       if (error) {
         console.error("Error checking session:", error)
         setError("Enlace de recuperación inválido o expirado")
@@ -90,11 +114,10 @@ export default function ResetPasswordPage() {
         setIsValidToken(true)
         setCheckingToken(false)
       } else {
-        // Check URL for error parameters
         const urlParams = new URLSearchParams(window.location.search)
-        const errorCode = urlParams.get('error')
-        const errorDescription = urlParams.get('error_description')
-        
+        const errorCode = urlParams.get("error")
+        const errorDescription = urlParams.get("error_description")
+
         if (errorCode) {
           console.error("URL error:", errorCode, errorDescription)
           setError(errorDescription || "Enlace de recuperación inválido o expirado")
@@ -105,7 +128,7 @@ export default function ResetPasswordPage() {
       }
     }
 
-    checkSession()
+    void checkSession()
 
     return () => {
       subscription.unsubscribe()

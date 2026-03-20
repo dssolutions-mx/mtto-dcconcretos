@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useForm } from "react-hook-form"
 import { z } from "zod"
@@ -55,14 +55,28 @@ const registerSchema = z.object({
 type LoginFormValues = z.infer<typeof loginSchema>
 type RegisterFormValues = z.infer<typeof registerSchema>
 
+function loginQueryErrorMessage(code: string | null): string | null {
+  if (!code) return null
+  if (code === "profile_not_found") {
+    return "No se pudo cargar su perfil de usuario. Contacte al administrador. Si acaba de usar «Olvidé mi contraseña», termine el cambio en el enlace del correo e intente iniciar sesión de nuevo."
+  }
+  if (code === "invalid_token" || code === "no_session" || code === "missing_token") {
+    return "El enlace de acceso no es válido o expiró. Solicite uno nuevo o inicie sesión con su contraseña."
+  }
+  return null
+}
+
 export function AuthForm({ mode = "login" }: { mode: "login" | "register" }) {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [showPassword, setShowPassword] = useState(false)
   
   // Use Zustand store for authentication
   const { signIn } = useAuthZustand()
+
+  const urlAuthMessage = mode === "login" ? loginQueryErrorMessage(searchParams.get("error")) : null
 
   const schema = mode === "login" ? loginSchema : registerSchema
 
@@ -132,6 +146,12 @@ export function AuthForm({ mode = "login" }: { mode: "login" | "register" }) {
                 <AlertDescription>
                   El registro público está deshabilitado. Contacte al administrador.
                 </AlertDescription>
+              </Alert>
+            )}
+
+            {mode === "login" && urlAuthMessage && (
+              <Alert variant="destructive">
+                <AlertDescription>{urlAuthMessage}</AlertDescription>
               </Alert>
             )}
 

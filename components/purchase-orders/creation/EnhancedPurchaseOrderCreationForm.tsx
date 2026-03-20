@@ -1,19 +1,21 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { useRouter, useSearchParams } from "next/navigation"
+import { useState, useEffect, useCallback, useMemo } from "react"
+import { useRouter, useSearchParams, usePathname } from "next/navigation"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { 
-  ArrowLeft, 
-  Store, 
-  Wrench, 
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import {
+  ArrowLeft,
+  Store,
+  Wrench,
   Building2,
   CheckCircle,
   Package,
   ShoppingCart,
-  Layers
+  Layers,
+  Info,
 } from "lucide-react"
 import { PurchaseOrderType } from "@/types/purchase-orders"
 import { useIsMobile } from "@/hooks/use-mobile"
@@ -21,6 +23,7 @@ import { PurchaseOrderTypeSelector } from "./PurchaseOrderTypeSelector"
 import { DirectPurchaseForm } from "./DirectPurchaseForm"
 import { DirectServiceForm } from "./DirectServiceForm"
 import { SpecialOrderForm } from "./SpecialOrderForm"
+import { OcCreationStepIndicator } from "./OcCreationStepIndicator"
 
 interface EnhancedPurchaseOrderCreationFormProps {
   workOrderId?: string
@@ -41,6 +44,7 @@ export function EnhancedPurchaseOrderCreationForm({
   initialType 
 }: EnhancedPurchaseOrderCreationFormProps) {
   const router = useRouter()
+  const pathname = usePathname()
   const searchParams = useSearchParams()
   const isMobile = useIsMobile()
   
@@ -50,10 +54,30 @@ export function EnhancedPurchaseOrderCreationForm({
   const [prefillSupplier, setPrefillSupplier] = useState<string>("")
   const [woLineSourceIntent, setWoLineSourceIntent] = useState<WoLineSourceIntent | null>(null)
 
+  const showOriginStep = useMemo(
+    () =>
+      !!workOrderIdState &&
+      (selectedType === null ||
+        selectedType === PurchaseOrderType.DIRECT_PURCHASE ||
+        selectedType === PurchaseOrderType.SPECIAL_ORDER),
+    [workOrderIdState, selectedType]
+  )
+
+  const advanceFromTypeSelection = useCallback(
+    (type: PurchaseOrderType) => {
+      setWoLineSourceIntent(null)
+      const needsLineIntent =
+        !!workOrderIdState &&
+        (type === PurchaseOrderType.DIRECT_PURCHASE || type === PurchaseOrderType.SPECIAL_ORDER)
+      setCurrentStep(needsLineIntent ? CreationStep.WO_LINE_INTENT : CreationStep.FILL_FORM)
+    },
+    [workOrderIdState]
+  )
+
   useEffect(() => {
     if (initialType && Object.values(PurchaseOrderType).includes(initialType as PurchaseOrderType)) {
       setSelectedType(initialType as PurchaseOrderType)
-      setCurrentStep(CreationStep.FILL_FORM)
+      setCurrentStep(CreationStep.SELECT_TYPE)
     }
     
     if (workOrderId) {
@@ -69,14 +93,13 @@ export function EnhancedPurchaseOrderCreationForm({
     if (prefill) setPrefillSupplier(prefill)
   }, [initialType, workOrderId, searchParams])
 
-  const handleTypeSelected = (type: PurchaseOrderType) => {
-    setSelectedType(type)
-    setWoLineSourceIntent(null)
-    const needsLineIntent =
-      !!workOrderIdState &&
-      (type === PurchaseOrderType.DIRECT_PURCHASE || type === PurchaseOrderType.SPECIAL_ORDER)
-    setCurrentStep(needsLineIntent ? CreationStep.WO_LINE_INTENT : CreationStep.FILL_FORM)
-  }
+  const stripTypeQueryFromUrl = useCallback(() => {
+    const p = new URLSearchParams(searchParams.toString())
+    p.delete("type")
+    p.delete("initialType")
+    const q = p.toString()
+    router.replace(q ? `${pathname}?${q}` : pathname)
+  }, [pathname, router, searchParams])
 
   const handleWoLineIntentConfirm = (intent: WoLineSourceIntent) => {
     setWoLineSourceIntent(intent)
@@ -108,6 +131,19 @@ export function EnhancedPurchaseOrderCreationForm({
       handleBackToTypeSelection()
     }
   }
+
+  const orchestratorStep = useMemo(() => {
+    if (currentStep === CreationStep.SELECT_TYPE) return "select-type" as const
+    if (currentStep === CreationStep.WO_LINE_INTENT) return "wo-line-intent" as const
+    if (currentStep === CreationStep.FILL_FORM) return "fill-form" as const
+    return "fill-form" as const
+  }, [currentStep])
+
+  const urlSuggestedTypeMatches =
+    Boolean(initialType) &&
+    Boolean(selectedType) &&
+    Object.values(PurchaseOrderType).includes(initialType as PurchaseOrderType) &&
+    selectedType === (initialType as PurchaseOrderType)
 
   const handleFormSuccess = (purchaseOrderId: string) => {
     setCurrentStep(CreationStep.SUCCESS)
@@ -154,6 +190,40 @@ export function EnhancedPurchaseOrderCreationForm({
 
   return (
     <div className="space-y-6">
+      {currentStep !== CreationStep.SUCCESS && (
+        <OcCreationStepIndicator
+          current={orchestratorStep}
+          showOriginStep={showOriginStep}
+          compact={isMobile}
+        />
+      )}
+
+      {currentStep === CreationStep.SELECT_TYPE &&
+        urlSuggestedTypeMatches &&
+        initialType && (
+          <Alert className="border-sky-200 bg-sky-50/80 dark:bg-sky-950/30 dark:border-sky-900/50">
+            <Info className="h-4 w-4 text-sky-700 dark:text-sky-300" />
+            <AlertTitle className="text-sky-950 dark:text-sky-100">
+              Tipo sugerido por el enlace
+            </AlertTitle>
+            <AlertDescription className="text-sky-900/90 dark:text-sky-100/90 text-sm space-y-2">
+              <p>
+                Verifique la tarjeta resaltada y pulse <strong>Continuar</strong>. Si el enlace no aplica,
+                elija otra opción o quite el parámetro de la URL.
+              </p>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="border-sky-300 text-sky-900 dark:text-sky-100"
+                onClick={stripTypeQueryFromUrl}
+              >
+                Quitar tipo del enlace
+              </Button>
+            </AlertDescription>
+          </Alert>
+        )}
+
       {currentStep !== CreationStep.SELECT_TYPE && currentStep !== CreationStep.WO_LINE_INTENT && (
         <Card>
           <CardContent className={isMobile ? "py-3 px-4" : "py-4"}>
@@ -210,7 +280,11 @@ export function EnhancedPurchaseOrderCreationForm({
 
       {currentStep === CreationStep.SELECT_TYPE && (
         <PurchaseOrderTypeSelector
-          onTypeSelected={handleTypeSelected}
+          onSelectType={(type) => setSelectedType(type)}
+          onContinue={() => {
+            if (!selectedType) return
+            advanceFromTypeSelection(selectedType)
+          }}
           selectedType={selectedType || undefined}
           workOrderId={workOrderIdState}
         />
@@ -245,7 +319,7 @@ export function EnhancedPurchaseOrderCreationForm({
                 onClick={() => handleWoLineIntentConfirm('inventory')}
               >
                 <Package className="h-5 w-5 shrink-0 text-green-700" />
-                <span className="font-medium">Todo desde almacén</span>
+                <span className="font-medium">Surtir todo desde almacén</span>
                 <span className="text-xs text-muted-foreground font-normal leading-snug">
                   Partidas con surtido interno cuando haya existencias.
                 </span>
@@ -257,9 +331,9 @@ export function EnhancedPurchaseOrderCreationForm({
                 onClick={() => handleWoLineIntentConfirm('mixed')}
               >
                 <Layers className="h-5 w-5 shrink-0 text-amber-700" />
-                <span className="font-medium">Combinado</span>
+                <span className="font-medium">Combinado (almacén + proveedor)</span>
                 <span className="text-xs text-muted-foreground font-normal leading-snug">
-                  El sistema sugerirá almacén cuando haya stock; el resto va por compra.
+                  El sistema sugerirá surtido desde almacén cuando haya stock; el resto va por compra.
                 </span>
               </Button>
               <Button

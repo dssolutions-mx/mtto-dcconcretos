@@ -12,13 +12,16 @@ interface PageProps {
   searchParams: Promise<{
     workOrderId?: string
     type?: string
+    /** @deprecated Prefer `type`; kept for older links */
+    initialType?: string
   }>
 }
 
 export default async function CreateTypedPurchaseOrderPage({ searchParams }: PageProps) {
   // Await searchParams before accessing its properties
   const resolvedSearchParams = await searchParams
-  const { workOrderId, type } = resolvedSearchParams
+  const { workOrderId, type, initialType: initialTypeLegacy } = resolvedSearchParams
+  const typeFromQuery = type ?? initialTypeLegacy
 
   return (
     <DashboardShell>
@@ -28,7 +31,7 @@ export default async function CreateTypedPurchaseOrderPage({ searchParams }: Pag
       />
       <EnhancedPurchaseOrderCreationForm 
         workOrderId={workOrderId}
-        initialType={type}
+        initialType={typeFromQuery}
       />
     </DashboardShell>
   )

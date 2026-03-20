@@ -40,6 +40,12 @@ import { Supplier } from "@/types/suppliers"
 import { PartAutocomplete, PartSuggestion } from "@/components/inventory/part-autocomplete"
 import { buildPurchaseOrderRoutingContext } from "@/lib/purchase-orders/routing-context"
 import { useIsMobile } from "@/hooks/use-mobile"
+import { PurchaseOrderCreationReviewDialog } from "@/components/purchase-orders/creation/PurchaseOrderCreationReviewDialog"
+import { getCreationWorkflowSummaryLines } from "@/lib/purchase-orders/creation-workflow-copy"
+import {
+  getIntentVersusLinesErrors,
+  getIntentVersusLinesSoftWarning,
+} from "@/lib/purchase-orders/wo-line-intent-validation"
 
 interface DirectPurchaseFormProps {
   workOrderId?: string
@@ -115,6 +121,10 @@ export function DirectPurchaseForm({
   const { createPurchaseOrder, isCreating, error, clearError } = usePurchaseOrders()
   const { userPlants, loading: plantsLoading } = useUserPlant()
   const launchWorkOrderType = searchParams.get("workOrderType")
+
+  const [reviewOpen, setReviewOpen] = useState(false)
+  const [reviewSubmitting, setReviewSubmitting] = useState(false)
+  const [reviewSoftWarning, setReviewSoftWarning] = useState<string | null>(null)
 
   // Plant selection state
   const [selectedPlantId, setSelectedPlantId] = useState<string>("")
@@ -693,8 +703,24 @@ export function DirectPurchaseForm({
       errors.push('La fecha de compra es obligatoria')
     }
 
+    if (workOrderId && woLineSourceIntent) {
+      errors.push(
+        ...getIntentVersusLinesErrors(woLineSourceIntent, items)
+      )
+    }
+
     setFormErrors(errors)
     return errors.length === 0
+  }
+
+  const woTypeForPolicy = workOrder?.type ?? launchWorkOrderType
+
+  const formatWoTypeLabel = (t?: string | null): string | null => {
+    if (!t) return null
+    const n = t.trim().toLowerCase()
+    if (n === 'preventive' || n === 'preventivo') return 'Preventivo'
+    if (n === 'corrective' || n === 'correctivo') return 'Correctivo'
+    return t
   }
 
   // Handle form submission
@@ -705,7 +731,18 @@ export function DirectPurchaseForm({
       return
     }
 
+    if (workOrderId && woLineSourceIntent) {
+      setReviewSoftWarning(getIntentVersusLinesSoftWarning(woLineSourceIntent, items))
+    } else {
+      setReviewSoftWarning(null)
+    }
+
+    setReviewOpen(true)
+  }
+
+  const performCreate = async () => {
     try {
+      setReviewSubmitting(true)
       const submissionRoutingContext = buildPurchaseOrderRoutingContext({
         poType: PurchaseOrderType.DIRECT_PURCHASE,
         workOrderId,
@@ -899,11 +936,13 @@ export function DirectPurchaseForm({
             `No se completó la creación estricta de la OC. ${errorMessage} ${rollbackMessage}`,
           ])
           toast.error('No se pudo completar la orden con sus cotizaciones.')
+          setReviewOpen(false)
           return
         }
       }
       
       if (result) {
+        setReviewOpen(false)
         if (onSuccess) {
           onSuccess(result.id)
         } else {
@@ -912,6 +951,9 @@ export function DirectPurchaseForm({
       }
     } catch (error) {
       console.error('Error creating direct purchase order:', error)
+      setReviewOpen(false)
+    } finally {
+      setReviewSubmitting(false)
     }
   }
 
@@ -953,7 +995,48 @@ export function DirectPurchaseForm({
     )
   }
 
+  const previewTotalAmount = formData.total_amount || fullTotal
+  const reviewRoutingPreview = buildPurchaseOrderRoutingContext({
+    poType: PurchaseOrderType.DIRECT_PURCHASE,
+    workOrderId,
+    workOrderType: woTypeForPolicy,
+    totalAmount: previewTotalAmount,
+    paymentMethod: formData.payment_method,
+    supplierPaymentTerms: selectedSupplier?.payment_terms,
+    quotationAmounts: quotations.map((quotation) => quotation.quoted_amount),
+    quotationPaymentTerms: quotations.map((quotation) => quotation.payment_terms),
+    items: items.map((item) => ({
+      fulfill_from: item.fulfill_from,
+      total_price: item.total_price,
+    })),
+  })
+  const reviewWorkflowLines = getCreationWorkflowSummaryLines({
+    poPurpose: reviewRoutingPreview.poPurpose,
+    workOrderType: reviewRoutingPreview.workOrderType,
+    approvalAmount: reviewRoutingPreview.approvalAmount,
+  })
+  const reviewInventoryCount = items.filter((i) => i.fulfill_from === 'inventory').length
+  const reviewPurchaseCount = Math.max(0, items.length - reviewInventoryCount)
+
   return (
+    <>
+      <PurchaseOrderCreationReviewDialog
+        open={reviewOpen}
+        onOpenChange={setReviewOpen}
+        onConfirm={performCreate}
+        isSubmitting={reviewSubmitting || isCreating}
+        poTypeLabel="Compra directa"
+        poPurpose={reviewRoutingPreview.poPurpose}
+        workOrderTypeLabel={formatWoTypeLabel(woTypeForPolicy)}
+        approvalAmount={reviewRoutingPreview.approvalAmount}
+        totalAmount={previewTotalAmount}
+        inventoryLineCount={reviewInventoryCount}
+        purchaseLineCount={reviewPurchaseCount}
+        workOrderId={workOrderId}
+        workOrderOrderId={workOrder?.order_id ?? null}
+        workflowHintLines={reviewWorkflowLines}
+        softWarning={reviewSoftWarning}
+      />
     <form onSubmit={handleSubmit} className="space-y-6">
       {/* Header */}
       <Card>
@@ -1954,13 +2037,14 @@ export function DirectPurchaseForm({
         <Button 
           type="submit" 
           disabled={
-            isCreating || 
+            isCreating ||
+            reviewSubmitting ||
             (!validationResult?.requires_quote && items.length === 0) ||
             (validationResult?.requires_quote && quotations.length === 0)
           }
           className="min-w-[150px]"
         >
-          {isCreating ? (
+          {isCreating || reviewSubmitting ? (
             <>
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               Creando...
@@ -1974,5 +2058,6 @@ export function DirectPurchaseForm({
         </Button>
       </div>
     </form>
+    </>
   )
 } 

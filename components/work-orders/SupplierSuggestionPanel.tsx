@@ -332,7 +332,7 @@ export function SupplierSuggestionPanel({
                   variant="secondary"
                   className="flex-1"
                   onClick={() => {
-                    const url = `/compras/crear-tipificada?workOrderId=${encodeURIComponent(workOrderId)}&initialType=${encodeURIComponent(PurchaseOrderType.DIRECT_SERVICE)}&prefillSupplier=${encodeURIComponent(suggestion.supplier.name)}`
+                    const url = `/compras/crear-tipificada?workOrderId=${encodeURIComponent(workOrderId)}&type=${encodeURIComponent(PurchaseOrderType.DIRECT_SERVICE)}&prefillSupplier=${encodeURIComponent(suggestion.supplier.name)}`
                     router.push(url)
                   }}
                 >

@@ -675,7 +675,11 @@ export const createAuthSlice: StateCreator<
     }
   },
 
-  // Password reset request
+  /**
+   * Password reset email is NOT sent by this Next.js app (no custom API/SMTP here).
+   * The browser calls Supabase Auth; Supabase delivers the message using the project's
+   * Auth email templates and SMTP (dashboard: Authentication → Email Templates / SMTP).
+   */
   resetPasswordForEmail: async (email) => {
     console.log('📧 Requesting password reset for:', email)
     const startTime = Date.now()

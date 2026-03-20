@@ -305,7 +305,36 @@ Función `notify_purchase_order_update` (solo base de datos): notifica al `reque
 | Recepción inventario         | `lib/services/inventory-receipt-service.ts`, API `receive-to-inventory`       |
 | UI workflow tipificada       | `components/purchase-orders/workflow/WorkflowStatusDisplay.tsx`               |
 | Resumen triggers/columnas    | `docs/supabase-purchase-order-database-summary.md`                            |
+| Orquestador creación OC      | `components/purchase-orders/creation/EnhancedPurchaseOrderCreationForm.tsx`     |
+| Selector tipo + copy política | `components/purchase-orders/creation/PurchaseOrderTypeSelector.tsx`            |
+| Revisión pre-envío (modal)   | `components/purchase-orders/creation/PurchaseOrderCreationReviewDialog.tsx`   |
+| Textos aprobación (creación) | `lib/purchase-orders/creation-workflow-copy.ts` → `workflow-policy.ts`        |
+| Validación intención vs líneas | `lib/purchase-orders/wo-line-intent-validation.ts`                           |
 
+
+### 8.1 Puntos de entrada a la creación tipificada
+
+| Entrada | URL / flujo | ¿Omite el encuadre (tipo / origen)? |
+| ------- | ----------- | ------------------------------------- |
+| Módulo Compras (hub, drawer, móvil) | `/compras/crear-tipificada` | **No**: paso **Tipo** con confirmación explícita (**Continuar**). |
+| Orden de trabajo → generar OC | `app/ordenes/[id]/generar-oc/page.tsx` redirige a `?workOrderId=&workOrderType=` | **No**: si el tipo es compra directa o pedido especial, aparece paso **Origen** (surtido almacén / combinado / compra). |
+| Panel sugerencia de proveedor (OT) | `?workOrderId=&type=direct_service&prefillSupplier=` | **No**: el `type` en query solo **preselecciona** la tarjeta; el usuario debe **Continuar**; opción **Quitar tipo del enlace**. |
+| Coordinador (legado) | `/compras/crear` | Flujo distinto; no es el orquestador tipificado de esta sección. |
+
+**Parámetros de query admitidos en `/compras/crear-tipificada`:** `workOrderId`, `workOrderType`, `type` (también se acepta `initialType` por compatibilidad con enlaces antiguos), `prefillSupplier`.
+
+### 8.2 UX ↔ `po_purpose` y `fulfill_from` (resumen)
+
+La verdad de negocio al guardar sigue en `buildPurchaseOrderRoutingContext` (`lib/purchase-orders/routing-context.ts`). La UI orienta así:
+
+| Elección en el asistente (con OT) | Efecto en partidas | `po_purpose` típico (no sustituye al código) |
+| --------------------------------- | ------------------ | -------------------------------------------- |
+| **Surtir todo desde almacén** (paso Origen) | Precarga `fulfill_from = inventory` donde aplica | Si todas las líneas quedan en inventario → `work_order_inventory` |
+| **Todo por compra** | Precarga compra / proveedor | `work_order_cash` (directa / servicio) o lógica de pedido especial en `resolvePoPurpose` |
+| **Combinado (almacén + proveedor)** | Mezcla por línea | `mixed` si hay al menos una línea inventario y una compra |
+| **Servicio directo** con OT | El formulario de servicio **no** usa `fulfill_from` en partidas | **No** se muestra paso Origen; `po_purpose` lo resuelve el contexto de enrutado (p. ej. `work_order_cash` para gasto de servicio) |
+
+Antes de crear, el usuario confirma en un **modal de revisión** con resumen de montos, conteo de líneas (inventario / compra) y **textos orientativos** de aprobación generados desde `resolveWorkflowPath` (`creation-workflow-copy.ts`), alineados con las vías A–D.
 
 ---
 

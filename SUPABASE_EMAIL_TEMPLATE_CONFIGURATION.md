@@ -1,5 +1,13 @@
 # Configuración de Plantillas de Email en Supabase
 
+## ¿Quién envía el correo de recuperación?
+
+- **No** hay envío desde el servidor de esta aplicación (no existe ruta `/api/...` ni proveedor SMTP propio para reset).
+- El flujo **«Olvidé mi contraseña»** en la app solo llama a `supabase.auth.resetPasswordForEmail()` desde el cliente ([`store/slices/auth-slice.ts`](store/slices/auth-slice.ts)).
+- **Supabase Auth** es quien genera y envía el correo, usando la plantilla **Reset Password** y la configuración SMTP del proyecto en el dashboard de Supabase.
+
+Si el correo no llega o el enlace falla, la causa está en **Supabase** (plantilla, URL de redirección, SMTP, límites, spam), no en un “mailer” interno de la app.
+
 ## 🚨 Importante: Configuración Requerida
 
 Para que el sistema de recuperación de contraseña funcione correctamente, necesitas configurar las plantillas de email en tu proyecto de Supabase.
@@ -92,7 +100,9 @@ Si prefieres no personalizar la plantilla de email, puedes usar el flujo predete
 
 ### Opción 1: Usar el Flujo Hash en el Cliente
 
-Actualiza `app/auth/reset-password/page.tsx` para manejar el hash directamente desde la URL:
+La app ya aplica `setSession` desde el fragmento `#access_token=...&refresh_token=...&type=recovery` cuando el usuario abre el enlace en `/auth/reset-password` (plantilla por defecto de Supabase). Si el correo lleva solo al **Site URL** raíz, configure la plantilla para apuntar a `/auth/reset-password` o use el flujo `token_hash` recomendado arriba.
+
+Si necesita referencia histórica, el patrón era:
 
 ```typescript
 useEffect(() => {

@@ -19,13 +19,17 @@ import { useIsMobile } from "@/hooks/use-mobile"
 import { cn } from "@/lib/utils"
 
 interface PurchaseOrderTypeSelectorProps {
-  onTypeSelected: (type: PurchaseOrderType) => void
+  /** Card click: only highlights selection (explicit Continuar required). */
+  onSelectType: (type: PurchaseOrderType) => void
+  /** Primary button after a type is highlighted. */
+  onContinue: () => void
   selectedType?: PurchaseOrderType
   workOrderId?: string
 }
 
 export function PurchaseOrderTypeSelector({
-  onTypeSelected,
+  onSelectType,
+  onContinue,
   selectedType,
   workOrderId,
 }: PurchaseOrderTypeSelectorProps) {
@@ -67,6 +71,18 @@ export function PurchaseOrderTypeSelector({
 
   return (
     <div className="space-y-6 sm:space-y-8">
+      <Card className="rounded-2xl border border-sky-200/60 bg-sky-50/40 dark:bg-sky-950/20 dark:border-sky-900/40">
+        <CardContent className={cn("p-4 sm:p-5", isMobile && "p-4")}>
+          <p className="text-xs sm:text-sm text-foreground/90 leading-relaxed">
+            <span className="font-semibold text-foreground">Inventario y proveedor: </span>
+            <strong>Surtir desde almacén</strong> autoriza uso de existencias (flujo de aprobación más corto en
+            rutas elegibles). <strong>Compra a proveedor</strong> puede requerir cotización y, según monto y tipo
+            de OT, <strong>viabilidad administrativa</strong> o <strong>Gerencia General</strong>. Puede
+            combinar ambos en las partidas cuando elija compra directa o pedido especial vinculado a una OT.
+          </p>
+        </CardContent>
+      </Card>
+
       <div className="space-y-2">
         <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
           Tipo de solicitud
@@ -102,7 +118,7 @@ export function PurchaseOrderTypeSelector({
               )}
               onMouseEnter={() => !isMobile && setHoveredType(orderType.type)}
               onMouseLeave={() => setHoveredType(null)}
-              onClick={() => onTypeSelected(orderType.type)}
+              onClick={() => onSelectType(orderType.type)}
             >
               {isSelected && (
                 <div className="absolute -top-2 -right-2 z-10 hidden sm:block">
@@ -172,7 +188,8 @@ export function PurchaseOrderTypeSelector({
           <Button
             size="lg"
             className={cn("min-h-[44px] rounded-xl cursor-pointer", isMobile && "w-full")}
-            onClick={() => onTypeSelected(selectedType)}
+            type="button"
+            onClick={() => onContinue()}
           >
             Continuar con {purchaseOrderTypes.find((t) => t.type === selectedType)?.title}
             <ArrowRight className="ml-2 h-4 w-4" />

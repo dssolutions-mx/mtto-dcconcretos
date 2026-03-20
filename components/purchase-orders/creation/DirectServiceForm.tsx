@@ -39,6 +39,8 @@ import { toast } from "sonner"
 import { Separator } from "@/components/ui/separator"
 import { buildPurchaseOrderRoutingContext } from "@/lib/purchase-orders/routing-context"
 import { useIsMobile } from "@/hooks/use-mobile"
+import { PurchaseOrderCreationReviewDialog } from "@/components/purchase-orders/creation/PurchaseOrderCreationReviewDialog"
+import { getCreationWorkflowSummaryLines } from "@/lib/purchase-orders/creation-workflow-copy"
 
 interface DirectServiceFormProps {
   workOrderId?: string
@@ -99,6 +101,9 @@ export function DirectServiceForm({
   const { createPurchaseOrder, isCreating, error, clearError } = usePurchaseOrders()
   const { userPlants, loading: plantLoading, error: plantError, userRole, hasFullAccess } = useUserPlant()
   const launchWorkOrderType = searchParams.get("workOrderType")
+
+  const [reviewOpen, setReviewOpen] = useState(false)
+  const [reviewSubmitting, setReviewSubmitting] = useState(false)
 
   // Work order state
   const [workOrder, setWorkOrder] = useState<WorkOrderData | null>(null)
@@ -446,6 +451,16 @@ export function DirectServiceForm({
     return errors.length === 0
   }
 
+  const woTypeForPolicy = workOrder?.type ?? launchWorkOrderType
+
+  const formatWoTypeLabel = (t?: string | null): string | null => {
+    if (!t) return null
+    const n = t.trim().toLowerCase()
+    if (n === 'preventive' || n === 'preventivo') return 'Preventivo'
+    if (n === 'corrective' || n === 'correctivo') return 'Correctivo'
+    return t
+  }
+
   // Handle form submission
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -454,7 +469,12 @@ export function DirectServiceForm({
       return
     }
 
+    setReviewOpen(true)
+  }
+
+  const performCreate = async () => {
     try {
+      setReviewSubmitting(true)
       const finalServiceProvider =
         selectedSupplier?.name ||
         formData.service_provider?.trim() ||
@@ -477,7 +497,7 @@ export function DirectServiceForm({
       const submissionRoutingContext = buildPurchaseOrderRoutingContext({
         poType: PurchaseOrderType.DIRECT_SERVICE,
         workOrderId,
-        workOrderType: workOrder?.type ?? launchWorkOrderType,
+        workOrderType: woTypeForPolicy,
         totalAmount: formData.total_amount,
         paymentMethod: formData.payment_method,
         supplierPaymentTerms: selectedSupplier?.payment_terms,
@@ -612,12 +632,14 @@ export function DirectServiceForm({
               `No se completó la creación estricta de la OC ${result.order_id}. ${message} ${rollbackMessage}`,
             ])
             toast.error(`No se pudo completar la OC ${result.order_id} con sus cotizaciones.`)
+            setReviewOpen(false)
             return
           }
 
           toast.success(`Servicio creado con ${normalizedQuotations.length} cotización${normalizedQuotations.length > 1 ? 'es' : ''}`)
         }
         
+        setReviewOpen(false)
         if (onSuccess) {
           onSuccess(result.id)
         } else {
@@ -626,6 +648,9 @@ export function DirectServiceForm({
       }
     } catch (error) {
       console.error('Error creating direct service order:', error)
+      setReviewOpen(false)
+    } finally {
+      setReviewSubmitting(false)
     }
   }
 
@@ -667,7 +692,47 @@ export function DirectServiceForm({
     )
   }
 
+  const previewServiceLineCount =
+    services.length > 0
+      ? services.length
+      : formData.total_amount && formData.total_amount > 0
+        ? 1
+        : 0
+
+  const reviewRoutingPreview = buildPurchaseOrderRoutingContext({
+    poType: PurchaseOrderType.DIRECT_SERVICE,
+    workOrderId,
+    workOrderType: woTypeForPolicy,
+    totalAmount: formData.total_amount,
+    paymentMethod: formData.payment_method,
+    supplierPaymentTerms: selectedSupplier?.payment_terms,
+    quotationAmounts: quotations.map((quotation) => quotation.quoted_amount),
+    quotationPaymentTerms: quotations.map((quotation) => quotation.payment_terms),
+  })
+  const reviewWorkflowLines = getCreationWorkflowSummaryLines({
+    poPurpose: reviewRoutingPreview.poPurpose,
+    workOrderType: reviewRoutingPreview.workOrderType,
+    approvalAmount: reviewRoutingPreview.approvalAmount,
+  })
+
   return (
+    <>
+      <PurchaseOrderCreationReviewDialog
+        open={reviewOpen}
+        onOpenChange={setReviewOpen}
+        onConfirm={performCreate}
+        isSubmitting={reviewSubmitting || isCreating}
+        poTypeLabel="Servicio directo"
+        poPurpose={reviewRoutingPreview.poPurpose}
+        workOrderTypeLabel={formatWoTypeLabel(woTypeForPolicy)}
+        approvalAmount={reviewRoutingPreview.approvalAmount}
+        totalAmount={formData.total_amount ?? 0}
+        inventoryLineCount={0}
+        purchaseLineCount={previewServiceLineCount}
+        workOrderId={workOrderId}
+        workOrderOrderId={workOrder?.order_id ?? null}
+        workflowHintLines={reviewWorkflowLines}
+      />
     <form onSubmit={handleSubmit} className="space-y-6">
       {/* Header */}
       <Card>
@@ -1357,10 +1422,14 @@ export function DirectServiceForm({
         
         <Button 
           type="submit" 
-          disabled={isCreating || (!formData.total_amount || formData.total_amount === 0)}
+          disabled={
+            isCreating ||
+            reviewSubmitting ||
+            (!formData.total_amount || formData.total_amount === 0)
+          }
           className="min-w-[150px]"
         >
-          {isCreating ? (
+          {isCreating || reviewSubmitting ? (
             <>
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               Creando...
@@ -1374,5 +1443,6 @@ export function DirectServiceForm({
         </Button>
       </div>
     </form>
+    </>
   )
 } 

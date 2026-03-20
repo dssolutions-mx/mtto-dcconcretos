@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
@@ -41,6 +41,12 @@ import { format } from "date-fns"
 import { toast } from "sonner"
 import { buildPurchaseOrderRoutingContext } from "@/lib/purchase-orders/routing-context"
 import { useIsMobile } from "@/hooks/use-mobile"
+import { PurchaseOrderCreationReviewDialog } from "@/components/purchase-orders/creation/PurchaseOrderCreationReviewDialog"
+import { getCreationWorkflowSummaryLines } from "@/lib/purchase-orders/creation-workflow-copy"
+import {
+  getIntentVersusLinesErrors,
+  getIntentVersusLinesSoftWarning,
+} from "@/lib/purchase-orders/wo-line-intent-validation"
 
 interface SpecialOrderFormProps {
   workOrderId?: string
@@ -134,6 +140,10 @@ export function SpecialOrderForm({
   const { userPlants, loading: plantsLoading } = useUserPlant()
   const launchWorkOrderType = searchParams.get("workOrderType")
 
+  const [reviewOpen, setReviewOpen] = useState(false)
+  const [reviewSubmitting, setReviewSubmitting] = useState(false)
+  const [reviewSoftWarning, setReviewSoftWarning] = useState<string | null>(null)
+
   // Plant selection state
   const [selectedPlantId, setSelectedPlantId] = useState<string | undefined>(undefined)
 
@@ -155,8 +165,7 @@ export function SpecialOrderForm({
     max_payment_date: undefined
   })
 
-  // Items management - NOT USED for Special Orders (comes from quotations)
-  // Keeping for compatibility with existing code, but will be empty
+  // Line items: optional catalog lines with fulfill_from (inventory vs purchase); quotations still capture supplier pricing
   const [items, setItems] = useState<OrderItem[]>([])
   const [newItem, setNewItem] = useState<Partial<OrderItem>>({
     part_number: '',
@@ -389,6 +398,9 @@ export function SpecialOrderForm({
     setFormData(prev => ({ ...prev, total_amount: total, items }))
   }, [items])
 
+  const effectivePlantId =
+    workOrder?.plant_id || workOrder?.asset?.plant_id || selectedPlantId || undefined
+
   // Handle form input changes
   const handleInputChange = (field: string, value: unknown) => {
     setFormData(prev => ({ ...prev, [field]: value }))
@@ -442,9 +454,8 @@ export function SpecialOrderForm({
   // Check availability for an item
   const checkItemAvailability = async (item: OrderItem) => {
     if (!item.part_id) return
-    
-    // Get plant_id from work order
-    const plantId = workOrder?.plant_id || workOrder?.asset?.plant_id
+
+    const plantId = effectivePlantId
     if (!plantId) return
     
     try {
@@ -485,6 +496,18 @@ export function SpecialOrderForm({
     }
   }
 
+  const itemsForAvailabilityRef = useRef(items)
+  itemsForAvailabilityRef.current = items
+
+  useEffect(() => {
+    if (!effectivePlantId) return
+    for (const row of itemsForAvailabilityRef.current) {
+      if (row.part_id) void checkItemAvailability(row)
+    }
+    // Re-fetch when plant context changes; line-level checks happen in addItem/handleItemChange
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- avoid re-running on every items edit
+  }, [effectivePlantId])
+
   // Handle part selection from autocomplete
   const handlePartSelect = (part: PartSuggestion | null) => {
     if (part) {
@@ -502,8 +525,7 @@ export function SpecialOrderForm({
         ...updatedItem
       }))
       
-      // Check availability if we have plant_id
-      const plantId = workOrder?.plant_id || workOrder?.asset?.plant_id
+      const plantId = effectivePlantId
       if (plantId && part.id) {
         setTimeout(async () => {
           try {
@@ -678,8 +700,22 @@ export function SpecialOrderForm({
       errors.push('Se requiere al menos una cotización con información del proveedor y precio para pedidos especiales')
     }
 
+    if (workOrderId && woLineSourceIntent) {
+      errors.push(...getIntentVersusLinesErrors(woLineSourceIntent, items))
+    }
+
     setFormErrors(errors)
     return errors.length === 0
+  }
+
+  const woTypeForPolicy = workOrder?.type ?? launchWorkOrderType
+
+  const formatWoTypeLabel = (t?: string | null): string | null => {
+    if (!t) return null
+    const n = t.trim().toLowerCase()
+    if (n === 'preventive' || n === 'preventivo') return 'Preventivo'
+    if (n === 'corrective' || n === 'correctivo') return 'Correctivo'
+    return t
   }
 
   // Handle form submission
@@ -690,7 +726,18 @@ export function SpecialOrderForm({
       return
     }
 
+    if (workOrderId && woLineSourceIntent) {
+      setReviewSoftWarning(getIntentVersusLinesSoftWarning(woLineSourceIntent, items))
+    } else {
+      setReviewSoftWarning(null)
+    }
+
+    setReviewOpen(true)
+  }
+
+  const performCreate = async () => {
     try {
+      setReviewSubmitting(true)
       const normalizedQuotations = normalizeQuotations(quotations)
       const isStandaloneQuoteFirstDraft = !workOrderId && items.length === 0 && quotations.length > 0
       const requestItems = isStandaloneQuoteFirstDraft ? [] : items
@@ -702,7 +749,7 @@ export function SpecialOrderForm({
       const submissionRoutingContext = buildPurchaseOrderRoutingContext({
         poType: PurchaseOrderType.SPECIAL_ORDER,
         workOrderId,
-        workOrderType: workOrder?.type ?? launchWorkOrderType,
+        workOrderType: woTypeForPolicy,
         totalAmount: requestTotalAmount,
         quotationAmounts: normalizedQuotations.map((quotation) => quotation.quoted_amount),
         quotationPaymentTerms: normalizedQuotations.map((quotation) => quotation.payment_terms),
@@ -843,12 +890,14 @@ export function SpecialOrderForm({
               `No se completó la creación estricta de la OC ${result.order_id}. ${message} ${rollbackMessage}`,
             ])
             toast.error(`No se pudo completar la OC ${result.order_id} con sus cotizaciones.`)
+            setReviewOpen(false)
             return
           }
 
           toast.success(`Pedido especial creado con ${normalizedQuotations.length} cotización${normalizedQuotations.length > 1 ? 'es' : ''}`)
         }
         
+        setReviewOpen(false)
         if (onSuccess) {
           onSuccess(result.id)
         } else {
@@ -857,6 +906,9 @@ export function SpecialOrderForm({
       }
     } catch (error) {
       console.error('Error creating special order:', error)
+      setReviewOpen(false)
+    } finally {
+      setReviewSubmitting(false)
     }
   }
 
@@ -878,7 +930,7 @@ export function SpecialOrderForm({
   const routingContext = buildPurchaseOrderRoutingContext({
     poType: PurchaseOrderType.SPECIAL_ORDER,
     workOrderId,
-    workOrderType: workOrder?.type ?? launchWorkOrderType,
+    workOrderType: woTypeForPolicy,
     totalAmount: formData.total_amount,
     paymentMethod: formData.payment_method,
     quotationAmounts: quotations.map((quotation) => quotation.quoted_amount),
@@ -888,6 +940,36 @@ export function SpecialOrderForm({
       total_price: item.total_price,
     })),
   })
+
+  const normalizedQuotationsPreview = normalizeQuotations(quotations)
+  const isStandaloneQuoteFirstPreview =
+    !workOrderId && items.length === 0 && quotations.length > 0
+  const previewRequestItems = isStandaloneQuoteFirstPreview ? [] : items
+  const previewTotalAmountSpecial = isStandaloneQuoteFirstPreview
+    ? (normalizedQuotationsPreview[0]?.quoted_amount ?? 0)
+    : (formData.total_amount || 0)
+  const reviewRoutingPreview = buildPurchaseOrderRoutingContext({
+    poType: PurchaseOrderType.SPECIAL_ORDER,
+    workOrderId,
+    workOrderType: woTypeForPolicy,
+    totalAmount: previewTotalAmountSpecial,
+    paymentMethod: formData.payment_method,
+    quotationAmounts: normalizedQuotationsPreview.map((q) => q.quoted_amount),
+    quotationPaymentTerms: normalizedQuotationsPreview.map((q) => q.payment_terms),
+    items: previewRequestItems.map((item) => ({
+      fulfill_from: item.fulfill_from,
+      total_price: item.total_price,
+    })),
+  })
+  const reviewWorkflowLines = getCreationWorkflowSummaryLines({
+    poPurpose: reviewRoutingPreview.poPurpose,
+    workOrderType: reviewRoutingPreview.workOrderType,
+    approvalAmount: reviewRoutingPreview.approvalAmount,
+  })
+  const reviewInventoryCount = previewRequestItems.filter(
+    (i) => i.fulfill_from === 'inventory'
+  ).length
+  const reviewPurchaseCount = Math.max(0, previewRequestItems.length - reviewInventoryCount)
 
   // Loading state
   if (isLoadingWorkOrder) {
@@ -928,6 +1010,24 @@ export function SpecialOrderForm({
   }
 
   return (
+    <>
+      <PurchaseOrderCreationReviewDialog
+        open={reviewOpen}
+        onOpenChange={setReviewOpen}
+        onConfirm={performCreate}
+        isSubmitting={reviewSubmitting || isCreating}
+        poTypeLabel="Pedido especial"
+        poPurpose={reviewRoutingPreview.poPurpose}
+        workOrderTypeLabel={formatWoTypeLabel(woTypeForPolicy)}
+        approvalAmount={reviewRoutingPreview.approvalAmount}
+        totalAmount={previewTotalAmountSpecial}
+        inventoryLineCount={reviewInventoryCount}
+        purchaseLineCount={reviewPurchaseCount}
+        workOrderId={workOrderId}
+        workOrderOrderId={workOrder?.order_id ?? null}
+        workflowHintLines={reviewWorkflowLines}
+        softWarning={reviewSoftWarning}
+      />
     <form onSubmit={handleSubmit} className="space-y-6">
       {/* Header */}
       <Card>
@@ -939,7 +1039,7 @@ export function SpecialOrderForm({
             <div>
               <CardTitle>Pedido Especial</CardTitle>
           <CardDescription>
-            Información básica de la orden de compra. Los proveedores y artículos se agregarán en las cotizaciones.
+            Cotización formal sigue siendo obligatoria. Puede agregar líneas desde el catálogo y elegir surtido desde almacén o compra; las partidas de compra se reflejan en las cotizaciones.
           </CardDescription>
             </div>
           </div>
@@ -960,18 +1060,133 @@ export function SpecialOrderForm({
         </AlertDescription>
       </Alert>
 
-      {/* Items from work order - shown first so user can set fulfill_from, then quotations get pre-filled */}
-      {workOrderId && items.length > 0 ? (
+      {/* Plant first on standalone so availability checks use the correct plant */}
+      {!workOrderId && (
+        <Card>
+          {isMobile ? (
+            <Collapsible defaultOpen={!!selectedPlantId}>
+              <CardHeader asChild>
+                <CollapsibleTrigger className="w-full text-left hover:no-underline group">
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-lg flex items-center space-x-2">
+                      <Building2 className="h-5 w-5" />
+                      <span>Selección de Planta</span>
+                    </CardTitle>
+                    <ChevronDown className="h-4 w-4 shrink-0 transition-transform group-data-[state=open]:rotate-180" />
+                  </div>
+                </CollapsibleTrigger>
+              </CardHeader>
+              <CollapsibleContent>
+                <CardContent className="space-y-4">
+            {plantsLoading ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="h-6 w-6 animate-spin mr-2" />
+                <span>Cargando plantas...</span>
+              </div>
+            ) : userPlants.length === 0 ? (
+              <Alert>
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>
+                  No tienes acceso a ninguna planta. Contacta al administrador.
+                </AlertDescription>
+              </Alert>
+            ) : (
+              <div className="space-y-2">
+                <Label htmlFor="plant_selector">Planta *</Label>
+                <Select
+                  value={selectedPlantId || ""}
+                  onValueChange={setSelectedPlantId}
+                  required
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecciona la planta donde se realizará el pedido" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {userPlants.map((plant) => (
+                      <SelectItem key={plant.plant_id} value={plant.plant_id}>
+                        <div className="flex flex-col">
+                          <span className="font-medium">{plant.plant_name}</span>
+                          {plant.business_unit_name && (
+                            <span className="text-xs text-muted-foreground">
+                              {plant.business_unit_name}
+                            </span>
+                          )}
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Necesaria para consultar disponibilidad por almacén al elegir refacciones del catálogo
+                </p>
+              </div>
+            )}
+          </CardContent>
+              </CollapsibleContent>
+            </Collapsible>
+          ) : (
+            <>
+              <CardHeader>
+                <CardTitle className="text-lg flex items-center space-x-2">
+                  <Building2 className="h-5 w-5" />
+                  <span>Selección de Planta</span>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {plantsLoading ? (
+                  <div className="flex justify-center items-center py-8">
+                    <Loader2 className="h-6 w-6 animate-spin mr-2" />
+                    <span>Cargando plantas...</span>
+                  </div>
+                ) : userPlants.length === 0 ? (
+                  <Alert>
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertDescription>No tienes acceso a ninguna planta. Contacta al administrador.</AlertDescription>
+                  </Alert>
+                ) : (
+                  <div className="space-y-2">
+                    <Label htmlFor="plant_selector">Planta *</Label>
+                    <Select value={selectedPlantId || ""} onValueChange={setSelectedPlantId} required>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Selecciona la planta donde se realizará el pedido" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {userPlants.map((plant) => (
+                          <SelectItem key={plant.plant_id} value={plant.plant_id}>
+                            <div className="flex flex-col">
+                              <span className="font-medium">{plant.plant_name}</span>
+                              {plant.business_unit_name && <span className="text-xs text-muted-foreground">{plant.business_unit_name}</span>}
+                            </div>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">
+                      Necesaria para consultar disponibilidad por almacén al elegir refacciones del catálogo
+                    </p>
+                  </div>
+                )}
+              </CardContent>
+            </>
+          )}
+        </Card>
+      )}
+
+      {/* Line items: set fulfill_from; purchase lines pre-fill quotations */}
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
             <CardTitle className="text-lg flex items-center space-x-2">
               <Package className="h-5 w-5" />
-              <span>Artículos de la Orden de Trabajo</span>
+              <span>
+                {workOrderId ? "Artículos de la Orden de Trabajo" : "Refacciones y materiales (opcional)"}
+              </span>
             </CardTitle>
           </div>
           <CardDescription>
-            Seleccione el origen por artículo (Inventario o Compra). Los artículos a comprar se usarán para pre-llenar las cotizaciones.
+            {workOrderId
+              ? "Seleccione el origen por artículo (Inventario o Compra). Las líneas de compra pre-llenan las cotizaciones."
+              : "Agregue líneas del catálogo si aplica. Elija Inventario o Compra por línea; la compra sigue documentándose en las cotizaciones."}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -1146,8 +1361,7 @@ export function SpecialOrderForm({
                         </div>
                         <div className="flex justify-between items-center pt-2 border-t">
                           <div className="flex gap-2 flex-wrap">
-                            {workOrderId && (
-                              <Select value={item.fulfill_from || 'purchase'} onValueChange={(value: 'inventory' | 'purchase') => {
+                            <Select value={item.fulfill_from || 'purchase'} onValueChange={(value: 'inventory' | 'purchase') => {
                                 setItems(prev => prev.map(i => {
                                   if (i.id !== item.id) return i
                                   const updates: Partial<OrderItem> = { fulfill_from: value }
@@ -1168,12 +1382,11 @@ export function SpecialOrderForm({
                                   <SelectItem value="purchase">Compra</SelectItem>
                                 </SelectContent>
                               </Select>
-                            )}
                             {item.is_special_order && <Badge variant="secondary" className="text-xs"><FileText className="h-3 w-3 mr-1" />Especial</Badge>}
                           </div>
                           <span className="font-semibold">${item.total_price.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                         </div>
-                        {workOrderId && isInventory && item.availability?.available_by_warehouse?.length ? (
+                        {isInventory && item.availability?.available_by_warehouse?.length ? (
                           <div>
                             <Label className="text-xs">Almacén</Label>
                             <Select value={item.warehouse_id || ''} onValueChange={(v) => handleItemChange(item.id, 'warehouse_id', v)}>
@@ -1189,6 +1402,14 @@ export function SpecialOrderForm({
                               </SelectContent>
                             </Select>
                           </div>
+                        ) : isInventory && item.part_id ? (
+                          <p className="text-xs text-amber-600 px-1">
+                            {!effectivePlantId
+                              ? 'Seleccione planta arriba para ver almacenes'
+                              : item.availability
+                                ? 'Sin stock'
+                                : 'Verificando...'}
+                          </p>
                         ) : null}
                       </Card>
                     )
@@ -1203,8 +1424,8 @@ export function SpecialOrderForm({
                       <TableHead>Cant.</TableHead>
                       <TableHead>Precio Unit.</TableHead>
                       <TableHead>Total</TableHead>
-                      {workOrderId ? <TableHead>Origen</TableHead> : null}
-                      {workOrderId ? <TableHead>Almacén</TableHead> : null}
+                      <TableHead>Origen</TableHead>
+                      <TableHead>Almacén</TableHead>
                       <TableHead>Entrega</TableHead>
                       <TableHead className="w-[100px]">Acciones</TableHead>
                     </TableRow>
@@ -1272,63 +1493,63 @@ export function SpecialOrderForm({
                           maximumFractionDigits: 2
                         })}
                       </TableCell>
-                      {workOrderId ? (
-                        <TableCell>
+                      <TableCell>
+                        <Select
+                          value={item.fulfill_from || 'purchase'}
+                          onValueChange={(value: 'inventory' | 'purchase') => {
+                            setItems(prev => prev.map(i => {
+                              if (i.id !== item.id) return i
+                              const updates: Partial<OrderItem> = { fulfill_from: value }
+                              if (value === 'purchase') {
+                                updates.warehouse_id = undefined
+                              } else if (value === 'inventory' && i.availability?.available_by_warehouse?.length) {
+                                const wh = i.availability.available_by_warehouse
+                                const best = wh.filter(w => w.available_quantity >= (Number(i.quantity) || 0))
+                                  .sort((a, b) => b.available_quantity - a.available_quantity)[0]
+                                updates.warehouse_id = best?.warehouse_id || wh[0].warehouse_id
+                              }
+                              return { ...i, ...updates }
+                            }))
+                          }}
+                        >
+                          <SelectTrigger className="w-[120px]">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="inventory">Inventario</SelectItem>
+                            <SelectItem value="purchase">Compra</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </TableCell>
+                      <TableCell>
+                        {isInventory && item.availability?.available_by_warehouse?.length ? (
                           <Select
-                            value={item.fulfill_from || 'purchase'}
-                            onValueChange={(value: 'inventory' | 'purchase') => {
-                              setItems(prev => prev.map(i => {
-                                if (i.id !== item.id) return i
-                                const updates: Partial<OrderItem> = { fulfill_from: value }
-                                if (value === 'purchase') {
-                                  updates.warehouse_id = undefined
-                                } else if (value === 'inventory' && i.availability?.available_by_warehouse?.length) {
-                                  const wh = i.availability.available_by_warehouse
-                                  const best = wh.filter(w => w.available_quantity >= (Number(i.quantity) || 0))
-                                    .sort((a, b) => b.available_quantity - a.available_quantity)[0]
-                                  updates.warehouse_id = best?.warehouse_id || wh[0].warehouse_id
-                                }
-                                return { ...i, ...updates }
-                              }))
-                            }}
+                            value={item.warehouse_id || ''}
+                            onValueChange={(v) => handleItemChange(item.id, 'warehouse_id', v)}
                           >
-                            <SelectTrigger className="w-[120px]">
-                              <SelectValue />
+                            <SelectTrigger className="w-[160px]">
+                              <SelectValue placeholder="Seleccionar almacén" />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="inventory">Inventario</SelectItem>
-                              <SelectItem value="purchase">Compra</SelectItem>
+                              {item.availability.available_by_warehouse.map((w) => (
+                                <SelectItem key={w.warehouse_id} value={w.warehouse_id}>
+                                  {w.warehouse_name} ({w.available_quantity} disp.)
+                                </SelectItem>
+                              ))}
                             </SelectContent>
                           </Select>
-                        </TableCell>
-                      ) : null}
-                      {workOrderId ? (
-                        <TableCell>
-                          {isInventory && item.availability?.available_by_warehouse?.length ? (
-                            <Select
-                              value={item.warehouse_id || ''}
-                              onValueChange={(v) => handleItemChange(item.id, 'warehouse_id', v)}
-                            >
-                              <SelectTrigger className="w-[160px]">
-                                <SelectValue placeholder="Seleccionar almacén" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {item.availability.available_by_warehouse.map((w) => (
-                                  <SelectItem key={w.warehouse_id} value={w.warehouse_id}>
-                                    {w.warehouse_name} ({w.available_quantity} disp.)
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          ) : isInventory && item.part_id ? (
-                            <span className="text-xs text-amber-600">
-                              {item.availability ? 'Sin stock' : 'Verificando...'}
-                            </span>
-                          ) : (
-                            <span className="text-muted-foreground">—</span>
-                          )}
-                        </TableCell>
-                      ) : null}
+                        ) : isInventory && item.part_id ? (
+                          <span className="text-xs text-amber-600">
+                            {!effectivePlantId
+                              ? 'Seleccione planta'
+                              : item.availability
+                                ? 'Sin stock'
+                                : 'Verificando...'}
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </TableCell>
                       <TableCell>
                         <div className="flex items-center space-x-2">
                           {isInventory ? (
@@ -1401,36 +1622,73 @@ export function SpecialOrderForm({
             </div>
           )}
 
-          {/* Inventory vs purchase summary - same as DirectPurchaseForm */}
-          {items.length > 0 && workOrderId && (() => {
+          {/* Inventory vs purchase summary - same as DirectPurchaseForm; standalone uses line mix when po_purpose is inventory_restock */}
+          {items.length > 0 && (() => {
             const inventoryItemsList = items.filter(i => i.fulfill_from === 'inventory')
             const purchaseItemsList = items.filter(i => i.fulfill_from === 'purchase' || !i.fulfill_from)
             const inventoryTotalSum = inventoryItemsList.reduce((sum, item) => sum + (item.total_price || 0), 0)
             const purchaseTotalSum = purchaseItemsList.reduce((sum, item) => sum + (item.total_price || 0), 0)
-            if (routingContext.poPurpose === 'work_order_inventory') {
+
+            if (workOrderId) {
+              if (routingContext.poPurpose === 'work_order_inventory') {
+                return (
+                  <Alert className="border-green-500 bg-green-50">
+                    <CheckCircle2 className="h-4 w-4 text-green-600" />
+                    <AlertDescription className="text-green-800">
+                      <strong>Esta orden usará solo existencias del almacén.</strong> No implica compra a proveedor en esta OC; sigue el flujo de autorización habitual.
+                    </AlertDescription>
+                  </Alert>
+                )
+              }
+              if (routingContext.poPurpose === 'mixed') {
+                return (
+                  <Alert className="border-yellow-500 bg-yellow-50">
+                    <AlertCircle className="h-4 w-4 text-yellow-600" />
+                    <AlertDescription className="text-yellow-800">
+                      <strong>Esta orden mezcla surtido desde almacén y compra a proveedor.</strong> Desde almacén: ${inventoryTotalSum.toFixed(2)}. Compra a proveedor: ${purchaseTotalSum.toFixed(2)}. Las cotizaciones se orientan a las partidas de compra.
+                    </AlertDescription>
+                  </Alert>
+                )
+              }
+              if (routingContext.poPurpose === 'work_order_cash') {
+                return (
+                  <Alert className="border-blue-500 bg-blue-50">
+                    <ShoppingCart className="h-4 w-4 text-blue-600" />
+                    <AlertDescription className="text-blue-800">
+                      <strong>Esta orden va principalmente por compra a proveedor:</strong> ${purchaseTotalSum.toFixed(2)}. Las cotizaciones se pre-llenarán con estas partidas.
+                    </AlertDescription>
+                  </Alert>
+                )
+              }
+              return null
+            }
+
+            if (inventoryItemsList.length === items.length && items.length > 0) {
               return (
                 <Alert className="border-green-500 bg-green-50">
                   <CheckCircle2 className="h-4 w-4 text-green-600" />
                   <AlertDescription className="text-green-800">
-                    <strong>Esta orden usará solo existencias del almacén.</strong> No implica compra a proveedor en esta OC; sigue el flujo de autorización habitual.
+                    <strong>Todas las líneas son surtido desde almacén.</strong> Registre las cotizaciones obligatorias del pedido especial según política; no hay partidas de compra que pre-llenar desde esta lista.
                   </AlertDescription>
                 </Alert>
               )
-            } else if (routingContext.poPurpose === 'mixed') {
-              return (
-                <Alert className="border-yellow-500 bg-yellow-50">
-                  <AlertCircle className="h-4 w-4 text-yellow-600" />
-                  <AlertDescription className="text-yellow-800">
-                    <strong>Esta orden mezcla surtido desde almacén y compra a proveedor.</strong> Desde almacén: ${inventoryTotalSum.toFixed(2)}. Compra a proveedor: ${purchaseTotalSum.toFixed(2)}. Las cotizaciones se orientan a las partidas de compra.
-                  </AlertDescription>
-                </Alert>
-              )
-            } else if (routingContext.poPurpose === 'work_order_cash') {
+            }
+            if (purchaseItemsList.length === items.length) {
               return (
                 <Alert className="border-blue-500 bg-blue-50">
                   <ShoppingCart className="h-4 w-4 text-blue-600" />
                   <AlertDescription className="text-blue-800">
-                    <strong>Esta orden va principalmente por compra a proveedor:</strong> ${purchaseTotalSum.toFixed(2)}. Las cotizaciones se pre-llenarán con estas partidas.
+                    <strong>Compra a proveedor:</strong> ${purchaseTotalSum.toFixed(2)}. Las cotizaciones se pre-llenarán con estas partidas.
+                  </AlertDescription>
+                </Alert>
+              )
+            }
+            if (inventoryItemsList.length > 0 && purchaseItemsList.length > 0) {
+              return (
+                <Alert className="border-yellow-500 bg-yellow-50">
+                  <AlertCircle className="h-4 w-4 text-yellow-600" />
+                  <AlertDescription className="text-yellow-800">
+                    <strong>Mezcla almacén y compra.</strong> Desde almacén: ${inventoryTotalSum.toFixed(2)}. Compra a proveedor: ${purchaseTotalSum.toFixed(2)}. Las cotizaciones se orientan a las partidas de compra.
                   </AlertDescription>
                 </Alert>
               )
@@ -1439,7 +1697,6 @@ export function SpecialOrderForm({
           })()}
         </CardContent>
       </Card>
-      ) : null}
 
       {/* Quotation Form - Always required for special orders */}
       {/* Pre-fill with purchase items from work order when adding first quotation */}
@@ -1567,7 +1824,7 @@ export function SpecialOrderForm({
                       <FileText className="h-5 w-5" />
                       <span>Información Básica</span>
                     </CardTitle>
-                    <CardDescription>Fechas y método de pago</CardDescription>
+                    <CardDescription>Fechas y método de pago; las cotizaciones formalizan la compra a proveedor</CardDescription>
                   </div>
                   <ChevronDown className="h-4 w-4 shrink-0 transition-transform group-data-[state=open]:rotate-180" />
                 </div>
@@ -1580,10 +1837,11 @@ export function SpecialOrderForm({
             <AlertDescription>
               <strong>Flujo de Pedido Especial:</strong>
               <ol className="list-decimal list-inside mt-2 space-y-1">
-                <li>Configure la información básica (fechas, método de pago, notas)</li>
-                <li>Agregue cotizaciones de diferentes proveedores (cada una con sus artículos y precios)</li>
-                <li>Compare las cotizaciones y seleccione la mejor opción</li>
-                <li>El sistema actualizará automáticamente el proveedor y artículos seleccionados</li>
+                <li>Opcional: agregue líneas del catálogo y elija surtido desde almacén o compra (pedido independiente: elija planta arriba)</li>
+                <li>Configure fechas, método de pago y notas</li>
+                <li>Agregue cotizaciones de proveedores (cada una con artículos y precios)</li>
+                <li>Compare cotizaciones y seleccione la mejor opción</li>
+                <li>El sistema actualizará proveedor y artículos según la cotización elegida</li>
               </ol>
             </AlertDescription>
           </Alert>
@@ -1662,7 +1920,7 @@ export function SpecialOrderForm({
                 <span>Información Básica</span>
               </CardTitle>
               <CardDescription>
-                Configure fechas y método de pago. El proveedor y artículos se agregarán en las cotizaciones.
+                Fechas y método de pago. Proveedor y precios de compra se documentan en las cotizaciones; las líneas de refacción sirven para surtido y pre-llenado.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -1671,10 +1929,11 @@ export function SpecialOrderForm({
                 <AlertDescription>
                   <strong>Flujo de Pedido Especial:</strong>
                   <ol className="list-decimal list-inside mt-2 space-y-1">
-                    <li>Configure la información básica (fechas, método de pago, notas)</li>
-                    <li>Agregue cotizaciones de diferentes proveedores (cada una con sus artículos y precios)</li>
-                    <li>Compare las cotizaciones y seleccione la mejor opción</li>
-                    <li>El sistema actualizará automáticamente el proveedor y artículos seleccionados</li>
+                    <li>Opcional: agregue líneas del catálogo y elija surtido desde almacén o compra (pedido independiente: elija planta arriba)</li>
+                    <li>Configure fechas, método de pago y notas</li>
+                    <li>Agregue cotizaciones de proveedores (cada una con artículos y precios)</li>
+                    <li>Compare cotizaciones y seleccione la mejor opción</li>
+                    <li>El sistema actualizará proveedor y artículos según la cotización elegida</li>
                   </ol>
                 </AlertDescription>
               </Alert>
@@ -1712,116 +1971,6 @@ export function SpecialOrderForm({
         )}
       </Card>
 
-      {/* Plant Selection - Only show for standalone orders */}
-      {!workOrderId && (
-        <Card>
-          {isMobile ? (
-            <Collapsible defaultOpen={!!selectedPlantId}>
-              <CardHeader asChild>
-                <CollapsibleTrigger className="w-full text-left hover:no-underline group">
-                  <div className="flex items-center justify-between">
-                    <CardTitle className="text-lg flex items-center space-x-2">
-                      <Building2 className="h-5 w-5" />
-                      <span>Selección de Planta</span>
-                    </CardTitle>
-                    <ChevronDown className="h-4 w-4 shrink-0 transition-transform group-data-[state=open]:rotate-180" />
-                  </div>
-                </CollapsibleTrigger>
-              </CardHeader>
-              <CollapsibleContent>
-                <CardContent className="space-y-4">
-            {plantsLoading ? (
-              <div className="flex items-center justify-center py-8">
-                <Loader2 className="h-6 w-6 animate-spin mr-2" />
-                <span>Cargando plantas...</span>
-              </div>
-            ) : userPlants.length === 0 ? (
-              <Alert>
-                <AlertCircle className="h-4 w-4" />
-                <AlertDescription>
-                  No tienes acceso a ninguna planta. Contacta al administrador.
-                </AlertDescription>
-              </Alert>
-            ) : (
-              <div className="space-y-2">
-                <Label htmlFor="plant_selector">Planta *</Label>
-                <Select
-                  value={selectedPlantId || ""}
-                  onValueChange={setSelectedPlantId}
-                  required
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Selecciona la planta donde se realizará el pedido" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {userPlants.map((plant) => (
-                      <SelectItem key={plant.plant_id} value={plant.plant_id}>
-                        <div className="flex flex-col">
-                          <span className="font-medium">{plant.plant_name}</span>
-                          {plant.business_unit_name && (
-                            <span className="text-xs text-muted-foreground">
-                              {plant.business_unit_name}
-                            </span>
-                          )}
-                        </div>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <p className="text-xs text-muted-foreground">
-                  Selecciona la planta para la cual se solicita este pedido especial
-                </p>
-              </div>
-            )}
-          </CardContent>
-              </CollapsibleContent>
-            </Collapsible>
-          ) : (
-            <>
-              <CardHeader>
-                <CardTitle className="text-lg flex items-center space-x-2">
-                  <Building2 className="h-5 w-5" />
-                  <span>Selección de Planta</span>
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {plantsLoading ? (
-                  <div className="flex justify-center items-center py-8">
-                    <Loader2 className="h-6 w-6 animate-spin mr-2" />
-                    <span>Cargando plantas...</span>
-                  </div>
-                ) : userPlants.length === 0 ? (
-                  <Alert>
-                    <AlertCircle className="h-4 w-4" />
-                    <AlertDescription>No tienes acceso a ninguna planta. Contacta al administrador.</AlertDescription>
-                  </Alert>
-                ) : (
-                  <div className="space-y-2">
-                    <Label htmlFor="plant_selector">Planta *</Label>
-                    <Select value={selectedPlantId || ""} onValueChange={setSelectedPlantId} required>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Selecciona la planta donde se realizará el pedido" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {userPlants.map((plant) => (
-                          <SelectItem key={plant.plant_id} value={plant.plant_id}>
-                            <div className="flex flex-col">
-                              <span className="font-medium">{plant.plant_name}</span>
-                              {plant.business_unit_name && <span className="text-xs text-muted-foreground">{plant.business_unit_name}</span>}
-                            </div>
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <p className="text-xs text-muted-foreground">Selecciona la planta para la cual se solicita este pedido especial</p>
-                  </div>
-                )}
-              </CardContent>
-            </>
-          )}
-        </Card>
-      )}
-
       {/* Notes */}
       <Card>
         <CardHeader>
@@ -1847,10 +1996,14 @@ export function SpecialOrderForm({
         
         <Button 
           type="submit" 
-          disabled={isCreating || (items.length === 0 && quotations.length === 0)}
+          disabled={
+            isCreating ||
+            reviewSubmitting ||
+            (items.length === 0 && quotations.length === 0)
+          }
           className="min-w-[150px]"
         >
-          {isCreating ? (
+          {isCreating || reviewSubmitting ? (
             <>
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               Creando...
@@ -1864,5 +2017,6 @@ export function SpecialOrderForm({
         </Button>
       </div>
     </form>
+    </>
   )
 } 
