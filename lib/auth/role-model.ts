@@ -2,6 +2,7 @@
 const ORIGINAL_DB_ROLES = [
   'GERENCIA_GENERAL',
   'JEFE_UNIDAD_NEGOCIO',
+  'ENCARGADO_MANTENIMIENTO',
   'AREA_ADMINISTRATIVA',
   'JEFE_PLANTA',
   'AUXILIAR_COMPRAS',
@@ -28,6 +29,7 @@ export const FUTURE_BUSINESS_ROLES = [
   'GERENCIA_GENERAL',
   'GERENTE_MANTENIMIENTO',
   'JEFE_UNIDAD_NEGOCIO',
+  'JEFE_PLANTA',
   'COORDINADOR_MANTENIMIENTO',
   'AREA_ADMINISTRATIVA',
   'AUXILIAR_COMPRAS',
@@ -52,8 +54,9 @@ export interface RoleScopeMetadata {
 const LEGACY_ROLE_LABELS: Record<LegacyDbRole, string> = {
   GERENCIA_GENERAL: 'Gerencia General',
   JEFE_UNIDAD_NEGOCIO: 'Jefe de Unidad de Negocio',
+  ENCARGADO_MANTENIMIENTO: 'Encargado de Mantenimiento (deprecado)',
   AREA_ADMINISTRATIVA: 'Área Administrativa',
-  JEFE_PLANTA: 'Coordinador de Mantenimiento (Legacy)',
+  JEFE_PLANTA: 'Jefe de Planta',
   AUXILIAR_COMPRAS: 'Auxiliar de Compras',
   DOSIFICADOR: 'Dosificador',
   OPERADOR: 'Operador',
@@ -70,6 +73,7 @@ const FUTURE_ROLE_LABELS: Record<FutureBusinessRole, string> = {
   GERENCIA_GENERAL: 'Gerencia General',
   GERENTE_MANTENIMIENTO: 'Gerente de Mantenimiento',
   JEFE_UNIDAD_NEGOCIO: 'Jefe de Unidad de Negocio',
+  JEFE_PLANTA: 'Jefe de Planta',
   COORDINADOR_MANTENIMIENTO: 'Coordinador de Mantenimiento',
   AREA_ADMINISTRATIVA: 'Área Administrativa',
   AUXILIAR_COMPRAS: 'Auxiliar de Compras',
@@ -82,13 +86,14 @@ const FUTURE_ROLE_LABELS: Record<FutureBusinessRole, string> = {
 }
 
 // Maps legacy DB roles to their semantic future business role equivalents.
-// JEFE_PLANTA maps to COORDINADOR_MANTENIMIENTO during transition.
+// ENCARGADO_MANTENIMIENTO (deprecated enum) maps to COORDINADOR for workflow scope; permissions stay keyed by profile.role.
 // New DB roles map directly to themselves.
 export const LEGACY_ROLE_TO_BUSINESS_ROLE: Partial<Record<LegacyDbRole, FutureBusinessRole>> = {
   GERENCIA_GENERAL: 'GERENCIA_GENERAL',
   JEFE_UNIDAD_NEGOCIO: 'JEFE_UNIDAD_NEGOCIO',
+  ENCARGADO_MANTENIMIENTO: 'COORDINADOR_MANTENIMIENTO',
   AREA_ADMINISTRATIVA: 'AREA_ADMINISTRATIVA',
-  JEFE_PLANTA: 'COORDINADOR_MANTENIMIENTO',
+  JEFE_PLANTA: 'JEFE_PLANTA',
   AUXILIAR_COMPRAS: 'AUXILIAR_COMPRAS',
   DOSIFICADOR: 'OPERADOR',
   OPERADOR: 'OPERADOR',
@@ -107,6 +112,7 @@ export const FUTURE_ROLE_TO_LEGACY_ROLE: Partial<Record<FutureBusinessRole, Lega
   GERENCIA_GENERAL: 'GERENCIA_GENERAL',
   GERENTE_MANTENIMIENTO: 'GERENTE_MANTENIMIENTO',
   JEFE_UNIDAD_NEGOCIO: 'JEFE_UNIDAD_NEGOCIO',
+  JEFE_PLANTA: 'JEFE_PLANTA',
   COORDINADOR_MANTENIMIENTO: 'COORDINADOR_MANTENIMIENTO',
   AREA_ADMINISTRATIVA: 'AREA_ADMINISTRATIVA',
   AUXILIAR_COMPRAS: 'AUXILIAR_COMPRAS',
@@ -133,6 +139,12 @@ export const BUSINESS_ROLE_SCOPE: Record<FutureBusinessRole, RoleScopeMetadata> 
     scope: 'business_unit',
     label: 'Unidad de negocio',
     description: 'Jefe de unidad de negocio. No aprueba órdenes de compra.',
+  },
+  JEFE_PLANTA: {
+    scope: 'plant',
+    label: 'Planta',
+    description:
+      'Supervisión operativa de planta. No es el Coordinador de Mantenimiento; no crea OC ni autoriza validación técnica Nivel 1.',
   },
   COORDINADOR_MANTENIMIENTO: {
     scope: 'plant',
@@ -275,19 +287,20 @@ export interface NormalizedPersistedRole {
 }
 
 /**
- * Legacy roles whose permissions differ from their mapped business role.
- * For these, we use profile.role (not business_role) for permission checks
- * so JEFE_PLANTA keeps $50k auth and personnel access (vs COORDINADOR's $0 and none).
+ * Roles that must use `profiles.role` for module permissions (never `business_role` alone).
+ * Covers: distinct permission rows vs mapped business role, JUN (must not inherit Gerente via stale business_role),
+ * deprecated Encargado (keep Coordinador-shaped business_role without collapsing permission row).
  */
-const LEGACY_ROLES_WITH_DISTINCT_PERMISSIONS = new Set<LegacyDbRole>([
-  'JEFE_PLANTA', // $50k auth, personnel read_write vs COORDINADOR's $0, personnel none
-  'DOSIFICADOR', // inventory read_write vs OPERADOR's inventory none
+export const ROLES_PINNED_TO_PROFILE_ROLE_FOR_PERMISSIONS = new Set<LegacyDbRole>([
+  'JEFE_UNIDAD_NEGOCIO',
+  'JEFE_PLANTA',
+  'ENCARGADO_MANTENIMIENTO',
+  'DOSIFICADOR',
 ])
 
 /**
  * Returns the role key to use for permission checks (hasModuleAccess, hasWriteAccess, etc.).
- * For legacy roles with distinct permissions (JEFE_PLANTA, DOSIFICADOR), uses profile.role
- * so they keep their correct access. Otherwise uses business_role || role.
+ * Pinned roles always use profile.role; others use business_role || role.
  */
 export function effectiveRoleForPermissions(profile: {
   role?: string | null
@@ -296,7 +309,7 @@ export function effectiveRoleForPermissions(profile: {
   if (!profile?.role) return null
   if (
     isLegacyDbRole(profile.role) &&
-    LEGACY_ROLES_WITH_DISTINCT_PERMISSIONS.has(profile.role)
+    ROLES_PINNED_TO_PROFILE_ROLE_FOR_PERMISSIONS.has(profile.role)
   ) {
     return profile.role
   }

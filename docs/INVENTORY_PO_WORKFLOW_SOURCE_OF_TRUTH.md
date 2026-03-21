@@ -2,6 +2,8 @@
 
 Este documento describe **cómo está implementado hoy** el flujo: orden de trabajo (OT) → orden de compra (OC) tipificada → aprobaciones (app y correo) → movimientos de inventario. Está pensado para **operación** y para **ingeniería**; las referencias a código y SQL permiten contrastar cualquier duda.
 
+**Matriz de roles (quién hace qué en plataforma):** ver [docs/POL_OPE_ROLES_PLATFORM_MATRIX.md](POL_OPE_ROLES_PLATFORM_MATRIX.md) (resumen alineado a POL-OPE-001/002 v2.0).
+
 **Alcance:** OC con `po_type` definido (“tipificadas”), que es el flujo principal. Al final hay una nota breve sobre OC legadas.
 
 **Umbral GM:** 7.000 MXN (`GM_ESCALATION_THRESHOLD_MXN` en código; mismo valor replicado en SQL `process_po_email_action`).

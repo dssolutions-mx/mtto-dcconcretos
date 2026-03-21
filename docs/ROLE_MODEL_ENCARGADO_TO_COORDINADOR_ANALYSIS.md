@@ -1,5 +1,7 @@
 # Deep Dive: Role Model & Encargado → Coordinador Transition
 
+> **Actualización (app):** `ENCARGADO_MANTENIMIENTO` está en `LEGACY_DB_ROLES` y en `lib/auth/role-permissions.ts` con permisos alineados a Coordinador hasta migración de filas; la etiqueta de UI indica “(deprecado)”.
+
 **Date:** 2026-03-10  
 **Scope:** DB and app alignment after Encargado de Mantenimiento → Coordinador de Mantenimiento rename
 

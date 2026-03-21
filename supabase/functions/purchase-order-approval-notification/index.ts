@@ -372,7 +372,7 @@ serve(async (req) => {
       const { data: technicalApprovers } = await supabase
         .from('profiles')
         .select('email, nombre, apellido')
-        .or('role.eq.GERENTE_MANTENIMIENTO,business_role.eq.GERENTE_MANTENIMIENTO')
+        .eq('role', 'GERENTE_MANTENIMIENTO')
         .eq('status', 'active')
       const m = (technicalApprovers || []).find((p: any) => !!p.email)
       if (m?.email) {

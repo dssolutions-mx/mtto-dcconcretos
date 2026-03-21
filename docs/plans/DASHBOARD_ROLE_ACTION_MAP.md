@@ -8,7 +8,7 @@
 
 - **ENCARGADO_ALMACEN** — Flag in roles only. No dedicated dashboard. Warehouse/release duties are not surfaced as a separate receiver.
 - **Coordinadores de Mantenimiento** — Primary care for: recently approved POs, status of their purchase orders, their OTs, checklist compliance.
-- **Formalizar WhatsApp** — Removed from Coordinador. Not useful.
+- **Formalizar WhatsApp** — POL-OPE-001 (*Roles y Acciones en Plataforma*, v2.0) still requires the Coordinador to formalize Grupo WhatsApp communication in the platform within **&lt;2h hábiles**. The **dashboard** does not surface a dedicated “WhatsApp” hero action (operational hygiene is expected in the relevant modules / routines). Product docs here describe **navigation priorities**, not a repeal of that policy.
 
 ---
 

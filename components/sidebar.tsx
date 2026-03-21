@@ -112,7 +112,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
   const { profile, ui } = useAuthZustand()
   const { isComplianceSystemEnabled } = useSystemSettings()
   const [equipmentOpen, setEquipmentOpen] = useState(false)
-  const operationsDefaultOpen = ['OPERADOR', 'DOSIFICADOR', 'COORDINADOR_MANTENIMIENTO', 'JEFE_PLANTA', 'GERENTE_MANTENIMIENTO'].includes(profile?.role || '')
+  const operationsDefaultOpen = ['OPERADOR', 'DOSIFICADOR', 'COORDINADOR_MANTENIMIENTO', 'JEFE_PLANTA', 'GERENTE_MANTENIMIENTO', 'JEFE_UNIDAD_NEGOCIO'].includes(profile?.role || '')
   const [operationsOpen, setOperationsOpen] = useState(operationsDefaultOpen)
   const [procurementOpen, setProcurementOpen] = useState(profile?.role === 'AREA_ADMINISTRATIVA')
   const [recordsOpen, setRecordsOpen] = useState(false)
@@ -130,7 +130,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
 
   // Auto-open Operations section for roles that primarily use checklists (operators, coordinators, plant managers)
   useEffect(() => {
-    if (['OPERADOR', 'DOSIFICADOR', 'COORDINADOR_MANTENIMIENTO', 'JEFE_PLANTA', 'GERENTE_MANTENIMIENTO'].includes(profile?.role || '')) {
+    if (['OPERADOR', 'DOSIFICADOR', 'COORDINADOR_MANTENIMIENTO', 'JEFE_PLANTA', 'GERENTE_MANTENIMIENTO', 'JEFE_UNIDAD_NEGOCIO'].includes(profile?.role || '')) {
       setOperationsOpen(true)
     }
   }, [profile])

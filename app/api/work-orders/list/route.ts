@@ -22,7 +22,8 @@ export async function GET() {
         asset:assets (
           id,
           name,
-          asset_id
+          asset_id,
+          plant_id
         )
       `
       )

@@ -7,10 +7,10 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import {
   resolveBusinessRole,
-  isTechnicalApproverRole,
   isViabilityReviewerRole,
   isGMEscalatorRole,
   isRHOwnerRole,
+  effectiveRoleForPermissions,
   type FutureBusinessRole,
   type RoleScope,
 } from '@/lib/auth/role-model'
@@ -82,6 +82,13 @@ export function resolveEffectiveBusinessRole(
   if (profile.role === 'GERENTE_MANTENIMIENTO') {
     return 'GERENTE_MANTENIMIENTO'
   }
+  // Never let stale business_role collapse JUN/JP into another line (e.g. Gerente).
+  if (profile.role === 'JEFE_UNIDAD_NEGOCIO') {
+    return 'JEFE_UNIDAD_NEGOCIO'
+  }
+  if (profile.role === 'JEFE_PLANTA') {
+    return 'JEFE_PLANTA'
+  }
   if (profile.business_role) {
     return resolveBusinessRole(profile.business_role)
   }
@@ -104,10 +111,17 @@ export async function loadActorContext(
   const roleScope = effectiveBusinessRole
     ? getRoleScopeFromBusinessRole(effectiveBusinessRole)
     : 'plant'
+  const permRole =
+    effectiveRoleForPermissions({
+      role: profile.role,
+      business_role: profile.business_role,
+    }) ??
+    profile.business_role ??
+    profile.role
   const authorizationLimit =
     (profile.can_authorize_up_to ?? 0) > 0
       ? (profile.can_authorize_up_to ?? 0)
-      : getAuthorizationLimit(profile.business_role ?? profile.role)
+      : getAuthorizationLimit(permRole)
 
   return {
     userId,
@@ -125,6 +139,7 @@ function getRoleScopeFromBusinessRole(
     GERENCIA_GENERAL: 'global',
     GERENTE_MANTENIMIENTO: 'global',
     JEFE_UNIDAD_NEGOCIO: 'business_unit',
+    JEFE_PLANTA: 'plant',
     COORDINADOR_MANTENIMIENTO: 'plant',
     AREA_ADMINISTRATIVA: 'global',
     AUXILIAR_COMPRAS: 'global',
@@ -194,10 +209,9 @@ export function checkRHOwnershipAuthority(
 }
 
 /**
- * Check if actor has technical approval authority for purchase orders.
- * Technical approver = GERENTE_MANTENIMIENTO per POL-OPE-001/002.
- * When profile.role is GERENTE_MANTENIMIENTO, always return true—ignore business_role
- * (which may be wrong legacy data like GERENCIA_GENERAL).
+ * Aut.1 técnica (validación técnica OC): solo Gerente de Mantenimiento por rol canónico.
+ * Uses profiles.role only — never business_role (JUN must not pass via stale GERENTE_MANTENIMIENTO).
+ * Gerencia General uses checkGMEscalationAuthority for primer aprobado / bypass, not this helper.
  */
 export function checkTechnicalApprovalAuthority(
   actor: ActorContext | null
@@ -205,10 +219,7 @@ export function checkTechnicalApprovalAuthority(
   if (!actor) {
     return false
   }
-  if (actor.profile.role === 'GERENTE_MANTENIMIENTO') {
-    return true
-  }
-  return isTechnicalApproverRole(actor.profile.business_role ?? actor.profile.role)
+  return actor.profile.role === 'GERENTE_MANTENIMIENTO'
 }
 
 /**

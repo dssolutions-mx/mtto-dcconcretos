@@ -41,7 +41,10 @@ export type WorkflowStage =
   | 'viability'   // Viabilidad administrativa
   | 'final'       // Aprobación final
 
-/** Roles that can approve at Validación técnica (stage 1). */
+/**
+ * Roles that can approve at Validación técnica (stage 1) in UI policy.
+ * Must stay aligned with `checkTechnicalApprovalAuthority` (Gerente only) plus GM bypass where the app uses `checkGMEscalationAuthority` on first action.
+ */
 const TECHNICAL_APPROVAL_ROLES = new Set<string>([
   'GERENTE_MANTENIMIENTO',
   'GERENCIA_GENERAL',

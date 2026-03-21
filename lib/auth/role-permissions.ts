@@ -43,6 +43,32 @@ export interface CompatibleRoleInfo {
   displayName: string
 }
 
+/** Gerente de Mantenimiento — global technical authority (Aut.1 OC); not shared with JUN. */
+const GERENTE_MANTENIMIENTO_MODULE_PERMISSIONS: ModulePermissions = {
+  assets: 'read_write',
+  maintenance: 'full',
+  work_orders: 'full_auth',
+  purchases: 'full_auth',
+  inventory: 'read_write',
+  personnel: 'full',
+  checklists: 'full',
+  reports: 'full',
+  config: 'read_write',
+}
+
+/** Jefe de Unidad de Negocio — BU leadership; POL-OPE: no crear OC, no Aut.1 técnica. */
+const JEFE_UNIDAD_NEGOCIO_MODULE_PERMISSIONS: ModulePermissions = {
+  assets: 'read_write',
+  maintenance: 'full',
+  work_orders: 'read_write',
+  purchases: 'read',
+  inventory: 'read_write',
+  personnel: 'full',
+  checklists: 'full',
+  reports: 'full',
+  config: 'read_write',
+}
+
 const LEGACY_ROLE_PERMISSIONS: Record<LegacyDbRole, RoleConfig> = {
   GERENCIA_GENERAL: {
     name: 'Gerencia General',
@@ -64,21 +90,12 @@ const LEGACY_ROLE_PERMISSIONS: Record<LegacyDbRole, RoleConfig> = {
   },
   JEFE_UNIDAD_NEGOCIO: {
     name: 'Jefe Unidad de Negocio',
-    businessRole: 'GERENTE_MANTENIMIENTO',
-    permissions: {
-      assets: 'read_write',
-      maintenance: 'full',
-      work_orders: 'full_auth',
-      purchases: 'full_auth',
-      inventory: 'read_write',
-      personnel: 'full',
-      checklists: 'full',
-      reports: 'full',
-      config: 'read_write',
-    },
-    authorizationLimit: 500000,
+    businessRole: 'JEFE_UNIDAD_NEGOCIO',
+    permissions: JEFE_UNIDAD_NEGOCIO_MODULE_PERMISSIONS,
+    authorizationLimit: 0,
     scope: 'business_unit',
-    description: 'Gestión completa de su unidad de negocio, incluyendo autorización de compras',
+    description:
+      'Autoridad operativa por unidad de negocio. No crea OC ni autoriza validación técnica Nivel 1 (POL-OPE-001/002).',
   },
   AREA_ADMINISTRATIVA: {
     name: 'Área Administrativa',
@@ -116,14 +133,33 @@ const LEGACY_ROLE_PERMISSIONS: Record<LegacyDbRole, RoleConfig> = {
     scope: 'plant',
     description: 'Gestión completa de mantenimiento, puede crear órdenes de compra que requieren aprobación',
   },
+  ENCARGADO_MANTENIMIENTO: {
+    name: 'Encargado de Mantenimiento (deprecado)',
+    businessRole: 'COORDINADOR_MANTENIMIENTO',
+    permissions: {
+      assets: 'read_write',
+      maintenance: 'full',
+      work_orders: 'full',
+      purchases: 'read_write',
+      inventory: 'read_write',
+      personnel: 'none',
+      checklists: 'full',
+      reports: 'read_write',
+      config: 'none',
+    },
+    authorizationLimit: 0,
+    scope: 'plant',
+    description:
+      'Rol deprecado en favor de COORDINADOR_MANTENIMIENTO; permisos alineados al coordinador hasta migración de datos.',
+  },
   JEFE_PLANTA: {
     name: 'Jefe de Planta',
-    businessRole: 'COORDINADOR_MANTENIMIENTO',
+    businessRole: 'JEFE_PLANTA',
     permissions: {
       assets: 'read_write',
       maintenance: 'read_write',
       work_orders: 'read_write',
-      purchases: 'read_write',
+      purchases: 'read',
       inventory: 'read_write',
       personnel: 'read_write',
       checklists: 'read_write',
@@ -132,7 +168,8 @@ const LEGACY_ROLE_PERMISSIONS: Record<LegacyDbRole, RoleConfig> = {
     },
     authorizationLimit: 50000,
     scope: 'plant',
-    description: 'Supervisión completa de su planta, incluyendo órdenes de compra hasta $50,000',
+    description:
+      'Supervisión de planta (POL-OPE: no crea OC). Otras autorizaciones según límite y módulo.',
   },
   AUXILIAR_COMPRAS: {
     name: 'Auxiliar de Compras',
@@ -243,6 +280,50 @@ const LEGACY_ROLE_PERMISSIONS: Record<LegacyDbRole, RoleConfig> = {
     description:
       'Rol legacy en transición. Mantiene compatibilidad mientras la responsabilidad de almacén se separa del rol primario.',
   },
+  GERENTE_MANTENIMIENTO: {
+    name: 'Gerente de Mantenimiento',
+    businessRole: 'GERENTE_MANTENIMIENTO',
+    permissions: GERENTE_MANTENIMIENTO_MODULE_PERMISSIONS,
+    authorizationLimit: 500_000,
+    scope: 'global',
+    description: 'Dirección de mantenimiento; Aut.1 técnica de todas las OC (alcance global).',
+  },
+  MECANICO: {
+    name: 'Mecánico',
+    businessRole: 'MECANICO',
+    permissions: {
+      assets: 'read',
+      maintenance: 'read_write',
+      work_orders: 'read_write',
+      purchases: 'none',
+      inventory: 'none',
+      personnel: 'none',
+      checklists: 'read',
+      reports: 'read',
+      config: 'none',
+    },
+    authorizationLimit: 0,
+    scope: 'plant',
+    description: 'Ejecución técnica según OT asignadas; sin creación de OC.',
+  },
+  RECURSOS_HUMANOS: {
+    name: 'Recursos Humanos',
+    businessRole: 'RECURSOS_HUMANOS',
+    permissions: {
+      assets: 'read',
+      maintenance: 'read',
+      work_orders: 'read',
+      purchases: 'read',
+      inventory: 'read',
+      personnel: 'full',
+      checklists: 'read',
+      reports: 'read',
+      config: 'read',
+    },
+    authorizationLimit: 0,
+    scope: 'global',
+    description: 'Gobierno de personal y conciliación.',
+  },
 }
 
 const FUTURE_ROLE_PERMISSIONS: Record<FutureBusinessRole, RoleConfig> = {
@@ -257,10 +338,26 @@ const FUTURE_ROLE_PERMISSIONS: Record<FutureBusinessRole, RoleConfig> = {
   GERENTE_MANTENIMIENTO: {
     name: 'Gerente de Mantenimiento',
     businessRole: 'GERENTE_MANTENIMIENTO',
+    permissions: LEGACY_ROLE_PERMISSIONS.GERENTE_MANTENIMIENTO.permissions,
+    authorizationLimit: LEGACY_ROLE_PERMISSIONS.GERENTE_MANTENIMIENTO.authorizationLimit,
+    scope: 'global',
+    description: 'Dirección de mantenimiento; Aut.1 técnica de todas las OC (alcance global).',
+  },
+  JEFE_UNIDAD_NEGOCIO: {
+    name: 'Jefe Unidad de Negocio',
+    businessRole: 'JEFE_UNIDAD_NEGOCIO',
     permissions: LEGACY_ROLE_PERMISSIONS.JEFE_UNIDAD_NEGOCIO.permissions,
     authorizationLimit: LEGACY_ROLE_PERMISSIONS.JEFE_UNIDAD_NEGOCIO.authorizationLimit,
     scope: 'business_unit',
-    description: 'Compatibilidad para el aprobador técnico futuro.',
+    description: 'Compatibilidad cuando business_role = JEFE_UNIDAD_NEGOCIO.',
+  },
+  JEFE_PLANTA: {
+    name: 'Jefe de Planta',
+    businessRole: 'JEFE_PLANTA',
+    permissions: LEGACY_ROLE_PERMISSIONS.JEFE_PLANTA.permissions,
+    authorizationLimit: LEGACY_ROLE_PERMISSIONS.JEFE_PLANTA.authorizationLimit,
+    scope: 'plant',
+    description: 'Compatibilidad cuando business_role = JEFE_PLANTA.',
   },
   COORDINADOR_MANTENIMIENTO: {
     name: 'Coordinador de Mantenimiento',
@@ -285,6 +382,14 @@ const FUTURE_ROLE_PERMISSIONS: Record<FutureBusinessRole, RoleConfig> = {
     authorizationLimit: LEGACY_ROLE_PERMISSIONS.AUXILIAR_COMPRAS.authorizationLimit,
     scope: 'global',
     description: 'Compatibilidad para operaciones de compras.',
+  },
+  ENCARGADO_ALMACEN: {
+    name: 'Encargado de Almacén',
+    businessRole: null,
+    permissions: LEGACY_ROLE_PERMISSIONS.ENCARGADO_ALMACEN.permissions,
+    authorizationLimit: LEGACY_ROLE_PERMISSIONS.ENCARGADO_ALMACEN.authorizationLimit,
+    scope: 'plant',
+    description: 'Compatibilidad futura para almacén.',
   },
   OPERADOR: {
     name: 'Operador',
@@ -313,36 +418,16 @@ const FUTURE_ROLE_PERMISSIONS: Record<FutureBusinessRole, RoleConfig> = {
   RECURSOS_HUMANOS: {
     name: 'Recursos Humanos',
     businessRole: 'RECURSOS_HUMANOS',
-    permissions: {
-      assets: 'read',
-      maintenance: 'read',
-      work_orders: 'read',
-      purchases: 'read',
-      inventory: 'read',
-      personnel: 'full',
-      checklists: 'read',
-      reports: 'read',
-      config: 'read',
-    },
-    authorizationLimit: 0,
+    permissions: LEGACY_ROLE_PERMISSIONS.RECURSOS_HUMANOS.permissions,
+    authorizationLimit: LEGACY_ROLE_PERMISSIONS.RECURSOS_HUMANOS.authorizationLimit,
     scope: 'global',
     description: 'Compatibilidad futura para gobierno de personal sin cambiar autoridad live en Task 1.',
   },
   MECANICO: {
     name: 'Mecánico',
     businessRole: 'MECANICO',
-    permissions: {
-      assets: 'read',
-      maintenance: 'read_write',
-      work_orders: 'read_write',
-      purchases: 'none',
-      inventory: 'none',
-      personnel: 'none',
-      checklists: 'read',
-      reports: 'read',
-      config: 'none',
-    },
-    authorizationLimit: 0,
+    permissions: LEGACY_ROLE_PERMISSIONS.MECANICO.permissions,
+    authorizationLimit: LEGACY_ROLE_PERMISSIONS.MECANICO.authorizationLimit,
     scope: 'plant',
     description: 'Compatibilidad futura para ejecución técnica sin autoridad administrativa adicional.',
   },
