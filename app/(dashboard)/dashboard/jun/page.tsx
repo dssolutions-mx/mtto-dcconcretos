@@ -449,9 +449,7 @@ export default function JUNDashboard() {
         }
         shortcuts={[
           { label: "Servicios pendientes", href: "/ordenes", icon: <Wrench className="h-4 w-4" /> },
-          { label: "Incidentes", href: "/incidentes", icon: <AlertTriangle className="h-4 w-4" /> },
-          { label: "Cumplimiento", href: "/compliance", icon: <ClipboardList className="h-4 w-4" /> },
-          { label: "Reportes", href: "/reportes", icon: <BarChart3 className="h-4 w-4" /> },
+          { label: "Cumplimiento checklist/diésel", href: "/compliance", icon: <ClipboardList className="h-4 w-4" /> },
         ]}
         kpis={
           <div className="space-y-5">

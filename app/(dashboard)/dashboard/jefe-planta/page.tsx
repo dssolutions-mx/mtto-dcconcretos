@@ -295,6 +295,12 @@ export default function JefePlantaDashboard() {
   const issueCount = issueSchedules.length
   const compliancePct = total > 0 ? Math.round((doneCount / total) * 100) : null
 
+  // Count of distinct operators who have pending/overdue checklists today
+  // This is the spec metric: "N operadores sin checklist hoy"
+  const operatorsWithIssues = new Set(
+    issueSchedules.filter((s) => s.assigned_to).map((s) => s.assigned_to)
+  ).size
+
   // Sort: pending/overdue first
   const sortedSchedules = [...schedules].sort((a, b) => {
     return (isIssue(a.status) ? 0 : 1) - (isIssue(b.status) ? 0 : 1)
@@ -355,10 +361,9 @@ export default function JefePlantaDashboard() {
           </Button>
         }
         shortcuts={[
-          { label: "Diesel de hoy", href: "/diesel", icon: <Fuel className="h-4 w-4" /> },
-          { label: "Incidentes", href: "/incidentes", icon: <AlertTriangle className="h-4 w-4" /> },
-          { label: "Activos", href: "/activos", icon: <Package className="h-4 w-4" /> },
-          { label: "Personal", href: "/gestion/personal", icon: <Users className="h-4 w-4" /> },
+          { label: "Asignación operador-activo", href: "/organizacion/asignacion-activos", icon: <Users className="h-4 w-4" /> },
+          { label: "Solicitar usuario RH", href: "/gestion/personal", icon: <Users className="h-4 w-4" /> },
+          { label: "Autorizar anomalía", href: "/incidentes", icon: <AlertTriangle className="h-4 w-4" /> },
         ]}
         kpis={
           <div className="space-y-5">
@@ -368,13 +373,13 @@ export default function JefePlantaDashboard() {
               Cumplimiento de tu planta
             </p>
 
-            {/* Hero action strip */}
+            {/* Hero action strip — spec: "N operadores sin checklist hoy → [Ver cumplimiento]" */}
             <DashboardActionStrip
               icon={ClipboardList}
-              count={issueCount}
-              label="checklists pendientes hoy"
-              href="/checklists"
-              ctaLabel="Ver checklists"
+              count={operatorsWithIssues}
+              label="operadores sin checklist hoy"
+              href="/compliance"
+              ctaLabel="Ver cumplimiento"
             />
 
             {/* Compliance KPI cards */}
