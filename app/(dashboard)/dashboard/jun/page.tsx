@@ -6,6 +6,7 @@ import {
   AlertTriangle,
   BarChart3,
   Building2,
+  CheckCircle2,
   ChevronRight,
   ClipboardList,
   FileText,
@@ -24,6 +25,8 @@ import { useAuthZustand } from "@/hooks/use-auth-zustand"
 import { useRouter } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { DashboardModuleLinks } from "@/components/dashboard/dashboard-module-links"
+
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 interface WorkOrder {
   id: string
@@ -53,6 +56,8 @@ interface IncidentGroup {
   ids: string[]
 }
 
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
 const ACTIVE_STATUSES = [
   "Pending",
   "Programmed",
@@ -79,17 +84,21 @@ const PRIORITY_COLORS: Record<string, string> = {
   Crítica: "bg-red-200 text-red-800",
 }
 
+// ─── Page ─────────────────────────────────────────────────────────────────────
+
 export default function JUNDashboard() {
   const { profile, ui, isLoading: authLoading, isInitialized, isAuthenticated } = useAuthZustand()
   const router = useRouter()
 
   const [plantIdsInBu, setPlantIdsInBu] = useState<Set<string>>(new Set())
+  const [plantCount, setPlantCount] = useState(0)
   const [workOrders, setWorkOrders] = useState<WorkOrder[]>([])
   const [incidents, setIncidents] = useState<Incident[]>([])
   const [pendingChecklists, setPendingChecklists] = useState(0)
   const [dataLoading, setDataLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
 
+  // Role guard
   useEffect(() => {
     if (!isInitialized || authLoading) return
     if (!isAuthenticated || !profile) {
@@ -120,6 +129,7 @@ export default function JUNDashboard() {
         const plantsJson = await plantsRes.json()
         const plants: Array<{ id: string; business_unit_id?: string | null }> = plantsJson.plants ?? []
         plantSet = new Set(plants.filter((p) => p.business_unit_id === buId).map((p) => p.id))
+        setPlantCount(plantSet.size)
       }
       setPlantIdsInBu(plantSet)
 
@@ -180,6 +190,8 @@ export default function JUNDashboard() {
     setRefreshing(false)
   }
 
+  // ─── Derived ──────────────────────────────────────────────────────────────
+
   const incidentGroups: IncidentGroup[] = Object.values(
     incidents.reduce((acc: Record<string, IncidentGroup>, inc) => {
       const key = inc.asset_display_name ?? inc.asset_code ?? "Equipo desconocido"
@@ -196,7 +208,9 @@ export default function JUNDashboard() {
 
   const totalIncidents = incidents.length
   const pendingServicesCount = workOrders.length + totalIncidents
+  const buScoped = !!profile?.business_unit_id && plantIdsInBu.size > 0
 
+  // Module list
   const moduleCards = [
     { title: "Diésel", href: "/diesel", icon: Fuel, module: "inventory" as const },
     { title: "Activos", href: "/activos", icon: Package, module: "assets" as const },
@@ -207,6 +221,8 @@ export default function JUNDashboard() {
     { title: "Personal", href: "/gestion/personal", icon: Users, module: "personnel" as const },
     { title: "Reportes", href: "/reportes", icon: BarChart3, module: "reports" as const },
   ]
+
+  // ─── Loading / auth ────────────────────────────────────────────────────────
 
   if (!isInitialized || authLoading) {
     return (
@@ -220,18 +236,22 @@ export default function JUNDashboard() {
     return null
   }
 
-  const hasAttention = workOrders.length > 0 || totalIncidents > 0
-  const buScoped = !!profile.business_unit_id && plantIdsInBu.size > 0
+  // ─── Content ──────────────────────────────────────────────────────────────
+
+  const buName = profile.business_units?.name ?? null
 
   return (
     <PullToRefresh onRefresh={handleRefresh} disabled={refreshing}>
       <div className="space-y-6 px-4 py-6 sm:px-6 lg:px-8">
+
+        {/* Header */}
         <div className="flex items-start justify-between gap-4">
           <div>
             <h1 className="text-xl font-semibold">Hola, {profile.nombre}</h1>
             <p className="mt-0.5 text-sm text-muted-foreground">
               Jefe de Unidad de Negocio
-              {profile.business_units?.name ? ` · ${profile.business_units.name}` : ""}
+              {buName ? ` · ${buName}` : ""}
+              {buScoped && plantCount > 0 ? ` · ${plantCount} ${plantCount === 1 ? "planta" : "plantas"}` : ""}
             </p>
           </div>
           <Button
@@ -250,46 +270,73 @@ export default function JUNDashboard() {
           </Button>
         </div>
 
+        {/* Warning: no BU assigned */}
         {!profile.business_unit_id && (
           <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-            Tu perfil no tiene unidad de negocio asignada. Los conteos de operación pueden estar incompletos.
+            Tu perfil no tiene unidad de negocio asignada. Los datos mostrados pueden estar incompletos.
           </p>
         )}
 
-        <div className="rounded-xl border border-border/60 bg-card px-4 py-4 flex flex-wrap items-center gap-3">
-          <Building2 className="h-5 w-5 text-muted-foreground shrink-0" />
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold">Servicios pendientes en tu unidad</p>
-            <p className="text-xs text-muted-foreground">
-              {buScoped ? "OT activas e incidentes en plantas de tu unidad." : "Resumen operativo (sin filtro de planta si falta unidad)."}
-            </p>
-          </div>
-          <Badge variant="secondary" className="tabular-nums text-base px-3 py-1">
-            {pendingServicesCount}
-          </Badge>
-          <Button asChild size="sm" variant="default" className="shrink-0">
-            <Link href="/ordenes">Ver órdenes</Link>
-          </Button>
-        </div>
+        {/* Hero action strip */}
+        {!dataLoading && (
+          <>
+            {pendingServicesCount > 0 ? (
+              <div className="rounded-xl border border-amber-200 bg-amber-50 px-5 py-4 flex items-center gap-4">
+                <Building2 className="h-5 w-5 text-amber-600 shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-amber-900">
+                    {pendingServicesCount}{" "}
+                    {pendingServicesCount === 1 ? "servicio activo" : "servicios activos"} en tu unidad
+                  </p>
+                  <p className="text-xs text-amber-700">
+                    {workOrders.length > 0 && `${workOrders.length} ${workOrders.length === 1 ? "orden" : "órdenes"}`}
+                    {workOrders.length > 0 && totalIncidents > 0 && " · "}
+                    {totalIncidents > 0 && `${totalIncidents} ${totalIncidents === 1 ? "incidente" : "incidentes"}`}
+                  </p>
+                </div>
+                <Button asChild size="sm" className="shrink-0">
+                  <Link href="/ordenes">Ver órdenes</Link>
+                </Button>
+              </div>
+            ) : (
+              <div className="rounded-xl border border-green-200 bg-green-50 px-5 py-4 flex items-center gap-4">
+                <CheckCircle2 className="h-5 w-5 text-green-600 shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-green-800">Sin servicios activos en tu unidad</p>
+                  <p className="text-xs text-green-700">
+                    {buScoped
+                      ? `${plantCount} ${plantCount === 1 ? "planta" : "plantas"} al día`
+                      : "Todo en orden"}
+                  </p>
+                </div>
+              </div>
+            )}
+          </>
+        )}
 
-        {hasAttention && !dataLoading && (
-          <div className="callout-attention flex flex-wrap items-center gap-x-4 gap-y-1">
-            {workOrders.length > 0 && (
-              <span className="text-sm font-medium text-amber-900">
-                {workOrders.length} {workOrders.length === 1 ? "orden activa" : "órdenes activas"}
-              </span>
-            )}
-            {totalIncidents > 0 && (
-              <>
-                {workOrders.length > 0 && <span className="text-amber-400">·</span>}
-                <span className="text-sm font-medium text-amber-900">
-                  {totalIncidents} {totalIncidents === 1 ? "incidente" : "incidentes"}
-                </span>
-              </>
-            )}
+        {/* Compact KPI strip */}
+        {!dataLoading && (
+          <div className="grid grid-cols-3 gap-3">
+            <div className="rounded-lg border border-border/60 bg-card px-3 py-3 text-center">
+              <p className="text-lg font-bold tabular-num">{workOrders.length}</p>
+              <p className="text-[11px] text-muted-foreground mt-0.5">OTs activas</p>
+            </div>
+            <div className="rounded-lg border border-border/60 bg-card px-3 py-3 text-center">
+              <p className={cn("text-lg font-bold tabular-num", totalIncidents > 0 && "text-amber-600")}>
+                {totalIncidents}
+              </p>
+              <p className="text-[11px] text-muted-foreground mt-0.5">Incidentes</p>
+            </div>
+            <div className="rounded-lg border border-border/60 bg-card px-3 py-3 text-center">
+              <p className={cn("text-lg font-bold tabular-num", pendingChecklists > 0 && "text-amber-600")}>
+                {pendingChecklists}
+              </p>
+              <p className="text-[11px] text-muted-foreground mt-0.5">Checklists pendientes</p>
+            </div>
           </div>
         )}
 
+        {/* Quick shortcuts */}
         <div className="flex flex-wrap gap-2">
           <Link href="/incidentes">
             <Button size="sm" variant="outline" className="min-h-[44px] gap-1.5">
@@ -305,6 +352,7 @@ export default function JUNDashboard() {
           </Link>
           <Link href="/checklists">
             <Button size="sm" variant="outline" className="min-h-[44px] gap-1.5">
+              <ClipboardList className="h-3.5 w-3.5" />
               Checklists
               {pendingChecklists > 0 && (
                 <span className="ml-1 rounded-full bg-amber-500 px-1.5 py-0.5 text-[10px] font-semibold text-white">
@@ -313,14 +361,23 @@ export default function JUNDashboard() {
               )}
             </Button>
           </Link>
+          <Link href="/reportes">
+            <Button size="sm" variant="outline" className="min-h-[44px] gap-1.5">
+              <BarChart3 className="h-3.5 w-3.5" />
+              Reportes
+            </Button>
+          </Link>
         </div>
 
+        {/* Detail grid: Work orders + Incidents */}
         <div className="grid gap-4 md:grid-cols-2">
+
+          {/* Active work orders */}
           <div className="rounded-xl border border-border/60 bg-card overflow-hidden">
             <div className="flex items-center justify-between border-b border-border/50 px-4 py-3">
               <div className="flex items-center gap-2">
                 <Wrench className="h-4 w-4 text-muted-foreground" />
-                <span className="text-sm font-semibold">Órdenes activas (tu unidad)</span>
+                <span className="text-sm font-semibold">Órdenes activas</span>
                 {!dataLoading && workOrders.length > 0 && (
                   <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-semibold tabular-num">
                     {workOrders.length}
@@ -341,7 +398,9 @@ export default function JUNDashboard() {
                 <span className="text-sm text-muted-foreground">Cargando…</span>
               </div>
             ) : workOrders.length === 0 ? (
-              <div className="px-4 py-5 text-sm text-muted-foreground">Sin órdenes activas en tu unidad</div>
+              <div className="px-4 py-5 text-sm text-muted-foreground">
+                Sin órdenes activas{buScoped ? " en tu unidad" : ""}
+              </div>
             ) : (
               <div className="divide-y divide-border/40">
                 {workOrders.map((wo) => (
@@ -390,11 +449,12 @@ export default function JUNDashboard() {
             )}
           </div>
 
+          {/* Incidents grouped by asset */}
           <div className="rounded-xl border border-border/60 bg-card overflow-hidden">
             <div className="flex items-center justify-between border-b border-border/50 px-4 py-3">
               <div className="flex items-center gap-2">
                 <AlertTriangle className="h-4 w-4 text-muted-foreground" />
-                <span className="text-sm font-semibold">Incidentes (tu unidad)</span>
+                <span className="text-sm font-semibold">Incidentes abiertos</span>
                 {!dataLoading && totalIncidents > 0 && (
                   <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800 tabular-num">
                     {totalIncidents}
@@ -415,7 +475,9 @@ export default function JUNDashboard() {
                 <span className="text-sm text-muted-foreground">Cargando…</span>
               </div>
             ) : incidentGroups.length === 0 ? (
-              <div className="px-4 py-5 text-sm text-muted-foreground">Sin incidentes en tu unidad</div>
+              <div className="px-4 py-5 text-sm text-muted-foreground">
+                Sin incidentes{buScoped ? " en tu unidad" : ""}
+              </div>
             ) : (
               <div className="divide-y divide-border/40">
                 {incidentGroups.map((group) => (
@@ -439,6 +501,7 @@ export default function JUNDashboard() {
           </div>
         </div>
 
+        {/* Modules */}
         <div className="pt-4 border-t border-border/40">
           <p className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Módulos</p>
           <DashboardModuleLinks
@@ -452,6 +515,7 @@ export default function JUNDashboard() {
               }))}
           />
         </div>
+
       </div>
     </PullToRefresh>
   )

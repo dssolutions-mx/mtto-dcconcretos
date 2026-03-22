@@ -8,7 +8,6 @@ import {
   CheckCircle2,
   ChevronRight,
   ClipboardList,
-  Clock,
   FileText,
   Fuel,
   Loader2,
@@ -19,7 +18,6 @@ import {
   Wrench,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
 import { PullToRefresh } from "@/components/ui/pull-to-refresh"
 import { useAuthZustand } from "@/hooks/use-auth-zustand"
 import { useRouter } from "next/navigation"
@@ -54,6 +52,11 @@ function getStatusDisplay(status: string | null) {
   return { label: status ?? "—", color: "text-muted-foreground", bg: "bg-muted/40" }
 }
 
+function isIssue(status: string | null) {
+  const s = status?.toLowerCase() ?? ""
+  return s === "pendiente" || s === "pending" || s === "vencido" || s === "overdue"
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function JefePlantaDashboard() {
@@ -79,12 +82,10 @@ export default function JefePlantaDashboard() {
   const loadData = useCallback(async () => {
     try {
       setDataLoading(true)
-
       const res = await fetch("/api/checklists/schedules", {
         credentials: "include",
         cache: "no-store",
       })
-
       if (res.ok) {
         const data = await res.json()
         const list = Array.isArray(data) ? data : (data.schedules ?? data.data ?? [])
@@ -109,25 +110,23 @@ export default function JefePlantaDashboard() {
     setRefreshing(false)
   }
 
-  // Derived stats
-  const completed = schedules.filter((s) => {
-    const st = s.status?.toLowerCase() ?? ""
-    return st === "completado" || st === "completed"
-  })
-  const pending = schedules.filter((s) => {
-    const st = s.status?.toLowerCase() ?? ""
-    return st === "pendiente" || st === "pending"
-  })
-  const overdue = schedules.filter((s) => {
-    const st = s.status?.toLowerCase() ?? ""
-    return st === "vencido" || st === "overdue"
-  })
+  // ─── Derived stats ────────────────────────────────────────────────────────
 
   const total = schedules.length
-  const doneCount = completed.length
-  const issueCount = pending.length + overdue.length
-
+  const issueSchedules = schedules.filter((s) => isIssue(s.status))
+  const doneCount = schedules.filter((s) => {
+    const st = s.status?.toLowerCase() ?? ""
+    return st === "completado" || st === "completed"
+  }).length
+  const issueCount = issueSchedules.length
   const compliancePct = total > 0 ? Math.round((doneCount / total) * 100) : null
+
+  // Sort: pending/overdue first, then completed
+  const sortedSchedules = [...schedules].sort((a, b) => {
+    const aIssue = isIssue(a.status) ? 0 : 1
+    const bIssue = isIssue(b.status) ? 0 : 1
+    return aIssue - bIssue
+  })
 
   // Module list
   const moduleCards = [
@@ -157,8 +156,7 @@ export default function JefePlantaDashboard() {
 
   // ─── Content ──────────────────────────────────────────────────────────────
 
-  const statusBannerGreen = !dataLoading && issueCount === 0 && total > 0
-  const statusBannerAmber = !dataLoading && issueCount > 0
+  const plantName = profile.plants?.name ?? null
 
   return (
     <PullToRefresh onRefresh={handleRefresh} disabled={refreshing}>
@@ -171,7 +169,7 @@ export default function JefePlantaDashboard() {
               {profile.nombre} {profile.apellido}
             </h1>
             <p className="mt-0.5 text-sm text-muted-foreground">
-              Jefe de Planta
+              Jefe de Planta{plantName ? ` · ${plantName}` : ""}
             </p>
           </div>
           <Button
@@ -188,52 +186,66 @@ export default function JefePlantaDashboard() {
           </Button>
         </div>
 
-        {/* Compliance banner */}
-        {statusBannerGreen && (
-          <div className="flex items-center gap-3 rounded-xl border border-green-200 bg-green-50 px-4 py-3">
-            <CheckCircle2 className="h-5 w-5 text-green-600 shrink-0" />
-            <div>
-              <p className="text-sm font-semibold text-green-800">
-                Todo al día · {doneCount}/{total} checklists completados
-              </p>
-              <p className="text-xs text-green-700">Cumplimiento: 100%</p>
-            </div>
-          </div>
+        {/* Hero action strip */}
+        {!dataLoading && total > 0 && (
+          <>
+            {issueCount > 0 ? (
+              <div className="rounded-xl border border-amber-200 bg-amber-50 px-5 py-4 flex items-center gap-4">
+                <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-amber-900">
+                    {issueCount} {issueCount === 1 ? "checklist requiere atención" : "checklists requieren atención"}
+                  </p>
+                  <p className="text-xs text-amber-700">
+                    {doneCount}/{total} completados
+                    {compliancePct !== null && ` · ${compliancePct}% cumplimiento`}
+                  </p>
+                </div>
+                <Button asChild size="sm" className="shrink-0">
+                  <Link href="/checklists">Ver checklists</Link>
+                </Button>
+              </div>
+            ) : (
+              <div className="rounded-xl border border-green-200 bg-green-50 px-5 py-4 flex items-center gap-4">
+                <CheckCircle2 className="h-5 w-5 text-green-600 shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-green-800">
+                    Todo al día · {doneCount}/{total} completados
+                  </p>
+                  <p className="text-xs text-green-700">Cumplimiento: 100%</p>
+                </div>
+                <Button asChild size="sm" variant="outline" className="shrink-0 border-green-300 text-green-800 hover:bg-green-100">
+                  <Link href="/checklists">Ver checklists</Link>
+                </Button>
+              </div>
+            )}
+          </>
         )}
 
-        {statusBannerAmber && (
-          <div className="callout-attention flex items-center gap-3">
-            <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0" />
-            <div>
-              <p className="text-sm font-semibold text-amber-900">
-                {issueCount} {issueCount === 1 ? "checklist requiere atención" : "checklists requieren atención"}
-              </p>
-              <p className="text-xs text-amber-800">
-                {doneCount}/{total} completados
-                {compliancePct !== null && ` · ${compliancePct}% cumplimiento`}
-              </p>
-            </div>
-          </div>
-        )}
-
-        {/* Quick actions */}
+        {/* Quick shortcuts */}
         <div className="flex flex-wrap gap-2">
           <Link href="/diesel">
             <Button size="sm" variant="outline" className="min-h-[44px] gap-1.5">
               <Fuel className="h-3.5 w-3.5" />
-              Diésel de hoy
+              Diesel de hoy
             </Button>
           </Link>
           <Link href="/activos">
             <Button size="sm" variant="outline" className="min-h-[44px] gap-1.5">
               <Package className="h-3.5 w-3.5" />
-              Ver activos
+              Activos
+            </Button>
+          </Link>
+          <Link href="/incidentes">
+            <Button size="sm" variant="outline" className="min-h-[44px] gap-1.5">
+              <AlertTriangle className="h-3.5 w-3.5" />
+              Incidentes
             </Button>
           </Link>
           <Link href="/gestion/personal">
             <Button size="sm" variant="outline" className="min-h-[44px] gap-1.5">
               <Users className="h-3.5 w-3.5" />
-              Solicitar usuario RH
+              Personal
             </Button>
           </Link>
         </div>
@@ -263,13 +275,13 @@ export default function JefePlantaDashboard() {
               <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
               <span className="text-sm text-muted-foreground">Cargando…</span>
             </div>
-          ) : schedules.length === 0 ? (
+          ) : sortedSchedules.length === 0 ? (
             <div className="px-4 py-5 text-sm text-muted-foreground">
               Sin checklists programados
             </div>
           ) : (
             <div className="divide-y divide-border/40">
-              {schedules.slice(0, 8).map((sched) => {
+              {sortedSchedules.slice(0, 8).map((sched) => {
                 const operatorName = sched.assigned_profile
                   ? `${sched.assigned_profile.nombre ?? ""} ${sched.assigned_profile.apellido ?? ""}`.trim()
                   : "Sin asignar"
@@ -297,13 +309,13 @@ export default function JefePlantaDashboard() {
                   </Link>
                 )
               })}
-              {schedules.length > 8 && (
-                <div className="px-4 py-3 border-t border-border/40">
+              {sortedSchedules.length > 8 && (
+                <div className="px-4 py-3">
                   <Link
                     href="/checklists"
                     className="text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
                   >
-                    + {schedules.length - 8} más →
+                    + {sortedSchedules.length - 8} más →
                   </Link>
                 </div>
               )}
