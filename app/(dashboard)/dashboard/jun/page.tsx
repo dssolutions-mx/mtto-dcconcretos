@@ -5,10 +5,10 @@ import Link from "next/link"
 import {
   AlertTriangle,
   BarChart3,
-  Building2,
   CheckCircle2,
   ChevronRight,
   ClipboardList,
+  Clock,
   FileText,
   Fuel,
   Loader2,
@@ -19,12 +19,14 @@ import {
   Wrench,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
 import { PullToRefresh } from "@/components/ui/pull-to-refresh"
 import { useAuthZustand } from "@/hooks/use-auth-zustand"
 import { useRouter } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { DashboardModuleLinks } from "@/components/dashboard/dashboard-module-links"
+import { DashboardExecutiveLayout } from "@/components/dashboard/dashboard-executive-layout"
+import { DashboardExecutiveHero } from "@/components/dashboard/dashboard-executive-hero"
+import { DashboardActionStrip } from "@/components/dashboard/dashboard-action-strip"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -49,13 +51,6 @@ interface Incident {
   assets?: { id?: string; name?: string; asset_id?: string; plant_id?: string | null } | null
 }
 
-interface IncidentGroup {
-  assetName: string
-  assetCode: string | null
-  count: number
-  ids: string[]
-}
-
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 const ACTIVE_STATUSES = [
@@ -77,11 +72,201 @@ function formatAge(createdAt: string | null | undefined): string {
   return `${days}d`
 }
 
-const PRIORITY_COLORS: Record<string, string> = {
-  Alta: "bg-red-100 text-red-700",
-  Media: "bg-amber-100 text-amber-700",
-  Baja: "bg-slate-100 text-slate-600",
-  Crítica: "bg-red-200 text-red-800",
+// ─── Operational KPI card ─────────────────────────────────────────────────────
+
+function OperationalKpiCard({
+  label,
+  value,
+  icon: Icon,
+  accentClass,
+  href,
+  highlight,
+}: {
+  label: string
+  value: number
+  icon: React.ComponentType<{ className?: string }>
+  accentClass: string
+  href?: string
+  highlight?: boolean
+}) {
+  const inner = (
+    <div
+      className={cn(
+        "group relative flex flex-col overflow-hidden",
+        "rounded-2xl border border-border/60 bg-card",
+        "px-4 py-4 sm:px-6 sm:py-5",
+        "transition-all hover:border-border hover:shadow-sm",
+        "min-h-[110px] sm:min-h-[130px]"
+      )}
+    >
+      {/* Colored top accent */}
+      <div className={cn("absolute inset-x-0 top-0 h-[3px] rounded-t-2xl", accentClass)} />
+
+      {/* Icon + label */}
+      <div className="flex items-center gap-2">
+        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-muted/60 sm:h-8 sm:w-8">
+          <Icon className="h-3.5 w-3.5 text-foreground/70 sm:h-4 sm:w-4" />
+        </div>
+        <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground leading-tight sm:text-[11px] sm:tracking-widest">
+          {label}
+        </span>
+      </div>
+
+      {/* Value */}
+      <div className="mt-3 flex-1">
+        <p
+          className={cn(
+            "font-bold leading-none tracking-tight tabular-num",
+            highlight && value > 0 ? "text-amber-600" : "text-foreground"
+          )}
+          style={{ fontSize: "clamp(1.8rem, 6vw, 2.5rem)" }}
+        >
+          {value}
+        </p>
+        <p className="mt-1.5 text-[10px] text-muted-foreground/50">
+          {value === 0 ? "Sin pendientes" : "En tu unidad"}
+        </p>
+      </div>
+    </div>
+  )
+
+  if (href) return <Link href={href} className="block">{inner}</Link>
+  return inner
+}
+
+function KpiCardSkeleton() {
+  return (
+    <div className="animate-pulse rounded-2xl border border-border/40 bg-card px-4 py-4 sm:px-6 sm:py-5 min-h-[110px] sm:min-h-[130px]">
+      <div className="flex items-center gap-2.5">
+        <div className="h-7 w-7 rounded-lg bg-muted/60" />
+        <div className="h-2.5 w-24 rounded bg-muted/50" />
+      </div>
+      <div className="mt-4 h-10 w-16 rounded bg-muted/60" />
+      <div className="mt-2 h-2.5 w-20 rounded bg-muted/40" />
+    </div>
+  )
+}
+
+// ─── Work orders queue ────────────────────────────────────────────────────────
+
+function WorkOrdersQueue({
+  workOrders,
+  totalCount,
+  isLoading,
+}: {
+  workOrders: WorkOrder[]
+  totalCount: number
+  isLoading: boolean
+}) {
+  return (
+    <div className="overflow-hidden rounded-2xl border border-border/50 bg-card">
+      {/* Header */}
+      <div className="flex items-center justify-between border-b border-border/50 px-4 py-3 sm:px-5 sm:py-3.5">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="text-sm font-semibold truncate">Órdenes activas en tu unidad</span>
+          {!isLoading && totalCount > 0 && (
+            <span className="inline-flex shrink-0 items-center justify-center rounded-full bg-foreground px-2 py-0.5 text-[11px] font-bold text-background tabular-num min-w-[22px]">
+              {totalCount}
+            </span>
+          )}
+        </div>
+        {totalCount > 0 && !isLoading && (
+          <Link
+            href="/ordenes"
+            className="shrink-0 ml-3 text-xs font-semibold text-muted-foreground transition-colors hover:text-foreground"
+          >
+            Ver todas →
+          </Link>
+        )}
+      </div>
+
+      {/* Rows */}
+      {isLoading ? (
+        <div className="divide-y divide-border/40">
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="flex items-center gap-4 px-4 py-4 animate-pulse sm:px-5">
+              <div className="flex-1 space-y-2">
+                <div className="h-3 w-28 rounded bg-muted/60" />
+                <div className="h-2.5 w-40 rounded bg-muted/40" />
+              </div>
+              <div className="h-3 w-14 rounded bg-muted/40" />
+            </div>
+          ))}
+        </div>
+      ) : workOrders.length === 0 ? (
+        <div className="flex items-center gap-3 px-4 py-5 sm:px-5">
+          <CheckCircle2 className="h-4 w-4 text-green-600 shrink-0" />
+          <span className="text-sm text-muted-foreground">Sin órdenes activas · Todo al día</span>
+        </div>
+      ) : (
+        <div className="divide-y divide-border/40">
+          {workOrders.map((wo, idx) => (
+            <Link
+              key={wo.id}
+              href={`/ordenes/${wo.id}`}
+              className={cn(
+                "group grid items-center gap-x-3 px-4 transition-colors hover:bg-muted/40 active:bg-muted/60 sm:px-5",
+                "grid-cols-[1fr_auto] sm:grid-cols-[1.5rem_1fr_auto]",
+                "min-h-[60px] py-3"
+              )}
+            >
+              {/* Row index — desktop only */}
+              <span className="hidden sm:block text-center text-xs font-medium text-muted-foreground/40 tabular-num">
+                {idx + 1}
+              </span>
+
+              {/* Order info */}
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                  <span className="text-sm font-semibold tabular-num">{wo.order_id}</span>
+                  {wo.type && (
+                    <span
+                      className={cn(
+                        "inline-flex rounded-full px-1.5 py-0.5 text-[10px] font-semibold leading-none",
+                        wo.type.toLowerCase().includes("prev")
+                          ? "bg-green-50 text-green-700 border border-green-200"
+                          : "bg-orange-50 text-orange-700 border border-orange-200"
+                      )}
+                    >
+                      {wo.type}
+                    </span>
+                  )}
+                  {wo.created_at && (
+                    <span className="inline-flex items-center gap-0.5 text-[10px] text-muted-foreground">
+                      <Clock className="h-2.5 w-2.5" />
+                      {formatAge(wo.created_at)}
+                    </span>
+                  )}
+                </div>
+                <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                  {wo.asset?.name ?? wo.description ?? "—"}
+                </p>
+              </div>
+
+              {/* Priority + chevron */}
+              <div className="flex items-center gap-1.5 shrink-0">
+                {wo.priority && (
+                  <span
+                    className={cn(
+                      "hidden sm:inline-flex rounded-full px-1.5 py-0.5 text-[10px] font-semibold leading-none",
+                      wo.priority === "Alta" || wo.priority === "Crítica"
+                        ? "bg-red-50 text-red-700 border border-red-200"
+                        : wo.priority === "Media"
+                        ? "bg-amber-50 text-amber-700 border border-amber-200"
+                        : "bg-slate-100 text-slate-600"
+                    )}
+                  >
+                    {wo.priority}
+                  </span>
+                )}
+                <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/30 transition-transform group-hover:translate-x-0.5" />
+              </div>
+            </Link>
+          ))}
+        </div>
+      )}
+    </div>
+  )
 }
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
@@ -114,7 +299,6 @@ export default function JUNDashboard() {
     if (profile?.role !== "JEFE_UNIDAD_NEGOCIO") return
     try {
       setDataLoading(true)
-
       const buId = profile.business_unit_id ?? null
 
       const [plantsRes, woRes, incRes, chkRes] = await Promise.all([
@@ -148,7 +332,7 @@ export default function JUNDashboard() {
         } else if (buId && plantSet.size === 0) {
           scoped = []
         }
-        setWorkOrders(scoped.slice(0, 6))
+        setWorkOrders(scoped.slice(0, 8))
       }
 
       if (incRes.ok) {
@@ -190,27 +374,9 @@ export default function JUNDashboard() {
     setRefreshing(false)
   }
 
-  // ─── Derived ──────────────────────────────────────────────────────────────
-
-  const incidentGroups: IncidentGroup[] = Object.values(
-    incidents.reduce((acc: Record<string, IncidentGroup>, inc) => {
-      const key = inc.asset_display_name ?? inc.asset_code ?? "Equipo desconocido"
-      if (!acc[key]) {
-        acc[key] = { assetName: key, assetCode: inc.asset_code ?? null, count: 0, ids: [] }
-      }
-      acc[key].count++
-      acc[key].ids.push(inc.id)
-      return acc
-    }, {})
-  )
-    .sort((a, b) => b.count - a.count)
-    .slice(0, 5)
-
   const totalIncidents = incidents.length
   const pendingServicesCount = workOrders.length + totalIncidents
-  const buScoped = !!profile?.business_unit_id && plantIdsInBu.size > 0
 
-  // Module list
   const moduleCards = [
     { title: "Diésel", href: "/diesel", icon: Fuel, module: "inventory" as const },
     { title: "Activos", href: "/activos", icon: Package, module: "assets" as const },
@@ -222,7 +388,7 @@ export default function JUNDashboard() {
     { title: "Reportes", href: "/reportes", icon: BarChart3, module: "reports" as const },
   ]
 
-  // ─── Loading / auth ────────────────────────────────────────────────────────
+  // ─── Loading / auth ───────────────────────────────────────────────────────
 
   if (!isInitialized || authLoading) {
     return (
@@ -239,271 +405,123 @@ export default function JUNDashboard() {
   // ─── Content ──────────────────────────────────────────────────────────────
 
   const buName = profile.business_units?.name ?? null
+  const roleSubtitle = [
+    "Jefe de Unidad de Negocio",
+    buName,
+    plantCount > 0 ? `${plantCount} ${plantCount === 1 ? "planta" : "plantas"}` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ")
 
   return (
     <PullToRefresh onRefresh={handleRefresh} disabled={refreshing}>
-      <div className="space-y-6 px-4 py-6 sm:px-6 lg:px-8">
 
-        {/* Header */}
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h1 className="text-xl font-semibold">Hola, {profile.nombre}</h1>
-            <p className="mt-0.5 text-sm text-muted-foreground">
-              Jefe de Unidad de Negocio
-              {buName ? ` · ${buName}` : ""}
-              {buScoped && plantCount > 0 ? ` · ${plantCount} ${plantCount === 1 ? "planta" : "plantas"}` : ""}
-            </p>
-          </div>
+      {/* No BU warning — own row above the layout */}
+      {!profile.business_unit_id && (
+        <div className="px-4 pt-4 sm:px-6 lg:px-8">
+          <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+            Tu perfil no tiene unidad de negocio asignada. Los datos mostrados pueden estar incompletos.
+          </p>
+        </div>
+      )}
+
+      <DashboardExecutiveLayout
+        hero={
+          <DashboardExecutiveHero
+            name={`${profile.nombre} ${profile.apellido}`}
+            role={roleSubtitle}
+          />
+        }
+        actions={
           <Button
             size="sm"
             variant="outline"
             onClick={handleRefresh}
             disabled={refreshing}
-            className="shrink-0"
+            className="h-8 w-8 p-0 sm:w-auto sm:px-3"
+            aria-label="Actualizar"
           >
-            {refreshing ? (
-              <Loader2 className="h-3 w-3 animate-spin" />
-            ) : (
-              <RefreshCw className="h-3 w-3" />
-            )}
-            <span className="ml-1.5 hidden sm:inline">Actualizar</span>
+            {refreshing
+              ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              : <RefreshCw className="h-3.5 w-3.5" />}
+            <span className="hidden sm:inline ml-1.5 text-xs">Actualizar</span>
           </Button>
-        </div>
+        }
+        shortcuts={[
+          { label: "Servicios pendientes", href: "/ordenes", icon: <Wrench className="h-4 w-4" /> },
+          { label: "Incidentes", href: "/incidentes", icon: <AlertTriangle className="h-4 w-4" /> },
+          { label: "Cumplimiento", href: "/compliance", icon: <ClipboardList className="h-4 w-4" /> },
+          { label: "Reportes", href: "/reportes", icon: <BarChart3 className="h-4 w-4" /> },
+        ]}
+        kpis={
+          <div className="space-y-5">
 
-        {/* Warning: no BU assigned */}
-        {!profile.business_unit_id && (
-          <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-            Tu perfil no tiene unidad de negocio asignada. Los datos mostrados pueden estar incompletos.
-          </p>
-        )}
+            {/* Section label */}
+            <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+              Resumen de tu unidad
+            </p>
 
-        {/* Hero action strip */}
-        {!dataLoading && (
-          <>
-            {pendingServicesCount > 0 ? (
-              <div className="rounded-xl border border-amber-200 bg-amber-50 px-5 py-4 flex items-center gap-4">
-                <Building2 className="h-5 w-5 text-amber-600 shrink-0" />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold text-amber-900">
-                    {pendingServicesCount}{" "}
-                    {pendingServicesCount === 1 ? "servicio activo" : "servicios activos"} en tu unidad
-                  </p>
-                  <p className="text-xs text-amber-700">
-                    {workOrders.length > 0 && `${workOrders.length} ${workOrders.length === 1 ? "orden" : "órdenes"}`}
-                    {workOrders.length > 0 && totalIncidents > 0 && " · "}
-                    {totalIncidents > 0 && `${totalIncidents} ${totalIncidents === 1 ? "incidente" : "incidentes"}`}
-                  </p>
-                </div>
-                <Button asChild size="sm" className="shrink-0">
-                  <Link href="/ordenes">Ver órdenes</Link>
-                </Button>
-              </div>
-            ) : (
-              <div className="rounded-xl border border-green-200 bg-green-50 px-5 py-4 flex items-center gap-4">
-                <CheckCircle2 className="h-5 w-5 text-green-600 shrink-0" />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold text-green-800">Sin servicios activos en tu unidad</p>
-                  <p className="text-xs text-green-700">
-                    {buScoped
-                      ? `${plantCount} ${plantCount === 1 ? "planta" : "plantas"} al día`
-                      : "Todo en orden"}
-                  </p>
-                </div>
-              </div>
-            )}
-          </>
-        )}
+            {/* Hero action strip */}
+            <DashboardActionStrip
+              icon={Wrench}
+              count={pendingServicesCount}
+              label="servicios activos en tu unidad"
+              href="/ordenes"
+              ctaLabel="Ver órdenes"
+            />
 
-        {/* Compact KPI strip */}
-        {!dataLoading && (
-          <div className="grid grid-cols-3 gap-3">
-            <div className="rounded-lg border border-border/60 bg-card px-3 py-3 text-center">
-              <p className="text-lg font-bold tabular-num">{workOrders.length}</p>
-              <p className="text-[11px] text-muted-foreground mt-0.5">OTs activas</p>
-            </div>
-            <div className="rounded-lg border border-border/60 bg-card px-3 py-3 text-center">
-              <p className={cn("text-lg font-bold tabular-num", totalIncidents > 0 && "text-amber-600")}>
-                {totalIncidents}
-              </p>
-              <p className="text-[11px] text-muted-foreground mt-0.5">Incidentes</p>
-            </div>
-            <div className="rounded-lg border border-border/60 bg-card px-3 py-3 text-center">
-              <p className={cn("text-lg font-bold tabular-num", pendingChecklists > 0 && "text-amber-600")}>
-                {pendingChecklists}
-              </p>
-              <p className="text-[11px] text-muted-foreground mt-0.5">Checklists pendientes</p>
-            </div>
-          </div>
-        )}
-
-        {/* Quick shortcuts */}
-        <div className="flex flex-wrap gap-2">
-          <Link href="/incidentes">
-            <Button size="sm" variant="outline" className="min-h-[44px] gap-1.5">
-              <AlertTriangle className="h-3.5 w-3.5" />
-              Incidentes
-            </Button>
-          </Link>
-          <Link href="/compliance">
-            <Button size="sm" variant="outline" className="min-h-[44px] gap-1.5">
-              <ClipboardList className="h-3.5 w-3.5" />
-              Cumplimiento
-            </Button>
-          </Link>
-          <Link href="/checklists">
-            <Button size="sm" variant="outline" className="min-h-[44px] gap-1.5">
-              <ClipboardList className="h-3.5 w-3.5" />
-              Checklists
-              {pendingChecklists > 0 && (
-                <span className="ml-1 rounded-full bg-amber-500 px-1.5 py-0.5 text-[10px] font-semibold text-white">
-                  {pendingChecklists}
-                </span>
+            {/* Operational KPI cards */}
+            <div className="grid grid-cols-2 gap-3 sm:gap-4">
+              {dataLoading ? (
+                <>
+                  <KpiCardSkeleton />
+                  <KpiCardSkeleton />
+                </>
+              ) : (
+                <>
+                  <OperationalKpiCard
+                    label="OTs activas"
+                    value={workOrders.length}
+                    icon={Wrench}
+                    accentClass="bg-gradient-to-r from-slate-400 to-slate-300"
+                    href="/ordenes"
+                  />
+                  <OperationalKpiCard
+                    label="Incidentes abiertos"
+                    value={totalIncidents}
+                    icon={AlertTriangle}
+                    accentClass="bg-gradient-to-r from-amber-400 to-orange-300"
+                    href="/incidentes"
+                    highlight
+                  />
+                </>
               )}
-            </Button>
-          </Link>
-          <Link href="/reportes">
-            <Button size="sm" variant="outline" className="min-h-[44px] gap-1.5">
-              <BarChart3 className="h-3.5 w-3.5" />
-              Reportes
-            </Button>
-          </Link>
-        </div>
-
-        {/* Detail grid: Work orders + Incidents */}
-        <div className="grid gap-4 md:grid-cols-2">
-
-          {/* Active work orders */}
-          <div className="rounded-xl border border-border/60 bg-card overflow-hidden">
-            <div className="flex items-center justify-between border-b border-border/50 px-4 py-3">
-              <div className="flex items-center gap-2">
-                <Wrench className="h-4 w-4 text-muted-foreground" />
-                <span className="text-sm font-semibold">Órdenes activas</span>
-                {!dataLoading && workOrders.length > 0 && (
-                  <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-semibold tabular-num">
-                    {workOrders.length}
-                  </span>
-                )}
-              </div>
-              <Link
-                href="/ordenes"
-                className="text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
-              >
-                Ver todas →
-              </Link>
             </div>
 
-            {dataLoading ? (
-              <div className="flex items-center gap-3 px-4 py-5">
-                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                <span className="text-sm text-muted-foreground">Cargando…</span>
-              </div>
-            ) : workOrders.length === 0 ? (
-              <div className="px-4 py-5 text-sm text-muted-foreground">
-                Sin órdenes activas{buScoped ? " en tu unidad" : ""}
-              </div>
-            ) : (
-              <div className="divide-y divide-border/40">
-                {workOrders.map((wo) => (
-                  <Link
-                    key={wo.id}
-                    href={`/ordenes/${wo.id}`}
-                    className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-muted/40 active:bg-muted/60 min-h-[52px]"
-                  >
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-xs font-semibold tabular-num text-muted-foreground">{wo.order_id}</span>
-                        {wo.type && (
-                          <span
-                            className={cn(
-                              "rounded-full px-1.5 py-0.5 text-[10px] font-medium",
-                              wo.type.toLowerCase().includes("prev")
-                                ? "bg-green-100 text-green-700"
-                                : "bg-orange-100 text-orange-700"
-                            )}
-                          >
-                            {wo.type}
-                          </span>
-                        )}
-                        {wo.created_at && (
-                          <span className="text-[10px] text-muted-foreground">{formatAge(wo.created_at)}</span>
-                        )}
-                      </div>
-                      <p className="text-sm font-medium truncate mt-0.5">
-                        {wo.asset?.name ?? wo.description ?? "—"}
-                      </p>
-                    </div>
-                    {wo.priority && (
-                      <span
-                        className={cn(
-                          "hidden sm:inline-flex rounded-full px-1.5 py-0.5 text-[10px] font-medium shrink-0",
-                          PRIORITY_COLORS[wo.priority] ?? "bg-muted text-muted-foreground"
-                        )}
-                      >
-                        {wo.priority}
-                      </span>
-                    )}
-                    <ChevronRight className="h-4 w-4 text-muted-foreground/50 shrink-0" />
-                  </Link>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Incidents grouped by asset */}
-          <div className="rounded-xl border border-border/60 bg-card overflow-hidden">
-            <div className="flex items-center justify-between border-b border-border/50 px-4 py-3">
-              <div className="flex items-center gap-2">
-                <AlertTriangle className="h-4 w-4 text-muted-foreground" />
-                <span className="text-sm font-semibold">Incidentes abiertos</span>
-                {!dataLoading && totalIncidents > 0 && (
-                  <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800 tabular-num">
-                    {totalIncidents}
-                  </span>
-                )}
-              </div>
+            {/* Checklists pending — tertiary stat */}
+            {!dataLoading && pendingChecklists > 0 && (
               <Link
-                href="/incidentes"
-                className="text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
+                href="/checklists"
+                className="flex items-center justify-between rounded-xl border border-border/50 bg-card px-4 py-3 text-sm transition-colors hover:bg-muted/30"
               >
-                Ver todos →
+                <div className="flex items-center gap-2 text-muted-foreground">
+                  <ClipboardList className="h-4 w-4" />
+                  <span>{pendingChecklists} {pendingChecklists === 1 ? "checklist pendiente" : "checklists pendientes"} en tu unidad</span>
+                </div>
+                <ChevronRight className="h-4 w-4 text-muted-foreground/40" />
               </Link>
-            </div>
-
-            {dataLoading ? (
-              <div className="flex items-center gap-3 px-4 py-5">
-                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                <span className="text-sm text-muted-foreground">Cargando…</span>
-              </div>
-            ) : incidentGroups.length === 0 ? (
-              <div className="px-4 py-5 text-sm text-muted-foreground">
-                Sin incidentes{buScoped ? " en tu unidad" : ""}
-              </div>
-            ) : (
-              <div className="divide-y divide-border/40">
-                {incidentGroups.map((group) => (
-                  <Link
-                    key={group.assetName}
-                    href={`/incidentes?asset=${group.assetCode ?? ""}`}
-                    className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-muted/40 active:bg-muted/60 min-h-[52px]"
-                  >
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">{group.assetName}</p>
-                      {group.assetCode && <p className="text-xs text-muted-foreground">{group.assetCode}</p>}
-                    </div>
-                    <Badge variant="outline" className="tabular-num shrink-0">
-                      {group.count} {group.count === 1 ? "incidente" : "incidentes"}
-                    </Badge>
-                    <ChevronRight className="h-4 w-4 text-muted-foreground/50 shrink-0" />
-                  </Link>
-                ))}
-              </div>
             )}
-          </div>
-        </div>
 
-        {/* Modules */}
-        <div className="pt-4 border-t border-border/40">
-          <p className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Módulos</p>
+            {/* Work orders queue */}
+            <WorkOrdersQueue
+              workOrders={workOrders}
+              totalCount={workOrders.length}
+              isLoading={dataLoading}
+            />
+
+          </div>
+        }
+        modules={
           <DashboardModuleLinks
             modules={moduleCards
               .filter((c) => ui.shouldShowInNavigation(c.module))
@@ -514,9 +532,8 @@ export default function JUNDashboard() {
                 hasAccess: true,
               }))}
           />
-        </div>
-
-      </div>
+        }
+      />
     </PullToRefresh>
   )
 }
