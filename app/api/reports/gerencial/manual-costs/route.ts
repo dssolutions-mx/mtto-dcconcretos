@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createServerSupabase } from '@/lib/supabase-server'
 import { EXPENSE_CATEGORIES, getExpenseCategoryById, isValidSubcategory, getValidCategoryIds } from '@/lib/constants/expense-categories'
+import { revalidateIngresosGastosReportCache } from '@/lib/reports/ingresos-gastos-cache'
 
 // GET: Fetch manual costs for a specific month
 export async function GET(req: NextRequest) {
@@ -290,9 +291,11 @@ export async function POST(req: NextRequest) {
 
     if (fetchError) {
       console.error('Fetch complete adjustment error:', fetchError)
+      revalidateIngresosGastosReportCache()
       return NextResponse.json({ adjustment }, { status: 201 })
     }
 
+    revalidateIngresosGastosReportCache()
     return NextResponse.json({ adjustment: completeAdjustment }, { status: 201 })
   } catch (e: any) {
     console.error('POST manual costs error:', e)
@@ -516,9 +519,11 @@ export async function PUT(req: NextRequest) {
 
     if (fetchCompleteError) {
       console.error('Fetch complete adjustment error:', fetchCompleteError)
+      revalidateIngresosGastosReportCache()
       return NextResponse.json({ adjustment: data })
     }
 
+    revalidateIngresosGastosReportCache()
     return NextResponse.json({ adjustment: completeAdjustment })
   } catch (e: any) {
     console.error('PUT manual costs error:', e)
@@ -548,6 +553,7 @@ export async function DELETE(req: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
+    revalidateIngresosGastosReportCache()
     return NextResponse.json({ success: true })
   } catch (e: any) {
     console.error('DELETE manual costs error:', e)

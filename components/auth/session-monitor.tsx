@@ -6,10 +6,11 @@ import { useAuthZustand } from "@/hooks/use-auth-zustand"
 
 export function SessionMonitor() {
   const { user } = useAuthZustand()
-  const supabase = createClient()
 
   useEffect(() => {
     if (!user) return
+
+    const supabase = createClient()
 
     // Listen for visibility changes to refresh when tab becomes active after being hidden
     const handleVisibilityChange = async () => {
@@ -42,7 +43,7 @@ export function SessionMonitor() {
       document.removeEventListener('visibilitychange', handleVisibilityChange)
       window.removeEventListener('online', handleOnline)
     }
-  }, [user, supabase])
+  }, [user])
 
   // This component doesn't render anything
   return null

@@ -3727,6 +3727,41 @@ export type Database = {
           },
         ]
       }
+      ingresos_gastos_kpi_plant_month: {
+        Row: {
+          id: string
+          period_month: string
+          plant_id: string
+          payload: Json
+          computed_at: string
+          compute_version: number
+        }
+        Insert: {
+          id?: string
+          period_month: string
+          plant_id: string
+          payload: Json
+          computed_at?: string
+          compute_version?: number
+        }
+        Update: {
+          id?: string
+          period_month?: string
+          plant_id?: string
+          payload?: Json
+          computed_at?: string
+          compute_version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ingresos_gastos_kpi_plant_month_plant_id_fkey"
+            columns: ["plant_id"]
+            isOneToOne: false
+            referencedRelation: "plants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       inventory_movements: {
         Row: {
           created_at: string | null

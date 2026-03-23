@@ -75,7 +75,7 @@ export function VolumeDistributionView({
       const resp = await fetch('/api/reports/gerencial/ingresos-gastos', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ month })
+        body: JSON.stringify({ month, skipPreviousMonth: true })
       })
 
       if (!resp.ok) {

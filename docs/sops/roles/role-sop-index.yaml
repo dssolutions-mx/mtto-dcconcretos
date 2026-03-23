@@ -1,0 +1,130 @@
+# Machine-readable index for roles SOP pack (maintenance-dashboard)
+# Normative text lives in docs/sops/policies/*.md — do not duplicate policy prose here.
+
+pack_version: 1
+generated_at_repo_sha: f71dd87f008ac869c10ca07afce2c3eeb7e89a41
+
+policies:
+  - id: POL-OPE-001
+    version: "2.0"
+    file: docs/sops/policies/POL-OPE-001_v2.0_SOP.md
+    title: Mantenimiento
+  - id: POL-OPE-002
+    version: "2.0"
+    file: docs/sops/policies/POL-OPE-002_v2.0_SOP.md
+    title: Gestión de Inventario y Activos
+
+companion_html: docs/sops/roles/source/roles-y-acciones-plataforma-v2.html
+
+flows:
+  - id: SOP-FLOW-INC
+    pol_refs: ["POL001-##-Correctivo-—-Protocolo-PAT"]
+    html_anchor: "#incidentes"
+  - id: SOP-FLOW-PREV
+    pol_refs: ["POL001-##-Preventivo"]
+    html_anchor: "#preventivo"
+  - id: SOP-FLOW-OC
+    pol_refs: ["POL002-##-Órdenes-de-Compra", "POL001-##-Correctivo-—-Protocolo-PAT"]
+    html_anchor: "#oc"
+  - id: SOP-FLOW-CHK-D
+    pol_refs: ["POL001-###-Diario"]
+    html_anchor: "#checklist"
+  - id: SOP-FLOW-CHK-W
+    pol_refs: ["POL001-###-Semanal"]
+    html_anchor: "#checklist"
+  - id: SOP-FLOW-DIE
+    pol_refs: ["POL001-##-Diésel"]
+    html_anchor: "#diesel"
+  - id: SOP-FLOW-AST-MOV
+    pol_refs: ["POL002-##-Movimientos-de-Activos"]
+    html_anchor: "#activos"
+  - id: SOP-FLOW-AST-ASG
+    pol_refs: ["POL002-###-Proceso:-asignación-de-personal", "POL001-##-Alta-de-Usuarios-y-Asignación-Operador–Equipo"]
+    html_anchor: "#personal"
+  - id: SOP-FLOW-CON
+    pol_refs: ["POL001-##-Incidencias-de-Sistema"]
+    html_anchor: "#conciliacion"
+  - id: SOP-FLOW-WA
+    pol_refs: ["POL001-##-Grupo-WhatsApp"]
+
+roles:
+  - sop_role_id: SOP-ROLE-GG
+    policy_labels: ["Gerente General"]
+    legacy_db_roles: ["GERENCIA_GENERAL"]
+    business_roles: ["GERENCIA_GENERAL"]
+    html_anchor: "#r-gg"
+  - sop_role_id: SOP-ROLE-GM
+    policy_labels: ["Gerente de Mantenimiento"]
+    legacy_db_roles: ["GERENTE_MANTENIMIENTO"]
+    business_roles: ["GERENTE_MANTENIMIENTO"]
+    html_anchor: "#r-gm"
+  - sop_role_id: SOP-ROLE-COORD
+    policy_labels: ["Coordinador de Mantenimiento", "Coordinador de Mtto"]
+    legacy_db_roles: ["COORDINADOR_MANTENIMIENTO", "ENCARGADO_MANTENIMIENTO"]
+    business_roles: ["COORDINADOR_MANTENIMIENTO"]
+    html_anchor: "#r-coord"
+  - sop_role_id: SOP-ROLE-JUN
+    policy_labels: ["Jefe de Unidad de Negocio"]
+    legacy_db_roles: ["JEFE_UNIDAD_NEGOCIO"]
+    business_roles: ["JEFE_UNIDAD_NEGOCIO"]
+    html_anchor: "#r-jun"
+  - sop_role_id: SOP-ROLE-JP
+    policy_labels: ["Jefe de Planta"]
+    legacy_db_roles: ["JEFE_PLANTA"]
+    business_roles: ["JEFE_PLANTA"]
+    html_anchor: "#r-jp"
+  - sop_role_id: SOP-ROLE-DOS
+    policy_labels: ["Dosificadores / Operadores"]
+    legacy_db_roles: ["DOSIFICADOR", "OPERADOR"]
+    business_roles: ["OPERADOR"]
+    html_anchor: "#r-dos"
+  - sop_role_id: SOP-ROLE-MEC
+    policy_labels: ["Mecánicos / Auxiliares"]
+    legacy_db_roles: ["MECANICO"]
+    business_roles: ["MECANICO"]
+    html_anchor: "#r-mec"
+  - sop_role_id: SOP-ROLE-ALM
+    policy_labels: ["Encargado de Almacén"]
+    legacy_db_roles: ["ENCARGADO_ALMACEN"]
+    business_roles: ["ENCARGADO_ALMACEN"]
+    html_anchor: "#r-alm"
+  - sop_role_id: SOP-ROLE-ADM
+    policy_labels: ["Administración"]
+    legacy_db_roles: ["AREA_ADMINISTRATIVA"]
+    business_roles: ["AREA_ADMINISTRATIVA"]
+    html_anchor: "#r-adm"
+  - sop_role_id: SOP-ROLE-RH
+    policy_labels: ["RRHH"]
+    legacy_db_roles: ["RECURSOS_HUMANOS"]
+    business_roles: ["RECURSOS_HUMANOS"]
+    html_anchor: "#r-rh"
+
+code_hints:
+  - path: lib/auth/role-model.ts
+  - path: lib/auth/role-permissions.ts
+  - path: lib/auth/server-authorization.ts
+  - path: lib/purchase-orders/workflow-policy.ts
+  - path: components/sidebar.tsx
+  - path: components/auth/role-guard.tsx
+  - path: hooks/use-auth-zustand.ts
+
+# Matrix rows: see 06-html-matrix-to-code-matrix.md for full list and UNVERIFIED clearance.
+actions:
+  - id: SOP-MATRIX-ROW-crear-oc
+    matrix_row_label: "Crear OC"
+    pol_refs: ["POL002-##-Órdenes-de-Compra"]
+    module_keys: ["purchases"]
+    code_hints: ["lib/purchase-orders/workflow-policy.ts", "app/api/purchase-orders/advance-workflow/[id]/route.ts"]
+    status: PARTIAL
+  - id: SOP-MATRIX-ROW-autorizar-oc-nivel-1
+    matrix_row_label: "Autorizar OC Nivel 1 (técnica)"
+    pol_refs: ["POL002-###-Tipos-de-OC", "POL001-##-Correctivo-—-Protocolo-PAT"]
+    module_keys: ["purchases"]
+    code_hints: ["lib/auth/role-model.ts"]
+    status: PARTIAL
+  - id: SOP-MATRIX-ROW-gestionar-conciliacion
+    matrix_row_label: "Gestionar proceso de conciliación"
+    pol_refs: ["POL001-###-Conciliación-(RRHH)"]
+    module_keys: ["personnel"]
+    code_hints: ["app/api/compliance/sanctions/route.ts", "app/api/compliance/incidents/[id]/dispute/review/route.ts"]
+    status: PARTIAL

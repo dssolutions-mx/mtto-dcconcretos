@@ -20,6 +20,8 @@ import { useAuthZustand } from "@/hooks/use-auth-zustand"
 import { useRouter } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { DashboardModuleLinks } from "@/components/dashboard/dashboard-module-links"
+import { DashboardHeader } from "@/components/dashboard/dashboard-header"
+import { DashboardShell } from "@/components/dashboard/dashboard-shell"
 import {
   Fuel,
   Package,
@@ -181,9 +183,12 @@ export default function CoordinadorDashboard() {
 
   if (!isInitialized || authLoading) {
     return (
-      <div className="flex min-h-[400px] items-center justify-center">
-        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-      </div>
+      <DashboardShell>
+        <DashboardHeader heading="Cargando…" text="Preparando tu dashboard de coordinación." />
+        <div className="flex min-h-[280px] items-center justify-center">
+          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        </div>
+      </DashboardShell>
     )
   }
 
@@ -197,19 +202,15 @@ export default function CoordinadorDashboard() {
 
   return (
     <PullToRefresh onRefresh={handleRefresh} disabled={refreshing}>
-      <div className="space-y-6 px-4 py-6 sm:px-6 lg:px-8">
-
-        {/* Header */}
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h1 className="text-xl font-semibold">
-              Hola, {profile.nombre}
-            </h1>
-            <p className="mt-0.5 text-sm text-muted-foreground">
-              Coordinador de Mantenimiento
-              {profile.plant_id && " · Tu zona"}
-            </p>
-          </div>
+      <DashboardShell className="space-y-6">
+        <DashboardHeader
+          heading={`Hola, ${profile.nombre}`}
+          text={
+            profile.plant_id
+              ? "Coordinador de Mantenimiento · Tu zona"
+              : "Coordinador de Mantenimiento"
+          }
+        >
           <Button
             size="sm"
             variant="outline"
@@ -222,7 +223,7 @@ export default function CoordinadorDashboard() {
               : <RefreshCw className="h-3 w-3" />}
             <span className="ml-1.5 hidden sm:inline">Actualizar</span>
           </Button>
-        </div>
+        </DashboardHeader>
 
         {/* Attention strip */}
         {hasAttention && !dataLoading && (
@@ -436,7 +437,7 @@ export default function CoordinadorDashboard() {
           />
         </div>
 
-      </div>
+      </DashboardShell>
     </PullToRefresh>
   )
 }

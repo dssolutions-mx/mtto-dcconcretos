@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createServerSupabase } from '@/lib/supabase-server'
 import { createClient } from '@supabase/supabase-js'
+import { revalidateIngresosGastosReportCache } from '@/lib/reports/ingresos-gastos-cache'
 
 // POST: Batch update multiple distributed adjustments with new volumes
 export async function POST(req: NextRequest) {
@@ -222,6 +223,10 @@ export async function POST(req: NextRequest) {
 
     const successCount = results.filter(r => r.success).length
     const failCount = results.filter(r => !r.success).length
+
+    if (successCount > 0) {
+      revalidateIngresosGastosReportCache()
+    }
 
     return NextResponse.json({
       success: true,

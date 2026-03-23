@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, Suspense } from "react"
+import dynamic from "next/dynamic"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription } from "@/components/ui/alert"
@@ -32,7 +33,13 @@ import { cn } from "@/lib/utils"
 import { PullToRefresh } from "@/components/ui/pull-to-refresh"
 import { RestartOnboardingButton } from "@/components/onboarding/restart-onboarding-button"
 import { GettingStartedCard } from "@/components/onboarding/GettingStartedCard"
-import { UserSanctionsWidget } from "@/components/compliance/user-sanctions-widget"
+const UserSanctionsWidget = dynamic(
+  () =>
+    import("@/components/compliance/user-sanctions-widget").then((m) => ({
+      default: m.UserSanctionsWidget,
+    })),
+  { ssr: false, loading: () => null }
+)
 import { DashboardExecutiveLayout } from "@/components/dashboard/dashboard-executive-layout"
 import { DashboardModuleLinks } from "@/components/dashboard/dashboard-module-links"
 import { DashboardExecutiveKPIs } from "@/components/dashboard/dashboard-executive-kpis"
@@ -319,9 +326,8 @@ function DashboardContent() {
 
       {/*
         ── Executive layout ─────────────────────────────────────────────────────
-        IMPORTANT: DashboardExecutiveLayout manages its own horizontal padding
-        (px-4 sm:px-6 lg:px-8) on every section. It must NOT be wrapped in an
-        extra padding container or the KPI grid will double-pad and overflow.
+        DashboardExecutiveLayout sets its own horizontal padding per section.
+        SidebarWrapper uses p-0 on <main> for /dashboard* so this is not doubled.
       */}
       {useExecutiveLayout && (
         <>

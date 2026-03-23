@@ -8,6 +8,9 @@ import {
   AuthStore 
 } from '@/types/auth-store'
 
+/** One shared initialize at a time (React Strict Mode remounts, duplicate effects). */
+let initializeInFlight: Promise<void> | null = null
+
 export interface AuthSlice extends AuthState {
   // Actions
   initialize: () => Promise<void>
@@ -125,14 +128,23 @@ export const createAuthSlice: StateCreator<
 
   // Actions
   initialize: async () => {
-    console.log('🔧 Fast auth initialization...')
-    const startTime = Date.now()
-    
     if (get().isInitialized) {
       console.log('✅ Auth already initialized, skipping')
       return
     }
-    
+    if (initializeInFlight) {
+      await initializeInFlight
+      return
+    }
+
+    initializeInFlight = (async () => {
+    console.log('🔧 Fast auth initialization...')
+    const startTime = Date.now()
+
+    if (get().isInitialized) {
+      return
+    }
+
     try {
       // FAST PATH 1: Check persisted state first (most reliable)
       const currentState = get()
@@ -215,8 +227,8 @@ export const createAuthSlice: StateCreator<
       const supabase = createClient()
       
       const sessionPromise = supabase.auth.getSession()
-      const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Session fetch timeout')), 5000) // Reduced to 5 seconds
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Session fetch timeout')), 12000)
       )
       
       try {
@@ -285,6 +297,13 @@ export const createAuthSlice: StateCreator<
         },
         isLoading: false
       } as Partial<AuthStore>)
+    }
+    })()
+
+    try {
+      await initializeInFlight
+    } finally {
+      initializeInFlight = null
     }
   },
 

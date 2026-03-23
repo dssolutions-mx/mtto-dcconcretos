@@ -432,10 +432,10 @@ CardFooter: Full-width buttons (Ver, Editar, Completar) with icons + text
 ## 10. References
 
 ### Internal
-- [MOBILE_DASHBOARD_IMPROVEMENTS.md](../MOBILE_DASHBOARD_IMPROVEMENTS.md) — Patterns used in main dashboard
-- [WORK_ORDERS_MOBILE_OPTIMIZATION.md](../WORK_ORDERS_MOBILE_OPTIMIZATION.md) — Cards vs table, PullToRefresh, WorkOrderCard
-- [MODELOS_MOBILE_OPTIMIZATION_SUMMARY.md](../MODELOS_MOBILE_OPTIMIZATION_SUMMARY.md) — Responsive cards, touch targets
-- [design-system/mantenpro/MASTER.md](../design-system/mantenpro/MASTER.md) — Typography, colors, anti-patterns
+- [MOBILE_DASHBOARD_IMPROVEMENTS.md](../archive/root-md/MOBILE_DASHBOARD_IMPROVEMENTS.md) — Patterns used in main dashboard
+- [WORK_ORDERS_MOBILE_OPTIMIZATION.md](../archive/root-md/WORK_ORDERS_MOBILE_OPTIMIZATION.md) — Cards vs table, PullToRefresh, WorkOrderCard
+- [MODELOS_MOBILE_OPTIMIZATION_SUMMARY.md](../archive/root-md/MODELOS_MOBILE_OPTIMIZATION_SUMMARY.md) — Responsive cards, touch targets
+- [design-system/mantenpro/MASTER.md](../../design-system/mantenpro/MASTER.md) — Typography, colors, anti-patterns
 
 ### External Research
 - [Dashboard UI: 4 Best Practices for Mobile Clarity](https://spaceberry.studio/blog/dashboard-ui-four-best-practices-for-mobile-clarity/) — Spaceberry Studio

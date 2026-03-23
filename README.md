@@ -128,6 +128,16 @@ maintenance-dashboard/
 └── types/                  # ✨ Updated TypeScript types
 ```
 
+## Documentation
+
+- **Roles, POL-OPE-001/002, and enforcement index:** [`docs/sops/roles/INDEX.md`](docs/sops/roles/INDEX.md) — policy traceability, DB role mapping, web/API inventory, HTML matrix cross-reference.
+- **Canonical policy copies (v2.0):** [`docs/sops/policies/`](docs/sops/policies/) — see [`VERSIONS.md`](docs/sops/policies/VERSIONS.md).
+- **Current writeups:** [`docs/`](docs/) — PO/inventory workflow, Supabase notes, security phases, active plans under [`docs/plans/`](docs/plans/).
+- **Legacy root markdown** (old implementation summaries and guides): [`docs/archive/root-md/`](docs/archive/root-md/).
+- **Database workflow:** [`docs/DATABASE_MIGRATIONS.md`](docs/DATABASE_MIGRATIONS.md) (MCP / CLI; archived SQL under `archive/legacy-db-migrations/`).
+- **Data / PDFs / stray media** (imports, policies, screenshots): [`archive/`](archive/README.md) — see [`archive/README.md`](archive/README.md).
+- **Where to put new files (agents & humans):** [`docs/skills/repo-structure-hygiene/SKILL.md`](docs/skills/repo-structure-hygiene/SKILL.md).
+
 ## Database Schema
 
 The system uses Supabase with a comprehensive PostgreSQL schema including:

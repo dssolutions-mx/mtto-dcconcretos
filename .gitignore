@@ -12,6 +12,8 @@
 /build
 
 # debug
+# Chrome DevTools performance traces (often 100MB+; never commit)
+Trace-*.json
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
@@ -29,3 +31,12 @@ next-env.d.ts
 
 # git worktrees
 .worktrees/
+
+# Playwright / e2e artifacts (regenerate with npm run test:e2e)
+test-results/
+
+# Script outputs (employee sync dry-runs, etc.)
+scripts/out/
+
+# macOS
+.DS_Store

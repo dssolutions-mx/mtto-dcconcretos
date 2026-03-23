@@ -1455,6 +1455,11 @@ export function SidebarWrapper({ children }: { children: React.ReactNode }) {
     return <>{children}</>
   }
 
+  // Home dashboards (executive layout) manage their own horizontal padding and
+  // edge-to-edge strips; avoid double-padding inside <main>.
+  const isAppDashboardRoute =
+    pathname === "/dashboard" || pathname?.startsWith("/dashboard/")
+
   return (
     <TooltipProvider>
       <div className="min-h-screen flex">
@@ -1535,8 +1540,17 @@ export function SidebarWrapper({ children }: { children: React.ReactNode }) {
             </div>
           </header>
 
-          {/* Page Content - generous padding for breathing room (Apple HIG spacing) */}
-          <main className="flex-1 overflow-auto relative z-page-content px-4 py-6 md:px-6 md:py-8 lg:px-8 lg:py-8">{children}</main>
+          {/* Page Content — default padding; /dashboard* uses shell-internal padding */}
+          <main
+            className={cn(
+              "flex-1 overflow-auto relative z-page-content",
+              isAppDashboardRoute
+                ? "p-0"
+                : "px-4 py-6 md:px-6 md:py-8 lg:px-8 lg:py-8"
+            )}
+          >
+            {children}
+          </main>
         </div>
       </div>
     </TooltipProvider>

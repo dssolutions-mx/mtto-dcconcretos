@@ -68,7 +68,7 @@
 
 ## Data Files
 
-- **Source**: `Inventario_Completo.csv`
+- **Source**: `archive/data/csv/Inventario_Completo.csv` (repo layout as of 2026)
 - **Import Script**: `scripts/import-plant2-inventory-data.sql`
 - **Warehouse ID**: `185233d1-5c96-4fa7-86ed-310677aa8831`
 - **Plant ID**: `fb6c2a9b-8faf-4d2b-b4d3-685153af0b23`

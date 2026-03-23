@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useEffect } from "react"
 import { createClient } from "@/lib/supabase"
+import { shareInFlight } from "@/lib/in-flight"
 import type { ApprovalContextItem } from "@/types/purchase-orders"
 import type { PurchaseOrderWithWorkOrder } from "@/components/compras/useComprasData"
 
@@ -29,6 +30,7 @@ export function useDashboardApprovalQueue(): DashboardApprovalQueueResult {
   const [approvalContext, setApprovalContext] = useState<Record<string, ApprovalContextItem>>({})
 
   const load = useCallback(async () => {
+    await shareInFlight("dashboard-approval-queue", async () => {
     try {
       setIsLoading(true)
       const supabase = createClient()
@@ -110,6 +112,7 @@ export function useDashboardApprovalQueue(): DashboardApprovalQueueResult {
     } finally {
       setIsLoading(false)
     }
+    })
   }, [])
 
   useEffect(() => {

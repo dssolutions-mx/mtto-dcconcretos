@@ -1,6 +1,7 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
+import useSWR from "swr"
 import Link from "next/link"
 import {
   AlertTriangle,
@@ -241,9 +242,51 @@ export default function JUNDashboard() {
   const [dataLoading, setDataLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
 
-  const [effData, setEffData] = useState<EfficiencyMetrics | null>(null)
-  const [effPrev, setEffPrev] = useState<EfficiencyMetrics | null>(null)
-  const [effLoading, setEffLoading] = useState(true)
+  const monthKey = useMemo(() => new Date().toISOString().slice(0, 7), [])
+
+  const swrIngresosEnabled =
+    isInitialized &&
+    !authLoading &&
+    isAuthenticated &&
+    !!profile &&
+    profile.role === "JEFE_UNIDAD_NEGOCIO"
+
+  const { data: ingresosPayload, isLoading: effLoading, mutate: mutateIngresos } = useSWR(
+    swrIngresosEnabled
+      ? (["jun-dashboard-ingresos", profile!.business_unit_id ?? "all", monthKey] as const)
+      : null,
+    async ([, buSlot, m]) => {
+      const businessUnitId = buSlot === "all" ? null : buSlot
+      const effRes = await fetch("/api/reports/gerencial/ingresos-gastos", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ month: m, businessUnitId, plantId: null }),
+        credentials: "include",
+        cache: "no-store",
+      })
+      if (!effRes.ok) throw new Error(`ingresos ${effRes.status}`)
+      return effRes.json() as {
+        plants?: IngresosGastosPlant[]
+        comparison?: { plants?: IngresosGastosPlant[] }
+      }
+    },
+    {
+      dedupingInterval: 120_000,
+      revalidateOnFocus: true,
+      onError(err) {
+        console.error("[JUNDashboard] ingresos", err)
+      },
+    }
+  )
+
+  const effData = useMemo(
+    () => (ingresosPayload ? aggregatePlants(ingresosPayload.plants ?? []) : null),
+    [ingresosPayload]
+  )
+  const effPrev = useMemo(
+    () => (ingresosPayload ? aggregatePlants(ingresosPayload.comparison?.plants ?? []) : null),
+    [ingresosPayload]
+  )
 
   // Role guard
   useEffect(() => {
@@ -256,20 +299,11 @@ export default function JUNDashboard() {
     if (profile?.role !== "JEFE_UNIDAD_NEGOCIO") return
     try {
       setDataLoading(true)
-      setEffLoading(true)
       const buId = profile.business_unit_id ?? null
-      const month = new Date().toISOString().slice(0, 7)
 
-      const [plantsRes, woRes, effRes] = await Promise.all([
+      const [plantsRes, woRes] = await Promise.all([
         fetch("/api/plants", { credentials: "include", cache: "no-store" }),
         fetch("/api/work-orders/list", { credentials: "include", cache: "no-store" }),
-        fetch("/api/reports/gerencial/ingresos-gastos", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ month, businessUnitId: buId, plantId: null }),
-          credentials: "include",
-          cache: "no-store",
-        }),
       ])
 
       // Plants in this BU
@@ -296,17 +330,10 @@ export default function JUNDashboard() {
         setPreventivePending(pending.length)
       }
 
-      // Efficiency
-      if (effRes.ok) {
-        const j = await effRes.json()
-        setEffData(aggregatePlants(j.plants ?? []))
-        setEffPrev(aggregatePlants(j.comparison?.plants ?? []))
-      }
     } catch (err) {
       console.error("[JUNDashboard]", err)
     } finally {
       setDataLoading(false)
-      setEffLoading(false)
     }
   }, [profile?.role, profile?.business_unit_id])
 
@@ -314,7 +341,11 @@ export default function JUNDashboard() {
     if (isInitialized && !authLoading && profile?.role === "JEFE_UNIDAD_NEGOCIO") void loadData()
   }, [isInitialized, authLoading, profile?.role, loadData])
 
-  const handleRefresh = async () => { setRefreshing(true); await loadData(); setRefreshing(false) }
+  const handleRefresh = async () => {
+    setRefreshing(true)
+    await Promise.all([loadData(), mutateIngresos()])
+    setRefreshing(false)
+  }
 
   const moduleCards = [
     { title: "Diésel", href: "/diesel", icon: Fuel, module: "inventory" as const },

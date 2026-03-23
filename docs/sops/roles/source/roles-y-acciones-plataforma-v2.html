@@ -1,0 +1,936 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Roles y Acciones en Plataforma — DC Concretos</title>
+<style>
+  :root {
+    --navy: #1B365D; --green: #00A64F; --lgreen: #E8F5EE; --lnavy: #EBF0F8;
+    --yellow: #FFF9E6; --orange: #FFF3E0; --red: #FEF2F2; --lgray: #F5F5F5;
+    --gray2: #E5E7EB; --purple: #F5F3FF;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Calibri, 'Segoe UI', sans-serif; font-size: 14px; color: #1a1a1a; background: #fff; }
+
+  /* NAV */
+  .sidenav { position: fixed; top: 0; left: 0; width: 210px; height: 100vh; background: var(--navy); overflow-y: auto; padding: 20px 0; z-index: 100; }
+  .sidenav-logo { padding: 0 18px 18px; border-bottom: 1px solid rgba(255,255,255,.15); margin-bottom: 12px; }
+  .sidenav-logo p { color: var(--green); font-weight: 700; font-size: 13px; line-height: 1.3; }
+  .sidenav-logo span { color: rgba(255,255,255,.5); font-size: 11px; }
+  .nav-section { padding: 8px 18px 4px; color: rgba(255,255,255,.4); font-size: 10px; text-transform: uppercase; letter-spacing: .8px; font-weight: 700; }
+  .sidenav a { display: block; padding: 7px 18px; color: rgba(255,255,255,.75); font-size: 13px; text-decoration: none; border-left: 3px solid transparent; transition: all .15s; }
+  .sidenav a:hover, .sidenav a.active { color: #fff; background: rgba(255,255,255,.08); border-left-color: var(--green); }
+
+  /* MAIN */
+  .main { margin-left: 210px; padding: 32px 36px; max-width: 1060px; }
+  header { background: var(--navy); color: #fff; padding: 22px 26px; border-radius: 8px; margin-bottom: 30px; }
+  header h1 { font-size: 20px; font-weight: 700; }
+  header p { font-size: 13px; color: #9EC8AC; margin-top: 3px; }
+
+  .callout { border-radius: 6px; padding: 12px 16px; margin-bottom: 20px; font-size: 13.5px; line-height: 1.5; }
+  .callout.yellow { background: var(--yellow); border-left: 4px solid #C8A000; }
+  .callout.green  { background: var(--lgreen); border-left: 4px solid var(--green); }
+  .callout.navy   { background: var(--lnavy); border-left: 4px solid var(--navy); }
+  .callout.red    { background: var(--red); border-left: 4px solid #DC2626; }
+  .callout strong { font-weight: 700; }
+
+  h2 { color: var(--navy); font-size: 18px; font-weight: 700; margin: 36px 0 14px; padding-bottom: 7px; border-bottom: 2px solid var(--green); }
+  h3 { color: var(--green); font-size: 15px; font-weight: 700; margin: 24px 0 10px; }
+  h4 { color: var(--navy); font-size: 13.5px; font-weight: 700; margin: 14px 0 6px; }
+
+  /* PROCESS FLOW */
+  .flow { display: flex; flex-wrap: wrap; gap: 0; align-items: stretch; margin: 14px 0 20px; }
+  .flow-step { background: var(--lnavy); border: 1px solid #C5D5E8; border-radius: 6px; padding: 12px 14px; min-width: 140px; flex: 1; position: relative; }
+  .flow-step.green-step { background: var(--lgreen); border-color: #A8D8BC; }
+  .flow-step.yellow-step { background: var(--yellow); border-color: #E0C040; }
+  .flow-step.red-step { background: var(--red); border-color: #FECACA; }
+  .flow-step.purple-step { background: var(--purple); border-color: #C4B5FD; }
+  .flow-arrow { display: flex; align-items: center; padding: 0 6px; color: #888; font-size: 18px; font-weight: 700; flex-shrink: 0; }
+  .step-num { font-size: 10px; font-weight: 700; color: var(--navy); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 3px; }
+  .step-title { font-size: 13px; font-weight: 700; color: var(--navy); margin-bottom: 4px; }
+  .step-who { font-size: 11.5px; color: #555; }
+  .step-who strong { color: var(--green); }
+
+  /* ROLE CARDS */
+  .role-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px; }
+  @media (max-width: 800px) { .role-grid { grid-template-columns: 1fr; } .sidenav { display: none; } .main { margin-left: 0; } }
+  .role-card { border: 1px solid var(--gray2); border-radius: 8px; overflow: hidden; }
+  .role-card.full { grid-column: 1 / -1; }
+  .rc-header { background: var(--navy); color: #fff; padding: 12px 16px; display: flex; align-items: center; gap: 10px; }
+  .rc-header h3 { color: #fff; font-size: 15px; margin: 0; }
+  .rc-body { padding: 14px 16px; }
+  .rc-body h4 { margin-top: 10px; }
+  .rc-body h4:first-child { margin-top: 0; }
+
+  .tags { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 8px; }
+  .tag { font-size: 11px; font-weight: 700; padding: 2px 9px; border-radius: 12px; }
+  .tag-oc     { background: var(--green); color: #fff; }
+  .tag-auth   { background: #DBEAFE; color: #1D4ED8; }
+  .tag-ops    { background: #FDE8D8; color: #9A3412; }
+  .tag-sys    { background: var(--purple); color: #5B21B6; }
+  .tag-notify { background: var(--yellow); color: #78350F; }
+  .tag-none   { background: var(--lgray); color: #666; }
+
+  ul.actions { padding: 0; list-style: none; }
+  ul.actions li { padding: 4px 0 4px 20px; border-bottom: 1px solid #f0f0f0; font-size: 13px; line-height: 1.4; position: relative; }
+  ul.actions li:last-child { border-bottom: none; }
+  ul.actions li::before { content: "•"; position: absolute; left: 6px; color: var(--green); font-weight: 700; }
+  ul.actions li.key::before { content: "★"; color: #E59B00; }
+  ul.actions li.block { color: #999; font-style: italic; }
+  ul.actions li.block::before { content: "✗"; color: #ccc; }
+
+  /* MODULE TABLE */
+  .mod-table-wrap { overflow-x: auto; margin-bottom: 28px; }
+  table.mod { width: 100%; border-collapse: collapse; font-size: 12px; }
+  table.mod th { background: var(--navy); color: #fff; padding: 8px 10px; text-align: center; font-size: 11px; white-space: nowrap; }
+  table.mod th.left { text-align: left; }
+  table.mod td { padding: 7px 10px; border-bottom: 1px solid var(--gray2); vertical-align: top; text-align: center; }
+  table.mod td.label { text-align: left; font-weight: 600; color: var(--navy); background: var(--lgray); white-space: nowrap; }
+  table.mod td.sublabel { text-align: left; padding-left: 22px; color: #555; background: #FAFAFA; }
+  tr:hover td { background: #f9fbff; }
+  .y  { color: var(--green); font-weight: 700; font-size: 14px; }
+  .n  { color: #D1D5DB; font-size: 13px; }
+  .p  { color: #B45309; font-weight: 700; font-size: 12px; } /* partial/suplente */
+  .a  { color: #1D4ED8; font-weight: 700; font-size: 12px; } /* auto */
+
+  /* SECTION SEPARATOR */
+  .section-sep { height: 2px; background: linear-gradient(to right, var(--green), transparent); margin: 40px 0 20px; border-radius: 2px; }
+
+  footer { margin-top: 48px; padding: 16px 0; border-top: 2px solid var(--green); font-size: 12px; color: #888; text-align: center; }
+</style>
+</head>
+<body>
+
+<nav class="sidenav">
+  <div class="sidenav-logo">
+    <p>DC Concretos</p>
+    <span>Roles y Acciones · v2.0</span>
+  </div>
+  <div class="nav-section">Flujos</div>
+  <a href="#incidentes">Incidentes y OT</a>
+  <a href="#preventivo">Mantenimiento Preventivo</a>
+  <a href="#oc">Órdenes de Compra</a>
+  <a href="#checklist">Checklists</a>
+  <a href="#diesel">Diésel</a>
+  <a href="#activos">Activos</a>
+  <a href="#personal">Personal y Usuarios</a>
+  <a href="#conciliacion">Conciliación</a>
+  <div class="nav-section">Por Rol</div>
+  <a href="#r-gg">Gerente General</a>
+  <a href="#r-gm">Gerente Mantenimiento</a>
+  <a href="#r-coord">Coordinador Mtto</a>
+  <a href="#r-jun">JUN</a>
+  <a href="#r-jp">Jefe de Planta</a>
+  <a href="#r-dos">Dosificador / Operador</a>
+  <a href="#r-mec">Mecánico / Auxiliar</a>
+  <a href="#r-alm">Encargado Almacén</a>
+  <a href="#r-adm">Administración</a>
+  <a href="#r-rh">Recursos Humanos</a>
+  <div class="nav-section">Matriz</div>
+  <a href="#matriz">Matriz completa</a>
+</nav>
+
+<div class="main">
+  <header>
+    <h1>Roles y Acciones en Plataforma — Referencia Completa</h1>
+    <p>POL-OPE-001 Mantenimiento · POL-OPE-002 Inventario y Activos · Versión 2.0 · Marzo 2026</p>
+  </header>
+
+  <div class="callout yellow">
+    <strong>Nota clave sobre OTs:</strong> Toda incidencia registrada en plataforma genera automáticamente una Orden de Trabajo (OT).
+    Esto significa que <strong>cualquier persona que registre una incidencia está iniciando el ciclo de una OT</strong>.
+    La diferencia es que el <em>Coordinador de Mantenimiento</em> es quien revisa esa OT y decide si se cierra o si se genera una OC.
+    Para mantenimiento preventivo, el Coordinador también crea OTs manualmente desde el programa agendado.
+  </div>
+
+  <div class="callout green">
+    <strong>Regla absoluta — OC:</strong> Las Órdenes de Compra son creadas <strong>únicamente</strong> por el
+    <strong>Coordinador de Mantenimiento</strong> o el <strong>Gerente de Mantenimiento</strong>.
+    Todos los demás roles pueden <em>desencadenar</em> la necesidad de una OC (al registrar una incidencia),
+    pero no pueden crearla directamente.
+  </div>
+
+
+  <!-- ═══════════════════════════════════════════════ -->
+  <h2 id="incidentes">🔧 Flujo: Incidentes → OT → OC → Ejecución</h2>
+
+  <div class="callout navy">
+    Este es el flujo central del mantenimiento correctivo (Protocolo PAT).
+    Nace desde cualquier usuario que opera o supervisa un equipo.
+  </div>
+
+  <div class="flow">
+    <div class="flow-step">
+      <div class="step-num">Origen</div>
+      <div class="step-title">Incidencia registrada</div>
+      <div class="step-who"><strong>Quién:</strong> Dosificador · Operador · Mecánico · JP · JUN · Coordinador · Plataforma (automático)</div>
+    </div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-step green-step">
+      <div class="step-num">Auto · Plataforma</div>
+      <div class="step-title">OT generada automáticamente</div>
+      <div class="step-who"><strong>Quién:</strong> El sistema crea la OT vinculada a la incidencia. No requiere acción manual.</div>
+    </div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-step">
+      <div class="step-num">Decisión</div>
+      <div class="step-title">Coordinador revisa la OT</div>
+      <div class="step-who"><strong>Quién:</strong> Coordinador de Mantenimiento<br>→ Cierra OT (no requiere más acción)<br>→ Genera OC (requiere insumos / servicio externo)</div>
+    </div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-step yellow-step">
+      <div class="step-num">Solo si hay OC</div>
+      <div class="step-title">Autorización técnica</div>
+      <div class="step-who"><strong>Aut. 1:</strong> Gerente de Mantenimiento aprueba técnicamente la OC.</div>
+    </div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-step yellow-step">
+      <div class="step-num">Solo Tipo B (compra externa)</div>
+      <div class="step-title">Viabilidad presupuestal</div>
+      <div class="step-who"><strong>Aut. 2:</strong> Administración confirma fondos o crédito con proveedor.<br>Si ≥$7k → Aut. 3: Gerente General.</div>
+    </div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-step green-step">
+      <div class="step-num">Ejecución</div>
+      <div class="step-title">Mecánico interviene</div>
+      <div class="step-who">Con evidencia fotográfica antes/después. Sin OT aprobada: no inicia.</div>
+    </div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-step purple-step">
+      <div class="step-num">Cierre</div>
+      <div class="step-title">Coordinador cierra OT</div>
+      <div class="step-who">Operador/dosificador confirma conformidad en plataforma.</div>
+    </div>
+  </div>
+
+  <h4>¿Quién puede registrar una incidencia?</h4>
+  <ul class="actions">
+    <li class="key">Dosificador / Operador — desde el checklist diario al detectar anomalía, o reporte directo.</li>
+    <li class="key">Coordinador de Mantenimiento — desde ronda de inspección o detección propia.</li>
+    <li class="key">Jefe de Planta / JUN — desde observación directa o reporte del dosificador.</li>
+    <li class="key">Mecánico — hallazgo adicional durante una intervención (lo reporta al Coordinador, quien registra o valida).</li>
+    <li class="key">Plataforma (automático) — alertas del sistema (equipo próximo a límite, inactividad, etc.).</li>
+    <li class="key">Gerente de Mantenimiento — durante revisión de indicadores o conciliación.</li>
+  </ul>
+
+  <div class="callout red">
+    <strong>Incidencia no registrada:</strong> Si ocurre algo en un equipo y quien lo opera NO lo registra, y después el Coordinador
+    debe intervenir para resolver, el sistema detecta la omisión y genera una incidencia de sistema que va a conciliación con RH.
+    El operador/dosificador y su supervisor inmediato comparten la responsabilidad.
+  </div>
+
+
+  <!-- ═══════════════════════════════════════════════ -->
+  <h2 id="preventivo">📅 Flujo: Mantenimiento Preventivo</h2>
+
+  <div class="callout navy">
+    A diferencia del correctivo, el preventivo NO nace de una incidencia. El Coordinador crea la OT manualmente
+    desde el programa agendado. La plataforma emite alertas al acercarse al umbral — pero la programación es responsabilidad humana.
+  </div>
+
+  <div class="flow">
+    <div class="flow-step">
+      <div class="step-num">Alerta del sistema</div>
+      <div class="step-title">Plataforma notifica</div>
+      <div class="step-who">El sistema alerta cuando el equipo se acerca al umbral (100 hrs o 1,000 km previos al intervalo).</div>
+    </div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-step yellow-step">
+      <div class="step-num">Responsabilidad activa</div>
+      <div class="step-title">Coordinador agenda y crea OT</div>
+      <div class="step-who"><strong>Quién:</strong> Coordinador de Mantenimiento.<br>Supervisado por: Gerente de Mantenimiento.<br><em>No atender la alerta = sanción.</em></div>
+    </div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-step yellow-step">
+      <div class="step-num">Crea OC</div>
+      <div class="step-title">Coordinador genera OC vinculada a la OT</div>
+      <div class="step-who">Especifica insumos, cantidades, proveedor.</div>
+    </div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-step">
+      <div class="step-num">Aut. 1</div>
+      <div class="step-title">Gerente de Mantenimiento autoriza OC</div>
+      <div class="step-who">Revisión técnica. Todas las OC preventivas pasan por aquí.</div>
+    </div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-step">
+      <div class="step-num">Aut. 2 — Viabilidad</div>
+      <div class="step-title">Administración confirma</div>
+      <div class="step-who">Fondos o crédito con proveedor. Si no es viable → regresa al Coordinador.<br>Las OC preventivas <strong>no</strong> escalan a G.General (dentro del programa aprobado).</div>
+    </div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-step green-step">
+      <div class="step-num">Ejecución</div>
+      <div class="step-title">Mecánico realiza el servicio</div>
+      <div class="step-who">Evidencia fotográfica antes y después.</div>
+    </div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-step purple-step">
+      <div class="step-num">Cierre</div>
+      <div class="step-title">Coordinador cierra OT</div>
+      <div class="step-who">Valida en plataforma. Registro histórico del equipo actualizado.</div>
+    </div>
+  </div>
+
+
+  <!-- ═══════════════════════════════════════════════ -->
+  <h2 id="oc">🛒 Flujo: Órdenes de Compra (OC)</h2>
+
+  <div class="callout green">
+    <strong>Quién crea OC:</strong> Exclusivamente Coordinador de Mantenimiento (rol principal) o Gerente de Mantenimiento (cuando aplica o en ausencia del Coordinador).
+  </div>
+
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px;">
+    <div>
+      <h4>Tipo A — Consumo de inventario existente</h4>
+      <div class="flow" style="flex-direction:column;gap:8px;">
+        <div class="flow-step"><div class="step-title">Coordinador/Gerente crea OC Tipo A</div><div class="step-who">Items ya en almacén. Sin gasto externo.</div></div>
+        <div class="flow-step"><div class="step-title">Gerente de Mantenimiento — Aut.1</div><div class="step-who">Aprobación técnica.</div></div>
+        <div class="flow-step green-step"><div class="step-title">Encargado libera material</div><div class="step-who">Solo con OC aprobada. Sin revisión de Administración.</div></div>
+      </div>
+    </div>
+    <div>
+      <h4>Tipo B — Compra externa a proveedor</h4>
+      <div class="flow" style="flex-direction:column;gap:8px;">
+        <div class="flow-step"><div class="step-title">Coordinador/Gerente crea OC Tipo B</div><div class="step-who">Requiere proveedor del Padrón.</div></div>
+        <div class="flow-step"><div class="step-title">Gerente de Mantenimiento — Aut.1</div><div class="step-who">Aprobación técnica.</div></div>
+        <div class="flow-step yellow-step"><div class="step-title">Administración — Aut.2 Viabilidad</div><div class="step-who">¿Hay fondos o crédito? Si NO → regresa. Si SÍ y &lt;$7k → CxP. Si SÍ y ≥$7k → G.General.</div></div>
+        <div class="flow-step purple-step"><div class="step-title">Gerente General — Aut.3 (si ≥$7k)</div><div class="step-who">Solo si Administración confirmó viabilidad. Requiere 2 cotizaciones del Padrón.</div></div>
+        <div class="flow-step green-step"><div class="step-title">Administración procesa CxP</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="callout red">
+    <strong>OC ejecutada sin autorización:</strong> Si se ejecuta una compra sin la cadena de autorización completa,
+    el costo es absorbido por quien gestionó la OC (Coordinador/Gerente Mantenimiento)
+    <em>y</em> por Administración (ya que ellos liberan los fondos — sin su intervención no se podría pagar).
+    Esto queda registrado en el módulo de sanciones de la plataforma.
+  </div>
+
+
+  <!-- ═══════════════════════════════════════════════ -->
+  <h2 id="checklist">✅ Flujo: Checklists</h2>
+
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px;">
+    <div>
+      <h3>Checklist Diario</h3>
+      <div class="callout navy" style="margin-bottom:12px;">
+        Aplica por equipo agendado en plataforma. Cada equipo tiene su propio checklist y su propio responsable.
+      </div>
+      <ul class="actions">
+        <li class="key">Responsable principal: el dosificador o el operador asignado a ese equipo específico.</li>
+        <li>Debe completarse ANTES de iniciar operación.</li>
+        <li>Si detecta anomalía → registra como incidencia → OT auto-generada.</li>
+        <li>Si no se completa → incidencia de sistema automática.</li>
+        <li>Responsable subsidiario: Jefe de Planta (o JUN si no hay JP). Si permiten operación sin checklist → descuento bono mensual.</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Checklist Semanal</h3>
+      <div class="callout navy" style="margin-bottom:12px;">
+        No es por equipo individual — es una inspección general. Cada lunes.
+      </div>
+      <ul class="actions">
+        <li class="key">Responsable principal: Coordinador de Mantenimiento.</li>
+        <li>En ausencia del Coordinador, en este orden: Dosificador → Jefe de Planta → JUN.</li>
+        <li>Quien lo ejecute debe registrarlo en plataforma con evidencia si detecta anomalías.</li>
+        <li>No realizarlo → descuento bono. 2 semanas seguidas → acta + 30% bono. 4 semanas → proceso disciplinario.</li>
+      </ul>
+    </div>
+  </div>
+
+  <h4>¿Qué pasa cuando el checklist diario detecta algo?</h4>
+  <div class="flow">
+    <div class="flow-step"><div class="step-title">Dosificador/Operador marca anomalía en checklist</div></div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-step green-step"><div class="step-title">Sistema registra incidencia automáticamente</div><div class="step-who">Y genera OT vinculada.</div></div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-step"><div class="step-title">Dosificador notifica al Coordinador / JP / JUN</div></div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-step yellow-step"><div class="step-title">¿Puede operar el equipo?</div><div class="step-who">Coordinador determina. Sin falla crítica: sí con condición. Con falla crítica: NO hasta resolución.</div></div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-step purple-step"><div class="step-title">Coordinador decide en la OT</div><div class="step-who">Cierra (sin acción adicional) o genera OC.</div></div>
+  </div>
+
+
+  <!-- ═══════════════════════════════════════════════ -->
+  <h2 id="diesel">⛽ Flujo: Carga de Diésel</h2>
+
+  <div class="callout navy">
+    Toda carga de diésel debe registrarse en plataforma en el momento de la carga, con evidencia fotográfica.
+    El mecanismo de responsabilidad es escalonado.
+  </div>
+
+  <div class="flow">
+    <div class="flow-step">
+      <div class="step-num">Escenario A — Normal</div>
+      <div class="step-title">Dosificador o Coordinador presentes</div>
+      <div class="step-who">Quien ejecuta la carga la registra en plataforma con foto. Datos: equipo, responsable, horómetro/odómetro, litros, proveedor, fecha, hora.</div>
+    </div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-step green-step">
+      <div class="step-title">Registro completado ✔</div>
+    </div>
+  </div>
+  <div class="flow" style="margin-top:10px;">
+    <div class="flow-step red-step">
+      <div class="step-num">Escenario B — Ninguno disponible</div>
+      <div class="step-title">Usuario que carga la registra con su propio usuario</div>
+      <div class="step-who">El registro queda marcado para conciliación posterior. RH y el Coordinador validarán la información.</div>
+    </div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-step yellow-step">
+      <div class="step-title">Proceso de conciliación</div>
+      <div class="step-who">RH valida con los actores involucrados si hay discrepancias.</div>
+    </div>
+  </div>
+
+  <h4>Sanciones por omisión de registro</h4>
+  <ul class="actions">
+    <li>Usuario / Dosificador que no registra → 30% del costo de la carga.</li>
+    <li>Jefe de Planta → 35% del costo de la carga.</li>
+    <li>JUN → 35% del costo de la carga.</li>
+    <li>Sin JP: el JUN absorbe ambas partes (35% + 35% = 70%).</li>
+    <li>Sin JP ni JUN: Gerente de Mantenimiento reporta directamente a Gerencia General.</li>
+  </ul>
+
+
+  <!-- ═══════════════════════════════════════════════ -->
+  <h2 id="activos">🏭 Flujo: Movimiento de Activos</h2>
+
+  <div class="callout navy">
+    Un <em>activo</em> es un equipo de producción, vehículo o maquinaria registrado como activo fijo.
+    No son los consumibles del inventario. El Coordinador los mueve; el Gerente de Mantenimiento supervisa;
+    Gerencia General siempre recibe notificación informativa.
+  </div>
+
+  <div class="flow">
+    <div class="flow-step yellow-step">
+      <div class="step-num">Antes del movimiento</div>
+      <div class="step-title">Checklist de Salida</div>
+      <div class="step-who"><strong>Coordinador origen.</strong> Estado del activo + evidencia fotográfica + firma digital.<br><em>Sin este paso → incidencia de sistema.</em></div>
+    </div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-step">
+      <div class="step-title">Ejecución del traslado</div>
+      <div class="step-who">Coordinador coordina logística. Validado por Gerente de Mantenimiento. No requiere autorización adicional.</div>
+    </div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-step yellow-step">
+      <div class="step-num">Al recibir</div>
+      <div class="step-title">Checklist de Recepción</div>
+      <div class="step-who"><strong>Coordinador destino.</strong> Compara vs. checklist de salida.<br>Si coinciden → movimiento exitoso.<br>Si no coinciden → incidencia para determinar responsabilidad.</div>
+    </div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-step purple-step">
+      <div class="step-title">Notificaciones automáticas</div>
+      <div class="step-who"><strong>G.General:</strong> Notificación informativa (siempre).<br><strong>G.Mantenimiento:</strong> Supervisión del movimiento.</div>
+    </div>
+  </div>
+
+  <h3>Asignación de personal a activos</h3>
+  <ul class="actions">
+    <li class="key">Quién registra: Jefe de Planta o JUN, en plataforma en &lt;24 horas.</li>
+    <li class="key">Notifica a: Gerente de Mantenimiento y Recursos Humanos (siempre).</li>
+    <li class="key">RH notifica a Gerencia General los movimientos de personal relevantes.</li>
+    <li>Datos de asignación inicial: código de equipo, nombre y número de empleado, fecha y turno.</li>
+    <li>Cambio de operador: razón, fecha efectiva, operador saliente y entrante, evidencia entrega-recepción.</li>
+    <li>Baja: motivo, fecha, estado final del equipo.</li>
+    <li>Equipo sin operador: máximo 48 horas en estado "Inactividad" antes de justificar o reasignar.</li>
+  </ul>
+
+
+  <!-- ═══════════════════════════════════════════════ -->
+  <h2 id="personal">👥 Flujo: Personal y Usuarios en Plataforma</h2>
+
+  <div class="flow">
+    <div class="flow-step">
+      <div class="step-num">Solicitud</div>
+      <div class="step-title">JUN o Jefe de Planta solicita alta</div>
+      <div class="step-who">Formalmente a RH. Mantenimiento puede asistir, pero la responsabilidad y solicitud formal recaen en JUN/JP.</div>
+    </div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-step green-step">
+      <div class="step-num">Proceso</div>
+      <div class="step-title">RH procesa el alta en plataforma</div>
+      <div class="step-who">Y notifica al usuario y a Gerencia General cuando aplica.</div>
+    </div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-step">
+      <div class="step-num">Cambios</div>
+      <div class="step-title">Reasignación / Baja</div>
+      <div class="step-who">JUN/JP comunica a RH → RH procesa → RH notifica a G.General.</div>
+    </div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-step yellow-step">
+      <div class="step-num">Control</div>
+      <div class="step-title">Sin usuario activo</div>
+      <div class="step-who">Operar sin usuario → incidencia de sistema imputable al JP o JUN del área.</div>
+    </div>
+  </div>
+
+
+  <!-- ═══════════════════════════════════════════════ -->
+  <h2 id="conciliacion">⚖️ Flujo: Conciliación de Incidencias de Sistema</h2>
+
+  <div class="callout navy">
+    Las incidencias de sistema (omisiones de checklist, diésel no registrado, WhatsApp no formalizado, etc.)
+    van automáticamente a conciliación. <strong>RH gestiona el proceso</strong> — no es transaccional,
+    permite que todos presenten su versión.
+  </div>
+
+  <div class="flow">
+    <div class="flow-step red-step">
+      <div class="step-title">Sistema genera incidencia automáticamente</div>
+      <div class="step-who">Por omisión de: checklist · diésel · WhatsApp no formalizado · usuario sin acceso · equipo sin operador.</div>
+    </div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-step">
+      <div class="step-title">Notificación en app</div>
+      <div class="step-who">Todos los usuarios afectados reciben notificación en la aplicación.</div>
+    </div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-step yellow-step">
+      <div class="step-title">Cada parte presenta su versión</div>
+      <div class="step-who">En plataforma, dentro del plazo habilitado. Con evidencia si aplica. Sin paso rígido — es un diálogo.</div>
+    </div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-step purple-step">
+      <div class="step-title">RH evalúa con actores involucrados</div>
+      <div class="step-who">Determina: levantar incidencia · documentar causa raíz · aplicar sanción en módulo de plataforma.</div>
+    </div>
+  </div>
+
+  <div class="callout green" style="margin-top:16px;">
+    <strong>Período de tolerancia:</strong> Durante la primera semana tras la firma de la política,
+    las incidencias por causas técnicas (acceso a plataforma, configuración de usuario) se evalúan con criterio flexible.
+    Después, el régimen de sanciones aplica sin excepción.
+  </div>
+
+
+  <div class="section-sep"></div>
+
+  <!-- ═══════════════════════════════════════════════ -->
+  <h2>Por Rol — Acciones Detalladas en Plataforma</h2>
+
+  <div class="role-grid">
+
+    <!-- GERENTE GENERAL -->
+    <div class="role-card" id="r-gg">
+      <div class="rc-header">
+        <h3>Gerente General</h3>
+      </div>
+      <div class="rc-body">
+        <div class="tags"><span class="tag tag-auth">Autoriza OC ≥ $7k</span><span class="tag tag-notify">Notificaciones</span></div>
+        <h4>Lo que hace en plataforma</h4>
+        <ul class="actions">
+          <li>Autoriza OC de compra externa ≥ $7,000 MXN (solo si Administración ya confirmó viabilidad).</li>
+          <li>Aprueba baja de inventario de alto valor y venta/baja definitiva de activos.</li>
+          <li class="key">Recibe notificación informativa de <em>todos</em> los movimientos de activos.</li>
+          <li class="key">Recibe notificación de movimientos de personal relevantes (a través de RH).</li>
+          <li>Revisa indicadores de desempeño de Mantenimiento mensualmente.</li>
+          <li>Aprueba cambios a las políticas.</li>
+        </ul>
+        <h4>Lo que NO hace</h4>
+        <ul class="actions">
+          <li class="block">No crea OC, OT, ni incidencias.</li>
+          <li class="block">No interviene en movimientos operativos.</li>
+          <li class="block">No gestiona checklists, diésel ni activos directamente.</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- GERENTE DE MANTENIMIENTO -->
+    <div class="role-card" id="r-gm">
+      <div class="rc-header">
+        <h3>Gerente de Mantenimiento</h3>
+      </div>
+      <div class="rc-body">
+        <div class="tags"><span class="tag tag-oc">Crea OC</span><span class="tag tag-auth">Aut. Nivel 1 — TODAS las OC</span><span class="tag tag-notify">Recibe alertas clave</span></div>
+        <h4>Incidencias y OT</h4>
+        <ul class="actions">
+          <li>Puede registrar incidencias (desde revisión de indicadores o conciliación).</li>
+          <li>Revisa la operativa de OTs abiertos; coordina con el Coordinador.</li>
+        </ul>
+        <h4>Órdenes de Compra</h4>
+        <ul class="actions">
+          <li class="key">Crea OC cuando el Coordinador no está disponible, o cuando él mismo detecta la necesidad.</li>
+          <li class="key">Autoriza técnicamente <em>TODAS</em> las OC (Nivel 1) — preventivas, correctivas, Tipo A y Tipo B.</li>
+        </ul>
+        <h4>Preventivo</h4>
+        <ul class="actions">
+          <li>Supervisa que los Coordinadores programen preventivos antes de los umbrales.</li>
+          <li>Revisa y actualiza matrices de mantenimiento anualmente.</li>
+          <li>Autoriza el uso de proveedores de emergencia fuera del padrón.</li>
+        </ul>
+        <h4>Activos y Almacén</h4>
+        <ul class="actions">
+          <li>Supervisa movimientos de activos; valida checklists de salida/recepción.</li>
+          <li>Recibe notificación de activos sin operador asignado y de equipos fuera de servicio.</li>
+          <li>Coordina con el Encargado de Almacén los requerimientos de inventario.</li>
+          <li>En ausencia del Coordinador: ejecuta directamente movimientos físicos de activos.</li>
+        </ul>
+        <h4>Conciliación y Personal</h4>
+        <ul class="actions">
+          <li>Conduce la revisión operativa de incidencias de sistema; coordina el proceso de conciliación con RH.</li>
+          <li>Gestiona el Padrón de Proveedores con Administración.</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- COORDINADOR DE MANTENIMIENTO -->
+    <div class="role-card full" id="r-coord">
+      <div class="rc-header">
+        <h3>Coordinador de Mantenimiento — Rol Operativo Central</h3>
+      </div>
+      <div class="rc-body">
+        <div class="tags"><span class="tag tag-oc">Crea OC (principal)</span><span class="tag tag-ops">Crea OT preventiva</span><span class="tag tag-sys">PAT Correctivo</span></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;">
+          <div>
+            <h4>Incidencias y OT</h4>
+            <ul class="actions">
+              <li class="key">Registra incidencias desde ronda de inspección o detección propia.</li>
+              <li class="key">Revisa TODAS las OTs auto-generadas por incidencias → decide: cierra o genera OC.</li>
+              <li class="key">Crea OTs manualmente para mantenimiento preventivo desde el programa agendado.</li>
+              <li>Cierra OTs validando la intervención; el dosificador/operador confirma.</li>
+            </ul>
+          </div>
+          <div>
+            <h4>Órdenes de Compra</h4>
+            <ul class="actions">
+              <li class="key">Crea OC para toda adquisición de mantenimiento (rol principal).</li>
+              <li>Vincula OC a OT cuando la OC involucra un activo registrado.</li>
+              <li>Tipo A (consumo de inventario): crea OC → G.Mantenimiento autoriza → Encargado libera.</li>
+              <li>Tipo B (compra externa): crea OC → G.Mantenimiento → Administración → (G.General si ≥$7k).</li>
+            </ul>
+          </div>
+          <div>
+            <h4>Preventivo y Checklists</h4>
+            <ul class="actions">
+              <li class="key">Programa y agenda preventivos antes de alcanzar los umbrales (manual, no automático).</li>
+              <li class="key">Realiza el checklist semanal. En su ausencia: delega a dosificador, JP o JUN (en ese orden).</li>
+              <li>Verifica que dosificadores/operadores completen el checklist diario de sus equipos.</li>
+            </ul>
+          </div>
+          <div>
+            <h4>Activos</h4>
+            <ul class="actions">
+              <li class="key">Control operativo de movimientos de activos entre plantas.</li>
+              <li class="key">OBLIGATORIO: Checklist de salida ANTES de mover. Checklist de recepción al recibir.</li>
+              <li>Evidencia fotográfica obligatoria en ambos checklists.</li>
+              <li>Reporta discrepancias de inmediato al Gerente.</li>
+            </ul>
+          </div>
+          <div>
+            <h4>WhatsApp y Comunicación</h4>
+            <ul class="actions">
+              <li class="key">Formaliza en plataforma toda comunicación del Grupo WhatsApp en &lt;2 horas hábiles.</li>
+              <li>Si no lo hace → incidencia de sistema a su cargo.</li>
+            </ul>
+          </div>
+          <div>
+            <h4>Supervisión</h4>
+            <ul class="actions">
+              <li>Supervisa mecánicos y auxiliares; exige evidencia fotográfica antes/después de cada intervención.</li>
+              <li>En ausencia del Gerente de Mantenimiento: escala autorizaciones al JUN o JP.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- JUN -->
+    <div class="role-card" id="r-jun">
+      <div class="rc-header"><h3>Jefe de Unidad de Negocio (JUN)</h3></div>
+      <div class="rc-body">
+        <div class="tags"><span class="tag tag-ops">Autoridad operativa</span><span class="tag tag-none">No crea OC</span></div>
+        <h4>Incidencias</h4>
+        <ul class="actions">
+          <li>Puede registrar incidencias desde observación directa o reporte del dosificador.</li>
+          <li>Recibe escalamiento cuando el Coordinador no está disponible.</li>
+        </ul>
+        <h4>Checklists y Operación</h4>
+        <ul class="actions">
+          <li>Responsable subsidiario de checklist y diésel cuando no hay Jefe de Planta.</li>
+          <li>Suplente en checklist semanal (último en el orden de prelación).</li>
+          <li>Asume todas las responsabilidades del JP cuando este no existe.</li>
+        </ul>
+        <h4>Personal y Usuarios</h4>
+        <ul class="actions">
+          <li class="key">Solicita alta de usuarios a RH para el personal de su unidad.</li>
+          <li class="key">Registra asignación de personal a activos en plataforma en &lt;24 horas; notifica a RH.</li>
+          <li>Registra cambios de operador y bajas de asignación.</li>
+          <li>Justifica activos sin operador &gt;48 horas.</li>
+        </ul>
+        <h4>Inventario y Activos</h4>
+        <ul class="actions">
+          <li>Supervisa al Encargado de Almacén; revisa reportes mensuales.</li>
+          <li>Investiga diferencias de inventario &gt;2%.</li>
+          <li>Aprueba bajas de inventario.</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- JEFE DE PLANTA -->
+    <div class="role-card" id="r-jp">
+      <div class="rc-header"><h3>Jefe de Planta</h3></div>
+      <div class="rc-body">
+        <div class="tags"><span class="tag tag-ops">Supervisión de planta</span><span class="tag tag-none">No crea OC</span></div>
+        <h4>Incidencias y Operación</h4>
+        <ul class="actions">
+          <li>Puede registrar incidencias desde observación en planta.</li>
+          <li>Autoriza el inicio de operación de un equipo tras anomalía en checklist, previo análisis con el Coordinador.</li>
+          <li>Responsable subsidiario ante omisiones de checklist o diésel en su planta.</li>
+        </ul>
+        <h4>Checklists</h4>
+        <ul class="actions">
+          <li>Supervisa que dosificadores/operadores completen el checklist diario.</li>
+          <li>Suplente en checklist semanal (segundo en el orden de prelación).</li>
+        </ul>
+        <h4>Personal y Usuarios</h4>
+        <ul class="actions">
+          <li class="key">Solicita alta de usuarios a RH para el personal de su planta.</li>
+          <li class="key">Registra asignación de personal a activos; informa cambios a RH.</li>
+          <li>Justifica activos sin operador &gt;48 horas.</li>
+        </ul>
+        <h4>Almacén</h4>
+        <ul class="actions">
+          <li>En ausencia del Encargado: asume custodia temporal respetando la restricción de OC.</li>
+          <li>Supervisa cumplimiento de checklists de activos.</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- DOSIFICADOR / OPERADOR -->
+    <div class="role-card" id="r-dos">
+      <div class="rc-header"><h3>Dosificador / Operador</h3></div>
+      <div class="rc-body">
+        <div class="tags"><span class="tag tag-ops">Operación de equipos</span><span class="tag tag-none">No crea OC</span></div>
+        <h4>Incidencias — inicio de todo el ciclo</h4>
+        <ul class="actions">
+          <li class="key">Registra incidencias desde el checklist diario o por observación directa.</li>
+          <li class="key">Al registrar una incidencia → OT se genera automáticamente. Es el punto de partida más frecuente del ciclo correctivo.</li>
+          <li>Notifica de inmediato al Coordinador / JP / JUN.</li>
+          <li>No opera con falla crítica sin autorización del Coordinador.</li>
+        </ul>
+        <h4>Checklist Diario (obligación principal)</h4>
+        <ul class="actions">
+          <li class="key">Completa el checklist de CADA equipo que tiene asignado, ANTES de iniciar operación.</li>
+          <li>No completarlo → incidencia de sistema automática + sanción.</li>
+        </ul>
+        <h4>Diésel</h4>
+        <ul class="actions">
+          <li>Registra la carga de diésel cuando es el responsable de la carga.</li>
+          <li>Si carga diésel sin Coordinador disponible → registra con su usuario para conciliación posterior.</li>
+        </ul>
+        <h4>OT y Cierre</h4>
+        <ul class="actions">
+          <li>Confirma en plataforma la conformidad al cierre de cada OT de intervención en su equipo.</li>
+          <li>Recibe materiales del almacén y firma digitalmente la recepción.</li>
+          <li>Apoya el checklist semanal en ausencia del Coordinador (primer suplente en el orden).</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- MECÁNICO -->
+    <div class="role-card" id="r-mec">
+      <div class="rc-header"><h3>Mecánico / Auxiliar de Mantenimiento</h3></div>
+      <div class="rc-body">
+        <div class="tags"><span class="tag tag-ops">Ejecución de intervenciones</span><span class="tag tag-none">No crea OC ni OT</span></div>
+        <h4>Intervenciones</h4>
+        <ul class="actions">
+          <li class="key">Ejecuta intervenciones ÚNICAMENTE sobre OT aprobada en plataforma. Sin OT aprobada: no inicia.</li>
+          <li class="key">Registra evidencia fotográfica ANTES y DESPUÉS de cada intervención. Sin foto: incumplimiento.</li>
+          <li>Reporta al Coordinador cualquier hallazgo adicional durante la ejecución.</li>
+        </ul>
+        <h4>Inventario y Garantías</h4>
+        <ul class="actions">
+          <li>Documenta la instalación de cada pieza: equipo, fecha, número de OT. Sin documentación → pierde derecho a garantía y asume el costo del reemplazo.</li>
+          <li>Custodia piezas en garantía hasta su reclamo. Pérdida de pieza → 100% del costo.</li>
+          <li>Instalación incorrecta que anula garantía → 50% del costo de reemplazo.</li>
+        </ul>
+        <h4>Incidencias</h4>
+        <ul class="actions">
+          <li>Puede reportar hallazgos al Coordinador durante la ejecución; el Coordinador decide si registra una nueva incidencia.</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- ENCARGADO DE ALMACÉN -->
+    <div class="role-card" id="r-alm">
+      <div class="rc-header"><h3>Encargado de Almacén</h3></div>
+      <div class="rc-body">
+        <div class="tags"><span class="tag tag-ops">Custodia física</span><span class="tag tag-none">No crea OC</span></div>
+        <h4>Regla absoluta</h4>
+        <div class="callout red" style="margin-bottom:10px;font-size:13px;">
+          Solo entrega material con OC aprobada en plataforma. Si la OC involucra un activo registrado, también requiere OT vinculada. Sin esto, asume el 100% del costo.
+        </div>
+        <h4>Acciones en plataforma</h4>
+        <ul class="actions">
+          <li class="key">Recibe notificación cuando una OC es aprobada → verifica y libera el material.</li>
+          <li class="key">Registra entradas (compras recibidas) y salidas (entregas) en &lt;2 horas.</li>
+          <li>Ejecuta conteos cíclicos según programa mensual.</li>
+          <li>Reporta faltantes, sobrantes o daños al JP y G.Mantenimiento.</li>
+          <li>Rechaza entregas sin documentación adecuada.</li>
+          <li>Mantiene almacén ordenado (5S).</li>
+        </ul>
+        <h4>Responsabilidad financiera</h4>
+        <ul class="actions">
+          <li>Entrega sin OC aprobada → 100% del costo (baja inmediata en reincidencia).</li>
+          <li>No registrar movimiento en &lt;2 horas → 20% descuento bono.</li>
+          <li>Faltante injustificado → 100% del costo del faltante.</li>
+          <li>2 faltantes injustificados en un trimestre → Baja inmediata.</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- ADMINISTRACIÓN -->
+    <div class="role-card" id="r-adm">
+      <div class="rc-header"><h3>Administración / Contabilidad</h3></div>
+      <div class="rc-body">
+        <div class="tags"><span class="tag tag-auth">Viabilidad presupuestal</span><span class="tag tag-none">No crea OC</span></div>
+        <h4>En el flujo de OC</h4>
+        <ul class="actions">
+          <li class="key">Revisa viabilidad <em>solo</em> para OC de compra externa (Tipo B). Las OC de consumo de inventario (Tipo A) <strong>no pasan por Administración</strong>.</li>
+          <li>Si NO es viable → regresa al Coordinador para buscar alternativa.</li>
+          <li>Si viable y &lt;$7k → procesa CxP directamente.</li>
+          <li>Si viable y ≥$7k → escala a Gerente General.</li>
+          <li class="key">Comparte responsabilidad en OC ejecutadas sin autorización (libera los fondos).</li>
+        </ul>
+        <h4>Otras responsabilidades</h4>
+        <ul class="actions">
+          <li>Gestiona el Padrón de Proveedores con el Gerente de Mantenimiento.</li>
+          <li>Gestiona reclamos de garantía con proveedores del Padrón.</li>
+          <li>Administra bajas de inventario de alto valor (con autorización de G.General).</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- RECURSOS HUMANOS -->
+    <div class="role-card" id="r-rh">
+      <div class="rc-header"><h3>Recursos Humanos</h3></div>
+      <div class="rc-body">
+        <div class="tags"><span class="tag tag-sys">Conciliación</span><span class="tag tag-notify">Personal y Accesos</span></div>
+        <h4>Conciliación de incidencias de sistema</h4>
+        <ul class="actions">
+          <li class="key">Gestiona el proceso de conciliación: evalúa casos con actores involucrados, permite que cada parte presente su versión y evidencia.</li>
+          <li>Emite resolución: levantar incidencia, documentar causa raíz, o aplicar sanción en plataforma.</li>
+          <li>Notifica a usuarios afectados en la app al inicio del proceso.</li>
+        </ul>
+        <h4>Gestión de personal y accesos</h4>
+        <ul class="actions">
+          <li class="key">Procesa el alta de usuarios en plataforma a solicitud del JUN o Jefe de Planta.</li>
+          <li class="key">Recibe notificación de TODO movimiento de personal: asignaciones, reasignaciones, cambios de operador, bajas de asignación a equipos.</li>
+          <li>Procesa y registra movimientos en los sistemas correspondientes.</li>
+          <li class="key">Notifica a Gerencia General de los movimientos de personal relevantes.</li>
+        </ul>
+      </div>
+    </div>
+
+  </div><!-- /role-grid -->
+
+
+  <!-- ═══════════════════════════════════════════════ -->
+  <h2 id="matriz">Matriz Completa de Acciones por Módulo</h2>
+
+  <div class="mod-table-wrap">
+  <table class="mod">
+    <thead>
+      <tr>
+        <th class="left" style="min-width:180px;">Acción / Módulo</th>
+        <th>G.General</th>
+        <th>G.Mtto</th>
+        <th>Coord.</th>
+        <th>JUN</th>
+        <th>J.Planta</th>
+        <th>Dosif./Op.</th>
+        <th>Mecánico</th>
+        <th>Enc.Almacén</th>
+        <th>Admón.</th>
+        <th>RH</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><td class="label" colspan="11">INCIDENCIAS</td></tr>
+      <tr><td class="sublabel">Registrar incidencia</td><td class="n">—</td><td class="y">✔</td><td class="y">✔</td><td class="y">✔</td><td class="y">✔</td><td class="y">✔</td><td class="p">Via Coord.</td><td class="n">—</td><td class="n">—</td><td class="n">—</td></tr>
+      <tr><td class="sublabel">OT auto-generada (desde incidencia)</td><td class="n">—</td><td class="a">AUTO</td><td class="a">AUTO</td><td class="a">AUTO</td><td class="a">AUTO</td><td class="a">AUTO</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td></tr>
+      <tr><td class="sublabel">Revisar OT y decidir cierre/OC</td><td class="n">—</td><td class="p">Supervisión</td><td class="y">✔</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td></tr>
+      <tr><td class="sublabel">Cerrar OT (validación)</td><td class="n">—</td><td class="n">—</td><td class="y">✔</td><td class="n">—</td><td class="n">—</td><td class="p">Confirma</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td></tr>
+
+      <tr><td class="label" colspan="11">ÓRDENES DE TRABAJO — PREVENTIVO</td></tr>
+      <tr><td class="sublabel">Crear OT preventiva (manual)</td><td class="n">—</td><td class="n">—</td><td class="y">✔</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td></tr>
+      <tr><td class="sublabel">Programar calendario preventivo</td><td class="n">—</td><td class="p">Supervisa</td><td class="y">✔</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td></tr>
+      <tr><td class="sublabel">Recibir alerta de umbral</td><td class="n">—</td><td class="y">✔</td><td class="y">✔</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td></tr>
+
+      <tr><td class="label" colspan="11">ÓRDENES DE COMPRA</td></tr>
+      <tr><td class="sublabel">Crear OC</td><td class="n">—</td><td class="y">✔ si aplica</td><td class="y">✔ principal</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td></tr>
+      <tr><td class="sublabel">Autorizar OC Nivel 1 (técnica)</td><td class="n">—</td><td class="y">✔ Siempre</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td></tr>
+      <tr><td class="sublabel">Revisar viabilidad (Tipo B)</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="y">✔</td><td class="n">—</td></tr>
+      <tr><td class="sublabel">Autorizar OC ≥$7k (Nivel 3)</td><td class="y">✔</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td></tr>
+      <tr><td class="sublabel">Liberar material (OC Tipo A aprobada)</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="y">✔</td><td class="n">—</td><td class="n">—</td></tr>
+      <tr><td class="sublabel">Procesar pago CxP</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="y">✔</td><td class="n">—</td></tr>
+
+      <tr><td class="label" colspan="11">CHECKLIST</td></tr>
+      <tr><td class="sublabel">Checklist diario (por equipo asignado)</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="y">✔ principal</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td></tr>
+      <tr><td class="sublabel">Checklist semanal</td><td class="n">—</td><td class="n">—</td><td class="y">✔ principal</td><td class="p">Suplente 3°</td><td class="p">Suplente 2°</td><td class="p">Suplente 1°</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td></tr>
+      <tr><td class="sublabel">Supervisar cumplimiento checklist</td><td class="n">—</td><td class="p">Supervisión</td><td class="y">✔</td><td class="y">✔</td><td class="y">✔</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td></tr>
+
+      <tr><td class="label" colspan="11">DIÉSEL</td></tr>
+      <tr><td class="sublabel">Registrar carga de diésel</td><td class="n">—</td><td class="n">—</td><td class="y">✔</td><td class="n">—</td><td class="n">—</td><td class="y">✔</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td></tr>
+      <tr><td class="sublabel">Registrar si ninguno disponible</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td></tr>
+      <tr><td class="sublabel" style="color:#B45309;">→ Cualquier usuario que carga, con su propio usuario (va a conciliación)</td><td class="p">—</td><td class="p">—</td><td class="p">—</td><td class="p">—</td><td class="p">—</td><td class="p">—</td><td class="p">—</td><td class="p">—</td><td class="p">—</td><td class="p">—</td></tr>
+
+      <tr><td class="label" colspan="11">ACTIVOS — MOVIMIENTO</td></tr>
+      <tr><td class="sublabel">Checklist de salida (antes de mover)</td><td class="n">—</td><td class="p">Supervisa</td><td class="y">✔</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td></tr>
+      <tr><td class="sublabel">Checklist de recepción (al recibir)</td><td class="n">—</td><td class="p">Supervisa</td><td class="y">✔</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td></tr>
+      <tr><td class="sublabel">Recibir notificación de movimiento</td><td class="y">✔ siempre</td><td class="y">✔</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td></tr>
+
+      <tr><td class="label" colspan="11">ACTIVOS — PERSONAL Y ASIGNACIÓN</td></tr>
+      <tr><td class="sublabel">Registrar asignación operador-equipo</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="y">✔</td><td class="y">✔</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td></tr>
+      <tr><td class="sublabel">Recibir notificación de asignación</td><td class="y">✔ via RH</td><td class="y">✔</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="y">✔</td></tr>
+      <tr><td class="sublabel">Solicitar alta de usuario a RH</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="y">✔</td><td class="y">✔</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td></tr>
+      <tr><td class="sublabel">Procesar alta/baja de usuario</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="y">✔</td></tr>
+      <tr><td class="sublabel">Notificar G.General movimientos personal</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="y">✔</td></tr>
+
+      <tr><td class="label" colspan="11">INVENTARIO</td></tr>
+      <tr><td class="sublabel">Recibir material (con remisión)</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="y">✔</td><td class="n">—</td><td class="n">—</td></tr>
+      <tr><td class="sublabel">Entregar material (con OC aprobada)</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="y">✔</td><td class="n">—</td><td class="n">—</td></tr>
+      <tr><td class="sublabel">Firmar recepción de material</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="y">✔</td><td class="y">✔</td><td class="n">—</td><td class="n">—</td><td class="n">—</td></tr>
+      <tr><td class="sublabel">Conteo cíclico</td><td class="n">—</td><td class="p">Puede asistir</td><td class="n">—</td><td class="n">—</td><td class="y">✔</td><td class="n">—</td><td class="n">—</td><td class="y">✔ principal</td><td class="n">—</td><td class="n">—</td></tr>
+
+      <tr><td class="label" colspan="11">CONCILIACIÓN</td></tr>
+      <tr><td class="sublabel">Gestionar proceso de conciliación</td><td class="n">—</td><td class="p">Coordina</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="y">✔ principal</td></tr>
+      <tr><td class="sublabel">Presentar versión en conciliación</td><td class="n">—</td><td class="y">✔</td><td class="y">✔</td><td class="y">✔</td><td class="y">✔</td><td class="y">✔</td><td class="y">✔</td><td class="y">✔</td><td class="y">✔</td><td class="n">—</td></tr>
+      <tr><td class="sublabel">Emitir resolución de conciliación</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="y">✔</td></tr>
+
+      <tr><td class="label" colspan="11">EJECUCIÓN DE INTERVENCIONES</td></tr>
+      <tr><td class="sublabel">Ejecutar intervención (sobre OT aprobada)</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="y">✔</td><td class="n">—</td><td class="n">—</td><td class="n">—</td></tr>
+      <tr><td class="sublabel">Registrar evidencia fotográfica</td><td class="n">—</td><td class="n">—</td><td class="y">✔</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="y">✔</td><td class="n">—</td><td class="n">—</td><td class="n">—</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="callout yellow" style="margin-top:8px;">
+    <strong>Leyenda:</strong>
+    ✔ = puede hacerlo · — = no aplica ·
+    <span class="p">Suplente/Parcial</span> = solo en ausencia del rol principal ·
+    <span class="a">AUTO</span> = lo hace el sistema automáticamente
+  </div>
+
+  <footer>DC Concretos, S.A. de C.V. · "Ayudando a concretar ideas" · POL-OPE-001 y POL-OPE-002 v2.0 · Marzo 2026</footer>
+</div>
+
+<script>
+  // Highlight active nav link on scroll
+  const sections = document.querySelectorAll('[id]');
+  const navLinks = document.querySelectorAll('.sidenav a');
+  window.addEventListener('scroll', () => {
+    let current = '';
+    sections.forEach(s => { if (window.scrollY >= s.offsetTop - 80) current = s.id; });
+    navLinks.forEach(a => { a.classList.remove('active'); if (a.getAttribute('href') === '#'+current) a.classList.add('active'); });
+  });
+</script>
+</body>
+</html>
