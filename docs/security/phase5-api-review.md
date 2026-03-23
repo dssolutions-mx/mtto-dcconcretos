@@ -98,11 +98,9 @@ See Phase 2 (STATIC-001, STATIC-002, STATIC-003, STATIC-004) and Phase 4 (CONFIG
 - **Issue:** Any authenticated user can call. Should be admin-only.
 - **Fix:** Add `canUpdateUserAuthorization` or equivalent; return 403 for non-admins.
 
-**[API-012]: Migration Routes — Should Be Admin-Only**
-- **Severity:** High
-- **Location:** `app/api/migrations/*`
-- **Issue:** Several migration routes (execute-id-fix, create-asset-operators-table, etc.) have getUser() but no admin role check.
-- **Fix:** Restrict to admin; or remove from production and run via CLI/CI only.
+**[API-012]: Migration Routes — Should Be Admin-Only** *(remediated)*
+- **Severity:** High (historical)
+- **Location:** ~~`app/api/migrations/*`~~ **removed** in 2026; schema changes via Supabase MCP/CLI only — see [DATABASE_MIGRATIONS.md](../DATABASE_MIGRATIONS.md).
 
 ---
 

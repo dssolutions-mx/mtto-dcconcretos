@@ -36,7 +36,7 @@ Maintenance-dashboard is a Next.js application for managing industrial maintenan
 | `app/api/purchase-order-actions/process/route.ts` | API | Token (JWT) | Email approval link; token-based, no session |
 | `app/api/maintenance/work-orders/route.ts` | API | **None when SERVICE_ROLE used** | Critical: uses service_role, no auth when env set |
 | `app/api/fix-duplicate-ids/route.ts` | API | Yes (getUser) | Calls exec_sql/execute_sql RPC |
-| `app/api/migrations/*` | API | Varies | Migration routes; several use exec_sql |
+| ~~`app/api/migrations/*`~~ | — | — | **Removed (2026):** no HTTP migration routes; use MCP/CLI — [DATABASE_MIGRATIONS.md](../DATABASE_MIGRATIONS.md) |
 | `app/api/assets/[id]/completed-checklists/route.ts` | API | RLS only | No explicit getUser |
 | `app/api/models/[id]/maintenance-intervals/route.ts` | API | RLS only | No explicit getUser |
 | `app/api/suppliers/route.ts` | API | RLS only | No explicit getUser |

@@ -500,12 +500,13 @@ const addEvidenceSection = () => {
 
 ## 🧪 TESTING
 
-### Crear Plantilla de Ejemplo:
-```bash
-POST /api/migrations/create-evidence-template-example
-```
+### Crear plantilla de ejemplo
 
-Este endpoint crea automáticamente:
+El antiguo endpoint `POST /api/migrations/create-evidence-template-example` **ya no existe** (las migraciones y datos semilla se aplican con **Supabase MCP** o SQL manual en el dashboard).
+
+Para una plantilla equivalente, ejecuta el SQL o el flujo documentado en tu proyecto / `archive/legacy-db-migrations/sql/` si aplica, o créala desde la UI de plantillas.
+
+Este flujo histórico creaba automáticamente:
 - ✅ Plantilla "Inspección Semanal con Evidencias"
 - ✅ Sección normal: "Inspección Mecánica" (con 3 items)
 - ✅ Sección evidencia: "Documentación Fotográfica" (4 categorías)

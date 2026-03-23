@@ -32,7 +32,7 @@
 - **Severity:** Medium
 - **OWASP:** A07 — Identification and Authentication Failures
 - **ASVS:** V2.1.1
-- **Location:** `app/api/migrations/generate-purchase-order/route.ts`, `app/api/maintenance/work-completions/route.ts`, `app/api/maintenance/generate-adjustment-po/route.ts`, `app/api/maintenance/work-orders/[id]/additional-expenses/route.ts`, `app/api/migrations/add-completion-fields/route.ts`
+- **Location:** `app/api/maintenance/work-completions/route.ts`, `app/api/maintenance/generate-adjustment-po/route.ts`, `app/api/maintenance/work-orders/[id]/additional-expenses/route.ts` *(historical: `app/api/migrations/*` removed in 2026)*
 - **Evidence:** These routes use `getSession()` rather than `getUser()` for auth verification.
 - **Impact:** Session can be forged client-side; server-side verification is weaker.
 - **Remediation:** Replace with `getUser()` and return 401 when user is null.
@@ -54,7 +54,7 @@
 - **Severity:** Critical (if exec_sql exists in DB)
 - **OWASP:** A03 — Injection
 - **ASVS:** V5.1.3
-- **Location:** `app/api/fix-duplicate-ids/route.ts` (lines 72–79), `app/api/migrations/*` (multiple routes)
+- **Location:** `app/api/fix-duplicate-ids/route.ts` (lines 72–79) if present; *(historical migration HTTP routes under `app/api/migrations/` were removed in 2026)*
 - **Evidence:** Routes call `supabase.rpc('exec_sql', { sql: fixFunctionSql })` or `execute_sql` with raw SQL strings. If these functions exist and are callable by the anon/authenticated role, any authenticated user with access to fix-duplicate-ids could execute arbitrary SQL.
 - **Impact:** Full database compromise: data exfiltration, modification, or deletion; privilege escalation.
 - **Remediation:** Remove or restrict `exec_sql`/`execute_sql` to superuser only. Migrations should run via Supabase CLI or migration pipeline, not through API routes. If admin operations must stay in API, use narrow, parameterized RPCs, not raw SQL passthrough.
