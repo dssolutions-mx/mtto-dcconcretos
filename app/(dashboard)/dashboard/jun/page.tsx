@@ -15,6 +15,8 @@ import {
   Package,
   RefreshCw,
   ShoppingCart,
+  TrendingDown,
+  TrendingUp,
   Users,
   Wrench,
 } from "lucide-react"
@@ -51,6 +53,33 @@ interface Incident {
   assets?: { id?: string; name?: string; asset_id?: string; plant_id?: string | null } | null
 }
 
+interface IngresosGastosPlant {
+  plant_id: string
+  plant_name: string
+  plant_code: string
+  volumen_concreto: number
+  ventas_total: number
+  diesel_total: number
+  diesel_unitario: number
+  diesel_pct: number
+  mantto_total: number
+  mantto_unitario: number
+  mantto_pct: number
+  ebitda: number
+  ebitda_pct: number
+}
+
+interface EfficiencyMetrics {
+  volumen: number
+  dieselTotal: number
+  dieselUnitario: number
+  manttoTotal: number
+  manttoUnitario: number
+  ebitda: number
+  ebitdaPct: number
+  ventas: number
+}
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 const ACTIVE_STATUSES = [
@@ -70,6 +99,180 @@ function formatAge(createdAt: string | null | undefined): string {
   if (days === 0) return "hoy"
   if (days === 1) return "1d"
   return `${days}d`
+}
+
+function formatCurrency(value: number): string {
+  return value.toLocaleString("es-MX", {
+    style: "currency",
+    currency: "MXN",
+    maximumFractionDigits: 0,
+  })
+}
+
+function formatM3(value: number): string {
+  return value.toLocaleString("es-MX", { maximumFractionDigits: 0 })
+}
+
+function aggregatePlants(plants: IngresosGastosPlant[]): EfficiencyMetrics {
+  const volumen = plants.reduce((sum, p) => sum + (p.volumen_concreto ?? 0), 0)
+  const dieselTotal = plants.reduce((sum, p) => sum + (p.diesel_total ?? 0), 0)
+  const manttoTotal = plants.reduce((sum, p) => sum + (p.mantto_total ?? 0), 0)
+  const ventas = plants.reduce((sum, p) => sum + (p.ventas_total ?? 0), 0)
+  const ebitda = plants.reduce((sum, p) => sum + (p.ebitda ?? 0), 0)
+  return {
+    volumen,
+    dieselTotal,
+    dieselUnitario: volumen > 0 ? dieselTotal / volumen : 0,
+    manttoTotal,
+    manttoUnitario: volumen > 0 ? manttoTotal / volumen : 0,
+    ebitda,
+    ebitdaPct: ventas > 0 ? (ebitda / ventas) * 100 : 0,
+    ventas,
+  }
+}
+
+// ─── Efficiency KPI card ──────────────────────────────────────────────────────
+
+function EfficiencyCard({
+  label,
+  value,
+  subLabel,
+  accentClass,
+  prevValue,
+  trendInvert = false,
+  href,
+}: {
+  label: string
+  value: string
+  subLabel?: string
+  accentClass: string
+  prevValue?: number
+  trendInvert?: boolean
+  href?: string
+}) {
+  // delta: positive = current > previous
+  // trendInvert: for cost metrics, positive delta is bad
+  const hasTrend = prevValue !== undefined && prevValue !== null
+  const currentNum = parseFloat(value.replace(/[^0-9.-]/g, ""))
+  const delta = hasTrend && prevValue !== 0 ? ((currentNum - prevValue) / Math.abs(prevValue)) * 100 : null
+
+  const isGood =
+    delta === null
+      ? null
+      : trendInvert
+      ? delta < 0   // cost: lower is better
+      : delta > 0   // ebitda: higher is better
+
+  const inner = (
+    <div
+      className={cn(
+        "group relative flex flex-col overflow-hidden",
+        "rounded-2xl border border-border/60 bg-card",
+        "px-4 py-4 sm:px-5 sm:py-5",
+        "transition-all hover:border-border hover:shadow-sm",
+        "min-h-[110px]"
+      )}
+    >
+      {/* Colored top accent */}
+      <div className={cn("absolute inset-x-0 top-0 h-[3px] rounded-t-2xl", accentClass)} />
+
+      {/* Label */}
+      <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground leading-tight sm:text-[11px]">
+        {label}
+      </span>
+
+      {/* Value */}
+      <p
+        className="mt-2 font-bold leading-none tracking-tight tabular-num text-foreground"
+        style={{ fontSize: "clamp(1.4rem, 4.5vw, 2rem)" }}
+      >
+        {value}
+      </p>
+
+      {/* Sub-label + trend row */}
+      <div className="mt-1.5 flex items-center gap-2">
+        {subLabel && (
+          <p className="text-[10px] text-muted-foreground/60 truncate">{subLabel}</p>
+        )}
+        {delta !== null && (
+          <span
+            className={cn(
+              "inline-flex shrink-0 items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[9px] font-semibold leading-none",
+              isGood === true
+                ? "bg-green-50 text-green-700 border border-green-200"
+                : isGood === false
+                ? "bg-amber-50 text-amber-700 border border-amber-200"
+                : "bg-muted text-muted-foreground"
+            )}
+          >
+            {delta > 0 ? (
+              <TrendingUp className="h-2.5 w-2.5" />
+            ) : (
+              <TrendingDown className="h-2.5 w-2.5" />
+            )}
+            {Math.abs(delta).toFixed(1)}%
+          </span>
+        )}
+      </div>
+    </div>
+  )
+
+  if (href) return <Link href={href} className="block">{inner}</Link>
+  return inner
+}
+
+function EfficiencyCardSkeleton() {
+  return (
+    <div className="animate-pulse rounded-2xl border border-border/40 bg-card px-4 py-4 min-h-[110px]">
+      <div className="h-2.5 w-24 rounded bg-muted/50" />
+      <div className="mt-3 h-8 w-20 rounded bg-muted/60" />
+      <div className="mt-2 h-2.5 w-16 rounded bg-muted/40" />
+    </div>
+  )
+}
+
+// ─── Quick actions card ────────────────────────────────────────────────────────
+
+interface QuickAction {
+  icon: React.ComponentType<{ className?: string }>
+  title: string
+  subtitle?: string
+  href: string
+}
+
+function QuickActionsCard({ actions }: { actions: QuickAction[] }) {
+  return (
+    <div className="overflow-hidden rounded-2xl border border-border/50 bg-card">
+      <div className="border-b border-border/50 px-4 py-3 sm:px-5 sm:py-3.5">
+        <span className="text-sm font-semibold">Acciones de tu rol</span>
+      </div>
+      <div className="divide-y divide-border/40">
+        {actions.map((action) => {
+          const Icon = action.icon
+          return (
+            <Link
+              key={action.href}
+              href={action.href}
+              className="group flex items-center gap-3 px-4 py-3.5 transition-colors hover:bg-muted/40 active:bg-muted/60 sm:px-5"
+            >
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-muted/50 transition-colors group-hover:bg-muted">
+                <Icon className="h-4 w-4 text-foreground/70" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium leading-tight">{action.title}</p>
+                {action.subtitle && (
+                  <p className="mt-0.5 text-[11px] text-muted-foreground leading-tight truncate">
+                    {action.subtitle}
+                  </p>
+                )}
+              </div>
+              <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground/30 transition-transform group-hover:translate-x-0.5" />
+            </Link>
+          )
+        })}
+      </div>
+    </div>
+  )
 }
 
 // ─── Operational KPI card ─────────────────────────────────────────────────────
@@ -99,10 +302,7 @@ function OperationalKpiCard({
         "min-h-[110px] sm:min-h-[130px]"
       )}
     >
-      {/* Colored top accent */}
       <div className={cn("absolute inset-x-0 top-0 h-[3px] rounded-t-2xl", accentClass)} />
-
-      {/* Icon + label */}
       <div className="flex items-center gap-2">
         <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-muted/60 sm:h-8 sm:w-8">
           <Icon className="h-3.5 w-3.5 text-foreground/70 sm:h-4 sm:w-4" />
@@ -111,8 +311,6 @@ function OperationalKpiCard({
           {label}
         </span>
       </div>
-
-      {/* Value */}
       <div className="mt-3 flex-1">
         <p
           className={cn(
@@ -160,7 +358,6 @@ function WorkOrdersQueue({
 }) {
   return (
     <div className="overflow-hidden rounded-2xl border border-border/50 bg-card">
-      {/* Header */}
       <div className="flex items-center justify-between border-b border-border/50 px-4 py-3 sm:px-5 sm:py-3.5">
         <div className="flex items-center gap-2 min-w-0">
           <span className="text-sm font-semibold truncate">Órdenes activas en tu unidad</span>
@@ -180,7 +377,6 @@ function WorkOrdersQueue({
         )}
       </div>
 
-      {/* Rows */}
       {isLoading ? (
         <div className="divide-y divide-border/40">
           {[0, 1, 2].map((i) => (
@@ -210,12 +406,9 @@ function WorkOrdersQueue({
                 "min-h-[60px] py-3"
               )}
             >
-              {/* Row index — desktop only */}
               <span className="hidden sm:block text-center text-xs font-medium text-muted-foreground/40 tabular-num">
                 {idx + 1}
               </span>
-
-              {/* Order info */}
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
                   <span className="text-sm font-semibold tabular-num">{wo.order_id}</span>
@@ -242,8 +435,6 @@ function WorkOrdersQueue({
                   {wo.asset?.name ?? wo.description ?? "—"}
                 </p>
               </div>
-
-              {/* Priority + chevron */}
               <div className="flex items-center gap-1.5 shrink-0">
                 {wo.priority && (
                   <span
@@ -283,6 +474,11 @@ export default function JUNDashboard() {
   const [dataLoading, setDataLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
 
+  // Efficiency metrics state
+  const [efficiencyData, setEfficiencyData] = useState<EfficiencyMetrics | null>(null)
+  const [efficiencyPrev, setEfficiencyPrev] = useState<EfficiencyMetrics | null>(null)
+  const [efficiencyLoading, setEfficiencyLoading] = useState(true)
+
   // Role guard
   useEffect(() => {
     if (!isInitialized || authLoading) return
@@ -299,15 +495,25 @@ export default function JUNDashboard() {
     if (profile?.role !== "JEFE_UNIDAD_NEGOCIO") return
     try {
       setDataLoading(true)
+      setEfficiencyLoading(true)
       const buId = profile.business_unit_id ?? null
+      const currentMonth = new Date().toISOString().slice(0, 7)
 
-      const [plantsRes, woRes, incRes, chkRes] = await Promise.all([
+      const [plantsRes, woRes, incRes, chkRes, effRes] = await Promise.all([
         fetch("/api/plants", { credentials: "include", cache: "no-store" }),
         fetch("/api/work-orders/list", { credentials: "include", cache: "no-store" }),
         fetch("/api/incidents", { credentials: "include", cache: "no-store" }),
         fetch("/api/checklists/schedules?status=pendiente", { credentials: "include", cache: "no-store" }),
+        fetch("/api/reports/gerencial/ingresos-gastos", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ month: currentMonth, businessUnitId: buId, plantId: null }),
+          credentials: "include",
+          cache: "no-store",
+        }),
       ])
 
+      // ── Plants ──────────────────────────────────────────────────────────────
       let plantSet = new Set<string>()
       if (plantsRes.ok && buId) {
         const plantsJson = await plantsRes.json()
@@ -317,6 +523,7 @@ export default function JUNDashboard() {
       }
       setPlantIdsInBu(plantSet)
 
+      // ── Work orders ─────────────────────────────────────────────────────────
       if (woRes.ok) {
         const woData = await woRes.json()
         const allWOs: WorkOrder[] = woData.workOrders ?? []
@@ -335,6 +542,7 @@ export default function JUNDashboard() {
         setWorkOrders(scoped.slice(0, 8))
       }
 
+      // ── Incidents ───────────────────────────────────────────────────────────
       if (incRes.ok) {
         const incData = await incRes.json()
         const list: Incident[] = Array.isArray(incData) ? incData : []
@@ -350,15 +558,24 @@ export default function JUNDashboard() {
         setIncidents(scoped)
       }
 
+      // ── Checklists ──────────────────────────────────────────────────────────
       if (chkRes.ok) {
         const chkData = await chkRes.json()
         const schedules = Array.isArray(chkData) ? chkData : (chkData.schedules ?? chkData.data ?? [])
         setPendingChecklists(schedules.length)
       }
+
+      // ── Efficiency ──────────────────────────────────────────────────────────
+      if (effRes.ok) {
+        const effData = await effRes.json()
+        setEfficiencyData(aggregatePlants(effData.plants ?? []))
+        setEfficiencyPrev(aggregatePlants(effData.comparison?.plants ?? []))
+      }
     } catch (err) {
       console.error("[JUNDashboard] load error:", err)
     } finally {
       setDataLoading(false)
+      setEfficiencyLoading(false)
     }
   }, [profile?.role, profile?.business_unit_id])
 
@@ -413,10 +630,12 @@ export default function JUNDashboard() {
     .filter(Boolean)
     .join(" · ")
 
+  const currentMonthLabel = new Date().toLocaleString("es-MX", { month: "long", year: "numeric" })
+
   return (
     <PullToRefresh onRefresh={handleRefresh} disabled={refreshing}>
 
-      {/* No BU warning — own row above the layout */}
+      {/* No BU warning */}
       {!profile.business_unit_id && (
         <div className="px-4 pt-4 sm:px-6 lg:px-8">
           <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
@@ -452,70 +671,175 @@ export default function JUNDashboard() {
           { label: "Cumplimiento checklist/diésel", href: "/compliance", icon: <ClipboardList className="h-4 w-4" /> },
         ]}
         kpis={
-          <div className="space-y-5">
+          <div className="space-y-8">
 
-            {/* Section label */}
-            <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
-              Resumen de tu unidad
-            </p>
+            {/* ── Section 1: Operational overview ───────────────────────────── */}
+            <div className="space-y-4">
+              <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+                Resumen de tu unidad
+              </p>
 
-            {/* Hero action strip */}
-            <DashboardActionStrip
-              icon={Wrench}
-              count={pendingServicesCount}
-              label="servicios activos en tu unidad"
-              href="/ordenes"
-              ctaLabel="Ver órdenes"
-            />
+              <DashboardActionStrip
+                icon={Wrench}
+                count={pendingServicesCount}
+                label="servicios activos en tu unidad"
+                href="/ordenes"
+                ctaLabel="Ver órdenes"
+              />
 
-            {/* Operational KPI cards */}
-            <div className="grid grid-cols-2 gap-3 sm:gap-4">
-              {dataLoading ? (
-                <>
-                  <KpiCardSkeleton />
-                  <KpiCardSkeleton />
-                </>
+              <div className="grid grid-cols-2 gap-3 sm:gap-4">
+                {dataLoading ? (
+                  <>
+                    <KpiCardSkeleton />
+                    <KpiCardSkeleton />
+                  </>
+                ) : (
+                  <>
+                    <OperationalKpiCard
+                      label="OTs activas"
+                      value={workOrders.length}
+                      icon={Wrench}
+                      accentClass="bg-gradient-to-r from-slate-400 to-slate-300"
+                      href="/ordenes"
+                    />
+                    <OperationalKpiCard
+                      label="Incidentes abiertos"
+                      value={totalIncidents}
+                      icon={AlertTriangle}
+                      accentClass="bg-gradient-to-r from-amber-400 to-orange-300"
+                      href="/incidentes"
+                      highlight
+                    />
+                  </>
+                )}
+              </div>
+
+              {!dataLoading && pendingChecklists > 0 && (
+                <Link
+                  href="/checklists"
+                  className="flex items-center justify-between rounded-xl border border-border/50 bg-card px-4 py-3 text-sm transition-colors hover:bg-muted/30"
+                >
+                  <div className="flex items-center gap-2 text-muted-foreground">
+                    <ClipboardList className="h-4 w-4" />
+                    <span>
+                      {pendingChecklists}{" "}
+                      {pendingChecklists === 1 ? "checklist pendiente" : "checklists pendientes"} en tu unidad
+                    </span>
+                  </div>
+                  <ChevronRight className="h-4 w-4 text-muted-foreground/40" />
+                </Link>
+              )}
+
+              <WorkOrdersQueue
+                workOrders={workOrders}
+                totalCount={workOrders.length}
+                isLoading={dataLoading}
+              />
+            </div>
+
+            {/* ── Section 2: Efficiency metrics ─────────────────────────────── */}
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+                  Eficiencia operativa · {currentMonthLabel}
+                </p>
+                <Link
+                  href="/reportes/gerencial/ingresos-gastos"
+                  className="text-[11px] font-semibold text-muted-foreground transition-colors hover:text-foreground"
+                >
+                  Ver reporte →
+                </Link>
+              </div>
+
+              {efficiencyLoading ? (
+                <div className="grid grid-cols-2 gap-3 sm:gap-4">
+                  <EfficiencyCardSkeleton />
+                  <EfficiencyCardSkeleton />
+                  <EfficiencyCardSkeleton />
+                  <EfficiencyCardSkeleton />
+                </div>
+              ) : efficiencyData ? (
+                <div className="grid grid-cols-2 gap-3 sm:gap-4">
+                  <EfficiencyCard
+                    label="Volumen producido"
+                    value={`${formatM3(efficiencyData.volumen)} m³`}
+                    subLabel={efficiencyData.ventas > 0 ? `Ventas: ${formatCurrency(efficiencyData.ventas)}` : undefined}
+                    accentClass="bg-gradient-to-r from-blue-400 to-sky-300"
+                    prevValue={efficiencyPrev ? efficiencyPrev.volumen : undefined}
+                    trendInvert={false}
+                    href="/reportes/gerencial/ingresos-gastos"
+                  />
+                  <EfficiencyCard
+                    label="EBITDA"
+                    value={`${efficiencyData.ebitdaPct.toFixed(1)}%`}
+                    subLabel={formatCurrency(efficiencyData.ebitda)}
+                    accentClass={
+                      efficiencyData.ebitdaPct >= 15
+                        ? "bg-gradient-to-r from-green-400 to-emerald-300"
+                        : efficiencyData.ebitdaPct >= 5
+                        ? "bg-gradient-to-r from-amber-400 to-yellow-300"
+                        : "bg-gradient-to-r from-red-400 to-rose-300"
+                    }
+                    prevValue={efficiencyPrev ? efficiencyPrev.ebitdaPct : undefined}
+                    trendInvert={false}
+                    href="/reportes/gerencial/ingresos-gastos"
+                  />
+                  <EfficiencyCard
+                    label="Diésel / m³"
+                    value={formatCurrency(efficiencyData.dieselUnitario)}
+                    subLabel={`Total: ${formatCurrency(efficiencyData.dieselTotal)}`}
+                    accentClass="bg-gradient-to-r from-orange-400 to-amber-300"
+                    prevValue={efficiencyPrev ? efficiencyPrev.dieselUnitario : undefined}
+                    trendInvert={true}
+                    href="/diesel"
+                  />
+                  <EfficiencyCard
+                    label="Mtto / m³"
+                    value={formatCurrency(efficiencyData.manttoUnitario)}
+                    subLabel={`Total: ${formatCurrency(efficiencyData.manttoTotal)}`}
+                    accentClass="bg-gradient-to-r from-violet-400 to-purple-300"
+                    prevValue={efficiencyPrev ? efficiencyPrev.manttoUnitario : undefined}
+                    trendInvert={true}
+                    href="/reportes/gerencial/ingresos-gastos"
+                  />
+                </div>
               ) : (
-                <>
-                  <OperationalKpiCard
-                    label="OTs activas"
-                    value={workOrders.length}
-                    icon={Wrench}
-                    accentClass="bg-gradient-to-r from-slate-400 to-slate-300"
-                    href="/ordenes"
-                  />
-                  <OperationalKpiCard
-                    label="Incidentes abiertos"
-                    value={totalIncidents}
-                    icon={AlertTriangle}
-                    accentClass="bg-gradient-to-r from-amber-400 to-orange-300"
-                    href="/incidentes"
-                    highlight
-                  />
-                </>
+                <div className="rounded-2xl border border-border/40 bg-card px-4 py-5">
+                  <p className="text-sm text-muted-foreground">
+                    No hay datos de eficiencia disponibles para este mes.
+                  </p>
+                </div>
               )}
             </div>
 
-            {/* Checklists pending — tertiary stat */}
-            {!dataLoading && pendingChecklists > 0 && (
-              <Link
-                href="/checklists"
-                className="flex items-center justify-between rounded-xl border border-border/50 bg-card px-4 py-3 text-sm transition-colors hover:bg-muted/30"
-              >
-                <div className="flex items-center gap-2 text-muted-foreground">
-                  <ClipboardList className="h-4 w-4" />
-                  <span>{pendingChecklists} {pendingChecklists === 1 ? "checklist pendiente" : "checklists pendientes"} en tu unidad</span>
-                </div>
-                <ChevronRight className="h-4 w-4 text-muted-foreground/40" />
-              </Link>
-            )}
-
-            {/* Work orders queue */}
-            <WorkOrdersQueue
-              workOrders={workOrders}
-              totalCount={workOrders.length}
-              isLoading={dataLoading}
-            />
+            {/* ── Section 3: Role quick-actions ──────────────────────────────── */}
+            <div className="space-y-4">
+              <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+                Gestión de tu unidad
+              </p>
+              <QuickActionsCard
+                actions={[
+                  {
+                    icon: AlertTriangle,
+                    title: "Registrar incidencia",
+                    subtitle: "Notificar anomalía o falla en planta",
+                    href: "/incidentes",
+                  },
+                  {
+                    icon: Users,
+                    title: "Asignación de personal a activos",
+                    subtitle: "Registrar <24h · Notificar a RH",
+                    href: "/organizacion/asignacion-activos",
+                  },
+                  {
+                    icon: FileText,
+                    title: "Solicitar alta de usuario RH",
+                    subtitle: "Gestión de accesos y altas en plataforma",
+                    href: "/gestion/personal",
+                  },
+                ]}
+              />
+            </div>
 
           </div>
         }
