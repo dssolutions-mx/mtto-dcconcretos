@@ -19,12 +19,14 @@ import {
   Wrench,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
 import { PullToRefresh } from "@/components/ui/pull-to-refresh"
 import { useAuthZustand } from "@/hooks/use-auth-zustand"
 import { useRouter } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { DashboardModuleLinks } from "@/components/dashboard/dashboard-module-links"
+import { DashboardExecutiveLayout } from "@/components/dashboard/dashboard-executive-layout"
+import { DashboardExecutiveHero } from "@/components/dashboard/dashboard-executive-hero"
+import { DashboardActionStrip } from "@/components/dashboard/dashboard-action-strip"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -38,20 +40,195 @@ interface ChecklistSchedule {
   checklist?: { title?: string } | null
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+function isIssue(status: string | null) {
+  const s = status?.toLowerCase() ?? ""
+  return s === "pendiente" || s === "pending" || s === "vencido" || s === "overdue"
+}
 
 function getStatusDisplay(status: string | null) {
   const s = status?.toLowerCase() ?? ""
   if (s === "completado" || s === "completed") {
-    return { label: "Completado", color: "text-green-700", bg: "bg-green-50" }
+    return { label: "Completado", color: "text-green-700", bg: "bg-green-50 border border-green-200" }
   }
   if (s === "pendiente" || s === "pending") {
-    return { label: "Pendiente", color: "text-amber-700", bg: "bg-amber-50" }
+    return { label: "Pendiente", color: "text-amber-700", bg: "bg-amber-50 border border-amber-200" }
   }
   if (s === "vencido" || s === "overdue") {
-    return { label: "Vencido", color: "text-red-700", bg: "bg-red-50" }
+    return { label: "Vencido", color: "text-red-700", bg: "bg-red-50 border border-red-200" }
   }
   return { label: status ?? "—", color: "text-muted-foreground", bg: "bg-muted/40" }
+}
+
+// ─── Compliance KPI card ──────────────────────────────────────────────────────
+
+function ComplianceKpiCard({
+  label,
+  value,
+  subtitle,
+  accentClass,
+  href,
+}: {
+  label: string
+  value: string | number
+  subtitle: string
+  accentClass: string
+  href?: string
+}) {
+  const inner = (
+    <div
+      className={cn(
+        "group relative flex flex-col overflow-hidden",
+        "rounded-2xl border border-border/60 bg-card",
+        "px-4 py-4 sm:px-6 sm:py-5",
+        "transition-all hover:border-border hover:shadow-sm",
+        "min-h-[110px] sm:min-h-[130px]"
+      )}
+    >
+      {/* Colored top accent */}
+      <div className={cn("absolute inset-x-0 top-0 h-[3px] rounded-t-2xl", accentClass)} />
+
+      {/* Label */}
+      <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground leading-tight sm:text-[11px] sm:tracking-widest">
+        {label}
+      </span>
+
+      {/* Value */}
+      <div className="mt-3 flex-1">
+        <p
+          className="font-bold leading-none tracking-tight tabular-num"
+          style={{ fontSize: "clamp(1.6rem, 5.5vw, 2.4rem)" }}
+        >
+          {value}
+        </p>
+        <p className="mt-1.5 text-[10px] text-muted-foreground/60">{subtitle}</p>
+      </div>
+    </div>
+  )
+
+  if (href) return <Link href={href} className="block">{inner}</Link>
+  return inner
+}
+
+function KpiCardSkeleton() {
+  return (
+    <div className="animate-pulse rounded-2xl border border-border/40 bg-card px-4 py-4 sm:px-6 sm:py-5 min-h-[110px] sm:min-h-[130px]">
+      <div className="h-2.5 w-24 rounded bg-muted/50" />
+      <div className="mt-4 h-10 w-20 rounded bg-muted/60" />
+      <div className="mt-2 h-2.5 w-16 rounded bg-muted/40" />
+    </div>
+  )
+}
+
+// ─── Checklist queue ──────────────────────────────────────────────────────────
+
+function ChecklistQueue({
+  schedules,
+  totalCount,
+  issueCount,
+  isLoading,
+}: {
+  schedules: ChecklistSchedule[]
+  totalCount: number
+  issueCount: number
+  isLoading: boolean
+}) {
+  return (
+    <div className="overflow-hidden rounded-2xl border border-border/50 bg-card">
+      {/* Header */}
+      <div className="flex items-center justify-between border-b border-border/50 px-4 py-3 sm:px-5 sm:py-3.5">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="text-sm font-semibold truncate">Checklists de hoy</span>
+          {!isLoading && totalCount > 0 && (
+            <span className="inline-flex shrink-0 items-center justify-center rounded-full bg-foreground px-2 py-0.5 text-[11px] font-bold text-background tabular-num min-w-[22px]">
+              {totalCount}
+            </span>
+          )}
+          {!isLoading && issueCount > 0 && (
+            <span className="inline-flex shrink-0 items-center rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-700">
+              {issueCount} pendientes
+            </span>
+          )}
+        </div>
+        {totalCount > 0 && !isLoading && (
+          <Link
+            href="/checklists"
+            className="shrink-0 ml-3 text-xs font-semibold text-muted-foreground transition-colors hover:text-foreground"
+          >
+            Ver todos →
+          </Link>
+        )}
+      </div>
+
+      {/* Rows */}
+      {isLoading ? (
+        <div className="divide-y divide-border/40">
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="flex items-center gap-4 px-4 py-4 animate-pulse sm:px-5">
+              <div className="flex-1 space-y-2">
+                <div className="h-3 w-32 rounded bg-muted/60" />
+                <div className="h-2.5 w-44 rounded bg-muted/40" />
+              </div>
+              <div className="h-5 w-20 rounded-full bg-muted/50" />
+            </div>
+          ))}
+        </div>
+      ) : schedules.length === 0 ? (
+        <div className="flex items-center gap-3 px-4 py-5 sm:px-5">
+          <CheckCircle2 className="h-4 w-4 text-green-600 shrink-0" />
+          <span className="text-sm text-muted-foreground">Sin checklists programados</span>
+        </div>
+      ) : (
+        <div className="divide-y divide-border/40">
+          {schedules.map((sched, idx) => {
+            const operatorName = sched.assigned_profile
+              ? `${sched.assigned_profile.nombre ?? ""} ${sched.assigned_profile.apellido ?? ""}`.trim()
+              : "Sin asignar"
+            const assetName = sched.asset?.name ?? sched.checklist?.title ?? "—"
+            const statusDisplay = getStatusDisplay(sched.status)
+
+            return (
+              <Link
+                key={sched.id}
+                href={`/checklists/${sched.id}`}
+                className={cn(
+                  "group grid items-center gap-x-3 px-4 transition-colors hover:bg-muted/40 active:bg-muted/60 sm:px-5",
+                  "grid-cols-[1fr_auto] sm:grid-cols-[1.5rem_1fr_auto]",
+                  "min-h-[60px] py-3"
+                )}
+              >
+                {/* Row index — desktop only */}
+                <span className="hidden sm:block text-center text-xs font-medium text-muted-foreground/40 tabular-num">
+                  {idx + 1}
+                </span>
+
+                {/* Operator + asset */}
+                <div className="min-w-0">
+                  <p className="text-sm font-medium truncate">{operatorName}</p>
+                  <p className="mt-0.5 truncate text-xs text-muted-foreground">{assetName}</p>
+                </div>
+
+                {/* Status badge + chevron */}
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <span
+                    className={cn(
+                      "inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold leading-none",
+                      statusDisplay.bg,
+                      statusDisplay.color
+                    )}
+                  >
+                    {statusDisplay.label}
+                  </span>
+                  <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/30 transition-transform group-hover:translate-x-0.5" />
+                </div>
+              </Link>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
 }
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
@@ -79,12 +256,10 @@ export default function JefePlantaDashboard() {
   const loadData = useCallback(async () => {
     try {
       setDataLoading(true)
-
       const res = await fetch("/api/checklists/schedules", {
         credentials: "include",
         cache: "no-store",
       })
-
       if (res.ok) {
         const data = await res.json()
         const list = Array.isArray(data) ? data : (data.schedules ?? data.data ?? [])
@@ -109,27 +284,28 @@ export default function JefePlantaDashboard() {
     setRefreshing(false)
   }
 
-  // Derived stats
-  const completed = schedules.filter((s) => {
-    const st = s.status?.toLowerCase() ?? ""
-    return st === "completado" || st === "completed"
-  })
-  const pending = schedules.filter((s) => {
-    const st = s.status?.toLowerCase() ?? ""
-    return st === "pendiente" || st === "pending"
-  })
-  const overdue = schedules.filter((s) => {
-    const st = s.status?.toLowerCase() ?? ""
-    return st === "vencido" || st === "overdue"
-  })
+  // ─── Derived stats ────────────────────────────────────────────────────────
 
   const total = schedules.length
-  const doneCount = completed.length
-  const issueCount = pending.length + overdue.length
-
+  const issueSchedules = schedules.filter((s) => isIssue(s.status))
+  const doneCount = schedules.filter((s) => {
+    const st = s.status?.toLowerCase() ?? ""
+    return st === "completado" || st === "completed"
+  }).length
+  const issueCount = issueSchedules.length
   const compliancePct = total > 0 ? Math.round((doneCount / total) * 100) : null
 
-  // Module list
+  // Count of distinct operators who have pending/overdue checklists today
+  // This is the spec metric: "N operadores sin checklist hoy"
+  const operatorsWithIssues = new Set(
+    issueSchedules.filter((s) => s.assigned_to).map((s) => s.assigned_to)
+  ).size
+
+  // Sort: pending/overdue first
+  const sortedSchedules = [...schedules].sort((a, b) => {
+    return (isIssue(a.status) ? 0 : 1) - (isIssue(b.status) ? 0 : 1)
+  })
+
   const moduleCards = [
     { title: "Diésel", href: "/diesel", icon: Fuel, module: "inventory" as const },
     { title: "Activos", href: "/activos", icon: Package, module: "assets" as const },
@@ -141,7 +317,7 @@ export default function JefePlantaDashboard() {
     { title: "Reportes", href: "/reportes", icon: BarChart3, module: "reports" as const },
   ]
 
-  // ─── Loading / auth ────────────────────────────────────────────────────────
+  // ─── Loading / auth ───────────────────────────────────────────────────────
 
   if (!isInitialized || authLoading) {
     return (
@@ -157,165 +333,109 @@ export default function JefePlantaDashboard() {
 
   // ─── Content ──────────────────────────────────────────────────────────────
 
-  const statusBannerGreen = !dataLoading && issueCount === 0 && total > 0
-  const statusBannerAmber = !dataLoading && issueCount > 0
+  const plantName = profile.plants?.name ?? null
+  const roleSubtitle = ["Jefe de Planta", plantName].filter(Boolean).join(" · ")
 
   return (
     <PullToRefresh onRefresh={handleRefresh} disabled={refreshing}>
-      <div className="space-y-6 px-4 py-6 sm:px-6 lg:px-8">
-
-        {/* Header */}
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h1 className="text-xl font-semibold">
-              {profile.nombre} {profile.apellido}
-            </h1>
-            <p className="mt-0.5 text-sm text-muted-foreground">
-              Jefe de Planta
-            </p>
-          </div>
+      <DashboardExecutiveLayout
+        hero={
+          <DashboardExecutiveHero
+            name={`${profile.nombre} ${profile.apellido}`}
+            role={roleSubtitle}
+          />
+        }
+        actions={
           <Button
             size="sm"
             variant="outline"
             onClick={handleRefresh}
             disabled={refreshing}
-            className="shrink-0"
+            className="h-8 w-8 p-0 sm:w-auto sm:px-3"
+            aria-label="Actualizar"
           >
             {refreshing
-              ? <Loader2 className="h-3 w-3 animate-spin" />
-              : <RefreshCw className="h-3 w-3" />}
-            <span className="ml-1.5 hidden sm:inline">Actualizar</span>
+              ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              : <RefreshCw className="h-3.5 w-3.5" />}
+            <span className="hidden sm:inline ml-1.5 text-xs">Actualizar</span>
           </Button>
-        </div>
+        }
+        shortcuts={[
+          { label: "Asignación operador-activo", href: "/organizacion/asignacion-activos", icon: <Users className="h-4 w-4" /> },
+          { label: "Solicitar usuario RH", href: "/gestion/personal", icon: <Users className="h-4 w-4" /> },
+          { label: "Autorizar anomalía", href: "/incidentes", icon: <AlertTriangle className="h-4 w-4" /> },
+        ]}
+        kpis={
+          <div className="space-y-5">
 
-        {/* Compliance banner */}
-        {statusBannerGreen && (
-          <div className="flex items-center gap-3 rounded-xl border border-green-200 bg-green-50 px-4 py-3">
-            <CheckCircle2 className="h-5 w-5 text-green-600 shrink-0" />
-            <div>
-              <p className="text-sm font-semibold text-green-800">
-                Todo al día · {doneCount}/{total} checklists completados
-              </p>
-              <p className="text-xs text-green-700">Cumplimiento: 100%</p>
-            </div>
+            {/* Section label */}
+            <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+              Cumplimiento de tu planta
+            </p>
+
+            {/* Hero action strip — spec: "N operadores sin checklist hoy → [Ver cumplimiento]" */}
+            <DashboardActionStrip
+              icon={ClipboardList}
+              count={operatorsWithIssues}
+              label="operadores sin checklist hoy"
+              href="/compliance"
+              ctaLabel="Ver cumplimiento"
+            />
+
+            {/* Compliance KPI cards */}
+            {total > 0 && (
+              <div className="grid grid-cols-2 gap-3 sm:gap-4">
+                {dataLoading ? (
+                  <>
+                    <KpiCardSkeleton />
+                    <KpiCardSkeleton />
+                  </>
+                ) : (
+                  <>
+                    <ComplianceKpiCard
+                      label="Completados"
+                      value={`${doneCount}/${total}`}
+                      subtitle="de los checklists de hoy"
+                      accentClass={
+                        doneCount === total
+                          ? "bg-gradient-to-r from-green-400 to-emerald-300"
+                          : "bg-gradient-to-r from-slate-400 to-slate-300"
+                      }
+                      href="/checklists"
+                    />
+                    <ComplianceKpiCard
+                      label="Cumplimiento"
+                      value={compliancePct !== null ? `${compliancePct}%` : "—"}
+                      subtitle={
+                        compliancePct === 100
+                          ? "Todo al día"
+                          : compliancePct !== null
+                          ? `${issueCount} ${issueCount === 1 ? "requiere atención" : "requieren atención"}`
+                          : "Sin datos"
+                      }
+                      accentClass={
+                        compliancePct === 100
+                          ? "bg-gradient-to-r from-green-400 to-emerald-300"
+                          : "bg-gradient-to-r from-amber-400 to-orange-300"
+                      }
+                      href="/compliance"
+                    />
+                  </>
+                )}
+              </div>
+            )}
+
+            {/* Checklist queue */}
+            <ChecklistQueue
+              schedules={sortedSchedules.slice(0, 8)}
+              totalCount={total}
+              issueCount={issueCount}
+              isLoading={dataLoading}
+            />
+
           </div>
-        )}
-
-        {statusBannerAmber && (
-          <div className="callout-attention flex items-center gap-3">
-            <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0" />
-            <div>
-              <p className="text-sm font-semibold text-amber-900">
-                {issueCount} {issueCount === 1 ? "checklist requiere atención" : "checklists requieren atención"}
-              </p>
-              <p className="text-xs text-amber-800">
-                {doneCount}/{total} completados
-                {compliancePct !== null && ` · ${compliancePct}% cumplimiento`}
-              </p>
-            </div>
-          </div>
-        )}
-
-        {/* Quick actions */}
-        <div className="flex flex-wrap gap-2">
-          <Link href="/diesel">
-            <Button size="sm" variant="outline" className="min-h-[44px] gap-1.5">
-              <Fuel className="h-3.5 w-3.5" />
-              Diésel de hoy
-            </Button>
-          </Link>
-          <Link href="/activos">
-            <Button size="sm" variant="outline" className="min-h-[44px] gap-1.5">
-              <Package className="h-3.5 w-3.5" />
-              Ver activos
-            </Button>
-          </Link>
-          <Link href="/gestion/personal">
-            <Button size="sm" variant="outline" className="min-h-[44px] gap-1.5">
-              <Users className="h-3.5 w-3.5" />
-              Solicitar usuario RH
-            </Button>
-          </Link>
-        </div>
-
-        {/* Checklist schedule table */}
-        <div className="rounded-xl border border-border/60 bg-card overflow-hidden">
-          <div className="flex items-center justify-between border-b border-border/50 px-4 py-3">
-            <div className="flex items-center gap-2">
-              <ClipboardList className="h-4 w-4 text-muted-foreground" />
-              <span className="text-sm font-semibold">Checklists de hoy</span>
-              {!dataLoading && total > 0 && (
-                <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-semibold tabular-num">
-                  {doneCount}/{total}
-                </span>
-              )}
-            </div>
-            <Link
-              href="/checklists"
-              className="text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
-            >
-              Ver todos →
-            </Link>
-          </div>
-
-          {dataLoading ? (
-            <div className="flex items-center gap-3 px-4 py-5">
-              <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-              <span className="text-sm text-muted-foreground">Cargando…</span>
-            </div>
-          ) : schedules.length === 0 ? (
-            <div className="px-4 py-5 text-sm text-muted-foreground">
-              Sin checklists programados
-            </div>
-          ) : (
-            <div className="divide-y divide-border/40">
-              {schedules.slice(0, 8).map((sched) => {
-                const operatorName = sched.assigned_profile
-                  ? `${sched.assigned_profile.nombre ?? ""} ${sched.assigned_profile.apellido ?? ""}`.trim()
-                  : "Sin asignar"
-                const assetName = sched.asset?.name ?? sched.checklist?.title ?? "—"
-                const statusDisplay = getStatusDisplay(sched.status)
-
-                return (
-                  <Link
-                    key={sched.id}
-                    href={`/checklists/${sched.id}`}
-                    className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-muted/40 active:bg-muted/60 min-h-[52px]"
-                  >
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">{operatorName}</p>
-                      <p className="text-xs text-muted-foreground truncate">{assetName}</p>
-                    </div>
-                    <span className={cn(
-                      "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium shrink-0",
-                      statusDisplay.bg,
-                      statusDisplay.color
-                    )}>
-                      {statusDisplay.label}
-                    </span>
-                    <ChevronRight className="h-4 w-4 text-muted-foreground/50 shrink-0" />
-                  </Link>
-                )
-              })}
-              {schedules.length > 8 && (
-                <div className="px-4 py-3 border-t border-border/40">
-                  <Link
-                    href="/checklists"
-                    className="text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
-                  >
-                    + {schedules.length - 8} más →
-                  </Link>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* Modules */}
-        <div className="pt-4 border-t border-border/40">
-          <p className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-            Módulos
-          </p>
+        }
+        modules={
           <DashboardModuleLinks
             modules={moduleCards
               .filter((c) => ui.shouldShowInNavigation(c.module))
@@ -326,9 +446,8 @@ export default function JefePlantaDashboard() {
                 hasAccess: true,
               }))}
           />
-        </div>
-
-      </div>
+        }
+      />
     </PullToRefresh>
   )
 }
