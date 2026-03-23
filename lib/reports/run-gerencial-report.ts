@@ -235,12 +235,11 @@ export async function runGerencialReport(
     ) : { plantCosts: new Map(), transactionCosts: new Map() }
     const fifoTransactionCosts = fifoResult.transactionCosts // Map of transaction_id -> FIFO cost
 
-    // Fetch purchase orders, then apply workflow-aware expense eligibility below.
+    // Fetch purchase orders, then apply the report expense eligibility rule below.
     const { data: purchaseOrders } = await supabase
       .from('purchase_orders')
       .select(`
         id, order_id, total_amount, actual_amount, created_at, posting_date, purchase_date, plant_id, work_order_id, status,
-        authorized_by,
         po_purpose, fulfillment_source, received_to_inventory
       `)
 
@@ -249,7 +248,6 @@ export async function runGerencialReport(
       purchaseOrders?.filter((po) =>
         shouldIncludePurchaseOrderInExpenseReport({
           status: po.status,
-          authorized_by: po.authorized_by,
         })
       ) || []
 
@@ -270,8 +268,8 @@ export async function runGerencialReport(
       workOrdersMap = new Map(workOrders?.map(wo => [wo.id, wo]) || [])
     }
 
-    // Filter purchase orders by date range (inclusive start, inclusive end)
-    // Priority: purchase_date → work_order.completed_at → work_order.planned_date → work_order.created_at
+    // Filter purchase orders by date range (inclusive start, inclusive end).
+    // Priority: purchase_date → work_order.completed_at → work_order.planned_date → work_order.created_at → po.created_at
     // Compare by DATE ONLY (YYYY-MM-DD) to avoid timezone issues
     const filteredPurchaseOrders = eligiblePurchaseOrders.filter(po => {
       let dateToCheckStr: string

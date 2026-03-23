@@ -4,14 +4,8 @@ import assert from "node:assert/strict"
 import { shouldIncludePurchaseOrderInExpenseReport } from "./purchase-order-report-eligibility"
 
 test("excludes draft and rejected purchase orders", () => {
-  assert.equal(
-    shouldIncludePurchaseOrderInExpenseReport({ status: "draft", authorized_by: null }),
-    false
-  )
-  assert.equal(
-    shouldIncludePurchaseOrderInExpenseReport({ status: "rejected", authorized_by: "user-1" }),
-    false
-  )
+  assert.equal(shouldIncludePurchaseOrderInExpenseReport({ status: "draft" }), false)
+  assert.equal(shouldIncludePurchaseOrderInExpenseReport({ status: "rejected" }), false)
 })
 
 test("includes approved and post-approval operational statuses", () => {
@@ -24,30 +18,14 @@ test("includes approved and post-approval operational statuses", () => {
     "fulfilled",
     "validated",
   ]) {
-    assert.equal(
-      shouldIncludePurchaseOrderInExpenseReport({ status, authorized_by: null }),
-      true,
-      `expected ${status} to count`
-    )
+    assert.equal(shouldIncludePurchaseOrderInExpenseReport({ status }), true, `expected ${status} to count`)
   }
 })
 
 test("excludes pending approval even after technical approval", () => {
-  assert.equal(
-    shouldIncludePurchaseOrderInExpenseReport({
-      status: "pending_approval",
-      authorized_by: "tech-user",
-    }),
-    false
-  )
+  assert.equal(shouldIncludePurchaseOrderInExpenseReport({ status: "pending_approval" }), false)
 })
 
 test("excludes raw pending approval before technical approval", () => {
-  assert.equal(
-    shouldIncludePurchaseOrderInExpenseReport({
-      status: "pending_approval",
-      authorized_by: null,
-    }),
-    false
-  )
+  assert.equal(shouldIncludePurchaseOrderInExpenseReport({ status: "pending_approval" }), false)
 })

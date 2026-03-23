@@ -1,6 +1,5 @@
 type PurchaseOrderExpenseEligibilityInput = {
   status: string | null | undefined
-  authorized_by: string | null | undefined
 }
 
 export function shouldIncludePurchaseOrderInExpenseReport(
