@@ -1,11 +1,11 @@
 import { Metadata } from 'next'
-import { PersonnelManagementDragDrop } from '@/components/personnel/personnel-management-drag-drop'
+import { GestionPersonalView } from '@/components/personnel/gestion-personal-view'
 
 export const metadata: Metadata = {
   title: 'Gestión de Personal',
   description: 'Administra operadores y personal de planta con drag and drop',
 }
 
-export default function PersonalPage() {
-  return <PersonnelManagementDragDrop />
-} 
+export default function OrganizacionPersonalPage() {
+  return <GestionPersonalView />
+}

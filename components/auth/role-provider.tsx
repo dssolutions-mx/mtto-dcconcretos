@@ -4,6 +4,7 @@ import { useEffect } from "react"
 import { useRouter, usePathname } from "next/navigation"
 import { useAuthZustand } from "@/hooks/use-auth-zustand"
 import { canAccessRoute } from "@/lib/auth/role-permissions"
+import { effectiveRoleForPermissions } from "@/lib/auth/role-model"
 
 /** Routes where we must not require a loaded profile (password recovery, etc.). */
 function isAuthFlowRoute(pathname: string): boolean {
@@ -33,9 +34,10 @@ export function RoleProvider({ children }: { children: React.ReactNode }) {
       return
     }
 
-    // Check role-based access
-    if (profile && !canAccessRoute(profile.role, pathname)) {
-      console.log(`Access denied for role ${profile.role} to ${pathname}`)
+    const permissionRoleKey =
+      effectiveRoleForPermissions(profile) ?? profile.business_role ?? profile.role ?? null
+
+    if (profile && permissionRoleKey && !canAccessRoute(permissionRoleKey, pathname)) {
       router.push(`/dashboard?error=access_denied&module=${pathname.split('/')[1]}`)
     }
   }, [pathname, profile, loading, user, router])

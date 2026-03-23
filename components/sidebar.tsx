@@ -48,6 +48,10 @@ import { BreadcrumbNav } from "@/components/breadcrumb-nav"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { Badge } from "@/components/ui/badge"
 import type { ModulePermissions } from "@/lib/auth/role-permissions"
+import {
+  canAccessRHReportingNav,
+  canManageUserAuthorizationClient,
+} from "@/lib/auth/client-authorization"
 
 interface SidebarProps extends React.HTMLAttributes<HTMLDivElement> {
   onLinkClick?: () => void
@@ -391,12 +395,12 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                       <p className="text-xs text-gray-500 mb-2">Páginas individuales:</p>
                     </div>
                     <Button
-                      variant={isPathActive("/personal") ? "secondary" : "ghost"}
+                      variant={isPathActive("/gestion/personal") || isPathActive("/personal") ? "secondary" : "ghost"}
                       className={cn("w-full justify-start pl-8", navItemClasses)}
                       asChild
                       onClick={handleLinkClick}
                     >
-                      <Link href="/personal">
+                      <Link href="/gestion/personal">
                         <Users className="mr-2 h-4 w-4" />
                         Gestión de Personal
                       </Link>
@@ -835,12 +839,12 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                   <p className="text-xs text-gray-500 mb-2">Páginas individuales:</p>
                 </div>
                 <Button
-                  variant={isPathActive("/personal") ? "secondary" : "ghost"}
+                  variant={isPathActive("/gestion/personal") || isPathActive("/personal") ? "secondary" : "ghost"}
                   className={cn("w-full justify-start pl-8", navItemClasses)}
                   asChild
                   onClick={handleLinkClick}
                 >
-                  <Link href="/personal">
+                  <Link href="/gestion/personal">
                     <Users className="mr-2 h-4 w-4" />
                     Gestión de Personal
                   </Link>
@@ -884,7 +888,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                     </Link>
                   </Button>
                 )}
-                {(profile.role === 'GERENCIA_GENERAL' || profile.business_role === 'RECURSOS_HUMANOS') && (
+                {canManageUserAuthorizationClient(profile) && (
                   <Button
                     variant={isPathActive("/gestion/autorizaciones") ? "secondary" : "ghost"}
                     className={cn("w-full justify-start pl-8", navItemClasses)}
@@ -928,7 +932,8 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
           </div>
         )}
 
-        {/* HR Section */}
+        {/* HR Section — reporting (RH + GG); not all personnel module users */}
+        {canAccessRHReportingNav(profile) && (
         <div className="px-4" data-tour="rh-nav">
           <Collapsible open={hrOpen} onOpenChange={setHrOpen}>
             <CollapsibleTrigger asChild>
@@ -973,6 +978,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
             </CollapsibleContent>
           </Collapsible>
         </div>
+        )}
 
         {/* Compliance Section */}
         {isComplianceSystemEnabled && ['GERENCIA_GENERAL', 'JEFE_UNIDAD_NEGOCIO', 'JEFE_PLANTA', 'AREA_ADMINISTRATIVA', 'GERENTE_MANTENIMIENTO', 'COORDINADOR_MANTENIMIENTO', 'RECURSOS_HUMANOS'].includes(profile?.role || '') && (
@@ -1058,7 +1064,7 @@ type NavSection =
   | { id: string; icon: React.ComponentType<{ className?: string }>; label: string; active: boolean; items: NavItem[]; href?: never }
 
 function buildNavigationSections(
-  profile: { role?: string },
+  profile: { role?: string; business_role?: string | null },
   ui: { shouldShowInNavigation: (m: keyof ModulePermissions) => boolean; canShowCreateButton?: (m: keyof ModulePermissions) => boolean },
   pathname: string,
   isPathActive: (path: string) => boolean,
@@ -1173,7 +1179,7 @@ function buildNavigationSections(
   if (ui.shouldShowInNavigation('personnel')) {
     const orgItems: NavItem[] = [
       { href: "/gestion/asignaciones", icon: Target, label: "Asignaciones Organizacionales", active: isPathActive("/gestion/asignaciones"), badge: "Nuevo" },
-      { href: "/personal", icon: Users, label: "Gestión de Personal", active: isPathActive("/personal") },
+      { href: "/gestion/personal", icon: Users, label: "Gestión de Personal", active: isPathActive("/gestion/personal") || isPathActive("/personal") },
     ]
     if (ui.canShowCreateButton?.('assets') || profile.role === 'AREA_ADMINISTRATIVA') {
       orgItems.push(
@@ -1184,30 +1190,43 @@ function buildNavigationSections(
     if (['GERENCIA_GENERAL', 'AREA_ADMINISTRATIVA'].includes(profile.role || '')) {
       orgItems.push({ href: "/plantas", icon: Building2, label: "Configuración de Plantas", active: isPathActive("/plantas") })
     }
-    orgItems.push(
-      { href: "/gestion/autorizaciones", icon: Shield, label: "Gestión de Autorizaciones", active: isPathActive("/gestion/autorizaciones") },
-      { href: "/gestion/credenciales", icon: IdCard, label: "Credenciales de Empleados", active: isPathActive("/gestion/credenciales") }
-    )
+    if (canManageUserAuthorizationClient(profile)) {
+      orgItems.push({
+        href: "/gestion/autorizaciones",
+        icon: Shield,
+        label: "Gestión de Autorizaciones",
+        active: isPathActive("/gestion/autorizaciones"),
+      })
+    }
+    if (['GERENCIA_GENERAL', 'AREA_ADMINISTRATIVA', 'JEFE_UNIDAD_NEGOCIO'].includes(profile.role || '')) {
+      orgItems.push({
+        href: "/gestion/credenciales",
+        icon: IdCard,
+        label: "Credenciales de Empleados",
+        active: isPathActive("/gestion/credenciales"),
+      })
+    }
     sections.push({
       id: "organization",
       icon: Building2,
       label: "Organización",
-      active: isSectionActive(["/gestion/asignaciones", "/personal", "/activos/asignacion", "/gestion/activos/asignacion-plantas", "/plantas", "/gestion/autorizaciones", "/gestion/credenciales"]),
+      active: isSectionActive(["/gestion/asignaciones", "/gestion/personal", "/personal", "/activos/asignacion", "/gestion/activos/asignacion-plantas", "/plantas", "/gestion/autorizaciones", "/gestion/credenciales"]),
       items: orgItems,
     })
   }
 
-  // HR
-  sections.push({
-    id: "hr",
-    icon: Users,
-    label: "Recursos Humanos",
-    active: isSectionActive(["/rh/limpieza", "/rh/cumplimiento-checklists"]),
-    items: [
-      { href: "/rh/limpieza", icon: Sparkles, label: "Reportes de Limpieza", active: isPathActive("/rh/limpieza") },
-      { href: "/rh/cumplimiento-checklists", icon: ClipboardCheck, label: "Cumplimiento de Checklists", active: isPathActive("/rh/cumplimiento-checklists") },
-    ],
-  })
+  if (canAccessRHReportingNav(profile)) {
+    sections.push({
+      id: "hr",
+      icon: Users,
+      label: "Recursos Humanos",
+      active: isSectionActive(["/rh/limpieza", "/rh/cumplimiento-checklists"]),
+      items: [
+        { href: "/rh/limpieza", icon: Sparkles, label: "Reportes de Limpieza", active: isPathActive("/rh/limpieza") },
+        { href: "/rh/cumplimiento-checklists", icon: ClipboardCheck, label: "Cumplimiento de Checklists", active: isPathActive("/rh/cumplimiento-checklists") },
+      ],
+    })
+  }
 
   // Compliance
   if (isComplianceSystemEnabled) {

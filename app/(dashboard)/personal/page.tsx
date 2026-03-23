@@ -1,5 +1,5 @@
 import { Metadata } from 'next'
-import { PersonnelManagementDragDrop } from '@/components/personnel/personnel-management-drag-drop'
+import { GestionPersonalView } from '@/components/personnel/gestion-personal-view'
 
 export const metadata: Metadata = {
   title: 'Gestión de Personal',
@@ -7,9 +7,5 @@ export const metadata: Metadata = {
 }
 
 export default function PersonnelPage() {
-  return (
-    <div className="container mx-auto py-6">
-      <PersonnelManagementDragDrop />
-    </div>
-  )
-} 
+  return <GestionPersonalView />
+}

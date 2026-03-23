@@ -12,12 +12,13 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { AlertCircle, AlertTriangle, Users, Building2, Factory, Plus, Edit, Trash2, Shield, Settings, DollarSign, UserCheck, Info } from 'lucide-react'
+import { AlertCircle, AlertTriangle, Building2, Edit, Info, Shield } from 'lucide-react'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { formatCurrency } from '@/lib/utils'
 import { toast } from 'sonner'
 import { useAuthZustand } from '@/hooks/use-auth-zustand'
 import { getRoleDisplayName } from '@/lib/auth/role-permissions'
+import { canManageUserAuthorizationClient } from '@/lib/auth/client-authorization'
 
 interface BusinessUnit {
   id: string
@@ -69,7 +70,13 @@ interface BusinessUnitLimit {
   last_updated?: string
 }
 
+interface AuthorizationSummaryPlant {
+  users?: UserProfile[]
+}
 
+interface AuthorizationSummaryBU {
+  plants?: AuthorizationSummaryPlant[]
+}
 
 const USER_ROLES = [
   'OPERADOR',
@@ -90,8 +97,7 @@ const USER_ROLES = [
 
 export default function AuthorizationManagementPage() {
   const { profile, refreshProfile } = useAuthZustand()
-  const canManageUserAuthorization =
-    profile?.business_role === 'RECURSOS_HUMANOS' || profile?.role === 'GERENCIA_GENERAL'
+  const canManageUserAuthorization = canManageUserAuthorizationClient(profile)
   const [activeTab, setActiveTab] = useState('users')
 
   const [businessUnits, setBusinessUnits] = useState<BusinessUnit[]>([])
@@ -99,7 +105,6 @@ export default function AuthorizationManagementPage() {
   const [users, setUsers] = useState<UserProfile[]>([])
   const [businessUnitLimits, setBusinessUnitLimits] = useState<BusinessUnitLimit[]>([])
   const [selectedUser, setSelectedUser] = useState<UserProfile | null>(null)
-  const [selectedBusinessUnit, setSelectedBusinessUnit] = useState<string>('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -133,14 +138,6 @@ export default function AuthorizationManagementPage() {
 
   useEffect(() => {
     if (profile) {
-      console.log('Current user profile:', {
-        role: profile.role,
-        business_unit_id: profile.business_unit_id,
-        business_units: profile.business_units,
-        plant_id: profile.plant_id,
-        plants: profile.plants,
-        full_profile: profile
-      })
       loadData()
     }
   }, [profile])
@@ -177,7 +174,7 @@ export default function AuthorizationManagementPage() {
         // Apply scope-based filtering
         if (profile?.role === 'JEFE_UNIDAD_NEGOCIO' && profile?.business_unit_id) {
           // JEFE_UNIDAD_NEGOCIO can only see their business unit
-          businessUnitsData = businessUnitsData.filter((bu: any) => bu.id === profile.business_unit_id)
+          businessUnitsData = businessUnitsData.filter((bu: BusinessUnit) => bu.id === profile.business_unit_id)
         }
         // GERENCIA_GENERAL and AREA_ADMINISTRATIVA can see all business units
         
@@ -202,10 +199,10 @@ export default function AuthorizationManagementPage() {
         // Apply scope-based filtering
         if (profile?.role === 'JEFE_UNIDAD_NEGOCIO' && profile?.business_unit_id) {
           // JEFE_UNIDAD_NEGOCIO can only see plants in their business unit
-          plantsData = plantsData.filter((plant: any) => plant.business_unit_id === profile.business_unit_id)
+          plantsData = plantsData.filter((plant: Plant) => plant.business_unit_id === profile.business_unit_id)
         } else if (profile?.role === 'JEFE_PLANTA' && profile?.plant_id) {
           // JEFE_PLANTA can only see their plant
-          plantsData = plantsData.filter((plant: any) => plant.id === profile.plant_id)
+          plantsData = plantsData.filter((plant: Plant) => plant.id === profile.plant_id)
         }
         // GERENCIA_GENERAL and AREA_ADMINISTRATIVA can see all plants
         
@@ -226,9 +223,9 @@ export default function AuthorizationManagementPage() {
         setUsers([])
       } else if (data.organization_summary && Array.isArray(data.organization_summary)) {
         const allUsers: UserProfile[] = []
-        data.organization_summary.forEach((bu: any) => {
+        ;(data.organization_summary as AuthorizationSummaryBU[]).forEach((bu) => {
           if (bu.plants && Array.isArray(bu.plants)) {
-            bu.plants.forEach((plant: any) => {
+            bu.plants.forEach((plant) => {
               if (plant.users && Array.isArray(plant.users)) {
                 allUsers.push(...plant.users)
               }
@@ -267,7 +264,6 @@ export default function AuthorizationManagementPage() {
       if (response.ok) {
         const data = await response.json()
         const limits = Array.isArray(data.limits) ? data.limits : []
-        console.log('Loaded business unit limits:', limits)
         setBusinessUnitLimits(limits)
       } else {
         console.error('Error loading business unit limits:', response.statusText)
@@ -282,35 +278,14 @@ export default function AuthorizationManagementPage() {
   const handleUpdateUser = async () => {
     try {
       const individualLimit = parseFloat(userEditForm.individual_limit)
-      
-      console.log('handleUpdateUser called with:', {
-        individualLimit,
-        userRole: profile?.role,
-        userBusinessUnitId: profile?.business_unit_id,
-        willValidate: profile?.role === 'JEFE_UNIDAD_NEGOCIO' && profile?.business_unit_id
-      })
-      
+
       // Validate business unit limit for JEFE_UNIDAD_NEGOCIO
       if (profile?.role === 'JEFE_UNIDAD_NEGOCIO' && profile?.business_unit_id) {
-        console.log('Validating limits:', {
-          profile_business_unit_id: profile.business_unit_id,
-          businessUnitLimits: businessUnitLimits.map(bu => ({
-            id: bu.business_unit_id,
-            name: bu.business_unit_name,
-            max_limit: bu.max_authorization_limit
-          })),
-          individualLimit,
-          individualLimitType: typeof individualLimit
-        })
-        
         const businessUnitLimit = businessUnitLimits.find(
           bu => bu.business_unit_id === profile.business_unit_id
         )
-        
-        console.log('Found business unit limit:', businessUnitLimit)
-        
+
         if (businessUnitLimit && individualLimit > businessUnitLimit.max_authorization_limit) {
-          console.log('VALIDATION FAILED: Individual limit exceeds business unit limit')
           const errorMessage = `El límite individual (${formatCurrency(individualLimit)}) no puede exceder el límite de la unidad de negocio (${formatCurrency(businessUnitLimit.max_authorization_limit)})`
           
           // Show professional error dialog
@@ -318,8 +293,6 @@ export default function AuthorizationManagementPage() {
           setShowValidationError(true)
           
           return
-        } else {
-          console.log('VALIDATION PASSED: Individual limit is within business unit limit')
         }
         
         if (!businessUnitLimit) {
@@ -522,17 +495,6 @@ export default function AuthorizationManagementPage() {
           <p className="text-muted-foreground">
             Configura límites de autorización, roles de usuario y delegaciones
           </p>
-          <div className="text-sm text-gray-500 mt-2">
-            Usuario actual: {profile?.role} | ID: {profile?.id}
-            <Button 
-              variant="outline" 
-              size="sm" 
-              className="ml-2"
-              onClick={() => refreshProfile()}
-            >
-              Refrescar Perfil
-            </Button>
-          </div>
         </div>
         <div className="flex gap-2">
           {profile?.role === 'GERENCIA_GENERAL' ? (
@@ -716,7 +678,7 @@ export default function AuthorizationManagementPage() {
             <AlertDescription>
               <strong>Sistema dinámico por unidades de negocio:</strong> Solo Gerencia General tiene autorización ilimitada. 
               Los demás usuarios están limitados por el menor valor entre su límite individual y el límite máximo de su unidad de negocio.
-              Configura primero los límites de unidad de negocio en la pestaña "Límites por Unidad".
+              Configura primero los límites de unidad de negocio en la pestaña «Límites por Unidad».
             </AlertDescription>
           </Alert>
 
@@ -753,8 +715,8 @@ export default function AuthorizationManagementPage() {
                         </Badge>
                       </TableCell>
                       <TableCell>
-                        <Badge variant={(user as any).is_active === false ? 'secondary' : 'default'}>
-                          {(user as any).is_active === false ? 'Inactivo' : 'Activo'}
+                        <Badge variant={user.is_active === false ? 'secondary' : 'default'}>
+                          {user.is_active === false ? 'Inactivo' : 'Activo'}
                         </Badge>
                       </TableCell>
                       <TableCell>{formatCurrency(user.individual_limit)}</TableCell>
@@ -786,7 +748,7 @@ export default function AuthorizationManagementPage() {
                             <Edit className="h-4 w-4" />
                           </Button>
                         )}
-                        {canManageUserAuthorization && user.role !== 'GERENCIA_GENERAL' && (user as any).is_active !== false && (
+                        {canManageUserAuthorization && user.role !== 'GERENCIA_GENERAL' && user.is_active !== false && (
                               <Button 
                                 variant="destructive" 
                                 size="sm" 

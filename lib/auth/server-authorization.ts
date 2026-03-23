@@ -15,6 +15,7 @@ import {
   type RoleScope,
 } from '@/lib/auth/role-model'
 import { getAuthorizationLimit } from '@/lib/auth/role-permissions'
+import { isJunOrJefePlantaActor } from '@/lib/auth/operator-scope'
 
 export interface ActorProfile {
   id: string
@@ -277,11 +278,17 @@ export function canViewOperatorsList(
   if (!actor) {
     return false
   }
-  return checkRHOwnershipAuthority(actor) || actor.profile.role === 'GERENCIA_GENERAL'
+  return (
+    checkRHOwnershipAuthority(actor) ||
+    actor.profile.role === 'GERENCIA_GENERAL' ||
+    actor.profile.role === 'JEFE_UNIDAD_NEGOCIO' ||
+    actor.profile.role === 'JEFE_PLANTA'
+  )
 }
 
 /**
  * Check if actor can create operators (register new users).
+ * JUN/JP: scoped validation in API (BU/plant + role allowlist).
  */
 export function canCreateOperators(
   actor: ActorContext | null
@@ -289,11 +296,16 @@ export function canCreateOperators(
   if (!actor) {
     return false
   }
-  return checkRHOwnershipAuthority(actor) || actor.profile.role === 'GERENCIA_GENERAL'
+  return (
+    checkRHOwnershipAuthority(actor) ||
+    actor.profile.role === 'GERENCIA_GENERAL' ||
+    actor.profile.role === 'JEFE_UNIDAD_NEGOCIO' ||
+    actor.profile.role === 'JEFE_PLANTA'
+  )
 }
 
 /**
- * Check if actor can update operators.
+ * Check if actor can update operators (full profile fields — RH / GG).
  */
 export function canUpdateOperators(
   actor: ActorContext | null
@@ -302,6 +314,25 @@ export function canUpdateOperators(
     return false
   }
   return checkRHOwnershipAuthority(actor) || actor.profile.role === 'GERENCIA_GENERAL'
+}
+
+/**
+ * JUN/JP may change plant/BU placement only (not role, limits, or PII batch edits).
+ */
+export function canUpdateOperatorPlacement(
+  actor: ActorContext | null
+): boolean {
+  if (!actor) {
+    return false
+  }
+  return isJunOrJefePlantaActor({
+    userId: actor.userId,
+    profile: {
+      role: actor.profile.role,
+      business_unit_id: actor.profile.business_unit_id,
+      plant_id: actor.profile.plant_id,
+    },
+  })
 }
 
 /**

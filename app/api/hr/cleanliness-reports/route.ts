@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
+import { loadActorContext, canAccessRHReporting } from '@/lib/auth/server-authorization'
 
 interface CleanlinessReport {
   id: string
@@ -71,6 +72,19 @@ export async function GET(request: NextRequest) {
     console.log(`[${requestId}] 🚀 Starting cleanliness reports API request`)
     
     const supabase = await createClient()
+
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser()
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+    const actor = await loadActorContext(supabase, user.id)
+    if (!actor || !canAccessRHReporting(actor)) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+
     const { searchParams } = new URL(request.url)
     
     console.log(`[${requestId}] 📊 Request parameters:`, {

@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react'
+import React, { useState, useMemo, useCallback, useEffect, type MutableRefObject } from 'react'
 import { DndContext, DragEndEvent, DragStartEvent, DragOverlay, PointerSensor, useSensor, useSensors, useDroppable } from '@dnd-kit/core'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -10,57 +10,31 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { toast } from 'react-hot-toast'
-import { Loader2, Search, Filter, Users, Building2, MapPin, RefreshCw, CheckCircle2, AlertCircle } from 'lucide-react'
+import { Loader2, Search, Filter, Users, Building2, MapPin, RefreshCw, CheckCircle2, AlertCircle, UserPlus } from 'lucide-react'
 import { PersonnelDraggableItem } from './personnel-draggable-item'
 import { useAuthZustand } from '@/hooks/use-auth-zustand'
 import { UserRegistrationTool } from '@/components/auth/user-registration-tool'
 import { MoveConflictDialog, ConflictData, ResolutionStrategy } from './dialogs/move-conflict-dialog'
 import { BatchAssignmentDialog } from './batch-assignment-dialog'
 import { dropZoneVariants, dragOverlayVariants } from '@/lib/utils/framer-drag-animations'
+import {
+  usePersonnelBoardData,
+  type PersonnelBoardProfile as Profile,
+  type PersonnelBoardPlant as Plant,
+  type PersonnelBoardBusinessUnit as BusinessUnit,
+} from '@/hooks/use-personnel-board-data'
+import { canRegisterOperatorsClient, isFullPersonnelRegistrationClient } from '@/lib/auth/client-authorization'
 
-interface Profile {
-  id: string
-  nombre: string
-  apellido: string
-  role: string
-  employee_code: string
-  position: string
-  shift: string
-  telefono: string
+export type PersonnelManagementDragDropProps = {
+  /** Parent can call board `refetch` after user registration (e.g. header CTA). */
+  registrationRefetchRef?: MutableRefObject<() => void>
+  /** When false, `UserRegistrationTool` is rendered by the parent (homogeneous shell). */
+  embedRegistrationTool?: boolean
+}
+
+type PlacementPatch = {
   plant_id: string | null
   business_unit_id: string | null
-  status: string
-  plants?: {
-    id: string
-    name: string
-    code: string
-  }
-  business_units?: {
-    id: string
-    name: string
-  }
-  // Para feedback optimista
-  _isUpdating?: boolean
-  _originalPlantId?: string | null
-  _originalBusinessUnitId?: string | null
-}
-
-interface Plant {
-  id: string
-  name: string
-  code: string
-  business_unit_id: string
-  status: string
-  business_units?: {
-    id: string
-    name: string
-  }
-}
-
-interface BusinessUnit {
-  id: string
-  name: string
-  code: string
 }
 
 // Componente de zona droppable optimizada
@@ -386,16 +360,37 @@ function UnassignedContainer({
   )
 }
 
-export function PersonnelManagementDragDrop() {
+export function PersonnelManagementDragDrop({
+  registrationRefetchRef,
+  embedRegistrationTool = true,
+}: PersonnelManagementDragDropProps = {}) {
   const { profile } = useAuthZustand()
-  const [operators, setOperators] = useState<Profile[]>([])
-  const [plants, setPlants] = useState<Plant[]>([])
-  const [businessUnits, setBusinessUnits] = useState<BusinessUnit[]>([])
-  const [loading, setLoading] = useState(true)
+  const {
+    operators,
+    setOperators,
+    plants,
+    businessUnits,
+    loading,
+    refetch,
+  } = usePersonnelBoardData(profile)
+
+  useEffect(() => {
+    if (!registrationRefetchRef) return
+    registrationRefetchRef.current = () => {
+      void refetch()
+    }
+    return () => {
+      registrationRefetchRef.current = () => {}
+    }
+  }, [registrationRefetchRef, refetch])
   const [draggedOperator, setDraggedOperator] = useState<Profile | null>(null)
   const [conflictDialogOpen, setConflictDialogOpen] = useState(false)
   const [conflictData, setConflictData] = useState<ConflictData | null>(null)
-  const [pendingMove, setPendingMove] = useState<{ operatorId: string; updateData: any; targetName: string } | null>(null)
+  const [pendingMove, setPendingMove] = useState<{
+    operatorId: string
+    updateData: PlacementPatch
+    targetName: string
+  } | null>(null)
   const [batchDialogOpen, setBatchDialogOpen] = useState(false)
   
   // Filtros
@@ -427,74 +422,6 @@ export function PersonnelManagementDragDrop() {
     'EJECUTIVO',
     'VISUALIZADOR'
   ]
-
-  const fetchData = useCallback(async () => {
-    try {
-      setLoading(true)
-      const [operatorsRes, plantsRes, businessUnitsRes] = await Promise.all([
-        fetch('/api/operators/register'),
-        fetch('/api/plants'),
-        fetch('/api/business-units')
-      ])
-
-      const [operatorsData, plantsData, businessUnitsData] = await Promise.all([
-        operatorsRes.ok ? operatorsRes.json() : [],
-        plantsRes.ok ? plantsRes.json() : [],
-        businessUnitsRes.ok ? businessUnitsRes.json() : []
-      ])
-
-      // Extract arrays from API response objects
-      const operators = Array.isArray(operatorsData) ? operatorsData : (operatorsData?.operators || [])
-      const plants = Array.isArray(plantsData) ? plantsData : (plantsData?.plants || [])
-      const businessUnits = Array.isArray(businessUnitsData) ? businessUnitsData : (businessUnitsData?.business_units || [])
-
-      console.log('Personnel data loaded:', {
-        operators: operators.length,
-        plants: plants.length,
-        businessUnits: businessUnits.length,
-        plantsData: plantsData,
-        businessUnitsData: businessUnitsData
-      })
-
-      // Apply scope-based filtering based on user role
-      let filteredOperators = operators
-      let filteredPlants = plants
-      let filteredBusinessUnits = businessUnits
-
-      if (profile?.role === 'JEFE_UNIDAD_NEGOCIO' && profile?.business_unit_id) {
-        // JEFE_UNIDAD_NEGOCIO can only see their business unit and its personnel/plants
-        // Also include unassigned operators (no plant_id and no business_unit_id) so they can assign them
-        filteredBusinessUnits = businessUnits.filter((bu: BusinessUnit) => bu.id === profile.business_unit_id)
-        filteredPlants = plants.filter((p: Plant) => p.business_unit_id === profile.business_unit_id)
-        filteredOperators = operators.filter((op: Profile) => 
-          op.business_unit_id === profile.business_unit_id || 
-          filteredPlants.some((p: Plant) => p.id === op.plant_id) ||
-          (!op.plant_id && !op.business_unit_id) // Include unassigned operators
-        )
-      } else if (profile?.role === 'JEFE_PLANTA' && profile?.plant_id) {
-        // JEFE_PLANTA can only see their plant and its personnel
-        const userPlant = plants.find((p: Plant) => p.id === profile.plant_id)
-        if (userPlant) {
-          filteredBusinessUnits = businessUnits.filter((bu: BusinessUnit) => bu.id === userPlant.business_unit_id)
-          filteredPlants = plants.filter((p: Plant) => p.id === profile.plant_id)
-          filteredOperators = operators.filter((op: Profile) => op.plant_id === profile.plant_id)
-        }
-      }
-
-      setOperators(filteredOperators)
-      setPlants(filteredPlants)
-      setBusinessUnits(filteredBusinessUnits)
-    } catch (error) {
-      console.error('Error fetching data:', error)
-      toast.error('Error al cargar datos')
-    } finally {
-      setLoading(false)
-    }
-  }, [profile])
-
-  useEffect(() => {
-    fetchData()
-  }, [fetchData])
 
   const handleDragStart = useCallback((event: DragStartEvent) => {
     if (!Array.isArray(operators)) {
@@ -571,8 +498,7 @@ export function PersonnelManagementDragDrop() {
     // Aplicar cambio optimista inmediatamente para UX inmediata
     handleOptimisticUpdate(operatorId, target)
 
-    // Determinar datos para backend
-    let updateData: any = {}
+    let updateData: PlacementPatch
     let targetName = ''
 
     switch (target.type) {
@@ -580,16 +506,21 @@ export function PersonnelManagementDragDrop() {
         updateData = { plant_id: null, business_unit_id: null }
         targetName = 'Sin asignar'
         break
-      case 'businessUnit':
+      case 'businessUnit': {
         const businessUnit = businessUnits.find(bu => bu.id === target.id)
-        updateData = { plant_id: null, business_unit_id: target.id }
+        updateData = { plant_id: null, business_unit_id: target.id ?? null }
         targetName = businessUnit?.name || 'Unidad de negocio'
         break
-      case 'plant':
+      }
+      case 'plant': {
         const plant = plants.find(p => p.id === target.id)
-        updateData = { plant_id: target.id, business_unit_id: plant?.business_unit_id }
+        updateData = {
+          plant_id: target.id ?? null,
+          business_unit_id: plant?.business_unit_id ?? null,
+        }
         targetName = plant?.name || 'Planta'
         break
+      }
     }
 
     try {
@@ -809,13 +740,12 @@ export function PersonnelManagementDragDrop() {
 
       await Promise.all(promises)
 
-      // Refresh data
-      await fetchData()
+      await refetch()
     } catch (error) {
       console.error('Error in batch assignment:', error)
       throw error
     }
-  }, [plants, fetchData])
+  }, [plants, refetch])
 
   const handleDragEnd = useCallback(async (event: DragEndEvent) => {
     const { active, over } = event
@@ -871,30 +801,102 @@ export function PersonnelManagementDragDrop() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
-        <span className="ml-2 text-gray-600">Cargando personal...</span>
+      <div className="flex flex-col items-center justify-center gap-3 py-16 text-muted-foreground">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" aria-hidden />
+        <span className="text-sm">Cargando personal…</span>
       </div>
     )
   }
 
+  const canRegister = canRegisterOperatorsClient(profile)
+  const isFullRegistration = isFullPersonnelRegistrationClient(profile)
+
   return (
     <div className="space-y-6">
+      {embedRegistrationTool && canRegister && (
+        <section
+          className="rounded-xl border border-border bg-card px-4 py-5 shadow-sm ring-1 ring-primary/15 sm:px-6 sm:py-6"
+          aria-labelledby="personnel-alta-heading"
+        >
+          <div className="flex items-center gap-2 text-primary">
+            <UserPlus className="h-5 w-5 shrink-0" aria-hidden />
+            <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+              Alta de personal
+            </p>
+          </div>
+          <div className="mt-3 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
+            <div className="min-w-0 space-y-1.5">
+              <h2
+                id="personnel-alta-heading"
+                className="text-xl font-semibold tracking-tight text-foreground sm:text-2xl"
+              >
+                {isFullRegistration
+                  ? 'Registrar usuarios en la plataforma'
+                  : 'Alta de operadores en tu unidad o planta'}
+              </h2>
+              <p className="text-sm leading-relaxed text-muted-foreground max-w-prose">
+                {isFullRegistration
+                  ? 'Como Recursos Humanos o Gerencia General puedes crear usuarios con distintos roles y asignarlos a cualquier unidad o planta.'
+                  : 'Como Jefe de Unidad de Negocio o Jefe de Planta puedes registrar operadores, dosificadores y mecánicos dentro de tu alcance (POL-OPE-001). Recursos Humanos mantiene el gobierno integral y las altas sin restricción de alcance.'}
+              </p>
+            </div>
+            <div className="shrink-0 flex flex-col items-stretch sm:items-end gap-2">
+              <UserRegistrationTool
+                triggerVariant="hero"
+                onRegistered={() => {
+                  void refetch()
+                }}
+              />
+              <p className="text-[11px] text-muted-foreground text-center sm:text-right max-w-[220px] sm:max-w-xs">
+                Acceso directo:{' '}
+                <span className="tabular-nums font-medium text-foreground">?registrar=1</span>
+              </p>
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* Resumen — mismo ritmo que Incidentes (métricas en línea) */}
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-sm">
+        <span>
+          <span className="font-semibold tabular-nums text-foreground">{filteredOperators.length}</span>{' '}
+          <span className="text-muted-foreground">mostrados</span>
+        </span>
+        <span>
+          <span className="font-semibold tabular-nums text-foreground">{stats.unassigned}</span>{' '}
+          <span className="text-muted-foreground">sin asignar</span>
+        </span>
+        <span>
+          <span className="font-semibold tabular-nums text-foreground">{stats.businessUnitOnly}</span>{' '}
+          <span className="text-muted-foreground">solo unidad</span>
+        </span>
+        <span>
+          <span className="font-semibold tabular-nums text-foreground">{stats.plantAssigned}</span>{' '}
+          <span className="text-muted-foreground">en planta</span>
+        </span>
+        {stats.updating > 0 && (
+          <span className="text-amber-700">
+            <span className="font-semibold tabular-nums">{stats.updating}</span>{' '}
+            <span className="text-muted-foreground">actualizando…</span>
+          </span>
+        )}
+      </div>
+
       {/* Header con filtros */}
-      <Card className="border-2">
-        <CardHeader className="bg-gradient-to-r from-blue-50 to-indigo-50 border-b">
-          <CardTitle className="flex items-center gap-2 text-xl">
-            <Filter className="h-6 w-6 text-blue-600" />
-            Gestión de Personal
+      <Card className="border border-border/60">
+        <CardHeader className="bg-muted/30 border-b border-border/40">
+          <CardTitle className="flex items-center gap-2 text-xl font-semibold tracking-tight">
+            <Filter className="h-5 w-5 text-muted-foreground" aria-hidden />
+            Tablero de asignación
           </CardTitle>
-          <p className="text-sm text-gray-600 mt-2">
-            Arrastra y suelta personal entre unidades de negocio y plantas, o usa asignación masiva para múltiples operadores
+          <p className="text-sm text-muted-foreground mt-2">
+            Arrastra personal entre unidades y plantas, o usa asignación masiva. Los cambios se validan en el servidor según tu rol.
           </p>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
               <Input
                 placeholder="Buscar personal..."
                 value={searchTerm}
@@ -933,65 +935,6 @@ export function PersonnelManagementDragDrop() {
           </div>
         </CardContent>
       </Card>
-
-      {/* User Registration Tool */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center justify-between">
-            <span className="flex items-center gap-2">
-              <Users className="h-5 w-5" />
-              Gestión de Usuarios
-            </span>
-            <UserRegistrationTool />
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p className="text-sm text-muted-foreground">
-            Registra nuevos usuarios en el sistema. Los usuarios registrados podrán acceder al sistema con sus credenciales.
-          </p>
-        </CardContent>
-      </Card>
-
-      {/* Estadísticas mejoradas */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-        <Card className="border-blue-200">
-          <CardContent className="p-4 text-center">
-            <Users className="h-6 w-6 mx-auto mb-2 text-blue-600" />
-            <p className="text-2xl font-bold text-blue-600">{stats.total}</p>
-            <p className="text-sm text-gray-600">Total</p>
-          </CardContent>
-        </Card>
-        <Card className="border-gray-200">
-          <CardContent className="p-4 text-center">
-            <AlertCircle className="h-6 w-6 mx-auto mb-2 text-gray-600" />
-            <p className="text-2xl font-bold text-gray-600">{stats.unassigned}</p>
-            <p className="text-sm text-gray-600">Sin Asignar</p>
-          </CardContent>
-        </Card>
-        <Card className="border-green-200">
-          <CardContent className="p-4 text-center">
-            <Building2 className="h-6 w-6 mx-auto mb-2 text-green-600" />
-            <p className="text-2xl font-bold text-green-600">{stats.businessUnitOnly}</p>
-            <p className="text-sm text-gray-600">Nivel Unidad</p>
-          </CardContent>
-        </Card>
-        <Card className="border-blue-200">
-          <CardContent className="p-4 text-center">
-            <MapPin className="h-6 w-6 mx-auto mb-2 text-blue-600" />
-            <p className="text-2xl font-bold text-blue-600">{stats.plantAssigned}</p>
-            <p className="text-sm text-gray-600">Planta Específica</p>
-          </CardContent>
-        </Card>
-        {stats.updating > 0 && (
-          <Card className="border-orange-200">
-            <CardContent className="p-4 text-center">
-              <Loader2 className="h-6 w-6 mx-auto mb-2 text-orange-600 animate-spin" />
-              <p className="text-2xl font-bold text-orange-600">{stats.updating}</p>
-              <p className="text-sm text-gray-600">Procesando</p>
-            </CardContent>
-          </Card>
-        )}
-      </div>
 
       {/* Vista principal optimizada */}
       <DndContext 
@@ -1066,9 +1009,9 @@ export function PersonnelManagementDragDrop() {
       <div className="flex justify-end">
         <Button 
           variant="outline" 
-          onClick={fetchData}
+          onClick={() => refetch()}
           disabled={loading}
-          className="flex items-center gap-2 hover:bg-blue-50"
+          className="flex items-center gap-2 cursor-pointer"
         >
           <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
           Actualizar

@@ -15,6 +15,9 @@ import {
   ShoppingCart,
   TrendingDown,
   TrendingUp,
+  Target,
+  UserCheck,
+  UserPlus,
   Users,
   Wrench,
 } from "lucide-react"
@@ -194,10 +197,10 @@ function QuickActionsCard() {
       href: "/organizacion/asignacion-activos",
     },
     {
-      icon: FileText,
-      title: "Solicitar alta de usuario RH",
-      sub: "Gestión de accesos en plataforma",
-      href: "/gestion/personal",
+      icon: UserPlus,
+      title: "Alta de usuario en plataforma",
+      sub: "Operadores en tu unidad (POL-OPE-001)",
+      href: "/gestion/personal?registrar=1",
     },
   ]
 
@@ -348,13 +351,14 @@ export default function JUNDashboard() {
   }
 
   const moduleCards = [
+    { title: "Personal", href: "/gestion/personal", icon: Users, module: "personnel" as const },
+    { title: "Asignaciones", href: "/gestion/asignaciones", icon: Target, module: "personnel" as const },
     { title: "Diésel", href: "/diesel", icon: Fuel, module: "inventory" as const },
     { title: "Activos", href: "/activos", icon: Package, module: "assets" as const },
     { title: "Mantenimiento", href: "/preventivo", icon: Wrench, module: "maintenance" as const },
     { title: "Órdenes de Trabajo", href: "/ordenes", icon: FileText, module: "work_orders" as const },
     { title: "Compras", href: "/compras", icon: ShoppingCart, module: "purchases" as const },
     { title: "Checklists", href: "/checklists", icon: ClipboardList, module: "checklists" as const },
-    { title: "Personal", href: "/gestion/personal", icon: Users, module: "personnel" as const },
     { title: "Reportes", href: "/reportes", icon: BarChart3, module: "reports" as const },
   ]
 
@@ -397,6 +401,10 @@ export default function JUNDashboard() {
           </Button>
         }
         shortcuts={[
+          { label: "Gestión de personal", href: "/gestion/personal", icon: <Users className="h-4 w-4" /> },
+          { label: "Registrar usuario", href: "/gestion/personal?registrar=1", icon: <UserPlus className="h-4 w-4" /> },
+          { label: "Asignaciones organizacionales", href: "/gestion/asignaciones", icon: <Target className="h-4 w-4" /> },
+          { label: "Operador → activo", href: "/organizacion/asignacion-activos", icon: <UserCheck className="h-4 w-4" /> },
           { label: "Preventivos pendientes", href: "/ordenes", icon: <Wrench className="h-4 w-4" /> },
           { label: "Cumplimiento checklist/diésel", href: "/compliance", icon: <ClipboardList className="h-4 w-4" /> },
         ]}

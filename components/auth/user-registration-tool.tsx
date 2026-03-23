@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -10,8 +10,12 @@ import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { toast } from 'react-hot-toast'
-import { Loader2, UserPlus, Building2, MapPin, Mail, Phone, Shield, Calendar, Hash, Key } from 'lucide-react'
+import { Loader2, UserPlus, Building2, Shield, Calendar, Hash, Key } from 'lucide-react'
 import { useAuthZustand } from '@/hooks/use-auth-zustand'
+import {
+  canRegisterOperatorsClient,
+  isFullPersonnelRegistrationClient,
+} from '@/lib/auth/client-authorization'
 
 interface BusinessUnit {
   id: string
@@ -43,17 +47,24 @@ interface UserRegistrationFormData {
   notes: string
 }
 
-const AVAILABLE_ROLES = [
+const LINE_MANAGER_REGISTER_ROLES = [
   { value: 'OPERADOR', label: 'Operador', description: 'Operación básica de equipos' },
   { value: 'DOSIFICADOR', label: 'Dosificador', description: 'Gestión de diesel y dosificación' },
+  { value: 'MECANICO', label: 'Mecánico', description: 'Ejecución de mantenimiento en planta' },
+]
+
+const FULL_REGISTER_ROLES = [
+  ...LINE_MANAGER_REGISTER_ROLES,
   { value: 'COORDINADOR_MANTENIMIENTO', label: 'Coordinador de Mantenimiento', description: 'Gestión completa de mantenimiento' },
   { value: 'JEFE_PLANTA', label: 'Jefe de Planta', description: 'Supervisión completa de planta' },
-  { value: 'JEFE_UNIDAD_NEGOCIO', label: 'Gerente de Mantenimiento', description: 'Gestión de unidad de negocio' },
+  { value: 'JEFE_UNIDAD_NEGOCIO', label: 'Jefe de Unidad de Negocio', description: 'Autoridad operativa de la unidad' },
+  { value: 'GERENTE_MANTENIMIENTO', label: 'Gerente de Mantenimiento', description: 'Dirección técnica de mantenimiento' },
+  { value: 'ENCARGADO_ALMACEN', label: 'Encargado de Almacén', description: 'Custodia e inventario en planta' },
   { value: 'AUXILIAR_COMPRAS', label: 'Auxiliar de Compras', description: 'Gestión de compras e inventario' },
   { value: 'AREA_ADMINISTRATIVA', label: 'Área Administrativa', description: 'Administración y autorización' },
   { value: 'RECURSOS_HUMANOS', label: 'Recursos Humanos', description: 'Altas, bajas y gobierno de personal' },
   { value: 'EJECUTIVO', label: 'Ejecutivo', description: 'Acceso ejecutivo con gestión de personal' },
-  { value: 'VISUALIZADOR', label: 'Visualizador', description: 'Visualización de información' }
+  { value: 'VISUALIZADOR', label: 'Visualizador', description: 'Visualización de información' },
 ]
 
 const SHIFT_OPTIONS = [
@@ -62,10 +73,33 @@ const SHIFT_OPTIONS = [
   { value: 'night', label: 'Nocturno (22:00 - 6:00)' }
 ]
 
-export function UserRegistrationTool() {
+export type UserRegistrationTriggerVariant = 'toolbar' | 'hero'
+
+export interface UserRegistrationToolProps {
+  /** `hero`: large primary CTA for personal / RH pages. */
+  triggerVariant?: UserRegistrationTriggerVariant
+  /** Called after a successful registration (e.g. refetch personnel board). */
+  onRegistered?: () => void
+}
+
+function generateProvisionalPasswordString(): string {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%'
+  let password = ''
+  for (let i = 0; i < 10; i++) {
+    password += chars.charAt(Math.floor(Math.random() * chars.length))
+  }
+  return password
+}
+
+export function UserRegistrationTool({
+  triggerVariant = 'toolbar',
+  onRegistered,
+}: UserRegistrationToolProps) {
   const { profile } = useAuthZustand()
-  const canManageUsers =
-    profile?.business_role === 'RECURSOS_HUMANOS' || profile?.role === 'GERENCIA_GENERAL'
+  const canManageUsers = canRegisterOperatorsClient(profile)
+  const lineManagerOnly =
+    canManageUsers && profile && !isFullPersonnelRegistrationClient(profile)
+  const roleOptions = lineManagerOnly ? LINE_MANAGER_REGISTER_ROLES : FULL_REGISTER_ROLES
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(false)
   const [businessUnits, setBusinessUnits] = useState<BusinessUnit[]>([])
@@ -110,6 +144,75 @@ export function UserRegistrationTool() {
     }
   }, [formData.business_unit_id, plants])
 
+  useEffect(() => {
+    if (!profile?.role) return
+    if (profile.role === 'JEFE_UNIDAD_NEGOCIO' && profile.business_unit_id) {
+      setFormData((prev) =>
+        prev.business_unit_id === profile.business_unit_id
+          ? prev
+          : { ...prev, business_unit_id: profile.business_unit_id! }
+      )
+    }
+    if (profile.role === 'JEFE_PLANTA' && profile.plant_id && plants.length > 0) {
+      const pl = plants.find((p) => p.id === profile.plant_id)
+      setFormData((prev) => ({
+        ...prev,
+        plant_id: profile.plant_id!,
+        business_unit_id: pl?.business_unit_id ?? prev.business_unit_id,
+      }))
+    }
+  }, [profile?.role, profile?.business_unit_id, profile?.plant_id, plants])
+
+  const registrarOpenedFromUrl = useRef(false)
+  useEffect(() => {
+    if (typeof window === 'undefined' || !canManageUsers) return
+    const sp = new URLSearchParams(window.location.search)
+    const flag = sp.get('registrar') ?? sp.get('alta')
+    if ((flag === '1' || flag === 'true') && !registrarOpenedFromUrl.current) {
+      registrarOpenedFromUrl.current = true
+      setOpen(true)
+    }
+  }, [canManageUsers])
+
+  /** Re-sync BU/plant when opening dialog (JP/JUN after async plant load). */
+  useEffect(() => {
+    if (!open || !profile) return
+    if (profile.role === 'JEFE_UNIDAD_NEGOCIO' && profile.business_unit_id) {
+      setFormData((prev) =>
+        prev.business_unit_id === profile.business_unit_id
+          ? prev
+          : { ...prev, business_unit_id: profile.business_unit_id! }
+      )
+    }
+    if (profile.role === 'JEFE_PLANTA' && profile.plant_id && plants.length > 0) {
+      const pl = plants.find((p) => p.id === profile.plant_id)
+      setFormData((prev) => ({
+        ...prev,
+        plant_id: profile.plant_id!,
+        business_unit_id: pl?.business_unit_id ?? prev.business_unit_id,
+      }))
+    }
+  }, [open, profile, plants])
+
+  const prevOpenRef = useRef(false)
+  useEffect(() => {
+    if (open && !prevOpenRef.current) {
+      setFormData((prev) => {
+        const next = { ...prev }
+        if (!next.provisional_password || next.provisional_password.length < 6) {
+          next.provisional_password = generateProvisionalPasswordString()
+        }
+        if (!next.employee_code.trim()) {
+          const timestamp = Date.now().toString().slice(-6)
+          const random = Math.floor(Math.random() * 100).toString().padStart(2, '0')
+          next.employee_code = `EMP${timestamp}${random}`
+        }
+        return next
+      })
+    }
+    prevOpenRef.current = open
+  }, [open])
+
   const loadBusinessUnits = async () => {
     try {
       const response = await fetch('/api/business-units')
@@ -142,14 +245,7 @@ export function UserRegistrationTool() {
     return `EMP${timestamp}${random}`
   }
 
-  const generatePassword = () => {
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*'
-    let password = ''
-    for (let i = 0; i < 8; i++) {
-      password += chars.charAt(Math.floor(Math.random() * chars.length))
-    }
-    return password
-  }
+  const generatePassword = () => generateProvisionalPasswordString()
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -165,8 +261,16 @@ export function UserRegistrationTool() {
       return
     }
 
-    if (!formData.business_unit_id) {
+    if (isFullPersonnelRegistrationClient(profile) && !formData.business_unit_id) {
       toast.error('Selecciona una unidad de negocio')
+      return
+    }
+    if (profile?.role === 'JEFE_UNIDAD_NEGOCIO' && !formData.business_unit_id) {
+      toast.error('Tu perfil no tiene unidad de negocio asignada')
+      return
+    }
+    if (profile?.role === 'JEFE_PLANTA' && !formData.plant_id) {
+      toast.error('Tu perfil no tiene planta asignada')
       return
     }
 
@@ -195,16 +299,43 @@ export function UserRegistrationTool() {
         }),
       })
 
-      const result = await response.json()
-
-      if (!response.ok) {
-        throw new Error(result.error || 'Error creating user')
+      let result: {
+        error?: string
+        email?: string
+        nombre?: string
+        apellido?: string
+        role?: string
+      } = {}
+      try {
+        result = await response.json()
+      } catch {
+        /* empty body */
       }
 
-      toast.success(
-        `✅ Usuario registrado: ${result.nombre} ${result.apellido} (${result.role}). Credenciales: ${result.email} / ${formData.provisional_password}`,
-        { duration: 8000 }
-      )
+      if (!response.ok) {
+        const msg =
+          typeof result.error === 'string' && result.error.trim()
+            ? result.error.trim()
+            : `No se pudo registrar (${response.status})`
+        throw new Error(msg)
+      }
+
+      const outEmail = result.email ?? formData.email
+      const credLine = `${outEmail}\t${formData.provisional_password}`
+      try {
+        await navigator.clipboard.writeText(credLine)
+        toast.success(
+          `Usuario registrado: ${result.nombre ?? ''} ${result.apellido ?? ''} (${result.role ?? formData.role}). Acceso copiado al portapapeles (una vez); guárdalo de forma segura.`,
+          { duration: 6000 }
+        )
+      } catch {
+        toast.success(
+          `Usuario registrado: ${result.nombre ?? ''} ${result.apellido ?? ''} (${result.role ?? formData.role}). Entrega la contraseña provisional por un canal seguro; no se mostró en pantalla.`,
+          { duration: 8000 }
+        )
+      }
+
+      onRegistered?.()
 
       // Reset form
       setFormData({
@@ -235,18 +366,29 @@ export function UserRegistrationTool() {
     }
   }
 
-  const selectedRole = AVAILABLE_ROLES.find(role => role.value === formData.role)
+  const selectedRole = roleOptions.find((role) => role.value === formData.role)
+  const lockBusinessUnit = profile?.role === 'JEFE_UNIDAD_NEGOCIO'
+  const lockPlant = profile?.role === 'JEFE_PLANTA'
 
   if (!canManageUsers) {
     return null
   }
 
+  const triggerLabel = lineManagerOnly ? 'Alta de operador' : 'Registrar usuario'
+
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button className="w-full sm:w-auto">
-          <UserPlus className="h-4 w-4 mr-2" />
-          Registrar Usuario
+        <Button
+          size={triggerVariant === 'hero' ? 'lg' : 'default'}
+          className={
+            triggerVariant === 'hero'
+              ? 'w-full sm:w-auto min-h-[48px] px-6 text-base font-semibold shadow-sm'
+              : 'w-full sm:w-auto cursor-pointer'
+          }
+        >
+          <UserPlus className={triggerVariant === 'hero' ? 'h-5 w-5 mr-2' : 'h-4 w-4 mr-2'} />
+          {triggerLabel}
         </Button>
       </DialogTrigger>
       
@@ -259,6 +401,12 @@ export function UserRegistrationTool() {
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-6">
+          {lineManagerOnly && (
+            <p className="text-sm text-muted-foreground rounded-lg border bg-muted/40 px-3 py-2">
+              Alta en plataforma a solicitud de Jefe de Unidad o Jefe de Planta (POL-OPE-001). RRHH da el alta
+              integral; aquí solo registras personal operativo en tu alcance.
+            </p>
+          )}
           {/* Basic Information */}
           <Card>
             <CardHeader>
@@ -342,7 +490,7 @@ export function UserRegistrationTool() {
                     <SelectValue placeholder="Selecciona un rol" />
                   </SelectTrigger>
                   <SelectContent>
-                    {AVAILABLE_ROLES.map((role) => (
+                    {roleOptions.map((role) => (
                       <SelectItem key={role.value} value={role.value}>
                         <div className="flex flex-col">
                           <span className="font-medium">{role.label}</span>
@@ -432,7 +580,11 @@ export function UserRegistrationTool() {
             <CardContent className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="business_unit_id">Unidad de Negocio *</Label>
-                <Select value={formData.business_unit_id} onValueChange={(value) => handleInputChange('business_unit_id', value)}>
+                <Select
+                  value={formData.business_unit_id}
+                  onValueChange={(value) => handleInputChange('business_unit_id', value)}
+                  disabled={lockBusinessUnit || lockPlant}
+                >
                   <SelectTrigger>
                     <SelectValue placeholder="Selecciona unidad de negocio" />
                   </SelectTrigger>
@@ -448,10 +600,10 @@ export function UserRegistrationTool() {
 
               <div className="space-y-2">
                 <Label htmlFor="plant_id">Planta</Label>
-                <Select 
-                  value={formData.plant_id} 
+                <Select
+                  value={formData.plant_id}
                   onValueChange={(value) => handleInputChange('plant_id', value)}
-                  disabled={!formData.business_unit_id}
+                  disabled={lockPlant || (!formData.business_unit_id && !lockBusinessUnit)}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder={
@@ -478,21 +630,23 @@ export function UserRegistrationTool() {
                 )}
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="can_authorize_up_to">Límite de Autorización ($)</Label>
-                <Input
-                  id="can_authorize_up_to"
-                  type="number"
-                  min="0"
-                  step="100"
-                  value={formData.can_authorize_up_to}
-                  onChange={(e) => handleInputChange('can_authorize_up_to', e.target.value)}
-                  placeholder="0"
-                />
-                <p className="text-xs text-muted-foreground">
-                  Monto máximo que puede autorizar en compras (0 = sin autorización)
-                </p>
-              </div>
+              {!lineManagerOnly && (
+                <div className="space-y-2">
+                  <Label htmlFor="can_authorize_up_to">Límite de Autorización ($)</Label>
+                  <Input
+                    id="can_authorize_up_to"
+                    type="number"
+                    min="0"
+                    step="100"
+                    value={formData.can_authorize_up_to}
+                    onChange={(e) => handleInputChange('can_authorize_up_to', e.target.value)}
+                    placeholder="0"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Monto máximo que puede autorizar en compras (0 = sin autorización)
+                  </p>
+                </div>
+              )}
             </CardContent>
           </Card>
 
@@ -528,7 +682,8 @@ export function UserRegistrationTool() {
                   </Button>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Esta será la contraseña inicial del usuario. Debe cambiarla en su primer acceso.
+                  Contraseña inicial en Supabase Auth (mínimo 6 caracteres). Se genera automáticamente al abrir
+                  este formulario; puedes regenerarla con el botón. El usuario debe cambiarla en su primer acceso.
                 </p>
               </div>
               

@@ -4,9 +4,16 @@ import { checkOperatorAssetConflicts } from '@/lib/utils/conflict-detection'
 import {
   loadActorContext,
   canUpdateOperators,
+  canUpdateOperatorPlacement,
   canViewOperatorsList,
+  checkRHOwnershipAuthority,
   checkScopeOverBusinessUnit,
 } from '@/lib/auth/server-authorization'
+import {
+  operatorRowVisibleToJun,
+  operatorRowVisibleToJp,
+  validateJunJpPatchPlacement,
+} from '@/lib/auth/operator-scope'
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -22,7 +29,9 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       return NextResponse.json({ error: 'Profile not found' }, { status: 404 })
     }
 
-    if (!canUpdateOperators(actor)) {
+    const fullUpdate = canUpdateOperators(actor)
+    const placementOnly = canUpdateOperatorPlacement(actor) && !fullUpdate
+    if (!fullUpdate && !placementOnly) {
       return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 })
     }
 
@@ -32,30 +41,116 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     const { resolve_conflicts, ...rawFields } = updateData
 
     // Role, authorization, lifecycle, and audit changes must go through dedicated endpoints.
+    const allowedKeys = placementOnly
+      ? (['plant_id', 'business_unit_id'] as const)
+      : ([
+          'nombre',
+          'apellido',
+          'email',
+          'telefono',
+          'phone_secondary',
+          'employee_code',
+          'position',
+          'shift',
+          'hire_date',
+          'plant_id',
+          'business_unit_id',
+          'notas_rh',
+        ] as const)
+
+    const allowed = new Set<string>(allowedKeys as unknown as string[])
     const fieldsToUpdate = Object.fromEntries(
-      Object.entries(rawFields).filter(([key]) => [
-        'nombre',
-        'apellido',
-        'email',
-        'telefono',
-        'phone_secondary',
-        'employee_code',
-        'position',
-        'shift',
-        'hire_date',
-        'plant_id',
-        'business_unit_id',
-        'notas_rh',
-      ].includes(key))
+      Object.entries(rawFields).filter(([key]) => allowed.has(key))
     )
+
+    const currentOperator = await supabase
+      .from('profiles')
+      .select('plant_id, business_unit_id, role')
+      .eq('id', operatorId)
+      .single()
+
+    if (placementOnly && currentOperator.data) {
+      const row = currentOperator.data
+      const scopeActor = {
+        userId: actor.userId,
+        profile: {
+          role: actor.profile.role,
+          business_unit_id: actor.profile.business_unit_id,
+          plant_id: actor.profile.plant_id,
+        },
+      }
+      if (actor.profile.role === 'JEFE_UNIDAD_NEGOCIO' && actor.profile.business_unit_id) {
+        const { data: buPlants } = await supabase
+          .from('plants')
+          .select('id')
+          .eq('business_unit_id', actor.profile.business_unit_id)
+        const plantIdsInBu = (buPlants ?? []).map((p) => p.id)
+        if (
+          !operatorRowVisibleToJun(
+            { plant_id: row.plant_id, business_unit_id: row.business_unit_id },
+            actor.profile.business_unit_id,
+            plantIdsInBu
+          )
+        ) {
+          return NextResponse.json({ error: 'No puedes editar este perfil' }, { status: 403 })
+        }
+      } else if (actor.profile.role === 'JEFE_PLANTA' && actor.profile.plant_id) {
+        if (
+          !operatorRowVisibleToJp(
+            { plant_id: row.plant_id, business_unit_id: row.business_unit_id },
+            actor.profile.plant_id
+          )
+        ) {
+          return NextResponse.json({ error: 'No puedes editar este perfil' }, { status: 403 })
+        }
+      } else {
+        return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 })
+      }
+    }
+
+    const cur = currentOperator.data
+    const mergedPlant =
+      'plant_id' in fieldsToUpdate ? (fieldsToUpdate.plant_id as string | null) : cur?.plant_id ?? null
+    const mergedBu =
+      'business_unit_id' in fieldsToUpdate
+        ? (fieldsToUpdate.business_unit_id as string | null)
+        : cur?.business_unit_id ?? null
+
+    let plantBuForMerged: string | null = null
+    if (mergedPlant) {
+      const { data: plRow } = await supabase
+        .from('plants')
+        .select('business_unit_id')
+        .eq('id', mergedPlant)
+        .single()
+      plantBuForMerged = plRow?.business_unit_id ?? null
+    }
+
+    if (placementOnly) {
+      const validated = validateJunJpPatchPlacement(
+        {
+          userId: actor.userId,
+          profile: {
+            role: actor.profile.role,
+            business_unit_id: actor.profile.business_unit_id,
+            plant_id: actor.profile.plant_id,
+          },
+        },
+        mergedPlant,
+        mergedBu,
+        plantBuForMerged
+      )
+      if (!validated.ok) {
+        return NextResponse.json({ error: validated.error }, { status: 400 })
+      }
+      Object.assign(fieldsToUpdate, {
+        plant_id: validated.plant_id,
+        business_unit_id: validated.business_unit_id,
+      })
+    }
 
     // Check for conflicts if plant_id is being changed
     const newPlantId = fieldsToUpdate.plant_id as string | null | undefined
-    const currentOperator = await supabase
-      .from('profiles')
-      .select('plant_id')
-      .eq('id', operatorId)
-      .single()
 
     if (newPlantId !== undefined && currentOperator.data?.plant_id !== newPlantId) {
       const conflictCheck = await checkOperatorAssetConflicts(operatorId, newPlantId || null)
@@ -237,6 +332,42 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     if (error) {
       console.error('Error fetching operator:', error)
       return NextResponse.json({ error: 'Operator not found' }, { status: 404 })
+    }
+
+    const rhOrGg =
+      checkRHOwnershipAuthority(actor) || actor.profile.role === 'GERENCIA_GENERAL'
+    if (!rhOrGg && operator) {
+      if (actor.profile.role === 'JEFE_UNIDAD_NEGOCIO' && actor.profile.business_unit_id) {
+        const { data: buPlants } = await supabase
+          .from('plants')
+          .select('id')
+          .eq('business_unit_id', actor.profile.business_unit_id)
+        const plantIdsInBu = (buPlants ?? []).map((p) => p.id)
+        if (
+          !operatorRowVisibleToJun(
+            {
+              plant_id: operator.plant_id,
+              business_unit_id: operator.business_unit_id,
+            },
+            actor.profile.business_unit_id,
+            plantIdsInBu
+          )
+        ) {
+          return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 })
+        }
+      } else if (actor.profile.role === 'JEFE_PLANTA' && actor.profile.plant_id) {
+        if (
+          !operatorRowVisibleToJp(
+            {
+              plant_id: operator.plant_id,
+              business_unit_id: operator.business_unit_id,
+            },
+            actor.profile.plant_id
+          )
+        ) {
+          return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 })
+        }
+      }
     }
 
     return NextResponse.json(operator)

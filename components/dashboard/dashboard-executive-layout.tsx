@@ -65,7 +65,7 @@ export function DashboardExecutiveLayout({
         <div className="flex items-center gap-0 overflow-x-auto scrollbar-none sm:flex-wrap sm:overflow-visible sm:gap-x-6 sm:gap-y-0 px-4 sm:px-6 lg:px-8">
           {shortcuts.map((s) => (
             <Link
-              key={s.href}
+              key={`${s.href}::${s.label}`}
               href={s.href}
               className="inline-flex shrink-0 items-center gap-1.5 py-3 pr-5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground active:text-foreground min-h-[44px] sm:pr-0"
             >

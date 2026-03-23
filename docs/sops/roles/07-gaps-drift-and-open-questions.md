@@ -37,3 +37,9 @@ Documented verbatim in [00-sources-and-conventions.md](./00-sources-and-conventi
 ## Matrix vs `ModulePermissions` granularity
 
 - HTML matrix rows (e.g. “Registrar evidencia fotográfica”) may involve **multiple** code paths (Coordinator + Mechanic). `ModulePermissions` alone does not prove row-level behavior — check workflows and APIs per [06-html-matrix-to-code-matrix.md](./06-html-matrix-to-code-matrix.md).
+
+## JUN/JP “solicitar alta” vs self-service registration (product decision)
+
+- **Shipped behavior:** JUN/JP may **POST** scoped operator registration (digital equivalent of *solicitud*: form + audit line in `notas_rh` / policy copy in UI). RRHH retains **unscoped** registration and governance pages and is the role expected to work **most intensively** on personnel in the product.
+- **Queue workflow (declined):** A separate JUN/JP → RH **ticket/queue** for alta (beyond the in-flow audit) is **out of scope** — product decision: avoid extra bureaucracy. If legal ever challenges direct `createUser` for JUN/JP, that is a **policy conversation**, not a committed roadmap item here.
+- **Optional RH / GG notifications** for personnel movements remain **out of product** unless ops explicitly requests them (matrix rows may stay **UNVERIFIED** in [06-html-matrix-to-code-matrix.md](./06-html-matrix-to-code-matrix.md) until then).

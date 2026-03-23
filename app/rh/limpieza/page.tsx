@@ -1,8 +1,10 @@
 import { Suspense } from 'react'
 import CleanlinessReportsView from '@/components/hr/cleanliness-reports-view'
+import { RHReportingGuard } from '@/components/auth/rh-reporting-guard'
 
 export default function CleanlinessReportsPage() {
   return (
+    <RHReportingGuard>
     <div className="container mx-auto py-6 px-8">
       <div className="mb-6">
         <h1 className="text-3xl font-bold">Reportes de Limpieza</h1>
@@ -15,5 +17,6 @@ export default function CleanlinessReportsPage() {
         <CleanlinessReportsView />
       </Suspense>
     </div>
+    </RHReportingGuard>
   )
 } 

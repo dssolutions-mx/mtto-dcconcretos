@@ -1,5 +1,6 @@
 import { Suspense } from 'react'
 import ChecklistComplianceView from '@/components/hr/checklist-compliance-view'
+import { RHReportingGuard } from '@/components/auth/rh-reporting-guard'
 import { Card, CardContent } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 
@@ -58,6 +59,7 @@ function LoadingSkeleton() {
 
 export default function ChecklistCompliancePage() {
   return (
+    <RHReportingGuard>
     <div className="container mx-auto py-6 px-8">
       {/* Header */}
       <div className="mb-6" id="checklist-compliance-header">
@@ -84,5 +86,6 @@ export default function ChecklistCompliancePage() {
         <ChecklistComplianceView />
       </Suspense>
     </div>
+    </RHReportingGuard>
   )
 } 

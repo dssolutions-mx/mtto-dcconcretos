@@ -32,13 +32,20 @@
    - `app/api/compliance/sanctions/[id]/route.ts`  
    - `app/api/compliance/incidents/[id]/dispute/review/route.ts`  
    - `app/api/hr/checklist-compliance/route.ts`  
+   - `app/api/hr/cleanliness-reports/route.ts` (GET: `getUser` + `loadActorContext` + `canAccessRHReporting`)  
    - `lib/auth/server-authorization.ts` (definition)
 
 5. **Client permission helpers:** `rg "hasModuleAccess|hasWriteAccess|RoleGuard" components hooks app` — **verified** hits include:  
    `lib/auth/role-permissions.ts`, `hooks/use-auth-zustand.ts`, `components/auth/role-guard.tsx`, `app/gestion/credenciales/page.tsx`, `app/credencial/page.tsx`, `components/credentials/employee-credentials-manager.tsx`.
 
+6. **App route map (authenticated):** `ROUTE_MODULE_RULES` in `lib/auth/role-permissions.ts` uses longest-prefix matching; **`canAccessRoute` denies by default** for dashboard paths not listed (public/auth routes remain explicitly allowed). `components/auth/role-provider.tsx` uses **`effectiveRoleForPermissions(profile)`** for redirects, aligned with `useAuthZustand` module checks. Canonical personal URL: **`/gestion/personal`** (`next.config.mjs` redirects `/personal` and `/organizacion/personal`).
+
+7. **Client mirrors for RH UI:** `lib/auth/client-authorization.ts` — `canAccessRHReportingNav`, `canRegisterOperatorsClient`, `canManageUserAuthorizationClient` (use with sidebar and pages).
+
 **UNVERIFIED:** Full per-page `page.tsx` audit against each module — run:  
 `rg "hasModuleAccess\\(|hasWriteAccess\\(|RoleGuard" app --glob "*.tsx"` and map results into this doc in a follow-up edit.
+
+**Manual QA:** Role-based checklist for personnel/RH after hardening — [08-hr-rbac-manual-qa.md](./08-hr-rbac-manual-qa.md).
 
 ---
 
@@ -91,7 +98,21 @@
 |--------------|-------------|---------------|-----------|--------|
 | User update authorization | `loadActorContext` + role checks | `app/api/users/update-authorization/route.ts` | POL001 Alta | PARTIAL |
 | User deactivate | `loadActorContext` | `app/api/users/deactivate/route.ts` | POL001/002 | PARTIAL |
-| Operators register | `loadActorContext` | `app/api/operators/register/route.ts`, `[id]/route.ts` | POL002 asignación | PARTIAL |
+| Operators register GET | `loadActorContext` + `canViewOperatorsList`; JUN/JP **scoped** list (Supabase filters + `operatorRowVisibleToJun` in code path) | `app/api/operators/register/route.ts` | POL001 alta / asignación | OK (scoped); RLS per live project — **re-verify** |
+| Operators register POST | `canCreateOperators`; RH/GG unscoped; JUN/JP **role allowlist** + `validateJunJpCreatePlacement` (`lib/auth/operator-scope.ts`) | `app/api/operators/register/route.ts` | POL001 alta | OK (scoped); audit via `notas_rh` line |
+| Operators register PATCH | Full field update: RH+GG (`canUpdateOperators`); JUN/JP: **placement-only** (`canUpdateOperatorPlacement` + `validateJunJpPatchPlacement`) | `app/api/operators/register/[id]/route.ts` | POL002 asignación | PARTIAL — confirm matrix rows for “procesar alta/baja” |
+| Personal UI | `RoleGuard module="personnel"` | `app/gestion/personal/page.tsx`, `app/(dashboard)/personal/page.tsx`, `app/(dashboard)/organizacion/personal/page.tsx` | — | OK |
+
+### Operators API matrix (JUN / JP / RH / GG)
+
+| Actor | GET list | POST create | PATCH |
+|-------|----------|-------------|--------|
+| **GERENCIA_GENERAL** | All (subject to query) | Yes, broad roles | Full update |
+| **RECURSOS_HUMANOS** | All | Yes, broad roles | Full update |
+| **JEFE_UNIDAD_NEGOCIO** | Scoped: BU + plants in BU + unassigned (`operatorRowVisibleToJun`) | Yes: `OPERADOR`, `DOSIFICADOR`, `MECANICO` only; BU/plant must match actor | Placement only |
+| **JEFE_PLANTA** | Scoped: `plant_id` | Yes: same role allowlist; plant locked to actor | Placement only; UI also restricts drag for unassigned non-operador roles |
+
+**RLS:** If `profiles` RLS is off or permissive (see [07-gaps-drift-and-open-questions.md](./07-gaps-drift-and-open-questions.md)), treat **route + `loadActorContext`** as authoritative for these APIs.
 
 ---
 
@@ -100,6 +121,16 @@
 | Route or API | Enforcement | Verified file | POL / SOP | Status |
 |--------------|-------------|---------------|-----------|--------|
 | HR checklist compliance | `loadActorContext` | `app/api/hr/checklist-compliance/route.ts` | POL001 Checklists | PARTIAL |
+
+---
+
+## HR reporting (limpieza / cumplimiento UI + API)
+
+| Route or API | Enforcement | Verified file | POL / SOP | Status |
+|--------------|-------------|---------------|-----------|--------|
+| Cleanliness reports GET | `getUser` + `loadActorContext` + `canAccessRHReporting` | `app/api/hr/cleanliness-reports/route.ts` | POL002 RH reporting | OK (entry gate); POST paths — confirm same pattern if exposed |
+| RH pages | `RHReportingGuard` (`canAccessRHReportingNav`) | `app/rh/limpieza/page.tsx`, `app/rh/cumplimiento-checklists/page.tsx` | — | OK |
+| Sidebar RH block | `canAccessRHReportingNav` | `components/sidebar.tsx` | — | OK |
 
 ---
 

@@ -532,7 +532,10 @@ export function isRHOwner(userRole: string): boolean {
   return isRHOwnerRole(userRole)
 }
 
-// Route access mapping
+/**
+ * Longest-prefix-first route → module. Keep more specific paths above shorter ones.
+ * @deprecated Use ROUTE_MODULE_RULES — kept for scripts that imported ROUTE_PERMISSIONS.
+ */
 export const ROUTE_PERMISSIONS: Record<string, keyof ModulePermissions> = {
   '/activos': 'assets',
   '/preventivo': 'maintenance',
@@ -543,24 +546,83 @@ export const ROUTE_PERMISSIONS: Record<string, keyof ModulePermissions> = {
   '/suppliers': 'purchases',
   '/gestion/personal': 'personnel',
   '/gestion/autorizaciones': 'personnel',
+  '/gestion/asignaciones': 'personnel',
+  '/gestion/credenciales': 'personnel',
   '/gestion/plantas': 'config',
   '/checklists': 'checklists',
   '/reportes': 'reports',
   '/gestion': 'personnel',
+  '/personal': 'personnel',
+  '/organizacion': 'personnel',
+  '/rh': 'personnel',
+  '/compliance': 'checklists',
 }
 
+/** Sorted longest-prefix-first at module init. */
+const ROUTE_MODULE_RULES: Array<[string, keyof ModulePermissions]> = [
+  ['/gestion/personal', 'personnel'],
+  ['/gestion/autorizaciones', 'personnel'],
+  ['/gestion/asignaciones', 'personnel'],
+  ['/gestion/credenciales', 'personnel'],
+  ['/gestion/activos/asignacion-plantas', 'assets'],
+  ['/gestion/activos/asignaciones', 'assets'],
+  ['/gestion/activos', 'assets'],
+  ['/gestion/plantas', 'config'],
+  ['/gestion', 'personnel'],
+  ['/organizacion/asignacion-activos', 'assets'],
+  ['/organizacion/plantas', 'config'],
+  ['/organizacion/personal', 'personnel'],
+  ['/organizacion', 'personnel'],
+  ['/rh/cumplimiento-checklists', 'personnel'],
+  ['/rh/limpieza', 'personnel'],
+  ['/rh', 'personnel'],
+  ['/activos/asignacion', 'assets'],
+  ['/activos', 'assets'],
+  ['/preventivo', 'maintenance'],
+  ['/incidentes', 'maintenance'],
+  ['/ordenes', 'work_orders'],
+  ['/compras', 'purchases'],
+  ['/inventario', 'inventory'],
+  ['/suppliers', 'purchases'],
+  ['/checklists', 'checklists'],
+  ['/reportes', 'reports'],
+  ['/diesel-inventory', 'inventory'],
+  ['/diesel', 'inventory'],
+  ['/urea', 'inventory'],
+  ['/plantas', 'config'],
+  ['/compliance', 'checklists'],
+  ['/personal', 'personnel'],
+  ['/modelos', 'maintenance'],
+  ['/calendario', 'maintenance'],
+  ['/servicios', 'maintenance'],
+  ['/configuracion', 'config'],
+  ['/gastos-adicionales', 'purchases'],
+  ['/debug', 'config'],
+].sort((a, b) => b[0].length - a[0].length)
+
+function pathMatchesRoute(pathname: string, prefix: string): boolean {
+  return pathname === prefix || pathname.startsWith(`${prefix}/`)
+}
+
+/**
+ * Client-side route guard: unknown app paths default to **deny** (no blanket allow).
+ * Exceptions: home, dashboard subtree, personal credential card.
+ */
 export function canAccessRoute(userRole: string, pathname: string): boolean {
-  if (pathname === '/dashboard' || pathname === '/') {
+  if (pathname === '/' || pathname === '/dashboard' || pathname.startsWith('/dashboard/')) {
+    return true
+  }
+  if (pathname === '/credencial' || pathname.startsWith('/credencial/')) {
     return true
   }
 
-  for (const [routePattern, module] of Object.entries(ROUTE_PERMISSIONS)) {
-    if (pathname.startsWith(routePattern)) {
+  for (const [prefix, module] of ROUTE_MODULE_RULES) {
+    if (pathMatchesRoute(pathname, prefix)) {
       return hasModuleAccess(userRole, module)
     }
   }
 
-  return true
+  return false
 }
 
 // UI element visibility helpers

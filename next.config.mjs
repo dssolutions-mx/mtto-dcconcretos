@@ -14,6 +14,12 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
+  async redirects() {
+    return [
+      { source: '/personal', destination: '/gestion/personal', permanent: false },
+      { source: '/organizacion/personal', destination: '/gestion/personal', permanent: false },
+    ]
+  },
   async headers() {
     return [
       {

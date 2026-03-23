@@ -8,13 +8,15 @@ import {
   CheckCircle2,
   ChevronRight,
   ClipboardList,
-  Clock,
   FileText,
   Fuel,
   Loader2,
   Package,
   RefreshCw,
   ShoppingCart,
+  Target,
+  UserCheck,
+  UserPlus,
   Users,
   Wrench,
 } from "lucide-react"
@@ -307,13 +309,14 @@ export default function JefePlantaDashboard() {
   })
 
   const moduleCards = [
+    { title: "Personal", href: "/gestion/personal", icon: Users, module: "personnel" as const },
+    { title: "Asignaciones", href: "/gestion/asignaciones", icon: Target, module: "personnel" as const },
     { title: "Diésel", href: "/diesel", icon: Fuel, module: "inventory" as const },
     { title: "Activos", href: "/activos", icon: Package, module: "assets" as const },
     { title: "Mantenimiento", href: "/preventivo", icon: Wrench, module: "maintenance" as const },
     { title: "Órdenes de Trabajo", href: "/ordenes", icon: FileText, module: "work_orders" as const },
     { title: "Compras", href: "/compras", icon: ShoppingCart, module: "purchases" as const },
     { title: "Checklists", href: "/checklists", icon: ClipboardList, module: "checklists" as const },
-    { title: "Personal", href: "/gestion/personal", icon: Users, module: "personnel" as const },
     { title: "Reportes", href: "/reportes", icon: BarChart3, module: "reports" as const },
   ]
 
@@ -361,8 +364,10 @@ export default function JefePlantaDashboard() {
           </Button>
         }
         shortcuts={[
-          { label: "Asignación operador-activo", href: "/organizacion/asignacion-activos", icon: <Users className="h-4 w-4" /> },
-          { label: "Solicitar usuario RH", href: "/gestion/personal", icon: <Users className="h-4 w-4" /> },
+          { label: "Gestión de personal", href: "/gestion/personal", icon: <Users className="h-4 w-4" /> },
+          { label: "Alta de usuario", href: "/gestion/personal?registrar=1", icon: <UserPlus className="h-4 w-4" /> },
+          { label: "Asignaciones organizacionales", href: "/gestion/asignaciones", icon: <Target className="h-4 w-4" /> },
+          { label: "Asignación operador-activo", href: "/organizacion/asignacion-activos", icon: <UserCheck className="h-4 w-4" /> },
           { label: "Autorizar anomalía", href: "/incidentes", icon: <AlertTriangle className="h-4 w-4" /> },
         ]}
         kpis={
