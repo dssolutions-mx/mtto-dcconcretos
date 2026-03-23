@@ -287,12 +287,12 @@ components/diesel-inventory/
 lib/services/
 └── offline-diesel-service.ts                 ← NEW (offline sync)
 
-migrations/sql/
+archive/legacy-db-migrations/sql/
 └── 20251001_diesel_production_tables.sql     ← Applied ✅
 
 Documentation/
 ├── DIESEL_MANAGEMENT_COMPREHENSIVE_PLAN.md   ← Original plan
-├── DIESEL_SYSTEM_COMPLETE.md                 ← Full specs
+├── docs/archive/root-historical/DIESEL_SYSTEM_COMPLETE.md ← Full specs (archived)
 ├── DIESEL_IMPLEMENTATION_SUMMARY.md          ← Quick reference
 └── DIESEL_FINAL_IMPLEMENTATION_REPORT.md     ← This file
 ```
@@ -375,7 +375,7 @@ All 5 stages are **complete** and **tested**:
 ## 📞 Support
 
 For questions or issues:
-1. **Full Documentation**: `DIESEL_SYSTEM_COMPLETE.md`
+1. **Full Documentation**: `docs/archive/root-historical/DIESEL_SYSTEM_COMPLETE.md`
 2. **Quick Reference**: `DIESEL_IMPLEMENTATION_SUMMARY.md`
 3. **Original Plan**: `DIESEL_MANAGEMENT_COMPREHENSIVE_PLAN.md`
 4. **This Report**: `DIESEL_FINAL_IMPLEMENTATION_REPORT.md`

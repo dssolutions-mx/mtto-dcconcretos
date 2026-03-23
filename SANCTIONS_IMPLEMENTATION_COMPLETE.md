@@ -238,7 +238,7 @@ Cuando se aplica una sanción:
 
 - `COMPLIANCE_SYSTEM_IMPLEMENTATION_SUMMARY.md` - Resumen del sistema de cumplimiento
 - `types/compliance.ts` - Tipos TypeScript para sanciones
-- `migrations/sql/20251220_compliance_governance_system.sql` - Esquema de base de datos
+- `archive/legacy-db-migrations/sql/20251220_compliance_governance_system.sql` - Esquema de base de datos
 
 ---
 

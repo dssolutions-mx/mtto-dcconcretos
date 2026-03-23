@@ -1,5 +1,5 @@
 import { createClient } from './supabase';
-import { Database } from './database.types';
+import type { Database } from '@/types/supabase-types';
 import { 
   Asset, 
   InsertAsset, 
@@ -12,7 +12,7 @@ import {
   FileUpload,
   MaintenancePart
 } from '../types';
-import { Json } from './database.types';
+import type { Json } from '@/types/supabase-types';
 
 // Use authenticated browser client
 const supabase = createClient();

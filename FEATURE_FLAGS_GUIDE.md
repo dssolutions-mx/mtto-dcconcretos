@@ -9,7 +9,7 @@ Este documento explica cómo usar los feature flags para controlar las nuevas fu
 ## ✅ Implementación Completada
 
 ### 1. **Migración SQL Creada**
-- Archivo: `migrations/sql/20251220_add_onboarding_feature_flags.sql`
+- Archivo: `archive/legacy-db-migrations/sql/20251220_add_onboarding_feature_flags.sql`
 - Agrega dos feature flags a la tabla `system_settings`:
   - `enable_onboarding_tour` (default: `false` = deshabilitado)
   - `enable_policy_acknowledgment` (default: `false` = deshabilitado)
@@ -39,7 +39,7 @@ Este documento explica cómo usar los feature flags para controlar las nuevas fu
 
 1. Ve a tu proyecto en Supabase Dashboard
 2. Abre el SQL Editor
-3. Copia y pega el contenido de `migrations/sql/20251220_add_onboarding_feature_flags.sql`
+3. Copia y pega el contenido de `archive/legacy-db-migrations/sql/20251220_add_onboarding_feature_flags.sql`
 4. Ejecuta la migración
 
 ---
@@ -160,7 +160,7 @@ Si necesitas desactivar rápidamente:
 ## 📚 Archivos Modificados
 
 ### Nuevos Archivos
-- ✅ `migrations/sql/20251220_add_onboarding_feature_flags.sql`
+- ✅ `archive/legacy-db-migrations/sql/20251220_add_onboarding_feature_flags.sql`
 - ✅ `hooks/use-system-settings.ts`
 - ✅ `FEATURE_FLAGS_GUIDE.md` (este archivo)
 

@@ -90,10 +90,10 @@ components/diesel-inventory/
 ├── asset-selector-mobile.tsx             ← Already existed
 └── reading-capture.tsx                   ← ENHANCED (both hours + km)
 
-migrations/sql/
+archive/legacy-db-migrations/sql/
 └── 20251001_diesel_production_tables.sql ← Applied ✅
 
-DIESEL_SYSTEM_COMPLETE.md                 ← Full documentation
+docs/archive/root-historical/DIESEL_SYSTEM_COMPLETE.md ← Full documentation (archived)
 DIESEL_IMPLEMENTATION_SUMMARY.md          ← This file
 ```
 

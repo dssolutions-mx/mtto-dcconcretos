@@ -194,7 +194,7 @@ Current behavior:
 
 RLS:
 
-- `migrations/sql/20250125_006_create_inventory_rls.sql`
+- `archive/legacy-db-migrations/sql/20250125_006_create_inventory_rls.sql`
 
 Current behavior:
 
@@ -498,8 +498,8 @@ Key finding:
 
 Compliance domain:
 
-- `migrations/sql/20251220_compliance_governance_system.sql`
-- `migrations/sql/20251220_compliance_functions.sql`
+- `archive/legacy-db-migrations/sql/20251220_compliance_governance_system.sql`
+- `archive/legacy-db-migrations/sql/20251220_compliance_functions.sql`
 - `app/api/compliance/incidents/[id]/dispute/review/route.ts`
 - `app/api/compliance/sanctions/route.ts`
 - `components/compliance/compliance-incident-detail-page.tsx`

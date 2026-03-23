@@ -348,7 +348,7 @@ SENDGRID_FROM
 - `/supabase/functions/purchase-order-approval-notification/index.ts` - Existente (ya incluye cotizaciones)
 
 ### Migraciones
-- 9 nuevas migraciones en `/migrations/sql/`
+- 9 nuevas migraciones en `archive/legacy-db-migrations/sql/`
 
 ---
 

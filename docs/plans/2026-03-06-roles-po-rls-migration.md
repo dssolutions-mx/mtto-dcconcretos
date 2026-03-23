@@ -281,8 +281,8 @@ Expected: `next build` completes successfully
 - Modify: `app/api/purchase-order-actions/process/route.ts`
 - Modify: `app/api/purchase-order-actions/direct-action/route.ts`
 - Modify: `supabase/functions/purchase-order-approval-notification/index.ts`
-- Modify: `migrations/sql/20250730_po_email_actions.sql`
-- Modify: `migrations/sql/20260211_add_po_action_tokens_quotation_and_user.sql`
+- Modify: `archive/legacy-db-migrations/sql/20250730_po_email_actions.sql`
+- Modify: `archive/legacy-db-migrations/sql/20260211_add_po_action_tokens_quotation_and_user.sql`
 
 **Step 1: Remove workflow drift between UI and email approval**
 
@@ -310,7 +310,7 @@ Expected: `next build` completes successfully
 ## Task 6: Implement Warehouse Responsibility Model
 
 **Files:**
-- Create: `migrations/sql/20260306_create_warehouse_responsibilities.sql`
+- Create: `archive/legacy-db-migrations/sql/20260306_create_warehouse_responsibilities.sql`
 - Create: `lib/inventory/warehouse-authority.ts`
 - Modify: `components/purchase-orders/inventory-actions.tsx`
 - Modify: `components/inventory/receive-po-dialog.tsx`
@@ -321,11 +321,11 @@ Expected: `next build` completes successfully
 - Modify: `app/api/inventory/stock/transfer/route.ts`
 - Modify: `lib/services/inventory-receipt-service.ts`
 - Modify: `lib/services/inventory-fulfillment-service.ts`
-- Modify: `migrations/sql/20250125_006_create_inventory_rls.sql`
+- Modify: `archive/legacy-db-migrations/sql/20250125_006_create_inventory_rls.sql`
 
 **Step 1: Add a dedicated warehouse responsibility table**
 
-Create migration `migrations/sql/20260306_create_warehouse_responsibilities.sql` with fields for:
+Create migration `archive/legacy-db-migrations/sql/20260306_create_warehouse_responsibilities.sql` with fields for:
 
 - `user_id`
 - `warehouse_id`
@@ -419,8 +419,8 @@ Expected: `next build` completes successfully
 ## Task 8: Migrate SQL, Types, And Compatibility Gaps
 
 **Files:**
-- Modify: `migrations/sql/20260129_update_status_workflow_for_inventory.sql`
-- Modify: `migrations/sql/20260123_purchase_order_quotations.sql`
+- Modify: `archive/legacy-db-migrations/sql/20260129_update_status_workflow_for_inventory.sql`
+- Modify: `archive/legacy-db-migrations/sql/20260123_purchase_order_quotations.sql`
 - Modify: `complete_schema.sql`
 - Modify: `types/supabase-types.ts`
 - Modify: `types/index.ts`

@@ -98,4 +98,4 @@ The Edge Function will route:
 ## Migration
 
 A migration file has been added to apply this fix:  
-`migrations/sql/20260318_fix_po_admin_email_trigger.sql`
+`archive/legacy-db-migrations/sql/20260318_fix_po_admin_email_trigger.sql`

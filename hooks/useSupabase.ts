@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { createClient } from '@/lib/supabase';
-import { Database } from '../lib/database.types';
+import type { Database } from '@/types/supabase-types';
 import { 
   EquipmentModel, 
   Asset,

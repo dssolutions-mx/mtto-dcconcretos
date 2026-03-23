@@ -23,7 +23,7 @@ has_quotations(p_purchase_order_id UUID) -> BOOLEAN
 - Used by workflow validation to ensure required quotations are uploaded
 
 **Migration Files:**
-- `/migrations/sql/20250102_multiple_quotations_support.sql` - Complete migration
+- `archive/legacy-db-migrations/sql/20250102_multiple_quotations_support.sql` - Complete migration
 - Applied via Supabase MCP on 2025-01-02
 
 ---
@@ -270,7 +270,7 @@ The implementation maintains full backwards compatibility:
 ## 📁 File Structure
 
 ```
-/migrations/sql/
+archive/legacy-db-migrations/sql/
   └── 20250102_multiple_quotations_support.sql
 
 /types/

@@ -390,7 +390,7 @@ components/
 lib/services/
 └── offline-diesel-service.ts              # Offline sync service (NEW)
 
-migrations/sql/
+archive/legacy-db-migrations/sql/
 └── 20251001_diesel_production_tables.sql  # Complete migration
 
 DIESEL_MANAGEMENT_COMPREHENSIVE_PLAN.md    # Original plan

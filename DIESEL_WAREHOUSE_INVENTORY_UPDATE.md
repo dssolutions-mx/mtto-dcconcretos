@@ -433,8 +433,8 @@ const balance = warehouse.current_inventory
 ## Files Modified
 
 1. **Database**:
-   - `migrations/sql/20251001_add_warehouse_inventory_tracking.sql` (NEW)
-   - `migrations/sql/20251001_warehouse_auto_update_trigger.sql` (NEW)
+   - `archive/legacy-db-migrations/sql/20251001_add_warehouse_inventory_tracking.sql` (NEW)
+   - `archive/legacy-db-migrations/sql/20251001_warehouse_auto_update_trigger.sql` (NEW)
 
 2. **Frontend**:
    - `components/diesel-inventory/consumption-entry-form.tsx` (UPDATED)

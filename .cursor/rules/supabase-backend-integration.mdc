@@ -234,6 +234,6 @@ export async function POST(request: Request) {
 
 - **Supabase Client**: [supabase.ts](mdc:lib/supabase.ts) - Client configuration
 - **Middleware**: [middleware.ts](mdc:middleware.ts) - Auth middleware setup
-- **Types**: [database.types](mdc:lib/database.types) - Generated Supabase types
+- **Types**: [supabase-types.ts](mdc:types/supabase-types.ts) - Generated Supabase types (`supabase gen types`)
 
 Remember: **Proper Supabase integration ensures data security and optimal performance** with the Zustand auth system.

@@ -88,7 +88,7 @@ This document presents a comprehensive plan for implementing a new Suppliers Man
 ## Technical Implementation
 
 ### Core Components Created
-1. **Database Schema** (`migrations/sql/20250102_create_suppliers_system.sql`)
+1. **Database Schema** (`archive/legacy-db-migrations/sql/20250102_create_suppliers_system.sql`)
    - 6 interconnected tables with proper relationships
    - Performance indexes and RLS policies
    - Comprehensive data validation and constraints

@@ -7,7 +7,7 @@ All planned components have been successfully implemented and are ready for migr
 ## What Was Built
 
 ### 1. Database Layer
-- ✅ Migration file created: `migrations/20250128_create_manual_financial_adjustments.sql`
+- ✅ Migration file created: `archive/legacy-db-migrations/root/20250128_create_manual_financial_adjustments.sql`
 - ✅ Table for manual financial entries (nómina, otros indirectos)
 - ✅ RLS policies for role-based access (admin, RH, gerente)
 - ✅ Indexes for performance optimization
@@ -46,7 +46,7 @@ All planned components have been successfully implemented and are ready for migr
 1. **Apply Database Migration**
    ```bash
    # Run the migration in Supabase
-   # File: migrations/20250128_create_manual_financial_adjustments.sql
+   # File: archive/legacy-db-migrations/root/20250128_create_manual_financial_adjustments.sql
    ```
 
 2. **Verify View Exists**
@@ -122,7 +122,7 @@ All planned components have been successfully implemented and are ready for migr
 ## Files Created/Modified
 
 ### Created (7 files):
-1. `migrations/20250128_create_manual_financial_adjustments.sql`
+1. `archive/legacy-db-migrations/root/20250128_create_manual_financial_adjustments.sql`
 2. `app/api/reports/gerencial/ingresos-gastos/route.ts`
 3. `app/api/reports/gerencial/manual-costs/route.ts`
 4. `app/api/business-units/route.ts`

@@ -68,7 +68,7 @@ Este documento describe **cómo está implementado hoy** el flujo: orden de trab
 
 ## 4. Máquina de estados (`status`) por propósito y tipo
 
-**Reglas en Postgres:** `get_valid_next_statuses(current_status, po_type, po_purpose)` — migración de referencia `migrations/sql/20260129_update_status_workflow_for_inventory.sql`.
+**Reglas en Postgres:** `get_valid_next_statuses(current_status, po_type, po_purpose)` — migración de referencia `archive/legacy-db-migrations/sql/20260129_update_status_workflow_for_inventory.sql`.
 
 ### 4.1 `po_purpose = work_order_inventory` (uso de inventario para OT)
 
@@ -175,7 +175,7 @@ Ambos envían `POST` con cuerpo `{ "po_id": "<uuid>" }` al Edge Function (el tri
 
 ### 7.1 Trigger `trg_notify_po_pending_approval`
 
-**Definición en producción (Supabase mantenimiento):** `AFTER INSERT OR UPDATE OF status, authorized_by, viability_state` — ver [supabase-purchase-order-database-summary.md](./supabase-purchase-order-database-summary.md). El repo puede mostrar una definición distinta en `migrations/sql/20250730_po_email_actions_trigger.sql` si esa migración no se reaplicó con la columna extra.
+**Definición en producción (Supabase mantenimiento):** `AFTER INSERT OR UPDATE OF status, authorized_by, viability_state` — ver [supabase-purchase-order-database-summary.md](./supabase-purchase-order-database-summary.md). El repo puede mostrar una definición distinta en `archive/legacy-db-migrations/sql/20250730_po_email_actions_trigger.sql` si esa migración no se reaplicó con la columna extra.
 
 **Condiciones en las que `notify_po_pending_approval()` encola el HTTP POST (cuerpo de función en BD):**
 
@@ -197,7 +197,7 @@ Ambos envían `POST` con cuerpo `{ "po_id": "<uuid>" }` al Edge Function (el tri
 En la base **Supabase mantenimiento** (`txapndpstzcspgxlybll`), el trigger está definido como  
 `AFTER INSERT OR UPDATE OF status, authorized_by, viability_state` — así, un `UPDATE` que **solo** pasa `viability_state` a `viable` **sí dispara** el trigger y puede encolar el correo al siguiente aprobador cuando la función evalúa la rama correspondiente.
 
-En el **repositorio**, el archivo `migrations/sql/20250730_po_email_actions_trigger.sql` aún muestra solo `status, authorized_by`; si otro entorno se creó solo desde esas migraciones, podría faltar `viability_state` en la definición del trigger. Contrastar con [supabase-purchase-order-database-summary.md](./supabase-purchase-order-database-summary.md) (metadatos vivos) o con `pg_get_triggerdef` en cada entorno.
+En el **repositorio**, el archivo `archive/legacy-db-migrations/sql/20250730_po_email_actions_trigger.sql` aún muestra solo `status, authorized_by`; si otro entorno se creó solo desde esas migraciones, podría faltar `viability_state` en la definición del trigger. Contrastar con [supabase-purchase-order-database-summary.md](./supabase-purchase-order-database-summary.md) (metadatos vivos) o con `pg_get_triggerdef` en cada entorno.
 
 ### 7.2 Edge Function `purchase-order-approval-notification`
 
@@ -235,14 +235,14 @@ En el **repositorio**, el archivo `migrations/sql/20250730_po_email_actions_trig
 
 ### 7.3 Resolución del clic: `direct-action` → `process`
 
-1. `**GET /api/purchase-order-actions/direct-action`** (`app/api/purchase-order-actions/direct-action/route.ts`): Lee `po`, `action`, `email`, `quotation`; llama RPC `**get_po_action_token**` (`migrations/sql/20260211_add_po_action_tokens_quotation_and_user.sql`) para obtener el JWT almacenado; redirige a:
+1. `**GET /api/purchase-order-actions/direct-action`** (`app/api/purchase-order-actions/direct-action/route.ts`): Lee `po`, `action`, `email`, `quotation`; llama RPC `**get_po_action_token**` (`archive/legacy-db-migrations/sql/20260211_add_po_action_tokens_quotation_and_user.sql`) para obtener el JWT almacenado; redirige a:
 2. `**GET /api/purchase-order-actions/process?token=...**` (`app/api/purchase-order-actions/process/route.ts`): Llama RPC `**process_po_email_action(p_token)**`; redirige a `/compras/accion-po?action=...&po=...`.
 
 **Tabla `po_action_tokens`:** RLS “deny all” a clientes; uso vía **SECURITY DEFINER** RPCs y service role en Edge Function.
 
 ### 7.4 RPC `process_po_email_action` (lógica por rol)
 
-**Fuente:** `migrations/sql/20260318_fix_po_email_action_viability.sql` (versión actual en migraciones del repo).
+**Fuente:** `archive/legacy-db-migrations/sql/20260318_fix_po_email_action_viability.sql` (versión actual en migraciones del repo).
 
 **Validaciones comunes:**
 
@@ -276,7 +276,7 @@ Tras éxito, **borra tokens** del mismo `purchase_order_id` + `recipient_email` 
 
 **Desde app:** `notifyReadyToPay(poId)` → Edge Function `po-ready-to-pay-notification` (`lib/purchase-orders/notify-approver.ts`).
 
-**Desde BD (repo):** Trigger `notify_po_ready_to_pay` en transición **a** `status = 'approved'` — `migrations/sql/20260319_po_ready_to_pay_notification.sql` (cola HTTP a `edge_po_ready_to_pay_url`).
+**Desde BD (repo):** Trigger `notify_po_ready_to_pay` en transición **a** `status = 'approved'` — `archive/legacy-db-migrations/sql/20260319_po_ready_to_pay_notification.sql` (cola HTTP a `edge_po_ready_to_pay_url`).
 
 Puede haber **doble notificación** (app + trigger) en el mismo evento; ambas van dirigidas a operación administrativa.
 
@@ -300,9 +300,9 @@ Función `notify_purchase_order_update` (solo base de datos): notifica al `reque
 | Llamadas a Edge desde app    | `lib/purchase-orders/notify-approver.ts`                                      |
 | Procesar clic de correo      | `app/api/purchase-order-actions/direct-action/route.ts`, `process/route.ts`   |
 | Edge aprobación OC           | `supabase/functions/purchase-order-approval-notification/index.ts`            |
-| Transiciones de estado SQL   | `migrations/sql/20260129_update_status_workflow_for_inventory.sql`            |
-| Trigger cola aprobación      | `migrations/sql/20260318_fix_po_admin_email_trigger.sql`                      |
-| RPC email                    | `migrations/sql/20260318_fix_po_email_action_viability.sql`                   |
+| Transiciones de estado SQL   | `archive/legacy-db-migrations/sql/20260129_update_status_workflow_for_inventory.sql`            |
+| Trigger cola aprobación      | `archive/legacy-db-migrations/sql/20260318_fix_po_admin_email_trigger.sql`                      |
+| RPC email                    | `archive/legacy-db-migrations/sql/20260318_fix_po_email_action_viability.sql`                   |
 | Surtido inventario           | `lib/services/inventory-fulfillment-service.ts`, API `fulfill-from-inventory` |
 | Recepción inventario         | `lib/services/inventory-receipt-service.ts`, API `receive-to-inventory`       |
 | UI workflow tipificada       | `components/purchase-orders/workflow/WorkflowStatusDisplay.tsx`               |
@@ -388,5 +388,5 @@ Pantallas pueden mostrar `LegacyActionCard` con rutas `/compras/[id]/pedido`, `/
 ## 12. Versión
 
 - Generado a partir del código y migraciones en el repositorio `maintenance-dashboard`.
-- Producción Supabase puede diferir si no se aplicaron todas las migraciones; contrastar con `migrations/sql/` desplegadas.
+- Producción Supabase puede diferir si no se aplicaron todas las migraciones; contrastar con `archive/legacy-db-migrations/sql/` desplegadas.
 

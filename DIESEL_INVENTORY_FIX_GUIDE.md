@@ -260,7 +260,7 @@ WHERE ABS(COALESCE(previous_balance, 0) - COALESCE(expected_prev, 0)) > 0.01
 ## Files Modified/Created
 
 ### New Files:
-- `migrations/sql/20251218_diesel_inventory_fix.sql`
+- `archive/legacy-db-migrations/sql/20251218_diesel_inventory_fix.sql`
 - `scripts/diagnose-diesel-inventory.ts`
 - `scripts/recalculate-diesel-balances.ts`
 - `app/api/diesel/audit-balance/route.ts`

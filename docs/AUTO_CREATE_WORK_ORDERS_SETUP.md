@@ -36,7 +36,7 @@ Execute the SQL migration in Supabase SQL Editor:
 
 ```bash
 # The migration file is located at:
-migrations/sql/20250114_auto_create_pending_work_orders.sql
+archive/legacy-db-migrations/sql/20250114_auto_create_pending_work_orders.sql
 ```
 
 **Important:** Run this with elevated permissions (service_role) because it:
@@ -355,7 +355,7 @@ $$;
 
 ## Related Files
 
-- **Migration:** `migrations/sql/20250114_auto_create_pending_work_orders.sql`
+- **Migration:** `archive/legacy-db-migrations/sql/20250114_auto_create_pending_work_orders.sql`
 - **API Endpoint:** `app/api/checklists/auto-create-pending-work-orders/route.ts`
 - **Unresolved Issues API:** `app/api/checklists/unresolved-issues/route.ts`
 - **Client Component:** `components/checklists/unresolved-issues-tracker.tsx`

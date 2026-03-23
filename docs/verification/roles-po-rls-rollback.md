@@ -34,7 +34,7 @@ No DB migration rollback needed — the app-layer change is the only gate.
 - `lib/auth/warehouse-responsibility.ts` — legacy fallback now includes new roles
 - `lib/inventory/warehouse-authority.ts` — checks `warehouse_responsibilities` table
 - API routes gated with `canUserReleaseInventory`, `canUserReceiveInventory`, `canUserAdjustInventory`
-- `migrations/sql/20260306_refactor_inventory_rls_warehouse_authority.sql` — RLS uses `user_has_warehouse_permission`
+- `archive/legacy-db-migrations/sql/20260306_refactor_inventory_rls_warehouse_authority.sql` — RLS uses `user_has_warehouse_permission`
 
 **Rollback condition:** Legitimate users with `ENCARGADO_ALMACEN` or legacy roles cannot perform inventory operations.
 
@@ -49,7 +49,7 @@ To revert RLS policies to legacy role membership checks:
 -- Drop the helper function and restore simple role-based policies
 DROP FUNCTION IF EXISTS public.user_has_warehouse_permission(uuid, uuid, text);
 
--- Restore the original policies from migrations/sql/20250125_006_create_inventory_rls.sql
+-- Restore the original policies from archive/legacy-db-migrations/sql/20250125_006_create_inventory_rls.sql
 -- (re-apply that migration after dropping the refactored policies)
 ```
 

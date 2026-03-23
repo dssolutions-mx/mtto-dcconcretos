@@ -28,13 +28,13 @@
 ### ✅ **Configuraciones Activas y Funcionales**
 
 #### 1. `enforce_asset_blocking`
-- **Ubicación en código:** `migrations/sql/20251220_compliance_functions.sql`
+- **Ubicación en código:** `archive/legacy-db-migrations/sql/20251220_compliance_functions.sql`
 - **Función:** `can_asset_operate()` y `enforce_checklist_before_operation()`
 - **Uso:** Controla si se bloquea hard (true) o solo se advierte (false) cuando un activo opera sin checklist
 - **Estado:** ✅ **FUNCIONAL**
 
 #### 2. `asset_grace_period_days`
-- **Ubicación en código:** `migrations/sql/20251220_compliance_functions.sql`
+- **Ubicación en código:** `archive/legacy-db-migrations/sql/20251220_compliance_functions.sql`
 - **Función:** `refresh_asset_accountability()`
 - **Uso:** Días que un activo nuevo está excluido de las verificaciones de cumplimiento
 - **Estado:** ✅ **FUNCIONAL**

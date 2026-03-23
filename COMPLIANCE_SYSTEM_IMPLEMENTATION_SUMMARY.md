@@ -196,10 +196,10 @@ All components of the Zero-Risk Governance & Compliance Rollout have been succes
 
 ## 📝 Migration Files Created
 
-1. `migrations/sql/20251220_compliance_governance_system.sql` - Main schema
-2. `migrations/sql/20251220_compliance_functions.sql` - Functions and triggers
-3. `migrations/sql/20251220_add_dispute_tracking.sql` - Dispute enhancements
-4. `migrations/sql/20251220_add_settings_audit_log.sql` - Audit logging
+1. `archive/legacy-db-migrations/sql/20251220_compliance_governance_system.sql` - Main schema
+2. `archive/legacy-db-migrations/sql/20251220_compliance_functions.sql` - Functions and triggers
+3. `archive/legacy-db-migrations/sql/20251220_add_dispute_tracking.sql` - Dispute enhancements
+4. `archive/legacy-db-migrations/sql/20251220_add_settings_audit_log.sql` - Audit logging
 
 All migrations applied successfully via Supabase MCP.
 

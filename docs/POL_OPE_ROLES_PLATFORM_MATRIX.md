@@ -27,5 +27,5 @@ Versión de referencia: **POL-OPE-001 Mantenimiento · POL-OPE-002 Inventario y 
 
 ## Migraciones relacionadas
 
-- `migrations/sql/20260321_fix_profiles_business_role_jun_jp.sql` — corrige `business_role` de JUN y JP.
-- `migrations/sql/20260321_process_po_email_action_technical_gerente_only.sql` — restringe aprobación técnica por correo a Gerente de Mantenimiento.
+- `archive/legacy-db-migrations/sql/20260321_fix_profiles_business_role_jun_jp.sql` — corrige `business_role` de JUN y JP.
+- `archive/legacy-db-migrations/sql/20260321_process_po_email_action_technical_gerente_only.sql` — restringe aprobación técnica por correo a Gerente de Mantenimiento.

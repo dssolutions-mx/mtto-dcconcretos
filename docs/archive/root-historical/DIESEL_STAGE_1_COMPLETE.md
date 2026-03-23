@@ -88,8 +88,8 @@ Following the same hierarchical access control as `assets`, `work_orders`, `comp
 
 ### ✅ Database Migration Files
 
-1. `migrations/sql/20251001_diesel_production_tables.sql` - Tables, functions, indices
-2. `migrations/sql/20251001_diesel_rls_policies.sql` - Documentation of policies
+1. `archive/legacy-db-migrations/sql/20251001_diesel_production_tables.sql` - Tables, functions, indices
+2. `archive/legacy-db-migrations/sql/20251001_diesel_rls_policies.sql` - Documentation of policies
 
 ### ✅ Permissions Granted
 

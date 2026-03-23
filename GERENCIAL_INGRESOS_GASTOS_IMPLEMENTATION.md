@@ -5,7 +5,7 @@ Successfully implemented a dedicated financial analysis page for the gerencial r
 
 ## Components Implemented
 
-### 1. Database Schema (`migrations/20250128_create_manual_financial_adjustments.sql`)
+### 1. Database Schema (`archive/legacy-db-migrations/root/20250128_create_manual_financial_adjustments.sql`)
 - Created `manual_financial_adjustments` table for storing manual financial entries
 - Fields: business_unit_id, plant_id, period_month, category (nomina/otros_indirectos), department, subcategory, description, amount, notes
 - Indexes for performance optimization
@@ -136,7 +136,7 @@ Successfully implemented a dedicated financial analysis page for the gerencial r
 ## Files Modified/Created
 
 ### Created:
-- `migrations/20250128_create_manual_financial_adjustments.sql`
+- `archive/legacy-db-migrations/root/20250128_create_manual_financial_adjustments.sql`
 - `app/api/reports/gerencial/ingresos-gastos/route.ts`
 - `app/api/reports/gerencial/manual-costs/route.ts`
 - `app/api/business-units/route.ts`

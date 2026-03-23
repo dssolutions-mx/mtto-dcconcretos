@@ -50,7 +50,7 @@ Inserted two default offices:
 
 2. **Oficina Principal** (placeholder for second office)
 
-**Migration File:** `/migrations/sql/20250930_create_offices_table.sql`
+**Migration File:** `archive/legacy-db-migrations/sql/20250930_create_offices_table.sql`
 
 ---
 
@@ -229,7 +229,7 @@ export type Profile = DbTables['profiles']['Row'] & {
 ## Files Modified
 
 1. **Migration:**
-   - `/migrations/sql/20250930_create_offices_table.sql` (new)
+   - `archive/legacy-db-migrations/sql/20250930_create_offices_table.sql` (new)
 
 2. **Components:**
    - `/components/credentials/credential-card.tsx` (updated)

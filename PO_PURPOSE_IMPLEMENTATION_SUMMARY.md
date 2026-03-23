@@ -3,7 +3,7 @@
 ## Completed Changes
 
 ### ✅ Phase 1: Database Schema
-- Created migration: `migrations/sql/20260125_add_po_purpose.sql`
+- Created migration: `archive/legacy-db-migrations/sql/20260125_add_po_purpose.sql`
 - Added `po_purpose` column to `purchase_orders` table
 - Created indexes for performance
 - Created `purchase_orders_expense_classification` view
@@ -186,7 +186,7 @@ Updated all three form components to check inventory and set purpose:
 ## Files Modified
 
 ### Database
-- `migrations/sql/20260125_add_po_purpose.sql` (NEW)
+- `archive/legacy-db-migrations/sql/20260125_add_po_purpose.sql` (NEW)
 
 ### Types
 - `types/purchase-orders.ts`

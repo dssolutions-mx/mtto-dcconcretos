@@ -6,7 +6,7 @@
 
 **Narrative workflow (OT → OC → aprobaciones → inventario):** [INVENTORY_PO_WORKFLOW_SOURCE_OF_TRUTH.md](./INVENTORY_PO_WORKFLOW_SOURCE_OF_TRUTH.md)
 
-**Note:** The git repo’s `migrations/sql/` folder can lag behind or diverge from this database (e.g. quotation triggers exist **here** but are not all checked into that folder). **This document reflects the live database only.**
+**Note:** The git repo’s `archive/legacy-db-migrations/sql/` folder can lag behind or diverge from this database (e.g. quotation triggers exist **here** but are not all checked into that folder). **This document reflects the live database only.**
 
 ---
 
@@ -178,4 +178,4 @@ SELECT pg_get_functiondef('public.notify_po_pending_approval()'::regprocedure);
 
 ## 14. Repo vs database
 
-Some objects above (e.g. `trigger_notify_quotation_selection`, `trigger_auto_select_single_quotation`, **`viability_state` on `trg_notify_po_pending_approval`**) may **not** appear in `migrations/sql/` in this workspace. Treat **this file** as the snapshot of **Supabase project `txapndpstzcspgxlybll`** at verification time; export or add migrations if you need the repo to match production.
+Some objects above (e.g. `trigger_notify_quotation_selection`, `trigger_auto_select_single_quotation`, **`viability_state` on `trg_notify_po_pending_approval`**) may **not** appear in `archive/legacy-db-migrations/sql/` in this workspace. Treat **this file** as the snapshot of **Supabase project `txapndpstzcspgxlybll`** at verification time; export or add migrations if you need the repo to match production.

@@ -58,9 +58,9 @@ This document captures architectural and implementation decisions for the PO app
 ## Files Modified / Created
 
 ### Migrations
-- `migrations/sql/20260211_fix_maira_profile_email_typo.sql`
-- `migrations/sql/20260211_add_po_action_tokens_quotation_and_user.sql`
-- `migrations/sql/20260211_add_asset_movement_notification_trigger.sql`
+- `archive/legacy-db-migrations/sql/20260211_fix_maira_profile_email_typo.sql`
+- `archive/legacy-db-migrations/sql/20260211_add_po_action_tokens_quotation_and_user.sql`
+- `archive/legacy-db-migrations/sql/20260211_add_asset_movement_notification_trigger.sql`
 
 ### Edge Functions
 - `supabase/functions/purchase-order-approval-notification/index.ts` – recipient_user_id, GM per-quote tokens
@@ -103,4 +103,4 @@ This document captures architectural and implementation decisions for the PO app
 
 - Plan: `.cursor/plans/po_edge_functions_analysis_48c9ab47.plan.md`
 - `QUOTATION_WORKFLOW_IMPLEMENTATION.md`
-- `migrations/sql/20250730_po_email_actions_trigger.sql`
+- `archive/legacy-db-migrations/sql/20250730_po_email_actions_trigger.sql`

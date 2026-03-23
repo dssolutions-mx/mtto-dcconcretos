@@ -259,7 +259,7 @@ For production deployment, consider:
 ## 📁 Files Modified
 
 ```
-✅ migrations/sql/
+✅ archive/legacy-db-migrations/sql/
    └── 20250102_add_purchase_date_field.sql (created)
 
 ✅ types/
