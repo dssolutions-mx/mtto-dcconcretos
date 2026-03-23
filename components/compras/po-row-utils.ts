@@ -8,6 +8,16 @@ export function getWorkOrder(order: PurchaseOrderWithWorkOrder) {
   return order.work_orders
 }
 
+/** Resolved plant for a PO: direct `plant_id`, else from linked work order asset. */
+export function getPurchaseOrderPlantId(order: PurchaseOrderWithWorkOrder): string | null {
+  const pid =
+    order.plant_id ||
+    order.work_orders?.assets?.plants?.id ||
+    order.work_orders?.assets?.plant_id ||
+    null
+  return pid ?? null
+}
+
 export function isEnhancedPurchaseOrder(order: PurchaseOrderWithWorkOrder): boolean {
   return !!(order.po_type)
 }

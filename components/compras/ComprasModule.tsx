@@ -39,7 +39,8 @@ import { ComprasSummaryRibbon } from "./ComprasSummaryRibbon"
 import { ComprasFilterBar } from "./ComprasFilterBar"
 import { ComprasTable } from "./ComprasTable"
 import { useComprasData, type PurchaseOrderWithWorkOrder } from "./useComprasData"
-import { getWorkOrder } from "./po-row-utils"
+import { getWorkOrder, getPurchaseOrderPlantId } from "./po-row-utils"
+import { useComprasPlantScope } from "./useComprasPlantScope"
 
 export interface ComprasModuleProps {
   /** When provided by parent (compras page), skips duplicate auth API fetch */
@@ -55,6 +56,15 @@ export function ComprasModule({
   const { profile } = useAuthZustand()
   const { orders, setOrders, technicians, approvalContext, isLoading, loadOrders, loadApprovalContext } =
     useComprasData()
+  const { allowedPlantIds, resolving: scopeResolving } = useComprasPlantScope()
+  const scopedOrders = useMemo(() => {
+    if (scopeResolving) return []
+    if (allowedPlantIds === null) return orders
+    return orders.filter((o) => {
+      const pid = getPurchaseOrderPlantId(o)
+      return pid != null && allowedPlantIds.has(pid)
+    })
+  }, [orders, allowedPlantIds, scopeResolving])
   const [searchTerm, setSearchTerm] = useState("")
   const [activeTab, setActiveTab] = useState<string>("all")
   const hasSetInitialTabRef = useRef(false)
@@ -143,7 +153,7 @@ export function ComprasModule({
       setOrders((prev) =>
         prev.map((o) => (o.id === order.id ? { ...o, viability_state: "viable" as const } : o))
       )
-      const pendingIds = orders
+      const pendingIds = scopedOrders
         .filter((o) => o.status === PurchaseOrderStatus.PendingApproval && !o.is_adjustment)
         .map((o) => o.id)
       await loadApprovalContext(pendingIds)
@@ -174,7 +184,7 @@ export function ComprasModule({
             : o
         )
       )
-      const stillPending = orders
+      const stillPending = scopedOrders
         .filter((o) => o.status === PurchaseOrderStatus.PendingApproval && !o.is_adjustment && o.id !== orderToApprove.id)
         .map((o) => o.id)
       await loadApprovalContext(stillPending)
@@ -217,7 +227,7 @@ export function ComprasModule({
 
   const assetOptions = useMemo(() => {
     const map: Record<string, { id: string; label: string }> = {}
-    orders.forEach((o) => {
+    scopedOrders.forEach((o) => {
       const asset = o.work_orders?.assets
       if (o.work_orders?.asset_id && asset) {
         const id = o.work_orders.asset_id
@@ -227,18 +237,18 @@ export function ComprasModule({
       }
     })
     return Object.values(map).sort((a, b) => a.label.localeCompare(b.label))
-  }, [orders])
+  }, [scopedOrders])
 
   const plantOptions = useMemo(() => {
     const map: Record<string, { id: string; label: string }> = {}
-    orders.forEach((o) => {
+    scopedOrders.forEach((o) => {
       const po = o as PurchaseOrderWithWorkOrder & { plants?: { id: string; name: string } | null }
-      const plantId = po.plant_id || po.work_orders?.assets?.plants?.id || po.work_orders?.assets?.plant_id
+      const plantId = getPurchaseOrderPlantId(po)
       const plantName = po.plants?.name || po.work_orders?.assets?.plants?.name
       if (plantId && plantName) map[plantId] = { id: plantId, label: plantName }
     })
     return Object.values(map).sort((a, b) => a.label.localeCompare(b.label))
-  }, [orders])
+  }, [scopedOrders])
 
   const orderTypeOptions = useMemo(
     () => [
@@ -251,25 +261,25 @@ export function ComprasModule({
 
   const supplierOptions = useMemo(() => {
     const map: Record<string, string> = {}
-    orders.forEach((o) => {
+    scopedOrders.forEach((o) => {
       const name = (o as PurchaseOrderWithWorkOrder).po_type && (o as PurchaseOrderWithWorkOrder).service_provider
         ? (o as PurchaseOrderWithWorkOrder).service_provider!
         : o.supplier || ""
       if (name?.trim()) map[name.trim()] = name.trim()
     })
     return Object.values(map).sort((a, b) => a.localeCompare(b))
-  }, [orders])
+  }, [scopedOrders])
 
   const summaryMetrics = useMemo(
     () => ({
-      pending: orders.filter((o) => o.status === PurchaseOrderStatus.PendingApproval && !o.is_adjustment).length,
-      approved: orders.filter((o) => o.status === PurchaseOrderStatus.Approved && !o.is_adjustment).length,
-      validated: orders.filter((o) => o.status === PurchaseOrderStatus.Validated && !o.is_adjustment).length,
-      adjustments: orders.filter((o) => o.is_adjustment).length,
-      totalPendingValue: orders
+      pending: scopedOrders.filter((o) => o.status === PurchaseOrderStatus.PendingApproval && !o.is_adjustment).length,
+      approved: scopedOrders.filter((o) => o.status === PurchaseOrderStatus.Approved && !o.is_adjustment).length,
+      validated: scopedOrders.filter((o) => o.status === PurchaseOrderStatus.Validated && !o.is_adjustment).length,
+      adjustments: scopedOrders.filter((o) => o.is_adjustment).length,
+      totalPendingValue: scopedOrders
         .filter((o) => o.status === PurchaseOrderStatus.PendingApproval && !o.is_adjustment)
         .reduce((sum, o) => sum + (typeof o.total_amount === "string" ? parseFloat(o.total_amount) : o.total_amount || 0), 0),
-      totalMonthValue: orders
+      totalMonthValue: scopedOrders
         .filter((o) => {
           if (!o.created_at) return false
           const d = new Date(o.created_at)
@@ -278,11 +288,11 @@ export function ComprasModule({
         })
         .reduce((sum, o) => sum + (typeof o.total_amount === "string" ? parseFloat(o.total_amount) : o.total_amount || 0), 0),
     }),
-    [orders]
+    [scopedOrders]
   )
 
   const filteredOrders = useMemo(() => {
-    let list = orders.filter((o) => {
+    let list = scopedOrders.filter((o) => {
       if (activeTab === "all") return true
       if (activeTab === "pending") return o.status === PurchaseOrderStatus.PendingApproval && !o.is_adjustment
       if (activeTab === "approved") return o.status === PurchaseOrderStatus.Approved && !o.is_adjustment
@@ -293,10 +303,7 @@ export function ComprasModule({
     })
     if (selectedAssetId) list = list.filter((o) => o.work_orders?.asset_id === selectedAssetId)
     if (selectedPlantId) {
-      list = list.filter((o) => {
-        const pid = o.plant_id || o.work_orders?.assets?.plants?.id || o.work_orders?.assets?.plant_id
-        return pid === selectedPlantId
-      })
+      list = list.filter((o) => getPurchaseOrderPlantId(o) === selectedPlantId)
     }
     if (selectedOrderType) list = list.filter((o) => o.po_type === selectedOrderType)
     if (selectedSupplier) {
@@ -337,7 +344,7 @@ export function ComprasModule({
         (wo?.description?.toLowerCase() || "").includes(term)
       )
     })
-  }, [orders, activeTab, selectedAssetId, selectedPlantId, selectedOrderType, selectedSupplier, fromDate, toDate, searchTerm])
+  }, [scopedOrders, activeTab, selectedAssetId, selectedPlantId, selectedOrderType, selectedSupplier, fromDate, toDate, searchTerm])
 
   const getTechnicianName = (techId: string | null) => {
     if (!techId) return "No asignado"
@@ -417,7 +424,7 @@ export function ComprasModule({
           </div>
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
             <TabsList className="grid w-full grid-cols-6">
-              <TabsTrigger value="all">Todas ({orders.length})</TabsTrigger>
+              <TabsTrigger value="all">Todas ({scopedOrders.length})</TabsTrigger>
               <TabsTrigger value="pending">Pendientes ({summaryMetrics.pending})</TabsTrigger>
               <TabsTrigger value="approved">Aprobadas ({summaryMetrics.approved})</TabsTrigger>
               <TabsTrigger value="validated">Validadas ({summaryMetrics.validated})</TabsTrigger>
@@ -425,7 +432,7 @@ export function ComprasModule({
               <TabsTrigger value="adjustments">Ajustes ({summaryMetrics.adjustments})</TabsTrigger>
             </TabsList>
             <TabsContent value={activeTab} className="mt-4">
-              {isLoading ? (
+              {isLoading || scopeResolving ? (
                 <div className="space-y-2">
                   {[...Array(5)].map((_, i) => (
                     <div key={i} className="h-14 bg-muted/50 rounded animate-pulse" />

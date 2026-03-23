@@ -51,7 +51,8 @@ import { Separator } from "@/components/ui/separator"
 import { useAuthZustand } from "@/hooks/use-auth-zustand"
 import { formatCurrency } from "@/lib/utils"
 import { useComprasData, type PurchaseOrderWithWorkOrder } from "@/components/compras/useComprasData"
-import { getWorkOrder, isEnhancedPurchaseOrder, getUrgencyConfig } from "@/components/compras/po-row-utils"
+import { useComprasPlantScope } from "@/components/compras/useComprasPlantScope"
+import { getWorkOrder, getPurchaseOrderPlantId, isEnhancedPurchaseOrder, getUrgencyConfig } from "@/components/compras/po-row-utils"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Calendar as CalendarPicker } from "@/components/ui/calendar"
@@ -460,6 +461,15 @@ export function PurchaseOrdersListMobile({ effectiveAuthLimitFromParent, isLoadi
   const { toast } = useToast()
   const { profile } = useAuthZustand()
   const { orders, setOrders, technicians, approvalContext, isLoading, loadOrders, loadApprovalContext } = useComprasData()
+  const { allowedPlantIds, resolving: scopeResolving } = useComprasPlantScope()
+  const scopedOrders = useMemo(() => {
+    if (scopeResolving) return []
+    if (allowedPlantIds === null) return orders
+    return orders.filter((o) => {
+      const pid = getPurchaseOrderPlantId(o)
+      return pid != null && allowedPlantIds.has(pid)
+    })
+  }, [orders, allowedPlantIds, scopeResolving])
   const [searchTerm, setSearchTerm] = useState("")
   const [activeTab, setActiveTab] = useState<string>("pending")
   const [userAuthLimit, setUserAuthLimit] = useState<number>(effectiveAuthLimitFromParent ?? 0)
@@ -567,7 +577,7 @@ export function PurchaseOrdersListMobile({ effectiveAuthLimitFromParent, isLoadi
         title: 'Viabilidad registrada',
         description: `La orden ${order.order_id} tiene viabilidad administrativa registrada.`,
       })
-      const pendingIds = orders
+      const pendingIds = scopedOrders
         .filter(o => o.status === PurchaseOrderStatus.PendingApproval && !o.is_adjustment)
         .map(o => o.id)
       await loadApprovalContext(pendingIds)
@@ -620,8 +630,13 @@ export function PurchaseOrdersListMobile({ effectiveAuthLimitFromParent, isLoadi
       )
       setOrders(updatedOrders)
       const pendingIds = updatedOrders
-        .filter(o => o.status === PurchaseOrderStatus.PendingApproval && !o.is_adjustment)
-        .map(o => o.id)
+        .filter((o) => {
+          if (o.status !== PurchaseOrderStatus.PendingApproval || o.is_adjustment) return false
+          if (allowedPlantIds === null) return true
+          const pid = getPurchaseOrderPlantId(o)
+          return pid != null && allowedPlantIds.has(pid)
+        })
+        .map((o) => o.id)
       await loadApprovalContext(pendingIds)
       
       toast({
@@ -683,20 +698,20 @@ export function PurchaseOrdersListMobile({ effectiveAuthLimitFromParent, isLoadi
   }, [loadOrders])
 
   // Calculate summary metrics (En curso = approved + validated)
-  const enCursoCount = orders.filter(o => (o.status === PurchaseOrderStatus.Approved || o.status === PurchaseOrderStatus.Validated) && !o.is_adjustment).length
+  const enCursoCount = scopedOrders.filter(o => (o.status === PurchaseOrderStatus.Approved || o.status === PurchaseOrderStatus.Validated) && !o.is_adjustment).length
   const summaryMetrics = {
-    pending: orders.filter(o => o.status === PurchaseOrderStatus.PendingApproval && !o.is_adjustment).length,
-    approved: orders.filter(o => o.status === PurchaseOrderStatus.Approved && !o.is_adjustment).length,
-    validated: orders.filter(o => o.status === PurchaseOrderStatus.Validated && !o.is_adjustment).length,
+    pending: scopedOrders.filter(o => o.status === PurchaseOrderStatus.PendingApproval && !o.is_adjustment).length,
+    approved: scopedOrders.filter(o => o.status === PurchaseOrderStatus.Approved && !o.is_adjustment).length,
+    validated: scopedOrders.filter(o => o.status === PurchaseOrderStatus.Validated && !o.is_adjustment).length,
     enCurso: enCursoCount,
-    adjustments: orders.filter(o => o.is_adjustment).length,
-    totalPendingValue: orders
+    adjustments: scopedOrders.filter(o => o.is_adjustment).length,
+    totalPendingValue: scopedOrders
       .filter(o => o.status === PurchaseOrderStatus.PendingApproval && !o.is_adjustment)
       .reduce((sum, o) => {
         const amount = typeof o.total_amount === 'string' ? parseFloat(o.total_amount) : (o.total_amount || 0);
         return sum + amount;
       }, 0),
-    totalMonthValue: orders
+    totalMonthValue: scopedOrders
       .filter(o => {
         if (!o.created_at) return false;
         const orderDate = new Date(o.created_at);
@@ -710,7 +725,7 @@ export function PurchaseOrdersListMobile({ effectiveAuthLimitFromParent, isLoadi
   }
 
   // Filter orders by status tab (En curso = approved + validated)
-  const filteredOrdersByTab = orders.filter(order => {
+  const filteredOrdersByTab = scopedOrders.filter(order => {
     if (activeTab === "all") return true;
     if (activeTab === "pending") return order.status === PurchaseOrderStatus.PendingApproval && !order.is_adjustment;
     if (activeTab === "en_curso") return (order.status === PurchaseOrderStatus.Approved || order.status === PurchaseOrderStatus.Validated) && !order.is_adjustment;
@@ -719,10 +734,10 @@ export function PurchaseOrdersListMobile({ effectiveAuthLimitFromParent, isLoadi
     return true;
   });
 
-  // Asset options built from orders
+  // Asset options built from scoped orders
   const assetOptions = useMemo(() => {
     const map: Record<string, { id: string; label: string }> = {}
-    orders.forEach(o => {
+    scopedOrders.forEach(o => {
       const asset = o.work_orders?.assets
       if (o.work_orders?.asset_id && asset) {
         const id = o.work_orders.asset_id
@@ -732,7 +747,7 @@ export function PurchaseOrdersListMobile({ effectiveAuthLimitFromParent, isLoadi
       }
     })
     return Object.values(map).sort((a, b) => a.label.localeCompare(b.label))
-  }, [orders])
+  }, [scopedOrders])
 
   // Filter by selected asset
   const filteredByAsset = filteredOrdersByTab.filter(order => {
@@ -894,7 +909,7 @@ export function PurchaseOrdersListMobile({ effectiveAuthLimitFromParent, isLoadi
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
             <TabsList className="flex flex-wrap gap-2 h-auto p-0 bg-transparent border-0">
               <TabsTrigger value="all" className="rounded-full px-4 py-2 min-h-[44px] data-[state=active]:bg-slate-900 data-[state=active]:text-white">
-                Todas {orders.length}
+                Todas {scopedOrders.length}
               </TabsTrigger>
               <TabsTrigger value="pending" className="rounded-full px-4 py-2 min-h-[44px] relative data-[state=active]:bg-yellow-600 data-[state=active]:text-white">
                 Pendientes {summaryMetrics.pending}
@@ -918,7 +933,7 @@ export function PurchaseOrdersListMobile({ effectiveAuthLimitFromParent, isLoadi
               <TabsContent value="all" className="mt-0">
                 <MobileView
                   orders={filteredOrders}
-                  isLoading={isLoading}
+                  isLoading={isLoading || scopeResolving}
                   getTechnicianName={getTechnicianName}
                   formatCurrency={formatCurrency}
                   onDeleteOrder={handleDeleteOrder}
@@ -931,7 +946,7 @@ export function PurchaseOrdersListMobile({ effectiveAuthLimitFromParent, isLoadi
               <TabsContent value="pending" className="mt-0">
                 <MobileView
                   orders={filteredOrders}
-                  isLoading={isLoading}
+                  isLoading={isLoading || scopeResolving}
                   getTechnicianName={getTechnicianName}
                   formatCurrency={formatCurrency}
                   onDeleteOrder={handleDeleteOrder}
@@ -944,7 +959,7 @@ export function PurchaseOrdersListMobile({ effectiveAuthLimitFromParent, isLoadi
               <TabsContent value="en_curso" className="mt-0">
                 <MobileView
                   orders={filteredOrders}
-                  isLoading={isLoading}
+                  isLoading={isLoading || scopeResolving}
                   getTechnicianName={getTechnicianName}
                   formatCurrency={formatCurrency}
                   onDeleteOrder={handleDeleteOrder}
@@ -957,7 +972,7 @@ export function PurchaseOrdersListMobile({ effectiveAuthLimitFromParent, isLoadi
               <TabsContent value="received" className="mt-0">
                 <MobileView
                   orders={filteredOrders}
-                  isLoading={isLoading}
+                  isLoading={isLoading || scopeResolving}
                   getTechnicianName={getTechnicianName}
                   formatCurrency={formatCurrency}
                   onDeleteOrder={handleDeleteOrder}
@@ -970,7 +985,7 @@ export function PurchaseOrdersListMobile({ effectiveAuthLimitFromParent, isLoadi
               <TabsContent value="adjustments" className="mt-0">
                 <MobileView
                   orders={filteredOrders}
-                  isLoading={isLoading}
+                  isLoading={isLoading || scopeResolving}
                   getTechnicianName={getTechnicianName}
                   formatCurrency={formatCurrency}
                   onDeleteOrder={handleDeleteOrder}
@@ -985,7 +1000,7 @@ export function PurchaseOrdersListMobile({ effectiveAuthLimitFromParent, isLoadi
         </div>
 
         <div className="text-xs text-muted-foreground pt-2 pb-4">
-          Mostrando <strong>{filteredOrders.length}</strong> de <strong>{orders.length}</strong> órdenes.
+          Mostrando <strong>{filteredOrders.length}</strong> de <strong>{scopedOrders.length}</strong> órdenes.
         </div>
       </div>
       
