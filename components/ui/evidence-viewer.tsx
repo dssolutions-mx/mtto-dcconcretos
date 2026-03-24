@@ -26,92 +26,171 @@ export interface EvidenceItem {
 interface EvidenceViewerProps {
   evidence: EvidenceItem[]
   title?: string
+  /** Dialog title when opening “ver todas” (e.g. phase-specific label). */
+  galleryTitle?: string
   className?: string
   showCategories?: boolean
   maxItems?: number
 }
 
+function getCategoryColor(category: string) {
+  const colors: Record<string, string> = {
+    identificacion_problema: "bg-red-100 text-red-800",
+    estado_equipo: "bg-blue-100 text-blue-800",
+    preocupaciones_seguridad: "bg-yellow-100 text-yellow-800",
+    area_trabajo_antes: "bg-gray-100 text-gray-800",
+    area_trabajo_despues: "bg-green-100 text-green-800",
+    trabajo_completado: "bg-green-100 text-green-800",
+    partes_reemplazadas: "bg-purple-100 text-purple-800",
+    equipo_funcionamiento: "bg-blue-100 text-blue-800",
+    control_calidad: "bg-indigo-100 text-indigo-800",
+    recibos_facturas: "bg-orange-100 text-orange-800",
+    antes_mantenimiento: "bg-gray-100 text-gray-800",
+    durante_proceso: "bg-blue-100 text-blue-800",
+    inspeccion_partes: "bg-purple-100 text-purple-800",
+    problema_cumplimiento: "bg-red-100 text-red-800",
+    elemento_marcado: "bg-yellow-100 text-yellow-800",
+    desgaste_dano: "bg-red-100 text-red-800",
+    lectura_medicion: "bg-blue-100 text-blue-800",
+    violacion_seguridad: "bg-red-100 text-red-800",
+    accion_correctiva: "bg-green-100 text-green-800",
+    condicion_inicial: "bg-gray-100 text-gray-800",
+    falla_danos: "bg-red-100 text-red-800",
+    area_afectada: "bg-orange-100 text-orange-800",
+    condiciones_seguridad: "bg-yellow-100 text-yellow-800",
+    evidencia_causa: "bg-purple-100 text-purple-800",
+    impacto_operacional: "bg-blue-100 text-blue-800",
+    acciones_inmediatas: "bg-green-100 text-green-800",
+    estado_final: "bg-green-100 text-green-800",
+    documentacion_soporte: "bg-gray-100 text-gray-800",
+    problem_identification: "bg-red-100 text-red-800",
+    equipment_condition: "bg-blue-100 text-blue-800",
+    safety_concerns: "bg-yellow-100 text-yellow-800",
+    workspace_before: "bg-gray-100 text-gray-800",
+    workspace_after: "bg-green-100 text-green-800",
+    work_completed: "bg-green-100 text-green-800",
+    parts_replaced: "bg-purple-100 text-purple-800",
+    equipment_running: "bg-blue-100 text-blue-800",
+    quality_check: "bg-indigo-100 text-indigo-800",
+    receipt_invoice: "bg-orange-100 text-orange-800",
+    before_maintenance: "bg-gray-100 text-gray-800",
+    during_process: "bg-blue-100 text-blue-800",
+    parts_inspection: "bg-purple-100 text-purple-800",
+    compliance_issue: "bg-red-100 text-red-800",
+    flagged_item: "bg-yellow-100 text-yellow-800",
+  }
+  return colors[category] || "bg-gray-100 text-gray-800"
+}
+
+function isImageUrl(url: string) {
+  return url.match(/\.(jpeg|jpg|gif|png|webp)$/i) != null || url.includes("image")
+}
+
+interface EvidenceGridProps {
+  items: EvidenceItem[]
+  showCategories: boolean
+  onView: (item: EvidenceItem) => void
+  onDownload: (item: EvidenceItem) => void
+}
+
+function EvidenceGrid({ items, showCategories, onView, onDownload }: EvidenceGridProps) {
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      {items.map((item, index) => (
+        <Card
+          key={item.id || index}
+          className="overflow-hidden hover:shadow-md transition-shadow"
+        >
+          <div className="aspect-video relative bg-muted">
+            {isImageUrl(item.url) ? (
+              <img
+                src={item.url}
+                alt={item.description}
+                className="w-full h-full object-cover"
+              />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center">
+                <FileText className="h-12 w-12 text-muted-foreground" />
+              </div>
+            )}
+
+            {showCategories && (
+              <Badge
+                className={cn(
+                  "absolute top-2 left-2 text-xs",
+                  getCategoryColor(item.category)
+                )}
+              >
+                {item.category}
+              </Badge>
+            )}
+
+            <div className="absolute top-2 right-2 flex gap-1">
+              <Button
+                size="sm"
+                variant="secondary"
+                className="h-6 w-6 p-0"
+                onClick={() => onView(item)}
+              >
+                <Eye className="h-3 w-3" />
+              </Button>
+              <Button
+                size="sm"
+                variant="secondary"
+                className="h-6 w-6 p-0"
+                onClick={() => onDownload(item)}
+              >
+                <Download className="h-3 w-3" />
+              </Button>
+            </div>
+          </div>
+
+          <CardContent className="p-3">
+            <p className="text-sm font-medium truncate mb-1">{item.description}</p>
+            <div className="flex items-center gap-1 text-xs text-muted-foreground">
+              <Calendar className="h-3 w-3" />
+              <span>{new Date(item.uploaded_at).toLocaleDateString()}</span>
+            </div>
+          </CardContent>
+        </Card>
+      ))}
+    </div>
+  )
+}
+
 export function EvidenceViewer({
   evidence,
   title = "Evidencia",
+  galleryTitle,
   className,
   showCategories = true,
-  maxItems
+  maxItems,
 }: EvidenceViewerProps) {
   const [selectedEvidence, setSelectedEvidence] = useState<EvidenceItem | null>(null)
   const [showModal, setShowModal] = useState(false)
+  const [galleryOpen, setGalleryOpen] = useState(false)
 
   const displayedEvidence = maxItems ? evidence.slice(0, maxItems) : evidence
-
-  const handleViewEvidence = (item: EvidenceItem) => {
-    setSelectedEvidence(item)
-    setShowModal(true)
-  }
+  const isTruncated = Boolean(maxItems && evidence.length > maxItems)
 
   const handleDownload = (item: EvidenceItem) => {
-    const link = document.createElement('a')
+    const link = document.createElement("a")
     link.href = item.url
-    link.download = `${item.description}.${item.url.split('.').pop()}`
+    link.download = `${item.description}.${item.url.split(".").pop()}`
     document.body.appendChild(link)
     link.click()
     document.body.removeChild(link)
   }
 
-  const isImage = (url: string) => {
-    return url.match(/\.(jpeg|jpg|gif|png|webp)$/i) || url.includes('image')
+  const handleViewEvidence = (item: EvidenceItem) => {
+    setGalleryOpen(false)
+    setSelectedEvidence(item)
+    setShowModal(true)
   }
 
-  const getCategoryColor = (category: string) => {
-    const colors: Record<string, string> = {
-      // Categorías en español
-      identificacion_problema: "bg-red-100 text-red-800",
-      estado_equipo: "bg-blue-100 text-blue-800",
-      preocupaciones_seguridad: "bg-yellow-100 text-yellow-800",
-      area_trabajo_antes: "bg-gray-100 text-gray-800",
-      area_trabajo_despues: "bg-green-100 text-green-800",
-      trabajo_completado: "bg-green-100 text-green-800",
-      partes_reemplazadas: "bg-purple-100 text-purple-800",
-      equipo_funcionamiento: "bg-blue-100 text-blue-800",
-      control_calidad: "bg-indigo-100 text-indigo-800",
-      recibos_facturas: "bg-orange-100 text-orange-800",
-      antes_mantenimiento: "bg-gray-100 text-gray-800",
-      durante_proceso: "bg-blue-100 text-blue-800",
-      inspeccion_partes: "bg-purple-100 text-purple-800",
-      problema_cumplimiento: "bg-red-100 text-red-800",
-      elemento_marcado: "bg-yellow-100 text-yellow-800",
-      desgaste_dano: "bg-red-100 text-red-800",
-      lectura_medicion: "bg-blue-100 text-blue-800",
-      violacion_seguridad: "bg-red-100 text-red-800",
-      accion_correctiva: "bg-green-100 text-green-800",
-      // Categorías de incidentes
-      condicion_inicial: "bg-gray-100 text-gray-800",
-      falla_danos: "bg-red-100 text-red-800",
-      area_afectada: "bg-orange-100 text-orange-800",
-      condiciones_seguridad: "bg-yellow-100 text-yellow-800",
-      evidencia_causa: "bg-purple-100 text-purple-800",
-      impacto_operacional: "bg-blue-100 text-blue-800",
-      acciones_inmediatas: "bg-green-100 text-green-800",
-      estado_final: "bg-green-100 text-green-800",
-      documentacion_soporte: "bg-gray-100 text-gray-800",
-      // Mantener compatibilidad con categorías en inglés antiguas
-      problem_identification: "bg-red-100 text-red-800",
-      equipment_condition: "bg-blue-100 text-blue-800",
-      safety_concerns: "bg-yellow-100 text-yellow-800",
-      workspace_before: "bg-gray-100 text-gray-800",
-      workspace_after: "bg-green-100 text-green-800",
-      work_completed: "bg-green-100 text-green-800",
-      parts_replaced: "bg-purple-100 text-purple-800",
-      equipment_running: "bg-blue-100 text-blue-800",
-      quality_check: "bg-indigo-100 text-indigo-800",
-      receipt_invoice: "bg-orange-100 text-orange-800",
-      before_maintenance: "bg-gray-100 text-gray-800",
-      during_process: "bg-blue-100 text-blue-800",
-      parts_inspection: "bg-purple-100 text-purple-800",
-      compliance_issue: "bg-red-100 text-red-800",
-      flagged_item: "bg-yellow-100 text-yellow-800",
-    }
-    return colors[category] || "bg-gray-100 text-gray-800"
-  }
+  const galleryDialogTitle =
+    galleryTitle?.trim() ||
+    (title?.trim() ? `${title.trim()} — todas` : "Todas las evidencias")
 
   if (evidence.length === 0) {
     return (
@@ -131,89 +210,59 @@ export function EvidenceViewer({
         </div>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {displayedEvidence.map((item, index) => (
-          <Card key={item.id || index} className="overflow-hidden hover:shadow-md transition-shadow">
-            <div className="aspect-video relative bg-muted">
-              {isImage(item.url) ? (
-                <img
-                  src={item.url}
-                  alt={item.description}
-                  className="w-full h-full object-cover"
-                />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center">
-                  <FileText className="h-12 w-12 text-muted-foreground" />
-                </div>
-              )}
-              
-              {showCategories && (
-                <Badge 
-                  className={cn(
-                    "absolute top-2 left-2 text-xs",
-                    getCategoryColor(item.category)
-                  )}
-                >
-                  {item.category}
-                </Badge>
-              )}
+      <EvidenceGrid
+        items={displayedEvidence}
+        showCategories={showCategories}
+        onView={handleViewEvidence}
+        onDownload={handleDownload}
+      />
 
-              <div className="absolute top-2 right-2 flex gap-1">
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  className="h-6 w-6 p-0"
-                  onClick={() => handleViewEvidence(item)}
-                >
-                  <Eye className="h-3 w-3" />
-                </Button>
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  className="h-6 w-6 p-0"
-                  onClick={() => handleDownload(item)}
-                >
-                  <Download className="h-3 w-3" />
-                </Button>
-              </div>
-            </div>
-            
-            <CardContent className="p-3">
-              <p className="text-sm font-medium truncate mb-1">
-                {item.description}
-              </p>
-              <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                <Calendar className="h-3 w-3" />
-                <span>{new Date(item.uploaded_at).toLocaleDateString()}</span>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-
-      {maxItems && evidence.length > maxItems && (
-        <div className="text-center">
+      {isTruncated && (
+        <div className="text-center space-y-2">
           <p className="text-sm text-muted-foreground">
             Mostrando {maxItems} de {evidence.length} archivos
           </p>
+          <Button type="button" variant="outline" onClick={() => setGalleryOpen(true)}>
+            Ver todas las evidencias ({evidence.length})
+          </Button>
         </div>
       )}
 
-      {/* Modal for viewing evidence */}
+      <Dialog open={galleryOpen} onOpenChange={setGalleryOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col gap-0 p-6">
+          <DialogHeader className="shrink-0 space-y-1 pb-4">
+            <DialogTitle>{galleryDialogTitle}</DialogTitle>
+            <DialogDescription>
+              {evidence.length} archivo(s) — desplázate para ver todos
+            </DialogDescription>
+          </DialogHeader>
+          <div className="min-h-0 flex-1 overflow-y-auto pr-1 -mr-1">
+            <EvidenceGrid
+              items={evidence}
+              showCategories={showCategories}
+              onView={handleViewEvidence}
+              onDownload={handleDownload}
+            />
+          </div>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={showModal} onOpenChange={setShowModal}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden">
           <DialogHeader>
             <DialogTitle>{selectedEvidence?.description}</DialogTitle>
             <DialogDescription>
-              Categoría: {selectedEvidence?.category} • {" "}
-              Subido: {selectedEvidence ? new Date(selectedEvidence.uploaded_at).toLocaleString() : ""}
+              Categoría: {selectedEvidence?.category} • Subido:{" "}
+              {selectedEvidence
+                ? new Date(selectedEvidence.uploaded_at).toLocaleString()
+                : ""}
             </DialogDescription>
           </DialogHeader>
-          
+
           <div className="flex-1 overflow-auto">
             {selectedEvidence && (
               <div className="space-y-4">
-                {isImage(selectedEvidence.url) ? (
+                {isImageUrl(selectedEvidence.url) ? (
                   <img
                     src={selectedEvidence.url}
                     alt={selectedEvidence.description}
@@ -244,4 +293,4 @@ export function EvidenceViewer({
       </Dialog>
     </div>
   )
-} 
+}

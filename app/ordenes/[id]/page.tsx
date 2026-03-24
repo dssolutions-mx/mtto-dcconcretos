@@ -685,10 +685,11 @@ export default async function WorkOrderDetailsPage({
                       <h4 className="text-sm font-medium mb-3 text-muted-foreground">
                         Evidencia de Creación ({creationPhotos.length})
                       </h4>
-                      <EvidenceViewer 
-                        evidence={creationPhotos} 
+                      <EvidenceViewer
+                        evidence={creationPhotos}
                         showCategories={true}
                         maxItems={6}
+                        galleryTitle="Evidencia de creación — todas"
                       />
                     </div>
                   )}
@@ -698,10 +699,11 @@ export default async function WorkOrderDetailsPage({
                       <h4 className="text-sm font-medium mb-3 text-muted-foreground">
                         Evidencia de Progreso ({progressPhotos.length})
                       </h4>
-                      <EvidenceViewer 
-                        evidence={progressPhotos} 
+                      <EvidenceViewer
+                        evidence={progressPhotos}
                         showCategories={true}
                         maxItems={6}
+                        galleryTitle="Evidencia de progreso — todas"
                       />
                     </div>
                   )}
@@ -711,10 +713,11 @@ export default async function WorkOrderDetailsPage({
                       <h4 className="text-sm font-medium mb-3 text-muted-foreground">
                         Evidencia de Finalización ({completionPhotos.length})
                       </h4>
-                      <EvidenceViewer 
-                        evidence={completionPhotos} 
+                      <EvidenceViewer
+                        evidence={completionPhotos}
                         showCategories={true}
                         maxItems={6}
+                        galleryTitle="Evidencia de finalización — todas"
                       />
                     </div>
                   )}
