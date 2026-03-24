@@ -342,8 +342,10 @@ export const createAuthSlice: StateCreator<
           await get().loadProfile(data.user.id)
           console.log('✅ Profile loaded after sign in')
           
-          // Ensure loading is set to false only after profile is loaded
-          set({ isLoading: false } as Partial<AuthStore>)
+          set({
+            isLoading: false,
+            isInitialized: true,
+          } as Partial<AuthStore>)
         } catch (profileError) {
           console.error('❌ Profile loading failed after sign in:', profileError)
           
@@ -357,7 +359,7 @@ export const createAuthSlice: StateCreator<
           }
         }
       } else {
-        set({ isLoading: false } as Partial<AuthStore>)
+        set({ isLoading: false, isInitialized: true } as Partial<AuthStore>)
       }
       
       const latency = Date.now() - startTime
@@ -414,91 +416,82 @@ export const createAuthSlice: StateCreator<
   signOut: async () => {
     console.log('🚪 Starting comprehensive sign out process...')
     set({ isLoading: true } as Partial<AuthStore>)
-    
+
     const supabase = createClient()
-    
-    try {
-      // Clear auth state immediately to prevent UI inconsistencies
-      console.log('🧹 Clearing local auth state first')
-      get().clearAuth()
-      
-      // Clear browser storage
-      if (typeof window !== 'undefined') {
-        try {
-          localStorage.clear()
-          sessionStorage.clear()
-          console.log('🗑️ Cleared browser storage')
-        } catch (storageError) {
-          console.warn('⚠️ Failed to clear browser storage:', storageError)
-        }
+    const isOffline = !get().isOnline
+
+    const clearClientStorage = () => {
+      if (typeof window === 'undefined') return
+      try {
+        localStorage.clear()
+        sessionStorage.clear()
+        console.log('🗑️ Cleared browser storage')
+      } catch (storageError) {
+        console.warn('⚠️ Failed to clear browser storage:', storageError)
       }
-      
-      // Check if offline and queue the operation
-      const isOffline = !get().isOnline
+    }
+
+    try {
       if (isOffline) {
         console.log('📱 Device is offline, queueing sign out operation')
+        get().clearAuth()
+        clearClientStorage()
         get().addToQueue({
           type: 'sign_out',
           payload: { action: 'signOut' },
-          maxRetries: 2
+          maxRetries: 2,
         })
-        
-        // Force hard redirect even in offline mode
         if (typeof window !== 'undefined') {
           console.log('🔄 Forcing hard redirect to login (offline)')
           window.location.href = '/login'
         }
         return
       }
-      
-      // Add timeout to prevent hanging
-      const signOutPromise = supabase.auth.signOut()
-      const timeoutPromise = new Promise((_, reject) => 
+
+      // Revoke Supabase session before wiping storage; clearing localStorage first breaks
+      // token/cookie cleanup and leaves stale sb-* cookies that fight the proxy + /login.
+      const signOutPromise = supabase.auth.signOut({ scope: 'global' })
+      const timeoutPromise = new Promise<never>((_, reject) =>
         setTimeout(() => reject(new Error('Sign out timeout')), 5000)
       )
-      
-      const { error } = await Promise.race([signOutPromise, timeoutPromise]) as any
-      
-      if (error) {
-        console.warn('⚠️ Supabase sign out error (local state already cleared):', error.message)
-        // Don't throw - local state is already cleared
-      } else {
-        console.log('✅ Supabase sign out successful')
+
+      try {
+        const { error } = (await Promise.race([signOutPromise, timeoutPromise])) as {
+          error?: { message?: string } | null
+        }
+        if (error) {
+          console.warn('⚠️ Supabase sign out error:', error.message)
+        } else {
+          console.log('✅ Supabase sign out successful')
+        }
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : String(e)
+        console.warn('⚠️ Supabase sign out timeout or failure (continuing local cleanup):', msg)
       }
-      
-      // Force a hard navigation to login page to clear any stale state
+
+      get().clearAuth()
+      clearClientStorage()
+
       if (typeof window !== 'undefined') {
         console.log('🔄 Forcing hard redirect to login')
         window.location.href = '/login'
       }
-      
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('❌ Sign out error:', error)
-      
-      // Even on error, ensure local state is cleared
       get().clearAuth()
-      
-      // Clear browser storage on error too
-      if (typeof window !== 'undefined') {
-        try {
-          localStorage.clear()
-          sessionStorage.clear()
-        } catch (storageError) {
-          console.warn('⚠️ Failed to clear storage during error handling:', storageError)
-        }
-      }
-      
+      clearClientStorage()
+
+      const message = error instanceof Error ? error.message : 'Failed to sign out'
       set({
         error: {
           code: 'SIGNOUT_ERROR',
-          message: error.message || 'Failed to sign out',
+          message,
           source: 'signOut',
-          timestamp: Date.now()
+          timestamp: Date.now(),
         },
-        isLoading: false
+        isLoading: false,
       } as Partial<AuthStore>)
-      
-      // Force hard redirect even on error
+
       if (typeof window !== 'undefined') {
         console.log('🔄 Forcing hard redirect to login (error recovery)')
         window.location.href = '/login'
@@ -613,7 +606,9 @@ export const createAuthSlice: StateCreator<
     const cachedProfile = get().getCachedProfile(userId)
     if (cachedProfile) {
       console.log('🎯 Using cached profile')
-      set({ profile: cachedProfile } as Partial<AuthStore>)
+      // Always clear loading; callers (e.g. initialize) set isLoading true before loadProfile,
+      // and the early return previously left isLoading stuck — dashboard spun forever.
+      set({ profile: cachedProfile, isLoading: false } as Partial<AuthStore>)
       return
     }
     

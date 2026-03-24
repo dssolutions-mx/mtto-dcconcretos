@@ -293,7 +293,7 @@ export default function JUNDashboard() {
 
   // Role guard
   useEffect(() => {
-    if (!isInitialized || authLoading) return
+    if (!isInitialized || (authLoading && !profile)) return
     if (!isAuthenticated || !profile) { router.push("/login"); return }
     if (profile.role !== "JEFE_UNIDAD_NEGOCIO") router.push("/dashboard")
   }, [isInitialized, authLoading, isAuthenticated, profile, router])
@@ -341,8 +341,8 @@ export default function JUNDashboard() {
   }, [profile?.role, profile?.business_unit_id])
 
   useEffect(() => {
-    if (isInitialized && !authLoading && profile?.role === "JEFE_UNIDAD_NEGOCIO") void loadData()
-  }, [isInitialized, authLoading, profile?.role, loadData])
+    if (isInitialized && profile?.role === "JEFE_UNIDAD_NEGOCIO") void loadData()
+  }, [isInitialized, profile?.role, loadData])
 
   const handleRefresh = async () => {
     setRefreshing(true)
@@ -362,7 +362,7 @@ export default function JUNDashboard() {
     { title: "Reportes", href: "/reportes", icon: BarChart3, module: "reports" as const },
   ]
 
-  if (!isInitialized || authLoading) {
+  if (!isInitialized || (authLoading && !profile)) {
     return (
       <div className="flex min-h-[400px] items-center justify-center">
         <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />

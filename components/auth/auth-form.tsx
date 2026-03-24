@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useForm } from "react-hook-form"
@@ -72,11 +72,18 @@ export function AuthForm({ mode = "login" }: { mode: "login" | "register" }) {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [showPassword, setShowPassword] = useState(false)
+  /** Avoid double navigation when sign-in flips isAuthenticated and useEffect also runs */
+  const redirectHandledInSubmitRef = useRef(false)
   
   // Use Zustand store for authentication
-  const { signIn } = useAuthZustand()
+  const { signIn, isAuthenticated } = useAuthZustand()
 
   const urlAuthMessage = mode === "login" ? loginQueryErrorMessage(searchParams.get("error")) : null
+
+  useEffect(() => {
+    if (!isAuthenticated || redirectHandledInSubmitRef.current) return
+    router.replace("/dashboard")
+  }, [isAuthenticated, router])
 
   const schema = mode === "login" ? loginSchema : registerSchema
 
@@ -114,8 +121,8 @@ export function AuthForm({ mode = "login" }: { mode: "login" | "register" }) {
         }
         
         console.log('✅ Login successful, redirecting...')
-        router.refresh()
-        router.push("/dashboard")
+        redirectHandledInSubmitRef.current = true
+        router.replace("/dashboard")
       } else {
         // Registration disabled
         throw new Error('El registro público está deshabilitado. Contacte al administrador.')

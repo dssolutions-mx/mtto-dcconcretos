@@ -10,16 +10,16 @@ import { useRouter } from "next/navigation"
 import { useEffect } from "react"
 
 export default function MechanicDashboard() {
-  const { profile, isInitialized, isLoading } = useAuthZustand()
+  const { profile, isInitialized } = useAuthZustand()
   const router = useRouter()
 
   useEffect(() => {
-    if (isInitialized && !isLoading && profile?.role && !['MECANICO'].includes(profile.role)) {
+    if (isInitialized && profile?.role && !['MECANICO'].includes(profile.role)) {
       router.push('/dashboard')
     }
-  }, [isInitialized, isLoading, profile?.role, router])
+  }, [isInitialized, profile?.role, router])
 
-  if (!isInitialized || isLoading || !profile) {
+  if (!isInitialized || !profile) {
     return (
       <DashboardShell>
         <DashboardHeader heading="Cargando..." text="Preparando tu dashboard." />

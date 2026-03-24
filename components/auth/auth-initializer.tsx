@@ -75,7 +75,8 @@ export function AuthInitializer() {
             return
           }
           router.push('/login')
-          return
+          // Must not return here: skipping initialize() left isInitialized false forever,
+          // so after sign-in the dashboard spinner never cleared until a full reload.
         }
       } catch {
         // Health check failed — continue with normal init

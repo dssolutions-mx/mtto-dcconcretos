@@ -128,14 +128,9 @@ export async function proxy(request: NextRequest) {
     return res
   }
 
-  // Authenticated user on login/register → redirect to dashboard
-  if (user && (pathname === "/login" || pathname === "/register")) {
-    const url = request.nextUrl.clone()
-    url.pathname = "/dashboard"
-    const res = NextResponse.redirect(url)
-    res.headers.set("X-Robots-Tag", "noindex, nofollow, noarchive")
-    return res
-  }
+  // Do not redirect /login or /register away based on cookie presence alone. Stale or
+  // partially cleared sb-* cookies caused a loop: proxy → /dashboard, AuthInitializer →
+  // /login, repeat. Real session checks run on the client (AuthForm / initialize).
 
   response.headers.set("X-Robots-Tag", "noindex, nofollow, noarchive")
   return response

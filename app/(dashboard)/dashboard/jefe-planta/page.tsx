@@ -245,7 +245,7 @@ export default function JefePlantaDashboard() {
 
   // Role guard
   useEffect(() => {
-    if (!isInitialized || authLoading) return
+    if (!isInitialized || (authLoading && !profile)) return
     if (!isAuthenticated || !profile) {
       router.push("/login")
       return
@@ -275,10 +275,10 @@ export default function JefePlantaDashboard() {
   }, [])
 
   useEffect(() => {
-    if (isInitialized && !authLoading && profile?.role === "JEFE_PLANTA") {
+    if (isInitialized && profile?.role === "JEFE_PLANTA") {
       loadData()
     }
-  }, [isInitialized, authLoading, profile?.role, loadData])
+  }, [isInitialized, profile?.role, loadData])
 
   const handleRefresh = async () => {
     setRefreshing(true)
@@ -322,7 +322,7 @@ export default function JefePlantaDashboard() {
 
   // ─── Loading / auth ───────────────────────────────────────────────────────
 
-  if (!isInitialized || authLoading) {
+  if (!isInitialized || (authLoading && !profile)) {
     return (
       <div className="flex min-h-[400px] items-center justify-center">
         <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />

@@ -55,7 +55,7 @@ function DashboardContent() {
     isInitialized, 
     isAuthenticated,
     error,
-    refreshProfile
+    refreshProfile,
   } = useAuthZustand()
   const { isComplianceSystemEnabled } = useSystemSettings()
   
@@ -96,9 +96,10 @@ function DashboardContent() {
     }
   }, [searchParams])
 
-  // Role-specific dashboard redirects
+  // Role-specific dashboard redirects (do not wait on isLoading — profile may be ready while
+  // a stale isLoading flag would block redirect after a cached-profile init path)
   useEffect(() => {
-    if (!isInitialized || isLoading || !profile?.role) return
+    if (!isInitialized || !profile?.role) return
     if (['OPERADOR', 'DOSIFICADOR'].includes(profile.role)) {
       router.push('/dashboard/operator')
     } else if (profile.role === 'MECANICO') {
@@ -112,10 +113,11 @@ function DashboardContent() {
     } else if (profile.role === 'JEFE_PLANTA') {
       router.push('/dashboard/jefe-planta')
     }
-  }, [isInitialized, isLoading, profile?.role, router])
+  }, [isInitialized, profile?.role, router])
 
-  // Show loading state while initializing
-  if (!isInitialized || isLoading) {
+  // Block only until auth is initialized; if we already have a profile, render (avoids infinite
+  // spinner when isLoading was stuck true, e.g. loadProfile cache hit without clearing isLoading).
+  if (!isInitialized || (isLoading && !profile)) {
     return (
       <div className="flex items-center justify-center min-h-[400px] px-4">
         <div className="text-center space-y-4 max-w-sm">
@@ -131,7 +133,9 @@ function DashboardContent() {
               "text-muted-foreground",
               isMobile ? "text-sm" : "text-sm"
             )}>
-              {!isInitialized ? 'Inicializando sistema...' : 'Cargando información del usuario...'}
+              {!isInitialized
+                ? 'Inicializando sistema...'
+                : 'Cargando información del usuario...'}
             </p>
           </div>
         </div>

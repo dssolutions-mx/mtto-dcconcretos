@@ -92,7 +92,7 @@ export default function CoordinadorDashboard() {
 
   // Role guard
   useEffect(() => {
-    if (!isInitialized || authLoading) return
+    if (!isInitialized || (authLoading && !profile)) return
     if (!isAuthenticated || !profile) {
       router.push("/login")
       return
@@ -139,10 +139,10 @@ export default function CoordinadorDashboard() {
   }, [])
 
   useEffect(() => {
-    if (isInitialized && !authLoading && profile?.role === "COORDINADOR_MANTENIMIENTO") {
+    if (isInitialized && profile?.role === "COORDINADOR_MANTENIMIENTO") {
       loadData()
     }
-  }, [isInitialized, authLoading, profile?.role, loadData])
+  }, [isInitialized, profile?.role, loadData])
 
   const handleRefresh = async () => {
     setRefreshing(true)
@@ -181,7 +181,7 @@ export default function CoordinadorDashboard() {
 
   // ─── Loading / auth states ────────────────────────────────────────────────
 
-  if (!isInitialized || authLoading) {
+  if (!isInitialized || (authLoading && !profile)) {
     return (
       <DashboardShell>
         <DashboardHeader heading="Cargando…" text="Preparando tu dashboard de coordinación." />

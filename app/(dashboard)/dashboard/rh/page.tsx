@@ -63,7 +63,7 @@ const hubLinks: {
 ]
 
 export default function RHDashboard() {
-  const { profile, isInitialized, isLoading } = useAuthZustand()
+  const { profile, isInitialized } = useAuthZustand()
   const router = useRouter()
 
   const isRH =
@@ -71,12 +71,12 @@ export default function RHDashboard() {
     isRHOwnerRole(effectiveRoleForPermissions(profile) ?? profile.business_role ?? profile.role)
 
   useEffect(() => {
-    if (isInitialized && !isLoading && profile && !isRH) {
+    if (isInitialized && profile && !isRH) {
       router.push("/dashboard")
     }
-  }, [isInitialized, isLoading, profile, isRH, router])
+  }, [isInitialized, profile, isRH, router])
 
-  if (!isInitialized || isLoading || !profile) {
+  if (!isInitialized || !profile) {
     return (
       <DashboardShell>
         <DashboardHeader heading="Cargando..." text="Preparando tu dashboard." />

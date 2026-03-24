@@ -1,6 +1,5 @@
 'use client'
 
-import { useRouter } from 'next/navigation'
 import { useAuthZustand } from '@/hooks/use-auth-zustand'
 import { Button } from '@/components/ui/button'
 import { LogOut, Loader2 } from 'lucide-react'
@@ -23,7 +22,6 @@ export function UnifiedLogoutButton({
   className = '',
   children
 }: UnifiedLogoutButtonProps) {
-  const router = useRouter()
   const { signOut, isLoading } = useAuthZustand()
   const [isSigningOut, setIsSigningOut] = useState(false)
 
@@ -33,11 +31,7 @@ export function UnifiedLogoutButton({
     
     try {
       await signOut()
-      console.log('✅ Logout successful, redirecting...')
-      
-      // Force immediate redirect
-      router.push('/login')
-      router.refresh()
+      // signOut ends with window.location.href = '/login'
     } catch (error) {
       console.error('❌ Logout error:', error)
     } finally {

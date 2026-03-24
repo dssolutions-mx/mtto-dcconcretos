@@ -69,9 +69,6 @@ export function UserProfile() {
     try {
       console.log('🚪 User profile logout initiated...')
       await signOut()
-      console.log('✅ Logout successful, redirecting...')
-      router.push("/login")
-      router.refresh()
     } catch (error: any) {
       console.error('❌ Logout error:', error)
       setError(error.message || "Ocurrió un error al cerrar sesión")
