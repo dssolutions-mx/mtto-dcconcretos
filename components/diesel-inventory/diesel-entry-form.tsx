@@ -24,7 +24,10 @@ import {
 } from "lucide-react"
 import { SmartPhotoUpload } from "@/components/checklists/smart-photo-upload"
 import { toast } from "sonner"
-import { validateDieselTransactionScope } from "@/lib/diesel/submit-scope-validation"
+import {
+  resolveDieselTransactionPlantId,
+  validateDieselTransactionScope
+} from "@/lib/diesel/submit-scope-validation"
 
 interface DieselEntryFormProps {
   productType: 'diesel' | 'urea'
@@ -49,9 +52,20 @@ export function DieselEntryForm({
   const [businessUnits, setBusinessUnits] = useState<any[]>([])
   const [plants, setPlants] = useState<any[]>([])
   const [warehouses, setWarehouses] = useState<any[]>([])
+  const [allBuWarehouses, setAllBuWarehouses] = useState<any[]>([])
+  const [accessProfile, setAccessProfile] = useState<{
+    business_unit_id: string | null
+    plant_id: string | null
+  } | null>(null)
   const [selectedBusinessUnit, setSelectedBusinessUnit] = useState<string | null>(null)
   const [selectedPlant, setSelectedPlant] = useState<string | null>(null)
   const [selectedWarehouse, setSelectedWarehouse] = useState<string | null>(null)
+
+  const dieselBuWideMode = !!(
+    accessProfile?.business_unit_id &&
+    !accessProfile.plant_id &&
+    selectedBusinessUnit === accessProfile.business_unit_id
+  )
   const [productId, setProductId] = useState<string | null>(null)
   
   // Entry data
@@ -148,6 +162,11 @@ export function DieselEntryForm({
 
       if (!profile) return
 
+      setAccessProfile({
+        business_unit_id: profile.business_unit_id ?? null,
+        plant_id: profile.plant_id ?? null
+      })
+
       const { data: busUnits } = await supabase
         .from('business_units')
         .select('*')
@@ -157,13 +176,18 @@ export function DieselEntryForm({
 
       if (profile.business_unit_id) {
         setSelectedBusinessUnit(profile.business_unit_id)
-        loadPlantsForBusinessUnit(profile.business_unit_id)
-        
+        await loadPlantsForBusinessUnit(profile.business_unit_id)
+
         if (profile.plant_id) {
           setSelectedPlant(profile.plant_id)
-          loadWarehousesForPlant(profile.plant_id)
+          setAllBuWarehouses([])
+          await loadWarehousesForPlant(profile.plant_id)
+        } else {
+          setSelectedPlant(null)
+          await loadWarehousesForBusinessUnit(profile.business_unit_id)
         }
       } else if (!profile.plant_id && !profile.business_unit_id) {
+        setAllBuWarehouses([])
         const { data: allPlants } = await supabase
           .from('plants')
           .select('*')
@@ -189,6 +213,55 @@ export function DieselEntryForm({
     }
   }
 
+  const loadWarehousesForBusinessUnit = async (businessUnitId: string) => {
+    try {
+      const { data: plantRows, error: plantErr } = await supabase
+        .from('plants')
+        .select('id')
+        .eq('business_unit_id', businessUnitId)
+
+      if (plantErr) {
+        console.error('Error loading plants for BU warehouses:', plantErr)
+        toast.error('Error al cargar almacenes')
+        return
+      }
+
+      const plantIds = (plantRows ?? []).map((p) => p.id).filter(Boolean)
+      if (plantIds.length === 0) {
+        setWarehouses([])
+        setAllBuWarehouses([])
+        return
+      }
+
+      const { data, error } = await supabase
+        .from('diesel_warehouses')
+        .select(
+          'id, name, warehouse_code, capacity_liters, current_inventory, has_cuenta_litros, plant_id'
+        )
+        .in('plant_id', plantIds)
+        .eq('product_type', productType)
+        .order('name')
+
+      if (error) {
+        console.error('Error loading BU warehouses:', error)
+        toast.error('Error al cargar almacenes')
+        return
+      }
+
+      const list = data || []
+      setAllBuWarehouses(list)
+      setWarehouses(list)
+
+      if (list.length === 1) {
+        setSelectedWarehouse(list[0].id)
+        if (list[0].plant_id) setSelectedPlant(list[0].plant_id)
+      }
+    } catch (error) {
+      console.error('Error loading BU warehouses:', error)
+      toast.error('Error al cargar almacenes')
+    }
+  }
+
   const loadWarehousesForPlant = async (plantId: string) => {
     try {
       const { data, error } = await supabase
@@ -205,9 +278,11 @@ export function DieselEntryForm({
       }
 
       setWarehouses(data || [])
-      
+      setAllBuWarehouses([])
+
       if (data && data.length === 1) {
         setSelectedWarehouse(data[0].id)
+        if (data[0].plant_id) setSelectedPlant(data[0].plant_id)
       }
     } catch (error) {
       console.error('Error loading warehouses:', error)
@@ -221,14 +296,38 @@ export function DieselEntryForm({
     setSelectedWarehouse(null)
     setPlants([])
     setWarehouses([])
-    loadPlantsForBusinessUnit(buId)
+    setAllBuWarehouses([])
+    void loadPlantsForBusinessUnit(buId)
+  }
+
+  const handleWarehouseChange = (warehouseId: string) => {
+    setSelectedWarehouse(warehouseId)
+    const wh =
+      warehouses.find((w) => w.id === warehouseId) ??
+      allBuWarehouses.find((w) => w.id === warehouseId)
+    if (wh?.plant_id) setSelectedPlant(wh.plant_id)
   }
 
   const handlePlantChange = (plantId: string) => {
-    setSelectedPlant(plantId)
+    const id = plantId || null
+    setSelectedPlant(id)
     setSelectedWarehouse(null)
-    setWarehouses([])
-    loadWarehousesForPlant(plantId)
+
+    if (!id) {
+      if (dieselBuWideMode && allBuWarehouses.length > 0) {
+        setWarehouses(allBuWarehouses)
+      } else {
+        setWarehouses([])
+      }
+      return
+    }
+
+    if (dieselBuWideMode && allBuWarehouses.length > 0) {
+      setWarehouses(allBuWarehouses.filter((w) => w.plant_id === id))
+    } else {
+      setWarehouses([])
+      void loadWarehousesForPlant(id)
+    }
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -332,9 +431,20 @@ export function DieselEntryForm({
       console.log('Step 2: Building transaction data...')
       
       const totalCost = unitCost ? parseFloat(unitCost) * parseFloat(quantityLiters) : null
-      
+
+      const plantIdForTx = resolveDieselTransactionPlantId(
+        selectedPlant,
+        selectedWarehouse,
+        warehouses,
+        allBuWarehouses
+      )
+      if (!plantIdForTx) {
+        toast.error('No se pudo determinar la planta del almacén. Vuelve a seleccionar el almacén.')
+        return
+      }
+
       const transactionData: any = {
-        plant_id: selectedPlant,
+        plant_id: plantIdForTx,
         warehouse_id: selectedWarehouse,
         product_id: productId,
         transaction_type: 'entry',
@@ -529,7 +639,9 @@ export function DieselEntryForm({
                   disabled={loading || !selectedBusinessUnit}
                   className="w-full h-12 px-3 border border-gray-300 rounded-md text-base"
                 >
-                  <option value="">Seleccionar...</option>
+                  <option value="">
+                    {dieselBuWideMode ? 'Todas las plantas' : 'Seleccionar...'}
+                  </option>
                   {plants.map(plant => (
                     <option key={plant.id} value={plant.id}>{plant.name} ({plant.code})</option>
                   ))}
@@ -543,8 +655,8 @@ export function DieselEntryForm({
                 <select
                   id="warehouse"
                   value={selectedWarehouse || ''}
-                  onChange={(e) => setSelectedWarehouse(e.target.value)}
-                  disabled={loading || !selectedPlant}
+                  onChange={(e) => handleWarehouseChange(e.target.value)}
+                  disabled={loading || (!dieselBuWideMode && !selectedPlant)}
                   className="w-full h-12 px-3 border border-gray-300 rounded-md text-base"
                 >
                   <option value="">Seleccionar...</option>
@@ -555,6 +667,11 @@ export function DieselEntryForm({
                   ))}
                 </select>
               </div>
+            )}
+            {dieselBuWideMode && warehouses.length > 0 && (
+              <p className="text-sm text-muted-foreground">
+                Elige almacén; la planta se asigna automáticamente. Opcional: filtra por planta arriba.
+              </p>
             )}
           </div>
 

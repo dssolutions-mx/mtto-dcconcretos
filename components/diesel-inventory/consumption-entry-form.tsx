@@ -27,7 +27,10 @@ import { AssetSelectorMobile } from "./asset-selector-mobile"
 import { ReadingCapture } from "./reading-capture"
 import { SmartPhotoUpload } from "@/components/checklists/smart-photo-upload"
 import { toast } from "sonner"
-import { validateDieselTransactionScope } from "@/lib/diesel/submit-scope-validation"
+import {
+  resolveDieselTransactionPlantId,
+  validateDieselTransactionScope
+} from "@/lib/diesel/submit-scope-validation"
 
 interface ConsumptionEntryFormProps {
   productType: 'diesel' | 'urea'
@@ -52,9 +55,21 @@ export function ConsumptionEntryForm({
   const [businessUnits, setBusinessUnits] = useState<any[]>([])
   const [plants, setPlants] = useState<any[]>([])
   const [warehouses, setWarehouses] = useState<any[]>([])
+  /** All warehouses in BU — used when Jefe de Unidad filters by plant or picks warehouse without plant step */
+  const [allBuWarehouses, setAllBuWarehouses] = useState<any[]>([])
+  const [accessProfile, setAccessProfile] = useState<{
+    business_unit_id: string | null
+    plant_id: string | null
+  } | null>(null)
   const [selectedBusinessUnit, setSelectedBusinessUnit] = useState<string | null>(null)
   const [selectedPlant, setSelectedPlant] = useState<string | null>(null)
   const [selectedWarehouse, setSelectedWarehouse] = useState<string | null>(null)
+
+  const dieselBuWideMode = !!(
+    accessProfile?.business_unit_id &&
+    !accessProfile.plant_id &&
+    selectedBusinessUnit === accessProfile.business_unit_id
+  )
   const [productId, setProductId] = useState<string | null>(null)
   const [assetType, setAssetType] = useState<'formal' | 'exception'>('formal')
   const [selectedAsset, setSelectedAsset] = useState<any>(null)
@@ -159,6 +174,11 @@ export function ConsumptionEntryForm({
 
       if (!profile) return
 
+      setAccessProfile({
+        business_unit_id: profile.business_unit_id ?? null,
+        plant_id: profile.plant_id ?? null
+      })
+
       // Load business units
       const { data: busUnits } = await supabase
         .from('business_units')
@@ -170,14 +190,20 @@ export function ConsumptionEntryForm({
       // Auto-select based on user context
       if (profile.business_unit_id) {
         setSelectedBusinessUnit(profile.business_unit_id)
-        loadPlantsForBusinessUnit(profile.business_unit_id)
-        
+        await loadPlantsForBusinessUnit(profile.business_unit_id)
+
         if (profile.plant_id) {
           setSelectedPlant(profile.plant_id)
-          loadWarehousesForPlant(profile.plant_id)
+          setAllBuWarehouses([])
+          await loadWarehousesForPlant(profile.plant_id)
+        } else {
+          // Jefe de Unidad (unidad scope, sin planta fija): todos los almacenes de la unidad
+          setSelectedPlant(null)
+          await loadWarehousesForBusinessUnit(profile.business_unit_id)
         }
       } else if (!profile.plant_id && !profile.business_unit_id) {
         // Global user - load all plants
+        setAllBuWarehouses([])
         const { data: allPlants } = await supabase
           .from('plants')
           .select('*')
@@ -203,6 +229,55 @@ export function ConsumptionEntryForm({
     }
   }
 
+  const loadWarehousesForBusinessUnit = async (businessUnitId: string) => {
+    try {
+      const { data: plantRows, error: plantErr } = await supabase
+        .from('plants')
+        .select('id')
+        .eq('business_unit_id', businessUnitId)
+
+      if (plantErr) {
+        console.error('Error loading plants for BU warehouses:', plantErr)
+        toast.error('Error al cargar almacenes')
+        return
+      }
+
+      const plantIds = (plantRows ?? []).map((p) => p.id).filter(Boolean)
+      if (plantIds.length === 0) {
+        setWarehouses([])
+        setAllBuWarehouses([])
+        return
+      }
+
+      const { data, error } = await supabase
+        .from('diesel_warehouses')
+        .select(
+          'id, name, warehouse_code, capacity_liters, current_inventory, has_cuenta_litros, plant_id'
+        )
+        .in('plant_id', plantIds)
+        .eq('product_type', productType)
+        .order('name')
+
+      if (error) {
+        console.error('Error loading BU warehouses:', error)
+        toast.error('Error al cargar almacenes')
+        return
+      }
+
+      const list = data || []
+      setAllBuWarehouses(list)
+      setWarehouses(list)
+
+      if (list.length === 1) {
+        setSelectedWarehouse(list[0].id)
+        if (list[0].plant_id) setSelectedPlant(list[0].plant_id)
+      }
+    } catch (error) {
+      console.error('Error loading BU warehouses:', error)
+      toast.error('Error al cargar almacenes')
+    }
+  }
+
   const loadWarehousesForPlant = async (plantId: string) => {
     try {
       // Load warehouses with current inventory - filter by product_type
@@ -220,10 +295,12 @@ export function ConsumptionEntryForm({
       }
 
       setWarehouses(data || [])
-      
+      setAllBuWarehouses([])
+
       // Auto-select if only one warehouse
       if (data && data.length === 1) {
         setSelectedWarehouse(data[0].id)
+        if (data[0].plant_id) setSelectedPlant(data[0].plant_id)
       }
     } catch (error) {
       console.error('Error loading warehouses:', error)
@@ -238,15 +315,39 @@ export function ConsumptionEntryForm({
     setSelectedWarehouse(null)
     setPlants([])
     setWarehouses([])
-    loadPlantsForBusinessUnit(buId)
+    setAllBuWarehouses([])
+    void loadPlantsForBusinessUnit(buId)
+  }
+
+  const handleWarehouseChange = (warehouseId: string) => {
+    setSelectedWarehouse(warehouseId)
+    const wh =
+      warehouses.find((w) => w.id === warehouseId) ??
+      allBuWarehouses.find((w) => w.id === warehouseId)
+    if (wh?.plant_id) setSelectedPlant(wh.plant_id)
   }
 
   // Handle plant change
   const handlePlantChange = (plantId: string) => {
-    setSelectedPlant(plantId)
+    const id = plantId || null
+    setSelectedPlant(id)
     setSelectedWarehouse(null)
-    setWarehouses([])
-    loadWarehousesForPlant(plantId)
+
+    if (!id) {
+      if (dieselBuWideMode && allBuWarehouses.length > 0) {
+        setWarehouses(allBuWarehouses)
+      } else {
+        setWarehouses([])
+      }
+      return
+    }
+
+    if (dieselBuWideMode && allBuWarehouses.length > 0) {
+      setWarehouses(allBuWarehouses.filter((w) => w.plant_id === id))
+    } else {
+      setWarehouses([])
+      void loadWarehousesForPlant(id)
+    }
   }
 
   // Load cuenta litros from warehouse (not from last transaction)
@@ -502,8 +603,19 @@ export function ConsumptionEntryForm({
       console.log('Selected Plant ID:', selectedPlant)
       console.log('Product ID:', productId)
       
+      const plantIdForTx = resolveDieselTransactionPlantId(
+        selectedPlant,
+        selectedWarehouse,
+        warehouses,
+        allBuWarehouses
+      )
+      if (!plantIdForTx) {
+        toast.error('No se pudo determinar la planta del almacén. Vuelve a seleccionar el almacén.')
+        return
+      }
+
       const transactionData: any = {
-        plant_id: selectedPlant,
+        plant_id: plantIdForTx,
         warehouse_id: selectedWarehouse,
         product_id: productId,
         transaction_type: 'consumption',
@@ -718,7 +830,9 @@ export function ConsumptionEntryForm({
                   disabled={loading || !selectedBusinessUnit}
                   className="w-full h-12 px-3 border border-gray-300 rounded-md text-base"
                 >
-                  <option value="">Seleccionar...</option>
+                  <option value="">
+                    {dieselBuWideMode ? 'Todas las plantas' : 'Seleccionar...'}
+                  </option>
                   {plants.map(plant => (
                     <option key={plant.id} value={plant.id}>{plant.name} ({plant.code})</option>
                   ))}
@@ -733,8 +847,8 @@ export function ConsumptionEntryForm({
                 <select
                   id="warehouse"
                   value={selectedWarehouse || ''}
-                  onChange={(e) => setSelectedWarehouse(e.target.value)}
-                  disabled={loading || !selectedPlant}
+                  onChange={(e) => handleWarehouseChange(e.target.value)}
+                  disabled={loading || (!dieselBuWideMode && !selectedPlant)}
                   className="w-full h-12 px-3 border border-gray-300 rounded-md text-base"
                 >
                   <option value="">Seleccionar...</option>
@@ -748,15 +862,30 @@ export function ConsumptionEntryForm({
               </div>
             )}
             
-            {!selectedPlant && plants.length > 0 && (
+            {!dieselBuWideMode && !selectedPlant && plants.length > 0 && (
               <p className="text-sm text-muted-foreground">
                 Selecciona una planta para ver los almacenes disponibles
               </p>
             )}
+            {dieselBuWideMode && warehouses.length > 0 && (
+              <p className="text-sm text-muted-foreground">
+                Elige un almacén de tu unidad; la planta se asigna automáticamente. Puedes filtrar por planta arriba.
+              </p>
+            )}
             
-            {selectedPlant && warehouses.length === 0 && (
+            {!dieselBuWideMode && selectedPlant && warehouses.length === 0 && (
               <p className="text-sm text-orange-600">
                 No hay almacenes disponibles en esta planta
+              </p>
+            )}
+            {dieselBuWideMode && selectedPlant && warehouses.length === 0 && allBuWarehouses.length > 0 && (
+              <p className="text-sm text-orange-600">
+                No hay almacenes en la planta seleccionada
+              </p>
+            )}
+            {dieselBuWideMode && allBuWarehouses.length === 0 && plants.length > 0 && (
+              <p className="text-sm text-orange-600">
+                No hay almacenes de {productType} en esta unidad
               </p>
             )}
           </div>
