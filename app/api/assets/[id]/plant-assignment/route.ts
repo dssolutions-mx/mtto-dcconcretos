@@ -28,7 +28,13 @@ export async function PATCH(
     }
 
     // Only certain roles can update asset plant assignments
-    const allowedRoles = ['GERENCIA_GENERAL', 'JEFE_UNIDAD_NEGOCIO', 'JEFE_PLANTA', 'COORDINADOR_MANTENIMIENTO']
+    const allowedRoles = [
+      'GERENCIA_GENERAL',
+      'JEFE_UNIDAD_NEGOCIO',
+      'JEFE_PLANTA',
+      'COORDINADOR_MANTENIMIENTO',
+      'GERENTE_MANTENIMIENTO',
+    ]
     if (!allowedRoles.includes(currentProfile.role)) {
       return NextResponse.json({ error: 'Insufficient permissions to modify asset assignments' }, { status: 403 })
     }
@@ -62,6 +68,42 @@ export async function PATCH(
       if (currentAsset.plant_id !== currentProfile.plant_id && plant_id !== currentProfile.plant_id) {
         return NextResponse.json({ 
           error: 'Como Jefe de Planta, solo puedes asignar activos a tu planta o mover activos ya asignados a tu planta' 
+        }, { status: 403 })
+      }
+    } else if (
+      currentProfile.role === 'COORDINADOR_MANTENIMIENTO' &&
+      currentProfile.business_unit_id
+    ) {
+      // BU-wide reassignment (same rules as Jefe de Unidad de Negocio for this action)
+      if (plant_id) {
+        const { data: targetPlant } = await supabase
+          .from('plants')
+          .select('business_unit_id')
+          .eq('id', plant_id)
+          .single()
+
+        if (targetPlant?.business_unit_id !== currentProfile.business_unit_id) {
+          return NextResponse.json({
+            error:
+              'Como Coordinador de Mantenimiento, solo puedes asignar activos a plantas dentro de tu unidad de negocio',
+          }, { status: 403 })
+        }
+      }
+
+      const assetPlant = Array.isArray(currentAsset.plants) ? currentAsset.plants[0] : currentAsset.plants
+      if (assetPlant?.business_unit_id && assetPlant.business_unit_id !== currentProfile.business_unit_id) {
+        return NextResponse.json({
+          error: 'No puedes modificar activos de otras unidades de negocio',
+        }, { status: 403 })
+      }
+    } else if (
+      currentProfile.role === 'COORDINADOR_MANTENIMIENTO' &&
+      currentProfile.plant_id
+    ) {
+      if (currentAsset.plant_id !== currentProfile.plant_id && plant_id !== currentProfile.plant_id) {
+        return NextResponse.json({
+          error:
+            'Como Coordinador de Mantenimiento, solo puedes asignar activos a tu planta o mover activos ya asignados a tu planta',
         }, { status: 403 })
       }
     } else if (currentProfile.role === 'JEFE_UNIDAD_NEGOCIO') {
