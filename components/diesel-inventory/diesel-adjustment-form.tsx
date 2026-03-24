@@ -25,6 +25,7 @@ import {
 } from "lucide-react"
 import { SmartPhotoUpload } from "@/components/checklists/smart-photo-upload"
 import { toast } from "sonner"
+import { validateDieselTransactionScope } from "@/lib/diesel/submit-scope-validation"
 
 interface DieselAdjustmentFormProps {
   productType: 'diesel' | 'urea'
@@ -266,6 +267,21 @@ export function DieselAdjustmentForm({
 
     if (!reason.trim()) {
       toast.error("Especifica la razón del ajuste")
+      return
+    }
+
+    const { data: { user: scopeUser } } = await supabase.auth.getUser()
+    if (!scopeUser) {
+      toast.error("No hay sesión de usuario")
+      return
+    }
+    const scopeErr = await validateDieselTransactionScope(supabase, {
+      userId: scopeUser.id,
+      selectedPlant,
+      selectedWarehouse
+    })
+    if (scopeErr) {
+      toast.error(scopeErr.error)
       return
     }
 

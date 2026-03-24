@@ -27,6 +27,7 @@ import { AssetSelectorMobile } from "./asset-selector-mobile"
 import { ReadingCapture } from "./reading-capture"
 import { SmartPhotoUpload } from "@/components/checklists/smart-photo-upload"
 import { toast } from "sonner"
+import { validateDieselTransactionScope } from "@/lib/diesel/submit-scope-validation"
 
 interface ConsumptionEntryFormProps {
   productType: 'diesel' | 'urea'
@@ -387,6 +388,21 @@ export function ConsumptionEntryForm({
 
     if (!machinePhoto) {
       toast.error("Toma una foto del display de la máquina")
+      return
+    }
+
+    const { data: { user: scopeUser } } = await supabase.auth.getUser()
+    if (!scopeUser) {
+      toast.error("No hay sesión de usuario")
+      return
+    }
+    const scopeErr = await validateDieselTransactionScope(supabase, {
+      userId: scopeUser.id,
+      selectedPlant,
+      selectedWarehouse
+    })
+    if (scopeErr) {
+      toast.error(scopeErr.error)
       return
     }
 
