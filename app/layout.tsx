@@ -1,7 +1,6 @@
 import type React from "react"
 import type { Metadata } from "next"
 import "./globals.css"
-import { ThemeProvider } from "@/components/theme-provider"
 import { SidebarWrapper } from "@/components/sidebar"
 import { AuthInitializer } from "@/components/auth/auth-initializer"
 import { RoleProvider } from "@/components/auth/role-provider"
@@ -25,22 +24,20 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="es" suppressHydrationWarning>
+    <html lang="es" suppressHydrationWarning className="light">
       <body className="font-sans">
-        <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
-          <AuthInitializer />
-          <SessionMonitor />
-          <RoleProvider>
-            <OnboardingProvider>
-              <ProductTour />
-              <SidebarWrapper>{children}</SidebarWrapper>
-            </OnboardingProvider>
-          </RoleProvider>
-          <Toaster />
-          <CacheConsoleLoader />
-          <StorageManager />
-          <Analytics />
-        </ThemeProvider>
+        <AuthInitializer />
+        <SessionMonitor />
+        <RoleProvider>
+          <OnboardingProvider>
+            <ProductTour />
+            <SidebarWrapper>{children}</SidebarWrapper>
+          </OnboardingProvider>
+        </RoleProvider>
+        <Toaster />
+        <CacheConsoleLoader />
+        <StorageManager />
+        <Analytics />
       </body>
     </html>
   )
