@@ -8,8 +8,9 @@ import { es } from "date-fns/locale"
 import { useRouter } from "next/navigation"
 import { useState, useMemo, useEffect } from "react"
 import { getAssetName, getAssetFullName, getReporterName } from "./incidents-list-utils"
-import { getDaysSinceCreated } from "./incidents-status-utils"
+import { getDaysSinceCreated, getStatusInfo, normalizeStatus, getPriorityInfo } from "./incidents-status-utils"
 import { cn } from "@/lib/utils"
+import { Badge } from "@/components/ui/badge"
 
 function formatDate(dateStr: string | null | undefined): string {
   if (!dateStr) return "—"
@@ -21,8 +22,51 @@ function formatDate(dateStr: string | null | undefined): string {
 }
 
 function isResolved(status: string): boolean {
-  const s = status.toLowerCase()
-  return s === "resolved" || s === "resuelto" || s === "cerrado"
+  return normalizeStatus(status) === "resolved"
+}
+
+function statusBadgeClass(status: string): string {
+  const n = normalizeStatus(status)
+  switch (n) {
+    case "resolved":
+      return "border-green-200 bg-green-50 text-green-800"
+    case "open":
+      return "border-red-200 bg-red-50 text-red-800"
+    case "pending":
+      return "border-amber-200 bg-amber-50 text-amber-800"
+    case "in_progress":
+      return "border-sky-200 bg-sky-50 text-sky-800"
+    default:
+      return "border-border bg-muted/50 text-foreground"
+  }
+}
+
+function urgencyBadgeClass(level: string): string {
+  switch (level) {
+    case "critical":
+      return "border-red-300 bg-red-100 text-red-900"
+    case "high":
+      return "border-amber-300 bg-amber-100 text-amber-900"
+    case "medium":
+      return "border-amber-200 bg-amber-50 text-amber-900"
+    case "low":
+      return "border-sky-200 bg-sky-50 text-sky-800"
+    default:
+      return "border-border bg-muted/40 text-muted-foreground"
+  }
+}
+
+function rowSurfaceClass(resolved: boolean, days: number): string {
+  if (resolved) {
+    return "bg-muted/20 border-l-4 border-l-muted-foreground/25"
+  }
+  if (days >= 7) {
+    return "bg-red-50 border-l-4 border-l-red-500"
+  }
+  if (days >= 3) {
+    return "bg-amber-50/80 border-l-4 border-l-amber-500"
+  }
+  return "bg-sky-50/60 border-l-4 border-l-sky-500"
 }
 
 interface AssetGroup {
@@ -175,7 +219,15 @@ export function IncidentsOTLookup({ incidents, assets }: IncidentsOTLookupProps)
                   <span className="font-semibold text-sm text-muted-foreground">Sin activo</span>
                 )}
                 <span className="text-xs text-muted-foreground shrink-0">
-                  · {group.incidents.length} incidente{group.incidents.length !== 1 ? "s" : ""}
+                  · {group.incidents.length} total
+                  <span className="text-foreground/90 font-medium">
+                    {" "}
+                    ({group.openCount} abierto{group.openCount !== 1 ? "s" : ""}
+                    {group.incidents.length - group.openCount > 0
+                      ? ` · ${group.incidents.length - group.openCount} resuelto${group.incidents.length - group.openCount !== 1 ? "s" : ""}`
+                      : ""}
+                    )
+                  </span>
                 </span>
               </div>
 
@@ -190,6 +242,13 @@ export function IncidentsOTLookup({ incidents, assets }: IncidentsOTLookupProps)
             {/* Filas de incidentes — más recientes primero */}
             {!isCollapsed && (
               <div className="divide-y divide-border/30">
+                <div className="hidden sm:flex items-center gap-4 px-4 py-1.5 bg-muted/30 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+                  <span className="w-20 shrink-0">Fecha</span>
+                  <span className="w-[9.5rem] shrink-0">Estado</span>
+                  <span className="flex-1 min-w-0">Descripción</span>
+                  <span className="w-32 shrink-0 text-right hidden md:block">Reportante</span>
+                  <span className="w-28 shrink-0 text-right">OT</span>
+                </div>
                 {group.incidents.map((incident, idx) => {
                   const incidentId = typeof incident.id === "string" ? incident.id : null
                   const workOrderId = typeof incident.work_order_id === "string" ? incident.work_order_id : null
@@ -197,24 +256,53 @@ export function IncidentsOTLookup({ incidents, assets }: IncidentsOTLookupProps)
                   const status = String(incident.status ?? "")
                   const resolved = isResolved(status)
                   const days = getDaysSinceCreated(dateStr ?? "")
-                  const isCritical = !resolved && days >= 7
+                  const statusLabel = getStatusInfo(status).label
+                  const priority = getPriorityInfo(status, days)
+                  const PriorityIcon = priority.icon
 
                   return (
                     <div
                       key={incidentId ?? `i-${idx}`}
                       className={cn(
-                        "flex items-center gap-4 px-4 py-2.5 cursor-pointer transition-colors hover:bg-muted/30",
-                        resolved && "opacity-50",
-                        isCritical && "bg-red-50/50"
+                        "flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4 px-4 py-2.5 cursor-pointer transition-colors hover:bg-muted/40",
+                        rowSurfaceClass(resolved, days),
                       )}
                       onClick={() => incidentId && router.push(`/incidentes/${incidentId}`)}
                     >
-                      <span className="shrink-0 text-xs text-muted-foreground w-20 whitespace-nowrap">
-                        {formatDate(dateStr)}
-                      </span>
+                      <div className="flex items-center gap-2 sm:contents">
+                        <span className="shrink-0 text-xs text-muted-foreground w-20 whitespace-nowrap">
+                          {formatDate(dateStr)}
+                        </span>
+                        <div className="flex flex-wrap items-center gap-1.5 sm:w-[9.5rem] sm:shrink-0">
+                          <Badge
+                            variant="outline"
+                            className={cn(
+                              "text-[10px] font-semibold px-2 py-0 h-5 border",
+                              statusBadgeClass(status),
+                            )}
+                          >
+                            {statusLabel}
+                          </Badge>
+                          {!resolved && (
+                            <Badge
+                              variant="outline"
+                              className={cn(
+                                "text-[10px] font-semibold px-2 py-0 h-5 border gap-0.5",
+                                urgencyBadgeClass(priority.level),
+                              )}
+                            >
+                              <PriorityIcon className="h-2.5 w-2.5" aria-hidden />
+                              {priority.label}
+                            </Badge>
+                          )}
+                        </div>
+                      </div>
 
                       <p
-                        className="flex-1 text-sm text-foreground leading-snug line-clamp-1"
+                        className={cn(
+                          "flex-1 text-sm leading-snug line-clamp-2 sm:line-clamp-1 min-w-0",
+                          resolved ? "text-muted-foreground" : "text-foreground font-medium",
+                        )}
                         title={String(incident.description ?? "")}
                       >
                         {String(incident.description ?? "—")}
@@ -225,11 +313,19 @@ export function IncidentsOTLookup({ incidents, assets }: IncidentsOTLookupProps)
                       </span>
 
                       <div
-                        className="shrink-0 w-28 flex justify-end"
+                        className="shrink-0 w-full sm:w-28 flex justify-start sm:justify-end"
                         onClick={(e) => e.stopPropagation()}
                       >
                         {workOrderId ? (
-                          <Button asChild size="sm" variant="outline" className="h-7 text-xs cursor-pointer">
+                          <Button
+                            asChild
+                            size="sm"
+                            variant={resolved ? "ghost" : "outline"}
+                            className={cn(
+                              "h-7 text-xs cursor-pointer",
+                              resolved && "text-muted-foreground border border-border/60",
+                            )}
+                          >
                             <Link href={`/ordenes/${workOrderId}`}>
                               <Wrench className="mr-1 h-3 w-3" />
                               {incident.work_order_order_id

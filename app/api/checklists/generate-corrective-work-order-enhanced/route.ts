@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
+import {
+  collectChecklistIssueEvidencePayload,
+  mergeIssuePhotoWithChecklistEvidence,
+  normalizeIssueItemPhotoUrl,
+} from '@/lib/checklist/collect-checklist-issue-evidence'
 
 // Add function to verify database functions exist
 async function verifyDatabaseFunctions(supabase: any) {
@@ -458,11 +463,17 @@ ORIGEN:
             .eq('id', asset_id)
             .single();
 
-          // Build creation_photos from issue photo
-          const issuePhotoUrl = issue.photo_url ?? issue.photo
-          const creationPhotos = issuePhotoUrl
-            ? [{ url: typeof issuePhotoUrl === 'string' ? issuePhotoUrl : (issuePhotoUrl as { url?: string })?.url ?? '', description: issue.description ?? '', category: 'checklist', uploaded_at: new Date().toISOString() }]
-            : []
+          const issuePhotoUrl = normalizeIssueItemPhotoUrl(issue)
+          const checklistEvidence = await collectChecklistIssueEvidencePayload(supabase, {
+            completedChecklistId: checklist_id,
+            itemId: issue.id,
+          })
+          const { documentUrls: mergedDocUrls, creationPhotos } =
+            mergeIssuePhotoWithChecklistEvidence({
+              issuePhotoUrl,
+              issueDescription: issue.description,
+              evidence: checklistEvidence,
+            })
 
           while (retryCount < maxRetries) {
             const { data: workOrderData, error: workOrderInsertError } = await supabase
@@ -569,12 +580,6 @@ ORIGEN:
             .update({ work_order_id: workOrder.id })
             .eq('id', savedIssue.id)
 
-          // Create individual incident with preserved evidence
-          const incidentDocuments = []
-          if (issue.photo_url) {
-            incidentDocuments.push(issue.photo_url)
-          }
-
           const { data: incident, error: incidentError } = await supabase
             .from('incident_history')
             .insert({
@@ -587,7 +592,7 @@ ORIGEN:
               reported_by: user.id,
               created_by: user.id,
               work_order_id: workOrder.id,
-              documents: incidentDocuments,
+              documents: mergedDocUrls.length > 0 ? mergedDocUrls : null,
               created_at: new Date().toISOString()
             })
             .select('id')

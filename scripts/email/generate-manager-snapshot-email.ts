@@ -17,6 +17,10 @@ import { createClient } from '@supabase/supabase-js'
 import { writeFileSync } from 'fs'
 import { resolve } from 'path'
 import { calculateMaintenanceSummary, type MaintenanceAlert } from './calculateMaintenanceSummary'
+import {
+  type CompletedChecklistTimingRow,
+  buildLastCompletionByAssetMap,
+} from '../../lib/checklist-completion-timing'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -128,11 +132,129 @@ function pushWoBand(bands: [number, number, number, number], days: number) {
   else bands[3] += 1
 }
 
-const ASSET_EXCLUDE = new Set(['maintenance', 'repair', 'out_of_service', 'scrapped'])
+/** Same exclusion list as refresh_asset_accountability() cursor (assets not in this set are scanned). */
+const COMPLIANCE_ASSET_STATUS_EXCLUDED = new Set([
+  'maintenance',
+  'repair',
+  'out_of_service',
+  'scrapped',
+  'inactive',
+  'retired',
+])
 
-function assetExcludedStatus(status: string | null): boolean {
+function isComplianceEligibleAssetStatus(status: string | null): boolean {
   if (!status) return false
-  return ASSET_EXCLUDE.has(String(status).toLowerCase())
+  return !COMPLIANCE_ASSET_STATUS_EXCLUDED.has(String(status).toLowerCase())
+}
+
+async function fetchGracePeriodDays(): Promise<number> {
+  const { data, error } = await supabase
+    .from('system_settings')
+    .select('value')
+    .eq('key', 'asset_grace_period_days')
+    .maybeSingle()
+  if (error || data?.value == null) return 7
+  try {
+    const n = parseInt(String(data.value).replace(/"/g, ''), 10)
+    return Number.isFinite(n) && n >= 0 ? n : 7
+  } catch {
+    return 7
+  }
+}
+
+async function fetchAllCompletedChecklistsMinimal(): Promise<CompletedChecklistTimingRow[]> {
+  const page = 1000
+  let from = 0
+  const out: CompletedChecklistTimingRow[] = []
+  for (;;) {
+    const { data, error } = await supabase
+      .from('completed_checklists')
+      .select('asset_id, completion_date, created_at')
+      .range(from, from + page - 1)
+    if (error) throw error
+    if (!data?.length) break
+    out.push(...(data as CompletedChecklistTimingRow[]))
+    if (data.length < page) break
+    from += page
+  }
+  return out
+}
+
+/** Primary operator: active row, no end_date, assignment_type = primary (same join as refresh_asset_accountability). */
+/** Al menos una fila en checklist_schedules (histórico); excluye activos fuera del programa de checklists. */
+async function fetchAssetIdsWithAnyChecklistSchedule(): Promise<Set<string>> {
+  const page = 1000
+  let from = 0
+  const ids = new Set<string>()
+  for (;;) {
+    const { data, error } = await supabase
+      .from('checklist_schedules')
+      .select('asset_id')
+      .not('asset_id', 'is', null)
+      .range(from, from + page - 1)
+    if (error) throw error
+    if (!data?.length) break
+    for (const row of data) {
+      if (row.asset_id) ids.add(row.asset_id as string)
+    }
+    if (data.length < page) break
+    from += page
+  }
+  return ids
+}
+
+async function fetchPrimaryOperatorAssetIds(): Promise<Set<string>> {
+  const page = 1000
+  let from = 0
+  const ids = new Set<string>()
+  for (;;) {
+    const { data, error } = await supabase
+      .from('asset_operators')
+      .select('asset_id')
+      .is('end_date', null)
+      .eq('status', 'active')
+      .eq('assignment_type', 'primary')
+      .range(from, from + page - 1)
+    if (error) throw error
+    if (!data?.length) break
+    for (const row of data) {
+      if (row.asset_id) ids.add(row.asset_id as string)
+    }
+    if (data.length < page) break
+    from += page
+  }
+  return ids
+}
+
+async function fetchAssetsForComplianceScan(): Promise<
+  { id: string; plant_id: string; status: string | null; created_at: string; plants: { name: string } | null }[]
+> {
+  const page = 1000
+  let from = 0
+  const out: { id: string; plant_id: string; status: string | null; created_at: string; plants: { name: string } | null }[] = []
+  for (;;) {
+    const { data, error } = await supabase
+      .from('assets')
+      .select('id, plant_id, status, created_at, plants(name)')
+      .not('plant_id', 'is', null)
+      .range(from, from + page - 1)
+    if (error) throw error
+    if (!data?.length) break
+    for (const row of data as any[]) {
+      if (row.plant_id) {
+        out.push({
+          id: row.id,
+          plant_id: row.plant_id,
+          status: row.status,
+          created_at: row.created_at,
+          plants: row.plants ?? null,
+        })
+      }
+    }
+    if (data.length < page) break
+    from += page
+  }
+  return out
 }
 
 type WoRow = {
@@ -141,7 +263,6 @@ type WoRow = {
   status: string | null
   created_at: string | null
   plant_id: string | null
-  incident_id: string | null
   asset_id: string | null
   assets?: { plant_id: string | null } | null
 }
@@ -153,7 +274,7 @@ async function fetchAllWorkOrders(): Promise<WoRow[]> {
   for (;;) {
     const { data, error } = await supabase
       .from('work_orders')
-      .select('id, type, status, created_at, plant_id, incident_id, asset_id, assets(plant_id)')
+      .select('id, type, status, created_at, plant_id, asset_id, assets(plant_id)')
       .range(from, from + page - 1)
     if (error) throw error
     if (!data?.length) break
@@ -170,6 +291,12 @@ async function main() {
 
   console.log('Fetching maintenance summary (same logic as edge function)…')
   const alerts = await calculateMaintenanceSummary(supabase)
+
+  console.log('Syncing asset_accountability_tracking for other dashboards (optional)…')
+  const { error: rpcRefreshErr } = await supabase.rpc('refresh_asset_accountability')
+  if (rpcRefreshErr) {
+    console.warn('refresh_asset_accountability RPC skipped or failed:', rpcRefreshErr.message)
+  }
 
   const plantMap = new Map<string, PlantAgg>()
 
@@ -203,7 +330,6 @@ async function main() {
 
   let woCorrTotal = 0
   let woPrevTotal = 0
-  let woCorrFromIncident = 0
 
   for (const w of pendingWos) {
     if (!w.created_at) continue
@@ -221,67 +347,54 @@ async function main() {
     } else {
       pushWoBand(p.woCorr, days)
       woCorrTotal += 1
-      if (w.incident_id) woCorrFromIncident += 1
     }
   }
 
-  console.log('Fetching accountability + incidents…')
-  const { data: trackingRows, error: trErr } = await supabase.from('asset_accountability_tracking').select(`
-    asset_id,
-    days_without_checklist,
-    has_operator,
-    alert_level,
-    asset:assets!inner (
-      id,
-      plant_id,
-      status,
-      updated_at,
-      plants ( id, name )
-    )
-  `)
-  if (trErr) {
-    console.warn('asset_accountability_tracking:', trErr.message)
-  }
+  console.log(
+    'Checklists & operadores: cálculo en vivo (completed_checklists + asset_operators primario activo). La tabla asset_accountability_tracking solo se actualiza al correr refresh_asset_accountability().',
+  )
+  const graceDays = await fetchGracePeriodDays()
+  const [checklistRows, operatorIds, scanAssets, assetIdsWithScheduledChecklist] = await Promise.all([
+    fetchAllCompletedChecklistsMinimal(),
+    fetchPrimaryOperatorAssetIds(),
+    fetchAssetsForComplianceScan(),
+    fetchAssetIdsWithAnyChecklistSchedule(),
+  ])
+  const lastCcMap = buildLastCompletionByAssetMap(checklistRows)
+  const nowMs = Date.now()
 
   let checklistGt7 = 0
   let noOperator = 0
 
-  for (const row of trackingRows || []) {
-    const asset = row.asset as any
-    if (!asset?.plant_id || assetExcludedStatus(asset.status)) continue
-    const pid = asset.plant_id as string
-    const pname = (asset.plants?.name as string) || plantMap.get(pid)?.name || 'Planta'
+  for (const a of scanAssets) {
+    if (!isComplianceEligibleAssetStatus(a.status)) continue
+    const createdMs = new Date(a.created_at).getTime()
+    const ageDays = (nowMs - createdMs) / 86400000
+    if (ageDays < graceDays) continue
+
+    const pid = a.plant_id
+    const pname =
+      (a.plants?.name as string) ||
+      alerts.find((x) => x.plant_id === pid)?.plant_name ||
+      plantMap.get(pid)?.name ||
+      'Planta'
     const p = ensurePlant(pid, pname)
 
-    const dwc = Number(row.days_without_checklist) || 0
+    if (!operatorIds.has(a.id)) {
+      noOperator += 1
+      p.noOp += 1
+    }
+
+    if (!assetIdsWithScheduledChecklist.has(a.id)) continue
+
+    const lastTs = lastCcMap.get(a.id)
+    const dwc = lastTs === undefined ? 999 : Math.floor((nowMs - lastTs) / 86400000)
     if (dwc > 7) {
       checklistGt7 += 1
       if (dwc >= 8 && dwc <= 13) p.chk813 += 1
       else if (dwc >= 14 && dwc <= 29) p.chk1429 += 1
       else if (dwc >= 30) p.chk30p += 1
     }
-
-    if (row.has_operator === false) {
-      noOperator += 1
-      p.noOp += 1
-    }
-  }
-
-  const { data: incidentsOpen, error: incErr } = await supabase
-    .from('incident_history')
-    .select('id, status, work_order_id, asset_id, assets!inner(plant_id, status)')
-    .is('work_order_id', null)
-    .neq('status', 'Resuelto')
-
-  if (incErr) {
-    console.warn('incident_history:', incErr.message)
-  }
-
-  let intakeNoWo = 0
-  for (const inc of incidentsOpen || []) {
-    const ast = (inc as any).assets
-    if (ast && assetExcludedStatus(ast.status)) continue
-    intakeNoWo += 1
   }
 
   console.log('Fetching assets for operational staleness…')
@@ -292,18 +405,10 @@ async function main() {
 
   if (astErr) throw astErr
 
-  const { data: allCc, error: ccErr } = await supabase.from('completed_checklists').select('asset_id, completion_date')
-  if (ccErr) throw ccErr
-
   const { data: allMh, error: mhErr } = await supabase.from('maintenance_history').select('asset_id, date')
   if (mhErr) throw mhErr
 
-  const lastCc = new Map<string, number>()
-  for (const r of allCc || []) {
-    const aid = r.asset_id as string
-    const t = r.completion_date ? new Date(r.completion_date as string).getTime() : 0
-    if (t > (lastCc.get(aid) || 0)) lastCc.set(aid, t)
-  }
+  const lastCc = lastCcMap
 
   const lastMh = new Map<string, number>()
   for (const r of allMh || []) {
@@ -312,7 +417,7 @@ async function main() {
     if (t > (lastMh.get(aid) || 0)) lastMh.set(aid, t)
   }
 
-  const now = Date.now()
+  const now = nowMs
   for (const a of activeAssets || []) {
     const pid = a.plant_id as string
     if (!pid) continue
@@ -491,7 +596,7 @@ async function main() {
 </head>
 <body style="margin:0;padding:0;background:#F8FAFC;-webkit-text-size-adjust:100%;">
   <div style="display:none;max-height:0;overflow:hidden;mso-hide:all;">
-    Resumen ${cutDate}: preventivo por intervalos, OT pendientes, checklists, operadores, intake sin OT.
+    Resumen ${cutDate}: seis KPIs ejecutivos y detalle por planta.
   </div>
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#F8FAFC;">
     <tr>
@@ -508,22 +613,6 @@ async function main() {
               <p style="margin:6px 0 0 0;font-family:Segoe UI,system-ui,Arial,sans-serif;font-size:14px;color:#BAE6FD;">
                 Para: <strong style="color:#ffffff;">${escapeHtml(recipient)}</strong>
               </p>
-            </td>
-          </tr>
-          <tr>
-            <td style="padding:20px 24px 0 24px;font-family:Segoe UI,system-ui,Arial,sans-serif;">
-              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#EFF6FF;border:1px solid #BFDBFE;border-radius:8px;">
-                <tr>
-                  <td style="padding:14px 16px;">
-                    <p style="margin:0 0 8px 0;font-size:13px;font-weight:700;color:#0C4A6E;">Cómo leer este correo</p>
-                    <p style="margin:0;font-size:12px;color:#475569;line-height:1.55;">
-                      <strong>Preventivo cíclico</strong> usa la misma lógica que las alertas automáticas (horas/km vs intervalos del modelo).
-                      <strong>OT</strong> pendientes alineadas a la vista «Pendientes» del sistema. Franjas de antigüedad por fecha de creación de la OT, sin solapar filas.
-                      <strong>Incidentes sin OT</strong> son solo triage aún sin orden generada (no duplican el conteo de OT correctivas).
-                    </p>
-                  </td>
-                </tr>
-              </table>
             </td>
           </tr>
           <tr>
@@ -569,7 +658,7 @@ async function main() {
                     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#F1F5F9;border-radius:8px;">
                       <tr><td style="padding:14px;text-align:center;">
                         <div style="font-size:22px;font-weight:700;color:#7C3AED;">${checklistGt7}</div>
-                        <div style="font-size:11px;color:#64748B;margin-top:4px;">Activos sin checklist<br/>completado &gt;7 días</div>
+                        <div style="font-size:11px;color:#64748B;margin-top:4px;">Programados sin checklist<br/>&gt;7 días</div>
                       </td></tr>
                     </table>
                   </td>
@@ -583,14 +672,6 @@ async function main() {
                   </td>
                 </tr>
               </table>
-            </td>
-          </tr>
-          <tr>
-            <td style="padding:0 24px 16px 24px;font-family:Segoe UI,system-ui,Arial,sans-serif;">
-              <p style="margin:0;font-size:12px;color:#64748B;line-height:1.5;background:#FFFBEB;border:1px solid #FDE68A;border-radius:6px;padding:10px 12px;">
-                <strong style="color:#92400E;">Intake sin ejecutar:</strong> incidentes sin OT generada: <strong style="color:#B45309;">${intakeNoWo}</strong>.
-                OT correctivas con <code style="font-size:11px;">incident_id</code> (origen incidente): <strong>${woCorrFromIncident}</strong>.
-              </p>
             </td>
           </tr>
           <tr>
@@ -623,8 +704,7 @@ async function main() {
           </tr>
           <tr>
             <td style="padding:20px 24px 8px 24px;font-family:Segoe UI,system-ui,Arial,sans-serif;">
-              <h2 style="margin:0 0 6px 0;font-size:16px;font-weight:700;color:#0C4A6E;border-bottom:2px solid #E2E8F0;padding-bottom:6px;">Activos — checklist (días sin completar)</h2>
-              <p style="margin:0 0 10px 0;font-size:12px;color:#64748B;">Fuente: <code style="font-size:11px;">asset_accountability_tracking</code>. Activos fuera de política de exclusión de cumplimiento omitidos.</p>
+              <h2 style="margin:0 0 10px 0;font-size:16px;font-weight:700;color:#0C4A6E;border-bottom:2px solid #E2E8F0;padding-bottom:6px;">Activos con programación — checklist (días sin completar)</h2>
               <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;">
                 ${tableRow(['Planta', '8–13 d', '14–29 d', '30+ d', 'Total &gt;7 d'], { header: true })}
                 ${checklistBody}
@@ -679,11 +759,15 @@ async function main() {
   console.log('Wrote', outPath)
   console.log({
     plants: plantRows.length,
-    alerts: alerts.length,
+    kpi: {
+      preventivoVencido: globalOverdue,
+      preventivoProximo: globalUpcoming,
+      otCorrectivasPendientes: woCorrTotal,
+      otPreventivasPendientes: woPrevTotal,
+      programadosSinChecklistGt7: checklistGt7,
+      activosSinOperador: noOperator,
+    },
     pendingWO: pendingWos.length,
-    intakeNoWo,
-    checklistGt7,
-    noOperator,
   })
 }
 

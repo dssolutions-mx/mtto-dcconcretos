@@ -12,6 +12,7 @@ import { Plus, Search, X } from "lucide-react"
 import Link from "next/link"
 import { IncidentsOTLookup } from "@/components/incidents/incidents-ot-lookup"
 import { getAssetName, getAssetFullName, getReporterName } from "@/components/incidents/incidents-list-utils"
+import { aggregateIncidentDashboardStats, isIncidentResolvedForDashboard } from "@/lib/incident-dashboard-metrics"
 
 function IncidentsPageContent() {
   const router = useRouter()
@@ -26,6 +27,7 @@ function IncidentsPageContent() {
   const [searchTerm, setSearchTerm] = useState("")
   const [statusFilter, setStatusFilter] = useState("all")
   const [typeFilter, setTypeFilter] = useState("all")
+  const [lifecycleFilter, setLifecycleFilter] = useState<"all" | "open" | "resolved">("all")
 
   // Initialize search from ?asset= param (used by coordinator dashboard)
   useEffect(() => {
@@ -84,28 +86,17 @@ function IncidentsPageContent() {
   }, [incidents])
 
   const stats = useMemo(() => {
-    let open = 0
-    let critical = 0
-    let resolved = 0
-
-    incidents.forEach((i) => {
-      const status = String(i.status ?? "").toLowerCase()
-      const isResolved = status === "resolved" || status === "resuelto" || status === "cerrado"
-      if (isResolved) resolved++
-      else {
-        open++
-        const dateStr = (i.date ?? i.created_at) as string | undefined
-        const days = Math.ceil(Math.abs(new Date().getTime() - new Date(dateStr ?? "").getTime()) / (1000 * 60 * 60 * 24))
-        if (days >= 7) critical++
-      }
-    })
-
-    return { open, critical, resolved }
+    const a = aggregateIncidentDashboardStats(
+      incidents as { status?: string | null; date?: string | null; created_at?: string | null }[],
+    )
+    return { open: a.open, critical: a.openOver7Days, resolved: a.resolved, total: a.total }
   }, [incidents])
 
   const filteredIncidents = useMemo(() => {
     return incidents.filter((incident) => {
       if (assetIdFromUrl && incident.asset_id !== assetIdFromUrl) return false
+      if (lifecycleFilter === "open" && isIncidentResolvedForDashboard(String(incident.status ?? ""))) return false
+      if (lifecycleFilter === "resolved" && !isIncidentResolvedForDashboard(String(incident.status ?? ""))) return false
       if (statusFilter !== "all" && String(incident.status ?? "") !== statusFilter) return false
       if (typeFilter !== "all" && String(incident.type ?? "") !== typeFilter) return false
       if (searchTerm.trim()) {
@@ -125,12 +116,13 @@ function IncidentsPageContent() {
       }
       return true
     })
-  }, [incidents, statusFilter, typeFilter, searchTerm, assets, assetIdFromUrl])
+  }, [incidents, lifecycleFilter, statusFilter, typeFilter, searchTerm, assets, assetIdFromUrl])
 
   const clearFilters = () => {
     setSearchTerm("")
     setStatusFilter("all")
     setTypeFilter("all")
+    setLifecycleFilter("all")
     if (assetIdFromUrl || assetFromUrl) {
       router.replace("/incidentes")
     }
@@ -180,12 +172,33 @@ function IncidentsPageContent() {
       <div className="space-y-4">
         {/* Métricas de resumen — texto plano, sin color */}
         <div className="flex items-center gap-6 text-sm">
-          <span><span className="font-semibold text-foreground">{incidents.length}</span> <span className="text-muted-foreground">total</span></span>
+          <span><span className="font-semibold text-foreground">{stats.total}</span> <span className="text-muted-foreground">total</span></span>
           <span><span className="font-semibold text-foreground">{stats.open}</span> <span className="text-muted-foreground">abiertos</span></span>
           {stats.critical > 0 && (
             <span><span className="font-semibold text-red-600">{stats.critical}</span> <span className="text-muted-foreground">sin resolver +7 días</span></span>
           )}
           <span><span className="font-semibold text-foreground">{stats.resolved}</span> <span className="text-muted-foreground">resueltos</span></span>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground w-full sm:w-auto sm:mr-1">
+            Vista rápida
+          </span>
+          {(["all", "open", "resolved"] as const).map((key) => {
+            const labels = { all: "Todos", open: "Solo abiertos", resolved: "Solo resueltos" } as const
+            return (
+              <Button
+                key={key}
+                type="button"
+                variant={lifecycleFilter === key ? "default" : "outline"}
+                size="sm"
+                className="h-8 text-xs cursor-pointer"
+                onClick={() => setLifecycleFilter(key)}
+              >
+                {labels[key]}
+              </Button>
+            )
+          })}
         </div>
 
         {/* Filtros */}
@@ -222,7 +235,7 @@ function IncidentsPageContent() {
               ))}
             </SelectContent>
           </Select>
-          {(searchTerm || statusFilter !== "all" || typeFilter !== "all" || assetIdFromUrl || assetFromUrl) && (
+          {(searchTerm || statusFilter !== "all" || typeFilter !== "all" || lifecycleFilter !== "all" || assetIdFromUrl || assetFromUrl) && (
             <button
               type="button"
               onClick={clearFilters}
