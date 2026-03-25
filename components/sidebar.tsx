@@ -41,7 +41,6 @@ import {
   Target,
 } from "lucide-react"
 import { UserNav } from "@/components/user-nav"
-import { ModeToggle } from "@/components/mode-toggle"
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { BreadcrumbNav } from "@/components/breadcrumb-nav"
@@ -1554,7 +1553,6 @@ export function SidebarWrapper({ children }: { children: React.ReactNode }) {
 
             {/* Header Actions */}
             <div className="flex items-center gap-2">
-              <ModeToggle />
               <UserNav />
             </div>
           </header>

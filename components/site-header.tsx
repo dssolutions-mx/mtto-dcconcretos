@@ -1,5 +1,4 @@
 "use client"
-import { ModeToggle } from "@/components/mode-toggle"
 import { UserNav } from "@/components/user-nav"
 
 export function SiteHeader() {
@@ -11,7 +10,6 @@ export function SiteHeader() {
         </div>
         <div className="flex flex-1 items-center justify-end space-x-4">
           <nav className="flex items-center space-x-1">
-            <ModeToggle />
             <UserNav />
           </nav>
         </div>
