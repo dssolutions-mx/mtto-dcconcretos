@@ -14,6 +14,10 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
+import {
+  isInspectionMaintenanceType,
+  isPreventiveMaintenanceType,
+} from "@/lib/utils/maintenance-history-classification";
 import type { MaintenanceHistory } from "@/types";
 
 const INITIAL_PAGE_SIZE = 20;
@@ -36,9 +40,8 @@ interface TimelineEvent {
 
 function getEventType(item: { type?: string | null }, source: "maintenance" | "incident"): TimelineEventType {
   if (source === "incident") return "correctivo";
-  const t = (item.type || "").toLowerCase();
-  if (t === "preventivo") return "pm";
-  if (t === "inspección" || t === "inspeccion") return "inspeccion";
+  if (isPreventiveMaintenanceType(item.type)) return "pm";
+  if (isInspectionMaintenanceType(item.type)) return "inspeccion";
   return "correctivo"; // Correctivo, Predictivo, Overhaul, etc.
 }
 

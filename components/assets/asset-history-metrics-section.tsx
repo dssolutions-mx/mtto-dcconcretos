@@ -19,6 +19,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { isPreventiveMaintenanceType } from "@/lib/utils/maintenance-history-classification";
 import type { MaintenanceHistory } from "@/types";
 
 interface CostDataPoint {
@@ -62,7 +63,7 @@ export function AssetHistoryMetricsSection({
       const cost = maintenance.total_cost ? parseFloat(maintenance.total_cost.toString()) : 0;
       totalCost += cost;
 
-      if (maintenance.type === "Preventivo") {
+      if (isPreventiveMaintenanceType(maintenance.type)) {
         preventiveCost += cost;
       } else {
         correctiveCost += cost;
@@ -78,7 +79,7 @@ export function AssetHistoryMetricsSection({
           monthlyData.set(monthName, { preventivo: 0, correctivo: 0, total: 0 });
         }
         const monthData = monthlyData.get(monthName)!;
-        if (maintenance.type === "Preventivo") {
+        if (isPreventiveMaintenanceType(maintenance.type)) {
           monthData.preventivo += cost;
         } else {
           monthData.correctivo += cost;
