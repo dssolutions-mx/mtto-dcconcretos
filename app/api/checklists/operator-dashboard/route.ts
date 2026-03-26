@@ -124,18 +124,34 @@ export async function GET(request: NextRequest) {
     const overdueChecklists = categorizedSchedules.overdue  
     const upcomingChecklists = [...categorizedSchedules.upcoming, ...categorizedSchedules.future]
 
-    // Add assignment information to each schedule (match component schedules to composite assignment)
+    const normalizeNestedAsset = (row: unknown) => {
+      if (!row || typeof row !== 'object') return null
+      const a = row as { id?: string; name?: string | null; asset_id?: string | null }
+      return a.id ? a : null
+    }
+
+    // Match component schedules to composite assignment; expose part (schedule.assets) vs unit (assignment.assets)
     const addAssignmentInfo = (schedules: any[]) => {
-      return schedules.map(schedule => {
+      return schedules.map((schedule) => {
         const assignment = findAssignmentForScheduleAsset(
           schedule.asset_id,
           assignedAssets,
           assignmentScopes
         )
+        const rawAssets = schedule.assets
+        const partAsset = normalizeNestedAsset(
+          Array.isArray(rawAssets) ? rawAssets[0] : rawAssets
+        )
+        const rawAssigned = assignment?.assets
+        const unitAsset = normalizeNestedAsset(
+          Array.isArray(rawAssigned) ? rawAssigned[0] : rawAssigned
+        )
         return {
           ...schedule,
+          assets: partAsset ?? schedule.assets,
+          assigned_asset: unitAsset ?? undefined,
           assignment_type: assignment?.assignment_type || 'unknown',
-          assignment_start_date: assignment?.start_date
+          assignment_start_date: assignment?.start_date,
         }
       })
     }

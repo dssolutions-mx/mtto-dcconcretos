@@ -24,6 +24,44 @@ import Link from 'next/link'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
 
+type ScheduleAssetInfo = {
+  assets?: { id?: string; name?: string | null; asset_id?: string | null } | null
+  assigned_asset?: { id?: string; name?: string | null; asset_id?: string | null } | null
+}
+
+/** Pending schedule row: show physical part vs composite assignment when they differ */
+function OperatorScheduleAssetLines({ checklist }: { checklist: ScheduleAssetInfo }) {
+  const part = checklist.assets
+  const unit = checklist.assigned_asset
+  const showPart = part?.asset_id
+  const showUnit = unit?.asset_id && unit.id && part?.id && unit.id !== part.id
+
+  if (showPart) {
+    return (
+      <div className="space-y-0.5">
+        <p className="text-xs text-muted-foreground">
+          Parte: {part?.name ?? "—"} ({part.asset_id})
+        </p>
+        {showUnit ? (
+          <p className="text-xs text-muted-foreground">
+            Unidad: {unit?.name ?? "—"} ({unit.asset_id})
+          </p>
+        ) : null}
+      </div>
+    )
+  }
+
+  if (unit?.asset_id) {
+    return (
+      <p className="text-sm text-gray-600">
+        {unit.name} ({unit.asset_id})
+      </p>
+    )
+  }
+
+  return null
+}
+
 export default function OperatorDashboard() {
   const { data, loading, error, isOperator, refetch } = useOperatorChecklists()
   const [refreshing, setRefreshing] = useState(false)
@@ -185,7 +223,8 @@ export default function OperatorDashboard() {
               Checklists Atrasados - ¡Atención Inmediata!
             </CardTitle>
             <CardDescription className="text-red-700">
-              Estos checklists están atrasados y requieren tu atención inmediata.
+              Estos checklists están atrasados y requieren tu atención inmediata. Si tu activo es
+              compuesto, verás la parte (bomba, camión, etc.) y la unidad.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -197,10 +236,8 @@ export default function OperatorDashboard() {
                       <Badge variant="destructive">Atrasado</Badge>
                       <span className="font-medium">{checklist.checklists?.name}</span>
                     </div>
-                    <p className="text-sm text-gray-600">
-                      {checklist.assigned_asset?.name} ({checklist.assigned_asset?.asset_id})
-                    </p>
-                    <p className="text-xs text-red-600">
+                    <OperatorScheduleAssetLines checklist={checklist} />
+                    <p className="text-xs text-red-600 mt-1">
                       Programado para: {format(new Date(checklist.scheduled_date), 'PPP', { locale: es })}
                     </p>
                   </div>
@@ -234,7 +271,8 @@ export default function OperatorDashboard() {
               Checklists para Hoy
             </CardTitle>
             <CardDescription className="text-blue-700">
-              Estos checklists están programados para completarse hoy.
+              Estos checklists están programados para completarse hoy (incluye todas las partes de un
+              compuesto cuando aplica).
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -246,10 +284,8 @@ export default function OperatorDashboard() {
                       <Badge variant="secondary" className="bg-blue-100 text-blue-800">Hoy</Badge>
                       <span className="font-medium">{checklist.checklists?.name}</span>
                     </div>
-                    <p className="text-sm text-gray-600">
-                      {checklist.assigned_asset?.name} ({checklist.assigned_asset?.asset_id})
-                    </p>
-                    <p className="text-xs text-blue-600">
+                    <OperatorScheduleAssetLines checklist={checklist} />
+                    <p className="text-xs text-blue-600 mt-1">
                       Frecuencia: {checklist.checklists?.frequency}
                     </p>
                   </div>

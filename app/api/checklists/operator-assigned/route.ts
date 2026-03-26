@@ -121,17 +121,31 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    // Add assignment type information to each schedule
-    const schedulesWithAssignmentInfo = filteredSchedules.map(schedule => {
+    const normalizeNestedAsset = (row: unknown) => {
+      if (!row || typeof row !== 'object') return null
+      const a = row as { id?: string; name?: string | null; asset_id?: string | null }
+      return a.id ? a : null
+    }
+
+    const schedulesWithAssignmentInfo = filteredSchedules.map((schedule) => {
       const assignment = findAssignmentForScheduleAsset(
         schedule.asset_id,
         assignedAssets,
         assignmentScopes
       )
+      const rawAssets = (schedule as { assets?: unknown }).assets
+      const partAsset = normalizeNestedAsset(
+        Array.isArray(rawAssets) ? rawAssets[0] : rawAssets
+      )
+      const rawAssigned = assignment?.assets
+      const unitAsset = normalizeNestedAsset(
+        Array.isArray(rawAssigned) ? rawAssigned[0] : rawAssigned
+      )
       return {
         ...schedule,
+        assets: partAsset ?? (schedule as { assets?: unknown }).assets,
         assignment_type: assignment?.assignment_type || 'unknown',
-        assigned_asset: assignment?.assets
+        assigned_asset: unitAsset ?? undefined,
       }
     })
 
