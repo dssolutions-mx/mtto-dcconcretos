@@ -1,6 +1,7 @@
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { NextResponse } from 'next/server'
+import { expandAssetIdsForOperatorChecklists } from '@/lib/composite-operator-scope'
 
 export async function GET(request: Request) {
   try {
@@ -98,7 +99,9 @@ export async function GET(request: Request) {
     }
 
     if (assetId) {
-      query = query.eq('asset_id', assetId)
+      const expanded = await expandAssetIdsForOperatorChecklists(supabase, [assetId])
+      const ids = expanded.length > 0 ? expanded : [assetId]
+      query = query.in('asset_id', ids)
     }
 
     // Order by scheduled_day for pending, by updated_at for completed

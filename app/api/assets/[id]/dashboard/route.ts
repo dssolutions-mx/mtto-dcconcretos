@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase-server'
 import { NextResponse } from 'next/server'
 import { categorizeSchedulesByDate } from '@/lib/utils/date-utils'
+import { expandAssetIdsForOperatorChecklists } from '@/lib/composite-operator-scope'
 
 export async function GET(
   request: Request,
@@ -9,38 +10,49 @@ export async function GET(
   try {
     const supabase = await createClient()
     const { id: assetId } = await params
-    
-    // Get all data for the asset in parallel
-    const [assetResult, pendingResult, completedChecklistsResult] = await Promise.all([
-      // Get asset details
-      supabase
-        .from('assets')
-        .select(`
+
+    const { data: asset, error: assetError } = await supabase
+      .from('assets')
+      .select(`
+        id,
+        name,
+        asset_id,
+        location,
+        department,
+        status,
+        current_hours,
+        model_id,
+        plant_id,
+        department_id,
+        is_composite,
+        component_assets,
+        plants (
           id,
           name,
-          asset_id,
-          location,
-          department,
-          status,
-          current_hours,
-          model_id,
-          plant_id,
-          department_id,
-          plants (
-            id,
-            name,
-            code
-          ),
-          departments (
-            id,
-            name,
-            code
-          )
-        `)
-        .eq('id', assetId)
-        .single(),
-      
-      // Get pending schedules for this asset
+          code
+        ),
+        departments (
+          id,
+          name,
+          code
+        )
+      `)
+      .eq('id', assetId)
+      .single()
+
+    if (assetError) {
+      console.error('Error fetching asset:', assetError)
+      return NextResponse.json({ error: assetError.message }, { status: 500 })
+    }
+
+    if (!asset) {
+      return NextResponse.json({ error: 'Asset not found' }, { status: 404 })
+    }
+
+    const scheduleAssetIds = await expandAssetIdsForOperatorChecklists(supabase, [assetId])
+    const filterIds = scheduleAssetIds.length > 0 ? scheduleAssetIds : [assetId]
+
+    const [pendingResult, completedChecklistsResult] = await Promise.all([
       supabase
         .from('checklist_schedules')
         .select(`
@@ -48,14 +60,19 @@ export async function GET(
           checklists(
             id,
             name,
-            description
+            description,
+            frequency
+          ),
+          assets (
+            id,
+            name,
+            asset_id
           )
         `)
-        .eq('asset_id', assetId)
+        .in('asset_id', filterIds)
         .eq('status', 'pendiente')
         .order('scheduled_day', { ascending: true }),
-      
-      // Get completed checklists directly from completed_checklists table
+
       supabase
         .from('completed_checklists')
         .select(`
@@ -73,21 +90,17 @@ export async function GET(
             name,
             frequency,
             description
+          ),
+          assets (
+            id,
+            name,
+            asset_id
           )
         `)
-        .eq('asset_id', assetId)
+        .in('asset_id', filterIds)
         .order('completion_date', { ascending: false })
-        .limit(10)
+        .limit(80),
     ])
-
-    if (assetResult.error) {
-      console.error('Error fetching asset:', assetResult.error)
-      return NextResponse.json({ error: assetResult.error.message }, { status: 500 })
-    }
-
-    if (!assetResult.data) {
-      return NextResponse.json({ error: 'Asset not found' }, { status: 404 })
-    }
 
     if (pendingResult.error) {
       console.error('Error fetching pending schedules:', pendingResult.error)
@@ -99,9 +112,21 @@ export async function GET(
       return NextResponse.json({ error: completedChecklistsResult.error.message }, { status: 500 })
     }
 
-    const asset = assetResult.data
-    const pendingSchedules = pendingResult.data || []
-    const completedChecklists = completedChecklistsResult.data || []
+    const normalizeChecklists = (row: any) =>
+      Array.isArray(row?.checklists) ? row.checklists[0] : row?.checklists
+    const normalizeAssets = (row: any) =>
+      Array.isArray(row?.assets) ? row.assets[0] : row?.assets
+
+    const pendingSchedules = (pendingResult.data || []).map((row: any) => ({
+      ...row,
+      checklists: normalizeChecklists(row),
+      assets: normalizeAssets(row),
+    }))
+    const completedChecklists = (completedChecklistsResult.data || []).map((row: any) => ({
+      ...row,
+      checklists: normalizeChecklists(row),
+      assets: normalizeAssets(row),
+    }))
 
     // Process completed checklists to enhance with template info
     const enhancedCompletedChecklists = completedChecklists.map(completed => {

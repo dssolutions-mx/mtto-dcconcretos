@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import { categorizeSchedulesByDate } from '@/lib/utils/date-utils'
+import {
+  expandPerAssignmentAssetScopes,
+  findAssignmentForScheduleAsset,
+} from '@/lib/composite-operator-scope'
 
 export async function GET(request: NextRequest) {
   try {
@@ -76,8 +80,14 @@ export async function GET(request: NextRequest) {
       })
     }
 
-    // Extract asset IDs from assignments
+    // Extract asset IDs from assignments (expand composite → components for schedules)
     const assignedAssetIds = assignedAssets.map(assignment => assignment.asset_id)
+    const assignmentScopes = await expandPerAssignmentAssetScopes(supabase, assignedAssetIds)
+    const scheduleAssetIds = [
+      ...new Set([].concat(...[...assignmentScopes.values()])),
+    ]
+    const scheduleAssetFilter =
+      scheduleAssetIds.length > 0 ? scheduleAssetIds : assignedAssetIds
 
     // Get all checklist schedules for assigned assets
     const { data: allSchedules, error: schedulesError } = await supabase
@@ -97,7 +107,7 @@ export async function GET(request: NextRequest) {
           location
         )
       `)
-      .in('asset_id', assignedAssetIds)
+      .in('asset_id', scheduleAssetFilter)
       .eq('status', 'pendiente')
       .order('scheduled_day', { ascending: true })
 
@@ -114,10 +124,14 @@ export async function GET(request: NextRequest) {
     const overdueChecklists = categorizedSchedules.overdue  
     const upcomingChecklists = [...categorizedSchedules.upcoming, ...categorizedSchedules.future]
 
-    // Add assignment information to each schedule
+    // Add assignment information to each schedule (match component schedules to composite assignment)
     const addAssignmentInfo = (schedules: any[]) => {
       return schedules.map(schedule => {
-        const assignment = assignedAssets.find(a => a.asset_id === schedule.asset_id)
+        const assignment = findAssignmentForScheduleAsset(
+          schedule.asset_id,
+          assignedAssets,
+          assignmentScopes
+        )
         return {
           ...schedule,
           assignment_type: assignment?.assignment_type || 'unknown',

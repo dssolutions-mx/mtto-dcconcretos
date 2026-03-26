@@ -24,6 +24,8 @@ interface ChecklistSchedule {
     nombre: string | null
     apellido: string | null
   } | null
+  /** Present when schedules are aggregated for a composite (truck, pump, etc.) */
+  assets?: { id: string; name: string | null; asset_id: string | null } | null
 }
 
 type ScheduleVariant = "overdue" | "today" | "upcoming" | "future"
@@ -152,6 +154,11 @@ function ScheduleCardInner({
             {schedule.checklists?.frequency}
             {` • ${formatDate(scheduledDay)}`}
           </p>
+          {schedule.assets?.asset_id && (
+            <p className="text-xs text-muted-foreground mt-1">
+              Parte: {schedule.assets.name || "—"} ({schedule.assets.asset_id})
+            </p>
+          )}
         </div>
         {getStatusBadge(schedule, formatDate)}
       </div>

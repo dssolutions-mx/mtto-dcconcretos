@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
+import { migrateOperatorsToNewComposite } from '@/lib/migrate-composite-operators'
 
 export async function POST(request: Request) {
   try {
@@ -120,7 +121,21 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: relInsertError.message }, { status: 500 })
     }
 
-    return NextResponse.json({ success: true, data: composite })
+    const {
+      data: { user: authUser },
+    } = await supabase.auth.getUser()
+    const operatorMigration = await migrateOperatorsToNewComposite(supabase, {
+      compositeId: composite.id,
+      componentIds: component_ids,
+      primaryComponentId: primary_component_id ?? null,
+      actorUserId: authUser?.id ?? null,
+    })
+
+    return NextResponse.json({
+      success: true,
+      data: composite,
+      operator_migration: operatorMigration,
+    })
   } catch (error: any) {
     return NextResponse.json({ error: error?.message ?? 'Unexpected error' }, { status: 500 })
   }

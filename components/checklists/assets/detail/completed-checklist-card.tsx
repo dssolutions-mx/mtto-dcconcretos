@@ -34,6 +34,7 @@ interface CompletedChecklist {
     nombre: string | null
     apellido: string | null
   } | null
+  assets?: { id: string; name: string | null; asset_id: string | null } | null
 }
 
 interface CompletedChecklistCardProps {
@@ -123,6 +124,11 @@ function CompletedChecklistCardInner({
           <p className="text-xs text-muted-foreground">
             Por: {technicianName}
           </p>
+          {checklist.assets?.asset_id && (
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Parte: {checklist.assets.name || "—"} ({checklist.assets.asset_id})
+            </p>
+          )}
           {summary.total > 0 && (
             <div className="flex items-center gap-2 mt-1 flex-wrap">
               <span className="text-xs text-muted-foreground">

@@ -160,7 +160,9 @@ export function IncidentsChecklistsTab({
             <Clock className="h-5 w-5" />
             Checklists Pendientes
           </CardTitle>
-          <CardDescription>Inspecciones por realizar</CardDescription>
+          <CardDescription>
+            Inspecciones por realizar (incluye partes asociadas cuando el activo es compuesto)
+          </CardDescription>
         </CardHeader>
         <CardContent>
           {pendingChecklistsLoading ? (
@@ -208,6 +210,12 @@ export function IncidentsChecklistsTab({
                   <p className="text-sm font-medium">
                     {checklist.checklists?.name || "Sin nombre"}
                   </p>
+                  {(checklist.assets?.asset_id || checklist.assets?.name) && (
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Parte: {checklist.assets?.name || "—"}
+                      {checklist.assets?.asset_id ? ` (${checklist.assets.asset_id})` : null}
+                    </p>
+                  )}
                   <div className="mt-2">
                     <Button
                       size="sm"
@@ -241,7 +249,9 @@ export function IncidentsChecklistsTab({
             <ClipboardCheck className="h-5 w-5" />
             Checklists Completados
           </CardTitle>
-          <CardDescription>Últimas inspecciones realizadas</CardDescription>
+          <CardDescription>
+            Últimas inspecciones realizadas (todas las partes del compuesto cuando aplica)
+          </CardDescription>
         </CardHeader>
         <CardContent>
           {checklistsLoading ? (
@@ -303,7 +313,9 @@ export function IncidentsChecklistsTab({
                                 .join(" ") || "No especificado"
                             : checklist.technician || "No especificado"
                         }
-                        assetName={assetName || "Activo desconocido"}
+                        assetName={
+                          checklist.assets?.name || checklist.assets?.asset_id || assetName || "Activo desconocido"
+                        }
                         trigger={
                           <Button variant="outline" size="sm" className="h-7 px-2 cursor-pointer">
                             <Camera className="h-3 w-3 mr-1" />
@@ -314,6 +326,12 @@ export function IncidentsChecklistsTab({
                     </div>
                   </div>
                   <p className="text-sm font-medium">{checklist.checklists?.name || "Sin nombre"}</p>
+                  {(checklist.assets?.asset_id || checklist.assets?.name) && (
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      Parte: {checklist.assets?.name || "—"}
+                      {checklist.assets?.asset_id ? ` (${checklist.assets.asset_id})` : null}
+                    </p>
+                  )}
                   <p className="text-sm text-muted-foreground">
                     {checklist.profiles
                       ? [checklist.profiles.nombre, checklist.profiles.apellido]

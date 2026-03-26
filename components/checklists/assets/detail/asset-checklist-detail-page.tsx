@@ -111,8 +111,13 @@ export function AssetChecklistDetailPage({
           if (cachedAsset) {
             const cachedSchedules =
               await offlineChecklistService.getCachedChecklistSchedules("pendiente")
-            const assetSchedules = (cachedSchedules || []).filter(
-              (s: { asset_id: string }) => s.asset_id === assetId
+            const ca = cachedAsset as Asset & { is_composite?: boolean; component_assets?: string[] }
+            const scopeIds =
+              ca.is_composite && Array.isArray(ca.component_assets) && ca.component_assets.length > 0
+                ? [assetId, ...ca.component_assets]
+                : [assetId]
+            const assetSchedules = (cachedSchedules || []).filter((s: { asset_id: string }) =>
+              scopeIds.includes(s.asset_id)
             )
             toast.success("Modo offline activado - funcionalidad limitada")
             return {

@@ -37,6 +37,7 @@ import {
   getUnitDisplayName,
   type MaintenanceUnit 
 } from "@/lib/utils/maintenance-units";
+import { expandAssetIdsForOperatorChecklists } from "@/lib/composite-operator-scope";
 
 export default function AssetDetailsPage({ params }: { params: Promise<{ id: string }> }) {
   // Unwrap params using React.use()
@@ -164,12 +165,7 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
           try {
             (incidents as any).splice(0, (incidents as any).length, ...aggregatedIncidents);
           } catch {}
-          try {
-            setPendingChecklists(aggregatedPending);
-          } catch {}
-          try {
-            setCompletedChecklists(aggregatedCompleted);
-          } catch {}
+          // Pending/completed checklists: loaded via effects using composite-expanded asset IDs
           // Keep original hook data intact; store combined separately
           setCombinedMaintenanceHistory(aggregatedMaintenance);
           try {
@@ -237,12 +233,7 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
         try {
           (incidents as any).splice(0, (incidents as any).length, ...aggregatedIncidents);
         } catch {}
-        try {
-          setPendingChecklists(aggregatedPending);
-        } catch {}
-        try {
-          setCompletedChecklists(aggregatedCompleted);
-        } catch {}
+        // Pending/completed checklists: loaded via effects (expanded composite scope)
         setCombinedMaintenanceHistory(aggregatedMaintenance);
         try {
           const transformed = (aggregatedUpcoming || []).map((m: any) => ({
@@ -609,8 +600,15 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
         try {
           setChecklistsLoading(true)
           const supabase = createClient()
-          
-          // Query completed_checklists directly like the history page does
+
+          const aggregateIds = await expandAssetIdsForOperatorChecklists(
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any -- client vs server Supabase generic
+            supabase as any,
+            [assetId]
+          )
+          const filterIds = aggregateIds.length > 0 ? aggregateIds : [assetId]
+
+          // Include related asset row so composite views show which part was inspected
           const { data, error } = await supabase
             .from('completed_checklists')
             .select(`
@@ -633,11 +631,16 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
                 id,
                 nombre,
                 apellido
+              ),
+              assets (
+                id,
+                name,
+                asset_id
               )
             `)
-            .eq('asset_id', assetId)
+            .in('asset_id', filterIds)
             .order('completion_date', { ascending: false })
-            .limit(10) // Limit to recent ones for the asset page
+            .limit(24)
           
           if (error) {
             console.error('Error fetching completed checklists:', error)
@@ -647,7 +650,8 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
             const transformedData = (data || []).map((item: any) => ({
               ...item,
               checklists: Array.isArray(item.checklists) ? item.checklists[0] : item.checklists,
-              profiles: Array.isArray(item.created_by_profile) ? item.created_by_profile[0] : item.created_by_profile
+              profiles: Array.isArray(item.created_by_profile) ? item.created_by_profile[0] : item.created_by_profile,
+              assets: Array.isArray(item.assets) ? item.assets[0] : item.assets,
             }))
             setCompletedChecklists(transformedData)
           }

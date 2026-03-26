@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
+import {
+  expandPerAssignmentAssetScopes,
+  findAssignmentForScheduleAsset,
+} from '@/lib/composite-operator-scope'
 
 export async function GET(request: NextRequest) {
   try {
@@ -60,8 +64,14 @@ export async function GET(request: NextRequest) {
       })
     }
 
-    // Extract asset IDs from assignments
+    // Extract asset IDs from assignments (expand composite → all parts)
     const assignedAssetIds = assignedAssets.map(assignment => assignment.asset_id)
+    const assignmentScopes = await expandPerAssignmentAssetScopes(supabase, assignedAssetIds)
+    const scheduleAssetIds = [
+      ...new Set([].concat(...[...assignmentScopes.values()])),
+    ]
+    const scheduleAssetFilter =
+      scheduleAssetIds.length > 0 ? scheduleAssetIds : assignedAssetIds
 
     // Get checklists for assigned assets only
     let query = supabase
@@ -83,7 +93,7 @@ export async function GET(request: NextRequest) {
           status
         )
       `)
-      .in('asset_id', assignedAssetIds)
+      .in('asset_id', scheduleAssetFilter)
 
     if (status) {
       query = query.eq('status', status)
@@ -113,7 +123,11 @@ export async function GET(request: NextRequest) {
 
     // Add assignment type information to each schedule
     const schedulesWithAssignmentInfo = filteredSchedules.map(schedule => {
-      const assignment = assignedAssets.find(a => a.asset_id === schedule.asset_id)
+      const assignment = findAssignmentForScheduleAsset(
+        schedule.asset_id,
+        assignedAssets,
+        assignmentScopes
+      )
       return {
         ...schedule,
         assignment_type: assignment?.assignment_type || 'unknown',
