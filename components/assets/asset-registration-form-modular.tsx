@@ -72,7 +72,7 @@ import { EvidenceUpload, EvidencePhoto } from "@/components/ui/evidence-upload"
 import { IncidentRegistrationDialog } from "./dialogs/incident-registration-dialog"
 
 const formSchema = z.object({
-  assetId: z.string().min(1, "El ID del activo es requerido"),
+  assetId: z.string().trim().min(1, "El ID del activo es requerido"),
   name: z.string().min(1, "El nombre es requerido"),
   serialNumber: z.string().min(1, "El número de serie es requerido"),
   plantId: z.string().min(1, "La planta es requerida"),
@@ -678,13 +678,33 @@ export function AssetRegistrationFormModular() {
         throw new Error("Usuario no autenticado")
       }
 
+      const trimmedAssetId = data.assetId.trim()
+
+      const { data: existingByAssetCode } = await supabase
+        .from("assets")
+        .select("id")
+        .eq("asset_id", trimmedAssetId)
+        .maybeSingle()
+
+      if (existingByAssetCode) {
+        const dupMsg = `Ya existe un activo con el código "${trimmedAssetId}". Use un ID distinto.`
+        form.setError("assetId", { message: dupMsg })
+        toast({
+          title: "Código duplicado",
+          description: dupMsg,
+          variant: "destructive",
+        })
+        setIsSubmitting(false)
+        return
+      }
+
       // Upload photos first if any
       const photoUrls: string[] = []
       
       for (const photo of uploadedPhotos) {
         if (photo.file) {
           // Create temporary asset ID for photo organization
-          const tempAssetId = data.assetId || `temp-${Date.now()}`
+          const tempAssetId = trimmedAssetId || `temp-${Date.now()}`
           const timestamp = Date.now()
           const category = photo.category || 'general'
           const fileExt = photo.file.name.split('.').pop()
@@ -719,7 +739,7 @@ export function AssetRegistrationFormModular() {
         .from("assets")
         .insert([
           {
-            asset_id: data.assetId,
+            asset_id: trimmedAssetId,
             name: data.name,
             serial_number: data.serialNumber,
             plant_id: data.plantId,
@@ -821,9 +841,17 @@ export function AssetRegistrationFormModular() {
       router.refresh()
     } catch (error: any) {
       console.error("Error al registrar activo:", error)
+      const pgCode = error?.code as string | undefined
+      const isDuplicateAssetId = pgCode === "23505"
+      const description = isDuplicateAssetId
+        ? "Ese código de activo (ID) ya existe. Elija otro valor único."
+        : error?.message || "Ha ocurrido un error inesperado."
+      if (isDuplicateAssetId) {
+        form.setError("assetId", { message: description })
+      }
       toast({
-        title: "Error al registrar el activo",
-        description: error.message || "Ha ocurrido un error inesperado.",
+        title: isDuplicateAssetId ? "Código duplicado" : "Error al registrar el activo",
+        description,
         variant: "destructive",
       })
     } finally {
