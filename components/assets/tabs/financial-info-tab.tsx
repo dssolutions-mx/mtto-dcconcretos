@@ -47,7 +47,7 @@ interface FormValues {
   }[]
 }
 
-interface InsuranceDocument {
+export interface InsuranceDocument {
   name: string
   file: File | null
   url?: string

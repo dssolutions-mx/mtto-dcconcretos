@@ -53,7 +53,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 
 import { GeneralInfoTab } from "./tabs/general-info-tab"
 import { TechnicalInfoTab } from "./tabs/technical-info-tab"
-import { FinancialInfoTab } from "./tabs/financial-info-tab"
+import { FinancialInfoTab, type InsuranceDocument } from "./tabs/financial-info-tab"
 import { MaintenancePlanTab } from "./tabs/maintenance-plan-tab"
 import { IncidentsTab } from "./tabs/incidents-tab"
 import { DocumentsTab } from "./tabs/documents-tab"
@@ -226,6 +226,16 @@ export function AssetEditForm({ assetId }: AssetEditFormProps) {
   const [maintenanceHistory, setMaintenanceHistory] = useState<MaintenanceHistoryRecord[]>([])
   const [maintenanceSchedule, setMaintenanceSchedule] = useState<any[]>([])
   const [completedMaintenances, setCompletedMaintenances] = useState<string[]>([])
+  const [insuranceDocuments, setInsuranceDocuments] = useState<InsuranceDocument[]>([])
+
+  const addInsuranceDocument = (file: File) => {
+    const newDoc: InsuranceDocument = { name: file.name, file }
+    setInsuranceDocuments((prev) => [...prev, newDoc])
+  }
+
+  const removeInsuranceDocument = (index: number) => {
+    setInsuranceDocuments((prev) => prev.filter((_, i) => i !== index))
+  }
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema) as Resolver<FormValues>,
@@ -404,6 +414,18 @@ export function AssetEditForm({ assetId }: AssetEditFormProps) {
             
             setUploadedPhotos(existingPhotos)
             console.log(`Loaded ${existingPhotos.length} existing photos for asset`)
+          }
+
+          if (asset.insurance_documents && Array.isArray(asset.insurance_documents) && asset.insurance_documents.length > 0) {
+            setInsuranceDocuments(
+              asset.insurance_documents.map((docUrl: string, index: number) => {
+                const seg = docUrl.split("/").pop() || ""
+                const name = decodeURIComponent(seg.replace(/\+/g, " ")) || `Documento ${index + 1}`
+                return { name, file: null, url: docUrl }
+              }),
+            )
+          } else {
+            setInsuranceDocuments([])
           }
         }
 
@@ -922,12 +944,29 @@ export function AssetEditForm({ assetId }: AssetEditFormProps) {
         }
       }
 
-      // Get existing photos from the asset
-      const { data: existingAsset, error: fetchError } = await supabase
-        .from("assets")
-        .select("photos")
-        .eq("id", assetId)
-        .single()
+      // Insurance / document files → asset-documents bucket (same pattern as offline sync)
+      const documentUrls: string[] = []
+      for (const doc of insuranceDocuments) {
+        if (doc.file) {
+          const safeName = doc.file.name.replace(/[^a-zA-Z0-9._-]/g, "_")
+          const fileName = `${assetId}/${Date.now()}-${safeName}`
+          const { error: docErr } = await supabase.storage.from("asset-documents").upload(fileName, doc.file, {
+            contentType: doc.file.type || undefined,
+            upsert: false,
+          })
+          if (docErr) {
+            console.error("Error uploading document:", fileName, docErr)
+            throw docErr
+          }
+          const { data: pub } = supabase.storage.from("asset-documents").getPublicUrl(fileName)
+          documentUrls.push(pub.publicUrl)
+        } else if (doc.url) {
+          documentUrls.push(doc.url)
+        }
+      }
+
+      // Verify asset row exists before update (helps surface RLS/404 early)
+      const { error: fetchError } = await supabase.from("assets").select("id").eq("id", assetId).single()
 
       if (fetchError) {
         throw fetchError
@@ -959,6 +998,7 @@ export function AssetEditForm({ assetId }: AssetEditFormProps) {
         insurance_policy: data.insurancePolicy,
         insurance_start_date: data.insuranceCoverage?.startDate?.toISOString(),
         insurance_end_date: data.insuranceCoverage?.endDate?.toISOString(),
+        insurance_documents: documentUrls,
         photos: allPhotos, // Include both existing and new photos
         model_id: selectedModel?.id || null, // Update the model_id based on selected model
         updated_at: new Date().toISOString(),
@@ -973,9 +1013,10 @@ export function AssetEditForm({ assetId }: AssetEditFormProps) {
         throw error
       }
 
+      const docCount = documentUrls.length
       toast({
         title: "Activo actualizado con éxito",
-        description: `${data.name} ha sido actualizado correctamente.${photoUrls.length > 0 ? ` Se agregaron ${photoUrls.length} foto(s).` : ''}`,
+        description: `${data.name} ha sido actualizado correctamente.${photoUrls.length > 0 ? ` Se agregaron ${photoUrls.length} foto(s).` : ""}${docCount > 0 ? ` ${docCount} documento(s) guardado(s).` : ""}`,
         variant: "default",
       })
 
@@ -1137,9 +1178,9 @@ export function AssetEditForm({ assetId }: AssetEditFormProps) {
           <TabsContent value="financial" className="space-y-6">
             <FinancialInfoTab
               control={form.control}
-              insuranceDocuments={[]}
-              addInsuranceDocument={() => {}}
-              removeInsuranceDocument={() => {}}
+              insuranceDocuments={insuranceDocuments}
+              addInsuranceDocument={addInsuranceDocument}
+              removeInsuranceDocument={removeInsuranceDocument}
             />
           </TabsContent>
           
