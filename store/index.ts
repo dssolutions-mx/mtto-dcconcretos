@@ -7,28 +7,24 @@ import { createCacheSlice } from './slices/cache-slice'
 import { createMetricsSlice } from './slices/metrics-slice'
 import { createOfflineSlice } from './slices/offline-slice'
 
-// **SOLUTION: Custom persist options to control what gets persisted**
+// Persist profile + offline queue only — user/session live in Supabase cookies + memory.
 const persistOptions = {
   name: 'auth-store',
-  version: 1,
-  // **CRITICAL: Only persist essential data, not sensitive session info**
+  version: 2,
   partialize: (state: AuthStore) => ({
-    user: state.user,
     profile: state.profile,
     lastAuthCheck: state.lastAuthCheck,
     authCheckSource: state.authCheckSource,
     cacheHits: state.cacheHits,
     cacheMisses: state.cacheMisses,
-    // Persist offline queue for session management
     queue: state.queue,
     failedOperations: state.failedOperations,
     lastSyncTime: state.lastSyncTime,
-    // Don't persist session, timers, or sensitive data
   }),
   migrate: (persistedState: any, version: number) => {
-    if (version === 0) {
-      // Migration logic for version upgrades
-      return { ...persistedState, version: 1 }
+    if (version < 2) {
+      const { user: _removedUser, ...rest } = persistedState ?? {}
+      return { ...rest, version: 2 }
     }
     return persistedState
   }
@@ -137,16 +133,6 @@ export const authUtils = {
   }
 }
 
-// **SOLUTION: Initialize store cleanup and monitoring**
 if (typeof window !== 'undefined') {
-  // Start cache cleanup
   authUtils.startCacheCleanup()
-  
-  // Health check every minute
-  setInterval(() => {
-    const health = authUtils.healthCheck()
-    if (!health.isHealthy) {
-      console.warn('🏥 Auth system health issues detected:', health.issues)
-    }
-  }, 60 * 1000)
-} 
+}

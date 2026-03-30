@@ -34,16 +34,15 @@ import {
 
 interface ConsumptionEntryFormProps {
   productType: 'diesel' | 'urea'
-  warehouseId?: string
-  plantId?: string
+  /** When set (e.g. from /diesel/consumo?warehouseId=), preselect warehouse after lists load */
+  initialWarehouseId?: string | null
   onSuccess?: (transactionId: string) => void
   onCancel?: () => void
 }
 
 export function ConsumptionEntryForm({
   productType,
-  warehouseId,
-  plantId,
+  initialWarehouseId,
   onSuccess,
   onCancel
 }: ConsumptionEntryFormProps) {
@@ -116,6 +115,22 @@ export function ConsumptionEntryForm({
     loadProduct()
     loadBackdatingThreshold()
   }, [productType])
+
+  useEffect(() => {
+    if (!initialWarehouseId) return
+    const combined = [...warehouses, ...allBuWarehouses]
+    const seen = new Set<string>()
+    const uniq = combined.filter((w) => {
+      if (seen.has(w.id)) return false
+      seen.add(w.id)
+      return true
+    })
+    const found = uniq.find((w) => w.id === initialWarehouseId)
+    if (found) {
+      setSelectedWarehouse(found.id)
+      if (found.plant_id) setSelectedPlant(found.plant_id)
+    }
+  }, [initialWarehouseId, warehouses, allBuWarehouses])
 
   const loadProduct = async () => {
     try {

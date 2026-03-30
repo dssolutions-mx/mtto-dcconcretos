@@ -1,16 +1,13 @@
+import { createServerClient, type CookieOptions } from "@supabase/ssr"
 import { NextResponse, type NextRequest } from "next/server"
 
 /**
- * Proxy (Next.js 16) — optimistic cookie-only auth checks.
- * Per Next.js guidance: "only read the session from the cookie (optimistic checks),
- * and avoid database checks to prevent performance issues."
- * API routes and server components handle actual auth validation.
+ * Proxy (Next.js 16) — Supabase SSR session validation + token refresh.
+ * Calls getUser() so expired tokens refresh via setAll → response cookies.
+ * API routes and /api/health-check skip this (see below).
  */
 export async function proxy(request: NextRequest) {
-  let response = NextResponse.next({ request })
-
-  // Rate limiting: use Vercel Firewall (Project → Settings → Firewall → Rate Limiting)
-  // Configure rules in the dashboard; no code or Upstash required.
+  const pathname = request.nextUrl.pathname
 
   // Enforce host allowlist (set ALLOWED_HOSTS="domain.com,www.domain.com" in env)
   const forwardedHost = request.headers.get("x-forwarded-host") || ""
@@ -34,9 +31,7 @@ export async function proxy(request: NextRequest) {
     return new NextResponse("Forbidden host", { status: 403 })
   }
 
-  const pathname = request.nextUrl.pathname
-
-  // Fast-path: /api/health-check — skip getUser, set offline headers from cookie presence
+  // Fast-path: /api/health-check — skip getUser; offline headers from cookie presence only
   if (pathname === "/api/health-check") {
     const hasCookies = request.cookies
       .getAll()
@@ -50,21 +45,41 @@ export async function proxy(request: NextRequest) {
     return res
   }
 
-  // Skip auth for API routes — they handle their own auth
+  // API routes handle their own auth
   if (pathname.startsWith("/api/")) {
-    response.headers.set("X-Robots-Tag", "noindex, nofollow, noarchive")
-    return response
+    const res = NextResponse.next({ request })
+    res.headers.set("X-Robots-Tag", "noindex, nofollow, noarchive")
+    return res
   }
 
-  // Optimistic check: Supabase cookies present → treat as likely authenticated
-  const allCookies = request.cookies.getAll()
-  const supabaseCookies = allCookies.filter(
-    (c) => c.name.startsWith("sb-") && c.value && c.value.length > 10
+  let supabaseResponse = NextResponse.next({ request })
+
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() {
+          return request.cookies.getAll()
+        },
+        setAll(cookiesToSet: { name: string; value: string; options: CookieOptions }[]) {
+          cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value))
+          supabaseResponse = NextResponse.next({ request })
+          cookiesToSet.forEach(({ name, value, options }) =>
+            supabaseResponse.cookies.set(name, value, options)
+          )
+        },
+      },
+    }
   )
-  const hasValidCookies = supabaseCookies.length > 0
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
 
   const publicRoutes = [
     "/login",
+    "/register",
     "/auth/callback",
     "/forgot-password",
     "/auth/reset-password",
@@ -73,7 +88,6 @@ export async function proxy(request: NextRequest) {
   ]
   const isPublicRoute = publicRoutes.some((route) => pathname.startsWith(route))
 
-  // Work routes that support offline mode (cookie presence = allow)
   const offlineWorkRoutes = [
     "/checklists",
     "/ordenes",
@@ -89,27 +103,11 @@ export async function proxy(request: NextRequest) {
   ]
   const isWorkRoute = offlineWorkRoutes.some((route) => pathname.startsWith(route))
 
-  let user: { id: string; email: string; aud: string; role: string } | null = null
-  let isOfflineMode = false
-
-  if (hasValidCookies) {
-    user = {
-      id: "optimistic-session",
-      email: "user@session.local",
-      aud: "authenticated",
-      role: "authenticated",
-    }
-    if (isWorkRoute) {
-      isOfflineMode = true
-      response.headers.set("X-Offline-Mode", "true")
-      response.headers.set("X-Auth-Required", "true")
-    }
-  } else if (isWorkRoute) {
-    // Work route but no cookies — no offline bypass
-    user = null
+  if (user && isWorkRoute) {
+    supabaseResponse.headers.set("X-Offline-Mode", "true")
+    supabaseResponse.headers.set("X-Auth-Required", "true")
   }
 
-  // Root path redirect
   if (pathname === "/") {
     const url = request.nextUrl.clone()
     url.pathname = user ? "/dashboard" : "/login"
@@ -118,7 +116,6 @@ export async function proxy(request: NextRequest) {
     return res
   }
 
-  // Unauthenticated + protected route → redirect to login
   if (!user && !isPublicRoute) {
     const url = request.nextUrl.clone()
     url.pathname = "/login"
@@ -128,12 +125,10 @@ export async function proxy(request: NextRequest) {
     return res
   }
 
-  // Do not redirect /login or /register away based on cookie presence alone. Stale or
-  // partially cleared sb-* cookies caused a loop: proxy → /dashboard, AuthInitializer →
-  // /login, repeat. Real session checks run on the client (AuthForm / initialize).
+  // Do not redirect /login away based on session alone — client validates full state.
 
-  response.headers.set("X-Robots-Tag", "noindex, nofollow, noarchive")
-  return response
+  supabaseResponse.headers.set("X-Robots-Tag", "noindex, nofollow, noarchive")
+  return supabaseResponse
 }
 
 export const config = {

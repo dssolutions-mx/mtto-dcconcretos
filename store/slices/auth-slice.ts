@@ -8,6 +8,30 @@ import {
   AuthStore 
 } from '@/types/auth-store'
 
+const AUTH_STORE_STORAGE_KEY = 'auth-store'
+
+/** Remove persisted Zustand slice + Supabase browser cookies (session is cookie-backed). */
+function clearClientAuthStorage() {
+  if (typeof window === 'undefined') return
+  try {
+    localStorage.removeItem(AUTH_STORE_STORAGE_KEY)
+    sessionStorage.removeItem(AUTH_STORE_STORAGE_KEY)
+  } catch (storageError) {
+    console.warn('⚠️ Failed to remove auth-store from storage:', storageError)
+  }
+  try {
+    const parts = document.cookie.split(';')
+    for (const part of parts) {
+      const name = part.split('=')[0]?.trim()
+      if (name?.startsWith('sb-')) {
+        document.cookie = `${name}=;max-age=0;path=/`
+      }
+    }
+  } catch (cookieError) {
+    console.warn('⚠️ Failed to clear sb-* cookies:', cookieError)
+  }
+}
+
 /** One shared initialize at a time (React Strict Mode remounts, duplicate effects). */
 let initializeInFlight: Promise<void> | null = null
 
@@ -146,35 +170,9 @@ export const createAuthSlice: StateCreator<
     }
 
     try {
-      // FAST PATH 1: Check persisted state first (most reliable)
       const currentState = get()
-      if (currentState.user && currentState.profile) {
-        console.log('✅ FAST: Using persisted user data (user + profile)')
-        set({
-          isInitialized: true,
-          isLoading: false,
-          lastAuthCheck: Date.now(),
-          authCheckSource: 'persisted'
-        } as Partial<AuthStore>)
-        
-        // Try to get session in background
-        setTimeout(() => {
-          const supabase = createClient()
-          supabase.auth.getSession()
-            .then(({ data: { session } }) => {
-              if (session) {
-                get().setCachedSession('current', session, 30 * 60 * 1000)
-                set({ session } as Partial<AuthStore>)
-              }
-            })
-            .catch(() => {})
-        }, 100)
-        
-        console.log(`✅ Fast init complete: ${Date.now() - startTime}ms`)
-        return
-      }
-      
-      // FAST PATH 2: Check cached session but ensure profile is loaded
+
+      // In-memory cached session only (never trust persisted user without live Supabase session)
       const cachedSession = get().getCachedSession('current')
       if (cachedSession && cachedSession.user) {
         console.log('🎯 FAST: Using cached session')
@@ -420,22 +418,11 @@ export const createAuthSlice: StateCreator<
     const supabase = createClient()
     const isOffline = !get().isOnline
 
-    const clearClientStorage = () => {
-      if (typeof window === 'undefined') return
-      try {
-        localStorage.clear()
-        sessionStorage.clear()
-        console.log('🗑️ Cleared browser storage')
-      } catch (storageError) {
-        console.warn('⚠️ Failed to clear browser storage:', storageError)
-      }
-    }
-
     try {
       if (isOffline) {
         console.log('📱 Device is offline, queueing sign out operation')
         get().clearAuth()
-        clearClientStorage()
+        clearClientAuthStorage()
         get().addToQueue({
           type: 'sign_out',
           payload: { action: 'signOut' },
@@ -448,29 +435,16 @@ export const createAuthSlice: StateCreator<
         return
       }
 
-      // Revoke Supabase session before wiping storage; clearing localStorage first breaks
-      // token/cookie cleanup and leaves stale sb-* cookies that fight the proxy + /login.
-      const signOutPromise = supabase.auth.signOut({ scope: 'global' })
-      const timeoutPromise = new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error('Sign out timeout')), 5000)
-      )
-
-      try {
-        const { error } = (await Promise.race([signOutPromise, timeoutPromise])) as {
-          error?: { message?: string } | null
-        }
-        if (error) {
-          console.warn('⚠️ Supabase sign out error:', error.message)
-        } else {
-          console.log('✅ Supabase sign out successful')
-        }
-      } catch (e: unknown) {
-        const msg = e instanceof Error ? e.message : String(e)
-        console.warn('⚠️ Supabase sign out timeout or failure (continuing local cleanup):', msg)
+      // Await full sign-out so @supabase/ssr can clear cookie-backed session (no race timeout).
+      const { error } = await supabase.auth.signOut({ scope: 'global' })
+      if (error) {
+        console.warn('⚠️ Supabase sign out error:', error.message)
+      } else {
+        console.log('✅ Supabase sign out successful')
       }
 
       get().clearAuth()
-      clearClientStorage()
+      clearClientAuthStorage()
 
       if (typeof window !== 'undefined') {
         console.log('🔄 Forcing hard redirect to login')
@@ -479,7 +453,7 @@ export const createAuthSlice: StateCreator<
     } catch (error: unknown) {
       console.error('❌ Sign out error:', error)
       get().clearAuth()
-      clearClientStorage()
+      clearClientAuthStorage()
 
       const message = error instanceof Error ? error.message : 'Failed to sign out'
       set({

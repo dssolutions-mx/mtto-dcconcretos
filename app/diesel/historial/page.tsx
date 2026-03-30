@@ -23,6 +23,9 @@ import {
 } from "lucide-react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
+import { DashboardHeader } from "@/components/dashboard/dashboard-header"
+import { DashboardShell } from "@/components/dashboard/dashboard-shell"
+import { getDieselPlantScope } from "@/lib/diesel-analytics-scope"
 
 interface Transaction {
   id: string
@@ -30,6 +33,7 @@ interface Transaction {
   quantity_liters: number
   transaction_date: string
   asset_name: string | null
+  warehouse_id: string
   warehouse_name: string
   created_by_name: string
   previous_balance: number
@@ -74,8 +78,15 @@ export default function DieselHistoryPage() {
     try {
       setLoading(true)
 
-      // Load transactions - filter by diesel product
-      const { data: transactionsData, error: transactionsError } = await supabase
+      const scope = await getDieselPlantScope(supabase)
+
+      if (scope.plantIds !== null && scope.plantIds.length === 0) {
+        setTransactions([])
+        setWarehouses([])
+        return
+      }
+
+      let transactionsQuery = supabase
         .from('diesel_transactions')
         .select(`
           id,
@@ -87,7 +98,7 @@ export default function DieselHistoryPage() {
           previous_balance,
           current_balance,
           notes,
-          diesel_warehouses!inner(id, name, product_type),
+          diesel_warehouses!inner(id, name, plant_id, product_type),
           diesel_products!inner(product_type),
           assets(asset_id, name)
         `)
@@ -95,6 +106,16 @@ export default function DieselHistoryPage() {
         .eq('diesel_products.product_type', 'diesel')
         .order('transaction_date', { ascending: false })
         .limit(500)
+
+      if (scope.plantIds !== null) {
+        transactionsQuery = transactionsQuery.in(
+          'diesel_warehouses.plant_id',
+          scope.plantIds
+        )
+      }
+
+      const { data: transactionsData, error: transactionsError } =
+        await transactionsQuery
 
       if (transactionsError) {
         console.error('Error loading transactions:', transactionsError)
@@ -127,6 +148,7 @@ export default function DieselHistoryPage() {
           quantity_liters: t.quantity_liters,
           transaction_date: t.transaction_date,
           asset_name: t.assets?.name || null,
+          warehouse_id: t.diesel_warehouses?.id ?? '',
           warehouse_name: t.diesel_warehouses?.name || 'N/A',
           created_by_name: userProfiles[t.created_by] || 'Usuario',
           previous_balance: t.previous_balance,
@@ -137,12 +159,17 @@ export default function DieselHistoryPage() {
         setTransactions(formatted)
       }
 
-      // Load warehouses for filter
-      const { data: warehousesData } = await supabase
+      let warehousesQuery = supabase
         .from('diesel_warehouses')
         .select('id, name')
         .eq('product_type', 'diesel')
         .order('name')
+
+      if (scope.plantIds !== null) {
+        warehousesQuery = warehousesQuery.in('plant_id', scope.plantIds)
+      }
+
+      const { data: warehousesData } = await warehousesQuery
 
       setWarehouses(warehousesData || [])
     } catch (error) {
@@ -162,7 +189,7 @@ export default function DieselHistoryPage() {
 
     // Warehouse filter
     if (selectedWarehouse !== "all") {
-      filtered = filtered.filter(t => t.warehouse_name === warehouses.find(w => w.id === selectedWarehouse)?.name)
+      filtered = filtered.filter((t) => t.warehouse_id === selectedWarehouse)
     }
 
     // Date range filter
@@ -229,32 +256,32 @@ export default function DieselHistoryPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-      </div>
+      <DashboardShell className="px-4 sm:px-6 lg:px-8">
+        <DashboardHeader
+          heading="Historial de transacciones"
+          text="Registro de movimientos de diesel en tu alcance."
+        />
+        <div className="flex items-center justify-center min-h-[40vh]">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        </div>
+      </DashboardShell>
     )
   }
 
   return (
-    <div className="container mx-auto py-6 px-4 space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold flex items-center gap-2">
-            <History className="h-8 w-8 text-blue-600" />
-            Historial de Transacciones
-          </h1>
-          <p className="text-muted-foreground mt-1">
-            Registro completo de movimientos de diesel
-          </p>
-        </div>
-        <Button variant="outline" asChild>
+    <DashboardShell className="px-4 sm:px-6 lg:px-8 pb-16 sm:pb-12 space-y-6">
+      <DashboardHeader
+        heading="Historial de transacciones"
+        text="Registro de movimientos de diesel en tu alcance."
+        id="diesel-historial-header"
+      >
+        <Button variant="outline" asChild className="shrink-0">
           <Link href="/diesel">
             <ChevronLeft className="h-4 w-4 mr-2" />
             Volver
           </Link>
         </Button>
-      </div>
+      </DashboardHeader>
 
       {/* Filters */}
       <Card>
@@ -437,7 +464,7 @@ export default function DieselHistoryPage() {
           )}
         </CardContent>
       </Card>
-    </div>
+    </DashboardShell>
   )
 }
 

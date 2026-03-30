@@ -8539,6 +8539,48 @@ export type Database = {
           },
         ]
       }
+      diesel_asset_consumption_by_warehouse: {
+        Row: {
+          asset_category: string | null
+          asset_code: string | null
+          asset_id: string | null
+          asset_name: string | null
+          avg_consumption_per_transaction: number | null
+          avg_liters_per_hour_tx: number | null
+          avg_liters_per_km_tx: number | null
+          consumption_last_30_days: number | null
+          exception_asset_name: string | null
+          first_consumption: string | null
+          last_consumption: string | null
+          plant_name: string | null
+          plant_id: string | null
+          product_type: string | null
+          total_consumption: number | null
+          transaction_count: number | null
+          transactions_last_30_days: number | null
+          warehouse_id: string | null
+          warehouse_name: string | null
+        }
+        Relationships: []
+      }
+      diesel_monthly_consumption_by_asset: {
+        Row: {
+          asset_category: string | null
+          asset_id: string | null
+          exception_asset_name: string | null
+          period_first_tx: string | null
+          period_last_tx: string | null
+          plant_id: string | null
+          total_hours_consumed: number | null
+          total_km_consumed: number | null
+          total_liters: number | null
+          transaction_count: number | null
+          warehouse_id: string | null
+          warehouse_name: string | null
+          year_month: string | null
+        }
+        Relationships: []
+      }
       diesel_current_inventory: {
         Row: {
           calculated_at: string | null
@@ -9947,6 +9989,56 @@ export type Database = {
         }[]
       }
       get_diesel_backdating_threshold_minutes: { Args: never; Returns: number }
+      diesel_analytics_assets_in_period: {
+        Args: {
+          p_from?: string | null
+          p_plant_ids?: string[] | null
+          p_to?: string | null
+          p_warehouse_id?: string | null
+        }
+        Returns: {
+          asset_category: string | null
+          asset_code: string | null
+          asset_id: string | null
+          asset_name: string | null
+          avg_consumption_per_transaction: number | null
+          exception_asset_name: string | null
+          first_consumption: string | null
+          last_consumption: string | null
+          plant_id: string | null
+          plant_name: string | null
+          sum_hours_consumed: number | null
+          sum_km_consumed: number | null
+          total_consumption: number | null
+          transaction_count: number | null
+          warehouse_id: string | null
+          warehouse_name: string | null
+        }[]
+      }
+      diesel_analytics_overview_totals: {
+        Args: {
+          p_from?: string | null
+          p_plant_ids?: string[] | null
+          p_to?: string | null
+        }
+        Returns: Json
+      }
+      diesel_analytics_warehouse_period: {
+        Args: {
+          p_from?: string | null
+          p_plant_ids?: string[] | null
+          p_to?: string | null
+        }
+        Returns: {
+          consumption_liters: number | null
+          entry_liters: number | null
+          net_flow: number | null
+          plant_id: string | null
+          plant_name: string | null
+          warehouse_id: string | null
+          warehouse_name: string | null
+        }[]
+      }
       get_expected_next_reading: {
         Args: { p_asset_id: string; p_reading_type?: string }
         Returns: Json

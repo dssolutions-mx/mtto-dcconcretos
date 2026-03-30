@@ -5,8 +5,10 @@ import { createBrowserClient } from "@supabase/ssr"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Separator } from "@/components/ui/separator"
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import { DashboardHeader } from "@/components/dashboard/dashboard-header"
+import { DashboardShell } from "@/components/dashboard/dashboard-shell"
+import { getDieselPlantScope } from "@/lib/diesel-analytics-scope"
 import { 
   Fuel, 
   TruckIcon, 
@@ -56,7 +58,6 @@ export default function DieselDashboardPage() {
   const [warehouses, setWarehouses] = useState<WarehouseSummary[]>([])
   const [recentTransactions, setRecentTransactions] = useState<RecentTransaction[]>([])
   const [totalInventory, setTotalInventory] = useState(0)
-  const [userProfile, setUserProfile] = useState<any>(null)
   const [createDialogOpen, setCreateDialogOpen] = useState(false)
 
   const supabase = createBrowserClient(
@@ -76,13 +77,14 @@ export default function DieselDashboardPage() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
 
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('plant_id, business_unit_id, role')
-        .eq('id', user.id)
-        .single()
+      const scope = await getDieselPlantScope(supabase)
 
-      setUserProfile(profile)
+      if (scope.plantIds !== null && scope.plantIds.length === 0) {
+        setWarehouses([])
+        setTotalInventory(0)
+        setRecentTransactions([])
+        return
+      }
 
       // Load warehouses with filtering - ONLY DIESEL warehouses
       let warehouseQuery = supabase
@@ -102,9 +104,8 @@ export default function DieselDashboardPage() {
         .eq('product_type', 'diesel')
         .order('name')
 
-      // Apply business unit filtering if user has one
-      if (profile?.business_unit_id) {
-        warehouseQuery = warehouseQuery.eq('plants.business_unit_id', profile.business_unit_id)
+      if (scope.plantIds !== null) {
+        warehouseQuery = warehouseQuery.in('plant_id', scope.plantIds)
       }
 
       const { data: warehousesData, error: warehousesError } = await warehouseQuery
@@ -143,9 +144,11 @@ export default function DieselDashboardPage() {
         .order('transaction_date', { ascending: false })
         .limit(10)
 
-      // Apply business unit filtering if user has one
-      if (profile?.plant_id) {
-        transactionsQuery = transactionsQuery.eq('diesel_warehouses.plant_id', profile.plant_id)
+      if (scope.plantIds !== null) {
+        transactionsQuery = transactionsQuery.in(
+          'diesel_warehouses.plant_id',
+          scope.plantIds
+        )
       }
 
       const { data: transactionsData, error: transactionsError } = await transactionsQuery
@@ -170,13 +173,7 @@ export default function DieselDashboardPage() {
             })
           }
         }
-        
-        // Debug: log first transaction to see structure
-        if (transactionsData && transactionsData.length > 0) {
-          console.log('Transaction data sample:', transactionsData[0])
-          console.log('Assets data:', transactionsData[0].assets)
-        }
-        
+
         const formattedTransactions = transactionsData?.map((t: any) => ({
           id: t.id,
           transaction_type: t.transaction_type,
@@ -226,24 +223,25 @@ export default function DieselDashboardPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-      </div>
+      <DashboardShell className="px-4 sm:px-6 lg:px-8">
+        <DashboardHeader
+          heading="Gestión de diesel"
+          text="Control de inventario, consumos y movimientos."
+        />
+        <div className="flex items-center justify-center min-h-[40vh]">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        </div>
+      </DashboardShell>
     )
   }
 
   return (
-    <div className="container mx-auto py-6 px-4 space-y-6">
-      {/* Header */}
-      <div>
-        <h1 className="text-3xl font-bold flex items-center gap-2">
-          <Fuel className="h-8 w-8 text-blue-600" />
-          Gestión de Diesel
-        </h1>
-        <p className="text-muted-foreground mt-1">
-          Control de inventario, consumos y movimientos de diesel
-        </p>
-      </div>
+    <DashboardShell className="px-4 sm:px-6 lg:px-8 pb-16 sm:pb-12 space-y-6">
+      <DashboardHeader
+        heading="Gestión de diesel"
+        text="Control de inventario, consumos y movimientos."
+        id="diesel-hub-header"
+      />
 
       {/* Offline Status */}
       <DieselOfflineStatus />
@@ -505,7 +503,7 @@ export default function DieselDashboardPage() {
           loadDashboardData()
         }}
       />
-    </div>
+    </DashboardShell>
   )
 }
 

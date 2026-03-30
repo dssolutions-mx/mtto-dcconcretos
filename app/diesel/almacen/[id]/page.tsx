@@ -31,6 +31,8 @@ import {
 } from "lucide-react"
 import { useRouter, useParams } from "next/navigation"
 import Link from "next/link"
+import { DashboardHeader } from "@/components/dashboard/dashboard-header"
+import { DashboardShell } from "@/components/dashboard/dashboard-shell"
 import { TransactionEditModal } from "@/components/diesel-inventory/transaction-edit-modal"
 import { TransactionEvidenceModal } from "@/components/diesel-inventory/transaction-evidence-modal"
 import { MarkTransferModal } from "@/components/diesel-inventory/mark-transfer-modal"
@@ -828,18 +830,21 @@ export default function WarehouseDetailPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-      </div>
+      <DashboardShell className="px-4 sm:px-6 lg:px-8">
+        <DashboardHeader heading="Almacén" text="Cargando detalle…" />
+        <div className="flex items-center justify-center min-h-[40vh]">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        </div>
+      </DashboardShell>
     )
   }
 
   if (!warehouse) {
     return (
-      <div className="container mx-auto py-6 px-4">
+      <DashboardShell className="px-4 sm:px-6 lg:px-8 pb-16 sm:pb-12">
+        <DashboardHeader heading="Almacén no encontrado" text="No existe o no tienes acceso." />
         <Card>
           <CardContent className="py-8 text-center">
-            <p className="text-muted-foreground">Almacén no encontrado</p>
             <Button variant="outline" className="mt-4" asChild>
               <Link href="/diesel">
                 <ChevronLeft className="h-4 w-4 mr-2" />
@@ -848,32 +853,41 @@ export default function WarehouseDetailPage() {
             </Button>
           </CardContent>
         </Card>
-      </div>
+      </DashboardShell>
     )
   }
 
   const percentage = getCapacityPercentage()
 
   return (
-    <div className="container mx-auto py-6 px-4 space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <div className="flex items-center gap-3">
-            <h1 className="text-3xl font-bold flex items-center gap-2">
-              <Fuel className="h-8 w-8 text-blue-600" />
-              {warehouse.name}
-            </h1>
-            <Badge variant="outline">{warehouse.warehouse_code}</Badge>
-          </div>
-          <p className="text-muted-foreground mt-1">
-            {warehouse.plant_name}
-          </p>
+    <DashboardShell className="px-4 sm:px-6 lg:px-8 pb-16 sm:pb-12 space-y-6">
+      <DashboardHeader
+        heading={warehouse.name}
+        text={warehouse.plant_name}
+        id="diesel-warehouse-detail-header"
+      >
+        <div className="flex flex-wrap items-center justify-end gap-2 shrink-0">
+          <Badge variant="outline">{warehouse.warehouse_code}</Badge>
+          <Button variant="outline" asChild>
+            <Link href="/diesel">
+              <ChevronLeft className="h-4 w-4 mr-2" />
+              Volver
+            </Link>
+          </Button>
         </div>
-        <Button variant="outline" asChild>
-          <Link href="/diesel">
-            <ChevronLeft className="h-4 w-4 mr-2" />
-            Volver
+      </DashboardHeader>
+
+      <div className="flex flex-wrap gap-2">
+        <Button asChild size="sm">
+          <Link href={`/diesel/consumo?warehouseId=${warehouseId}`}>
+            <TrendingDown className="h-4 w-4 mr-2" />
+            Registrar consumo
+          </Link>
+        </Button>
+        <Button asChild size="sm" variant="outline">
+          <Link href="/diesel/entrada">
+            <TruckIcon className="h-4 w-4 mr-2" />
+            Entrada
           </Link>
         </Button>
       </div>
@@ -1630,7 +1644,7 @@ export default function WarehouseDetailPage() {
         onClose={handleCloseMarkTransferModal}
         onSuccess={handleMarkTransferSuccess}
       />
-    </div>
+    </DashboardShell>
   )
 }
 
