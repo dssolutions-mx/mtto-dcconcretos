@@ -367,6 +367,18 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         ) {
           return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 })
         }
+      } else if (actor.profile.role === 'DOSIFICADOR' && actor.profile.plant_id) {
+        if (
+          !operatorRowVisibleToJp(
+            {
+              plant_id: operator.plant_id,
+              business_unit_id: operator.business_unit_id,
+            },
+            actor.profile.plant_id
+          )
+        ) {
+          return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 })
+        }
       }
     }
 

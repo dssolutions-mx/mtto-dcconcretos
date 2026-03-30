@@ -271,6 +271,7 @@ export function canUpdateUserAuthorization(
 
 /**
  * Check if actor can view the operators list (filtered by scope).
+ * DOSIFICADOR: same-plant peer list only (e.g. security-talk attendees); requires plant_id on profile.
  */
 export function canViewOperatorsList(
   actor: ActorContext | null
@@ -282,7 +283,8 @@ export function canViewOperatorsList(
     checkRHOwnershipAuthority(actor) ||
     actor.profile.role === 'GERENCIA_GENERAL' ||
     actor.profile.role === 'JEFE_UNIDAD_NEGOCIO' ||
-    actor.profile.role === 'JEFE_PLANTA'
+    actor.profile.role === 'JEFE_PLANTA' ||
+    (actor.profile.role === 'DOSIFICADOR' && !!actor.profile.plant_id)
   )
 }
 

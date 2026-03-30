@@ -339,6 +339,15 @@ export async function GET(request: NextRequest) {
     const status = searchParams.get('status') || 'active'
     const ids = searchParams.get('ids')
 
+    if (
+      actor.profile.role === 'DOSIFICADOR' &&
+      actor.profile.plant_id &&
+      plant_id &&
+      plant_id !== actor.profile.plant_id
+    ) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+
     const rhOrGgView =
       checkRHOwnershipAuthority(actor) || actor.profile.role === 'GERENCIA_GENERAL'
 
@@ -383,6 +392,8 @@ export async function GET(request: NextRequest) {
           query = query.eq('business_unit_id', business_unit_id)
         }
       } else if (actor.profile.role === 'JEFE_PLANTA' && actor.profile.plant_id) {
+        query = query.eq('plant_id', actor.profile.plant_id)
+      } else if (actor.profile.role === 'DOSIFICADOR' && actor.profile.plant_id) {
         query = query.eq('plant_id', actor.profile.plant_id)
       } else if (actor.profile.role === 'JEFE_UNIDAD_NEGOCIO' && actor.profile.business_unit_id) {
         const buId = actor.profile.business_unit_id
@@ -431,6 +442,15 @@ export async function GET(request: NextRequest) {
     }
 
     if (!rhOrGgView && actor.profile.role === 'JEFE_PLANTA' && actor.profile.plant_id) {
+      list = list.filter((op) =>
+        operatorRowVisibleToJp(
+          { plant_id: op.plant_id, business_unit_id: op.business_unit_id },
+          actor.profile.plant_id!
+        )
+      )
+    }
+
+    if (!rhOrGgView && actor.profile.role === 'DOSIFICADOR' && actor.profile.plant_id) {
       list = list.filter((op) =>
         operatorRowVisibleToJp(
           { plant_id: op.plant_id, business_unit_id: op.business_unit_id },
