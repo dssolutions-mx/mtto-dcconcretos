@@ -249,6 +249,20 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                       Checklists
                     </Link>
                   </Button>
+                  <Button
+                    variant={pathname.startsWith("/dashboard/operator/incidentes") ? "secondary" : "ghost"}
+                    className={cn("w-full justify-start pl-8", navItemClasses)}
+                    asChild
+                    onClick={handleLinkClick}
+                  >
+                    <Link
+                      href="/dashboard/operator/incidentes?estado=abiertos"
+                      aria-current={pathname.startsWith("/dashboard/operator/incidentes") ? "page" : undefined}
+                    >
+                      <AlertTriangle className="mr-2 h-4 w-4" />
+                      Incidentes del equipo
+                    </Link>
+                  </Button>
                 </CollapsibleContent>
               </Collapsible>
             </div>
@@ -1291,6 +1305,13 @@ export function CollapsedSidebar({ className, onLinkClick }: SidebarProps) {
   if (isOperator) {
     navigationSections = [
       { id: "checklists", icon: ClipboardCheck, label: "Mis Checklists", href: "/checklists", active: isPathActive("/checklists") },
+      {
+        id: "mis-reportes",
+        icon: AlertTriangle,
+        label: "Incidentes del equipo",
+        href: "/dashboard/operator/incidentes?estado=abiertos",
+        active: isPathActive("/dashboard/operator/incidentes"),
+      },
     ]
   } else if (profile.role === 'AREA_ADMINISTRATIVA') {
     navigationSections = buildNavigationSections(profile, ui, pathname, isPathActive, isSectionActive, isComplianceSystemEnabled)
