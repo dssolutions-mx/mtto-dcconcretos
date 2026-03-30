@@ -1,7 +1,20 @@
 "use client"
 
 import React, { useState, useRef, useCallback, useMemo } from "react"
-import { Camera, Upload, X, Check, Plus, Grid3X3, List, FileText, AlertTriangle, Eye, Trash2 } from "lucide-react"
+import {
+  Camera,
+  Upload,
+  X,
+  Check,
+  Plus,
+  Grid3X3,
+  List,
+  FileText,
+  AlertTriangle,
+  Eye,
+  Trash2,
+  Images,
+} from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -54,7 +67,12 @@ interface EvidenceUploadProps {
   assetId?: string
   title?: string
   description?: string
+  /** Phone-first flow: no classify tab; auto category; optional captions (operators reporting incidents). */
+  operatorSimple?: boolean
 }
+
+const OPERATOR_DEFAULT_CATEGORY = "evidencia_reporte"
+const OPERATOR_DEFAULT_DESCRIPTION = "Foto del problema"
 
 const EVIDENCE_CATEGORIES = {
   creation: [
@@ -91,6 +109,7 @@ const EVIDENCE_CATEGORIES = {
     { value: "accion_correctiva", label: "Acción Correctiva", icon: "🔧" },
   ],
   incident: [
+    { value: "evidencia_reporte", label: "Evidencia de reporte", icon: "📷" },
     { value: "condicion_inicial", label: "Condición Inicial", icon: "📷" },
     { value: "falla_danos", label: "Falla/Daños", icon: "💥" },
     { value: "area_afectada", label: "Área Afectada", icon: "🏭" },
@@ -129,7 +148,8 @@ export function EvidenceUpload({
   workOrderId,
   assetId,
   title = "Gestión de Evidencia",
-  description = "Suba fotografías y documentos como evidencia"
+  description = "Suba fotografías y documentos como evidencia",
+  operatorSimple = false,
 }: EvidenceUploadProps) {
   const [pendingEvidence, setPendingEvidence] = useState<EvidencePhoto[]>([])
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid")
@@ -139,6 +159,10 @@ export function EvidenceUpload({
   const [newCategoryName, setNewCategoryName] = useState("")
   const [showAddCategory, setShowAddCategory] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const cameraInputRef = useRef<HTMLInputElement>(null)
+  const galleryInputRef = useRef<HTMLInputElement>(null)
+
+  const isOperatorIncidentSimple = operatorSimple && context === "incident"
 
   const categories = [...(EVIDENCE_CATEGORIES[context] || EVIDENCE_CATEGORIES.creation), ...customCategories]
 
@@ -164,27 +188,46 @@ export function EvidenceUpload({
   const handleFileUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       const files = Array.from(e.target.files)
-      
+
       const newEvidence = files.map((file) => {
         const preview = URL.createObjectURL(file)
-        
+
         return {
           id: crypto.randomUUID(),
           file,
           url: preview,
           preview,
-          description: `${file.name.split('.')[0]}`,
+          description: `${file.name.split(".")[0]}`,
           category: "",
           uploaded_at: new Date().toISOString(),
         }
       })
-      
-      setPendingEvidence(prev => [...prev, ...newEvidence])
+
+      setPendingEvidence((prev) => [...prev, ...newEvidence])
     }
-    
+
     if (e.target) {
       e.target.value = ""
     }
+  }, [])
+
+  const handleOperatorFileAdd = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || e.target.files.length === 0) return
+    const files = Array.from(e.target.files).filter((f) => f.type.startsWith("image/"))
+    const newEvidence = files.map((file) => {
+      const preview = URL.createObjectURL(file)
+      return {
+        id: crypto.randomUUID(),
+        file,
+        url: preview,
+        preview,
+        description: OPERATOR_DEFAULT_DESCRIPTION,
+        category: OPERATOR_DEFAULT_CATEGORY,
+        uploaded_at: new Date().toISOString(),
+      }
+    })
+    setPendingEvidence((prev) => [...prev, ...newEvidence])
+    e.target.value = ""
   }, [])
 
   const updateEvidenceCategory = useCallback((index: number, category: string) => {
@@ -221,130 +264,179 @@ export function EvidenceUpload({
     setPreviewImage(null)
   }, [])
 
-  const uploadToSupabase = async (evidenceItem: EvidencePhoto): Promise<EvidencePhoto> => {
-    if (!evidenceItem.file) {
-      throw new Error("No file to upload")
-    }
-
-    // Determine bucket based on context
-    const bucket = context === "checklist"
-      ? "checklist-photos"
-      : context === "incident"
-        ? "incident-evidence"
-        : context === "asset"
-          ? "asset-photos"
-          : "work-order-evidence"
-
-    // Prefer server-side upload API (better auth/session handling; avoids mobile CORS issues)
-    const formData = new FormData()
-    formData.append('file', evidenceItem.file)
-    formData.append('bucket', bucket)
-
-    try {
-      const res = await fetch('/api/storage/upload', {
-        method: 'POST',
-        body: formData
-      })
-
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}))
-        throw new Error(err?.error || 'Upload failed')
+  const uploadToSupabase = useCallback(
+    async (evidenceItem: EvidencePhoto): Promise<EvidencePhoto> => {
+      if (!evidenceItem.file) {
+        throw new Error("No file to upload")
       }
 
-      const data = await res.json()
-      return {
-        ...evidenceItem,
-        url: data.url,
-        bucket_path: data.path,
-        file: undefined
-      }
-    } catch (serverError: any) {
-      console.warn('Server upload failed, falling back to client storage upload:', serverError)
+      const bucket =
+        context === "checklist"
+          ? "checklist-photos"
+          : context === "incident"
+            ? "incident-evidence"
+            : context === "asset"
+              ? "asset-photos"
+              : "work-order-evidence"
 
-      // Fallback to client-side Supabase Storage upload
-      const supabase = createClient()
-      const fileExt = evidenceItem.file.name.split('.').pop()
-      const fileName = `${context}_${workOrderId || assetId || 'general'}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}.${fileExt}`
+      const formData = new FormData()
+      formData.append("file", evidenceItem.file)
+      formData.append("bucket", bucket)
 
-      const { error } = await supabase.storage
-        .from(bucket)
-        .upload(fileName, evidenceItem.file, {
-          cacheControl: '3600',
-          upsert: true
+      try {
+        const res = await fetch("/api/storage/upload", {
+          method: "POST",
+          body: formData,
         })
 
-      if (error) {
-        console.error('Client storage upload failed:', error)
-        throw new Error(error.message || 'Upload failed')
-      }
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}))
+          throw new Error((err as { error?: string })?.error || "Upload failed")
+        }
 
-      const { data: urlData } = supabase.storage
-        .from(bucket)
-        .getPublicUrl(fileName)
+        const data = await res.json()
+        return {
+          ...evidenceItem,
+          url: data.url,
+          bucket_path: data.path,
+          file: undefined,
+        }
+      } catch (serverError: unknown) {
+        console.warn("Server upload failed, falling back to client storage upload:", serverError)
 
-      return {
-        ...evidenceItem,
-        url: urlData.publicUrl,
-        bucket_path: fileName,
-        file: undefined
+        const supabase = createClient()
+        const fileExt = evidenceItem.file.name.split(".").pop()
+        const fileName = `${context}_${workOrderId || assetId || "general"}_${Date.now()}_${Math.random().toString(36).substring(2, 11)}.${fileExt}`
+
+        const { error } = await supabase.storage.from(bucket).upload(fileName, evidenceItem.file, {
+          cacheControl: "3600",
+          upsert: true,
+        })
+
+        if (error) {
+          console.error("Client storage upload failed:", error)
+          throw new Error(error.message || "Upload failed")
+        }
+
+        const { data: urlData } = supabase.storage.from(bucket).getPublicUrl(fileName)
+
+        return {
+          ...evidenceItem,
+          url: urlData.publicUrl,
+          bucket_path: fileName,
+          file: undefined,
+        }
       }
-    }
-  }
+    },
+    [context, workOrderId, assetId]
+  )
 
   const handleSaveEvidence = useCallback(async () => {
-    const validEvidence = pendingEvidence.filter(item => 
-      item.description.trim() && item.category
+    if (isOperatorIncidentSimple) {
+      if (pendingEvidence.length === 0) {
+        onOpenChange(false)
+        return
+      }
+      const normalized = pendingEvidence
+        .filter((item) => item.file)
+        .map((item) => ({
+          ...item,
+          description: item.description.trim() || OPERATOR_DEFAULT_DESCRIPTION,
+          category: item.category || OPERATOR_DEFAULT_CATEGORY,
+        }))
+      if (normalized.length === 0) {
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: "No hay fotos para subir",
+        })
+        return
+      }
+      try {
+        setUploading(true)
+        const uploadedEvidence = await Promise.all(normalized.map((item) => uploadToSupabase(item)))
+        setEvidence([...evidence, ...uploadedEvidence])
+        setPendingEvidence([])
+        onOpenChange(false)
+        toast({
+          title: "Listo",
+          description:
+            uploadedEvidence.length === 1
+              ? "La foto se agregó a tu reporte."
+              : `${uploadedEvidence.length} fotos agregadas a tu reporte.`,
+        })
+      } catch (error: unknown) {
+        console.error("Error uploading evidence:", error)
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: `Error al subir: ${error instanceof Error ? error.message : "Intenta de nuevo"}`,
+        })
+      } finally {
+        setUploading(false)
+      }
+      return
+    }
+
+    const validEvidence = pendingEvidence.filter(
+      (item) => item.description.trim() && item.category
     )
-    
+
     if (validEvidence.length === 0) {
       toast({
         variant: "destructive",
         title: "Error",
-        description: "Todas las evidencias deben tener descripción y categoría"
+        description: "Todas las evidencias deben tener descripción y categoría",
       })
       return
     }
 
     try {
       setUploading(true)
-      
+
       // For asset context, don't upload to Supabase, just save locally
       if (context === "asset") {
         setEvidence([...evidence, ...validEvidence])
         setPendingEvidence([])
         onOpenChange(false)
-        
+
         toast({
           title: "Éxito",
-          description: `${validEvidence.length} evidencia(s) agregada(s) correctamente`
+          description: `${validEvidence.length} evidencia(s) agregada(s) correctamente`,
         })
         return
       }
-      
+
       // For other contexts, upload all evidence to Supabase
-      const uploadedEvidence = await Promise.all(
-        validEvidence.map(item => uploadToSupabase(item))
-      )
+      const uploadedEvidence = await Promise.all(validEvidence.map((item) => uploadToSupabase(item)))
 
       setEvidence([...evidence, ...uploadedEvidence])
       setPendingEvidence([])
       onOpenChange(false)
-      
+
       toast({
         title: "Éxito",
-        description: `${uploadedEvidence.length} evidencia(s) subida(s) correctamente`
+        description: `${uploadedEvidence.length} evidencia(s) subida(s) correctamente`,
       })
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("Error uploading evidence:", error)
       toast({
         variant: "destructive",
         title: "Error",
-        description: `Error al subir evidencias: ${error.message}`
+        description: `Error al subir evidencias: ${error instanceof Error ? error.message : "Error"}`,
       })
     } finally {
       setUploading(false)
     }
-  }, [pendingEvidence, evidence, setEvidence, onOpenChange, workOrderId, assetId, context])
+  }, [
+    pendingEvidence,
+    evidence,
+    setEvidence,
+    onOpenChange,
+    context,
+    isOperatorIncidentSimple,
+    uploadToSupabase,
+  ])
 
   const handleClose = useCallback(() => {
     // Clean up preview URLs
@@ -362,25 +454,125 @@ export function EvidenceUpload({
     return category || { value: categoryValue, label: categoryValue, icon: "📋" }
   }, [categories])
 
-  const canSave = useMemo(() => 
-    pendingEvidence.length > 0 && 
-    pendingEvidence.every(item => item.description.trim() && item.category), 
-    [pendingEvidence])
+  const canSave = useMemo(() => {
+    if (isOperatorIncidentSimple) {
+      return pendingEvidence.length > 0
+    }
+    return (
+      pendingEvidence.length > 0 &&
+      pendingEvidence.every((item) => item.description.trim() && item.category)
+    )
+  }, [pendingEvidence, isOperatorIncidentSimple])
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[90vh]">
+      <DialogContent
+        className={cn(
+          "max-h-[90vh]",
+          isOperatorIncidentSimple ? "max-w-lg sm:max-w-lg" : "max-w-4xl"
+        )}
+      >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Camera className="h-5 w-5" />
             {title}
           </DialogTitle>
-          <DialogDescription>
-            {description}
-          </DialogDescription>
+          <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
 
-        <div className="my-4" style={{ height: 'calc(80vh - 200px)', overflowY: 'auto' }}>
+        {isOperatorIncidentSimple ? (
+          <div className="my-2 max-h-[min(70vh,520px)] space-y-4 overflow-y-auto">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <Button
+                type="button"
+                variant="default"
+                className="min-h-[52px] w-full gap-2 text-base"
+                onClick={() => cameraInputRef.current?.click()}
+              >
+                <Camera className="h-5 w-5 shrink-0" />
+                Tomar foto
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                className="min-h-[52px] w-full gap-2 text-base"
+                onClick={() => galleryInputRef.current?.click()}
+              >
+                <Images className="h-5 w-5 shrink-0" />
+                Elegir fotos
+              </Button>
+              <input
+                ref={cameraInputRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                className="hidden"
+                onChange={handleOperatorFileAdd}
+              />
+              <input
+                ref={galleryInputRef}
+                type="file"
+                accept="image/*"
+                multiple
+                className="hidden"
+                onChange={handleOperatorFileAdd}
+              />
+            </div>
+
+            {pendingEvidence.length > 0 && (
+              <div className="space-y-3">
+                <p className="text-sm font-medium text-muted-foreground">
+                  Fotos ({pendingEvidence.length})
+                </p>
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                  {pendingEvidence.map((item, index) => {
+                    const src = item.preview || item.url
+                    return (
+                      <div key={item.id} className="space-y-1.5">
+                        <div className="relative aspect-square overflow-hidden rounded-lg border bg-muted">
+                          <button
+                            type="button"
+                            className="absolute inset-0"
+                            onClick={() => openPreview(src)}
+                            aria-label="Ver foto grande"
+                          >
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={src} alt="" className="h-full w-full object-cover" />
+                          </button>
+                          <Button
+                            type="button"
+                            variant="destructive"
+                            size="icon"
+                            className="absolute right-1 top-1 h-8 w-8"
+                            onClick={() => removeEvidence(index)}
+                            aria-label="Quitar foto"
+                          >
+                            <X className="h-4 w-4" />
+                          </Button>
+                        </div>
+                        <Input
+                          placeholder="Nota (opcional)"
+                          className="text-sm"
+                          value={
+                            item.description === OPERATOR_DEFAULT_DESCRIPTION ? "" : item.description
+                          }
+                          onChange={(e) => {
+                            const v = e.target.value
+                            updateEvidenceDescription(
+                              index,
+                              v === "" ? OPERATOR_DEFAULT_DESCRIPTION : v
+                            )
+                          }}
+                        />
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        ) : (
+        <div className="my-4" style={{ height: "calc(80vh - 200px)", overflowY: "auto" }}>
           <Tabs defaultValue="upload" className="w-full">
             <TabsList className="grid w-full grid-cols-2">
               <TabsTrigger value="upload">Subir Evidencia</TabsTrigger>
@@ -493,28 +685,49 @@ export function EvidenceUpload({
             </TabsContent>
           </Tabs>
         </div>
+        )}
 
         <DialogFooter>
-          <div className="flex items-center justify-between w-full">
-            <div className="text-sm text-muted-foreground">
-              {pendingEvidence.filter(e => e.category && e.description.trim()).length} de {pendingEvidence.length} clasificados
-            </div>
-            <div className="flex gap-2">
+          {isOperatorIncidentSimple ? (
+            <div className="flex w-full flex-col gap-2 sm:flex-row sm:justify-end">
               <Button
+                type="button"
                 variant="outline"
+                className="min-h-[48px] w-full sm:w-auto"
                 onClick={handleClose}
                 disabled={uploading}
               >
                 Cancelar
               </Button>
               <Button
-                onClick={handleSaveEvidence}
-                disabled={!canSave || uploading}
+                type="button"
+                className="min-h-[48px] w-full sm:min-w-[180px]"
+                onClick={() => void handleSaveEvidence()}
+                disabled={uploading}
               >
-                {uploading ? "Subiendo..." : "Guardar Evidencia"}
+                {uploading
+                  ? "Subiendo…"
+                  : pendingEvidence.length > 0
+                    ? "Agregar al reporte"
+                    : "Listo"}
               </Button>
             </div>
-          </div>
+          ) : (
+            <div className="flex w-full items-center justify-between">
+              <div className="text-sm text-muted-foreground">
+                {pendingEvidence.filter((e) => e.category && e.description.trim()).length} de{" "}
+                {pendingEvidence.length} clasificados
+              </div>
+              <div className="flex gap-2">
+                <Button variant="outline" onClick={handleClose} disabled={uploading}>
+                  Cancelar
+                </Button>
+                <Button onClick={() => void handleSaveEvidence()} disabled={!canSave || uploading}>
+                  {uploading ? "Subiendo..." : "Guardar Evidencia"}
+                </Button>
+              </div>
+            </div>
+          )}
         </DialogFooter>
       </DialogContent>
 

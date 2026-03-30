@@ -187,7 +187,7 @@ export function OperatorReportProblemDialog({
         <DialogHeader>
           <DialogTitle className="text-xl">Reportar problema</DialogTitle>
           <DialogDescription className="text-base">
-            Solo unos pasos. Si puedes, agrega una foto del problema.
+            Solo unos pasos. Si puedes, toma una foto con el celular (opcional).
           </DialogDescription>
         </DialogHeader>
 
@@ -308,8 +308,9 @@ export function OperatorReportProblemDialog({
         setEvidence={setPhotos}
         context="incident"
         assetId={effectiveAssetId ?? undefined}
-        title="Foto del problema"
-        description="Sube una o más fotos del equipo o del daño."
+        operatorSimple
+        title="Fotos del problema"
+        description="Con el celular: toma foto o elige de la galería. Sin clasificar—solo agrega y listo."
       />
     </Dialog>
   )
