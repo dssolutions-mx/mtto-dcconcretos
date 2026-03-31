@@ -1,20 +1,19 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useRef, type ChangeEvent } from "react"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { 
-  Camera, 
-  Upload, 
-  X, 
-  CheckCircle2, 
-  AlertCircle, 
+import {
+  Camera,
+  Images,
+  X,
+  CheckCircle2,
+  AlertCircle,
   RefreshCw,
   Loader2,
   WifiOff,
-  Wifi
 } from "lucide-react"
 import { toast } from "sonner"
 
@@ -50,6 +49,9 @@ export function SmartPhotoUpload({
   const [uploading, setUploading] = useState(false)
   const [isOnline, setIsOnline] = useState(typeof window !== 'undefined' ? navigator.onLine : true)
   
+  const cameraInputRef = useRef<HTMLInputElement>(null)
+  const galleryInputRef = useRef<HTMLInputElement>(null)
+
   // Dynamic import of photo service to avoid SSR issues
   const [photoService, setPhotoService] = useState<any>(null)
   
@@ -164,6 +166,14 @@ export function SmartPhotoUpload({
     } finally {
       setUploading(false)
     }
+  }
+
+  const handleFileInputChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) {
+      void handlePhotoUpload(file)
+    }
+    e.target.value = ""
   }
 
   const handleRetryUpload = async () => {
@@ -302,40 +312,61 @@ export function SmartPhotoUpload({
           )}
         </div>
       ) : (
-        <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
-          <Label
-            htmlFor={`photo-upload-${itemId}`}
-            className="cursor-pointer flex flex-col items-center gap-2"
-          >
-            <div className="flex items-center gap-2">
+        <div className="space-y-3 rounded-lg border-2 border-dashed border-gray-300 p-4">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <Button
+              type="button"
+              variant="default"
+              className="min-h-[52px] w-full gap-2"
+              disabled={disabled || uploading}
+              onClick={() => cameraInputRef.current?.click()}
+            >
               {uploading ? (
-                <Loader2 className="h-5 w-5 animate-spin text-blue-500" />
+                <Loader2 className="h-5 w-5 shrink-0 animate-spin" />
               ) : (
-                <Camera className="h-5 w-5 text-gray-400" />
+                <Camera className="h-5 w-5 shrink-0" />
               )}
-              <span className="text-sm text-gray-600">
-                {uploading ? 'Procesando...' : 'Tomar foto o seleccionar archivo'}
-              </span>
-            </div>
-            {!isOnline && (
-              <span className="text-xs text-gray-500 flex items-center gap-1">
-                <WifiOff className="h-3 w-3" />
-                Sin conexión - se guardará localmente
-              </span>
-            )}
-          </Label>
+              Tomar foto
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              className="min-h-[52px] w-full gap-2"
+              disabled={disabled || uploading}
+              onClick={() => galleryInputRef.current?.click()}
+            >
+              <Images className="h-5 w-5 shrink-0" />
+              Galer?a
+            </Button>
+          </div>
           <input
-            id={`photo-upload-${itemId}`}
+            ref={cameraInputRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            className="hidden"
+            tabIndex={-1}
+            aria-hidden
+            disabled={disabled || uploading}
+            onChange={handleFileInputChange}
+          />
+          <input
+            ref={galleryInputRef}
+            id={`photo-gallery-${itemId}`}
             type="file"
             accept="image/*"
             className="hidden"
+            tabIndex={-1}
+            aria-hidden
             disabled={disabled || uploading}
-            onChange={(e) => {
-              if (e.target.files && e.target.files[0]) {
-                handlePhotoUpload(e.target.files[0])
-              }
-            }}
+            onChange={handleFileInputChange}
           />
+          {!isOnline && (
+            <p className="flex items-center justify-center gap-1 text-center text-xs text-gray-500">
+              <WifiOff className="h-3 w-3 shrink-0" />
+              Sin conexión - se guardará localmente
+            </p>
+          )}
         </div>
       )}
     </div>
