@@ -328,7 +328,6 @@ export function SmartPhotoUpload({
             id={`photo-upload-${itemId}`}
             type="file"
             accept="image/*"
-            capture="environment"
             className="hidden"
             disabled={disabled || uploading}
             onChange={(e) => {
