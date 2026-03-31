@@ -115,6 +115,28 @@ function DashboardContent() {
     }
   }, [isInitialized, profile?.role, router])
 
+  // While client-side redirect to role dashboards runs, avoid painting the default dashboard (flash).
+  const REDIRECT_ROLES = [
+    'OPERADOR',
+    'DOSIFICADOR',
+    'MECANICO',
+    'JEFE_UNIDAD_NEGOCIO',
+    'RECURSOS_HUMANOS',
+    'COORDINADOR_MANTENIMIENTO',
+    'JEFE_PLANTA',
+  ]
+
+  if (isInitialized && profile?.role && REDIRECT_ROLES.includes(profile.role)) {
+    return (
+      <div className="flex min-h-[400px] items-center justify-center px-4">
+        <div className="max-w-sm space-y-4 text-center">
+          <Loader2 className="mx-auto h-8 w-8 animate-spin text-primary" />
+          <p className="text-sm text-muted-foreground">Cargando tu dashboard...</p>
+        </div>
+      </div>
+    )
+  }
+
   // Block only until auth is initialized; if we already have a profile, render (avoids infinite
   // spinner when isLoading was stuck true, e.g. loadProfile cache hit without clearing isLoading).
   if (!isInitialized || (isLoading && !profile)) {
