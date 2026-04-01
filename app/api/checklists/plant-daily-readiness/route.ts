@@ -19,8 +19,8 @@ function isCompletedStatus(status: string | null | undefined): boolean {
 }
 
 /**
- * Plant-scoped daily checklist readiness for DOSIFICADOR.
- * Uses UTC date keys consistent with checklist date-utils.
+ * Plant-scoped daily checklist readiness (UTC dates).
+ * DOSIFICADOR: operational loading decisions; JEFE_PLANTA: same plant supervision view.
  */
 export async function GET() {
   try {
@@ -43,7 +43,7 @@ export async function GET() {
       return NextResponse.json({ error: "Profile not found" }, { status: 404 })
     }
 
-    if (profile.role !== "DOSIFICADOR") {
+    if (profile.role !== "DOSIFICADOR" && profile.role !== "JEFE_PLANTA") {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 })
     }
 

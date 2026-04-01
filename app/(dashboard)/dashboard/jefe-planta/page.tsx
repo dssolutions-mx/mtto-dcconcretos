@@ -6,6 +6,7 @@ import {
   AlertTriangle,
   BarChart3,
   CheckCircle2,
+  ChevronDown,
   ChevronRight,
   ClipboardList,
   FileText,
@@ -21,6 +22,8 @@ import {
   Wrench,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { PullToRefresh } from "@/components/ui/pull-to-refresh"
 import { useAuthZustand } from "@/hooks/use-auth-zustand"
 import { useRouter } from "next/navigation"
@@ -29,6 +32,8 @@ import { DashboardModuleLinks } from "@/components/dashboard/dashboard-module-li
 import { DashboardExecutiveLayout } from "@/components/dashboard/dashboard-executive-layout"
 import { DashboardExecutiveHero } from "@/components/dashboard/dashboard-executive-hero"
 import { DashboardActionStrip } from "@/components/dashboard/dashboard-action-strip"
+import { PlantDailyReadinessTable } from "@/components/dashboard/plant-daily-readiness-table"
+import type { PlantDailyReadinessPayload } from "@/types/plant-daily-readiness"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -243,6 +248,10 @@ export default function JefePlantaDashboard() {
   const [dataLoading, setDataLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
 
+  const [readinessPayload, setReadinessPayload] = useState<PlantDailyReadinessPayload | null>(null)
+  const [readinessLoading, setReadinessLoading] = useState(true)
+  const [readinessError, setReadinessError] = useState<string | null>(null)
+
   // Role guard
   useEffect(() => {
     if (!isInitialized || (authLoading && !profile)) return
@@ -274,15 +283,37 @@ export default function JefePlantaDashboard() {
     }
   }, [])
 
+  const loadReadiness = useCallback(async () => {
+    try {
+      setReadinessLoading(true)
+      setReadinessError(null)
+      const res = await fetch("/api/checklists/plant-daily-readiness", {
+        credentials: "include",
+        cache: "no-store",
+      })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        throw new Error(json.error || `HTTP ${res.status}`)
+      }
+      setReadinessPayload(json.data as PlantDailyReadinessPayload)
+    } catch (e) {
+      setReadinessError(e instanceof Error ? e.message : "Error al cargar inspección diaria")
+      setReadinessPayload(null)
+    } finally {
+      setReadinessLoading(false)
+    }
+  }, [])
+
   useEffect(() => {
     if (isInitialized && profile?.role === "JEFE_PLANTA") {
-      loadData()
+      void loadData()
+      void loadReadiness()
     }
-  }, [isInitialized, profile?.role, loadData])
+  }, [isInitialized, profile?.role, loadData, loadReadiness])
 
   const handleRefresh = async () => {
     setRefreshing(true)
-    await loadData()
+    await Promise.all([loadData(), loadReadiness()])
     setRefreshing(false)
   }
 
@@ -437,6 +468,47 @@ export default function JefePlantaDashboard() {
               issueCount={issueCount}
               isLoading={dataLoading}
             />
+
+            <Collapsible defaultOpen={false} className="rounded-2xl border border-border/50 bg-card/30">
+              <CollapsibleTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="flex h-auto w-full items-center justify-between gap-3 rounded-2xl px-4 py-3.5 text-left hover:bg-muted/50 data-[state=open]:[&_.readiness-chevron]:rotate-180 sm:px-5"
+                >
+                  <span className="min-w-0">
+                    <span className="block text-sm font-semibold">Inspección diaria por activo y operador</span>
+                    <span className="mt-0.5 block text-xs text-muted-foreground">
+                      Misma vista que usa dosificación para decidir carga de unidades. Expande para revisar.
+                    </span>
+                  </span>
+                  <span className="flex shrink-0 items-center gap-2">
+                    {!readinessLoading &&
+                      readinessPayload != null &&
+                      (readinessPayload.pendingCount ?? 0) > 0 && (
+                        <Badge variant="secondary" className="tabular-nums">
+                          {readinessPayload.pendingCount} pendientes
+                        </Badge>
+                      )}
+                    <ChevronDown className="readiness-chevron h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200" />
+                  </span>
+                </Button>
+              </CollapsibleTrigger>
+              <CollapsibleContent className="border-t border-border/40 px-0 pb-4 pt-1 data-[state=closed]:animate-none">
+                <div className="px-4 sm:px-5">
+                  {readinessError && (
+                    <div className="mb-3 rounded-lg border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+                      {readinessError}
+                    </div>
+                  )}
+                  <PlantDailyReadinessTable
+                    loading={readinessLoading}
+                    payload={readinessPayload}
+                    headerCaption="Supervisión: estado por activo y operador asignado."
+                  />
+                </div>
+              </CollapsibleContent>
+            </Collapsible>
 
           </div>
         }
