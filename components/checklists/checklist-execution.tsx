@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback, useRef } from "react"
+import { useState, useEffect, useCallback, useRef, useMemo } from "react"
 import { useRouter } from "next/navigation"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -57,7 +57,15 @@ import { SecurityTalkSection } from "@/components/checklists/security-talk-secti
 import { CorrectiveWorkOrderDialog } from "@/components/checklists/corrective-work-order-dialog"
 import { SmartPhotoUpload } from "@/components/checklists/smart-photo-upload"
 import { useOfflineSync } from "@/hooks/useOfflineSync"
+import { useAuthZustand } from "@/hooks/use-auth-zustand"
 import { toast } from "sonner"
+import { cn } from "@/lib/utils"
+import {
+  buildCorrectiveDescriptionFromIssues,
+  computeVisibleMeters,
+  isOperatorChecklistRole,
+} from "@/lib/checklist/checklist-execution-helpers"
+import { ChecklistCompletionOverlay } from "@/components/checklists/checklist-completion-overlay"
 import { createBrowserClient } from '@supabase/ssr'
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 
@@ -100,6 +108,11 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
   const [correctiveDialogOpen, setCorrectiveDialogOpen] = useState(false)
   const [selectedItem, setSelectedItem] = useState<string | null>(null)
   const [completedChecklistId, setCompletedChecklistId] = useState<string | null>(null)
+  const [completionOverlayOpen, setCompletionOverlayOpen] = useState(false)
+  const [completionOverlayTitle, setCompletionOverlayTitle] = useState("")
+  const [completionOverlaySubtitle, setCompletionOverlaySubtitle] = useState("")
+  const [completionRedirectLabel, setCompletionRedirectLabel] = useState("Inicio")
+  const [operatorAutoWoSubmitting, setOperatorAutoWoSubmitting] = useState(false)
   
   // Estados para lecturas de equipo
   const [equipmentReadings, setEquipmentReadings] = useState<{
@@ -119,6 +132,16 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
   
   // Usar el nuevo hook para estado offline
   const { isOnline, hasPendingSyncs } = useOfflineSync()
+  const { profile } = useAuthZustand()
+  const operatorSimpleFlow = isOperatorChecklistRole(profile?.role ?? null)
+
+  useEffect(() => {
+    if (!checklist) return
+    const vm = checklist.visibleMeters ?? computeVisibleMeters(checklist.maintenanceUnitRaw ?? null)
+    if (vm === "none") {
+      setEquipmentReadings({})
+    }
+  }, [checklist])
   
   // Estados para auto-guardar
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
@@ -636,6 +659,14 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
                 checklist_items: (section.checklist_items || []).sort((a: any, b: any) => a.order_index - b.order_index)
               }))
             
+            const offlineMuRaw = cached.template.checklists?.equipment_models?.maintenance_unit ?? null
+            const offlineVisible = computeVisibleMeters(offlineMuRaw)
+            const offlineMaintenanceUnit: "hours" | "kilometers" | null =
+              offlineVisible === "kilometers"
+                ? "kilometers"
+                : offlineVisible === "none"
+                  ? null
+                  : "hours"
             setChecklist({
               id: cached.template.id,
               name: cached.template.checklists?.name || '',
@@ -655,7 +686,9 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
               // Información del activo para lecturas
               currentHours: cached.asset?.current_hours || 0,
               currentKilometers: cached.asset?.current_kilometers || 0,
-              maintenanceUnit: cached.template.checklists?.equipment_models?.maintenance_unit || 'hours'
+              maintenanceUnitRaw: offlineMuRaw,
+              visibleMeters: offlineVisible,
+              maintenanceUnit: offlineMaintenanceUnit,
             })
             setLoading(false)
             // Call loadFromLocalStorage in the next tick to avoid interference
@@ -717,6 +750,15 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
               checklist_items: (section.checklist_items || []).sort((a: any, b: any) => a.order_index - b.order_index)
             }))
           
+          const muRaw = data.checklists?.equipment_models?.maintenance_unit ?? null
+          const visibleMeters = computeVisibleMeters(muRaw)
+          const maintenanceUnitForForm: "hours" | "kilometers" | null =
+            visibleMeters === "kilometers"
+              ? "kilometers"
+              : visibleMeters === "none"
+                ? null
+                : "hours"
+
           const checklistData = {
             id: data.id,
             name: data.checklists?.name || '',
@@ -736,7 +778,9 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
             // Información del activo para lecturas
             currentHours: data.assets?.current_hours || 0,
             currentKilometers: data.assets?.current_kilometers || 0,
-            maintenanceUnit: data.checklists?.equipment_models?.maintenance_unit || 'hours'
+            maintenanceUnitRaw: muRaw,
+            visibleMeters,
+            maintenanceUnit: maintenanceUnitForForm,
           }
           
           setChecklist(checklistData)
@@ -1012,36 +1056,120 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
   const validateEquipmentReadings = () => {
     const errors: string[] = []
     const warnings: string[] = []
+    const vm = checklist?.visibleMeters ?? computeVisibleMeters(checklist?.maintenanceUnitRaw ?? null)
 
-    if (process.env.NODE_ENV === 'development') {
-      console.log('🔍 validateEquipmentReadings - readings:', equipmentReadings)
+    if (process.env.NODE_ENV === "development") {
+      console.log("🔍 validateEquipmentReadings - readings:", equipmentReadings, "visibleMeters:", vm)
     }
 
-    if (equipmentReadings.hours_reading !== undefined && equipmentReadings.hours_reading !== null) {
+    if (vm === "none") {
+      return { isValid: true, errors, warnings }
+    }
+
+    const checkHours = vm === "hours" || vm === "both"
+    const checkKm = vm === "kilometers" || vm === "both"
+
+    if (checkHours && equipmentReadings.hours_reading !== undefined && equipmentReadings.hours_reading !== null) {
       if (equipmentReadings.hours_reading <= 0) {
         errors.push("⏱️ Lectura de horas inválida (debe ser mayor a 0)")
       } else if (equipmentReadings.hours_reading <= checklist.currentHours) {
-        warnings.push(`⚠️ Lectura de horas (${equipmentReadings.hours_reading}) no mayor a la actual (${checklist.currentHours})`)
+        warnings.push(
+          `⚠️ Lectura de horas (${equipmentReadings.hours_reading}) no mayor a la actual (${checklist.currentHours})`
+        )
       }
     }
 
-    if (equipmentReadings.kilometers_reading !== undefined && equipmentReadings.kilometers_reading !== null) {
+    if (checkKm && equipmentReadings.kilometers_reading !== undefined && equipmentReadings.kilometers_reading !== null) {
       if (equipmentReadings.kilometers_reading <= 0) {
         errors.push("📏 Lectura de kilómetros inválida (debe ser mayor a 0)")
       } else if (equipmentReadings.kilometers_reading <= checklist.currentKilometers) {
-        warnings.push(`⚠️ Lectura de kilómetros (${equipmentReadings.kilometers_reading}) no mayor a la actual (${checklist.currentKilometers})`)
+        warnings.push(
+          `⚠️ Lectura de kilómetros (${equipmentReadings.kilometers_reading}) no mayor a la actual (${checklist.currentKilometers})`
+        )
       }
     }
 
     const result = { isValid: errors.length === 0, errors, warnings }
-    
-    if (process.env.NODE_ENV === 'development') {
-      console.log('🔍 validateEquipmentReadings result:', result)
+
+    if (process.env.NODE_ENV === "development") {
+      console.log("🔍 validateEquipmentReadings result:", result)
     }
 
     return result
   }
-  
+
+  const scrollToFieldById = useCallback((elementId: string) => {
+    const el = typeof document !== "undefined" ? document.getElementById(elementId) : null
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "center" })
+      el.classList.add("ring-2", "ring-destructive", "ring-offset-2", "rounded-lg")
+      window.setTimeout(() => {
+        el.classList.remove("ring-2", "ring-destructive", "ring-offset-2", "rounded-lg")
+      }, 2200)
+    }
+  }, [])
+
+  const firstIncompleteSectionDomId = useMemo(() => {
+    if (!checklist?.sections) return null
+    for (const section of checklist.sections) {
+      const items = section.checklist_items || section.items || []
+      for (const item of items) {
+        if (!itemStatus[item.id]) {
+          return `section-${section.id}`
+        }
+      }
+    }
+    return null
+  }, [checklist, itemStatus])
+
+  const liveBlockingIssues = useMemo(() => {
+    if (!checklist) {
+      return [] as Array<{ id: string; label: string; targetId: string }>
+    }
+    const issues: Array<{ id: string; label: string; targetId: string }> = []
+    const totalItems = getTotalItems()
+    const completedItems = getCompletedItems()
+    if (completedItems < totalItems) {
+      issues.push({
+        id: "items",
+        label: `${totalItems - completedItems} sin evaluar`,
+        targetId: firstIncompleteSectionDomId || "checklist-scroll-items-start",
+      })
+    }
+    if (!technician?.trim()) {
+      issues.push({ id: "tech", label: "Falta técnico", targetId: "checklist-field-technician" })
+    }
+    if (!signature) {
+      issues.push({ id: "sig", label: "Falta firma", targetId: "checklist-field-signature" })
+    }
+    const ev = validateEvidenceRequirements()
+    if (!ev.isValid) {
+      const evSection = checklist.sections?.find((s: any) => s.section_type === "evidence")
+      issues.push({
+        id: "evidence",
+        label: "Faltan fotos",
+        targetId: evSection ? `section-${evSection.id}` : "checklist-scroll-items-start",
+      })
+    }
+    const readings = validateEquipmentReadings()
+    if (!readings.isValid) {
+      issues.push({
+        id: "readings",
+        label: "Lecturas inválidas",
+        targetId: "checklist-field-equipment-readings",
+      })
+    }
+    return issues
+  }, [
+    checklist,
+    itemStatus,
+    technician,
+    signature,
+    evidenceData,
+    equipmentReadings,
+    firstIncompleteSectionDomId,
+  ])
+
   const handleSubmit = async () => {
     // =====================================================
     // ENHANCED VALIDATION WITH DETAILED NOTIFICATIONS
@@ -1168,22 +1296,22 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
     }
     
     if (validationErrors.length > 0) {
-      if (process.env.NODE_ENV === 'development') {
-        console.log('❌ Validation failed, showing errors and returning early')
+      if (process.env.NODE_ENV === "development") {
+        console.log("❌ Validation failed, showing errors and returning early")
       }
-      // Show primary error with all missing items
       toast.error("⚠️ No se puede enviar el checklist", {
         description: `Faltan: ${validationErrors.join(", ")}`,
-        duration: 8000
+        duration: 8000,
       })
-      
-      // Show warnings as separate toasts
       validationWarnings.forEach((warning, index) => {
         setTimeout(() => {
           toast.warning(warning, { duration: 6000 })
-        }, (index + 1) * 500) // Stagger warnings
+        }, (index + 1) * 500)
       })
-      
+      const first = liveBlockingIssues[0]
+      if (first?.targetId) {
+        scrollToFieldById(first.targetId)
+      }
       return
     }
 
@@ -1242,50 +1370,132 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
       console.log('✅ Submission successful, completedId:', completedId)
     }
     toast.success("✅ Checklist guardado exitosamente", {
-      duration: 3000
+      duration: 3000,
     })
 
+    if (completedId !== "success" && completedId !== "offline-success") {
+      setCompletedChecklistId(completedId)
+    }
+
+    const resolvedWoChecklistId =
+      completedId !== "success" && completedId !== "offline-success"
+        ? completedId
+        : completedChecklistId || completedId
+
     if (maintenanceItemsWithIssues.length > 0) {
-      if (process.env.NODE_ENV === 'development') {
-        console.log('⚠️ Found maintenance issues, handling corrective actions...', {
+      if (process.env.NODE_ENV === "development") {
+        console.log("⚠️ Found maintenance issues, handling corrective actions...", {
           issueCount: maintenanceItemsWithIssues.length,
-          completedId
+          completedId,
+          operatorSimpleFlow,
         })
       }
-      
-      // Store the completed checklist ID for corrective work orders
-      if (completedId !== "success" && completedId !== "offline-success") {
-        setCompletedChecklistId(completedId)
+
+      const itemsPayload = maintenanceItemsWithIssues
+        .map(([itemId]) => {
+          const sectionAndItem = findSectionAndItemById(itemId)
+          return {
+            id: itemId,
+            description: sectionAndItem?.item?.description || "",
+            notes: itemNotes[itemId] || "",
+            photo: itemPhotos[itemId] || null,
+            status: itemStatus[itemId] as "flag" | "fail",
+            sectionTitle: sectionAndItem?.section?.title,
+            sectionType: sectionAndItem?.section?.section_type,
+          }
+        })
+        .filter((item) => item.sectionType !== "cleanliness_bonus" && item.sectionType !== "security_talk")
+
+      if (operatorSimpleFlow) {
+        const uuidOk =
+          typeof resolvedWoChecklistId === "string" &&
+          /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(resolvedWoChecklistId)
+
+        if (isOnline && uuidOk) {
+          setOperatorAutoWoSubmitting(true)
+          try {
+            const description = buildCorrectiveDescriptionFromIssues(
+              checklist.name,
+              itemsPayload.map((i) => ({
+                description: i.description,
+                status: i.status,
+                notes: i.notes,
+                sectionTitle: i.sectionTitle,
+              }))
+            )
+            const itemsWithPriorities = itemsPayload.map((item) => ({
+              ...item,
+              priority: item.status === "fail" ? "Alta" : "Media",
+            }))
+            const res = await fetch("/api/checklists/generate-corrective-work-order-enhanced", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                checklist_id: resolvedWoChecklistId,
+                asset_id: checklist.assetId,
+                asset_name: checklist.asset,
+                items_with_issues: itemsWithPriorities,
+                priority: "Media",
+                description,
+                enable_smart_deduplication: true,
+                consolidation_window_days: 30,
+                consolidation_choices: {},
+              }),
+            })
+            const data = await res.json().catch(() => ({}))
+            if (!res.ok) {
+              throw new Error(data.error || data.message || "Error al crear órdenes")
+            }
+            const subtitle =
+              data.message ||
+              (data.work_orders_created > 0
+                ? `Se crearon ${data.work_orders_created} orden(es) de trabajo.`
+                : "Problemas registrados.")
+            setCompletionOverlayTitle("Checklist completado")
+            setCompletionOverlaySubtitle(subtitle)
+            setCompletionRedirectLabel(operatorSimpleFlow ? "Panel de operador" : "Activos")
+            setCompleted(true)
+            setCompletionOverlayOpen(true)
+          } catch (e) {
+            console.error(e)
+            toast.error("No se pudieron crear las órdenes automáticamente", {
+              description: e instanceof Error ? e.message : "Intente de nuevo o contacte a su coordinador",
+            })
+          } finally {
+            setOperatorAutoWoSubmitting(false)
+          }
+        } else {
+          setCompletionOverlayTitle("Checklist guardado")
+          setCompletionOverlaySubtitle(
+            "Sin conexión o datos pendientes: las órdenes se crearán al sincronizar o desde coordinación."
+          )
+          setCompletionRedirectLabel(operatorSimpleFlow ? "Panel de operador" : "Activos")
+          setCompleted(true)
+          setCompletionOverlayOpen(true)
+        }
+        return
       }
-      
-      // Directly open the corrective work order dialog - no more "save for later" option
+
       setCompleted(true)
-      
-      // Show a brief success message
       toast.success("✅ Checklist completado exitosamente", {
         description: "Configurando órdenes de trabajo correctivas...",
-        duration: 3000
+        duration: 3000,
       })
-      
-      // Small delay to show the completion state, then open the dialog
       setTimeout(() => {
         handleCorrectiveDialogOpen()
       }, 1000)
-      
       return
     }
 
-    // If no issues, complete normally
-    if (process.env.NODE_ENV === 'development') {
-      console.log('✅ No issues found, completing normally')
+    if (process.env.NODE_ENV === "development") {
+      console.log("✅ No issues found, completing normally")
     }
     setCompleted(true)
-    
-    // Always redirect after a brief delay to show completion state
-    setTimeout(() => {
-      handleNavigateToAssetsPage()
-    }, 2500) // Slightly longer delay to read the completion message
-    
+    setCompletionOverlayTitle("Checklist completado")
+    setCompletionOverlaySubtitle("Todo guardado correctamente.")
+    setCompletionRedirectLabel(operatorSimpleFlow ? "Panel de operador" : "Activos")
+    setCompletionOverlayOpen(true)
+
     } catch (error) {
       console.error('❌ Error in handleSubmit:', error)
       toast.error("Error inesperado al procesar el checklist", {
@@ -1301,17 +1511,27 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
 
   const submitChecklist = async (): Promise<string | null> => {
     setSubmitting(true)
-    
+
+    const vmSubmit = checklist?.visibleMeters ?? computeVisibleMeters(checklist?.maintenanceUnitRaw ?? null)
+    let hoursOut: number | null = null
+    let kmOut: number | null = null
+    if (vmSubmit === "hours" || vmSubmit === "both") {
+      hoursOut = equipmentReadings.hours_reading ?? null
+    }
+    if (vmSubmit === "kilometers" || vmSubmit === "both") {
+      kmOut = equipmentReadings.kilometers_reading ?? null
+    }
+
     try {
       const completedItems = prepareCompletedItems()
-      
+
       const submissionData = {
         completed_items: completedItems,
         technician: technician || 'Técnico',
         notes,
         signature,
-        hours_reading: equipmentReadings.hours_reading || null,
-        kilometers_reading: equipmentReadings.kilometers_reading || null,
+        hours_reading: hoursOut,
+        kilometers_reading: kmOut,
         evidence_data: evidenceData,
         security_data: Object.keys(securityData).length > 0 ? securityData : undefined
       }
@@ -1517,8 +1737,8 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
                 notes: itemNotes[itemId] || null,
                 photo_url: itemPhotos[itemId] || null
               })),
-              hours_reading: equipmentReadings.hours_reading || null,
-              kilometers_reading: equipmentReadings.kilometers_reading || null,
+              hours_reading: hoursOut,
+              kilometers_reading: kmOut,
               evidence_data: evidenceData,
               security_data: Object.keys(securityData).length > 0 ? securityData : undefined
             }
@@ -1552,8 +1772,8 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
                 notes: itemNotes[itemId] || null,
                 photo_url: itemPhotos[itemId] || null
               })),
-              hours_reading: equipmentReadings.hours_reading || null,
-              kilometers_reading: equipmentReadings.kilometers_reading || null,
+              hours_reading: hoursOut,
+              kilometers_reading: kmOut,
               evidence_data: evidenceData,
               security_data: Object.keys(securityData).length > 0 ? securityData : undefined,
               timestamp: Date.now(),
@@ -1673,27 +1893,28 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
     }
   }
 
-  // Enhanced function to handle navigation with offline support
-  const handleNavigateToAssetsPage = () => {
-    // Always navigate to assets page - it handles offline scenarios properly
+  /** Post-checklist: operators go home; others stay in checklist asset flows */
+  const handlePostCompletionNavigation = useCallback(() => {
+    const path = operatorSimpleFlow ? "/dashboard/operator" : "/checklists/assets"
     try {
-      const connectivityState = navigator.onLine ? 'online' : 'offline'
-      console.log(`🚀 Navigating to assets page (${connectivityState})`)
-      
-      // The assets page has offline functionality built-in with cached data
-      router.push('/checklists/assets')
+      const connectivityState = navigator.onLine ? "online" : "offline"
+      console.log(`🚀 Navigating after checklist (${connectivityState}) → ${path}`)
+      router.push(path)
     } catch (error) {
-      console.error('Navigation error:', error)
-      
-      // Fallback: use window.location if router fails
+      console.error("Navigation error:", error)
       try {
-        window.location.href = '/checklists/assets'
+        window.location.href = path
       } catch (locationError) {
-        console.error('Window location fallback failed:', locationError)
+        console.error("Window location fallback failed:", locationError)
         toast.error("Error al navegar, pero el checklist fue guardado exitosamente")
       }
     }
-  }
+  }, [operatorSimpleFlow, router])
+
+  const handleCompletionOverlayContinue = useCallback(() => {
+    setCompletionOverlayOpen(false)
+    handlePostCompletionNavigation()
+  }, [handlePostCompletionNavigation])
   
   const findSectionAndItemById = (itemId: string) => {
     if (!checklist) return null
@@ -1855,7 +2076,7 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
   const overallProgress = getOverallProgress()
 
   return (
-    <div className="space-y-6 relative">
+    <div className={cn("space-y-6 relative", !completed && "pb-40 md:pb-6")}>
       {/* Simplified Navigation Bar */}
       <div className="sticky top-0 z-50 bg-white border-b shadow-sm" data-navigation-header>
         <div className="flex items-center justify-between p-4">
@@ -1994,7 +2215,7 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
           </div>
 
           {/* Enhanced Collapsible Sections */}
-          <div className="space-y-4">
+          <div id="checklist-scroll-items-start" className="space-y-4 scroll-mt-28">
             {checklist.sections && checklist.sections.map((section: any, sectionIndex: number) => {
               const sectionStatus = getSectionStatus(section)
               const isCollapsed = sectionCollapsed[section.id] || false
@@ -2353,7 +2574,14 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
                     onOpenChange={() => toggleSectionCollapse(section.id)}
                   >
                     <CollapsibleTrigger asChild>
-                      <Card className="cursor-pointer hover:shadow-md transition-shadow">
+                      <Card
+                        className={cn(
+                          "cursor-pointer hover:shadow-md transition-shadow",
+                          !sectionStatus.isComplete &&
+                            sectionStatus.total > 0 &&
+                            "border-destructive/70 ring-2 ring-destructive/25"
+                        )}
+                      >
                         <CardHeader className="pb-3">
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-3">
@@ -2505,6 +2733,9 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
         assetId={checklist.assetId}
         assetName={checklist.asset}
         maintenanceUnit={checklist.maintenanceUnit}
+        visibleMeters={
+          checklist.visibleMeters ?? computeVisibleMeters(checklist.maintenanceUnitRaw ?? null)
+        }
         currentHours={checklist.currentHours}
         currentKilometers={checklist.currentKilometers}
         onReadingsChange={handleEquipmentReadingsChange}
@@ -2524,7 +2755,7 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
           />
         </div>
 
-        <div className="space-y-2">
+        <div id="checklist-field-technician" className="space-y-2 scroll-mt-28">
           <Label htmlFor="technician">Técnico Responsable</Label>
           <Input 
             id="technician" 
@@ -2535,73 +2766,95 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
           />
         </div>
 
-        <div className="space-y-2">
+        <div id="checklist-field-signature" className="space-y-2 scroll-mt-28">
           <Label htmlFor="signature">Firma</Label>
           <SignatureCanvas onSave={handleSignatureChange} />
           {signature && <p className="text-sm text-green-600 mt-1">Firma guardada</p>}
         </div>
 
-        <div className="flex justify-between">
-          <Button variant="outline" onClick={() => router.back()}>
+        <div
+          className={cn(
+            "flex flex-col gap-3 md:flex-row md:justify-between md:items-end",
+            "fixed bottom-0 left-0 right-0 z-40 border-t bg-background/95 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-[0_-4px_16px_rgba(0,0,0,0.08)] backdrop-blur md:static md:border-0 md:bg-transparent md:p-0 md:shadow-none"
+          )}
+        >
+          <Button variant="outline" onClick={() => router.back()} className="w-full md:w-auto shrink-0">
             Cancelar
           </Button>
-          <div className="flex flex-col items-end gap-2">
-            <div className="text-sm text-muted-foreground">
-              Progreso: {overallProgress.completedItems}/{overallProgress.totalItems} items completados
-            </div>
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <div className="flex w-full flex-col gap-2 md:max-w-md md:items-end">
+            {!liveBlockingIssues.length ? (
+              <p className="text-sm text-muted-foreground">
+                Progreso: {overallProgress.completedItems}/{overallProgress.totalItems} ítems
+              </p>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {liveBlockingIssues.map((issue) => (
+                  <Button
+                    key={issue.id}
+                    type="button"
+                    variant="destructive"
+                    size="sm"
+                    className="h-9 rounded-full text-xs"
+                    onClick={() => scrollToFieldById(issue.targetId)}
+                  >
+                    {issue.label}
+                  </Button>
+                ))}
+              </div>
+            )}
+            <div className="flex items-center gap-2 text-xs text-muted-foreground md:justify-end">
               {isOnline ? (
-                <><Wifi className="h-3 w-3 text-green-500" /> Se enviará al servidor</>
+                <>
+                  <Wifi className="h-3 w-3 text-green-500" /> En línea
+                </>
               ) : (
-                <><WifiOff className="h-3 w-3 text-amber-500" /> Se guardará localmente</>
+                <>
+                  <WifiOff className="h-3 w-3 text-amber-500" /> Sin conexión
+                </>
               )}
             </div>
-            
-            {/* Mobile-friendly submission button with better validation feedback */}
-            <div className="flex flex-col gap-2 w-full sm:w-auto">
-              {/* Validation feedback for mobile */}
-              {!isChecklistComplete() && (
-                <div className="text-xs text-amber-600 text-right">
-                  {!technician.trim() && "• Falta nombre del técnico"}
-                  {!signature && "• Falta firma"}
-                  {getCompletedItems() === 0 && "• Ningún item evaluado"}
-                </div>
+            <Button
+              onClick={handleSubmit}
+              disabled={submitting || completed || operatorAutoWoSubmitting}
+              className={cn("w-full min-h-12 text-base", completed && "bg-green-600 hover:bg-green-600")}
+              size="lg"
+            >
+              {completed ? (
+                <>
+                  <Check className="mr-2 h-4 w-4" />
+                  Listo
+                </>
+              ) : submitting || operatorAutoWoSubmitting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  {operatorAutoWoSubmitting
+                    ? "Creando órdenes…"
+                    : isOnline
+                      ? "Enviando…"
+                      : "Guardando…"}
+                </>
+              ) : (
+                <>
+                  <Save className="mr-2 h-4 w-4" />
+                  Completar ({overallProgress.completedItems}/{overallProgress.totalItems})
+                </>
               )}
-              
-              <Button 
-                onClick={handleSubmit} 
-                disabled={submitting || completed}
-                className={`w-full sm:w-auto ${completed ? "bg-green-500 hover:bg-green-600" : ""}`}
-                size="lg"
-              >
-                {completed ? (
-                  <>
-                    <Check className="mr-2 h-4 w-4" />
-                    ¡Completado! Redirigiendo...
-                  </>
-                ) : submitting ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    {isOnline ? "Enviando..." : "Guardando offline..."}
-                  </>
-                ) : !isChecklistComplete() ? (
-                  <>
-                    <Save className="mr-2 h-4 w-4" />
-                    Enviar Checklist
-                  </>
-                ) : (
-                  <>
-                    <Save className="mr-2 h-4 w-4" />
-                    Completar Checklist
-                  </>
-                )}
-              </Button>
-            </div>
+            </Button>
           </div>
         </div>
       </div>
 
 
+
+      <ChecklistCompletionOverlay
+        open={completionOverlayOpen}
+        title={completionOverlayTitle}
+        subtitle={completionOverlaySubtitle}
+        redirectPathLabel={completionRedirectLabel}
+        countdownSeconds={5}
+        onContinue={handleCompletionOverlayContinue}
+        primaryActionLabel="Continuar"
+      />
 
       {/* Corrective Work Order Dialog */}
       <CorrectiveWorkOrderDialog
@@ -2610,7 +2863,7 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
           setCorrectiveDialogOpen(open)
           // When dialog is closed without creating work orders, navigate to assets page
           if (!open) {
-            handleNavigateToAssetsPage()
+            handlePostCompletionNavigation()
           }
         }}
         checklist={{
@@ -2635,7 +2888,7 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
           // Exclude cleanliness verification items and security talk sections from corrective work orders
           .filter(item => item.sectionType !== 'cleanliness_bonus' && item.sectionType !== 'security_talk')}
         onWorkOrderCreated={handleWorkOrderCreated}
-        onNavigateToAssetsPage={handleNavigateToAssetsPage}
+        onNavigateToAssetsPage={handlePostCompletionNavigation}
       />
 
       {/* Estado offline integrado */}

@@ -8,6 +8,7 @@ import { SessionMonitor } from "@/components/auth/session-monitor"
 import { OnboardingProvider } from "@/components/onboarding/onboarding-provider"
 import { ProductTour } from "@/components/onboarding/ProductTour"
 import { Toaster } from "@/components/ui/toaster"
+import { Toaster as SonnerToaster } from "@/components/ui/sonner"
 import { CacheConsoleLoader } from "@/components/cache-console-loader"
 import { StorageManager } from "@/components/storage-manager"
 import { Analytics } from "@vercel/analytics/next"
@@ -35,6 +36,7 @@ export default function RootLayout({
           </OnboardingProvider>
         </RoleProvider>
         <Toaster />
+        <SonnerToaster />
         <CacheConsoleLoader />
         <StorageManager />
         <Analytics />

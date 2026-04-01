@@ -8,12 +8,14 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Gauge, MapPin, Clock, TrendingUp, AlertTriangle, Info } from "lucide-react"
-import { toast } from "sonner"
+import type { VisibleMeters } from "@/lib/checklist/checklist-execution-helpers"
 
 interface EquipmentReadingsFormProps {
   assetId: string
   assetName: string
-  maintenanceUnit: 'hours' | 'kilometers' | null
+  /** Legacy display hint — use visibleMeters for which inputs to show */
+  maintenanceUnit: "hours" | "kilometers" | null
+  visibleMeters: VisibleMeters
   currentHours: number | null
   currentKilometers: number | null
   onReadingsChange: (readings: {
@@ -48,43 +50,47 @@ export function EquipmentReadingsForm({
   assetId,
   assetName,
   maintenanceUnit,
+  visibleMeters,
   currentHours,
   currentKilometers,
   onReadingsChange,
-  disabled = false
+  disabled = false,
 }: EquipmentReadingsFormProps) {
-  const [hoursReading, setHoursReading] = useState<string>('')
-  const [kilometersReading, setKilometersReading] = useState<string>('')
+  const [hoursReading, setHoursReading] = useState<string>("")
+  const [kilometersReading, setKilometersReading] = useState<string>("")
   const [validation, setValidation] = useState<ValidationResult | null>(null)
   const [isValidating, setIsValidating] = useState(false)
-  const [showExpectedReadings, setShowExpectedReadings] = useState(false)
 
-  // Formatear números para mostrar
+  const showHours = visibleMeters === "hours" || visibleMeters === "both"
+  const showKm = visibleMeters === "kilometers" || visibleMeters === "both"
+
   const formatNumber = (num: number | null) => {
-    if (num === null || num === undefined) return 'N/A'
+    if (num === null || num === undefined) return "N/A"
     return num.toLocaleString()
   }
 
-  // Validar lecturas en tiempo real
   const validateReadings = async () => {
-    if (!hoursReading && !kilometersReading) {
+    const hPayload = showHours && hoursReading ? parseInt(hoursReading, 10) : null
+    const kPayload = showKm && kilometersReading ? parseInt(kilometersReading, 10) : null
+
+    if (!hPayload && !kPayload) {
       setValidation(null)
       return
     }
 
     setIsValidating(true)
-    
+
     try {
-      const response = await fetch('/api/checklists/validate-readings', {
-        method: 'POST',
+      const response = await fetch("/api/checklists/validate-readings", {
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
         body: JSON.stringify({
           asset_id: assetId,
-          hours_reading: hoursReading ? parseInt(hoursReading) : null,
-          kilometers_reading: kilometersReading ? parseInt(kilometersReading) : null
-        })
+          hours_reading: hPayload,
+          kilometers_reading: kPayload,
+        }),
       })
 
       if (response.ok) {
@@ -92,155 +98,166 @@ export function EquipmentReadingsForm({
         setValidation(result)
       }
     } catch (error) {
-      console.error('Error validating readings:', error)
+      console.error("Error validating readings:", error)
     } finally {
       setIsValidating(false)
     }
   }
 
-  // Efecto para validar cuando cambian las lecturas
   useEffect(() => {
     const timeoutId = setTimeout(() => {
       validateReadings()
-    }, 500) // Debounce de 500ms
+    }, 500)
 
     return () => clearTimeout(timeoutId)
-  }, [hoursReading, kilometersReading, assetId])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- validateReadings closes over latest inputs
+  }, [hoursReading, kilometersReading, assetId, showHours, showKm])
 
-  // Efecto para notificar cambios al componente padre
   useEffect(() => {
     onReadingsChange({
-      hours_reading: hoursReading ? parseInt(hoursReading) : null,
-      kilometers_reading: kilometersReading ? parseInt(kilometersReading) : null
+      hours_reading: showHours && hoursReading ? parseInt(hoursReading, 10) : null,
+      kilometers_reading: showKm && kilometersReading ? parseInt(kilometersReading, 10) : null,
     })
-  }, [hoursReading, kilometersReading, onReadingsChange])
+  }, [hoursReading, kilometersReading, onReadingsChange, showHours, showKm])
 
-  // Establecer valores iniciales sugeridos
   const setSuggestedValues = () => {
-    if (validation?.expected_hours?.expected_reading) {
+    if (validation?.expected_hours?.expected_reading && showHours) {
       setHoursReading(validation.expected_hours.expected_reading.toString())
     }
-    if (validation?.expected_kilometers?.expected_reading) {
+    if (validation?.expected_kilometers?.expected_reading && showKm) {
       setKilometersReading(validation.expected_kilometers.expected_reading.toString())
     }
   }
 
-  const getPrimaryUnit = () => {
-    return maintenanceUnit || 'hours'
+  const primaryLabel = () => {
+    if (visibleMeters === "both") return "Horas y kilómetros"
+    if (visibleMeters === "kilometers") return "Kilómetros"
+    return "Horas"
   }
 
-  const isHoursRequired = () => {
-    return getPrimaryUnit() === 'hours'
-  }
+  const isHoursRequired = () => showHours && (visibleMeters === "hours" || visibleMeters === "both")
+  const isKilometersRequired = () => showKm && (visibleMeters === "kilometers" || visibleMeters === "both")
 
-  const isKilometersRequired = () => {
-    return getPrimaryUnit() === 'kilometers'
+  if (visibleMeters === "none") {
+    return null
   }
 
   return (
-    <Card className="mb-6">
+    <Card id="checklist-field-equipment-readings" className="mb-6 scroll-mt-24">
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Gauge className="h-5 w-5 text-blue-600" />
           Lecturas del Equipo
         </CardTitle>
         <CardDescription>
-          Ingrese las lecturas actuales del horómetro y/o odómetro para {assetName}
+          {visibleMeters === "both"
+            ? `Ingrese horómetro y odómetro para ${assetName}`
+            : `Ingrese la lectura actual para ${assetName}`}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
-        {/* Información actual del equipo */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 bg-gray-50 rounded-lg">
-          <div className="text-center">
-            <div className="text-sm font-medium text-gray-600">Horas Actuales</div>
-            <div className="text-lg font-semibold text-gray-900">
-              {formatNumber(currentHours)} h
+        <div
+          className={`grid grid-cols-1 gap-4 p-4 bg-gray-50 rounded-lg ${
+            showHours && showKm ? "md:grid-cols-3" : "md:grid-cols-2"
+          }`}
+        >
+          {showHours && (
+            <div className="text-center">
+              <div className="text-sm font-medium text-gray-600">Horas Actuales</div>
+              <div className="text-lg font-semibold text-gray-900">{formatNumber(currentHours)} h</div>
             </div>
-          </div>
-          <div className="text-center">
-            <div className="text-sm font-medium text-gray-600">Kilómetros Actuales</div>
-            <div className="text-lg font-semibold text-gray-900">
-              {formatNumber(currentKilometers)} km
+          )}
+          {showKm && (
+            <div className="text-center">
+              <div className="text-sm font-medium text-gray-600">Kilómetros Actuales</div>
+              <div className="text-lg font-semibold text-gray-900">{formatNumber(currentKilometers)} km</div>
             </div>
-          </div>
+          )}
           <div className="text-center">
-            <div className="text-sm font-medium text-gray-600">Unidad Principal</div>
+            <div className="text-sm font-medium text-gray-600">Unidad principal</div>
             <Badge variant="outline" className="mt-1">
-              {getPrimaryUnit() === 'hours' ? 'Horas' : 'Kilómetros'}
+              {primaryLabel()}
             </Badge>
           </div>
         </div>
 
-        {/* Campos de entrada */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* Lectura de Horas */}
-          <div className="space-y-2">
-            <Label htmlFor="hours_reading" className="flex items-center gap-2">
-              <Clock className="h-4 w-4" />
-              Lectura del Horómetro
-              {isHoursRequired() && <span className="text-red-500">*</span>}
-            </Label>
-            <Input
-              id="hours_reading"
-              type="number"
-              min="0"
-              placeholder={`Actual: ${formatNumber(currentHours)}`}
-              value={hoursReading}
-              onChange={(e) => setHoursReading(e.target.value)}
-              disabled={disabled}
-              className={`${
-                validation?.errors?.some(error => error.includes('horas')) 
-                  ? 'border-red-500' 
-                  : validation && hoursReading ? 'border-green-500' : ''
-              }`}
-            />
-            {validation?.expected_hours && (
-              <div className="text-xs text-gray-600">
-                Estimado: {formatNumber(validation.expected_hours.expected_reading)} h
-                {validation.expected_hours.average_daily_usage > 0 && (
-                  <span className="ml-2">
-                    (Promedio: {validation.expected_hours.average_daily_usage.toFixed(1)} h/día)
-                  </span>
-                )}
-              </div>
-            )}
-          </div>
+          {showHours && (
+            <div className="space-y-2">
+              <Label htmlFor="hours_reading" className="flex items-center gap-2">
+                <Clock className="h-4 w-4" />
+                Lectura del Horómetro
+                {isHoursRequired() && <span className="text-red-500">*</span>}
+              </Label>
+              <Input
+                id="hours_reading"
+                type="number"
+                min="0"
+                placeholder={`Actual: ${formatNumber(currentHours)}`}
+                value={hoursReading}
+                onChange={(e) => setHoursReading(e.target.value)}
+                disabled={disabled}
+                className={`${
+                  validation?.errors?.some((error) => error.toLowerCase().includes("hora"))
+                    ? "border-red-500"
+                    : validation && hoursReading
+                      ? "border-green-500"
+                      : ""
+                }`}
+              />
+              {validation?.expected_hours && (
+                <div className="text-xs text-gray-600">
+                  Estimado: {formatNumber(validation.expected_hours.expected_reading)} h
+                  {validation.expected_hours.average_daily_usage > 0 && (
+                    <span className="ml-2">
+                      (Promedio: {validation.expected_hours.average_daily_usage.toFixed(1)} h/día)
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
-          {/* Lectura de Kilómetros */}
-          <div className="space-y-2">
-            <Label htmlFor="kilometers_reading" className="flex items-center gap-2">
-              <MapPin className="h-4 w-4" />
-              Lectura del Odómetro
-              {isKilometersRequired() && <span className="text-red-500">*</span>}
-            </Label>
-            <Input
-              id="kilometers_reading"
-              type="number"
-              min="0"
-              placeholder={`Actual: ${formatNumber(currentKilometers)}`}
-              value={kilometersReading}
-              onChange={(e) => setKilometersReading(e.target.value)}
-              disabled={disabled}
-              className={`${
-                validation?.errors?.some(error => error.includes('kilómetros')) 
-                  ? 'border-red-500' 
-                  : validation && kilometersReading ? 'border-green-500' : ''
-              }`}
-            />
-            {validation?.expected_kilometers && (
-              <div className="text-xs text-gray-600">
-                Estimado: {formatNumber(validation.expected_kilometers.expected_reading)} km
-                {validation.expected_kilometers.average_daily_usage > 0 && (
-                  <span className="ml-2">
-                    (Promedio: {validation.expected_kilometers.average_daily_usage.toFixed(1)} km/día)
-                  </span>
-                )}
-              </div>
-            )}
-          </div>
+          {showKm && (
+            <div className="space-y-2">
+              <Label htmlFor="kilometers_reading" className="flex items-center gap-2">
+                <MapPin className="h-4 w-4" />
+                Lectura del Odómetro
+                {isKilometersRequired() && <span className="text-red-500">*</span>}
+              </Label>
+              <Input
+                id="kilometers_reading"
+                type="number"
+                min="0"
+                placeholder={`Actual: ${formatNumber(currentKilometers)}`}
+                value={kilometersReading}
+                onChange={(e) => setKilometersReading(e.target.value)}
+                disabled={disabled}
+                className={`${
+                  validation?.errors?.some(
+                    (error) =>
+                      error.toLowerCase().includes("kilómet") || error.toLowerCase().includes("kilomet")
+                  )
+                    ? "border-red-500"
+                    : validation && kilometersReading
+                      ? "border-green-500"
+                      : ""
+                }`}
+              />
+              {validation?.expected_kilometers && (
+                <div className="text-xs text-gray-600">
+                  Estimado: {formatNumber(validation.expected_kilometers.expected_reading)} km
+                  {validation.expected_kilometers.average_daily_usage > 0 && (
+                    <span className="ml-2">
+                      (Promedio: {validation.expected_kilometers.average_daily_usage.toFixed(1)} km/día)
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
-        {/* Botón para valores sugeridos */}
         {(validation?.expected_hours?.expected_reading || validation?.expected_kilometers?.expected_reading) && (
           <div className="flex justify-center">
             <Button
@@ -257,15 +274,13 @@ export function EquipmentReadingsForm({
           </div>
         )}
 
-        {/* Validación en tiempo real */}
         {isValidating && (
           <div className="flex items-center gap-2 text-sm text-gray-600">
-            <div className="animate-spin h-4 w-4 border-2 border-blue-600 border-t-transparent rounded-full"></div>
+            <div className="animate-spin h-4 w-4 border-2 border-blue-600 border-t-transparent rounded-full" />
             Validando lecturas...
           </div>
         )}
 
-        {/* Errores de validación */}
         {validation?.errors && validation.errors.length > 0 && (
           <Alert className="border-red-200 bg-red-50">
             <AlertTriangle className="h-4 w-4 text-red-600" />
@@ -279,7 +294,6 @@ export function EquipmentReadingsForm({
           </Alert>
         )}
 
-        {/* Advertencias de validación */}
         {validation?.warnings && validation.warnings.length > 0 && (
           <Alert className="border-yellow-200 bg-yellow-50">
             <Info className="h-4 w-4 text-yellow-600" />
@@ -293,42 +307,45 @@ export function EquipmentReadingsForm({
           </Alert>
         )}
 
-        {/* Información adicional */}
         {(hoursReading || kilometersReading) && validation?.valid && (
           <div className="p-4 bg-green-50 rounded-lg border border-green-200">
             <div className="text-sm text-green-800 space-y-1">
               <div className="font-medium">✓ Lecturas válidas</div>
-              {hoursReading && (
+              {hoursReading && showHours && (
                 <div>
-                  Incremento de horas: +{parseInt(hoursReading) - (currentHours || 0)} h
+                  Incremento de horas: +{parseInt(hoursReading, 10) - (currentHours || 0)} h
                 </div>
               )}
-              {kilometersReading && (
+              {kilometersReading && showKm && (
                 <div>
-                  Incremento de kilómetros: +{parseInt(kilometersReading) - (currentKilometers || 0)} km
+                  Incremento de kilómetros: +{parseInt(kilometersReading, 10) - (currentKilometers || 0)} km
                 </div>
               )}
             </div>
           </div>
         )}
 
-        {/* Recordatorio sobre unidad principal */}
         <div className="text-xs text-gray-600 text-center p-3 bg-blue-50 rounded-lg border border-blue-200">
           <Info className="h-4 w-4 inline mr-1" />
-          {isHoursRequired() && (
+          {maintenanceUnit === "hours" && visibleMeters !== "kilometers" && (
             <span>
-              Este equipo se mantiene por <strong>horas de operación</strong>. 
-              La lectura del horómetro es requerida para calcular el próximo mantenimiento.
+              Este equipo se mantiene por <strong>horas de operación</strong>. La lectura del horómetro es necesaria
+              para el seguimiento del mantenimiento.
             </span>
           )}
-          {isKilometersRequired() && (
+          {maintenanceUnit === "kilometers" && visibleMeters !== "hours" && (
             <span>
-              Este equipo se mantiene por <strong>kilometraje</strong>. 
-              La lectura del odómetro es requerida para calcular el próximo mantenimiento.
+              Este equipo se mantiene por <strong>kilometraje</strong>. La lectura del odómetro es necesaria para el
+              seguimiento del mantenimiento.
+            </span>
+          )}
+          {visibleMeters === "both" && (
+            <span>
+              Ingrese <strong>ambas</strong> lecturas si el equipo tiene horómetro y odómetro.
             </span>
           )}
         </div>
       </CardContent>
     </Card>
   )
-} 
+}
