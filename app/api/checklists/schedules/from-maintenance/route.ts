@@ -273,7 +273,6 @@ export async function POST(request: Request) {
           status: 'pendiente',
           assigned_to: assignedTo,
           maintenance_plan_id: maintenancePlanId,
-          maintenance_interval_id: maintenanceIntervalId
         })
         .select('*')
         .single()

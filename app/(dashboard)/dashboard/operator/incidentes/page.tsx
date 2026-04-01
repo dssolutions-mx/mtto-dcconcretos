@@ -15,6 +15,7 @@ import { useAuthZustand } from "@/hooks/use-auth-zustand"
 import type { OperatorIncidentsApiResponse, OperatorIncidentItem } from "@/types/operator-incidents"
 import { workOrderStatusLabelForOperator, friendlyIncidentTypeLabel } from "@/lib/operator-incident-ui"
 import { cn } from "@/lib/utils"
+import { dashboardHomeForRole } from "@/lib/dashboard-home"
 
 type EstadoTab = "abiertos" | "cerrados"
 
@@ -116,6 +117,8 @@ function IncidentesListContent() {
     return null
   }
 
+  const panelHomeHref = dashboardHomeForRole(profile.role)
+
   const hasScopeData = !loading && data && (data.assets?.length ?? 0) > 0
   const noIncidentsForScope = hasScopeData && flatIncidents.length === 0
   const filterEmpty = hasScopeData && flatIncidents.length > 0 && filtered.length === 0
@@ -129,7 +132,7 @@ function IncidentesListContent() {
         >
           <div className="flex shrink-0 items-center gap-1 sm:gap-2">
             <Button variant="ghost" size="sm" asChild className="gap-1 px-2 sm:px-3">
-              <Link href="/dashboard/operator">
+              <Link href={panelHomeHref}>
                 <ArrowLeft className="h-4 w-4" />
                 <span className="hidden sm:inline">Panel</span>
               </Link>
@@ -187,7 +190,7 @@ function IncidentesListContent() {
               Cuando existan registros para tus activos, aparecerán aquí.
             </p>
             <Button asChild>
-              <Link href="/dashboard/operator">Volver al panel</Link>
+              <Link href={panelHomeHref}>Volver al panel</Link>
             </Button>
           </div>
         )}

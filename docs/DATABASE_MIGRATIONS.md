@@ -19,3 +19,9 @@ npm run gen:db-types
 ```
 
 Requires a [linked](https://supabase.com/docs/guides/cli/getting-started) Supabase project (`supabase link`).
+
+## Recent operational migrations
+
+- **20260401120606** — `reschedule_overdue_checklists()` weekly branch fix (PostgreSQL date arithmetic).
+- **20260401120640** — Stale `pendiente` dedupe, batched reschedule, `pg_cron` job `reschedule-overdue-checklists`. Runbook: [checklist-schedules-overdue-hygiene.md](./checklist-schedules-overdue-hygiene.md).
+- **20260401140000** — Recovery after dedupe used `max(scheduled_day)` (could drop today’s row): diario cleanup + doc on correct survivor order.

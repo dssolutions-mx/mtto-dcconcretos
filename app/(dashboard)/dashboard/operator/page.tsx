@@ -76,7 +76,8 @@ function OperatorScheduleAssetLines({ checklist }: { checklist: ScheduleAssetInf
 export default function OperatorDashboard() {
   const router = useRouter()
   const { profile, isInitialized, isAuthenticated, isLoading: authLoading } = useAuthZustand()
-  const { data, loading, error, isOperator, refetch } = useOperatorChecklists()
+  const { data, loading, error, isOperator: hookIsOperator, refetch } = useOperatorChecklists()
+  const isOperator = hookIsOperator && profile?.role === "OPERADOR"
   const [refreshing, setRefreshing] = useState(false)
   const [incidentsPayload, setIncidentsPayload] = useState<OperatorIncidentsApiResponse | null>(null)
   const [incidentsLoading, setIncidentsLoading] = useState(true)
@@ -89,7 +90,11 @@ export default function OperatorDashboard() {
       router.push("/login")
       return
     }
-    if (!["OPERADOR", "DOSIFICADOR"].includes(profile.role)) {
+    if (profile.role === "DOSIFICADOR") {
+      router.replace("/dashboard/dosificador")
+      return
+    }
+    if (profile.role !== "OPERADOR") {
       router.push("/dashboard")
     }
   }, [isInitialized, authLoading, isAuthenticated, profile, router])
@@ -149,6 +154,28 @@ export default function OperatorDashboard() {
     if (!data?.stats) return 0
     return data.stats.today_checklists + data.stats.overdue_checklists
   }, [data?.stats])
+
+  if (!isInitialized || (authLoading && !profile)) {
+    return (
+      <DashboardShell>
+        <DashboardHeader heading="Cargando…" text="Preparando tu panel." />
+        <div className="flex h-64 items-center justify-center">
+          <Loader2 className="h-8 w-8 animate-spin" />
+        </div>
+      </DashboardShell>
+    )
+  }
+
+  if (isInitialized && profile?.role === "DOSIFICADOR") {
+    return (
+      <DashboardShell>
+        <DashboardHeader heading="Redirigiendo…" text="Abriendo tu panel de dosificador." />
+        <div className="flex h-64 items-center justify-center">
+          <Loader2 className="h-8 w-8 animate-spin" />
+        </div>
+      </DashboardShell>
+    )
+  }
 
   if (!isOperator) {
     return (

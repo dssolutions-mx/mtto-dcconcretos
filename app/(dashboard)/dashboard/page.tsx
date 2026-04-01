@@ -100,8 +100,10 @@ function DashboardContent() {
   // a stale isLoading flag would block redirect after a cached-profile init path)
   useEffect(() => {
     if (!isInitialized || !profile?.role) return
-    if (['OPERADOR', 'DOSIFICADOR'].includes(profile.role)) {
+    if (profile.role === 'OPERADOR') {
       router.push('/dashboard/operator')
+    } else if (profile.role === 'DOSIFICADOR') {
+      router.push('/dashboard/dosificador')
     } else if (profile.role === 'MECANICO') {
       router.push('/dashboard/mechanic')
     } else if (profile.role === 'JEFE_UNIDAD_NEGOCIO') {

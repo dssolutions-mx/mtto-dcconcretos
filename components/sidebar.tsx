@@ -152,7 +152,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
     return pathname === path || pathname.startsWith(path + "/")
   }
 
-  // Check if user is an operator
+  // Check if user is an operator (or dosificador — shared checklist/incident nav)
   const isOperator = profile?.role && ['OPERADOR', 'DOSIFICADOR'].includes(profile.role)
 
   // Return loading state if no profile yet
@@ -177,6 +177,17 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
     )
   }
 
+  const dashboardHomeHref =
+    profile.role === 'DOSIFICADOR'
+      ? '/dashboard/dosificador'
+      : profile.role === 'OPERADOR'
+        ? '/dashboard/operator'
+        : '/dashboard'
+  const isDashboardNavActive =
+    pathname === '/dashboard' ||
+    pathname === '/dashboard/operator' ||
+    pathname === '/dashboard/dosificador'
+
   return (
     <div className={cn("pb-12", className)} role="navigation" aria-label="Navegación principal">
       <div className="space-y-4 py-4" data-tour="sidebar" id="sidebar-nav">
@@ -184,12 +195,12 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
         <div className="px-4 py-2" data-tour="sidebar-first-item">
           <div className="space-y-1">
             <Button
-              variant={pathname === "/dashboard" ? "secondary" : "ghost"}
+              variant={isDashboardNavActive ? "secondary" : "ghost"}
               className={cn("w-full justify-start", navItemClasses)}
               asChild
               onClick={handleLinkClick}
             >
-              <Link href={isOperator ? "/dashboard/operator" : "/dashboard"} aria-current={pathname === "/dashboard" || pathname === "/dashboard/operator" ? "page" : undefined}>
+              <Link href={dashboardHomeHref} aria-current={isDashboardNavActive ? "page" : undefined}>
                 <Home className="mr-2 h-4 w-4" />
                 Dashboard
               </Link>

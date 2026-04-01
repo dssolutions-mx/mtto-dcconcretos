@@ -14,6 +14,7 @@ import { formatDistanceToNow } from "date-fns"
 import { es } from "date-fns/locale"
 import { useAuthZustand } from "@/hooks/use-auth-zustand"
 import { cn } from "@/lib/utils"
+import { dashboardHomeForRole } from "@/lib/dashboard-home"
 import { workOrderStatusLabelForOperator, friendlyIncidentTypeLabel } from "@/lib/operator-incident-ui"
 
 type DetailResponse = {
@@ -66,6 +67,8 @@ function useListBackHref() {
 
 function DetailHeaderNav() {
   const listHref = useListBackHref()
+  const { profile } = useAuthZustand()
+  const panelHref = dashboardHomeForRole(profile?.role)
   return (
     <div className="flex w-full flex-wrap items-center justify-end gap-2">
       <Button variant="outline" size="sm" asChild className="min-h-[44px]">
@@ -75,7 +78,7 @@ function DetailHeaderNav() {
         </Link>
       </Button>
       <Button variant="ghost" size="sm" asChild className="min-h-[44px]">
-        <Link href="/dashboard/operator">Panel de operador</Link>
+        <Link href={panelHref}>Panel</Link>
       </Button>
     </div>
   )
