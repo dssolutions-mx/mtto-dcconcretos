@@ -439,6 +439,11 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
   const saveToLocalStorage = useCallback(() => {
     if (!checklist) return
     
+    const lightEvidenceData: Record<string, any[]> = {}
+    for (const [sectionId, items] of Object.entries(evidenceData)) {
+      lightEvidenceData[sectionId] = (items as any[]).map(({ file, preview, ...rest }) => rest)
+    }
+
     const saveData = {
       checklist,
       itemStatus,
@@ -449,12 +454,22 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
       signature,
       selectedItem,
       equipmentReadings,
-      evidenceData,
-      sectionCollapsed, // Save section collapse state
+      evidenceData: lightEvidenceData,
+      sectionCollapsed,
       timestamp: Date.now()
     }
     
-    localStorage.setItem(`checklist-draft-${id}`, JSON.stringify(saveData))
+    try {
+      localStorage.setItem(`checklist-draft-${id}`, JSON.stringify(saveData))
+    } catch (e: any) {
+      if (e?.name === 'QuotaExceededError' || e?.code === 22) {
+        console.warn('localStorage quota exceeded — saving draft without evidence')
+        saveData.evidenceData = {}
+        try {
+          localStorage.setItem(`checklist-draft-${id}`, JSON.stringify(saveData))
+        } catch { /* give up silently */ }
+      }
+    }
     setHasUnsavedChanges(false)
     hasUnsavedChangesRef.current = false
     setLastSaved(new Date())

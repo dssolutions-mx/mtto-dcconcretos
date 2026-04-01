@@ -156,6 +156,7 @@ export function EvidenceCaptureSection({
             ...evidence,
             status: status as any,
             photo_url: url || evidence.photo_url,
+            preview: (status === 'uploaded' && url) ? undefined : evidence.preview,
             error: error,
             ...(metadata && {
               originalSize: metadata.originalSize,
@@ -190,19 +191,19 @@ export function EvidenceCaptureSection({
     }
   }, [])
 
-  // Enhanced persistence - save evidences to localStorage
   useEffect(() => {
     if (evidences.length > 0) {
       try {
         localStorage.setItem(storageKey, JSON.stringify({
-          evidences: evidences.map(e => ({
-            ...e,
-            file: undefined // Don't store file objects in localStorage
-          })),
+          evidences: evidences.map(({ file, preview, ...rest }) => rest),
           timestamp: Date.now()
         }))
-      } catch (error) {
-        console.error('Failed to save evidences to localStorage:', error)
+      } catch (e: any) {
+        if (e?.name === 'QuotaExceededError' || e?.code === 22) {
+          console.warn('localStorage quota exceeded for evidence section — skipping persist')
+        } else {
+          console.error('Failed to save evidences to localStorage:', e)
+        }
       }
     }
   }, [evidences, storageKey])
@@ -320,7 +321,6 @@ export function EvidenceCaptureSection({
         sequence_order: evidences.filter(e => e.category === selectedCategory).length + 1,
         status: result.status,
         photoId: result.id,
-        file,
         originalSize,
         compressedSize,
         compressionRatio,

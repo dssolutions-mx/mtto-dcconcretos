@@ -32,7 +32,6 @@ class SimplePhotoService {
     }
   }
 
-  // Compress image and generate preview
   private async compressImage(
     file: File, 
     options: PhotoUploadOptions = {}
@@ -51,9 +50,11 @@ class SimplePhotoService {
       const canvas = document.createElement('canvas')
       const ctx = canvas.getContext('2d')
       const img = new Image()
+      const objectUrl = URL.createObjectURL(file)
       
       img.onload = () => {
-        // Calculate new dimensions
+        URL.revokeObjectURL(objectUrl)
+
         let { width, height } = img
         
         if (width > maxWidth || height > maxHeight) {
@@ -64,22 +65,22 @@ class SimplePhotoService {
         
         canvas.width = width
         canvas.height = height
-        
-        // Draw and compress
         ctx?.drawImage(img, 0, 0, width, height)
         
-        // Generate preview (small base64)
         const previewCanvas = document.createElement('canvas')
         const previewCtx = previewCanvas.getContext('2d')
         previewCanvas.width = 200
-        previewCanvas.height = (200 * height) / width
-        
+        previewCanvas.height = Math.round((200 * height) / width)
         previewCtx?.drawImage(img, 0, 0, previewCanvas.width, previewCanvas.height)
-        const preview = previewCanvas.toDataURL('image/jpeg', 0.7)
+        const preview = previewCanvas.toDataURL('image/jpeg', 0.6)
         
-        // Convert main canvas to blob
         canvas.toBlob(
           (blob) => {
+            canvas.width = 0
+            canvas.height = 0
+            previewCanvas.width = 0
+            previewCanvas.height = 0
+
             if (!blob) {
               reject(new Error('Failed to compress image'))
               return
@@ -88,12 +89,7 @@ class SimplePhotoService {
             resolve({
               compressed: blob,
               preview,
-              metadata: {
-                width,
-                height,
-                type: blob.type,
-                quality
-              }
+              metadata: { width, height, type: blob.type, quality }
             })
           },
           'image/jpeg',
@@ -101,8 +97,11 @@ class SimplePhotoService {
         )
       }
       
-      img.onerror = () => reject(new Error('Failed to load image'))
-      img.src = URL.createObjectURL(file)
+      img.onerror = () => {
+        URL.revokeObjectURL(objectUrl)
+        reject(new Error('Failed to load image'))
+      }
+      img.src = objectUrl
     })
   }
 
@@ -119,15 +118,14 @@ class SimplePhotoService {
       // Compress image and generate preview
       const { compressed, preview, metadata } = await this.compressImage(file, options)
       
-      // Store in memory
       const photoData = {
         id: photoId,
         checklistId,
         itemId,
         sectionId: options.category,
         category: options.category,
-        originalFile: file,
-        compressedFile: compressed,
+        originalFile: null as File | null,
+        compressedFile: compressed as Blob | null,
         preview,
         fileName: file.name,
         fileSize: file.size,
@@ -188,12 +186,13 @@ class SimplePhotoService {
         const uploadResult = await this.uploadPhotoToServer(photo)
         
         if (uploadResult.success) {
-          // Mark as uploaded
           photo.uploaded = true
           photo.uploadUrl = uploadResult.url
+          photo.compressedFile = null
+          photo.originalFile = null
+          photo.preview = ''
           this.photos.set(photoId, photo)
           
-          // Emit success event
           this.emitUploadEvent(photoId, 'uploaded', uploadResult.url)
         } else {
           throw new Error(uploadResult.error || 'Upload failed')
