@@ -428,14 +428,18 @@ class OfflineChecklistService {
             equipment_models (
               id, 
               name, 
-              manufacturer
+              manufacturer,
+              maintenance_unit,
+              category
             )
           ),
           assets (
             id,
             name,
             asset_id,
-            location
+            location,
+            current_hours,
+            current_kilometers
           )
         `)
         .eq('id', scheduleId)
@@ -479,14 +483,18 @@ class OfflineChecklistService {
             equipment_models (
               id, 
               name, 
-              manufacturer
+              manufacturer,
+              maintenance_unit,
+              category
             )
           ),
           assets (
             id,
             name,
             asset_id,
-            location
+            location,
+            current_hours,
+            current_kilometers
           )
         `)
         .eq('status', 'pendiente')

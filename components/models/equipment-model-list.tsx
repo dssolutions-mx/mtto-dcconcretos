@@ -8,6 +8,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge"
 import { Eye, FileText, Edit, RefreshCw, Copy, Trash2, Factory, Calendar, Gauge } from "lucide-react"
 import { EquipmentModel } from "@/types"
+import { formatMaintenanceUnitLabel } from "@/lib/utils/maintenance-units"
 import { Skeleton } from "@/components/ui/skeleton"
 
 interface EquipmentModelListProps {
@@ -99,7 +100,7 @@ export function EquipmentModelList({ models, isLoading = false, onRefresh }: Equ
               <p className="text-sm text-muted-foreground">ID: {model.model_id}</p>
             </div>
             <Badge variant="outline" className="capitalize">
-              {model.maintenance_unit === 'hours' ? 'Horas' : 'Kilómetros'}
+              {formatMaintenanceUnitLabel(model.maintenance_unit)}
             </Badge>
           </div>
 
@@ -200,7 +201,7 @@ export function EquipmentModelList({ models, isLoading = false, onRefresh }: Equ
                       <TableCell>{model.category}</TableCell>
                       <TableCell>
                         <Badge variant="outline" className="capitalize">
-                          {model.maintenance_unit === 'hours' ? 'Horas' : 'Kilómetros'}
+                          {formatMaintenanceUnitLabel(model.maintenance_unit)}
                         </Badge>
                       </TableCell>
                       <TableCell>{model.year_introduced || 'N/A'}</TableCell>

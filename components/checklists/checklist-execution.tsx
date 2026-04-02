@@ -135,13 +135,20 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
   const { profile } = useAuthZustand()
   const operatorSimpleFlow = isOperatorChecklistRole(profile?.role ?? null)
 
+  const resolvedVisibleMeters = useMemo(() => {
+    if (!checklist) return "hours" as const
+    return computeVisibleMeters(
+      checklist.maintenanceUnitRaw ?? null,
+      checklist.modelCategory ?? null
+    )
+  }, [checklist])
+
   useEffect(() => {
     if (!checklist) return
-    const vm = checklist.visibleMeters ?? computeVisibleMeters(checklist.maintenanceUnitRaw ?? null)
-    if (vm === "none") {
+    if (resolvedVisibleMeters === "none") {
       setEquipmentReadings({})
     }
-  }, [checklist])
+  }, [checklist, resolvedVisibleMeters])
   
   // Estados para auto-guardar
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
@@ -675,13 +682,16 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
               }))
             
             const offlineMuRaw = cached.template.checklists?.equipment_models?.maintenance_unit ?? null
-            const offlineVisible = computeVisibleMeters(offlineMuRaw)
+            const offlineCat = cached.template.checklists?.equipment_models?.category ?? null
+            const offlineVisible = computeVisibleMeters(offlineMuRaw, offlineCat)
             const offlineMaintenanceUnit: "hours" | "kilometers" | null =
               offlineVisible === "kilometers"
                 ? "kilometers"
                 : offlineVisible === "none"
                   ? null
-                  : "hours"
+                  : offlineVisible === "both"
+                    ? null
+                    : "hours"
             setChecklist({
               id: cached.template.id,
               name: cached.template.checklists?.name || '',
@@ -702,6 +712,7 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
               currentHours: cached.asset?.current_hours || 0,
               currentKilometers: cached.asset?.current_kilometers || 0,
               maintenanceUnitRaw: offlineMuRaw,
+              modelCategory: offlineCat,
               visibleMeters: offlineVisible,
               maintenanceUnit: offlineMaintenanceUnit,
             })
@@ -738,7 +749,8 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
                   id, 
                   name, 
                   manufacturer,
-                  maintenance_unit
+                  maintenance_unit,
+                  category
                 )
               ),
               assets (
@@ -766,13 +778,16 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
             }))
           
           const muRaw = data.checklists?.equipment_models?.maintenance_unit ?? null
-          const visibleMeters = computeVisibleMeters(muRaw)
+          const modelCategory = data.checklists?.equipment_models?.category ?? null
+          const visibleMeters = computeVisibleMeters(muRaw, modelCategory)
           const maintenanceUnitForForm: "hours" | "kilometers" | null =
             visibleMeters === "kilometers"
               ? "kilometers"
               : visibleMeters === "none"
                 ? null
-                : "hours"
+                : visibleMeters === "both"
+                  ? null
+                  : "hours"
 
           const checklistData = {
             id: data.id,
@@ -794,6 +809,7 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
             currentHours: data.assets?.current_hours || 0,
             currentKilometers: data.assets?.current_kilometers || 0,
             maintenanceUnitRaw: muRaw,
+            modelCategory,
             visibleMeters,
             maintenanceUnit: maintenanceUnitForForm,
           }
@@ -1071,7 +1087,7 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
   const validateEquipmentReadings = () => {
     const errors: string[] = []
     const warnings: string[] = []
-    const vm = checklist?.visibleMeters ?? computeVisibleMeters(checklist?.maintenanceUnitRaw ?? null)
+    const vm = resolvedVisibleMeters
 
     if (process.env.NODE_ENV === "development") {
       console.log("🔍 validateEquipmentReadings - readings:", equipmentReadings, "visibleMeters:", vm)
@@ -1183,6 +1199,7 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
     evidenceData,
     equipmentReadings,
     firstIncompleteSectionDomId,
+    resolvedVisibleMeters,
   ])
 
   const handleSubmit = async () => {
@@ -1527,7 +1544,7 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
   const submitChecklist = async (): Promise<string | null> => {
     setSubmitting(true)
 
-    const vmSubmit = checklist?.visibleMeters ?? computeVisibleMeters(checklist?.maintenanceUnitRaw ?? null)
+    const vmSubmit = resolvedVisibleMeters
     let hoursOut: number | null = null
     let kmOut: number | null = null
     if (vmSubmit === "hours" || vmSubmit === "both") {
@@ -2747,10 +2764,7 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
       <EquipmentReadingsForm
         assetId={checklist.assetId}
         assetName={checklist.asset}
-        maintenanceUnit={checklist.maintenanceUnit}
-        visibleMeters={
-          checklist.visibleMeters ?? computeVisibleMeters(checklist.maintenanceUnitRaw ?? null)
-        }
+        visibleMeters={resolvedVisibleMeters}
         currentHours={checklist.currentHours}
         currentKilometers={checklist.currentKilometers}
         onReadingsChange={handleEquipmentReadingsChange}

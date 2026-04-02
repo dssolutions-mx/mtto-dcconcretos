@@ -53,7 +53,8 @@ export const assetStatuses = [
 // Unidades de medida
 export const measurementUnits = [
   { value: "hours", label: "Horas" },
-  { value: "kilometers", label: "Kilómetros" }
+  { value: "kilometers", label: "Kilómetros" },
+  { value: "both", label: "Horas y kilómetros" },
 ]
 
 // Tipos de mantenimiento

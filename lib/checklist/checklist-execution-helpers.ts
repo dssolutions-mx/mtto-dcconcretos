@@ -4,9 +4,35 @@
  */
 export type VisibleMeters = "hours" | "kilometers" | "both" | "none"
 
+/** Normalize category for comparisons (lowercase, strip accents). */
+export function normalizeEquipmentCategory(category: string | null | undefined): string {
+  return (category ?? "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+}
+
+/**
+ * Which meters to show on checklist readings.
+ * @param modelCategory equipment_models.category — used when DB still says "hours" for mezcladoras/camiones,
+ *   and to keep cargadores frontales / generadores on horas solamente.
+ */
 export function computeVisibleMeters(
-  maintenanceUnitRaw: string | null | undefined
+  maintenanceUnitRaw: string | null | undefined,
+  modelCategory?: string | null
 ): VisibleMeters {
+  const cat = normalizeEquipmentCategory(modelCategory)
+
+  // Cargadores frontales: solo horómetro (sin odómetro en checklist)
+  if (cat === "cargador frontal") {
+    return "hours"
+  }
+  // Generadores: solo horas
+  if (cat.includes("generador")) {
+    return "hours"
+  }
+
   const u = (maintenanceUnitRaw ?? "").trim().toLowerCase()
   if (!u || u === "none" || u === "n/a" || u === "na" || u === "sin_medidor") {
     return "none"
@@ -14,9 +40,21 @@ export function computeVisibleMeters(
   if (u === "kilometers" || u === "km" || u === "kilometros" || u === "kilómetros") {
     return "kilometers"
   }
-  if (u === "both" || u === "hours_and_kilometers" || u === "hours_kilometers") {
+  if (
+    u === "both" ||
+    u === "hours_and_kilometers" ||
+    u === "hours_kilometers" ||
+    u === "horas_y_kilometros" ||
+    u === "horas y kilómetros"
+  ) {
     return "both"
   }
+
+  // Mezcladoras y camiones: horómetro + odómetro aunque el modelo legacy diga solo "hours"
+  if (cat === "mezcladora de concreto" || cat === "camion") {
+    return "both"
+  }
+
   return "hours"
 }
 

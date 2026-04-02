@@ -13,8 +13,6 @@ import type { VisibleMeters } from "@/lib/checklist/checklist-execution-helpers"
 interface EquipmentReadingsFormProps {
   assetId: string
   assetName: string
-  /** Legacy display hint — use visibleMeters for which inputs to show */
-  maintenanceUnit: "hours" | "kilometers" | null
   visibleMeters: VisibleMeters
   currentHours: number | null
   currentKilometers: number | null
@@ -49,7 +47,6 @@ interface ValidationResult {
 export function EquipmentReadingsForm({
   assetId,
   assetName,
-  maintenanceUnit,
   visibleMeters,
   currentHours,
   currentKilometers,
@@ -327,13 +324,13 @@ export function EquipmentReadingsForm({
 
         <div className="text-xs text-gray-600 text-center p-3 bg-blue-50 rounded-lg border border-blue-200">
           <Info className="h-4 w-4 inline mr-1" />
-          {maintenanceUnit === "hours" && visibleMeters !== "kilometers" && (
+          {visibleMeters === "hours" && (
             <span>
               Este equipo se mantiene por <strong>horas de operación</strong>. La lectura del horómetro es necesaria
               para el seguimiento del mantenimiento.
             </span>
           )}
-          {maintenanceUnit === "kilometers" && visibleMeters !== "hours" && (
+          {visibleMeters === "kilometers" && (
             <span>
               Este equipo se mantiene por <strong>kilometraje</strong>. La lectura del odómetro es necesaria para el
               seguimiento del mantenimiento.
@@ -341,7 +338,7 @@ export function EquipmentReadingsForm({
           )}
           {visibleMeters === "both" && (
             <span>
-              Ingrese <strong>ambas</strong> lecturas si el equipo tiene horómetro y odómetro.
+              Ingrese <strong>ambas</strong> lecturas: horómetro y odómetro (mezcladoras, camiones, etc.).
             </span>
           )}
         </div>

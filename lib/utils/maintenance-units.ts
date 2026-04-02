@@ -4,6 +4,22 @@
 
 export type MaintenanceUnit = 'hours' | 'kilometers';
 
+/** Short label for model forms and lists (includes `both` / `none`). */
+export function formatMaintenanceUnitLabel(unit: string | null | undefined): string {
+  switch (unit) {
+    case 'hours':
+      return 'Horas'
+    case 'kilometers':
+      return 'Kilómetros'
+    case 'both':
+      return 'Horas y kilómetros'
+    case 'none':
+      return 'Sin medidor'
+    default:
+      return unit?.trim() ? unit : '—'
+  }
+}
+
 /**
  * Get the maintenance unit from an asset or component
  * @param assetOrComponent - Asset or component object with equipment_models or model property

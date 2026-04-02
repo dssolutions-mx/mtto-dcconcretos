@@ -1094,7 +1094,7 @@ export function EquipmentModelEditForm({ modelId }: EquipmentModelEditFormProps)
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>{maintenanceUnit === 'hours' ? 'Horas' : 'Kilómetros'}</TableHead>
+                    <TableHead>{maintenanceUnit === 'kilometers' ? 'Kilómetros' : 'Horas'}</TableHead>
                     <TableHead>Nombre</TableHead>
                     <TableHead>Descripción</TableHead>
                     <TableHead>Tareas</TableHead>
@@ -1199,11 +1199,11 @@ export function EquipmentModelEditForm({ modelId }: EquipmentModelEditFormProps)
               <h4 className="text-sm font-medium">Agregar Nuevo Intervalo de Mantenimiento</h4>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="intervalHours">{maintenanceUnit === 'hours' ? 'Horas' : 'Kilómetros'}</Label>
+                  <Label htmlFor="intervalHours">{maintenanceUnit === 'kilometers' ? 'Kilómetros' : 'Horas'}</Label>
                   <Input
                     id="intervalHours"
                     type="number"
-                    placeholder={maintenanceUnit === 'hours' ? "Ej: 500" : "Ej: 10000"}
+                    placeholder={maintenanceUnit === 'kilometers' ? "Ej: 10000" : "Ej: 500"}
                     value={newInterval.hours || ""}
                     onChange={(e) => setNewInterval({ ...newInterval, hours: Number.parseInt(e.target.value) || 0 })}
                   />
@@ -1556,11 +1556,11 @@ export function EquipmentModelEditForm({ modelId }: EquipmentModelEditFormProps)
           </DialogHeader>
           <div className="grid gap-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="editIntervalHours">{maintenanceUnit === 'hours' ? 'Horas' : 'Kilómetros'}</Label>
+              <Label htmlFor="editIntervalHours">{maintenanceUnit === 'kilometers' ? 'Kilómetros' : 'Horas'}</Label>
               <Input
                 id="editIntervalHours"
                 type="number"
-                placeholder={maintenanceUnit === 'hours' ? "Ej: 500" : "Ej: 10000"}
+                placeholder={maintenanceUnit === 'kilometers' ? "Ej: 10000" : "Ej: 500"}
                 value={currentInterval?.hours || 0}
                 onChange={(e) => setCurrentInterval(prev => 
                   prev ? { ...prev, hours: Number.parseInt(e.target.value) || 0 } : null
