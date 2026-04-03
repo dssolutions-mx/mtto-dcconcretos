@@ -34,6 +34,7 @@ import {
   trafficLightForOpenCount,
   workOrderStatusLabelForOperator,
   friendlyIncidentTypeLabel,
+  operatorIncidentSecondaryLine,
 } from "@/lib/operator-incident-ui"
 
 type ScheduleAssetInfo = {
@@ -535,24 +536,30 @@ export default function OperatorDashboard() {
               <CardDescription>Toca para ver detalle y estado de la orden</CardDescription>
             </CardHeader>
             <CardContent className="divide-y divide-border/60 px-0 pb-0">
-              {recentIncidents.map((inc) => (
-                <Link
-                  key={inc.id}
-                  href={`/dashboard/operator/incidentes/${inc.id}?estado=abiertos`}
-                  className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-muted/40 min-h-[56px]"
-                >
-                  <div className="min-w-0 flex-1">
-                    <p className="text-xs font-semibold text-muted-foreground">
-                      {inc.asset_code} · {friendlyIncidentTypeLabel(inc.type)}
-                    </p>
-                    <p className="truncate text-sm font-medium">{inc.description}</p>
-                  </div>
-                  <Badge variant="outline" className="shrink-0 text-[10px]">
-                    {inc.work_order?.order_id ?? "—"} · {workOrderStatusLabelForOperator(inc.work_order)}
-                  </Badge>
-                  <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
-                </Link>
-              ))}
+              {recentIncidents.map((inc) => {
+                const secondary = operatorIncidentSecondaryLine(inc.work_order)
+                return (
+                  <Link
+                    key={inc.id}
+                    href={`/dashboard/operator/incidentes/${inc.id}?estado=abiertos`}
+                    className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-muted/40 min-h-[56px]"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs font-semibold text-muted-foreground">
+                        {inc.asset_code} · {friendlyIncidentTypeLabel(inc.type)}
+                      </p>
+                      <p className="truncate text-sm font-medium">{inc.description}</p>
+                      {secondary && (
+                        <p className="mt-0.5 line-clamp-2 text-[11px] text-muted-foreground">{secondary}</p>
+                      )}
+                    </div>
+                    <Badge variant="outline" className="shrink-0 text-[10px]">
+                      {inc.work_order?.order_id ?? "—"} · {workOrderStatusLabelForOperator(inc.work_order)}
+                    </Badge>
+                    <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  </Link>
+                )
+              })}
             </CardContent>
           </Card>
         )}

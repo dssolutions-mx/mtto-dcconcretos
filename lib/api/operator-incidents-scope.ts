@@ -1,4 +1,4 @@
-import type { SupabaseClient } from '@supabase/supabase-js'
+import type { OperatorRouteSupabase } from '@/lib/operator-incidents-supabase'
 import { expandPerAssignmentAssetScopes } from '@/lib/composite-operator-scope'
 
 const RESOLVED_STATUS_KEYS = new Set([
@@ -46,7 +46,7 @@ export type OperatorScopeResult =
  * Resolves OPERADOR/DOSIFICADOR + active asset_operators + composite expansion.
  */
 export async function resolveOperatorIncidentsScope(
-  supabase: SupabaseClient
+  supabase: OperatorRouteSupabase
 ): Promise<OperatorScopeResult> {
   const {
     data: { user },
@@ -66,7 +66,9 @@ export async function resolveOperatorIncidentsScope(
     return { ok: false, status: 404, error: 'Profile not found' }
   }
 
-  if (!['OPERADOR', 'DOSIFICADOR'].includes(profile.role)) {
+  const profRow = profile as OperatorProfileRow
+  const role = profRow.role ?? ''
+  if (!['OPERADOR', 'DOSIFICADOR'].includes(role)) {
     return { ok: false, status: 403, error: 'Access denied. Only operators can use this endpoint.' }
   }
 
@@ -94,12 +96,12 @@ export async function resolveOperatorIncidentsScope(
     return { ok: false, status: 500, error: 'Error fetching assignments' }
   }
 
-  const assignments = (assignedAssets || []) as OperatorAssignmentRow[]
+  const assignments = (assignedAssets || []) as unknown as OperatorAssignmentRow[]
   if (assignments.length === 0) {
     return {
       ok: true,
       userId: user.id,
-      profile: profile as OperatorProfileRow,
+      profile: profRow,
       assignments: [],
       expandedAssetIds: [],
       scopeByAssignment: new Map(),
@@ -108,14 +110,12 @@ export async function resolveOperatorIncidentsScope(
 
   const assignedAssetIds = assignments.map((a) => a.asset_id)
   const scopeByAssignment = await expandPerAssignmentAssetScopes(supabase, assignedAssetIds)
-  const expandedAssetIds = [
-    ...new Set([].concat(...[...scopeByAssignment.values()] as string[][])),
-  ]
+  const expandedAssetIds = [...new Set([...scopeByAssignment.values()].flat())]
 
   return {
     ok: true,
     userId: user.id,
-    profile: profile as OperatorProfileRow,
+    profile: profRow,
     assignments,
     expandedAssetIds,
     scopeByAssignment,

@@ -5,6 +5,11 @@ import {
   isIncidentOpenForOperator,
   resolveOperatorIncidentsScope,
 } from '@/lib/api/operator-incidents-scope'
+import {
+  fetchPurchaseOrdersForOperatorWorkOrders,
+  mergeOperatorPartsProcurement,
+  purchaseOrdersForWorkOrder,
+} from '@/lib/operator-incident-procurement'
 
 type WoRow = {
   id: string
@@ -14,6 +19,8 @@ type WoRow = {
   assigned_to: string | null
   created_at: string | null
   completed_at: string | null
+  planned_date: string | null
+  purchase_order_id: string | null
 } | null
 
 type IncidentRow = {
@@ -86,7 +93,9 @@ export async function GET() {
           priority,
           assigned_to,
           created_at,
-          completed_at
+          completed_at,
+          planned_date,
+          purchase_order_id
         )
       `
       )
@@ -103,10 +112,18 @@ export async function GET() {
     const openIncidents = incidents.filter((i) => isIncidentOpenForOperator(i.status))
 
     const mechanicIds = new Set<string>()
+    const woIds: string[] = []
+    const poIds: (string | null)[] = []
     for (const i of incidents) {
       const wo = asSingleWo(i.work_orders)
       if (wo?.assigned_to) mechanicIds.add(wo.assigned_to)
+      if (wo) {
+        woIds.push(wo.id)
+        poIds.push(wo.purchase_order_id)
+      }
     }
+
+    const allPoRows = await fetchPurchaseOrdersForOperatorWorkOrders(supabase, woIds, poIds)
 
     const mechanicNames = new Map<string, string>()
     if (mechanicIds.size > 0) {
@@ -114,7 +131,7 @@ export async function GET() {
         .from('profiles')
         .select('id, nombre, apellido')
         .in('id', [...mechanicIds])
-      for (const p of profs || []) {
+      for (const p of (profs || []) as { id: string; nombre: string | null; apellido: string | null }[]) {
         const name = `${p.nombre || ''} ${p.apellido || ''}`.trim()
         mechanicNames.set(p.id, name || '—')
       }
@@ -126,6 +143,10 @@ export async function GET() {
         ? mechanicNames.get(wo.assigned_to) ?? null
         : null
       const isOpen = isIncidentOpenForOperator(i.status)
+      const partsRows = wo
+        ? purchaseOrdersForWorkOrder(allPoRows, wo.id, wo.purchase_order_id)
+        : []
+      const partsProcurement = mergeOperatorPartsProcurement(partsRows)
       return {
         id: i.id,
         type: i.type,
@@ -144,11 +165,13 @@ export async function GET() {
           ? {
               id: wo.id,
               order_id: wo.order_id,
+              planned_date: wo.planned_date,
               status: wo.status,
               priority: wo.priority,
               mechanic_name: mechanicName,
               created_at: wo.created_at,
               completed_at: wo.completed_at,
+              parts_procurement: partsProcurement,
             }
           : null,
       }

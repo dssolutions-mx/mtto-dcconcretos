@@ -1,11 +1,17 @@
+import type { OperatorPartsProcurement } from '@/lib/operator-incident-procurement'
+
+export type { OperatorPartsProcurementStage } from '@/lib/operator-incident-procurement'
+
 export type OperatorIncidentWorkOrder = {
   id: string
   order_id: string
+  planned_date: string | null
   status: string | null
   priority: string | null
   mechanic_name: string | null
   created_at: string | null
   completed_at: string | null
+  parts_procurement: OperatorPartsProcurement
 } | null
 
 export type OperatorIncidentItem = {

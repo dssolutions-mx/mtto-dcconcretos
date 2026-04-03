@@ -5,6 +5,11 @@ import {
   isIncidentOpenForOperator,
   resolveOperatorIncidentsScope,
 } from '@/lib/api/operator-incidents-scope'
+import {
+  fetchPurchaseOrdersForOperatorWorkOrders,
+  mergeOperatorPartsProcurement,
+  purchaseOrdersForWorkOrder,
+} from '@/lib/operator-incident-procurement'
 
 type WoRow = {
   id: string
@@ -16,11 +21,32 @@ type WoRow = {
   completed_at: string | null
   description: string | null
   type: string | null
+  planned_date: string | null
+  purchase_order_id: string | null
 } | null
 
 function asSingleWo(wo: WoRow | WoRow[] | null | undefined): WoRow {
   if (!wo) return null
   return Array.isArray(wo) ? wo[0] ?? null : wo
+}
+
+type IncidentDetailRow = {
+  id: string
+  asset_id: string | null
+  date: string
+  type: string
+  description: string
+  status: string | null
+  impact: string | null
+  resolution: string | null
+  work_order_id: string | null
+  documents: unknown
+  reported_by: string | null
+  reported_by_id: string | null
+  created_at: string | null
+  updated_at: string | null
+  assets: { id: string; name: string | null; asset_id: string | null; location: string | null } | null
+  work_orders: WoRow | WoRow[] | null
 }
 
 export async function GET(
@@ -71,7 +97,9 @@ export async function GET(
           created_at,
           completed_at,
           description,
-          type
+          type,
+          planned_date,
+          purchase_order_id
         )
       `
       )
@@ -82,7 +110,8 @@ export async function GET(
       return NextResponse.json({ error: 'Not found' }, { status: 404 })
     }
 
-    const assetId = incident.asset_id as string | null
+    const inc = incident as IncidentDetailRow
+    const assetId = inc.asset_id as string | null
     const allowed = scope.assignments.some((a) =>
       incidentBelongsToAssignment(assetId, a.asset_id, scope.scopeByAssignment)
     )
@@ -91,7 +120,7 @@ export async function GET(
     }
 
     const wo = asSingleWo(
-      incident.work_orders as WoRow | WoRow[] | null | undefined
+      inc.work_orders as WoRow | WoRow[] | null | undefined
     )
     let mechanicName: string | null = null
     if (wo?.assigned_to) {
@@ -101,11 +130,20 @@ export async function GET(
         .eq('id', wo.assigned_to)
         .single()
       if (prof) {
-        mechanicName = `${prof.nombre || ''} ${prof.apellido || ''}`.trim() || null
+        const pr = prof as { nombre: string | null; apellido: string | null }
+        mechanicName = `${pr.nombre || ''} ${pr.apellido || ''}`.trim() || null
       }
     }
 
-    const assets = incident.assets as {
+    const allPoRows = wo
+      ? await fetchPurchaseOrdersForOperatorWorkOrders(supabase, [wo.id], [wo.purchase_order_id])
+      : []
+    const partsRows = wo
+      ? purchaseOrdersForWorkOrder(allPoRows, wo.id, wo.purchase_order_id)
+      : []
+    const partsProcurement = mergeOperatorPartsProcurement(partsRows)
+
+    const assets = inc.assets as {
       id: string
       name: string | null
       asset_id: string | null
@@ -113,20 +151,20 @@ export async function GET(
     } | null
 
     return NextResponse.json({
-      id: incident.id,
-      asset_id: incident.asset_id,
-      date: incident.date,
-      type: incident.type,
-      description: incident.description,
-      status: incident.status,
-      impact: incident.impact,
-      resolution: incident.resolution,
-      documents: incident.documents,
-      reported_by: incident.reported_by,
-      reported_by_id: incident.reported_by_id,
-      created_at: incident.created_at,
-      updated_at: incident.updated_at,
-      is_open: isIncidentOpenForOperator(incident.status as string | null),
+      id: inc.id,
+      asset_id: inc.asset_id,
+      date: inc.date,
+      type: inc.type,
+      description: inc.description,
+      status: inc.status,
+      impact: inc.impact,
+      resolution: inc.resolution,
+      documents: inc.documents,
+      reported_by: inc.reported_by,
+      reported_by_id: inc.reported_by_id,
+      created_at: inc.created_at,
+      updated_at: inc.updated_at,
+      is_open: isIncidentOpenForOperator(inc.status as string | null),
       asset: assets
         ? {
             id: assets.id,
@@ -139,6 +177,7 @@ export async function GET(
         ? {
             id: wo.id,
             order_id: wo.order_id,
+            planned_date: wo.planned_date,
             status: wo.status,
             priority: wo.priority,
             mechanic_name: mechanicName,
@@ -146,6 +185,7 @@ export async function GET(
             completed_at: wo.completed_at,
             description: wo.description,
             type: wo.type,
+            parts_procurement: partsProcurement,
           }
         : null,
     })

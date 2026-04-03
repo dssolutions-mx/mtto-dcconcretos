@@ -1,4 +1,4 @@
-import type { SupabaseClient } from '@supabase/supabase-js'
+import type { OperatorRouteSupabase } from '@/lib/operator-incidents-supabase'
 
 type AssetRow = {
   id: string
@@ -42,7 +42,7 @@ function expandOneAssetId(
  * that belong to that logical unit (composite + components, or standalone).
  */
 export async function expandPerAssignmentAssetScopes(
-  supabase: SupabaseClient,
+  supabase: OperatorRouteSupabase,
   assignmentAssetIds: string[]
 ): Promise<Map<string, string[]>> {
   const ids = [...new Set(assignmentAssetIds.filter(Boolean))]
@@ -60,7 +60,9 @@ export async function expandPerAssignmentAssetScopes(
     return result
   }
 
-  const assetsById = new Map((assetsRows || []).map((a) => [a.id, a as AssetRow]))
+  const assetsById = new Map(
+    ((assetsRows || []) as AssetRow[]).map((a) => [a.id, a])
+  )
 
   const { data: rels } = await supabase
     .from('asset_composite_relationships')
@@ -69,7 +71,8 @@ export async function expandPerAssignmentAssetScopes(
     .eq('status', 'active')
 
   const parentByComponent = new Map<string, string>()
-  for (const r of rels || []) {
+  type RelRow = { component_asset_id: string; composite_asset_id: string }
+  for (const r of (rels || []) as RelRow[]) {
     parentByComponent.set(r.component_asset_id, r.composite_asset_id)
   }
 
@@ -93,7 +96,9 @@ export async function expandPerAssignmentAssetScopes(
     if (compErr) {
       console.error('expandPerAssignmentAssetScopes: composite assets query', compErr)
     } else {
-      compositeById = new Map((compositeAssets || []).map((a) => [a.id, a as AssetRow]))
+      compositeById = new Map(
+        ((compositeAssets || []) as AssetRow[]).map((a) => [a.id, a])
+      )
     }
   }
 
@@ -108,7 +113,7 @@ export async function expandPerAssignmentAssetScopes(
  * Union of all schedule asset IDs covered by the given operator assignments.
  */
 export async function expandAssetIdsForOperatorChecklists(
-  supabase: SupabaseClient,
+  supabase: OperatorRouteSupabase,
   assignmentAssetIds: string[]
 ): Promise<string[]> {
   const map = await expandPerAssignmentAssetScopes(supabase, assignmentAssetIds)

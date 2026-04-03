@@ -13,7 +13,12 @@ import { PullToRefresh } from "@/components/ui/pull-to-refresh"
 import { Loader2, RefreshCw, ChevronRight, CheckCircle2, ArrowLeft, Inbox } from "lucide-react"
 import { useAuthZustand } from "@/hooks/use-auth-zustand"
 import type { OperatorIncidentsApiResponse, OperatorIncidentItem } from "@/types/operator-incidents"
-import { workOrderStatusLabelForOperator, friendlyIncidentTypeLabel } from "@/lib/operator-incident-ui"
+import {
+  workOrderStatusLabelForOperator,
+  friendlyIncidentTypeLabel,
+  operatorIncidentSecondaryLine,
+} from "@/lib/operator-incident-ui"
+import { operatorIncidentHasProgress } from "@/lib/operator-incident-procurement"
 import { cn } from "@/lib/utils"
 import { dashboardHomeForRole } from "@/lib/dashboard-home"
 
@@ -215,12 +220,20 @@ function IncidentesListContent() {
           <div className="divide-y divide-border overflow-hidden rounded-xl border border-border/80 bg-card">
             {filtered.map((inc) => {
               const st = (inc.status || "").toLowerCase()
+              const hasProgress =
+                inc.is_open &&
+                !!inc.work_order &&
+                operatorIncidentHasProgress({
+                  planned_date: inc.work_order.planned_date,
+                  parts: inc.work_order.parts_procurement,
+                })
               const dot =
                 st.includes("resuelto") || st.includes("cerrado")
                   ? "bg-emerald-500"
-                  : st.includes("progreso")
+                  : hasProgress || st.includes("progreso")
                     ? "bg-blue-500"
                     : "bg-amber-500"
+              const secondary = operatorIncidentSecondaryLine(inc.work_order)
               return (
                 <Link
                   key={inc.id}
@@ -235,6 +248,9 @@ function IncidentesListContent() {
                       {friendlyIncidentTypeLabel(inc.type)}
                       {inc.reported_by ? ` · Reporte: ${inc.reported_by}` : ""}
                     </p>
+                    {secondary && (
+                      <p className="mt-0.5 line-clamp-2 text-[11px] text-muted-foreground/90">{secondary}</p>
+                    )}
                   </div>
                   <Badge variant="secondary" className="max-w-[140px] shrink-0 truncate text-[10px]">
                     {inc.work_order?.order_id ?? "Sin OT"} · {workOrderStatusLabelForOperator(inc.work_order)}

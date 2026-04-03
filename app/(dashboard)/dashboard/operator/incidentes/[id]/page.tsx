@@ -9,13 +9,18 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Loader2, ArrowLeft, AlertTriangle, Wrench, User } from "lucide-react"
+import { Loader2, ArrowLeft, AlertTriangle, Wrench, User, CheckCircle2, Circle } from "lucide-react"
 import { formatDistanceToNow } from "date-fns"
 import { es } from "date-fns/locale"
 import { useAuthZustand } from "@/hooks/use-auth-zustand"
 import { cn } from "@/lib/utils"
 import { dashboardHomeForRole } from "@/lib/dashboard-home"
 import { workOrderStatusLabelForOperator, friendlyIncidentTypeLabel } from "@/lib/operator-incident-ui"
+import {
+  buildOperatorIncidentTimeline,
+  operatorPartsProcurementDetailCopy,
+  type OperatorPartsProcurement,
+} from "@/lib/operator-incident-procurement"
 
 type DetailResponse = {
   id: string
@@ -32,6 +37,7 @@ type DetailResponse = {
   work_order: {
     id: string
     order_id: string
+    planned_date: string | null
     status: string | null
     priority: string | null
     mechanic_name: string | null
@@ -39,6 +45,7 @@ type DetailResponse = {
     completed_at: string | null
     description: string | null
     type: string | null
+    parts_procurement: OperatorPartsProcurement
   } | null
 }
 
@@ -138,6 +145,19 @@ function OperatorIncidentDetailInner({ id }: { id: string }) {
   }
 
   const urls = parseDocumentUrls(row?.documents)
+
+  const timeline =
+    row?.work_order &&
+    buildOperatorIncidentTimeline({
+      planned_date: row.work_order.planned_date,
+      wo_status: row.work_order.status,
+      wo_completed_at: row.work_order.completed_at,
+      parts: row.work_order.parts_procurement,
+    })
+
+  const procurementDetail = row?.work_order
+    ? operatorPartsProcurementDetailCopy(row.work_order.parts_procurement)
+    : null
 
   return (
     <DashboardShell className="space-y-4">
@@ -283,10 +303,50 @@ function OperatorIncidentDetailInner({ id }: { id: string }) {
                       Terminada: {new Date(row.work_order.completed_at).toLocaleString("es-MX")}
                     </p>
                   )}
+                  {row.work_order.planned_date && (
+                    <p className="text-sm text-foreground">
+                      <span className="font-medium">Revisión programada: </span>
+                      {new Date(row.work_order.planned_date).toLocaleDateString("es-MX", {
+                        dateStyle: "medium",
+                      })}
+                    </p>
+                  )}
+                  {procurementDetail && (
+                    <p className="text-sm leading-relaxed text-muted-foreground">{procurementDetail}</p>
+                  )}
                 </>
               )}
             </CardContent>
           </Card>
+
+          {row.work_order && timeline && timeline.length > 0 && (
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base">Avance del seguimiento</CardTitle>
+                <p className="text-xs text-muted-foreground">
+                  Lo que ya está en curso sobre tu reporte (sin datos comerciales).
+                </p>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                {timeline.map((item) => (
+                  <div key={item.id} className="flex items-start gap-2 text-sm">
+                    {item.done ? (
+                      <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" aria-hidden />
+                    ) : (
+                      <Circle className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground/50" aria-hidden />
+                    )}
+                    <span
+                      className={cn(
+                        item.done ? "text-foreground" : "text-muted-foreground"
+                      )}
+                    >
+                      {item.label}
+                    </span>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          )}
         </>
       )}
     </DashboardShell>
