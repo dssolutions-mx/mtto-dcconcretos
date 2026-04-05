@@ -523,7 +523,7 @@ export function StatusMaintenanceTab({
                     <Button size="sm" asChild className="flex-1 cursor-pointer">
                       <Link href={`/ordenes/crear?assetId=${assetId}`}>
                         <Plus className="h-4 w-4 mr-2" />
-                        Nueva OT
+                        Nueva OT correctiva
                       </Link>
                     </Button>
                   )}
@@ -555,7 +555,7 @@ export function StatusMaintenanceTab({
                     <Button size="sm" asChild className="flex-1 cursor-pointer">
                       <Link href={`/ordenes/crear?assetId=${assetId}`}>
                         <Plus className="h-4 w-4 mr-2" />
-                        Nueva OT
+                        Nueva OT correctiva
                       </Link>
                     </Button>
                   )}

@@ -945,7 +945,6 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
             actions={
               <AssetDetailActions
                 assetId={assetId}
-                assetName={asset?.name || ""}
                 hasComposite={!!compositeContext.composite}
                 setOpenCreateComposite={setOpenCreateComposite}
                 onReportIncidentClick={() => setReportIncidentOpen(true)}

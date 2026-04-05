@@ -1,5 +1,7 @@
 "use client"
 
+import { useState } from "react"
+import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import Link from "next/link"
 import {
@@ -8,10 +10,13 @@ import {
   FileText,
   Wrench,
 } from "lucide-react"
+import {
+  CreateWorkOrderIntentDialog,
+  type WorkOrderIntent,
+} from "@/components/assets/dialogs/create-work-order-intent-dialog"
 
 interface AssetDetailActionsProps {
   assetId: string
-  assetName: string
   hasComposite: boolean
   setOpenCreateComposite: (open: boolean) => void
   onReportIncidentClick?: () => void
@@ -23,25 +28,46 @@ interface AssetDetailActionsProps {
 
 export function AssetDetailActions({
   assetId,
-  assetName,
   hasComposite,
   setOpenCreateComposite,
   onReportIncidentClick,
   ui,
 }: AssetDetailActionsProps) {
+  const router = useRouter()
+  const [workOrderIntentOpen, setWorkOrderIntentOpen] = useState(false)
+
+  const handleWorkOrderIntent = (intent: WorkOrderIntent) => {
+    if (intent === "preventive") {
+      router.push(`/activos/${assetId}/mantenimiento/nuevo`)
+      return
+    }
+    if (intent === "corrective") {
+      router.push(`/ordenes/crear?assetId=${assetId}`)
+      return
+    }
+    onReportIncidentClick?.()
+  }
+
   return (
     <div className="flex flex-col space-y-2 sm:space-y-0 sm:flex-row sm:flex-wrap sm:gap-2">
       {ui.shouldShowInNavigation("work_orders") && (
-        <Button
-          size="sm"
-          asChild
-          className="w-full sm:w-auto justify-center min-h-[44px] cursor-pointer transition-colors duration-200 bg-sky-700 hover:bg-sky-800 text-white"
-        >
-          <Link href={`/activos/${assetId}/mantenimiento/nuevo`}>
+        <>
+          <Button
+            type="button"
+            size="sm"
+            className="w-full sm:w-auto justify-center min-h-[44px] cursor-pointer transition-colors duration-200 bg-sky-700 hover:bg-sky-800 text-white"
+            onClick={() => setWorkOrderIntentOpen(true)}
+          >
             <Wrench className="h-4 w-4 mr-2" />
             Crear OT
-          </Link>
-        </Button>
+          </Button>
+          <CreateWorkOrderIntentDialog
+            open={workOrderIntentOpen}
+            onOpenChange={setWorkOrderIntentOpen}
+            onSelectIntent={handleWorkOrderIntent}
+            showIncidentFirstOption={ui.shouldShowInNavigation("maintenance")}
+          />
+        </>
       )}
       {ui.shouldShowInNavigation("maintenance") && (
         <Button
