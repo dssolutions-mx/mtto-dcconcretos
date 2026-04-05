@@ -7127,6 +7127,51 @@ export type Database = {
           },
         ]
       }
+      supplier_verification_events: {
+        Row: {
+          action: string
+          actor_id: string
+          checklist_snapshot: Json | null
+          created_at: string
+          id: string
+          notes: string | null
+          supplier_id: string
+        }
+        Insert: {
+          action: string
+          actor_id: string
+          checklist_snapshot?: Json | null
+          created_at?: string
+          id?: string
+          notes?: string | null
+          supplier_id: string
+        }
+        Update: {
+          action?: string
+          actor_id?: string
+          checklist_snapshot?: Json | null
+          created_at?: string
+          id?: string
+          notes?: string | null
+          supplier_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "supplier_verification_events_actor_id_fkey"
+            columns: ["actor_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "supplier_verification_events_supplier_id_fkey"
+            columns: ["supplier_id"]
+            isOneToOne: false
+            referencedRelation: "suppliers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       suppliers: {
         Row: {
           address: string | null
@@ -7164,6 +7209,8 @@ export type Database = {
           total_orders: number | null
           updated_at: string | null
           updated_by: string | null
+          verified_at: string | null
+          verified_by: string | null
         }
         Insert: {
           address?: string | null
@@ -7201,6 +7248,8 @@ export type Database = {
           total_orders?: number | null
           updated_at?: string | null
           updated_by?: string | null
+          verified_at?: string | null
+          verified_by?: string | null
         }
         Update: {
           address?: string | null
@@ -7238,6 +7287,8 @@ export type Database = {
           total_orders?: number | null
           updated_at?: string | null
           updated_by?: string | null
+          verified_at?: string | null
+          verified_by?: string | null
         }
         Relationships: [
           {
@@ -7245,6 +7296,13 @@ export type Database = {
             columns: ["business_unit_id"]
             isOneToOne: false
             referencedRelation: "business_units"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "suppliers_verified_by_fkey"
+            columns: ["verified_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
         ]
@@ -9533,6 +9591,16 @@ export type Database = {
       }
       approve_purchase_order: {
         Args: { p_approved_by: string; p_purchase_order_id: string }
+        Returns: undefined
+      }
+      apply_supplier_verification_event: {
+        Args: {
+          p_action: string
+          p_checklist_snapshot?: Json | null
+          p_new_status: string
+          p_notes?: string | null
+          p_supplier_id: string
+        }
         Returns: undefined
       }
       assign_operator_to_asset: {

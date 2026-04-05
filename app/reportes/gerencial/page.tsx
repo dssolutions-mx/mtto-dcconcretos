@@ -364,10 +364,16 @@ export default function GerencialReportPage() {
             Análisis ejecutivo integrado: ventas, diésel y mantenimiento
           </p>
         </div>
-        <Button onClick={() => router.push('/reportes/gerencial/ingresos-gastos')}>
-          <FileText className="w-4 h-4 mr-2" />
-          Ingresos vs Gastos
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" onClick={() => router.push('/reportes/gerencial/informe-ejecutivo')}>
+            <FileText className="w-4 h-4 mr-2" />
+            Informe ejecutivo
+          </Button>
+          <Button onClick={() => router.push('/reportes/gerencial/ingresos-gastos')}>
+            <FileText className="w-4 h-4 mr-2" />
+            Ingresos vs Gastos
+          </Button>
+        </div>
       </div>
 
       {/* Filters */}

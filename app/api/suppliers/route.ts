@@ -14,7 +14,8 @@ export async function GET(request: NextRequest) {
     // Get query parameters
     const { searchParams } = new URL(request.url)
     const query = searchParams.get('query') || ''
-    const status = searchParams.get('status') || 'active'
+    const status = searchParams.get('status') ?? 'all'
+    const issuesOnly = searchParams.get('issues') === '1'
     const supplier_type = searchParams.get('type') || 'all'
     const industry = searchParams.get('industry') || ''
     const business_unit_id = searchParams.get('business_unit_id') || ''
@@ -23,6 +24,7 @@ export async function GET(request: NextRequest) {
     const state = searchParams.get('state') || ''
     const limit = parseInt(searchParams.get('limit') || '50')
     const offset = parseInt(searchParams.get('offset') || '0')
+    const includeStatusCounts = searchParams.get('include_status_counts') === '1'
 
     // Build the query
     let dbQuery = supabase
@@ -35,7 +37,9 @@ export async function GET(request: NextRequest) {
       .range(offset, offset + limit - 1)
 
     // Apply filters
-    if (status !== 'all') {
+    if (issuesOnly) {
+      dbQuery = dbQuery.in('status', ['suspended', 'blacklisted'])
+    } else if (status !== 'all') {
       dbQuery = dbQuery.eq('status', status)
     }
 
@@ -76,6 +80,41 @@ export async function GET(request: NextRequest) {
     dbQuery = dbQuery.order('rating', { ascending: false, nullsFirst: false })
       .order('name', { ascending: true })
 
+    const buildCountQuery = () => {
+      let q = supabase
+        .from('suppliers')
+        .select('id', { count: 'exact', head: true })
+      if (issuesOnly) {
+        q = q.in('status', ['suspended', 'blacklisted'])
+      } else if (status !== 'all') {
+        q = q.eq('status', status)
+      }
+      if (supplier_type !== 'all') {
+        q = q.eq('supplier_type', supplier_type)
+      }
+      if (industry) {
+        const normalized = normalizeIndustry(industry)
+        if (normalized && normalized !== 'other') {
+          q = q.eq('industry', normalized)
+        } else {
+          q = q.neq('industry', '')
+        }
+      }
+      if (city) q = q.eq('city', city)
+      if (state) q = q.eq('state', state)
+      if (business_unit_id) q = q.eq('business_unit_id', business_unit_id)
+      if (min_rating) q = q.gte('rating', parseFloat(min_rating))
+      if (query) {
+        q = q.or(`name.ilike.%${query}%,business_name.ilike.%${query}%,contact_person.ilike.%${query}%`)
+      }
+      return q
+    }
+
+    const { count: totalCount, error: countError } = await buildCountQuery()
+    if (countError) {
+      console.error('Error counting suppliers:', countError)
+    }
+
     const { data: suppliers, error } = await dbQuery
 
     if (error) {
@@ -86,9 +125,45 @@ export async function GET(request: NextRequest) {
       )
     }
 
+    let status_counts:
+      | {
+          total: number
+          certified: number
+          active: number
+          pending: number
+          issues: number
+        }
+      | undefined
+
+    if (includeStatusCounts) {
+      const countFor = async (statusEq: string | null) => {
+        let q = supabase.from('suppliers').select('id', { count: 'exact', head: true })
+        if (supplier_type !== 'all') q = q.eq('supplier_type', supplier_type)
+        if (statusEq) q = q.eq('status', statusEq)
+        const { count } = await q
+        return count ?? 0
+      }
+      const [total, certified, active, pending, suspended, blacklisted] = await Promise.all([
+        countFor(null),
+        countFor('active_certified'),
+        countFor('active'),
+        countFor('pending'),
+        countFor('suspended'),
+        countFor('blacklisted'),
+      ])
+      status_counts = {
+        total,
+        certified,
+        active,
+        pending,
+        issues: suspended + blacklisted,
+      }
+    }
+
     return NextResponse.json({
       suppliers: suppliers || [],
-      total: suppliers?.length || 0,
+      total: totalCount ?? suppliers?.length ?? 0,
+      status_counts,
       filters_applied: {
         query,
         status,

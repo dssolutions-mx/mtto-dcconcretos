@@ -155,6 +155,15 @@ export type SupplierStatus =
   | 'suspended'
   | 'blacklisted'
 
+/** Server route POST /api/suppliers/[id]/verification */
+export type SupplierVerificationAction =
+  | 'certify'
+  | 'activate'
+  | 'suspend'
+  | 'revoke_certification'
+  | 'reactivate'
+  | 'reject'
+
 export type ContactType =
   | 'general'
   | 'technical'

@@ -1,0 +1,28 @@
+/* Scoped print: hide app chrome when printing from the executive analytical report page */
+@media print {
+  body:has([data-executive-analytical-report]) #main-sidebar,
+  body:has([data-executive-analytical-report]) header {
+    display: none !important;
+  }
+
+  body:has([data-executive-analytical-report]) .executive-report-no-print {
+    display: none !important;
+  }
+
+  body:has([data-executive-analytical-report]) {
+    background: #fff !important;
+  }
+
+  [data-executive-analytical-report] {
+    max-width: 100% !important;
+    padding: 0 !important;
+  }
+
+  .executive-report-break-after {
+    break-after: page;
+  }
+
+  .executive-report-avoid-break {
+    break-inside: avoid;
+  }
+}

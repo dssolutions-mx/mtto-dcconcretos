@@ -49,6 +49,7 @@ import {
 import { Supplier, SupplierContact, SupplierService, SupplierWorkHistory, SupplierPerformanceHistory } from "@/types/suppliers"
 import { SupplierPerformanceChart } from "./SupplierPerformanceChart"
 import { ReportIssueDialog } from "./ReportIssueDialog"
+import { SupplierVerificationPanel } from "./supplier-verification-panel"
 import { createClient } from "@/lib/supabase"
 import { calculateAllMetrics, SupplierMetrics, getPostingDate } from "@/lib/suppliers/metrics"
 import { ArrowUp, ArrowDown, Minus, TrendingUp as TrendingUpIcon, AlertCircle } from "lucide-react"
@@ -74,6 +75,9 @@ interface SupplierDetailsProps {
   onEdit?: (supplier: Supplier) => void
   showWorkHistory?: boolean
   showPerformanceHistory?: boolean
+  /** Full-page detail: show expediente verification + audit (default false for legacy dialog embeds) */
+  showVerificationPanel?: boolean
+  canVerifyPurchases?: boolean
 }
 
 interface SupplierPurchaseOrder {
@@ -112,7 +116,9 @@ export function SupplierDetails({
   onClose,
   onEdit,
   showWorkHistory = true,
-  showPerformanceHistory = true
+  showPerformanceHistory = true,
+  showVerificationPanel = false,
+  canVerifyPurchases = false,
 }: SupplierDetailsProps) {
   const [supplierData, setSupplierData] = useState<Supplier | null>(null)
   const [contacts, setContacts] = useState<SupplierContact[]>([])
@@ -149,7 +155,8 @@ export function SupplierDetails({
           supplier_contacts(*),
           supplier_services(*),
           supplier_work_history(*),
-          supplier_performance_history(*)
+          supplier_performance_history(*),
+          supplier_certifications(*)
         `)
         .eq('id', supplier.id)
         .single()
@@ -376,6 +383,14 @@ export function SupplierDetails({
   const primaryContact = contacts.find(contact => contact.is_primary)
   const activeServices = services.filter(service => service.is_active)
 
+  const verificationCertificationsCount =
+    (supplierData as unknown as { supplier_certifications?: { id: string }[] })?.supplier_certifications?.length ?? 0
+  const verificationPrimaryContactCount = contacts.filter((c) => c.is_active !== false).length
+  const verificationSince = new Date()
+  verificationSince.setDate(verificationSince.getDate() - 365)
+  const verificationSinceIso = verificationSince.toISOString()
+  const verificationWorkHistoryCount = workHistory.filter((w) => w.created_at >= verificationSinceIso).length
+
   const getTrendIcon = (trend: 'increasing' | 'decreasing' | 'stable') => {
     switch (trend) {
       case 'increasing':
@@ -551,10 +566,12 @@ export function SupplierDetails({
             </div>
           </div>
           <div className="flex gap-2 flex-shrink-0">
-            <Button variant="outline" onClick={() => onEdit?.(supplier)}>
-              <Edit className="w-4 h-4 mr-2" />
-              Editar
-            </Button>
+            {onEdit && (
+              <Button variant="outline" onClick={() => onEdit(supplier)}>
+                <Edit className="w-4 h-4 mr-2" />
+                Editar
+              </Button>
+            )}
             <Button variant="outline" onClick={() => window.open(`/suppliers/analytics`, '_blank')}>
               <BarChart3 className="w-4 h-4 mr-2" />
               Ver Análisis
@@ -733,6 +750,20 @@ export function SupplierDetails({
             </Card>
           ))}
         </div>
+      )}
+
+      {showVerificationPanel && (
+        <SupplierVerificationPanel
+          supplierId={displaySupplier.id}
+          supplier={displaySupplier}
+          certificationsCount={verificationCertificationsCount}
+          primaryContactCount={verificationPrimaryContactCount}
+          workHistoryCountLast365d={verificationWorkHistoryCount}
+          canWrite={canVerifyPurchases}
+          onAfterChange={() => {
+            void loadSupplierDetails()
+          }}
+        />
       )}
 
       <Tabs defaultValue="overview" className="space-y-4">
