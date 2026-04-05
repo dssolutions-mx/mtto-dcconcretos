@@ -4,7 +4,11 @@ import { loadActorProfile } from '@/lib/auth/server-authorization'
 import { effectiveRoleForPermissions } from '@/lib/auth/role-model'
 import { hasModuleAccess, hasWriteAccess } from '@/lib/auth/role-permissions'
 import { evaluateSupplierVerification } from '@/lib/suppliers/verification-rules'
+import type { Database, Json } from '@/types/supabase-types'
 import type { Supplier, SupplierVerificationAction } from '@/types/suppliers'
+
+type ApplySupplierVerificationArgs =
+  Database['public']['Functions']['apply_supplier_verification_event']['Args']
 
 const ACTION_TO_STATUS: Record<SupplierVerificationAction, string> = {
   certify: 'active_certified',
@@ -28,7 +32,10 @@ export async function GET(
       return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
     }
 
-    const profile = await loadActorProfile(supabase, user.id)
+    const profile = await loadActorProfile(
+      supabase as unknown as Parameters<typeof loadActorProfile>[0],
+      user.id
+    )
     if (!profile) {
       return NextResponse.json({ error: 'Profile not found' }, { status: 403 })
     }
@@ -69,7 +76,10 @@ export async function POST(
       return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
     }
 
-    const profile = await loadActorProfile(supabase, user.id)
+    const profile = await loadActorProfile(
+      supabase as unknown as Parameters<typeof loadActorProfile>[0],
+      user.id
+    )
     if (!profile) {
       return NextResponse.json({ error: 'Profile not found' }, { status: 403 })
     }
@@ -152,20 +162,27 @@ export async function POST(
               passedCount: ev.passedCount,
               totalCount: ev.totalCount,
               checks: ev.checks,
-            } as Record<string, unknown>
+            } as unknown as Json
           })()
         : null)
 
-    const { error: rpcError } = await supabase.rpc(
-      'apply_supplier_verification_event',
-      {
-        p_supplier_id: supplierId,
-        p_action: action,
-        p_new_status: newStatus,
-        p_notes: body.notes ?? null,
-        p_checklist_snapshot: checklist_snapshot,
+    const rpcArgs: ApplySupplierVerificationArgs = {
+      p_supplier_id: supplierId,
+      p_action: action,
+      p_new_status: newStatus,
+      p_notes: body.notes ?? null,
+      p_checklist_snapshot: checklist_snapshot as ApplySupplierVerificationArgs['p_checklist_snapshot'],
+    }
+
+    // Typed Database + auth.getUser mutation widens the SSR client so `.rpc` loses `Functions` inference (args → undefined).
+    const { error: rpcError } = await (
+      supabase as unknown as {
+        rpc: (
+          fn: 'apply_supplier_verification_event',
+          args: ApplySupplierVerificationArgs
+        ) => Promise<{ error: Error | null }>
       }
-    )
+    ).rpc('apply_supplier_verification_event', rpcArgs)
 
     if (rpcError) {
       console.error('apply_supplier_verification_event', rpcError)
