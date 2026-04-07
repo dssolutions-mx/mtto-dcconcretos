@@ -1,6 +1,6 @@
 "use client"
 
-import { Suspense, useState, useEffect, useMemo } from "react"
+import { Suspense, useState, useEffect, useMemo, useRef, useCallback } from "react"
 import { useSearchParams, useRouter } from "next/navigation"
 import { DashboardHeader } from "@/components/dashboard/dashboard-header"
 import { DashboardShell } from "@/components/dashboard/dashboard-shell"
@@ -8,15 +8,22 @@ import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Plus, Search, X } from "lucide-react"
+import { Plus, Search, X, FileDown } from "lucide-react"
 import Link from "next/link"
 import { IncidentsOTLookup } from "@/components/incidents/incidents-ot-lookup"
-import { getAssetName, getAssetFullName, getReporterName } from "@/components/incidents/incidents-list-utils"
-import { aggregateIncidentDashboardStats, isIncidentResolvedForDashboard } from "@/lib/incident-dashboard-metrics"
+import { IncidentSnapshotPrintDocument } from "@/components/incidents/incident-snapshot-print-document"
+import { useToast } from "@/hooks/use-toast"
+import {
+  filterIncidentsForIncidentesPage,
+  buildIncidentesFilterSummary,
+} from "@/lib/incidents/incident-list-filters"
+import { generateIncidentSnapshotPdf } from "@/lib/incidents/generate-incident-snapshot-pdf"
+import { aggregateIncidentDashboardStats } from "@/lib/incident-dashboard-metrics"
 
 function IncidentsPageContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
+  const { toast } = useToast()
   const assetIdFromUrl = searchParams.get("assetId")
   const assetFromUrl = searchParams.get("asset")
 
@@ -28,6 +35,9 @@ function IncidentsPageContent() {
   const [statusFilter, setStatusFilter] = useState("all")
   const [typeFilter, setTypeFilter] = useState("all")
   const [lifecycleFilter, setLifecycleFilter] = useState<"all" | "open" | "resolved">("all")
+  const [snapshotOpen, setSnapshotOpen] = useState(false)
+  const [snapshotAt, setSnapshotAt] = useState(() => new Date())
+  const snapshotRef = useRef<HTMLDivElement>(null)
 
   // Initialize search from ?asset= param (used by coordinator dashboard)
   useEffect(() => {
@@ -92,31 +102,77 @@ function IncidentsPageContent() {
     return { open: a.open, critical: a.openOver7Days, resolved: a.resolved, total: a.total }
   }, [incidents])
 
-  const filteredIncidents = useMemo(() => {
-    return incidents.filter((incident) => {
-      if (assetIdFromUrl && incident.asset_id !== assetIdFromUrl) return false
-      if (lifecycleFilter === "open" && isIncidentResolvedForDashboard(String(incident.status ?? ""))) return false
-      if (lifecycleFilter === "resolved" && !isIncidentResolvedForDashboard(String(incident.status ?? ""))) return false
-      if (statusFilter !== "all" && String(incident.status ?? "") !== statusFilter) return false
-      if (typeFilter !== "all" && String(incident.type ?? "") !== typeFilter) return false
-      if (searchTerm.trim()) {
-        const q = searchTerm.toLowerCase()
-        const assetName = getAssetName(incident, assets).toLowerCase()
-        const assetFull = getAssetFullName(incident, assets).toLowerCase()
-        const reporter = getReporterName(incident).toLowerCase()
-        const desc = String(incident.description ?? "").toLowerCase()
-        const orderId = incident.work_order_order_id ? String(incident.work_order_order_id) : ""
-        if (
-          !assetName.includes(q) &&
-          !assetFull.includes(q) &&
-          !reporter.includes(q) &&
-          !desc.includes(q) &&
-          !orderId.includes(q)
-        ) return false
+  const prefilledAssetName = useMemo(() => {
+    if (!assetIdFromUrl || assets.length === 0) return null
+    const asset = assets.find((a: Record<string, unknown>) => a.id === assetIdFromUrl) as Record<string, unknown> | undefined
+    return asset ? String(asset.name ?? asset.asset_id ?? "Activo") : "Activo"
+  }, [assetIdFromUrl, assets])
+
+  const incidentesFilters = useMemo(
+    () => ({
+      assetIdFromUrl,
+      lifecycleFilter,
+      statusFilter,
+      typeFilter,
+      searchTerm,
+    }),
+    [assetIdFromUrl, lifecycleFilter, statusFilter, typeFilter, searchTerm],
+  )
+
+  const filteredIncidents = useMemo(
+    () => filterIncidentsForIncidentesPage(incidents, assets, incidentesFilters),
+    [incidents, assets, incidentesFilters],
+  )
+
+  const filterSummaryLine = useMemo(
+    () =>
+      buildIncidentesFilterSummary(
+        {
+          assetIdFromUrl,
+          lifecycleFilter,
+          statusFilter,
+          typeFilter,
+          searchTerm,
+        },
+        { assetLabel: prefilledAssetName },
+      ),
+    [assetIdFromUrl, lifecycleFilter, statusFilter, typeFilter, searchTerm, prefilledAssetName],
+  )
+
+  const handleSnapshotPdfReady = useCallback(
+    async (el: HTMLElement) => {
+      try {
+        await generateIncidentSnapshotPdf(el)
+        toast({
+          title: "PDF generado",
+          description: "El instantáneo se descargó correctamente.",
+        })
+      } catch (err) {
+        console.error(err)
+        toast({
+          title: "Error al generar PDF",
+          description: err instanceof Error ? err.message : "Error desconocido",
+          variant: "destructive",
+        })
+      } finally {
+        setSnapshotOpen(false)
       }
-      return true
-    })
-  }, [incidents, lifecycleFilter, statusFilter, typeFilter, searchTerm, assets, assetIdFromUrl])
+    },
+    [toast],
+  )
+
+  const handleInstantaneoPdf = () => {
+    if (filteredIncidents.length === 0) {
+      toast({
+        title: "Sin datos",
+        description: "No hay incidentes que coincidan con los filtros actuales.",
+        variant: "destructive",
+      })
+      return
+    }
+    setSnapshotAt(new Date())
+    setSnapshotOpen(true)
+  }
 
   const clearFilters = () => {
     setSearchTerm("")
@@ -127,12 +183,6 @@ function IncidentsPageContent() {
       router.replace("/incidentes")
     }
   }
-
-  const prefilledAssetName = useMemo(() => {
-    if (!assetIdFromUrl || assets.length === 0) return null
-    const asset = assets.find((a: Record<string, unknown>) => a.id === assetIdFromUrl) as Record<string, unknown> | undefined
-    return asset ? String(asset.name ?? asset.asset_id ?? "Activo") : "Activo"
-  }, [assetIdFromUrl, assets])
 
   if (loading) {
     return (
@@ -150,17 +200,43 @@ function IncidentsPageContent() {
 
   return (
     <DashboardShell>
+      {snapshotOpen ? (
+        <div className="fixed -left-[9999px] top-0 z-[100] pointer-events-none" aria-hidden>
+          <IncidentSnapshotPrintDocument
+            ref={snapshotRef}
+            active={snapshotOpen}
+            incidents={filteredIncidents}
+            assets={assets}
+            filterSummaryLine={filterSummaryLine}
+            generatedAt={snapshotAt}
+            onReadyForPdf={handleSnapshotPdfReady}
+          />
+        </div>
+      ) : null}
+
       <DashboardHeader
         heading="Incidentes"
         text="Vista de incidentes activos agrupados por activo"
       >
-        <Button asChild className="cursor-pointer">
-          <Link href="/activos">
-            <Plus className="mr-2 h-4 w-4" />
-            <span className="hidden sm:inline">Reportar Incidente</span>
-            <span className="sm:hidden">Nuevo</span>
-          </Link>
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            className="cursor-pointer"
+            onClick={handleInstantaneoPdf}
+          >
+            <FileDown className="mr-2 h-4 w-4" />
+            <span className="hidden sm:inline">Instantáneo PDF</span>
+            <span className="sm:hidden">PDF</span>
+          </Button>
+          <Button asChild className="cursor-pointer">
+            <Link href="/activos">
+              <Plus className="mr-2 h-4 w-4" />
+              <span className="hidden sm:inline">Reportar Incidente</span>
+              <span className="sm:hidden">Nuevo</span>
+            </Link>
+          </Button>
+        </div>
       </DashboardHeader>
 
       {error && (

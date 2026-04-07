@@ -59,15 +59,22 @@ export async function POST(request: NextRequest) {
     console.log('[Diesel Recalculate] Warehouse:', warehouse.warehouse_code, warehouse.name)
     console.log('[Diesel Recalculate] Current inventory:', oldBalance)
 
-    // Create pre-recalculation snapshot
+    // Create pre-recalculation snapshot (matches diesel_inventory_snapshots schema:
+    // opening/closing + totals; no created_by column)
+    const backupBalance = Number(oldBalance)
     const { error: snapshotError } = await supabase
       .from('diesel_inventory_snapshots')
       .insert({
         warehouse_id: warehouse_id,
         snapshot_date: new Date().toISOString(),
-        inventory_balance: oldBalance,
+        opening_balance: backupBalance,
+        total_entries: 0,
+        total_consumptions: 0,
+        total_adjustments: 0,
+        closing_balance: backupBalance,
         notes: `Pre-recalculation backup by ${user.email}`,
-        created_by: user.id
+        validated_by: user.id,
+        validated_at: new Date().toISOString()
       })
 
     if (snapshotError) {

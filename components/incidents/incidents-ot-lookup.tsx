@@ -7,8 +7,9 @@ import { format } from "date-fns"
 import { es } from "date-fns/locale"
 import { useRouter } from "next/navigation"
 import { useState, useMemo, useEffect } from "react"
-import { getAssetName, getAssetFullName, getReporterName } from "./incidents-list-utils"
+import { getReporterName } from "./incidents-list-utils"
 import { getDaysSinceCreated, getStatusInfo, normalizeStatus, getPriorityInfo } from "./incidents-status-utils"
+import { groupIncidentsForIncidentesLookup } from "@/lib/incidents/incident-snapshot-grouping"
 import { cn } from "@/lib/utils"
 import { Badge } from "@/components/ui/badge"
 
@@ -69,15 +70,6 @@ function rowSurfaceClass(resolved: boolean, days: number): string {
   return "bg-sky-50/60 border-l-4 border-l-sky-500"
 }
 
-interface AssetGroup {
-  assetId: string | null
-  assetCode: string
-  assetFullName: string
-  incidents: Record<string, unknown>[]
-  openCount: number
-  criticalCount: number
-}
-
 interface IncidentsOTLookupProps {
   incidents: Record<string, unknown>[]
   assets: Record<string, unknown>[]
@@ -88,44 +80,10 @@ export function IncidentsOTLookup({ incidents, assets }: IncidentsOTLookupProps)
   const [collapsedAssets, setCollapsedAssets] = useState<Set<string>>(new Set())
   const [allCollapsed, setAllCollapsed] = useState(false)
 
-  const grouped = useMemo((): AssetGroup[] => {
-    const map = new Map<string, AssetGroup>()
-
-    incidents.forEach((incident) => {
-      const assetId = typeof incident.asset_id === "string" ? incident.asset_id : null
-      const key = assetId ?? "__no_asset__"
-      const assetCode = getAssetName(incident, assets)
-      const assetFullName = getAssetFullName(incident, assets)
-
-      if (!map.has(key)) {
-        map.set(key, { assetId, assetCode, assetFullName, incidents: [], openCount: 0, criticalCount: 0 })
-      }
-
-      const group = map.get(key)!
-      group.incidents.push(incident)
-
-      const status = String(incident.status ?? "")
-      if (!isResolved(status)) {
-        group.openCount++
-        const dateStr = (incident.date ?? incident.created_at) as string | undefined
-        if (getDaysSinceCreated(dateStr ?? "") >= 7) group.criticalCount++
-      }
-    })
-
-    // Sort incidents within each group: most recent first
-    for (const group of map.values()) {
-      group.incidents.sort((a, b) => {
-        const da = new Date((a.date ?? a.created_at ?? "") as string).getTime()
-        const db = new Date((b.date ?? b.created_at ?? "") as string).getTime()
-        return db - da
-      })
-    }
-
-    return Array.from(map.values()).sort((a, b) => {
-      if (b.criticalCount !== a.criticalCount) return b.criticalCount - a.criticalCount
-      return b.openCount - a.openCount
-    })
-  }, [incidents, assets])
+  const grouped = useMemo(
+    () => groupIncidentsForIncidentesLookup(incidents, assets),
+    [incidents, assets],
+  )
 
   // On initial load: collapse groups that have no critical/open incidents
   useEffect(() => {

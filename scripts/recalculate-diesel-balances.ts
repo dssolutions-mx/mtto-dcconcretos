@@ -169,16 +169,19 @@ async function recalculateWarehouseBalances(warehouseId: string, warehouseCode: 
     // EXECUTE MODE - Apply changes
     console.log(`\n🔨 EXECUTING UPDATES...`)
 
-    // Create backup snapshot first
+    // Create backup snapshot first (schema: opening/closing + activity totals)
+    const backupBalance = Number(result.old_stored_inventory)
     const { error: snapshotError } = await supabase
       .from('diesel_inventory_snapshots')
       .insert({
         warehouse_id: warehouseId,
         snapshot_date: new Date().toISOString(),
-        inventory_balance: result.old_stored_inventory,
-        transaction_count: transactions.length,
-        notes: `Pre-recalculation backup - ${result.corrections_made} corrections needed`,
-        created_by: null // System-generated
+        opening_balance: backupBalance,
+        total_entries: 0,
+        total_consumptions: 0,
+        total_adjustments: 0,
+        closing_balance: backupBalance,
+        notes: `Pre-recalculation backup (${transactions.length} tx) — ${result.corrections_made} corrections needed`
       })
 
     if (snapshotError) {
