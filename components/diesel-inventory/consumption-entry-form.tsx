@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { createBrowserClient } from "@supabase/ssr"
 import { useRouter } from "next/navigation"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
@@ -31,6 +31,7 @@ import {
   resolveDieselTransactionPlantId,
   validateDieselTransactionScope
 } from "@/lib/diesel/submit-scope-validation"
+import { getLocalDateString, getLocalTimeString } from "@/lib/diesel/date-utils"
 
 interface ConsumptionEntryFormProps {
   productType: 'diesel' | 'urea'
@@ -48,6 +49,7 @@ export function ConsumptionEntryForm({
 }: ConsumptionEntryFormProps) {
   const router = useRouter()
   const [loading, setLoading] = useState(false)
+  const submittingRef = useRef(false)
   const [isOnline, setIsOnline] = useState(typeof window !== 'undefined' ? navigator.onLine : true)
 
   // Form state
@@ -74,8 +76,8 @@ export function ConsumptionEntryForm({
   const [selectedAsset, setSelectedAsset] = useState<any>(null)
   const [exceptionAssetName, setExceptionAssetName] = useState<string>("")
   const [quantityLiters, setQuantityLiters] = useState<string>("")
-  const [transactionDate, setTransactionDate] = useState<string>(new Date().toISOString().split('T')[0])
-  const [transactionTime, setTransactionTime] = useState<string>(new Date().toTimeString().slice(0, 5))
+  const [transactionDate, setTransactionDate] = useState<string>(() => getLocalDateString())
+  const [transactionTime, setTransactionTime] = useState<string>(() => getLocalTimeString())
   const [cuentaLitros, setCuentaLitros] = useState<string>("")
   const [previousCuentaLitros, setPreviousCuentaLitros] = useState<number | null>(null)
   const [readings, setReadings] = useState<any>({})
@@ -459,7 +461,11 @@ export function ConsumptionEntryForm({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    
+    if (submittingRef.current) return
+    submittingRef.current = true
+    setLoading(true)
+
+    try {
     console.log('=== FORM SUBMISSION STARTED ===')
     console.log('Asset Type:', assetType)
     console.log('Selected Warehouse:', selectedWarehouse)
@@ -507,13 +513,13 @@ export function ConsumptionEntryForm({
       return
     }
 
-    const { data: { user: scopeUser } } = await supabase.auth.getUser()
-    if (!scopeUser) {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) {
       toast.error("No hay sesión de usuario")
       return
     }
     const scopeErr = await validateDieselTransactionScope(supabase, {
-      userId: scopeUser.id,
+      userId: user.id,
       selectedPlant,
       selectedWarehouse
     })
@@ -569,16 +575,6 @@ export function ConsumptionEntryForm({
       if (!proceed) return
     }
 
-    try {
-      setLoading(true)
-      console.log('Step 1: Getting user...')
-
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) {
-        toast.error("No hay sesión de usuario")
-        console.error('No user found')
-        return
-      }
       console.log('Step 1 ✓: User:', user.id)
 
       // Get warehouse current inventory (faster than RPC)
@@ -758,6 +754,8 @@ export function ConsumptionEntryForm({
       setNotes("")
       setReadings({})
       setPreviousCuentaLitros(null)
+      setTransactionDate(getLocalDateString())
+      setTransactionTime(getLocalTimeString())
 
       if (onSuccess) {
         onSuccess(transaction.id)
@@ -776,6 +774,7 @@ export function ConsumptionEntryForm({
       })
     } finally {
       setLoading(false)
+      submittingRef.current = false
       console.log('=== FORM SUBMISSION ENDED ===')
     }
   }
@@ -1011,7 +1010,7 @@ export function ConsumptionEntryForm({
                       value={transactionDate}
                       onChange={(e) => setTransactionDate(e.target.value)}
                       disabled={loading}
-                      max={new Date().toISOString().split('T')[0]}
+                      max={getLocalDateString()}
                       className="h-12 text-base"
                       required
                     />

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { createBrowserClient } from "@supabase/ssr"
 import { useRouter } from "next/navigation"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
@@ -16,6 +16,7 @@ import {
   CheckCircle2
 } from "lucide-react"
 import { toast } from "sonner"
+import { getLocalDateString, getLocalTimeString } from "@/lib/diesel/date-utils"
 import {
   Select,
   SelectContent,
@@ -37,6 +38,7 @@ export function TransferEntryForm({
 }: TransferEntryFormProps) {
   const router = useRouter()
   const [loading, setLoading] = useState(false)
+  const submittingRef = useRef(false)
 
   // Form state
   const [businessUnits, setBusinessUnits] = useState<any[]>([])
@@ -52,8 +54,8 @@ export function TransferEntryForm({
   const [selectedToWarehouse, setSelectedToWarehouse] = useState<string | null>(null)
   
   const [quantityLiters, setQuantityLiters] = useState<string>("")
-  const [transactionDate, setTransactionDate] = useState<string>(new Date().toISOString().split('T')[0])
-  const [transactionTime, setTransactionTime] = useState<string>(new Date().toTimeString().slice(0, 5))
+  const [transactionDate, setTransactionDate] = useState<string>(() => getLocalDateString())
+  const [transactionTime, setTransactionTime] = useState<string>(() => getLocalTimeString())
   const [notes, setNotes] = useState("")
   
   const [fromWarehouseInventory, setFromWarehouseInventory] = useState<number | null>(null)
@@ -187,7 +189,11 @@ export function TransferEntryForm({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (submittingRef.current) return
+    submittingRef.current = true
+    setLoading(true)
 
+    try {
     // Validation
     if (!selectedFromWarehouse || !selectedToWarehouse) {
       toast.error("Selecciona almacén de origen y destino")
@@ -208,9 +214,6 @@ export function TransferEntryForm({
       toast.error(`Inventario insuficiente. Disponible: ${fromWarehouseInventory}L`)
       return
     }
-
-    try {
-      setLoading(true)
 
       const response = await fetch('/api/diesel/transfer', {
         method: 'POST',
@@ -244,6 +247,7 @@ export function TransferEntryForm({
       toast.error(error.message || 'Error al crear transferencia')
     } finally {
       setLoading(false)
+      submittingRef.current = false
     }
   }
 
@@ -448,6 +452,8 @@ export function TransferEntryForm({
                 type="date"
                 value={transactionDate}
                 onChange={(e) => setTransactionDate(e.target.value)}
+                max={getLocalDateString()}
+                disabled={loading}
                 required
               />
             </div>

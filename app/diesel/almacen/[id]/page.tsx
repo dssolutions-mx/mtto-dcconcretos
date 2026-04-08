@@ -36,6 +36,7 @@ import { DashboardShell } from "@/components/dashboard/dashboard-shell"
 import { TransactionEditModal } from "@/components/diesel-inventory/transaction-edit-modal"
 import { TransactionEvidenceModal } from "@/components/diesel-inventory/transaction-evidence-modal"
 import { MarkTransferModal } from "@/components/diesel-inventory/mark-transfer-modal"
+import { formatLocalDateForAccounting } from "@/lib/diesel/date-utils"
 
 interface WarehouseDetails {
   id: string
@@ -760,22 +761,8 @@ export default function WarehouseDetailPage() {
     return 'bg-green-500'
   }
 
-  // Helpers for copy-to-Excel (TSV) export
-  const formatDateForAccounting = (dateStr: string): string => {
-    if (!dateStr) return '-'
-    try {
-      const base = dateStr.split('T')[0]
-      const [y, m, d] = base.split('-').map(n => parseInt(n, 10))
-      if (!y || !m || !d) return '-'
-      const dt = new Date(y, m - 1, d, 12, 0, 0)
-      const dd = String(dt.getDate()).padStart(2, '0')
-      const mm = String(dt.getMonth() + 1).padStart(2, '0')
-      const yyyy = String(dt.getFullYear())
-      return `${dd}/${mm}/${yyyy}`
-    } catch {
-      return '-'
-    }
-  }
+  // Helpers for copy-to-Excel (TSV) export — use local calendar date, not UTC YYYY-MM-DD slice
+  const formatDateForAccounting = formatLocalDateForAccounting
 
   const getWarehouseNumberFromCode = (code: string): string => {
     if (!code) return '-'
