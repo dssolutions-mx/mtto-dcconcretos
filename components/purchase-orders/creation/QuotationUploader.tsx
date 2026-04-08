@@ -11,16 +11,16 @@ import { createClient } from "@/lib/supabase"
 
 interface UploadedFile {
   file: File
-  url: string
   path: string
-  isUploading?: boolean
 }
 
 interface QuotationUploaderProps {
   workOrderId?: string
   isRequired?: boolean
-  onFileUploaded?: (url: string) => void  // Legacy: single file callback
-  onFilesUploaded?: (urls: string[]) => void  // New: multiple files callback
+  /** @deprecated Prefer onFilesUploaded paths — emits storage path in quotations bucket */
+  onFileUploaded?: (storagePath: string) => void
+  /** Storage paths under bucket `quotations` */
+  onFilesUploaded?: (storagePaths: string[]) => void
   onFileRemoved?: () => void
   className?: string
   allowMultiple?: boolean  // Enable multiple file uploads (default: true)
@@ -128,71 +128,48 @@ export function QuotationUploader({
         throw new Error('Usuario no autenticado. Por favor, inicie sesión.')
       }
       
-      const uploadedUrls: string[] = []
-      
+      const uploadedPaths: string[] = []
+
       for (const file of files) {
         try {
           // Create appropriate folder structure
           const folderName = workOrderId || `standalone-po-${Date.now()}`
           const sanitizedFileName = sanitizeFileName(file.name)
           const fileName = `${folderName}/${Date.now()}_${sanitizedFileName}`
-          
-          // Upload to quotations bucket
+
           const { data: uploadData, error: uploadError } = await supabase.storage
             .from('quotations')
             .upload(fileName, file, {
               cacheControl: '3600',
               upsert: true
             })
-            
+
           if (uploadError) {
             console.error('Storage upload error:', uploadError)
             throw new Error(`Error al subir ${file.name}: ${uploadError.message}`)
           }
-          
+
           if (!uploadData?.path) {
             throw new Error(`No se recibió confirmación de upload para ${file.name}`)
           }
-          
-          // Create signed URL for private bucket
-          const { data: signedUrlData, error: urlError } = await supabase.storage
-            .from('quotations')
-            .createSignedUrl(uploadData.path, 3600 * 24 * 7) // 7 days expiry
-            
-          if (urlError) {
-            console.error('Signed URL error:', urlError)
-            throw new Error(`Error al generar URL de ${file.name}: ${urlError.message}`)
-          }
-          
-          const signedUrl = signedUrlData?.signedUrl
-          
-          if (signedUrl) {
-            uploadedUrls.push(signedUrl)
-            
-            // Add to uploaded files list
-            setUploadedFiles(prev => [...prev, {
-              file,
-              url: signedUrl,
-              path: uploadData.path
-            }])
-          }
+
+          uploadedPaths.push(uploadData.path)
+
+          setUploadedFiles((prev) => [...prev, { file, path: uploadData.path }])
         } catch (fileError: any) {
           console.error(`Error uploading ${file.name}:`, fileError)
           setUploadError(fileError.message || `Error al subir ${file.name}`)
         }
       }
       
-      // Call callbacks with uploaded URLs
-      if (uploadedUrls.length > 0) {
+      if (uploadedPaths.length > 0) {
         if (onFilesUploaded) {
-          // Get all current URLs including new ones
-          const allUrls = [...uploadedFiles.map(f => f.url), ...uploadedUrls]
-          onFilesUploaded(allUrls)
+          const allPaths = [...uploadedFiles.map((f) => f.path), ...uploadedPaths]
+          onFilesUploaded(allPaths)
         }
-        
-        // Legacy single file callback (for backwards compatibility)
-        if (onFileUploaded && uploadedUrls.length > 0) {
-          onFileUploaded(uploadedUrls[0])
+
+        if (onFileUploaded && uploadedPaths.length > 0) {
+          onFileUploaded(uploadedPaths[0])
         }
       }
       
@@ -240,7 +217,7 @@ export function QuotationUploader({
       
       // Update callbacks
       if (onFilesUploaded) {
-        onFilesUploaded(newFiles.map(f => f.url))
+        onFilesUploaded(newFiles.map((f) => f.path))
       }
       
       if (newFiles.length === 0 && onFileRemoved) {
@@ -334,16 +311,19 @@ export function QuotationUploader({
                       <Button
                         variant="ghost"
                         size="sm"
-                        asChild
+                        type="button"
+                        className="text-xs"
+                        onClick={async () => {
+                          const supabase = createClient()
+                          const { data, error } = await supabase.storage
+                            .from('quotations')
+                            .createSignedUrl(uploadedFile.path, 3600 * 24)
+                          if (!error && data?.signedUrl) {
+                            window.open(data.signedUrl, '_blank', 'noopener,noreferrer')
+                          }
+                        }}
                       >
-                        <a 
-                          href={uploadedFile.url} 
-                          target="_blank" 
-                          rel="noopener noreferrer"
-                          className="text-xs"
-                        >
-                          Ver
-                        </a>
+                        Ver
                       </Button>
                       
                       <Button

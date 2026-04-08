@@ -288,9 +288,14 @@ export async function DELETE(
       return NextResponse.json({ error: 'No autorizado para eliminar esta orden' }, { status: 403 })
     }
 
-    if (purchaseOrder.status !== 'draft' || purchaseOrder.selected_quotation_id) {
+    const canRevertIncompleteCreation =
+      (purchaseOrder.status === 'draft' || purchaseOrder.status === 'pending_approval') &&
+      !purchaseOrder.selected_quotation_id
+
+    if (!canRevertIncompleteCreation) {
       return NextResponse.json({
-        error: 'Solo se pueden revertir órdenes en borrador sin cotización seleccionada',
+        error:
+          'Solo se pueden revertir órdenes en borrador o pendientes de aprobación, sin cotización seleccionada',
       }, { status: 409 })
     }
 

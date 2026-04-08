@@ -9,6 +9,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover"
 import { ExternalLink, FileText, Image as ImageIcon, Loader2 } from "lucide-react"
+import { getSignedUrlForQuotationFile } from "@/lib/quotations/quotation-file-access"
 
 interface QuotationQuickAccessPopoverProps {
   purchaseOrderId: string
@@ -46,9 +47,12 @@ export function QuotationQuickAccessPopover({
         ? [legacyUrl]
         : []
     for (const url of urls) {
-      if (url && url.trim()) {
-        const name = url.split("/").pop() || "Cotización"
-        collected.push({ name, url: url.trim() })
+      if (!url?.trim()) continue
+      const trimmed = url.trim()
+      const name = trimmed.split("/").pop()?.split("?")[0] || "Cotización"
+      const resolved = await getSignedUrlForQuotationFile(supabase, { file_url: trimmed })
+      if (resolved) {
+        collected.push({ name, url: resolved })
       }
     }
 

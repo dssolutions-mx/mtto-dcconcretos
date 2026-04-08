@@ -123,9 +123,15 @@ export class PurchaseOrderService {
       
       // Determine initial status:
       // - If requires quote: start in 'draft' (will advance after quotation selection)
+      // - If client will attach structured quotations (same request): stay 'draft' so rollback DELETE works
       // - If doesn't require quote: go directly to 'pending_approval'
-      // - Exception: inventory-only POs don't need approval, but still go to pending_approval for workflow
-      const initialStatus = quoteRequirement.requires_quote ? 'draft' : 'pending_approval'
+      const willAttachQuotationsFromClient =
+        Array.isArray(normalizedRequest.quotation_amounts) &&
+        normalizedRequest.quotation_amounts.length > 0
+      const initialStatus =
+        quoteRequirement.requires_quote || willAttachQuotationsFromClient
+          ? 'draft'
+          : 'pending_approval'
       
       const { data, error } = await supabase
         .from('purchase_orders')

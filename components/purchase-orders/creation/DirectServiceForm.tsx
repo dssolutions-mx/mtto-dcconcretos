@@ -160,6 +160,7 @@ export function DirectServiceForm({
     notes?: string
     file?: File
     file_url?: string
+    file_storage_path?: string
     file_name?: string
   }
   const [quotations, setQuotations] = useState<QuotationFormData[]>([])
@@ -560,33 +561,22 @@ export function DirectServiceForm({
 
             // Upload files first, then create quotations
             for (const quotation of normalizedQuotations) {
-              let fileUrl = quotation.file_url
-              
-              // Upload file if provided
-              if (quotation.file && !fileUrl) {
+              if (quotation.file && !quotation.file_storage_path && !quotation.file_url) {
                 const folderName = workOrderId || result.id
                 const sanitizedFileName = quotation.file.name.replace(/[^a-zA-Z0-9.-]/g, '_')
                 const fileName = `${folderName}/${Date.now()}_${sanitizedFileName}`
-                
+
                 const { data: uploadData, error: uploadError } = await supabase.storage
                   .from('quotations')
                   .upload(fileName, quotation.file, { cacheControl: '3600', upsert: false })
-                
+
                 if (uploadError || !uploadData) {
                   throw new Error(uploadError?.message || 'No se pudo subir el archivo de cotización.')
                 }
 
-                const { data: signedUrlData, error: signedUrlError } = await supabase.storage
-                  .from('quotations')
-                  .createSignedUrl(uploadData.path, 3600 * 24 * 7)
-
-                if (signedUrlError || !signedUrlData?.signedUrl) {
-                  throw new Error(signedUrlError?.message || 'No se pudo generar la URL de la cotización.')
-                }
-
-                fileUrl = signedUrlData.signedUrl
+                quotation.file_storage_path = uploadData.path
               }
-              
+
               // Create quotation via API
               const quotationRequest = {
                 purchase_order_id: result.id,
@@ -598,7 +588,8 @@ export function DirectServiceForm({
                 payment_terms: quotation.payment_terms,
                 validity_date: quotation.validity_date ? format(quotation.validity_date, 'yyyy-MM-dd') : undefined,
                 notes: quotation.notes,
-                file_url: fileUrl,
+                file_storage_path: quotation.file_storage_path,
+                file_url: quotation.file_url,
                 file_name: quotation.file_name
               }
               

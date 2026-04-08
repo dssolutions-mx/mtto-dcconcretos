@@ -71,7 +71,8 @@ export async function POST(request: NextRequest) {
         payment_terms: body.payment_terms,
         validity_date: body.validity_date,
         notes: body.notes,
-        file_url: body.file_url,
+        file_storage_path: body.file_storage_path ?? null,
+        file_url: body.file_url ?? null,
         file_name: body.file_name,
         status: 'pending',
         created_by: user.id

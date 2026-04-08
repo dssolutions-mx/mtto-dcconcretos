@@ -1,6 +1,7 @@
 "use client"
 
 import { Suspense, useState, useEffect, useMemo, useRef, useCallback } from "react"
+import { createPortal } from "react-dom"
 import { useSearchParams, useRouter } from "next/navigation"
 import { DashboardHeader } from "@/components/dashboard/dashboard-header"
 import { DashboardShell } from "@/components/dashboard/dashboard-shell"
@@ -8,7 +9,7 @@ import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Plus, Search, X, FileDown } from "lucide-react"
+import { Plus, Search, X, FileDown, Loader2 } from "lucide-react"
 import Link from "next/link"
 import { IncidentsOTLookup } from "@/components/incidents/incidents-ot-lookup"
 import { IncidentSnapshotPrintDocument } from "@/components/incidents/incident-snapshot-print-document"
@@ -161,6 +162,15 @@ function IncidentsPageContent() {
     [toast],
   )
 
+  useEffect(() => {
+    if (!snapshotOpen) return
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = "hidden"
+    return () => {
+      document.body.style.overflow = previousOverflow
+    }
+  }, [snapshotOpen])
+
   const handleInstantaneoPdf = () => {
     if (filteredIncidents.length === 0) {
       toast({
@@ -198,21 +208,46 @@ function IncidentsPageContent() {
     )
   }
 
+  const pdfPortal =
+    snapshotOpen &&
+    typeof document !== "undefined" &&
+    createPortal(
+      <>
+        <div
+          className="fixed inset-0 z-[200] flex items-center justify-center bg-background/75 backdrop-blur-[2px]"
+          role="alertdialog"
+          aria-busy="true"
+          aria-live="polite"
+          aria-label="Generando PDF"
+        >
+          <div className="mx-4 flex max-w-sm flex-col items-center gap-3 rounded-lg border bg-card px-6 py-5 text-center shadow-lg">
+            <Loader2 className="h-9 w-9 animate-spin text-primary" aria-hidden />
+            <p className="text-sm font-semibold text-foreground">Generando instantáneo PDF</p>
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              Midiendo el listado y capturando el documento. Suele tardar unos segundos si hay muchas fotos.
+            </p>
+          </div>
+        </div>
+        <div className="pointer-events-none fixed left-0 top-0 z-[40] h-0 w-0 overflow-visible" aria-hidden>
+          <div className="absolute left-[-9999px] top-0 w-[794px]">
+            <IncidentSnapshotPrintDocument
+              ref={snapshotRef}
+              active={snapshotOpen}
+              incidents={filteredIncidents}
+              assets={assets}
+              filterSummaryLine={filterSummaryLine}
+              generatedAt={snapshotAt}
+              onReadyForPdf={handleSnapshotPdfReady}
+            />
+          </div>
+        </div>
+      </>,
+      document.body,
+    )
+
   return (
     <DashboardShell>
-      {snapshotOpen ? (
-        <div className="fixed -left-[9999px] top-0 z-[100] pointer-events-none" aria-hidden>
-          <IncidentSnapshotPrintDocument
-            ref={snapshotRef}
-            active={snapshotOpen}
-            incidents={filteredIncidents}
-            assets={assets}
-            filterSummaryLine={filterSummaryLine}
-            generatedAt={snapshotAt}
-            onReadyForPdf={handleSnapshotPdfReady}
-          />
-        </div>
-      ) : null}
+      {pdfPortal}
 
       <DashboardHeader
         heading="Incidentes"
@@ -222,12 +257,17 @@ function IncidentsPageContent() {
           <Button
             type="button"
             variant="outline"
-            className="cursor-pointer"
+            className="min-w-[9rem] cursor-pointer"
+            disabled={snapshotOpen}
             onClick={handleInstantaneoPdf}
           >
-            <FileDown className="mr-2 h-4 w-4" />
-            <span className="hidden sm:inline">Instantáneo PDF</span>
-            <span className="sm:hidden">PDF</span>
+            {snapshotOpen ? (
+              <Loader2 className="mr-2 h-4 w-4 shrink-0 animate-spin" aria-hidden />
+            ) : (
+              <FileDown className="mr-2 h-4 w-4 shrink-0" aria-hidden />
+            )}
+            <span className="hidden sm:inline">{snapshotOpen ? "Generando…" : "Instantáneo PDF"}</span>
+            <span className="sm:hidden">{snapshotOpen ? "…" : "PDF"}</span>
           </Button>
           <Button asChild className="cursor-pointer">
             <Link href="/activos">

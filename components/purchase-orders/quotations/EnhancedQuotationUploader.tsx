@@ -30,6 +30,7 @@ interface QuotationFormData {
   notes?: string
   file?: File
   file_url?: string
+  file_storage_path?: string
   file_name?: string
 }
 
@@ -81,7 +82,7 @@ export function EnhancedQuotationUploader({
       errors.push('El monto cotizado debe ser mayor a 0')
     }
     
-    if (!formData.file && !formData.file_url) {
+    if (!formData.file && !formData.file_url && !formData.file_storage_path) {
       errors.push('Debe subir un archivo de cotización')
     }
     
@@ -116,24 +117,18 @@ export function EnhancedQuotationUploader({
       const folderName = workOrderId || purchaseOrderId
       const sanitizedFileName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_')
       const fileName = `${folderName}/${Date.now()}_${sanitizedFileName}`
-      
+
       const { data: uploadData, error: uploadError } = await supabase.storage
         .from('quotations')
         .upload(fileName, file, {
           cacheControl: '3600',
           upsert: false
         })
-      
+
       if (uploadError) throw uploadError
-      
-      // Create signed URL
-      const { data: signedUrlData, error: urlError } = await supabase.storage
-        .from('quotations')
-        .createSignedUrl(uploadData.path, 3600 * 24 * 7) // 7 days
-      
-      if (urlError) throw urlError
-      
-      return signedUrlData?.signedUrl || ''
+      if (!uploadData?.path) throw new Error('Sin ruta de archivo tras subir')
+
+      return uploadData.path
     } finally {
       setIsUploadingFile(false)
     }
@@ -150,14 +145,13 @@ export function EnhancedQuotationUploader({
     setFormErrors([])
     
     try {
+      let fileStoragePath = formData.file_storage_path
       let fileUrl = formData.file_url
-      
-      // Upload file if provided
-      if (formData.file && !fileUrl) {
-        fileUrl = await uploadFile(formData.file)
+
+      if (formData.file && !fileStoragePath && !fileUrl) {
+        fileStoragePath = await uploadFile(formData.file)
       }
-      
-      // Create quotation request
+
       const request: CreateQuotationRequest = {
         purchase_order_id: purchaseOrderId,
         supplier_id: selectedSupplier?.id,
@@ -167,6 +161,7 @@ export function EnhancedQuotationUploader({
         payment_terms: formData.payment_terms || undefined,
         validity_date: formData.validity_date ? format(formData.validity_date, 'yyyy-MM-dd') : undefined,
         notes: formData.notes || undefined,
+        file_storage_path: fileStoragePath,
         file_url: fileUrl,
         file_name: formData.file_name
       }

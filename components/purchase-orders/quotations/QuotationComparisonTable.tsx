@@ -7,11 +7,12 @@ import { Badge } from "@/components/ui/badge"
 import { ArrowUpDown, ArrowUp, ArrowDown, CheckCircle2, FileText, Star } from "lucide-react"
 import { PurchaseOrderQuotation, QuotationComparison } from "@/types/purchase-orders"
 import { QuotationStatus } from "@/types/purchase-orders"
+import { QuotationFileButton } from "@/components/purchase-orders/quotations/QuotationFileButton"
+import { quotationHasFile } from "@/lib/quotations/quotation-file-access"
 
 interface QuotationComparisonTableProps {
   comparison: QuotationComparison
   onSelect?: (quotationId: string) => void
-  onViewFile?: (quotationId: string) => void
 }
 
 type SortField = 'supplier' | 'price' | 'delivery' | 'rating'
@@ -20,7 +21,6 @@ type SortDirection = 'asc' | 'desc'
 export function QuotationComparisonTable({
   comparison,
   onSelect,
-  onViewFile
 }: QuotationComparisonTableProps) {
   const [sortField, setSortField] = useState<SortField>('price')
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc')
@@ -195,17 +195,15 @@ export function QuotationComparisonTable({
                 </TableCell>
                 <TableCell className="text-center">
                   <div className="flex items-center justify-center space-x-2">
-                    {quotation.file_url && (
-                      <Button
+                    {quotationHasFile(quotation) && (
+                      <QuotationFileButton
+                        quotation={quotation}
                         variant="ghost"
-                        size="sm"
-                        onClick={() => onViewFile?.(quotation.id)}
-                        asChild
+                        size="icon"
+                        className="h-8 w-8 p-0"
                       >
-                        <a href={quotation.file_url} target="_blank" rel="noopener noreferrer">
-                          <FileText className="h-4 w-4" />
-                        </a>
-                      </Button>
+                        <FileText className="h-4 w-4" />
+                      </QuotationFileButton>
                     )}
                     {!isSelected && quotation.status === QuotationStatus.PENDING && onSelect && (
                       <Button

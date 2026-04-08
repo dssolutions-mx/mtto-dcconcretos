@@ -5,6 +5,8 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Star, Clock, DollarSign, CheckCircle2, XCircle, FileText, TrendingDown, Zap, Trash2 } from "lucide-react"
 import { PurchaseOrderQuotation } from "@/types/purchase-orders"
+import { QuotationFileButton } from "@/components/purchase-orders/quotations/QuotationFileButton"
+import { quotationHasFile } from "@/lib/quotations/quotation-file-access"
 import { Supplier } from "@/types/suppliers"
 import { QuotationStatus } from "@/types/purchase-orders"
 
@@ -140,14 +142,9 @@ export function QuotationComparisonCard({
         </div>
 
         {/* File Link */}
-        {quotation.file_url && (
+        {quotationHasFile(quotation) && (
           <div className="mb-4">
-            <Button variant="outline" size="sm" asChild className="w-full">
-              <a href={quotation.file_url} target="_blank" rel="noopener noreferrer">
-                <FileText className="h-4 w-4 mr-2" />
-                Ver Cotización
-              </a>
-            </Button>
+            <QuotationFileButton quotation={quotation} fullWidth />
           </div>
         )}
 

@@ -398,7 +398,10 @@ export interface PurchaseOrderQuotation {
   payment_terms?: string
   validity_date?: string
   notes?: string
+  /** @deprecated Prefer file_storage_path; persisted signed URLs expire */
   file_url?: string
+  /** Path within bucket `quotations` — stable; use for new records */
+  file_storage_path?: string | null
   file_name?: string
   status: QuotationStatus
   selected_at?: string
@@ -424,7 +427,9 @@ export interface CreateQuotationRequest {
   payment_terms?: string
   validity_date?: string
   notes?: string
+  /** @deprecated Use file_storage_path for uploads */
   file_url?: string
+  file_storage_path?: string | null
   file_name?: string
 }
 

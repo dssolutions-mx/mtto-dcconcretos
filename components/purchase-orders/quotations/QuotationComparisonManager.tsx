@@ -15,6 +15,7 @@ import { EnhancedQuotationUploader } from "./EnhancedQuotationUploader"
 import { QuotationComparisonTable } from "./QuotationComparisonTable"
 import { QuotationComparisonCard } from "./QuotationComparisonCard"
 import { QuotationSelectionDialog } from "./QuotationSelectionDialog"
+import { QuotationFileButton } from "./QuotationFileButton"
 import { PurchaseOrderQuotation, QuotationComparisonResponse, QuotationStatus } from "@/types/purchase-orders"
 import { QuotationService } from "@/lib/services/quotation-service"
 import { toast } from "sonner"
@@ -192,17 +193,15 @@ export function QuotationComparisonManager({
           <span className="text-green-800">
             {selectedQuotationData.quoted_amount?.toLocaleString('es-MX', { style: 'currency', currency: 'MXN' })}
           </span>
-          {selectedQuotationData.file_url && (
-            <a
-              href={selectedQuotationData.file_url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 text-green-700 hover:underline"
-            >
-              <FileText className="h-3.5 w-3.5" />
-              Ver
-            </a>
-          )}
+          <QuotationFileButton
+            quotation={selectedQuotationData}
+            variant="link"
+            className="inline-flex h-auto p-0 text-green-700"
+            label="Ver"
+          >
+            <FileText className="h-3.5 w-3.5 mr-1" />
+            Ver
+          </QuotationFileButton>
         </div>
       ) : quotations.length > 0 ? (
         compact ? (
@@ -257,10 +256,6 @@ export function QuotationComparisonManager({
                 <QuotationComparisonTable
                   comparison={comparison.comparison}
                   onSelect={quotationSelectionStatus === 'pending_selection' ? handleSelectQuotation : undefined}
-                  onViewFile={(id) => {
-                    const q = quotations.find(qu => qu.id === id)
-                    if (q?.file_url) window.open(q.file_url, '_blank')
-                  }}
                 />
               )}
             </TabsContent>

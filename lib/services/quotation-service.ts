@@ -71,7 +71,8 @@ export class QuotationService {
           payment_terms: request.payment_terms,
           validity_date: request.validity_date,
           notes: request.notes,
-          file_url: request.file_url,
+          file_storage_path: request.file_storage_path ?? null,
+          file_url: request.file_url ?? null,
           file_name: request.file_name,
           status: QuotationStatus.PENDING,
           created_by: user_id

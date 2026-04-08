@@ -9,6 +9,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Download, ExternalLink, FileText, Image as ImageIcon, Loader2, Trash2, Upload } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { getSignedUrlForQuotationFile } from "@/lib/quotations/quotation-file-access"
 
 type QuotationSource = 'quotations' | 'documents' | 'legacy'
 
@@ -83,9 +84,13 @@ export function QuotationManager({ purchaseOrderId, workOrderId, onChanged, read
         } catch {}
       }
 
-      // 3) Optional: show single legacy URL stored in DB (only if still nothing found)
+      // 3) Optional: legacy URL from DB — refresh signed URL if expired
       if (legacyUrl && collected.length === 0) {
-        collected.unshift({ name: legacyUrl.split('/').pop() || 'cotizacion', path: legacyUrl, signedUrl: legacyUrl, source: 'legacy' })
+        const name = legacyUrl.split('/').pop()?.split('?')[0] || 'cotizacion'
+        const resolved = await getSignedUrlForQuotationFile(supabase, { file_url: legacyUrl })
+        if (resolved) {
+          collected.unshift({ name, path: legacyUrl, signedUrl: resolved, source: 'legacy' })
+        }
       }
 
       // Deduplicate by filename to avoid duplicates across sources
