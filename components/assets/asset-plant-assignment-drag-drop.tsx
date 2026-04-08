@@ -1,29 +1,32 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { 
   Building2, 
   Package, 
-  Search,
-  Filter,
   RefreshCw,
   Factory,
   MapPin,
-  Wrench,
   AlertCircle,
-  Plus,
-  Settings
+  GripVertical,
+  Layers
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
 import { useToast } from '@/components/ui/use-toast'
 import { getAssetStatusConfig } from '@/lib/utils/asset-status'
-import { ScrollArea } from '@/components/ui/scroll-area'
-import { Separator } from '@/components/ui/separator'
-import { Alert, AlertDescription } from '@/components/ui/alert'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Switch } from '@/components/ui/switch'
+import { Label } from '@/components/ui/label'
 import { MoveConflictDialog, ConflictData, ResolutionStrategy } from '@/components/personnel/dialogs/move-conflict-dialog'
 import { QuickOperatorAssignmentDialog } from './quick-operator-assignment-dialog'
 import { dragItemVariants, dropZoneVariants, springTransition, dragOverlayVariants } from '@/lib/utils/framer-drag-animations'
@@ -33,13 +36,20 @@ import {
   DragEndEvent,
   DragStartEvent,
   DragOverlay,
-  PointerSensor,
+  TouchSensor,
+  MouseSensor,
   useSensor,
   useSensors,
-  closestCenter,
   DragOverEvent,
   useDroppable,
 } from '@dnd-kit/core'
+import {
+  assetDragId,
+  parseAssetDragId,
+  plantDroppableId,
+  parsePlantDroppableId,
+  preferZoneDroppableCollision,
+} from '@/lib/dnd/assignment-drop-targets'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   SortableContext,
@@ -53,6 +63,8 @@ interface Asset {
   asset_id: string
   name: string
   status: string
+  /** When true, row is the composite parent; components are not listed separately. */
+  is_composite?: boolean | null
   location?: string
   department?: string
   current_hours?: number
@@ -94,9 +106,14 @@ interface BusinessUnit {
 
 // Asset Draggable Item Component
 function AssetDraggableItem({ 
-  asset, 
+  asset,
+  onRequestMove,
+  /** Single-line row: fits more assets per plant without tiny scroll viewport. */
+  density = 'default',
 }: { 
   asset: Asset
+  onRequestMove?: (asset: Asset) => void
+  density?: 'default' | 'compact'
 }) {
   const {
     attributes,
@@ -105,7 +122,7 @@ function AssetDraggableItem({
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: asset.id })
+  } = useSortable({ id: assetDragId(asset.id) })
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -124,7 +141,70 @@ function AssetDraggableItem({
     )
   }
 
-  // Ultra-compact version for better density
+  if (density === 'compact') {
+    return (
+      <motion.div
+        variants={dragItemVariants}
+        initial="idle"
+        animate={isDragging ? "dragging" : "idle"}
+        whileHover="hover"
+        layout
+        transition={springTransition}
+      >
+        <div
+          ref={setNodeRef}
+          style={style}
+          {...attributes}
+          className="bg-white border border-gray-200 rounded px-1 py-0.5 hover:shadow-sm transition-all duration-200 hover:border-blue-300"
+        >
+          <div
+            {...listeners}
+            className="cursor-grab touch-none active:cursor-grabbing flex items-center gap-0.5 min-h-[26px]"
+          >
+            <GripVertical className="h-3 w-3 shrink-0 text-gray-400" aria-hidden />
+            <span className="font-semibold text-[11px] text-gray-900 tabular-nums shrink-0 max-w-[5.5rem] truncate">
+              {asset.asset_id}
+            </span>
+            <span className="text-[10px] text-gray-600 truncate min-w-0 flex-1" title={asset.name}>
+              {asset.name}
+            </span>
+            {asset.is_composite && (
+              <span
+                className="inline-flex items-center gap-0 rounded border border-violet-200 bg-violet-50 px-0.5 shrink-0"
+                title="Activo compuesto (incluye componentes)"
+              >
+                <Layers className="h-2.5 w-2.5 text-violet-600" aria-hidden />
+              </span>
+            )}
+            <Badge
+              variant={getAssetStatusConfig(asset.status).variant}
+              className="text-[7px] h-4 px-1 py-0 leading-none shrink-0 max-w-[4.5rem] truncate"
+              title={getAssetStatusConfig(asset.status).label}
+            >
+              {getAssetStatusConfig(asset.status).label}
+            </Badge>
+          </div>
+          {onRequestMove && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="w-full mt-0.5 h-6 text-[9px] md:hidden py-0"
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.stopPropagation()
+                onRequestMove(asset)
+              }}
+            >
+              Mover…
+            </Button>
+          )}
+        </div>
+      </motion.div>
+    )
+  }
+
+  // Default: unassigned panel & drag overlay — a bit more detail
   return (
     <motion.div
       variants={dragItemVariants}
@@ -138,43 +218,68 @@ function AssetDraggableItem({
         ref={setNodeRef}
         style={style}
         {...attributes}
-        {...listeners}
-        className="bg-white border border-gray-200 rounded p-1.5 cursor-grab active:cursor-grabbing hover:shadow-sm transition-all duration-200 hover:border-blue-300"
+        className="bg-white border border-gray-200 rounded p-1.5 hover:shadow-sm transition-all duration-200 hover:border-blue-300"
       >
-      {/* Single line with Asset ID and Badge */}
-      <div className="flex items-center justify-between mb-1">
-        <div className="flex items-center gap-1">
-          <div className="p-0.5 bg-blue-50 rounded">
-            <Package className="h-2 w-2 text-blue-600" />
+        <div
+          {...listeners}
+          className="cursor-grab touch-none active:cursor-grabbing"
+        >
+          <div className="flex items-start gap-1">
+            <span className="mt-0.5 text-gray-400 shrink-0" aria-hidden>
+              <GripVertical className="h-3 w-3" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center justify-between mb-1">
+                <div className="flex items-center gap-1 min-w-0">
+                  <div className="p-0.5 bg-blue-50 rounded shrink-0">
+                    {asset.is_composite ? (
+                      <Layers className="h-2 w-2 text-violet-600" aria-hidden />
+                    ) : (
+                      <Package className="h-2 w-2 text-blue-600" />
+                    )}
+                  </div>
+                  <span className="font-bold text-sm text-gray-900 truncate">
+                    {asset.asset_id}
+                  </span>
+                </div>
+                <Badge variant={getAssetStatusConfig(asset.status).variant} className="text-[8px] h-2.5 px-1 shrink-0">
+                  {getAssetStatusConfig(asset.status).label}
+                </Badge>
+              </div>
+              <p className="text-[10px] text-gray-600 leading-tight truncate">
+                {asset.name}
+              </p>
+              <div className="flex items-center justify-between mt-1">
+                {asset.location && (
+                  <p className="text-[8px] text-gray-500 flex items-center gap-0.5 truncate">
+                    <MapPin className="h-1.5 w-1.5 shrink-0" />
+                    {asset.location}
+                  </p>
+                )}
+                {asset.current_hours && (
+                  <span className="text-[8px] text-gray-500">
+                    {asset.current_hours.toLocaleString()}h
+                  </span>
+                )}
+              </div>
+            </div>
           </div>
-          <span className="font-bold text-sm text-gray-900">
-            {asset.asset_id}
-          </span>
         </div>
-                              <Badge variant={getAssetStatusConfig(asset.status).variant} className="text-[8px] h-2.5 px-1">
-          {getAssetStatusConfig(asset.status).label}
-        </Badge>
-      </div>
-      
-      {/* Asset Name - Only one line, no model duplication */}
-      <p className="text-[10px] text-gray-600 leading-tight truncate">
-        {asset.name}
-      </p>
-      
-      {/* Bottom line with location and hours */}
-      <div className="flex items-center justify-between mt-1">
-        {asset.location && (
-          <p className="text-[8px] text-gray-500 flex items-center gap-0.5">
-            <MapPin className="h-1.5 w-1.5" />
-            {asset.location}
-          </p>
+        {onRequestMove && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="w-full mt-1.5 h-7 text-[10px] md:hidden"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation()
+              onRequestMove(asset)
+            }}
+          >
+            Mover a planta…
+          </Button>
         )}
-        {asset.current_hours && (
-          <span className="text-[8px] text-gray-500">
-            {asset.current_hours.toLocaleString()}h
-          </span>
-        )}
-      </div>
       </div>
     </motion.div>
   )
@@ -184,17 +289,15 @@ function AssetDraggableItem({
 function PlantContainer({ 
   plant, 
   assets, 
-  onDrop,
-  draggedAsset
+  onRequestMove,
 }: {
   plant: Plant
   assets: Asset[]
-  onDrop: (assetId: string, plantId: string) => void
-  draggedAsset: Asset | null
+  onRequestMove?: (asset: Asset) => void
 }) {
   
   const { setNodeRef, isOver } = useDroppable({
-    id: `plant-${plant.id}`,
+    id: plantDroppableId(plant.id),
   })
   
   const plantAssets = assets.filter(asset => asset.plant_id === plant.id)
@@ -208,28 +311,28 @@ function PlantContainer({
       <div 
         ref={setNodeRef} 
         className={`
-          relative border-2 rounded-lg transition-all duration-200 min-h-[150px]
+          relative border-2 rounded-lg transition-all duration-200 min-h-[100px]
           ${isOver 
             ? 'border-green-400 bg-green-50 shadow-lg' 
             : 'border-gray-200 bg-white hover:border-gray-300 hover:shadow-sm'
           }
         `}
       >
-      {/* Header */}
-      <div className="p-3 border-b border-gray-100 bg-gray-50/50">
-        <div className="flex items-center gap-2">
-          <div className="p-1.5 bg-green-100 rounded">
-            <Factory className="h-4 w-4 text-green-600" />
+      {/* Header — slim so list area gets vertical space */}
+      <div className="py-2 px-2 border-b border-gray-100 bg-gray-50/50">
+        <div className="flex items-center gap-1.5">
+          <div className="p-1 bg-green-100 rounded shrink-0">
+            <Factory className="h-3.5 w-3.5 text-green-600" />
           </div>
           <div className="flex-1 min-w-0">
-            <h4 className="font-semibold text-sm text-gray-900 truncate">
+            <h4 className="font-semibold text-xs text-gray-900 truncate leading-tight">
               {plant.name}
             </h4>
-            <p className="text-xs text-gray-600">
-              {plantAssets.length} activo{plantAssets.length !== 1 ? 's' : ''} asignado{plantAssets.length !== 1 ? 's' : ''}
+            <p className="text-[10px] text-gray-600 leading-tight">
+              {plantAssets.length} activo{plantAssets.length !== 1 ? 's' : ''}
             </p>
           </div>
-          <Badge variant="outline" className="text-xs px-2 py-0.5">
+          <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-5 shrink-0">
             {plant.code}
           </Badge>
         </div>
@@ -255,12 +358,12 @@ function PlantContainer({
         )}
       </div>
 
-      {/* Assets in this plant */}
-      <div className="p-2">
-        <div className="max-h-72 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100">
-          <div className="space-y-1 pr-2">
+      {/* Assets — viewport-tall scroll + compact rows = many visible per plant */}
+      <div className="p-1.5">
+        <div className="max-h-[min(72vh,720px)] min-h-[120px] overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 overscroll-contain">
+          <div className="space-y-0.5 pr-1">
             <SortableContext 
-              items={plantAssets.map(a => a.id)} 
+              items={plantAssets.map(a => assetDragId(a.id))} 
               strategy={verticalListSortingStrategy}
             >
               <AnimatePresence mode="popLayout">
@@ -274,6 +377,8 @@ function PlantContainer({
                   >
                     <AssetDraggableItem
                       asset={asset}
+                      onRequestMove={onRequestMove}
+                      density="compact"
                     />
                   </motion.div>
                 ))}
@@ -300,19 +405,20 @@ function PlantContainer({
 // Business Unit Container Component
 function BusinessUnitContainer({ 
   businessUnit, 
-  plants, 
+  plantsInUnit, 
+  configuredPlantCount,
   assets, 
-  onDrop,
-  draggedAsset
+  onRequestMove,
 }: {
   businessUnit: BusinessUnit
-  plants: Plant[]
+  plantsInUnit: Plant[]
+  /** Total plants in DB for this BU (before visibility filter). */
+  configuredPlantCount: number
   assets: Asset[]
-  onDrop: (assetId: string, plantId: string) => void
-  draggedAsset: Asset | null
+  onRequestMove?: (asset: Asset) => void
 }) {
   
-  const businessUnitPlants = plants.filter(plant => plant.business_unit_id === businessUnit.id)
+  const businessUnitPlants = plantsInUnit
   const businessUnitAssets = assets.filter(asset => {
     const assetPlant = businessUnitPlants.find(p => p.id === asset.plant_id)
     return assetPlant !== undefined
@@ -349,10 +455,10 @@ function BusinessUnitContainer({
         </div>
       </div>
 
-      {/* Plants grid */}
-      <div className="p-3">
+      {/* Plants grid — fewer, wider columns so each plant list is readable */}
+      <div className="p-2 md:p-3">
         {businessUnitPlants.length > 0 ? (
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-2 2xl:grid-cols-3">
             <AnimatePresence mode="popLayout">
               {businessUnitPlants.map((plant) => (
                 <motion.div
@@ -365,17 +471,23 @@ function BusinessUnitContainer({
                   <PlantContainer 
                     plant={plant}
                     assets={assets}
-                    onDrop={onDrop}
-                    draggedAsset={draggedAsset}
+                    onRequestMove={onRequestMove}
                   />
                 </motion.div>
               ))}
             </AnimatePresence>
           </div>
-        ) : (
+        ) : configuredPlantCount === 0 ? (
           <div className="text-center py-6 text-gray-400">
             <Factory className="h-8 w-8 mx-auto mb-2 opacity-50" />
             <p className="text-xs">No hay plantas configuradas</p>
+          </div>
+        ) : (
+          <div className="text-center py-6 text-sm text-amber-800 bg-amber-50 rounded-lg border border-amber-100 px-3">
+            <p className="font-medium">Plantas ocultas (sin activos asignados)</p>
+            <p className="text-xs mt-1 text-amber-900/80">
+              Activa &quot;Mostrar plantas sin activos&quot; arriba o usa &quot;Mover a planta…&quot; en el activo para elegir destino.
+            </p>
           </div>
         )}
       </div>
@@ -386,10 +498,12 @@ function BusinessUnitContainer({
 // Unassigned Assets Container
 function UnassignedAssetsContainer({ 
   assets, 
-  searchTerm 
+  searchTerm,
+  onRequestMove,
 }: { 
   assets: Asset[]
   searchTerm: string
+  onRequestMove?: (asset: Asset) => void
 }) {
   const filteredAssets = assets.filter(asset =>
     !asset.plant_id && (
@@ -431,7 +545,7 @@ function UnassignedAssetsContainer({
         <div className="h-[450px] overflow-y-auto scrollbar-thin scrollbar-thumb-orange-300 scrollbar-track-orange-100">
           <div className="space-y-1 pr-2">
             <SortableContext 
-              items={filteredAssets.map(a => a.id)} 
+              items={filteredAssets.map(a => assetDragId(a.id))} 
               strategy={verticalListSortingStrategy}
             >
               <AnimatePresence mode="popLayout">
@@ -445,6 +559,7 @@ function UnassignedAssetsContainer({
                   >
                     <AssetDraggableItem
                       asset={asset}
+                      onRequestMove={onRequestMove}
                     />
                   </motion.div>
                 ))}
@@ -488,13 +603,18 @@ export function AssetPlantAssignmentDragDrop() {
   const [pendingAssignment, setPendingAssignment] = useState<{ assetId: string; plantId: string | null } | null>(null)
   const [quickAssignDialogOpen, setQuickAssignDialogOpen] = useState(false)
   const [recentlyAssignedAsset, setRecentlyAssignedAsset] = useState<{ id: string; name: string; asset_id: string; plantId: string } | null>(null)
+  const [showEmptyPlantsWithNoAssets, setShowEmptyPlantsWithNoAssets] = useState(false)
+  const [assetForMovePicker, setAssetForMovePicker] = useState<Asset | null>(null)
+  const [movePickerPlantId, setMovePickerPlantId] = useState<string>('')
+  const lastPlantContainerRef = useRef<string | null>(null)
   const { toast } = useToast()
 
   const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: {
-        distance: 8,
-      },
+    useSensor(MouseSensor, {
+      activationConstraint: { distance: 10 },
+    }),
+    useSensor(TouchSensor, {
+      activationConstraint: { delay: 250, tolerance: 8 },
     })
   )
 
@@ -524,7 +644,7 @@ export function AssetPlantAssignmentDragDrop() {
 
   const fetchAssets = async () => {
     try {
-      const response = await fetch('/api/assets')
+      const response = await fetch('/api/assets?exclude_components=true')
       if (response.ok) {
         const data = await response.json()
         setAssets(data)
@@ -560,25 +680,49 @@ export function AssetPlantAssignmentDragDrop() {
 
   const handleDragStart = (event: DragStartEvent) => {
     setActiveId(event.active.id as string)
+    lastPlantContainerRef.current = null
+  }
+
+  const handleDragOver = (event: DragOverEvent) => {
+    const id = event.over?.id
+    if (id && parsePlantDroppableId(String(id))) {
+      lastPlantContainerRef.current = String(id)
+    }
   }
 
   const handleDragEnd = async (event: DragEndEvent) => {
     const { active, over } = event
     setActiveId(null)
 
-    if (!over) return
+    const assetId = parseAssetDragId(active.id)
+    if (!assetId) {
+      lastPlantContainerRef.current = null
+      return
+    }
 
-    const assetId = active.id as string
-    const dropZoneId = over.id as string
+    const overStr = over ? String(over.id) : ''
+    let plantId: string | null = parsePlantDroppableId(overStr)
+    if (!plantId && lastPlantContainerRef.current) {
+      plantId = parsePlantDroppableId(lastPlantContainerRef.current)
+    }
+    lastPlantContainerRef.current = null
 
-    // Extract plant ID from drop zone ID
-    let plantId: string | null = null
-    if (dropZoneId.startsWith('plant-')) {
-      plantId = dropZoneId.replace('plant-', '')
+    if (plantId === null) {
+      return
+    }
+
+    const asset = assets.find((a) => a.id === assetId)
+    if (asset?.plant_id === plantId) {
+      return
     }
 
     await handleAssetPlantAssignment(assetId, plantId)
   }
+
+  const openMovePicker = useCallback((asset: Asset) => {
+    setAssetForMovePicker(asset)
+    setMovePickerPlantId(asset.plant_id || plants[0]?.id || '')
+  }, [plants])
 
   const handleAssetPlantAssignment = async (
     assetId: string, 
@@ -604,6 +748,15 @@ export function AssetPlantAssignmentDragDrop() {
       if (!response.ok) {
         // Check if this is a conflict response
         if (response.status === 409 && data.conflicts) {
+          if (
+            !resolveConflicts &&
+            plantId &&
+            data.canTransfer &&
+            !data.requiresUnassign
+          ) {
+            await handleAssetPlantAssignment(assetId, plantId, 'transfer_operators')
+            return
+          }
           // Get plant names for display
           const currentPlant = asset.plants
           const newPlant = plantId ? plants.find(p => p.id === plantId) : null
@@ -766,7 +919,24 @@ export function AssetPlantAssignmentDragDrop() {
     selectedBusinessUnit === 'all' || bu.id === selectedBusinessUnit
   )
 
-  const activeAsset = assets.find(asset => asset.id === activeId)
+  const visiblePlants = useMemo(() => {
+    return plants.filter(
+      (p) =>
+        showEmptyPlantsWithNoAssets ||
+        assets.some((a) => a.plant_id === p.id)
+    )
+  }, [plants, assets, showEmptyPlantsWithNoAssets])
+
+  const businessUnitsToRender = useMemo(() => {
+    return filteredBusinessUnits.filter((bu) =>
+      plants.some((p) => p.business_unit_id === bu.id)
+    )
+  }, [filteredBusinessUnits, plants])
+
+  const activeAsset = useMemo(() => {
+    const raw = parseAssetDragId(activeId)
+    return raw ? assets.find((a) => a.id === raw) ?? null : null
+  }, [activeId, assets])
 
   if (loading) {
     return (
@@ -779,8 +949,9 @@ export function AssetPlantAssignmentDragDrop() {
   return (
     <DndContext
       sensors={sensors}
-      collisionDetection={closestCenter}
+      collisionDetection={preferZoneDroppableCollision()}
       onDragStart={handleDragStart}
+      onDragOver={handleDragOver}
       onDragEnd={handleDragEnd}
     >
       <div className="space-y-4">
@@ -820,7 +991,17 @@ export function AssetPlantAssignmentDragDrop() {
                 {assets.filter(a => !a.plant_id).length} Sin Asignar
               </Badge>
             </div>
-            <div className="flex justify-end">
+            <div className="flex flex-wrap items-center justify-end gap-3">
+              <div className="flex items-center gap-2">
+                <Switch
+                  id="show-empty-plants"
+                  checked={showEmptyPlantsWithNoAssets}
+                  onCheckedChange={setShowEmptyPlantsWithNoAssets}
+                />
+                <Label htmlFor="show-empty-plants" className="text-xs cursor-pointer whitespace-nowrap">
+                  Mostrar plantas sin activos
+                </Label>
+              </div>
               <Button onClick={fetchData} variant="outline" size="sm" className="h-8">
                 <RefreshCw className="h-3 w-3 mr-1" />
                 Actualizar
@@ -836,23 +1017,26 @@ export function AssetPlantAssignmentDragDrop() {
             <UnassignedAssetsContainer 
               assets={assets}
               searchTerm={searchTerm}
+              onRequestMove={openMovePicker}
             />
           </div>
 
           {/* Business Units and Plants - Main Area */}
           <div className="lg:col-span-3 space-y-4">
-            {filteredBusinessUnits.map((businessUnit) => (
+            {businessUnitsToRender.map((businessUnit) => (
               <BusinessUnitContainer
                 key={businessUnit.id}
                 businessUnit={businessUnit}
-                plants={plants}
+                plantsInUnit={visiblePlants.filter((p) => p.business_unit_id === businessUnit.id)}
+                configuredPlantCount={
+                  plants.filter((p) => p.business_unit_id === businessUnit.id).length
+                }
                 assets={assets}
-                onDrop={handleAssetPlantAssignment}
-                draggedAsset={activeAsset || null}
+                onRequestMove={openMovePicker}
               />
             ))}
             
-            {filteredBusinessUnits.length === 0 && (
+            {businessUnitsToRender.length === 0 && (
               <div className="border border-gray-200 rounded-lg p-6 text-center bg-white">
                 <Building2 className="h-8 w-8 mx-auto mb-2 text-gray-400" />
                 <h3 className="text-sm font-medium text-gray-900 mb-1">
@@ -908,6 +1092,67 @@ export function AssetPlantAssignmentDragDrop() {
             onAssign={handleQuickAssign}
           />
         )}
+
+        <Dialog
+          open={assetForMovePicker !== null}
+          onOpenChange={(open) => {
+            if (!open) {
+              setAssetForMovePicker(null)
+              setMovePickerPlantId('')
+            }
+          }}
+        >
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>Mover activo a planta</DialogTitle>
+              <DialogDescription>
+                {assetForMovePicker
+                  ? `${assetForMovePicker.asset_id} — ${assetForMovePicker.name}`
+                  : ''}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-2 py-2">
+              <Label htmlFor="move-plant-select">Planta destino</Label>
+              <Select
+                value={movePickerPlantId}
+                onValueChange={setMovePickerPlantId}
+              >
+                <SelectTrigger id="move-plant-select">
+                  <SelectValue placeholder="Selecciona planta" />
+                </SelectTrigger>
+                <SelectContent>
+                  {plants.map((p) => (
+                    <SelectItem key={p.id} value={p.id}>
+                      {p.name} ({p.code})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setAssetForMovePicker(null)
+                  setMovePickerPlantId('')
+                }}
+              >
+                Cancelar
+              </Button>
+              <Button
+                onClick={async () => {
+                  if (!assetForMovePicker || !movePickerPlantId) return
+                  await handleAssetPlantAssignment(assetForMovePicker.id, movePickerPlantId)
+                  setAssetForMovePicker(null)
+                  setMovePickerPlantId('')
+                }}
+                disabled={!movePickerPlantId}
+              >
+                Mover
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </DndContext>
   )

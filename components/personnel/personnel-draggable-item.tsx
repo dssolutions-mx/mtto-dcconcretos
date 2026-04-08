@@ -2,11 +2,12 @@
 
 import React from 'react'
 import { useDraggable } from '@dnd-kit/core'
+import { operatorDragId } from '@/lib/dnd/assignment-drop-targets'
 import { motion } from 'framer-motion'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
-import { User, Phone, MapPin } from 'lucide-react'
+import { Phone, MapPin } from 'lucide-react'
 import { dragItemVariants, springTransition } from '@/lib/utils/framer-drag-animations'
 
 interface Profile {
@@ -83,7 +84,7 @@ export function PersonnelDraggableItem({ operator, compact = false, isDragging =
     setNodeRef,
     transform,
   } = useDraggable({
-    id: operator.id,
+    id: operatorDragId(operator.id),
   })
 
   const style = {
@@ -108,7 +109,7 @@ export function PersonnelDraggableItem({ operator, compact = false, isDragging =
           style={style}
           {...listeners}
           {...attributes}
-          className={`group relative p-2 bg-white border border-gray-200 rounded-md shadow-sm hover:shadow-md transition-all duration-200 cursor-grab active:cursor-grabbing ${
+          className={`group relative touch-none p-2 bg-white border border-gray-200 rounded-md shadow-sm hover:shadow-md transition-all duration-200 cursor-grab active:cursor-grabbing ${
             isDragging ? 'shadow-lg' : ''
           }`}
         >
@@ -149,7 +150,7 @@ export function PersonnelDraggableItem({ operator, compact = false, isDragging =
         style={style}
         {...listeners}
         {...attributes}
-        className={`group relative cursor-grab active:cursor-grabbing transition-all duration-200 hover:shadow-md ${
+        className={`group relative touch-none cursor-grab active:cursor-grabbing transition-all duration-200 hover:shadow-md ${
           isDragging ? 'shadow-lg' : ''
         }`}
       >

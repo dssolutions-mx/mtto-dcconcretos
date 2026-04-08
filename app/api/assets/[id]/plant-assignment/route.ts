@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase-server'
 import { createAdminClient } from '@/lib/supabase-admin'
 import { NextRequest, NextResponse } from 'next/server'
 import { checkAssetOperatorConflicts } from '@/lib/utils/conflict-detection'
+import { bundleAssetIdsFromRow } from '@/lib/composite-asset-bundle'
 
 export async function PATCH(
   request: NextRequest,
@@ -52,6 +53,8 @@ export async function PATCH(
         name,
         asset_id,
         plant_id,
+        is_composite,
+        component_assets,
         plants:plant_id(id, name, business_unit_id)
       `)
       .eq('id', assetId)
@@ -131,7 +134,9 @@ export async function PATCH(
       }
     }
 
-    // Check for conflicts with assigned operators
+    const bundleAssetIds = bundleAssetIdsFromRow(currentAsset)
+
+    // Check for conflicts with assigned operators (composite + components)
     const conflictCheck = await checkAssetOperatorConflicts(assetId, plant_id || null)
     
     // If conflicts exist and no resolution strategy provided, return conflict information
@@ -156,7 +161,7 @@ export async function PATCH(
       }
 
       if (resolve_conflicts === 'unassign') {
-        // Unassign all operators from this asset
+        // Unassign all operators from this asset (and from composite components if applicable)
         const { error: unassignError } = await supabase
           .from('asset_operators')
           .update({
@@ -166,7 +171,7 @@ export async function PATCH(
             updated_at: new Date().toISOString(),
             notes: `Unassigned due to asset move to ${plant_id ? 'new plant' : 'unassigned'}`
           })
-          .eq('asset_id', assetId)
+          .in('asset_id', bundleAssetIds)
           .eq('status', 'active')
 
         if (unassignError) {
@@ -199,23 +204,39 @@ export async function PATCH(
           }, { status: 404 })
         }
 
-        // Update operators to new plant (only if they're unassigned or in same business unit)
+        const adminForProfiles = createAdminClient()
+        const transferErrors: { operator_id: string; message: string }[] = []
+
         for (const operator of conflictCheck.affected_operators) {
           if (!operator.plant_id || operator.business_unit_id === newPlant.business_unit_id) {
-            const { error: updateOpError } = await supabase
+            const { error: updateOpError } = await adminForProfiles
               .from('profiles')
               .update({
                 plant_id: plant_id,
                 business_unit_id: newPlant.business_unit_id,
-                updated_by: user.id,
-                updated_at: new Date().toISOString()
+                updated_at: new Date().toISOString(),
               })
               .eq('id', operator.id)
 
             if (updateOpError) {
               console.error(`Error transferring operator ${operator.id}:`, updateOpError)
+              transferErrors.push({
+                operator_id: operator.id,
+                message: updateOpError.message,
+              })
             }
           }
+        }
+
+        if (transferErrors.length > 0) {
+          return NextResponse.json(
+            {
+              error:
+                'No se pudieron actualizar uno o más operadores al mover el activo. Revisa permisos o datos del operador.',
+              transfer_errors: transferErrors,
+            },
+            { status: 500 }
+          )
         }
       } else if (resolve_conflicts === 'keep') {
         // Keep assignments but log warning
@@ -258,6 +279,29 @@ export async function PATCH(
     if (updateError) {
       console.error('Error updating asset plant assignment:', updateError)
       return NextResponse.json({ error: 'Error updating asset assignment' }, { status: 500 })
+    }
+
+    // Keep component rows in sync when moving a composite (single logical unit)
+    const componentOnlyIds = Array.isArray(currentAsset.component_assets)
+      ? currentAsset.component_assets.filter((cid: string) => cid && cid !== currentAsset.id)
+      : []
+    if (currentAsset.is_composite && componentOnlyIds.length > 0) {
+      const { error: componentUpdateError } = await adminClient
+        .from('assets')
+        .update({
+          plant_id: plant_id || null,
+          updated_by: user.id,
+          updated_at: new Date().toISOString(),
+        })
+        .in('id', componentOnlyIds)
+
+      if (componentUpdateError) {
+        console.error('Error updating composite component plant assignments:', componentUpdateError)
+        return NextResponse.json(
+          { error: 'No se pudieron actualizar las plantas de los componentes del activo compuesto' },
+          { status: 500 }
+        )
+      }
     }
 
     // Log the assignment change for audit trail

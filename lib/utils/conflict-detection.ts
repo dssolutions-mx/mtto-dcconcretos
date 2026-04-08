@@ -1,4 +1,14 @@
 import { createClient } from '@/lib/supabase-server'
+import { getCompositeBundleAssetIds } from '@/lib/composite-asset-bundle'
+
+/** Supabase FK embed may return one object or a single-element array depending on schema/version. */
+function unwrapJoinedProfile<T extends { id?: string }>(
+  raw: T | T[] | null | undefined
+): T | null {
+  if (raw == null) return null
+  const row = Array.isArray(raw) ? raw[0] : raw
+  return row && typeof row === 'object' ? row : null
+}
 
 export interface OperatorConflict {
   id: string
@@ -44,7 +54,9 @@ export async function checkAssetOperatorConflicts(
 ): Promise<AssetOperatorConflictResult> {
   const supabase = await createClient()
 
-  // Get active assignments for this asset
+  const bundleAssetIds = await getCompositeBundleAssetIds(supabase, assetId)
+
+  // Active assignments on the composite and any of its components (same logical unit)
   const { data: assignments, error } = await supabase
     .from('asset_operators')
     .select(`
@@ -60,7 +72,7 @@ export async function checkAssetOperatorConflicts(
         business_unit_id
       )
     `)
-    .eq('asset_id', assetId)
+    .in('asset_id', bundleAssetIds)
     .eq('status', 'active')
 
   if (error) {
@@ -84,19 +96,41 @@ export async function checkAssetOperatorConflicts(
     }
   }
 
+  const dedupeOperators = (ops: OperatorConflict[]): OperatorConflict[] => {
+    const byId = new Map<string, OperatorConflict>()
+    for (const o of ops) {
+      if (!o.id) continue
+      const prev = byId.get(o.id)
+      if (!prev) {
+        byId.set(o.id, o)
+        continue
+      }
+      const rank = (t: string) => (t === 'primary' ? 0 : 1)
+      if (rank(o.assignment_type) < rank(prev.assignment_type)) {
+        byId.set(o.id, o)
+      }
+    }
+    return [...byId.values()]
+  }
+
   // If asset is being unassigned (newPlantId is null), all operators need to be handled
   if (!newPlantId) {
     return {
       conflicts: true,
-      affected_operators: assignments.map(a => ({
-        id: a.operators?.id || '',
-        nombre: a.operators?.nombre || '',
-        apellido: a.operators?.apellido || '',
-        employee_code: a.operators?.employee_code || undefined,
-        plant_id: a.operators?.plant_id || null,
-        business_unit_id: a.operators?.business_unit_id || null,
-        assignment_type: a.assignment_type as 'primary' | 'secondary'
-      })),
+      affected_operators: dedupeOperators(
+        assignments.map((a) => {
+          const op = unwrapJoinedProfile(a.operators as { id: string } | null)
+          return {
+            id: op?.id || '',
+            nombre: (op as { nombre?: string })?.nombre || '',
+            apellido: (op as { apellido?: string })?.apellido || '',
+            employee_code: (op as { employee_code?: string })?.employee_code || undefined,
+            plant_id: (op as { plant_id?: string | null })?.plant_id ?? null,
+            business_unit_id: (op as { business_unit_id?: string | null })?.business_unit_id ?? null,
+            assignment_type: a.assignment_type as 'primary' | 'secondary',
+          }
+        })
+      ),
       canTransfer: false,
       requiresUnassign: true,
       resolution_required: true
@@ -118,8 +152,8 @@ export async function checkAssetOperatorConflicts(
   let requiresUnassign = false
 
   for (const assignment of assignments) {
-    const operator = assignment.operators as any
-    if (!operator) continue
+    const operator = unwrapJoinedProfile(assignment.operators as { id: string; plant_id?: string | null; business_unit_id?: string | null; nombre?: string; apellido?: string; employee_code?: string } | null)
+    if (!operator?.id) continue
 
     const operatorPlantId = operator.plant_id
     const operatorBusinessUnitId = operator.business_unit_id
@@ -147,12 +181,14 @@ export async function checkAssetOperatorConflicts(
     }
   }
 
+  const merged = dedupeOperators(affectedOperators)
+
   return {
-    conflicts: affectedOperators.length > 0,
-    affected_operators: affectedOperators,
+    conflicts: merged.length > 0,
+    affected_operators: merged,
     canTransfer,
     requiresUnassign,
-    resolution_required: affectedOperators.length > 0
+    resolution_required: merged.length > 0
   }
 }
 
@@ -209,15 +245,24 @@ export async function checkOperatorAssetConflicts(
 
   // If operator is being unassigned (newPlantId is null), all assets need to be handled
   if (!newPlantId) {
-    const allAssets = assignments.map(a => {
-      const asset = a.assets as any
-      const plant = asset?.plants as any
+    const allAssets = assignments.map((a) => {
+      const asset = unwrapJoinedProfile(
+        a.assets as {
+          id: string
+          asset_id?: string
+          name?: string
+          plant_id?: string | null
+          plants?: { business_unit_id?: string | null } | { business_unit_id?: string | null }[] | null
+        } | null
+      )
+      const plantEmbed = asset?.plants
+      const plant = Array.isArray(plantEmbed) ? plantEmbed[0] : plantEmbed
       return {
         id: asset?.id || '',
         asset_id: asset?.asset_id || '',
         name: asset?.name || '',
-        plant_id: asset?.plant_id || null,
-        business_unit_id: plant?.business_unit_id || null
+        plant_id: asset?.plant_id ?? null,
+        business_unit_id: plant?.business_unit_id ?? null,
       }
     })
 
@@ -230,26 +275,26 @@ export async function checkOperatorAssetConflicts(
     }
   }
 
-  // Get the new plant's business unit
-  const { data: newPlant } = await supabase
-    .from('plants')
-    .select('business_unit_id')
-    .eq('id', newPlantId)
-    .single()
-
-  const newBusinessUnitId = newPlant?.business_unit_id || null
-
   const affectedAssets: AssetConflict[] = []
   const assetsInNewPlant: AssetConflict[] = []
   const assetsInOtherPlants: AssetConflict[] = []
 
   for (const assignment of assignments) {
-    const asset = assignment.assets as any
-    if (!asset) continue
+    const asset = unwrapJoinedProfile(
+      assignment.assets as {
+        id: string
+        asset_id?: string
+        name?: string
+        plant_id?: string | null
+        plants?: { business_unit_id?: string | null } | { business_unit_id?: string | null }[] | null
+      } | null
+    )
+    if (!asset?.id) continue
 
-    const assetPlantId = asset.plant_id
-    const plant = asset.plants as any
-    const assetBusinessUnitId = plant?.business_unit_id || null
+    const assetPlantId = asset.plant_id ?? null
+    const plantEmbed = asset.plants
+    const plant = Array.isArray(plantEmbed) ? plantEmbed[0] : plantEmbed
+    const assetBusinessUnitId = plant?.business_unit_id ?? null
 
     const assetConflict: AssetConflict = {
       id: asset.id,

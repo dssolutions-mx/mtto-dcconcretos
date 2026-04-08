@@ -37,6 +37,22 @@ export async function GET(request: NextRequest) {
           current_hours,
           plant_id,
           department_id,
+          is_composite,
+          plants (
+            id,
+            name,
+            code,
+            business_units (
+              id,
+              name,
+              code
+            )
+          ),
+          departments (
+            id,
+            name,
+            code
+          ),
           equipment_models (
             id,
             name,
@@ -80,6 +96,7 @@ export async function GET(request: NextRequest) {
         current_hours,
         plant_id,
         department_id,
+        is_composite,
         plants (
           id,
           name,
@@ -119,7 +136,7 @@ export async function GET(request: NextRequest) {
     }
 
     return NextResponse.json(assets)
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Server error:', error)
     return NextResponse.json(
       { error: 'Internal server error' },

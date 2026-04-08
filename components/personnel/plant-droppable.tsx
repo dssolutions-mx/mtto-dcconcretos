@@ -2,6 +2,7 @@
 
 import React from 'react'
 import { useDroppable } from '@dnd-kit/core'
+import { plantDroppableId, BU_DROP_PREFIX } from '@/lib/dnd/assignment-drop-targets'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -52,7 +53,7 @@ interface PlantDroppableProps {
 
 export function PlantDroppable({ plant, operators, isOver, compact = false }: PlantDroppableProps) {
   const { setNodeRef } = useDroppable({
-    id: plant.id,
+    id: plantDroppableId(plant.id),
   })
 
   // Show only operators assigned specifically to this plant
@@ -132,7 +133,7 @@ interface BusinessUnitDroppableProps {
 
 export function BusinessUnitDroppable({ businessUnit, operators, isOver }: BusinessUnitDroppableProps) {
   const { setNodeRef } = useDroppable({
-    id: `business-unit-${businessUnit.id}`,
+    id: `${BU_DROP_PREFIX}${businessUnit.id}`,
   })
 
   // Show operators assigned to this business unit but not to specific plants

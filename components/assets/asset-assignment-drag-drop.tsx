@@ -1,15 +1,12 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { 
   Users, 
   Package, 
   UserCheck, 
   Search,
-  Building2,
-  Plus,
   UserPlus,
-  Filter,
   RefreshCw
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -20,20 +17,26 @@ import { Badge } from '@/components/ui/badge'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { useToast } from '@/components/ui/use-toast'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { Separator } from '@/components/ui/separator'
 
 import {
   DndContext,
   DragEndEvent,
   DragStartEvent,
   DragOverlay,
-  PointerSensor,
+  MouseSensor,
+  TouchSensor,
   useSensor,
   useSensors,
-  closestCenter,
   DragOverEvent,
   useDroppable,
 } from '@dnd-kit/core'
+import {
+  operatorDragId,
+  parseOperatorDragId,
+  assetDropId,
+  parseAssetDropId,
+  preferAssetDropCollision,
+} from '@/lib/dnd/assignment-drop-targets'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   SortableContext,
@@ -110,7 +113,7 @@ function DraggableOperatorCard({ operator }: { operator: Operator }) {
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: operator.id })
+  } = useSortable({ id: operatorDragId(operator.id) })
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -132,7 +135,7 @@ function DraggableOperatorCard({ operator }: { operator: Operator }) {
         style={style}
         {...attributes}
         {...listeners}
-        className={`group relative p-4 bg-white border border-gray-200 rounded-lg shadow-sm hover:shadow-md transition-all duration-200 cursor-grab active:cursor-grabbing ${
+        className={`group relative touch-none p-4 bg-white border border-gray-200 rounded-lg shadow-sm hover:shadow-md transition-all duration-200 cursor-grab active:cursor-grabbing ${
           isDragging ? '' : ''
         }`}
       >
@@ -178,7 +181,7 @@ function DroppableAssetCard({
   onRemoveAssignment: (assignmentId: string) => void
 }) {
   const { isOver, setNodeRef } = useDroppable({
-    id: asset.id,
+    id: assetDropId(asset.id),
   })
 
   const primaryOperator = assignments.find(a => a.assignment_type === 'primary')
@@ -352,17 +355,19 @@ export function AssetAssignmentDragDrop() {
   const [searchAssets, setSearchAssets] = useState('')
   const [loading, setLoading] = useState(true)
   const [activeId, setActiveId] = useState<string | null>(null)
-  const [overId, setOverId] = useState<string | null>(null)
   const [showCreateOperator, setShowCreateOperator] = useState(false)
   const [showTransferDialog, setShowTransferDialog] = useState(false)
   const [pendingTransfer, setPendingTransfer] = useState<TransferData | null>(null)
   const { toast } = useToast()
 
+  const lastAssetDropRef = useRef<string | null>(null)
+
   const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: {
-        distance: 8,
-      },
+    useSensor(MouseSensor, {
+      activationConstraint: { distance: 10 },
+    }),
+    useSensor(TouchSensor, {
+      activationConstraint: { delay: 250, tolerance: 8 },
     })
   )
 
@@ -450,24 +455,36 @@ export function AssetAssignmentDragDrop() {
 
   const handleDragStart = (event: DragStartEvent) => {
     setActiveId(event.active.id as string)
+    lastAssetDropRef.current = null
   }
 
   const handleDragOver = (event: DragOverEvent) => {
-    setOverId(event.over?.id as string || null)
+    const id = event.over?.id
+    if (id && String(id).startsWith('asset-drop:')) {
+      lastAssetDropRef.current = String(id)
+    }
   }
 
   const handleDragEnd = async (event: DragEndEvent) => {
     const { active, over } = event
     setActiveId(null)
-    setOverId(null)
 
-    if (!over) return
+    const operatorId = parseOperatorDragId(active.id)
+    if (!operatorId) {
+      lastAssetDropRef.current = null
+      return
+    }
 
-    const operatorId = active.id as string
-    const assetId = over.id as string
+    let assetId = over ? parseAssetDropId(over.id) : null
+    if (!assetId && lastAssetDropRef.current) {
+      assetId = parseAssetDropId(lastAssetDropRef.current)
+    }
+    lastAssetDropRef.current = null
 
-    const operator = operators.find(op => op.id === operatorId)
-    const asset = assets.find(a => a.id === assetId)
+    if (!assetId) return
+
+    const operator = operators.find((op) => op.id === operatorId)
+    const asset = assets.find((a) => a.id === assetId)
 
     if (operator && asset) {
       await handleCreateAssignment(assetId, operatorId)
@@ -734,7 +751,10 @@ export function AssetAssignmentDragDrop() {
     asset.equipment_models?.name?.toLowerCase().includes(searchAssets.toLowerCase())
   )
 
-  const activeOperator = operators.find(op => op.id === activeId)
+  const activeOperator = useMemo(() => {
+    const oid = parseOperatorDragId(activeId)
+    return oid ? operators.find((op) => op.id === oid) : undefined
+  }, [activeId, operators])
 
   if (loading) {
     return (
@@ -747,7 +767,7 @@ export function AssetAssignmentDragDrop() {
   return (
     <DndContext
       sensors={sensors}
-      collisionDetection={closestCenter}
+      collisionDetection={preferAssetDropCollision()}
       onDragStart={handleDragStart}
       onDragOver={handleDragOver}
       onDragEnd={handleDragEnd}
@@ -811,7 +831,7 @@ export function AssetAssignmentDragDrop() {
                   <ScrollArea className="h-[550px] px-6 pb-6">
                     <div className="space-y-3">
                       <SortableContext
-                        items={getUnassignedOperators().map(op => op.id)}
+                        items={getUnassignedOperators().map((op) => operatorDragId(op.id))}
                         strategy={verticalListSortingStrategy}
                       >
                         <AnimatePresence mode="popLayout">

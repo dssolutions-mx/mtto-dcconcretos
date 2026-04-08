@@ -1,7 +1,25 @@
 'use client'
 
-import React, { useState, useMemo, useCallback, useEffect, type MutableRefObject } from 'react'
-import { DndContext, DragEndEvent, DragStartEvent, DragOverlay, PointerSensor, useSensor, useSensors, useDroppable } from '@dnd-kit/core'
+import React, { useState, useMemo, useCallback, useEffect, useRef, type MutableRefObject } from 'react'
+import {
+  DndContext,
+  DragEndEvent,
+  DragOverEvent,
+  DragStartEvent,
+  DragOverlay,
+  MouseSensor,
+  TouchSensor,
+  useSensor,
+  useSensors,
+  useDroppable,
+} from '@dnd-kit/core'
+import {
+  plantDroppableId,
+  parseOperatorDragId,
+  resolvePersonnelDropTarget,
+  preferZoneDroppableCollision,
+  isDroppableContainerId,
+} from '@/lib/dnd/assignment-drop-targets'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -42,14 +60,10 @@ function BusinessUnitContainer({
   businessUnit, 
   plants, 
   operators, 
-  onDrop,
-  draggedOperator
 }: {
   businessUnit: BusinessUnit
   plants: Plant[]
   operators: Profile[]
-  onDrop: (operatorId: string, target: { type: 'businessUnit' | 'plant' | 'unassigned', id?: string }) => void
-  draggedOperator: Profile | null
 }) {
   
   const { setNodeRef, isOver } = useDroppable({
@@ -154,8 +168,6 @@ function BusinessUnitContainer({
                 key={plant.id}
                 plant={plant}
                 operators={operators}
-                onDrop={onDrop}
-                draggedOperator={draggedOperator}
               />
             ))}
           </div>
@@ -170,17 +182,13 @@ function BusinessUnitContainer({
 function PlantContainer({
   plant,
   operators,
-  onDrop,
-  draggedOperator
 }: {
   plant: Plant
   operators: Profile[]
-  onDrop: (operatorId: string, target: { type: 'businessUnit' | 'plant' | 'unassigned', id?: string }) => void
-  draggedOperator: Profile | null
 }) {
   
   const { setNodeRef, isOver } = useDroppable({
-    id: plant.id,
+    id: plantDroppableId(plant.id),
   })
   
   const plantOperators = Array.isArray(operators) ? operators.filter(op => op.plant_id === plant.id) : []
@@ -248,13 +256,9 @@ function PlantContainer({
 // Componente de personal sin asignar
 function UnassignedContainer({
   operators,
-  onDrop,
-  draggedOperator,
   onBatchAssign
 }: {
   operators: Profile[]
-  onDrop: (operatorId: string, target: { type: 'businessUnit' | 'plant' | 'unassigned', id?: string }) => void
-  draggedOperator: Profile | null
   onBatchAssign?: () => void
 }) {
   
@@ -398,12 +402,14 @@ export function PersonnelManagementDragDrop({
   const [roleFilter, setRoleFilter] = useState<string>('all')
   const [businessUnitFilter, setBusinessUnitFilter] = useState<string>('all')
 
-  // Sensores optimizados para mejor rendimiento y menos lag
+  const lastContainerOverRef = useRef<string | null>(null)
+
   const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: {
-        distance: 5, // Balance entre sensibilidad y evitar drags accidentales
-      },
+    useSensor(MouseSensor, {
+      activationConstraint: { distance: 10 },
+    }),
+    useSensor(TouchSensor, {
+      activationConstraint: { delay: 250, tolerance: 8 },
     })
   )
 
@@ -424,13 +430,22 @@ export function PersonnelManagementDragDrop({
   ]
 
   const handleDragStart = useCallback((event: DragStartEvent) => {
+    lastContainerOverRef.current = null
     if (!Array.isArray(operators)) {
       setDraggedOperator(null)
       return
     }
-    const operator = operators.find(op => op.id === event.active.id)
+    const oid = parseOperatorDragId(event.active.id)
+    const operator = oid ? operators.find((op) => op.id === oid) : undefined
     setDraggedOperator(operator || null)
   }, [operators])
+
+  const handleDragOver = useCallback((event: DragOverEvent) => {
+    const id = event.over?.id
+    if (id != null && isDroppableContainerId(id)) {
+      lastContainerOverRef.current = String(id)
+    }
+  }, [])
 
   // Función optimista para feedback inmediato
   const handleOptimisticUpdate = useCallback((
@@ -747,25 +762,45 @@ export function PersonnelManagementDragDrop({
     }
   }, [plants, refetch])
 
-  const handleDragEnd = useCallback(async (event: DragEndEvent) => {
-    const { active, over } = event
-    setDraggedOperator(null)
+  const handleDragEnd = useCallback(
+    async (event: DragEndEvent) => {
+      const { active, over } = event
+      setDraggedOperator(null)
 
-    if (!over || !draggedOperator) return
+      const operatorId = parseOperatorDragId(active.id)
+      if (!operatorId) {
+        lastContainerOverRef.current = null
+        return
+      }
 
-    const dropZoneId = over.id as string
-    let target: { type: 'businessUnit' | 'plant' | 'unassigned', id?: string }
+      const validPlantIds = new Set(Array.isArray(plants) ? plants.map((p) => p.id) : [])
+      const validBuIds = new Set(
+        Array.isArray(businessUnits) ? businessUnits.map((b) => b.id) : []
+      )
 
-    if (dropZoneId === 'unassigned') {
-      target = { type: 'unassigned' }
-    } else if (dropZoneId.startsWith('business-unit-')) {
-      target = { type: 'businessUnit', id: dropZoneId.replace('business-unit-', '') }
-    } else {
-      target = { type: 'plant', id: dropZoneId }
-    }
+      const resolved = resolvePersonnelDropTarget(
+        over?.id,
+        lastContainerOverRef.current,
+        validPlantIds,
+        validBuIds
+      )
+      lastContainerOverRef.current = null
 
-    await handleDrop(draggedOperator.id, target)
-  }, [draggedOperator, handleDrop])
+      if (!resolved) return
+
+      let target: { type: 'businessUnit' | 'plant' | 'unassigned'; id?: string }
+      if (resolved.type === 'unassigned') {
+        target = { type: 'unassigned' }
+      } else if (resolved.type === 'businessUnit') {
+        target = { type: 'businessUnit', id: resolved.id }
+      } else {
+        target = { type: 'plant', id: resolved.id }
+      }
+
+      await handleDrop(operatorId, target)
+    },
+    [handleDrop, plants, businessUnits]
+  )
 
   // Datos filtrados memoizados
   const filteredOperators = useMemo(() => {
@@ -939,15 +974,15 @@ export function PersonnelManagementDragDrop({
       {/* Vista principal optimizada */}
       <DndContext 
         sensors={sensors}
+        collisionDetection={preferZoneDroppableCollision()}
         onDragStart={handleDragStart}
+        onDragOver={handleDragOver}
         onDragEnd={handleDragEnd}
       >
         <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
           {/* Personal sin asignar */}
           <UnassignedContainer
             operators={filteredOperators}
-            onDrop={handleDrop}
-            draggedOperator={draggedOperator}
             onBatchAssign={() => {
               setBatchDialogOpen(true)
             }}
@@ -960,8 +995,6 @@ export function PersonnelManagementDragDrop({
               businessUnit={businessUnit}
               plants={plants}
               operators={filteredOperators}
-              onDrop={handleDrop}
-              draggedOperator={draggedOperator}
             />
           ))}
         </div>
