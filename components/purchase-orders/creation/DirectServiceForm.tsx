@@ -40,6 +40,13 @@ import { Separator } from "@/components/ui/separator"
 import { buildPurchaseOrderRoutingContext } from "@/lib/purchase-orders/routing-context"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { PurchaseOrderCreationReviewDialog } from "@/components/purchase-orders/creation/PurchaseOrderCreationReviewDialog"
+import { PurchaseOrderCreationStepper } from "@/components/purchase-orders/creation/PurchaseOrderCreationStepper"
+import {
+  PurchaseOrderCreationSummaryStrip,
+  type PurchaseOrderChecklistItem,
+} from "@/components/purchase-orders/creation/PurchaseOrderCreationSummaryStrip"
+import { PurchaseOrderCreationActionRail } from "@/components/purchase-orders/creation/PurchaseOrderCreationActionRail"
+import { usePurchaseOrderReviewOpenChange } from "@/components/purchase-orders/creation/usePurchaseOrderReviewOpenChange"
 import { getCreationWorkflowSummaryLines } from "@/lib/purchase-orders/creation-workflow-copy"
 
 interface DirectServiceFormProps {
@@ -104,6 +111,7 @@ export function DirectServiceForm({
 
   const [reviewOpen, setReviewOpen] = useState(false)
   const [reviewSubmitting, setReviewSubmitting] = useState(false)
+  const { onReviewOpenChange, skipDismissToastRef } = usePurchaseOrderReviewOpenChange(setReviewOpen)
 
   // Work order state
   const [workOrder, setWorkOrder] = useState<WorkOrderData | null>(null)
@@ -474,6 +482,7 @@ export function DirectServiceForm({
   }
 
   const performCreate = async () => {
+    skipDismissToastRef.current = true
     try {
       setReviewSubmitting(true)
       const finalServiceProvider =
@@ -706,11 +715,74 @@ export function DirectServiceForm({
     approvalAmount: reviewRoutingPreview.approvalAmount,
   })
 
+  const reviewCreationChecklist: PurchaseOrderChecklistItem[] = (() => {
+    const rows: PurchaseOrderChecklistItem[] = []
+    if (!workOrderId) {
+      rows.push({
+        id: "plant",
+        label: "Seleccionar planta (orden independiente)",
+        done: Boolean(selectedPlantId),
+      })
+    }
+    if (!validationResult?.requires_quote) {
+      rows.push({
+        id: "provider",
+        label: "Proveedor de servicio o nombre (compra menor a $5,000)",
+        done: Boolean(selectedSupplier) || Boolean(formData.service_provider?.trim()),
+      })
+    }
+    rows.push({
+      id: "payment",
+      label: "Método de pago",
+      done: Boolean(formData.payment_method),
+    })
+    if (formData.payment_method === PaymentMethod.TRANSFER) {
+      const ok =
+        Boolean(formData.max_payment_date) &&
+        (() => {
+          const maxDate = new Date(formData.max_payment_date as string)
+          const today = new Date()
+          today.setHours(0, 0, 0, 0)
+          return maxDate >= today
+        })()
+      rows.push({
+        id: "transfer_deadline",
+        label: "Fecha máxima de pago (transferencia)",
+        done: ok,
+      })
+    }
+    const hasDetailOrAmount =
+      services.length > 0 || (formData.total_amount != null && formData.total_amount > 0)
+    rows.push({
+      id: "service_detail",
+      label: "Servicios en tabla o monto total del servicio",
+      done: hasDetailOrAmount,
+    })
+    rows.push({
+      id: "total",
+      label: "Monto total mayor a cero",
+      done: Boolean(formData.total_amount && formData.total_amount > 0),
+    })
+    rows.push({
+      id: "purchase_date",
+      label: "Fecha de compra",
+      done: Boolean(formData.purchase_date),
+    })
+    if ((formData.total_amount ?? 0) >= 5000) {
+      rows.push({
+        id: "quotations",
+        label: "Al menos una cotización (servicio ≥ $5,000)",
+        done: quotations.length > 0,
+      })
+    }
+    return rows
+  })()
+
   return (
     <>
       <PurchaseOrderCreationReviewDialog
         open={reviewOpen}
-        onOpenChange={setReviewOpen}
+        onOpenChange={onReviewOpenChange}
         onConfirm={performCreate}
         isSubmitting={reviewSubmitting || isCreating}
         poTypeLabel="Servicio directo"
@@ -724,7 +796,11 @@ export function DirectServiceForm({
         workOrderOrderId={workOrder?.order_id ?? null}
         workflowHintLines={reviewWorkflowLines}
       />
-    <form onSubmit={handleSubmit} className="space-y-6">
+    <form onSubmit={handleSubmit} className="space-y-6 pb-24 md:pb-28">
+      <PurchaseOrderCreationStepper reviewOpen={reviewOpen} />
+      <p className="text-xs text-muted-foreground">
+        La orden solo se registra en el sistema al confirmar en el paso 2 (resumen).
+      </p>
       {/* Header */}
       <Card>
         <CardHeader>
@@ -1403,35 +1479,42 @@ export function DirectServiceForm({
         </CardContent>
       </Card>
 
-      {/* Action Buttons */}
-      <div className="flex justify-end space-x-3 pt-4">
-        {onCancel && (
-          <Button type="button" variant="outline" onClick={onCancel}>
-            Cancelar
-          </Button>
-        )}
-        
-        <Button 
-          type="submit" 
-          disabled={
-            isCreating ||
-            reviewSubmitting ||
-            (!formData.total_amount || formData.total_amount === 0)
-          }
-          className="min-w-[150px]"
-        >
-          {isCreating || reviewSubmitting ? (
-            <>
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Creando...
-            </>
-          ) : (
-            <>
-              <Wrench className="mr-2 h-4 w-4" />
-              Crear Servicio Directo
-            </>
+      <div className="space-y-3">
+        <PurchaseOrderCreationSummaryStrip
+          totalAmount={formData.total_amount ?? 0}
+          approvalAmount={reviewRoutingPreview.approvalAmount}
+          workflowHintLine={reviewWorkflowLines[0] ?? null}
+          checklist={reviewCreationChecklist}
+        />
+        <PurchaseOrderCreationActionRail>
+          {onCancel && (
+            <Button type="button" variant="outline" onClick={onCancel}>
+              Cancelar
+            </Button>
           )}
-        </Button>
+          <Button
+            type="submit"
+            disabled={
+              isCreating ||
+              reviewSubmitting ||
+              !formData.total_amount ||
+              formData.total_amount === 0
+            }
+            className="min-w-[160px]"
+          >
+            {isCreating || reviewSubmitting ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Abriendo resumen…
+              </>
+            ) : (
+              <>
+                <Wrench className="mr-2 h-4 w-4" />
+                Revisar y confirmar
+              </>
+            )}
+          </Button>
+        </PurchaseOrderCreationActionRail>
       </div>
     </form>
     </>

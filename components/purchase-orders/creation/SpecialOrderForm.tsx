@@ -42,6 +42,13 @@ import { toast } from "sonner"
 import { buildPurchaseOrderRoutingContext } from "@/lib/purchase-orders/routing-context"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { PurchaseOrderCreationReviewDialog } from "@/components/purchase-orders/creation/PurchaseOrderCreationReviewDialog"
+import { PurchaseOrderCreationStepper } from "@/components/purchase-orders/creation/PurchaseOrderCreationStepper"
+import {
+  PurchaseOrderCreationSummaryStrip,
+  type PurchaseOrderChecklistItem,
+} from "@/components/purchase-orders/creation/PurchaseOrderCreationSummaryStrip"
+import { PurchaseOrderCreationActionRail } from "@/components/purchase-orders/creation/PurchaseOrderCreationActionRail"
+import { usePurchaseOrderReviewOpenChange } from "@/components/purchase-orders/creation/usePurchaseOrderReviewOpenChange"
 import { getCreationWorkflowSummaryLines } from "@/lib/purchase-orders/creation-workflow-copy"
 import {
   getIntentVersusLinesErrors,
@@ -143,6 +150,7 @@ export function SpecialOrderForm({
   const [reviewOpen, setReviewOpen] = useState(false)
   const [reviewSubmitting, setReviewSubmitting] = useState(false)
   const [reviewSoftWarning, setReviewSoftWarning] = useState<string | null>(null)
+  const { onReviewOpenChange, skipDismissToastRef } = usePurchaseOrderReviewOpenChange(setReviewOpen)
 
   // Plant selection state
   const [selectedPlantId, setSelectedPlantId] = useState<string | undefined>(undefined)
@@ -737,6 +745,7 @@ export function SpecialOrderForm({
   }
 
   const performCreate = async () => {
+    skipDismissToastRef.current = true
     try {
       setReviewSubmitting(true)
       const normalizedQuotations = normalizeQuotations(quotations)
@@ -962,6 +971,86 @@ export function SpecialOrderForm({
   ).length
   const reviewPurchaseCount = Math.max(0, previewRequestItems.length - reviewInventoryCount)
 
+  const reviewCreationChecklist: PurchaseOrderChecklistItem[] = (() => {
+    const rows: PurchaseOrderChecklistItem[] = []
+    if (!workOrderId) {
+      rows.push({
+        id: "plant",
+        label: "Seleccionar planta (orden independiente)",
+        done: Boolean(selectedPlantId),
+      })
+    }
+    rows.push({
+      id: "payment",
+      label: "Método de pago",
+      done: Boolean(formData.payment_method),
+    })
+    if (formData.payment_method === PaymentMethod.TRANSFER) {
+      const ok =
+        Boolean(formData.max_payment_date) &&
+        (() => {
+          const maxDate = new Date(formData.max_payment_date as string)
+          const today = new Date()
+          today.setHours(0, 0, 0, 0)
+          return maxDate >= today
+        })()
+      rows.push({
+        id: "transfer_deadline",
+        label: "Fecha máxima de pago (transferencia)",
+        done: ok,
+      })
+    }
+    rows.push({
+      id: "quotations",
+      label: "Al menos una cotización formal (obligatorio en pedido especial)",
+      done: quotations.length > 0,
+    })
+    if (items.length === 0 && quotations.length > 0) {
+      const quotationsWithItems = quotations.filter(
+        (q) => q.quotation_items && q.quotation_items.length > 0
+      )
+      rows.push({
+        id: "quote_line_items",
+        label: "Artículos en cotización (si aún no hay líneas en el pedido)",
+        done: quotationsWithItems.length > 0,
+      })
+    }
+    const hasInventoryLines = items.some((i) => i.fulfill_from === "inventory")
+    if (hasInventoryLines) {
+      const inventoryWithoutWarehouse = items.filter(
+        (i) => i.fulfill_from === "inventory" && !i.warehouse_id
+      )
+      rows.push({
+        id: "warehouses",
+        label: "Almacén de origen en cada partida de inventario",
+        done: inventoryWithoutWarehouse.length === 0,
+      })
+    }
+    rows.push({
+      id: "purchase_date",
+      label: "Fecha de compra",
+      done: Boolean(formData.purchase_date),
+    })
+    if (items.length > 0) {
+      rows.push({
+        id: "total",
+        label: "Monto total coherente con las líneas",
+        done: (formData.total_amount ?? 0) > 0,
+      })
+    }
+    if (workOrderId && woLineSourceIntent) {
+      const intentErrors = getIntentVersusLinesErrors(woLineSourceIntent, items)
+      rows.push({
+        id: "wo_intent",
+        label:
+          intentErrors[0] ??
+          "Origen de partidas coherente con el asistente de la OT",
+        done: intentErrors.length === 0,
+      })
+    }
+    return rows
+  })()
+
   // Loading state
   if (isLoadingWorkOrder) {
     return (
@@ -1004,7 +1093,7 @@ export function SpecialOrderForm({
     <>
       <PurchaseOrderCreationReviewDialog
         open={reviewOpen}
-        onOpenChange={setReviewOpen}
+        onOpenChange={onReviewOpenChange}
         onConfirm={performCreate}
         isSubmitting={reviewSubmitting || isCreating}
         poTypeLabel="Pedido especial"
@@ -1019,7 +1108,11 @@ export function SpecialOrderForm({
         workflowHintLines={reviewWorkflowLines}
         softWarning={reviewSoftWarning}
       />
-    <form onSubmit={handleSubmit} className="space-y-6">
+    <form onSubmit={handleSubmit} className="space-y-6 pb-24 md:pb-28">
+      <PurchaseOrderCreationStepper reviewOpen={reviewOpen} />
+      <p className="text-xs text-muted-foreground">
+        La orden solo se registra en el sistema al confirmar en el paso 2 (resumen).
+      </p>
       {/* Header */}
       <Card>
         <CardHeader>
@@ -1977,35 +2070,41 @@ export function SpecialOrderForm({
         </CardContent>
       </Card>
 
-      {/* Action Buttons */}
-      <div className="flex justify-end space-x-3 pt-4">
-        {onCancel && (
-          <Button type="button" variant="outline" onClick={onCancel}>
-            Cancelar
-          </Button>
-        )}
-        
-        <Button 
-          type="submit" 
-          disabled={
-            isCreating ||
-            reviewSubmitting ||
-            (items.length === 0 && quotations.length === 0)
-          }
-          className="min-w-[150px]"
-        >
-          {isCreating || reviewSubmitting ? (
-            <>
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Creando...
-            </>
-          ) : (
-            <>
-              <Building2 className="mr-2 h-4 w-4" />
-              Crear Pedido Especial
-            </>
+      <div className="space-y-3">
+        <PurchaseOrderCreationSummaryStrip
+          totalAmount={previewTotalAmountSpecial}
+          approvalAmount={reviewRoutingPreview.approvalAmount}
+          workflowHintLine={reviewWorkflowLines[0] ?? null}
+          checklist={reviewCreationChecklist}
+        />
+        <PurchaseOrderCreationActionRail>
+          {onCancel && (
+            <Button type="button" variant="outline" onClick={onCancel}>
+              Cancelar
+            </Button>
           )}
-        </Button>
+          <Button
+            type="submit"
+            disabled={
+              isCreating ||
+              reviewSubmitting ||
+              (items.length === 0 && quotations.length === 0)
+            }
+            className="min-w-[160px]"
+          >
+            {isCreating || reviewSubmitting ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Abriendo resumen…
+              </>
+            ) : (
+              <>
+                <Building2 className="mr-2 h-4 w-4" />
+                Revisar y confirmar
+              </>
+            )}
+          </Button>
+        </PurchaseOrderCreationActionRail>
       </div>
     </form>
     </>
