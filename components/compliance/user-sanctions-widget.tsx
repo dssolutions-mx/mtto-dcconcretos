@@ -7,8 +7,8 @@ import { Badge } from '@/components/ui/badge'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Shield, AlertTriangle, CheckCircle, XCircle, ArrowRight } from 'lucide-react'
 import Link from 'next/link'
-import { createClient } from '@/lib/supabase'
 import type { SanctionWithDetails } from '@/types/compliance'
+import { useAuthZustand } from '@/hooks/use-auth-zustand'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
 
@@ -21,53 +21,50 @@ export function UserSanctionsWidget({
   maxItems = 5,
   showOnlyActive = true 
 }: UserSanctionsWidgetProps) {
+  const { user } = useAuthZustand()
   const [sanctions, setSanctions] = useState<SanctionWithDetails[]>([])
   const [loading, setLoading] = useState(true)
   const [activeCount, setActiveCount] = useState(0)
 
   useEffect(() => {
+    if (!user?.id) {
+      setLoading(false)
+      return
+    }
+    const fetchUserSanctions = async () => {
+      try {
+        const params = new URLSearchParams()
+        params.append('user_id', user.id)
+        if (showOnlyActive) {
+          params.append('status', 'active')
+        }
+
+        const response = await fetch(`/api/compliance/sanctions?${params.toString()}`)
+        if (!response.ok) throw new Error('Failed to fetch sanctions')
+
+        const data = await response.json()
+        const allSanctions: SanctionWithDetails[] = (data.sanctions || []).map((s: any) => ({
+          ...s,
+          user_name: s.user ? `${s.user.nombre} ${s.user.apellido}` : null,
+          applied_by_name: s.applied_by_profile ? `${s.applied_by_profile.nombre} ${s.applied_by_profile.apellido}` : null,
+          incident_description: s.incident ? `${s.incident.incident_type} (${s.incident.severity})` : null,
+          policy_rule_title: s.policy_rule?.title || null
+        }))
+
+        setSanctions(allSanctions.slice(0, maxItems))
+
+        const active = allSanctions.filter(s => s.status === 'active').length
+        setActiveCount(active)
+      } catch (error) {
+        console.error('Error fetching user sanctions:', error)
+      } finally {
+        setLoading(false)
+      }
+    }
     fetchUserSanctions()
-    // Refresh every 60 seconds
     const interval = setInterval(fetchUserSanctions, 60000)
     return () => clearInterval(interval)
-  }, [showOnlyActive])
-
-  const fetchUserSanctions = async () => {
-    try {
-      const supabase = createClient()
-      const { data: { user } } = await supabase.auth.getUser()
-      
-      if (!user) return
-
-      const params = new URLSearchParams()
-      params.append('user_id', user.id)
-      if (showOnlyActive) {
-        params.append('status', 'active')
-      }
-
-      const response = await fetch(`/api/compliance/sanctions?${params.toString()}`)
-      if (!response.ok) throw new Error('Failed to fetch sanctions')
-
-      const data = await response.json()
-      const allSanctions: SanctionWithDetails[] = (data.sanctions || []).map((s: any) => ({
-        ...s,
-        user_name: s.user ? `${s.user.nombre} ${s.user.apellido}` : null,
-        applied_by_name: s.applied_by_profile ? `${s.applied_by_profile.nombre} ${s.applied_by_profile.apellido}` : null,
-        incident_description: s.incident ? `${s.incident.incident_type} (${s.incident.severity})` : null,
-        policy_rule_title: s.policy_rule?.title || null
-      }))
-
-      setSanctions(allSanctions.slice(0, maxItems))
-      
-      // Count active sanctions
-      const active = allSanctions.filter(s => s.status === 'active').length
-      setActiveCount(active)
-    } catch (error) {
-      console.error('Error fetching user sanctions:', error)
-    } finally {
-      setLoading(false)
-    }
-  }
+  }, [user?.id, showOnlyActive, maxItems])
 
   const getSanctionTypeLabel = (type: string) => {
     const labels: Record<string, string> = {

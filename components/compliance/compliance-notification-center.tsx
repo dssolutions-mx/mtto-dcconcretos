@@ -19,6 +19,7 @@ import { es } from 'date-fns/locale'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase'
 import type { ComplianceNotification } from '@/types/compliance'
+import { useAuthZustand } from '@/hooks/use-auth-zustand'
 
 interface ComplianceNotificationCenterProps {
   maxItems?: number
@@ -29,28 +30,24 @@ export function ComplianceNotificationCenter({
   maxItems = 10,
   showUnreadOnly = false 
 }: ComplianceNotificationCenterProps) {
+  const { user } = useAuthZustand()
   const [notifications, setNotifications] = useState<ComplianceNotification[]>([])
   const [loading, setLoading] = useState(true)
   const [unreadCount, setUnreadCount] = useState(0)
 
   useEffect(() => {
-    fetchNotifications()
-    // Refresh every 30 seconds
-    const interval = setInterval(fetchNotifications, 30000)
-    return () => clearInterval(interval)
-  }, [showUnreadOnly])
-
-  const fetchNotifications = async () => {
-    try {
-      const supabase = createClient()
-      const { data: { user } } = await supabase.auth.getUser()
-      
-      if (!user) return
-
-      let query = supabase
-        .from('compliance_notifications')
+    if (!user?.id) {
+      setLoading(false)
+      return
+    }
+    const fetchNotifications = async () => {
+      try {
+        const supabase = createClient()
+        const uid = user.id
+        let query = supabase
+          .from('compliance_notifications')
         .select('*')
-        .eq('user_id', user.id)
+        .eq('user_id', uid)
         .eq('is_dismissed', false)
         .order('created_at', { ascending: false })
         .limit(maxItems)
@@ -69,7 +66,7 @@ export function ComplianceNotificationCenter({
       const { count } = await supabase
         .from('compliance_notifications')
         .select('*', { count: 'exact', head: true })
-        .eq('user_id', user.id)
+        .eq('user_id', uid)
         .eq('is_read', false)
         .eq('is_dismissed', false)
 
@@ -79,7 +76,11 @@ export function ComplianceNotificationCenter({
     } finally {
       setLoading(false)
     }
-  }
+    }
+    fetchNotifications()
+    const interval = setInterval(fetchNotifications, 30000)
+    return () => clearInterval(interval)
+  }, [user?.id, showUnreadOnly, maxItems])
 
   const markAsRead = async (notificationId: string) => {
     try {
@@ -132,9 +133,8 @@ export function ComplianceNotificationCenter({
 
   const markAllAsRead = async () => {
     try {
+      if (!user?.id) return
       const supabase = createClient()
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
 
       const { error } = await supabase
         .from('compliance_notifications')

@@ -5795,6 +5795,7 @@ export type Database = {
           created_by: string | null
           delivery_days: number | null
           file_name: string | null
+          file_storage_path: string | null
           file_url: string | null
           id: string
           notes: string | null
@@ -5817,6 +5818,7 @@ export type Database = {
           created_by?: string | null
           delivery_days?: number | null
           file_name?: string | null
+          file_storage_path?: string | null
           file_url?: string | null
           id?: string
           notes?: string | null
@@ -5839,6 +5841,7 @@ export type Database = {
           created_by?: string | null
           delivery_days?: number | null
           file_name?: string | null
+          file_storage_path?: string | null
           file_url?: string | null
           id?: string
           notes?: string | null

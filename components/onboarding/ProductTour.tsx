@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useMemo } from 'react'
 import { usePathname } from 'next/navigation'
 import { NextStepReact, useNextStep } from 'nextstepjs'
 import { useNextAdapter } from 'nextstepjs/adapters/next'
@@ -9,7 +9,7 @@ import { useSystemSettings } from '@/hooks/use-system-settings'
 import { getTourStepsForRole } from './tour-steps'
 
 export function ProductTour() {
-  const { profile, isInitialized, isAuthenticated } = useAuthZustand()
+  const { profile, user, isInitialized, isAuthenticated } = useAuthZustand()
   const { isOnboardingTourEnabled, loading: settingsLoading } = useSystemSettings()
   const { startNextStep } = useNextStep()
   const pathname = usePathname()
@@ -20,7 +20,10 @@ export function ProductTour() {
                      pathname?.startsWith('/reset-password') ||
                      pathname === '/'
   
-  const tourSteps = getTourStepsForRole(profile?.role)
+  const tourSteps = useMemo(
+    () => getTourStepsForRole(profile?.role),
+    [profile?.role]
+  )
   const tourId = tourSteps[0]?.tour || 'default-onboarding'
 
   // Debug logging
@@ -95,11 +98,9 @@ export function ProductTour() {
       // If not in localStorage, check database
       if (policyAcknowledged === null) {
         try {
-          const { createClient } = await import('@/lib/supabase')
-          const supabase = createClient()
-          const { data: { user } } = await supabase.auth.getUser()
-          
-          if (user) {
+          if (user?.id) {
+            const { createClient } = await import('@/lib/supabase')
+            const supabase = createClient()
             // Get active policies
             const { data: activePolicies } = await supabase
               .from('policies')
@@ -200,7 +201,17 @@ export function ProductTour() {
       clearTimeout(timeoutId)
       window.removeEventListener('start-tour', handleManualStart)
     }
-  }, [settingsLoading, isOnboardingTourEnabled, isInitialized, isAuthenticated, profile, tourId, startNextStep, tourSteps, isAuthPage])
+  }, [
+    settingsLoading,
+    isOnboardingTourEnabled,
+    isInitialized,
+    isAuthenticated,
+    profile,
+    user?.id,
+    tourId,
+    startNextStep,
+    isAuthPage,
+  ])
 
   const scrollToSelector = async (selector?: string) => {
     if (!selector || typeof document === 'undefined') return

@@ -9,6 +9,10 @@ import jsPDF from 'jspdf'
 import html2canvas from 'html2canvas'
 import { useAuthZustand } from '@/hooks/use-auth-zustand'
 import { createClient } from '@/lib/supabase'
+import {
+  isProfileAvatarPathKnownMissing,
+  markProfileAvatarPathMissing,
+} from '@/lib/profile-avatar-path-cache'
 import { CredentialCard } from './credential-card'
 import { PrintSpecifications } from './print-specifications'
 import { toast } from 'sonner'
@@ -83,6 +87,10 @@ export function PersonalCredentialView() {
         setResolvedAvatarUrl(val)
         return
       }
+      if (isProfileAvatarPathKnownMissing(val)) {
+        setResolvedAvatarUrl(null)
+        return
+      }
       try {
         const { data, error } = await supabase.storage
           .from('profiles')
@@ -90,9 +98,11 @@ export function PersonalCredentialView() {
         if (!error && data?.signedUrl) {
           setResolvedAvatarUrl(data.signedUrl)
         } else {
+          markProfileAvatarPathMissing(val)
           setResolvedAvatarUrl(null)
         }
       } catch (_e) {
+        markProfileAvatarPathMissing(val)
         setResolvedAvatarUrl(null)
       }
     }

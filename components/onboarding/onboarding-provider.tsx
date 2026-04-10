@@ -47,12 +47,7 @@ export function OnboardingProvider({ children }: OnboardingProviderProps) {
     try {
       const { createClient } = await import('@/lib/supabase')
       const supabase = createClient()
-      const { data: { user } } = await supabase.auth.getUser()
-      
-      if (!user) {
-        console.log('⏸️ OnboardingProvider: No user found, skipping policy check')
-        return
-      }
+      const userId = profile.id
 
       // Get active policies
       const { data: activePolicies } = await supabase
@@ -73,7 +68,7 @@ export function OnboardingProvider({ children }: OnboardingProviderProps) {
       const { data: acknowledgment } = await supabase
         .from('policy_acknowledgments')
         .select('id')
-        .eq('user_id', user.id)
+        .eq('user_id', userId)
         .eq('policy_id', activePolicies[0].id)
         .single()
 

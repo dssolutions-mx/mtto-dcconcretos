@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase'
+import { useAuthStore } from '@/store'
+import { useShallow } from 'zustand/react/shallow'
 
 interface UserPlant {
   plant_id: string
@@ -17,6 +19,9 @@ interface UserPlantsHook {
 }
 
 export function useUserPlant(): UserPlantsHook {
+  const { user, isInitialized } = useAuthStore(
+    useShallow((s) => ({ user: s.user, isInitialized: s.isInitialized }))
+  )
   const [userPlants, setUserPlants] = useState<UserPlant[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -24,30 +29,30 @@ export function useUserPlant(): UserPlantsHook {
   const [hasFullAccess, setHasFullAccess] = useState(false)
 
   useEffect(() => {
+    if (!isInitialized) {
+      return
+    }
+    if (!user?.id) {
+      setError('Usuario no autenticado')
+      setLoading(false)
+      return
+    }
+
+    setLoading(true)
+    setError(null)
+
     const fetchUserPlants = async () => {
       try {
         const supabase = createClient()
-        
-        // Get current authenticated user first
-        const { data: { user }, error: userError } = await supabase.auth.getUser()
-        if (userError) {
-          console.error('Auth error:', userError)
-          setError('Error de autenticación')
-          return
-        }
-        
-        if (!user) {
-          setError('Usuario no autenticado')
-          return
-        }
+        const userId = user.id
 
-        console.log('Current user ID:', user.id)
+        console.log('Current user ID:', userId)
         
         // Get the user's authorization info using the authenticated user ID
         const { data: authData, error: authError } = await supabase
           .from('user_authorization_summary')
           .select('role, plant_id, plant_name, business_unit_id, business_unit_name')
-          .eq('user_id', user.id)
+          .eq('user_id', userId)
           .limit(1)
           .single()
 
@@ -118,7 +123,7 @@ export function useUserPlant(): UserPlantsHook {
           const { data: userSpecificPlants, error: userPlantsError } = await supabase
             .from('user_authorization_summary')
             .select('plant_id, plant_name, business_unit_id, business_unit_name')
-            .eq('user_id', user.id)
+            .eq('user_id', userId)
             .not('plant_id', 'is', null)
 
           if (userPlantsError) {
@@ -155,7 +160,7 @@ export function useUserPlant(): UserPlantsHook {
     }
 
     fetchUserPlants()
-  }, [])
+  }, [isInitialized, user?.id])
 
   return { userPlants, loading, error, userRole, hasFullAccess }
 } 

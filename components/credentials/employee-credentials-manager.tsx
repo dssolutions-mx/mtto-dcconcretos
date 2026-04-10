@@ -36,6 +36,11 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { toast } from 'sonner'
+import {
+  clearProfileAvatarPathMissing,
+  isProfileAvatarPathKnownMissing,
+  markProfileAvatarPathMissing,
+} from '@/lib/profile-avatar-path-cache'
 
 export function EmployeeCredentialsManager() {
   const [employees, setEmployees] = useState<Employee[]>([])
@@ -127,6 +132,9 @@ export function EmployeeCredentialsManager() {
 
   const getSignedUrl = async (path: string, ttlSeconds = 3600): Promise<string | null> => {
     try {
+      if (isProfileAvatarPathKnownMissing(path)) {
+        return null
+      }
       const cacheEntry = signedUrlCache.current.get(path)
       const now = Date.now()
       if (cacheEntry && cacheEntry.expiresAt > now + 15_000) {
@@ -136,11 +144,13 @@ export function EmployeeCredentialsManager() {
         .from('profiles')
         .createSignedUrl(path, ttlSeconds)
       if (error || !data?.signedUrl) {
+        markProfileAvatarPathMissing(path)
         return null
       }
       signedUrlCache.current.set(path, { url: data.signedUrl, expiresAt: now + ttlSeconds * 1000 })
       return data.signedUrl
     } catch (_err) {
+      markProfileAvatarPathMissing(path)
       return null
     }
   }
@@ -157,7 +167,7 @@ export function EmployeeCredentialsManager() {
       }
     })
 
-    const paths = Object.keys(pathToIndexes)
+    const paths = Object.keys(pathToIndexes).filter((p) => !isProfileAvatarPathKnownMissing(p))
     if (paths.length === 0) return rows
 
     // Batch where possible
@@ -168,7 +178,12 @@ export function EmployeeCredentialsManager() {
         .createSignedUrls(paths, 3600)
       if (!error && Array.isArray(data)) {
         data.forEach((res, i) => {
-          if (res?.signedUrl) batchedResults[paths[i]] = res.signedUrl
+          const pathKey = paths[i]
+          if (res?.signedUrl && pathKey) {
+            batchedResults[pathKey] = res.signedUrl
+          } else if (pathKey) {
+            markProfileAvatarPathMissing(pathKey)
+          }
         })
       }
     } catch (_e) {}
@@ -689,6 +704,7 @@ export function EmployeeCredentialsManager() {
           return
         }
         newAvatarStoragePath = fileName
+        clearProfileAvatarPathMissing(fileName)
       }
 
       const updatePayload: Record<string, unknown> = {
@@ -729,6 +745,11 @@ export function EmployeeCredentialsManager() {
 
       if (error) {
         console.error('Error updating employee:', error)
+        if (newAvatarStoragePath) {
+          try {
+            await supabase.storage.from('profiles').remove([newAvatarStoragePath])
+          } catch (_e) {}
+        }
         toast.error('Error al guardar información del empleado')
         return
       }
