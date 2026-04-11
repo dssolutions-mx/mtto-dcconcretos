@@ -75,11 +75,31 @@ const SHIFT_OPTIONS = [
 
 export type UserRegistrationTriggerVariant = 'toolbar' | 'hero'
 
+/** Profile payload returned from `POST /api/operators/register` (inserted row). */
+export type RegisteredOperatorProfile = {
+  id: string
+  nombre: string
+  apellido: string
+  role: string
+  status?: string
+  employee_code?: string | null
+  shift?: string | null
+  plant_id?: string | null
+  business_unit_id?: string | null
+}
+
 export interface UserRegistrationToolProps {
   /** `hero`: large primary CTA for personal / RH pages. */
   triggerVariant?: UserRegistrationTriggerVariant
-  /** Called after a successful registration (e.g. refetch personnel board). */
-  onRegistered?: () => void
+  /** Called after a successful registration with the created profile when available. */
+  onRegistered?: (profile?: RegisteredOperatorProfile) => void
+  /** With `onOpenChange`, controls dialog visibility from the parent. */
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
+  /** Omit the default trigger button (parent opens via `open` / `onOpenChange`). */
+  hideTrigger?: boolean
+  /** Prefill plant and business unit when the dialog opens (assignment board, filters). Ignored for JEFE_PLANTA (profile locks plant). */
+  initialPlantId?: string | null
 }
 
 function generateProvisionalPasswordString(): string {
@@ -94,13 +114,26 @@ function generateProvisionalPasswordString(): string {
 export function UserRegistrationTool({
   triggerVariant = 'toolbar',
   onRegistered,
+  open: openProp,
+  onOpenChange: onOpenChangeProp,
+  hideTrigger = false,
+  initialPlantId = null,
 }: UserRegistrationToolProps) {
   const { profile } = useAuthZustand()
   const canManageUsers = canRegisterOperatorsClient(profile)
   const lineManagerOnly =
     canManageUsers && profile && !isFullPersonnelRegistrationClient(profile)
   const roleOptions = lineManagerOnly ? LINE_MANAGER_REGISTER_ROLES : FULL_REGISTER_ROLES
-  const [open, setOpen] = useState(false)
+  const isControlled = openProp !== undefined && onOpenChangeProp !== undefined
+  const [internalOpen, setInternalOpen] = useState(false)
+  const open = isControlled ? openProp : internalOpen
+  const setOpen = (next: boolean) => {
+    if (isControlled) {
+      onOpenChangeProp(next)
+    } else {
+      setInternalOpen(next)
+    }
+  }
   const [loading, setLoading] = useState(false)
   const [businessUnits, setBusinessUnits] = useState<BusinessUnit[]>([])
   const [plants, setPlants] = useState<Plant[]>([])
@@ -165,14 +198,14 @@ export function UserRegistrationTool({
 
   const registrarOpenedFromUrl = useRef(false)
   useEffect(() => {
-    if (typeof window === 'undefined' || !canManageUsers) return
+    if (typeof window === 'undefined' || !canManageUsers || isControlled) return
     const sp = new URLSearchParams(window.location.search)
     const flag = sp.get('registrar') ?? sp.get('alta')
     if ((flag === '1' || flag === 'true') && !registrarOpenedFromUrl.current) {
       registrarOpenedFromUrl.current = true
-      setOpen(true)
+      setInternalOpen(true)
     }
-  }, [canManageUsers])
+  }, [canManageUsers, isControlled])
 
   /** Re-sync BU/plant when opening dialog (JP/JUN after async plant load). */
   useEffect(() => {
@@ -197,6 +230,7 @@ export function UserRegistrationTool({
   const prevOpenRef = useRef(false)
   useEffect(() => {
     if (open && !prevOpenRef.current) {
+      const lockPlant = profile?.role === 'JEFE_PLANTA'
       setFormData((prev) => {
         const next = { ...prev }
         if (!next.provisional_password || next.provisional_password.length < 6) {
@@ -207,11 +241,22 @@ export function UserRegistrationTool({
           const random = Math.floor(Math.random() * 100).toString().padStart(2, '0')
           next.employee_code = `EMP${timestamp}${random}`
         }
+        if (
+          initialPlantId &&
+          plants.length > 0 &&
+          !lockPlant
+        ) {
+          const pl = plants.find((p) => p.id === initialPlantId)
+          if (pl) {
+            next.plant_id = pl.id
+            next.business_unit_id = pl.business_unit_id
+          }
+        }
         return next
       })
     }
     prevOpenRef.current = open
-  }, [open])
+  }, [open, initialPlantId, plants, profile?.role])
 
   const loadBusinessUnits = async () => {
     try {
@@ -239,7 +284,7 @@ export function UserRegistrationTool({
     setFormData(prev => ({ ...prev, [field]: value }))
   }
 
-  const generateEmployeeCode = () => {
+  const makeEmployeeCode = () => {
     const timestamp = Date.now().toString().slice(-6)
     const random = Math.floor(Math.random() * 100).toString().padStart(2, '0')
     return `EMP${timestamp}${random}`
@@ -305,7 +350,9 @@ export function UserRegistrationTool({
         nombre?: string
         apellido?: string
         role?: string
-      } = {}
+        id?: string
+        user?: { profile?: RegisteredOperatorProfile }
+      } & Partial<RegisteredOperatorProfile> = {}
       try {
         result = await response.json()
       } catch {
@@ -319,6 +366,22 @@ export function UserRegistrationTool({
             : `No se pudo registrar (${response.status})`
         throw new Error(msg)
       }
+
+      const createdProfile: RegisteredOperatorProfile | undefined =
+        result.user?.profile ??
+        (result.id
+          ? {
+              id: result.id,
+              nombre: result.nombre ?? formData.nombre,
+              apellido: result.apellido ?? formData.apellido,
+              role: result.role ?? formData.role,
+              status: result.status ?? 'active',
+              employee_code: result.employee_code ?? formData.employee_code,
+              shift: result.shift ?? formData.shift,
+              plant_id: result.plant_id ?? formData.plant_id,
+              business_unit_id: result.business_unit_id ?? formData.business_unit_id,
+            }
+          : undefined)
 
       const outEmail = result.email ?? formData.email
       const credLine = `${outEmail}\t${formData.provisional_password}`
@@ -335,7 +398,7 @@ export function UserRegistrationTool({
         )
       }
 
-      onRegistered?.()
+      onRegistered?.(createdProfile)
 
       // Reset form
       setFormData({
@@ -358,7 +421,7 @@ export function UserRegistrationTool({
 
       setOpen(false)
 
-    } catch (error) {
+    } catch (error: unknown) {
       console.error('Error creating user:', error)
       toast.error(`Error registrando usuario: ${error instanceof Error ? error.message : 'Error desconocido'}`)
     } finally {
@@ -378,19 +441,21 @@ export function UserRegistrationTool({
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button
-          size={triggerVariant === 'hero' ? 'lg' : 'default'}
-          className={
-            triggerVariant === 'hero'
-              ? 'w-full sm:w-auto min-h-[48px] px-6 text-base font-semibold shadow-sm'
-              : 'w-full sm:w-auto cursor-pointer'
-          }
-        >
-          <UserPlus className={triggerVariant === 'hero' ? 'h-5 w-5 mr-2' : 'h-4 w-4 mr-2'} />
-          {triggerLabel}
-        </Button>
-      </DialogTrigger>
+      {!hideTrigger && (
+        <DialogTrigger asChild>
+          <Button
+            size={triggerVariant === 'hero' ? 'lg' : 'default'}
+            className={
+              triggerVariant === 'hero'
+                ? 'w-full sm:w-auto min-h-[48px] px-6 text-base font-semibold shadow-sm'
+                : 'w-full sm:w-auto cursor-pointer'
+            }
+          >
+            <UserPlus className={triggerVariant === 'hero' ? 'h-5 w-5 mr-2' : 'h-4 w-4 mr-2'} />
+            {triggerLabel}
+          </Button>
+        </DialogTrigger>
+      )}
       
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
@@ -522,7 +587,7 @@ export function UserRegistrationTool({
                       type="button"
                       variant="outline"
                       size="sm"
-                      onClick={generateEmployeeCode}
+                      onClick={() => handleInputChange('employee_code', makeEmployeeCode())}
                       className="px-3"
                     >
                       <Hash className="h-4 w-4" />

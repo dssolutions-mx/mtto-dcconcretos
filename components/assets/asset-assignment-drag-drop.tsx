@@ -45,7 +45,10 @@ import {
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 
-import { CreateOperatorDialog } from '@/components/personnel/create-operator-dialog'
+import {
+  UserRegistrationTool,
+  type RegisteredOperatorProfile,
+} from '@/components/auth/user-registration-tool'
 import { OperatorTransferDialog, TransferData } from './dialogs/operator-transfer-dialog'
 import { getAssetStatusConfig } from '@/lib/utils/asset-status'
 import { dragItemVariants, dropZoneVariants, springTransition, dragOverlayVariants } from '@/lib/utils/framer-drag-animations'
@@ -662,13 +665,22 @@ export function AssetAssignmentDragDrop() {
     }
   }
 
-  const handleOperatorCreated = (newOperator: Operator) => {
-    setOperators(prev => [newOperator, ...prev])
+  const handleOperatorCreated = (newOperator: RegisteredOperatorProfile) => {
+    const plant =
+      selectedPlant ??
+      (newOperator.plant_id ? plants.find((p) => p.id === newOperator.plant_id) : undefined)
+    const enriched: Operator = {
+      id: newOperator.id,
+      nombre: newOperator.nombre,
+      apellido: newOperator.apellido,
+      role: newOperator.role,
+      status: newOperator.status ?? 'active',
+      employee_code: newOperator.employee_code ?? undefined,
+      shift: newOperator.shift ?? undefined,
+      plants: plant,
+    }
+    setOperators((prev) => [enriched, ...prev])
     setShowCreateOperator(false)
-    toast({
-      title: "Éxito",
-      description: "Operador creado exitosamente",
-    })
   }
 
   const handleTransferConfirm = async (forceTransfer = false) => {
@@ -976,12 +988,14 @@ export function AssetAssignmentDragDrop() {
           )}
         </DragOverlay>
 
-        {/* Create Operator Dialog */}
-        <CreateOperatorDialog
+        <UserRegistrationTool
+          hideTrigger
           open={showCreateOperator}
           onOpenChange={setShowCreateOperator}
-          onOperatorCreated={handleOperatorCreated}
-          plants={plants}
+          initialPlantId={selectedPlant?.id ?? null}
+          onRegistered={(profile) => {
+            if (profile) handleOperatorCreated(profile)
+          }}
         />
 
         {/* Transfer Confirmation Dialog */}

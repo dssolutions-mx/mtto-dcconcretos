@@ -9,7 +9,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Badge } from '@/components/ui/badge'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 
-import { CreateOperatorDialog } from './create-operator-dialog'
+import {
+  UserRegistrationTool,
+  type RegisteredOperatorProfile,
+} from '@/components/auth/user-registration-tool'
 import { OperatorDetailsDialog } from './operator-details-dialog'
 import { useToast } from '@/components/ui/use-toast'
 
@@ -120,13 +123,21 @@ export function PersonnelManagementPage() {
     }
   }
 
-  const handleOperatorCreated = (newOperator: Operator) => {
-    setOperators(prev => [newOperator, ...prev])
+  const handleOperatorCreated = (profile?: RegisteredOperatorProfile) => {
+    if (!profile?.id) return
+    const plant = profile.plant_id ? plants.find((p) => p.id === profile.plant_id) : undefined
+    const row: Operator = {
+      id: profile.id,
+      nombre: profile.nombre,
+      apellido: profile.apellido,
+      role: profile.role,
+      status: profile.status ?? 'active',
+      employee_code: profile.employee_code ?? undefined,
+      shift: profile.shift ?? undefined,
+      plants: plant,
+    }
+    setOperators((prev) => [row, ...prev])
     setShowCreateDialog(false)
-    toast({
-      title: "Éxito",
-      description: "Operador creado exitosamente",
-    })
   }
 
   const getRoleBadgeColor = (role: string) => {
@@ -335,11 +346,12 @@ export function PersonnelManagementPage() {
       )}
 
       {/* Dialogs */}
-      <CreateOperatorDialog
+      <UserRegistrationTool
+        hideTrigger
         open={showCreateDialog}
         onOpenChange={setShowCreateDialog}
-        onOperatorCreated={handleOperatorCreated}
-        plants={plants}
+        initialPlantId={selectedPlant?.id ?? null}
+        onRegistered={handleOperatorCreated}
       />
 
       {selectedOperator && (
