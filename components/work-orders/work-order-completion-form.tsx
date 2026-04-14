@@ -510,8 +510,7 @@ export function WorkOrderCompletionForm({ workOrderId, initialData }: WorkOrderC
           work_order_id: workOrderId,
           findings: updatedData.technician_notes || null,
           actions: updatedData.resolution_details,
-          // Important: Include the maintenance_plan_id from the work order to properly mark the maintenance as completed
-          maintenance_plan_id: workOrder.maintenance_plan_id || null,
+          // maintenance_plan_id on maintenance_history is set server-side from WO → maintenance_plans.interval_id
           completed_tasks: completedTasksData.length > 0 ? completedTasksData : null,
           // Incluir todos los campos de completion que no van en work_orders
           downtime_hours: updatedData.downtime_hours,

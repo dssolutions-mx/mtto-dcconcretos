@@ -205,18 +205,16 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
                 // CRITICAL: Only consider maintenance_history entries where maintenance_plan_id matches an actual interval
                 // This excludes work orders and service orders NOT linked to cycle intervals
                 const componentPreventiveHistory = componentHistory.filter((m: any) => {
-                  if (m?.type !== 'Preventivo' || !m?.maintenance_plan_id) return false
+                  const typeLower = m?.type?.toLowerCase?.() ?? "";
+                  const isPreventive = typeLower === "preventive" || typeLower === "preventivo";
+                  if (!isPreventive || !m?.maintenance_plan_id) return false;
                   // Verify maintenance_plan_id exists in the intervals array
-                  return intervals.some((interval: any) => interval.id === m.maintenance_plan_id)
+                  return intervals.some((interval: any) => interval.id === m.maintenance_plan_id);
                 })
                 const currentCycleMaintenances = componentPreventiveHistory.filter((m: any) => {
                   const mValue = getMaintenanceValue(m, componentUnit);
                   return mValue > currentCycleStartValue && mValue < currentCycleEndValue;
                 });
-
-                const highestMaintenanceInCycle = currentCycleMaintenances.length > 0
-                  ? Math.max(...currentCycleMaintenances.map((m: any) => getMaintenanceValue(m, componentUnit)))
-                  : 0;
 
                 // Process each interval for this component
                 modelIntervals.forEach(interval => {
@@ -248,33 +246,24 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
                         status = 'not_applicable';
                       }
                     } else {
-                      // Current cycle logic (includes services that fall exactly at cycle boundary)
-                      // Check if this specific interval was performed in the current cycle
-                      const safeDue = Number(nextDueValue ?? 0)
-                      const wasPerformedInCurrentCycle = safeDue > 0 && currentCycleMaintenances.some((m: any) => {
-                        const maintenanceValue = getMaintenanceValue(m, componentUnit);
-                        // The maintenance should match both the plan ID AND be in the right value range for this cycle
-                        const tolerance = 200; // Allow some tolerance for when maintenance is done early/late
-
-                        return m.maintenance_plan_id === interval.id &&
-                               Math.abs(maintenanceValue - safeDue) <= tolerance;
-                      });
+                      // Current cycle logic — match asset detail page (/activos/[id])
+                      const dueVal = Number(nextDueValue ?? 0);
+                      const wasPerformedInCurrentCycle = currentCycleMaintenances.some(
+                        (m: any) => m.maintenance_plan_id === interval.id
+                      );
 
                       if (wasPerformedInCurrentCycle) {
                         status = 'completed';
                       } else {
-                        // Plan-aware coverage: higher/equal interval (same unit/category) covers lower ones
-                        // CRITICAL: Coverage is based SOLELY on interval value comparison
-                        // If a higher interval service is performed, it covers ALL lower interval services (including future ones)
-                        // Example: If 1500km service performed at 1150km, it covers 300km, 600km, 900km, 1200km, 1500km
-                        // NO timing/position verification needed - purely interval value comparison
                         const isCoveredByHigher = currentCycleMaintenances.some((m: any) => {
                           const performedInterval = (intervals as any[]).find((i: any) => i.id === m.maintenance_plan_id);
                           const dueInterval = interval;
                           if (!performedInterval || !dueInterval) return false;
                           const sameUnit = performedInterval.type === dueInterval.type;
-                          const higherOrEqual = Number(performedInterval.interval_value) >= Number(dueInterval.interval_value);
-                          return sameUnit && higherOrEqual;
+                          const higherOrEqual =
+                            Number(performedInterval.interval_value) >= Number(dueInterval.interval_value);
+                          const performedAtValue = getMaintenanceValue(m, componentUnit);
+                          return sameUnit && higherOrEqual && performedAtValue >= dueVal;
                         });
 
                         if (isCoveredByHigher) {
@@ -312,101 +301,6 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
                     component_unit: componentUnit
                   });
                 });
-              });
-
-              // Check for uncompleted services from previous cycles for each component
-              Object.entries(intervalsByModel).forEach(([modelId, modelIntervals]) => {
-                const component = componentByModel[modelId];
-                if (!component) return;
-
-                const componentUnit = getMaintenanceUnit(component);
-                const componentValue = getCurrentValue(component, componentUnit);
-                const componentHistory = (json?.data?.maintenance_history || []).filter(
-                  (m: any) => m.asset_id === component.id
-                );
-
-                const componentPreventiveHistory = componentHistory.filter((m: any) => {
-                  if (m?.type !== 'Preventivo' || !m?.maintenance_plan_id) return false
-                  return intervals.some((interval: any) => interval.id === m.maintenance_plan_id)
-                });
-
-                for (let pastCycle = 1; pastCycle < currentCycleNum; pastCycle++) {
-                  const pastCycleStartValue = (pastCycle - 1) * maxInterval;
-                  const pastCycleEndValue = pastCycle * maxInterval;
-
-                  const pastCycleMaintenances = componentPreventiveHistory.filter((m: any) => {
-                    const mValue = getMaintenanceValue(m, componentUnit);
-                    return mValue > pastCycleStartValue && mValue < pastCycleEndValue;
-                  });
-
-                  modelIntervals.forEach(interval => {
-                    const isRecurring = (interval as any).is_recurring !== false;
-                    const isFirstCycleOnly = (interval as any).is_first_cycle_only === true;
-                    const category = (interval as any).maintenance_category || 'standard';
-
-                    if (isFirstCycleOnly && pastCycle > 1) return;
-
-                    const expectedDueValue = pastCycleStartValue + interval.interval_value;
-
-                    const wasCompletedInPastCycle = pastCycleMaintenances.some((m: any) => {
-                      const mValue = getMaintenanceValue(m, componentUnit);
-                      const tolerance = 200;
-                      return m.maintenance_plan_id === interval.id &&
-                             Math.abs(mValue - expectedDueValue) <= tolerance;
-                    });
-
-                    if (!wasCompletedInPastCycle) {
-                      // Check if covered by higher service in SAME past cycle
-                      const isCoveredInSameCycle = pastCycleMaintenances.some((m: any) => {
-                        const performedInterval = (intervals as any[]).find((i: any) => i.id === m.maintenance_plan_id);
-                        if (!performedInterval) return false;
-                        const sameUnit = performedInterval.type === interval.type;
-                        const higherOrEqual = Number(performedInterval.interval_value) >= Number(interval.interval_value);
-                        return sameUnit && higherOrEqual;
-                      });
-                      
-                      // Check if covered by current cycle maintenance
-                      const currentCycleStartValue = (currentCycleNum - 1) * maxInterval;
-                      const currentCycleEndValue = currentCycleNum * maxInterval;
-                      const currentCycleMaintenances = componentPreventiveHistory.filter((m: any) => {
-                        const mValue = getMaintenanceValue(m, componentUnit);
-                        return mValue > currentCycleStartValue && mValue < currentCycleEndValue;
-                      });
-
-                      const isCoveredByCurrentCycle = currentCycleMaintenances.some((m: any) => {
-                        const performedInterval = (intervals as any[]).find((i: any) => i.id === m.maintenance_plan_id);
-                        if (!performedInterval) return false;
-                        const sameUnit = performedInterval.type === interval.type;
-                        const higherOrEqual = Number(performedInterval.interval_value) >= Number(interval.interval_value);
-                        return sameUnit && higherOrEqual;
-                      });
-
-                      // Only add if NOT covered by same cycle OR current cycle
-                      if (!isCoveredInSameCycle && !isCoveredByCurrentCycle) {
-                        processedIntervals.push({
-                          interval_id: interval.id,
-                          interval_value: interval.interval_value,
-                          name: interval.name,
-                          description: interval.description || '',
-                          type: interval.type,
-                          maintenance_category: category,
-                          is_recurring: isRecurring,
-                          is_first_cycle_only: isFirstCycleOnly,
-                          current_cycle: pastCycle,
-                          next_due_hour: expectedDueValue,
-                          next_due_value: expectedDueValue,
-                          status: 'overdue',
-                          cycle_length: maxInterval,
-                          component_id: component.id,
-                          component_name: component.name,
-                          component_hours: componentValue,
-                          component_value: componentValue,
-                          component_unit: componentUnit
-                        });
-                      }
-                    }
-                  });
-                }
               });
 
               // Filter and sort - show relevant intervals for current cycle and near future
@@ -462,70 +356,17 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
             const currentCycleStartValue = (currentCycleNum - 1) * maxInterval;
             const currentCycleEndValue = currentCycleNum * maxInterval;
 
-            // Use preventive, plan-linked entries only for coverage/completion
-            // CRITICAL: Fetch maintenance_plans to map maintenance_plan_id to interval_id
-            const { data: maintenancePlans } = await supabase
-              .from('maintenance_plans')
-              .select('id, interval_id')
-              .eq('asset_id', assetId);
-            
-            console.log(`[MAINT PAGE ${assetId}] Fetched maintenance_plans:`, maintenancePlans);
-            
-            // Create mapping: maintenance_plan_id -> interval_id
-            const planToIntervalMap = new Map<string, string>();
-            (maintenancePlans || []).forEach(plan => {
-              if (plan.id && plan.interval_id) {
-                planToIntervalMap.set(plan.id, plan.interval_id);
-              }
-            });
-            
-            console.log(`[MAINT PAGE ${assetId}] Plan to Interval Map:`, Array.from(planToIntervalMap.entries()));
-            
-            console.log(`[MAINT PAGE ${assetId}] Total maintenance history:`, maintenanceHistory.length);
-            console.log(`[MAINT PAGE ${assetId}] Intervals:`, intervals.map(i => ({id: i.id, value: i.interval_value})));
-            
-            // CRITICAL: maintenance_history.maintenance_plan_id DIRECTLY stores maintenance_intervals.id!
-            // Direct reference: maintenance_history.maintenance_plan_id → maintenance_intervals.id
+            // maintenance_history.maintenance_plan_id = maintenance_intervals.id
             const preventiveHistory = maintenanceHistory.filter(m => {
-              // Check for 'preventive' (English) or 'preventivo' (Spanish) - handle both languages and cases
               const typeLower = m?.type?.toLowerCase();
               const isPreventive = typeLower === 'preventive' || typeLower === 'preventivo';
-              if (!isPreventive || !m?.maintenance_plan_id) return false
-              
-              // maintenance_plan_id IS the interval.id - check directly
+              if (!isPreventive || !m?.maintenance_plan_id) return false;
               return intervals.some(interval => interval.id === m.maintenance_plan_id);
             });
-            
-            console.log(`[MAINT PAGE ${assetId}] Preventive history after filtering:`, preventiveHistory.length);
-            console.log(`[MAINT PAGE ${assetId}] Preventive details:`, preventiveHistory.map(m => {
-              // maintenance_plan_id is actually the interval_id which IS the interval.id
-              const interval = intervals.find(i => i.id === m.maintenance_plan_id);
-              return {
-                date: m.date,
-                maintenance_plan_id: m.maintenance_plan_id,
-                interval_id: m.maintenance_plan_id,
-                interval_value: interval?.interval_value,
-                value: maintenanceUnit === 'kilometers' ? m.kilometers : m.hours
-              };
-            }));
             const currentCycleMaintenances = preventiveHistory.filter(m => {
               const mValue = getMaintenanceValue(m, maintenanceUnit);
-              // Exclude maintenance that marks the end of previous cycle (exactly at cycle boundary)
               return mValue > currentCycleStartValue && mValue < currentCycleEndValue;
             });
-            
-            console.log(`[MAINT PAGE ${assetId}] Current cycle: ${currentCycleNum}, Range: ${currentCycleStartValue}${getUnitLabel(maintenanceUnit)} - ${currentCycleEndValue}${getUnitLabel(maintenanceUnit)}`);
-            console.log(`[MAINT PAGE ${assetId}] Current cycle maintenances:`, currentCycleMaintenances.length);
-            console.log(`[MAINT PAGE ${assetId}] Current cycle details:`, currentCycleMaintenances.map(m => ({
-              date: m.date,
-              maintenance_plan_id: m.maintenance_plan_id,
-              value: getMaintenanceValue(m, maintenanceUnit),
-              interval_value: intervals.find(i => i.id === m.maintenance_plan_id)?.interval_value
-            })));
-
-            const highestMaintenanceInCycle = currentCycleMaintenances.length > 0
-              ? Math.max(...currentCycleMaintenances.map(m => getMaintenanceValue(m, maintenanceUnit)))
-              : 0;
 
             // Process intervals for cyclic logic
             const processedIntervals: CyclicMaintenanceInterval[] = intervals.map(interval => {
@@ -561,32 +402,24 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
                   // Current cycle logic (includes services that fall exactly at cycle boundary)
                   // Check if this specific interval was performed in the current cycle
                   // CRITICAL: maintenance_plan_id IS the interval ID
-                  const wasPerformedInCurrentCycle = currentCycleMaintenances.some(m => {
-                    const matches = m.maintenance_plan_id === interval.id;
-                    if (interval.interval_value === 1500 || matches) {
-                      console.log(`[MAINT PAGE ${assetId}] Checking ${interval.interval_value}${getUnitLabel(maintenanceUnit)} completion:`, {
-                        maintenance_plan_id: m.maintenance_plan_id,
-                        target_interval_id: interval.id,
-                        matches
-                      });
-                    }
-                    return matches;
-                  });
+                  const wasPerformedInCurrentCycle = currentCycleMaintenances.some(
+                    m => m.maintenance_plan_id === interval.id
+                  );
 
                   if (wasPerformedInCurrentCycle) {
                     status = 'completed';
                   } else {
-                    // Plan-aware coverage: higher/equal interval covers lower ones (same unit)
-                    // CRITICAL: Coverage based on interval value only - category is metadata, not a coverage gate
-                    // A 1500h service covers 300h, 600h, 900h, 1200h regardless of category (standard vs intermediate vs major)
-                    // CRITICAL: maintenance_plan_id IS the interval ID
+                    // Same coverage rule as asset detail page (/activos/[id]): tier + performed at/after due
+                    const dueValue = Number(nextDueValue);
                     const isCoveredByHigher = currentCycleMaintenances.some(m => {
                       const performedInterval = intervals.find((i: any) => i.id === m.maintenance_plan_id);
                       const dueInterval = interval;
                       if (!performedInterval || !dueInterval) return false;
                       const sameUnit = performedInterval.type === dueInterval.type;
-                      const higherOrEqual = Number(performedInterval.interval_value) >= Number(dueInterval.interval_value);
-                      return sameUnit && higherOrEqual;
+                      const higherOrEqual =
+                        Number(performedInterval.interval_value) >= Number(dueInterval.interval_value);
+                      const performedAtValue = getMaintenanceValue(m, maintenanceUnit);
+                      return sameUnit && higherOrEqual && performedAtValue >= dueValue;
                     });
 
                     if (isCoveredByHigher) {
@@ -619,87 +452,8 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
               };
             });
 
-            // Check for uncompleted services from previous cycles
-            // Add them to processedIntervals if they are not covered by services in current cycle
-            const pastCycleIntervals: CyclicMaintenanceInterval[] = [];
-            
-            for (let pastCycle = 1; pastCycle < currentCycleNum; pastCycle++) {
-              const pastCycleStartValue = (pastCycle - 1) * maxInterval;
-              const pastCycleEndValue = pastCycle * maxInterval;
-              
-              // Get all preventive maintenances from this past cycle
-              const pastCycleMaintenances = preventiveHistory.filter(m => {
-                const mValue = getMaintenanceValue(m, maintenanceUnit);
-                return mValue > pastCycleStartValue && mValue < pastCycleEndValue;
-              });
-              
-              intervals.forEach(interval => {
-                const isRecurring = (interval as any).is_recurring !== false;
-                const isFirstCycleOnly = (interval as any).is_first_cycle_only === true;
-                const category = (interval as any).maintenance_category || 'standard';
-                
-                // Skip if first cycle only and we're past first cycle
-                if (isFirstCycleOnly && pastCycle > 1) return;
-                
-                // Calculate expected due value for this past cycle
-                const expectedDueValue = pastCycleStartValue + interval.interval_value;
-                
-                // Check if this service was completed in that past cycle
-                const wasCompletedInPastCycle = pastCycleMaintenances.some(m => {
-                  const mValue = getMaintenanceValue(m, maintenanceUnit);
-                  const tolerance = 200;
-                  
-                  return m.maintenance_plan_id === interval.id &&
-                         Math.abs(mValue - expectedDueValue) <= tolerance;
-                });
-                
-                // If not completed, check if it's covered by a higher service
-                if (!wasCompletedInPastCycle) {
-                  // Check if covered by higher service in SAME past cycle
-                  const isCoveredInSameCycle = pastCycleMaintenances.some(m => {
-                    const performedInterval = intervals.find((i: any) => i.id === m.maintenance_plan_id);
-                    if (!performedInterval) return false;
-                    const sameUnit = performedInterval.type === interval.type;
-                    const higherOrEqual = Number(performedInterval.interval_value) >= Number(interval.interval_value);
-                    return sameUnit && higherOrEqual;
-                  });
-                  
-                  // Check if covered by service in current cycle
-                  const isCoveredByCurrentCycle = currentCycleMaintenances.some(m => {
-                    const performedInterval = intervals.find((i: any) => i.id === m.maintenance_plan_id);
-                    if (!performedInterval) return false;
-                    const sameUnit = performedInterval.type === interval.type;
-                    const higherOrEqual = Number(performedInterval.interval_value) >= Number(interval.interval_value);
-                    return sameUnit && higherOrEqual;
-                  });
-                  
-                  // Only add if NOT covered by same cycle OR current cycle
-                  if (!isCoveredInSameCycle && !isCoveredByCurrentCycle) {
-                    pastCycleIntervals.push({
-                      interval_id: interval.id,
-                      interval_value: interval.interval_value,
-                      name: interval.name,
-                      description: interval.description || '',
-                      type: interval.type,
-                      maintenance_category: category,
-                      is_recurring: isRecurring,
-                      is_first_cycle_only: isFirstCycleOnly,
-                      current_cycle: pastCycle,
-                      next_due_hour: expectedDueValue,
-                      next_due_value: expectedDueValue,
-                      status: 'overdue', // Always overdue for past cycles
-                      cycle_length: maxInterval
-                    });
-                  }
-                }
-              });
-            }
-            
-            // Merge past cycle intervals with current cycle intervals
-            const allIntervals = [...pastCycleIntervals, ...processedIntervals];
-
-            // Filter and sort - show relevant intervals for current cycle and near future
-            const filtered = allIntervals.filter(i => {
+            // Same listing as asset detail: one row per interval (no extra "past cycle backlog" rows)
+            const filtered = processedIntervals.filter(i => {
               // Show: overdue, upcoming, scheduled, covered
               // Don't show: not_applicable, completed (already done)
               return ['overdue', 'upcoming', 'scheduled', 'covered'].includes(i.status);
@@ -1005,8 +759,7 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
                    será a las {cycleLength + (cyclicIntervals[0]?.interval_value || 0)}{getUnitLabel(maintenanceUnit)}.
                  </p>
                  <p className="mt-1">
-                   <span className="font-medium">Lógica de Cobertura:</span> Un mantenimiento mayor cubre automáticamente todos los mantenimientos menores
-                   del mismo tipo y categoría. Por ejemplo, si se realiza el servicio de 2700{getUnitLabel(maintenanceUnit)}, este cubre automáticamente todos los servicios menores (300{getUnitLabel(maintenanceUnit)}, 600{getUnitLabel(maintenanceUnit)}, etc.) tanto del ciclo actual como de ciclos anteriores no completados.
+                   <span className="font-medium">Lógica de Cobertura:</span> Un mantenimiento de intervalo mayor cubre los menores del mismo tipo en el ciclo vigente cuando se registró en horas/km en o después del vencimiento de cada menor (misma lógica que la ficha del activo).
                  </p>
                  {isComposite && (
                    <p className="mt-1">

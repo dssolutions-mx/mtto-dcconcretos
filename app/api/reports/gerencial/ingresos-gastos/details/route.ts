@@ -33,7 +33,7 @@ export async function GET(req: NextRequest) {
     // Get plant code for matching
     const { data: plant } = await supabase
       .from('plants')
-      .select('id, code')
+      .select('id, code, business_unit_id')
       .eq('id', plantId)
       .single()
 
@@ -50,6 +50,7 @@ export async function GET(req: NextRequest) {
         distributions:manual_financial_adjustment_distributions(
           id,
           plant_id,
+          business_unit_id,
           amount,
           department
         )
@@ -74,6 +75,16 @@ export async function GET(req: NextRequest) {
           departmentToPlants.get(profile.departamento)!.push(profile.plant_id)
         }
       }
+    })
+
+    const { data: allPlantsBu } = await supabase.from('plants').select('id, business_unit_id')
+    const plantsByBusinessUnit = new Map<string, string[]>()
+    ;(allPlantsBu || []).forEach((p: { id: string; business_unit_id: string | null }) => {
+      if (!p.business_unit_id) return
+      if (!plantsByBusinessUnit.has(p.business_unit_id)) {
+        plantsByBusinessUnit.set(p.business_unit_id, [])
+      }
+      plantsByBusinessUnit.get(p.business_unit_id)!.push(p.id)
     })
 
     // Collect all entries for this plant
@@ -108,7 +119,7 @@ export async function GET(req: NextRequest) {
       // Distributed entries - check if this plant is included
       if (adj.is_distributed && adj.distributions && Array.isArray(adj.distributions)) {
         adj.distributions.forEach((dist: any) => {
-          // Direct plant distribution
+          // One target per distribution row (DB CHECK); count each row once only.
           if (dist.plant_id === plantId) {
             entries.push({
               id: `${adj.id}-${dist.id}`,
@@ -121,13 +132,25 @@ export async function GET(req: NextRequest) {
               is_distributed: true,
               distribution_method: adj.distribution_method
             })
-          }
-
-          // Department distribution - check if plant has this department
-          if (dist.department) {
+          } else if (dist.business_unit_id) {
+            const buPlantIds = plantsByBusinessUnit.get(dist.business_unit_id) || []
+            if (buPlantIds.includes(plantId) && buPlantIds.length > 0) {
+              const amountPerPlant = Number(dist.amount || 0) / buPlantIds.length
+              entries.push({
+                id: `${adj.id}-${dist.id}-bu`,
+                description: adj.description,
+                subcategory: adj.subcategory,
+                expense_category: adj.expense_category || null,
+                expense_subcategory: adj.expense_subcategory || null,
+                amount: amountPerPlant,
+                department: dist.department || adj.department,
+                is_distributed: true,
+                distribution_method: adj.distribution_method
+              })
+            }
+          } else if (dist.department) {
             const departmentPlants = departmentToPlants.get(dist.department) || []
             if (departmentPlants.includes(plantId)) {
-              // Distribute equally among plants with this department
               const amountPerPlant = Number(dist.amount || 0) / departmentPlants.length
               entries.push({
                 id: `${adj.id}-${dist.id}-dept`,

@@ -784,6 +784,7 @@ export function AssetRegistrationFormModular() {
             total_cost: record.cost || null,
             work_order: record.workOrder || null,
             parts: record.parts ? JSON.stringify(record.parts) : null,
+            // maintenanceSchedule[].id is maintenance_intervals.id
             maintenance_plan_id: record.maintenancePlanId || null,
             completed_tasks: record.completedTasks ? JSON.stringify(record.completedTasks) : null,
             created_by: user.id,

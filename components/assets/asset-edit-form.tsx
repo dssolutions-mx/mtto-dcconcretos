@@ -733,6 +733,7 @@ export function AssetEditForm({ assetId }: AssetEditFormProps) {
           total_cost: totalCost > 0 ? totalCost.toString() : null,
           work_order: historyWorkOrder || null,
           parts: historyParts.length > 0 ? JSON.stringify(historyParts) : null,
+          // maintenanceSchedule[].id is maintenance_intervals.id (from /api/models/.../maintenance-intervals)
           maintenance_plan_id: selectedMaintenancePlan?.id || null,
           completed_tasks: Object.keys(completedTasks).length > 0 ? JSON.stringify(completedTasks) : null,
           created_by: user.id,

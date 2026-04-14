@@ -25,6 +25,9 @@ export async function GET(req: NextRequest) {
         amount,
         category,
         description,
+        department,
+        expense_category,
+        expense_subcategory,
         distribution_method,
         period_month,
         distributions:manual_financial_adjustment_distributions(
@@ -46,9 +49,9 @@ export async function GET(req: NextRequest) {
     }
 
     if (!adjustments || adjustments.length === 0) {
-      return NextResponse.json({ 
+      return NextResponse.json({
         adjustments: [],
-        needsUpdate: []
+        needsUpdate: [],
       })
     }
 
@@ -59,7 +62,6 @@ export async function GET(req: NextRequest) {
       { auth: { persistSession: false } }
     )
 
-    // Fetch current volumes from view (use period_start like ingresos-gastos endpoint)
     const { data: viewData, error: viewError } = await cotizadorSupabase
       .from('vw_plant_financial_analysis_unified')
       .select('plant_code, volumen_concreto_m3')
@@ -67,13 +69,11 @@ export async function GET(req: NextRequest) {
 
     if (viewError) {
       console.error('Fetch volumes error:', viewError)
-      // Continue anyway - we'll mark as needs update if we can't verify
     }
 
-    // Create map of current volumes by plant code
     const currentVolumesByCode = new Map<string, number>()
     if (viewData) {
-      viewData.forEach((row: any) => {
+      viewData.forEach((row: { plant_code?: string; volumen_concreto_m3?: number | string }) => {
         const code = row.plant_code
         const volume = Number(row.volumen_concreto_m3 || 0)
         if (code) {
@@ -83,10 +83,9 @@ export async function GET(req: NextRequest) {
       })
     }
 
-    // Get plant code mapping
     const plantIds = new Set<string>()
     adjustments.forEach(adj => {
-      adj.distributions?.forEach((dist: any) => {
+      adj.distributions?.forEach((dist: { plant_id?: string | null }) => {
         if (dist.plant_id) plantIds.add(dist.plant_id)
       })
     })
@@ -101,21 +100,33 @@ export async function GET(req: NextRequest) {
       plantIdToCode.set(p.id, p.code)
     })
 
-    // Check each adjustment for volume changes
+    type ChangeRow = {
+      plantId: string
+      plantCode: string
+      plantName: string
+      originalVolume: number
+      currentVolume: number
+      volumeDiff: number
+      originalAmount: number
+      newAmount: number
+      amountDiff: number
+      neverSyncedRow: boolean
+    }
+
     const needsUpdate: Array<{
       adjustmentId: string
-      adjustment: any
-      changes: Array<{
-        plantId: string
-        plantCode: string
-        plantName: string
-        originalVolume: number
-        currentVolume: number
-        volumeDiff: number
-        originalAmount: number
-        newAmount: number
-        amountDiff: number
-      }>
+      neverSynced: boolean
+      adjustment: {
+        id: string
+        amount: number
+        category: string
+        description: string | null
+        department: string | null
+        expense_category: string | null
+        expense_subcategory: string | null
+        period_month: string
+      }
+      changes: ChangeRow[]
       totalVolumeDiff: number
       totalAmountDiff: number
     }> = []
@@ -123,69 +134,65 @@ export async function GET(req: NextRequest) {
     adjustments.forEach(adj => {
       if (!adj.distributions || adj.distributions.length === 0) return
 
-      const changes: Array<{
-        plantId: string
-        plantCode: string
-        plantName: string
-        originalVolume: number
-        currentVolume: number
-        volumeDiff: number
-        originalAmount: number
-        newAmount: number
-        amountDiff: number
-      }> = []
-
+      const changes: ChangeRow[] = []
       let totalOriginalVolume = 0
       let totalCurrentVolume = 0
-      let totalOriginalAmount = 0
-      let totalNewAmount = 0
+      let totalOriginalAmountChanged = 0
+      let neverSynced = false
 
-      adj.distributions.forEach((dist: any) => {
-        if (!dist.plant_id || dist.volume_m3 === null || dist.volume_m3 === undefined) return
+      adj.distributions.forEach((dist: {
+        plant_id?: string | null
+        volume_m3?: number | string | null
+        amount?: number | string | null
+        plant?: { name?: string; code?: string } | null
+      }) => {
+        if (!dist.plant_id) return
 
         const plantCode = plantIdToCode.get(dist.plant_id)
         if (!plantCode) return
 
-        const originalVolume = Number(dist.volume_m3 || 0)
+        const storedVol = dist.volume_m3
+        const hasStoredVolume = storedVol !== null && storedVol !== undefined
+        const originalVolume = hasStoredVolume ? Number(storedVol) : 0
         const currentVolume = currentVolumesByCode.get(plantCode) || 0
         const volumeDiff = currentVolume - originalVolume
 
-        // Only flag as changed if difference is significant (> 0.01 m³ or > 1%)
-        const percentDiff = originalVolume > 0 ? Math.abs((volumeDiff / originalVolume) * 100) : 0
-        const hasSignificantChange = Math.abs(volumeDiff) > 0.01 || percentDiff > 1
+        let needsRowUpdate = false
+        if (!hasStoredVolume) {
+          neverSynced = true
+          needsRowUpdate = true
+        } else {
+          const percentDiff =
+            originalVolume > 0 ? Math.abs((volumeDiff / originalVolume) * 100) : 0
+          needsRowUpdate = Math.abs(volumeDiff) > 0.01 || percentDiff > 1
+        }
 
-        if (hasSignificantChange) {
-          totalOriginalVolume += originalVolume
-          totalCurrentVolume += currentVolume
+        totalOriginalVolume += originalVolume
+        totalCurrentVolume += currentVolume
 
-          const originalAmount = Number(dist.amount || 0)
-          totalOriginalAmount += originalAmount
+        const originalAmount = Number(dist.amount || 0)
 
-          // Calculate new amount based on current volume
-          // We need total volume to calculate percentage
-          // For now, we'll calculate it later when we have all volumes
+        if (needsRowUpdate) {
+          totalOriginalAmountChanged += originalAmount
           changes.push({
             plantId: dist.plant_id,
-            plantCode: plantCode,
+            plantCode,
             plantName: dist.plant?.name || plantCode,
             originalVolume,
             currentVolume,
             volumeDiff,
             originalAmount,
-            newAmount: 0, // Will calculate below
-            amountDiff: 0
+            newAmount: 0,
+            amountDiff: 0,
+            neverSyncedRow: !hasStoredVolume,
           })
-        } else {
-          totalOriginalVolume += originalVolume
-          totalCurrentVolume += currentVolume
-          totalOriginalAmount += Number(dist.amount || 0)
         }
       })
 
-      // Calculate new amounts for changed plants
       if (changes.length > 0 && totalCurrentVolume > 0) {
         const totalAmount = Number(adj.amount || 0)
-        
+        let totalNewAmount = 0
+
         changes.forEach(change => {
           const newPercentage = (change.currentVolume / totalCurrentVolume) * 100
           change.newAmount = (totalAmount * newPercentage) / 100
@@ -193,21 +200,24 @@ export async function GET(req: NextRequest) {
           totalNewAmount += change.newAmount
         })
 
-        // Calculate total amount diff
-        const totalAmountDiff = totalNewAmount - totalOriginalAmount
+        const totalAmountDiff = totalNewAmount - totalOriginalAmountChanged
 
         needsUpdate.push({
           adjustmentId: adj.id,
+          neverSynced,
           adjustment: {
             id: adj.id,
             amount: adj.amount,
             category: adj.category,
             description: adj.description,
-            period_month: adj.period_month
+            department: adj.department ?? null,
+            expense_category: adj.expense_category ?? null,
+            expense_subcategory: adj.expense_subcategory ?? null,
+            period_month: adj.period_month,
           },
           changes,
           totalVolumeDiff: totalCurrentVolume - totalOriginalVolume,
-          totalAmountDiff
+          totalAmountDiff,
         })
       }
     })
@@ -218,14 +228,17 @@ export async function GET(req: NextRequest) {
         amount: adj.amount,
         category: adj.category,
         description: adj.description,
+        department: adj.department,
+        expense_category: adj.expense_category,
+        expense_subcategory: adj.expense_subcategory,
         distribution_method: adj.distribution_method,
-        distributions: adj.distributions
+        distributions: adj.distributions,
       })),
-      needsUpdate
+      needsUpdate,
     })
-  } catch (e: any) {
+  } catch (e: unknown) {
     console.error('Check updates error:', e)
-    return NextResponse.json({ error: e?.message || 'Unexpected error' }, { status: 500 })
+    const message = e instanceof Error ? e.message : 'Unexpected error'
+    return NextResponse.json({ error: message }, { status: 500 })
   }
 }
-

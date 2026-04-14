@@ -7,9 +7,12 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
-import { RefreshCw, Download, AlertCircle, Settings, ChevronRight, ChevronDown, Loader2, ArrowUpRight, ArrowDownRight, Minus } from 'lucide-react'
-import { useRouter } from 'next/navigation'
+import { RefreshCw, Download, AlertCircle, ChevronRight, ChevronDown, Loader2, ArrowUpRight, ArrowDownRight, Minus } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { VolumeUpdateSheet } from '@/components/manual-costs/volume-update-dialog'
+import { groupCostDetailEntriesByAdjustment } from '@/components/reports/ingresos-gastos/helpers/cost-detail-rows'
+import { IngresosGastosActions } from '@/components/reports/ingresos-gastos/ingresos-gastos-actions'
 
 type PlantData = {
   plant_id: string
@@ -109,7 +112,6 @@ const formatNumber = (num: number, decimals: number = 2) =>
 const formatPercent = (pct: number) => `${formatNumber(pct, 2)}%`
 
 export default function IngresosGastosPage() {
-  const router = useRouter()
   const { toast } = useToast()
   const [loading, setLoading] = useState(false)
   const [refreshingView, setRefreshingView] = useState(false)
@@ -131,6 +133,32 @@ export default function IngresosGastosPage() {
   const [costDetails, setCostDetails] = useState<Map<string, CostDetails>>(new Map())
   // State for loading cost details: Map<`${plantId}-${category}`, boolean>
   const [loadingCostDetails, setLoadingCostDetails] = useState<Map<string, boolean>>(new Map())
+
+  const [volumeStaleCount, setVolumeStaleCount] = useState(0)
+  const [volumeSheetOpen, setVolumeSheetOpen] = useState(false)
+  const [volumeBannerDismissed, setVolumeBannerDismissed] = useState(false)
+
+  const refreshVolumeStaleCount = async (month: string) => {
+    try {
+      const r = await fetch(`/api/reports/gerencial/manual-costs/check-updates?month=${month}`)
+      const d = await r.json()
+      if (r.ok) setVolumeStaleCount((d.needsUpdate || []).length)
+      else setVolumeStaleCount(0)
+    } catch {
+      setVolumeStaleCount(0)
+    }
+  }
+
+  useEffect(() => {
+    setVolumeBannerDismissed(false)
+  }, [selectedMonth])
+
+  useEffect(() => {
+    setExpandedCosts(new Map())
+    setExpandedDepartments(new Map())
+    setCostDetails(new Map())
+    setLoadingCostDetails(new Map())
+  }, [selectedMonth, businessUnitId, plantId])
 
   useEffect(() => {
     if (selectedMonth) {
@@ -166,6 +194,7 @@ export default function IngresosGastosPage() {
       })
     } finally {
       setLoading(false)
+      void refreshVolumeStaleCount(selectedMonth)
     }
   }
 
@@ -1227,16 +1256,44 @@ export default function IngresosGastosPage() {
             Análisis financiero mensual por planta: ingresos, costos y EBITDA
           </p>
         </div>
-        <div className="flex gap-2">
-          <Button
-            variant="outline"
-            onClick={() => router.push('/reportes/gerencial/manual-costs')}
-          >
-            <Settings className="w-4 h-4 mr-2" />
-            Gestionar Costos Manuales
-          </Button>
-        </div>
+        <IngresosGastosActions
+          volumeStaleCount={volumeStaleCount}
+          onOpenVolumeSheet={() => setVolumeSheetOpen(true)}
+        />
       </div>
+
+      {volumeStaleCount > 0 && !volumeBannerDismissed && (
+        <Alert className="border-amber-500/60 bg-amber-50/80 dark:bg-amber-950/30">
+          <AlertCircle className="h-4 w-4 text-amber-700 dark:text-amber-400" />
+          <AlertTitle className="text-amber-900 dark:text-amber-100">
+            Distribución por volumen pendiente
+          </AlertTitle>
+          <AlertDescription className="text-amber-900/90 dark:text-amber-100/90">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <span>
+                Hay <strong>{volumeStaleCount}</strong> ajuste(s) manual(es) con volúmenes sin sincronizar o
+                desactualizados para <strong>{selectedMonth}</strong>. Los montos por planta pueden no reflejar el
+                volumen actual del cotizador hasta que los actualices.
+              </span>
+              <div className="flex shrink-0 flex-wrap gap-2">
+                <Button size="sm" onClick={() => setVolumeSheetOpen(true)}>
+                  Abrir sincronización
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => setVolumeBannerDismissed(true)}>
+                  Ocultar aviso
+                </Button>
+              </div>
+            </div>
+          </AlertDescription>
+        </Alert>
+      )}
+
+      <VolumeUpdateSheet
+        open={volumeSheetOpen}
+        onOpenChange={setVolumeSheetOpen}
+        month={selectedMonth}
+        onSynced={() => void loadData()}
+      />
 
       {/* Filters */}
       <Card>
@@ -1744,24 +1801,34 @@ export default function IngresosGastosPage() {
                                   ))}
                                   {renderGrandTotalCell(grandTotal, formatCurrency)}
                                 </tr>
-                                {isDeptExpanded && Array.from(deptData.entriesByPlant.entries()).map(([plantId, entries]) => {
-                                  const plant = plants.find(p => p.plant_id === plantId)
-                                  if (!plant || entries.length === 0) return null
-                                  
-                                  return entries.map(entry => (
-                                    <tr key={`${entry.id}-${plantId}`} className="bg-muted/10">
-                                      <td className="sticky left-0 z-10 bg-background pl-10 p-3 border-r-2">
-                                        {entry.description || entry.subcategory || 'Sin descripción'}
-                                      </td>
-                                      {plants.map(p => (
-                                        <td key={p.plant_id} className="text-right p-3 border-r">
-                                          {p.plant_id === plantId ? formatCurrency(entry.amount) : ''}
+                                {isDeptExpanded &&
+                                  groupCostDetailEntriesByAdjustment(
+                                    Array.from(deptData.entriesByPlant.entries()).flatMap(([pid, entries]) =>
+                                      entries.map(e => ({
+                                        ...e,
+                                        plantId: (e as { plantId?: string }).plantId || pid,
+                                      }))
+                                    ) as any,
+                                    e => e.description || e.subcategory || 'Sin descripción'
+                                  ).map(line => {
+                                    const rowGrand = Array.from(line.amountsByPlant.values()).reduce(
+                                      (s, v) => s + v,
+                                      0
+                                    )
+                                    return (
+                                      <tr key={`${deptName}-${line.rowKey}`} className="bg-muted/10">
+                                        <td className="sticky left-0 z-10 bg-background pl-10 p-3 border-r-2">
+                                          {line.label}
                                         </td>
-                                      ))}
-                                      {renderGrandTotalCell(entry.amount, formatCurrency)}
-                                    </tr>
-                                  ))
-                                })}
+                                        {plants.map(p => (
+                                          <td key={p.plant_id} className="text-right p-3 border-r">
+                                            {formatCurrency(line.amountsByPlant.get(p.plant_id) || 0)}
+                                          </td>
+                                        ))}
+                                        {renderGrandTotalCell(rowGrand, formatCurrency)}
+                                      </tr>
+                                    )
+                                  })}
                               </React.Fragment>
                             )
                           })
@@ -1909,32 +1976,42 @@ export default function IngresosGastosPage() {
                                   ))}
                                   {renderGrandTotalCell(grandTotal, formatCurrency)}
                                 </tr>
-                                {isDeptExpanded && Array.from(deptData.entriesByPlant.entries()).map(([plantId, entries]) => {
-                                  const plant = plants.find(p => p.plant_id === plantId)
-                                  if (!plant || entries.length === 0) return null
-                                  
-                                  return entries.map(entry => {
-                                    // For otros_indirectos, prefer expense_subcategory, then description, then subcategory
-                                    const displayText = (entry as any).expense_subcategory 
-                                      || entry.description 
-                                      || entry.subcategory 
-                                      || 'Sin descripción'
-                                    
+                                {isDeptExpanded &&
+                                  groupCostDetailEntriesByAdjustment(
+                                    Array.from(deptData.entriesByPlant.entries()).flatMap(([pid, entries]) =>
+                                      entries.map(e => ({
+                                        ...e,
+                                        plantId: (e as { plantId?: string }).plantId || pid,
+                                      }))
+                                    ) as any,
+                                    e => {
+                                      const x = e as { expense_subcategory?: string | null }
+                                      return (
+                                        x.expense_subcategory ||
+                                        e.description ||
+                                        e.subcategory ||
+                                        'Sin descripción'
+                                      )
+                                    }
+                                  ).map(line => {
+                                    const rowGrand = Array.from(line.amountsByPlant.values()).reduce(
+                                      (s, v) => s + v,
+                                      0
+                                    )
                                     return (
-                                      <tr key={`${entry.id}-${plantId}`} className="bg-muted/10">
+                                      <tr key={`${deptName}-${line.rowKey}`} className="bg-muted/10">
                                         <td className="sticky left-0 z-10 bg-background pl-10 p-3 border-r-2">
-                                          {displayText}
+                                          {line.label}
                                         </td>
                                         {plants.map(p => (
                                           <td key={p.plant_id} className="text-right p-3 border-r">
-                                            {p.plant_id === plantId ? formatCurrency(entry.amount) : ''}
+                                            {formatCurrency(line.amountsByPlant.get(p.plant_id) || 0)}
                                           </td>
                                         ))}
-                                        {renderGrandTotalCell(entry.amount, formatCurrency)}
+                                        {renderGrandTotalCell(rowGrand, formatCurrency)}
                                       </tr>
                                     )
-                                  })
-                                })}
+                                  })}
                               </React.Fragment>
                             )
                           })

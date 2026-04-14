@@ -315,6 +315,27 @@ export async function POST(request: Request) {
         enhancedHistoryData.technician_id = existingOrder.assigned_to;
       }
       enhancedHistoryData.work_order_id = workOrderId;
+
+      // Canonical: maintenance_history.maintenance_plan_id = maintenance_intervals.id (cyclic logic / UI).
+      // work_orders.maintenance_plan_id stays maintenance_plans.id; resolve interval here.
+      if (existingOrder.maintenance_plan_id) {
+        const { data: planForHistory, error: planForHistoryError } = await supabase
+          .from("maintenance_plans")
+          .select("interval_id")
+          .eq("id", existingOrder.maintenance_plan_id)
+          .maybeSingle();
+        if (planForHistoryError) {
+          console.error("API: Error loading maintenance_plan for history interval_id:", planForHistoryError);
+        }
+        if (planForHistory?.interval_id) {
+          enhancedHistoryData.maintenance_plan_id = planForHistory.interval_id;
+        } else {
+          enhancedHistoryData.maintenance_plan_id = null;
+          console.warn(
+            "API: maintenance_plan missing interval_id; maintenance_history.maintenance_plan_id set null"
+          );
+        }
+      }
       
       console.log("API: Guardando datos en maintenance_history:", JSON.stringify({
         asset_id: enhancedHistoryData.asset_id,

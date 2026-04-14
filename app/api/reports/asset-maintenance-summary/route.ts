@@ -152,12 +152,8 @@ export async function POST(req: NextRequest) {
     })
 
     // Fetch maintenance history for all assets (preventive only)
-    // CRITICAL: maintenance_history.maintenance_plan_id references maintenance_plans.id
-    // maintenance_plans.interval_id references maintenance_intervals.id
-    // We need to join through maintenance_plans to get the actual interval_id
     const assetIds = assets.map(a => a.id)
-    // CRITICAL: maintenance_history.maintenance_plan_id actually stores INTERVAL IDs directly!
-    // No need to join maintenance_plans - the field already contains interval IDs
+    // maintenance_history.maintenance_plan_id = maintenance_intervals.id (WO completion resolves from maintenance_plans.interval_id)
     const { data: maintenanceHistory, error: historyError } = await supabase
       .from('maintenance_history')
       .select(`
@@ -805,8 +801,7 @@ export async function POST(req: NextRequest) {
           const currentCycleEndKm = currentCycle * maxInterval
 
           // Use preventive, plan-linked entries only for coverage/completion
-          // CRITICAL: maintenance_history.maintenance_plan_id stores what appears in maintenance_plans.interval_id
-          // We DON'T need to filter by planToIntervalMap here since we're checking ALL intervals for the model
+          // maintenance_history.maintenance_plan_id = maintenance_intervals.id
           const preventiveHistory = assetMaintenanceHistory.filter(m => {
             // Check for 'preventive' (English) or 'preventivo' (Spanish) - handle both languages and cases
             const typeLower = m?.type?.toLowerCase();

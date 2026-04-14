@@ -43,6 +43,8 @@ export async function POST(req: NextRequest) {
         distributions:manual_financial_adjustment_distributions(
           id,
           plant_id,
+          business_unit_id,
+          department,
           volume_m3,
           percentage,
           amount,

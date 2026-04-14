@@ -34,7 +34,8 @@
 | 1650 | 1500h interval (babc0d5c...) | 2025-10-20 |
 | 323 | 300h interval (504e757a...) | 2025-07-31 |
 
-**Key:** `maintenance_history.maintenance_plan_id` = `maintenance_intervals.id` directly.
+**Key:** `maintenance_history.maintenance_plan_id` is always **`maintenance_intervals.id`**.  
+The asset’s scheduled plan row is `maintenance_plans`; work orders use `work_orders.maintenance_plan_id` → `maintenance_plans.id`. On WO completion, the API resolves `maintenance_plans.interval_id` into `maintenance_history.maintenance_plan_id`. Legacy rows that stored plan ids are backfilled via migration.
 
 ---
 
@@ -56,9 +57,9 @@ mValue > cycleStart && mValue < cycleEnd  // Exclusive end
 Maintenance at exact boundary (e.g. 3600h) is excluded.
 
 ### 3. Preventive History Filter
-- `type` = preventive / Preventivo / preventivo
+- `type` = preventive / Preventivo / preventivo (case-insensitive)
 - `maintenance_plan_id` matches an interval in the model's intervals
-- `maintenance_plan_id` IS the interval.id (no plan→interval mapping)
+- `maintenance_plan_id` IS `maintenance_intervals.id` (not `maintenance_plans.id`)
 
 ### 4. Completion
 Exact interval performed in current cycle:  

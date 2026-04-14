@@ -1043,7 +1043,7 @@ export async function runIngresosGastosPost(params: {
         if (adj.is_distributed && adj.distributions && Array.isArray(adj.distributions)) {
           adj.distributions.forEach((dist: any) => {
             const distAmount = Number(dist.amount || 0)
-            
+            // One target per distribution row; apply amount once (plant > BU > department).
             if (dist.plant_id && targetPlantIds.includes(dist.plant_id)) {
               const matchingPlant = (plants || []).find(p => p.id === dist.plant_id)
               if (matchingPlant?.code) {
@@ -1057,10 +1057,8 @@ export async function runIngresosGastosPost(params: {
                   entry.otros_indirectos += distAmount
                 }
               }
-            }
-            
-            if (dist.business_unit_id) {
-              const buPlants = (plants || []).filter(p => 
+            } else if (dist.business_unit_id) {
+              const buPlants = (plants || []).filter(p =>
                 p.business_unit_id === dist.business_unit_id && targetPlantIds.includes(p.id)
               )
               if (buPlants.length > 0) {
@@ -1079,9 +1077,7 @@ export async function runIngresosGastosPost(params: {
                   }
                 })
               }
-            }
-            
-            if (dist.department) {
+            } else if (dist.department) {
               const departmentPlants = departmentToPlants.get(dist.department) || []
               const targetDepartmentPlants = departmentPlants.filter(pid => targetPlantIds.includes(pid))
               if (targetDepartmentPlants.length > 0) {
