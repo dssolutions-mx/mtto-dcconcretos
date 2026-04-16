@@ -111,6 +111,7 @@ export function CommandCenter({ data, viewMode }: Props) {
         invertDeltaColor
         series={seriesFrom(summary.totalCostoOp, months)}
         accent="cost"
+        emptyReason={opMoM.current === 0 && opMoM.previous > 0 ? 'awaiting-entry' : undefined}
       />
 
       <KpiTile

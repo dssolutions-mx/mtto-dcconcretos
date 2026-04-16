@@ -5,7 +5,7 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { Button } from '@/components/ui/button'
-import { Loader2, RefreshCw } from 'lucide-react'
+import { Clock, Loader2, RefreshCw } from 'lucide-react'
 import type { RangePreset, ViewMode } from './view-mode'
 import { VIEW_MODE_LABEL } from './view-mode'
 
@@ -30,11 +30,23 @@ type Props = {
   filterOptions: FilterOptions | null
   loading: boolean
   onRefresh: () => void
+  /** ISO timestamp of most recent manual adjustment capture, for the global "Datos al …" stamp. */
+  lastUpdatedAt?: string | null
+}
+
+function formatLastUpdatedStamp(iso: string | null | undefined): string | null {
+  if (!iso) return null
+  const t = Date.parse(iso)
+  if (!Number.isFinite(t)) return null
+  const d = new Date(t)
+  // "24 abr" style — compact for the filter bar
+  return d.toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' })
 }
 
 export function FilterBar(props: Props) {
   const availablePlants =
     props.filterOptions?.plants.filter(p => !props.businessUnitId || p.business_unit_id === props.businessUnitId) || []
+  const lastUpdatedStamp = formatLastUpdatedStamp(props.lastUpdatedAt)
 
   return (
     <div className="sticky top-0 z-30 -mx-4 border-b border-border/60 bg-background/90 px-4 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/70 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
@@ -153,6 +165,13 @@ export function FilterBar(props: Props) {
               ))}
             </SelectContent>
           </Select>
+
+          {lastUpdatedStamp && (
+            <span className="ml-auto inline-flex items-center gap-1 text-[11px] tabular-num text-muted-foreground">
+              <Clock className="h-3 w-3" />
+              Datos al {lastUpdatedStamp}
+            </span>
+          )}
         </div>
       </div>
     </div>

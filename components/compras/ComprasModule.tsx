@@ -41,6 +41,11 @@ import { ComprasTable } from "./ComprasTable"
 import { useComprasData, type PurchaseOrderWithWorkOrder } from "./useComprasData"
 import { getWorkOrder, getPurchaseOrderPlantId } from "./po-row-utils"
 import { useComprasPlantScope } from "./useComprasPlantScope"
+import {
+  getApproveSuccessToastContent,
+  getListApprovalCopy,
+  purchaseOrderStaysPendingAfterApproveResponse,
+} from "@/lib/purchase-orders/advance-workflow-response"
 
 export interface ComprasModuleProps {
   /** When provided by parent (compras page), skips duplicate auth API fetch */
@@ -157,7 +162,11 @@ export function ComprasModule({
         .filter((o) => o.status === PurchaseOrderStatus.PendingApproval && !o.is_adjustment)
         .map((o) => o.id)
       await loadApprovalContext(pendingIds)
-      toast({ title: "Viabilidad registrada", description: `La orden ${order.order_id} tiene viabilidad administrativa registrada.` })
+      toast({
+        title: "Viabilidad registrada",
+        description: `La orden ${order.order_id} tiene viabilidad administrativa registrada.`,
+        variant: "success",
+      })
     } catch (err) {
       toast({ title: "Error", description: err instanceof Error ? err.message : "No se pudo registrar viabilidad", variant: "destructive" })
     } finally {
@@ -175,20 +184,54 @@ export function ComprasModule({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ new_status: newStatus }),
       })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.details || data.error || data.message || "Error en la aprobación")
-      setOrders((prev) =>
-        prev.map((o) =>
-          o.id === orderToApprove.id
-            ? { ...o, status: newStatus === "approved" ? PurchaseOrderStatus.Approved : PurchaseOrderStatus.Rejected }
-            : o
+      const data = (await res.json()) as Record<string, unknown>
+      if (!res.ok) throw new Error(String(data.details || data.error || data.message || "Error en la aprobación"))
+
+      if (approvalAction === "reject") {
+        setOrders((prev) =>
+          prev.map((o) => (o.id === orderToApprove.id ? { ...o, status: PurchaseOrderStatus.Rejected } : o))
         )
-      )
-      const stillPending = scopedOrders
-        .filter((o) => o.status === PurchaseOrderStatus.PendingApproval && !o.is_adjustment && o.id !== orderToApprove.id)
+        toast({
+          title: "Orden rechazada",
+          description: `La orden ${orderToApprove.order_id} ha sido rechazada.`,
+        })
+      } else if (purchaseOrderStaysPendingAfterApproveResponse(data)) {
+        const nowIso = new Date().toISOString()
+        const uid = profile?.id
+        setOrders((prev) =>
+          prev.map((o) =>
+            o.id === orderToApprove.id
+              ? {
+                  ...o,
+                  status: PurchaseOrderStatus.PendingApproval,
+                  ...(uid ? { authorized_by: uid, authorization_date: nowIso } : {}),
+                }
+              : o
+          )
+        )
+        const { title, description } = getApproveSuccessToastContent(data, orderToApprove.order_id)
+        toast({ title, description, variant: "success" })
+      } else {
+        setOrders((prev) =>
+          prev.map((o) => (o.id === orderToApprove.id ? { ...o, status: PurchaseOrderStatus.Approved } : o))
+        )
+        const { title, description } = getApproveSuccessToastContent(data, orderToApprove.order_id)
+        toast({ title, description, variant: "success" })
+      }
+
+      const basePendingIds = scopedOrders
+        .filter((o) => o.status === PurchaseOrderStatus.PendingApproval && !o.is_adjustment)
         .map((o) => o.id)
-      await loadApprovalContext(stillPending)
-      toast({ title: approvalAction === "approve" ? "Orden aprobada" : "Orden rechazada", description: `La orden ${orderToApprove.order_id} ha sido ${approvalAction === "approve" ? "aprobada" : "rechazada"} exitosamente.` })
+
+      let idsToRefresh = basePendingIds
+      if (approvalAction === "approve" && !purchaseOrderStaysPendingAfterApproveResponse(data)) {
+        idsToRefresh = basePendingIds.filter((id) => id !== orderToApprove.id)
+      } else if (approvalAction === "reject") {
+        idsToRefresh = basePendingIds.filter((id) => id !== orderToApprove.id)
+      }
+
+      await loadApprovalContext(idsToRefresh)
+
       setShowApprovalDialog(false)
       setOrderToApprove(null)
     } catch (err) {
@@ -361,6 +404,14 @@ export function ComprasModule({
 
   const formatNumberToCurrency = (amount: number) => `$${amount.toFixed(2)}`
 
+  const approvalDialogCopy =
+    orderToApprove && approvalAction === "approve"
+      ? getListApprovalCopy(
+          approvalContext[orderToApprove.id]?.workflowStage,
+          profile?.role
+        )
+      : null
+
   const formatDate = (dateString: string | null | undefined): string => {
     if (!dateString) return "N/A"
     try {
@@ -467,9 +518,15 @@ export function ComprasModule({
       <AlertDialog open={showApprovalDialog} onOpenChange={setShowApprovalDialog}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>{approvalAction === "approve" ? "Confirmar Aprobación" : "Confirmar Rechazo"}</AlertDialogTitle>
+            <AlertDialogTitle>
+              {approvalAction === "approve"
+                ? approvalDialogCopy?.dialogTitleApprove ?? "Confirmar aprobación"
+                : "Confirmar rechazo"}
+            </AlertDialogTitle>
             <AlertDialogDescription>
-              {approvalAction === "approve" ? "Revisa los detalles de la orden antes de aprobar." : "Revisa los detalles de la orden antes de rechazar."}
+              {approvalAction === "approve"
+                ? "Revisa la etapa del flujo y los detalles antes de continuar."
+                : "Revisa los detalles de la orden antes de rechazar."}
             </AlertDialogDescription>
           </AlertDialogHeader>
           {orderToApprove && (
@@ -645,7 +702,10 @@ export function ComprasModule({
               {approvalAction === "approve" ? (
                 <div className="flex items-center space-x-2 text-green-700 bg-green-50 p-3 rounded-lg">
                   <Check className="h-4 w-4" />
-                  <span className="font-medium">¿Confirmas que quieres aprobar esta orden de compra?</span>
+                  <span className="font-medium">
+                    {approvalDialogCopy?.dialogConfirmApprove ??
+                      "¿Confirmas que quieres aprobar esta orden de compra?"}
+                  </span>
                 </div>
               ) : (
                 <div className="flex items-center space-x-2 text-red-700 bg-red-50 p-3 rounded-lg">
@@ -673,7 +733,7 @@ export function ComprasModule({
                   {approvalAction === "approve" ? (
                     <>
                       <Check className="mr-2 h-4 w-4" />
-                      Aprobar
+                      {approvalDialogCopy?.primaryButtonApprove ?? "Aprobar"}
                     </>
                   ) : (
                     <>

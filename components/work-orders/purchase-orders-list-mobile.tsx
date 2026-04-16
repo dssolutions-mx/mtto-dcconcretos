@@ -60,6 +60,11 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/co
 import { Skeleton } from "@/components/ui/skeleton"
 
 import type { ApprovalContextItem } from "@/types/purchase-orders"
+import {
+  getApproveSuccessToastContent,
+  getListApprovalCopy,
+  purchaseOrderStaysPendingAfterApproveResponse,
+} from "@/lib/purchase-orders/advance-workflow-response"
 
 // Helper function to preview items
 function getItemsPreview(items: any): string {
@@ -171,6 +176,7 @@ function PurchaseOrderCard({
   approvalContext?: ApprovalContextItem | null
 }) {
   const router = useRouter()
+  const { profile } = useAuthZustand()
   const workOrder = getWorkOrder(order)
   const isEnhanced = isEnhancedPurchaseOrder(order)
   const TypeIcon = getPurchaseOrderTypeIcon(order.po_type || null)
@@ -181,6 +187,7 @@ function PurchaseOrderCard({
     ? `${workOrder.assets.asset_id || workOrder.assets.name || ""}${workOrder.assets.plants ? ` • ${workOrder.assets.plants.name}` : ""}`.trim()
     : ""
   const ctx = order.status === PurchaseOrderStatus.PendingApproval && !order.is_adjustment ? approvalContext : null
+  const approveListCopy = ctx?.canApprove ? getListApprovalCopy(ctx.workflowStage, profile?.role) : null
   const urgencyConfig = getUrgencyConfig(workOrder?.priority, workOrder?.priority)
   const UrgencyIcon = urgencyConfig.icon
 
@@ -293,7 +300,7 @@ function PurchaseOrderCard({
                 onClick={() => onQuickApproval(order, 'approve')}
               >
                 <Check className="h-4 w-4 mr-1" />
-                Aprobar
+                {approveListCopy?.primaryButtonApprove ?? 'Aprobar'}
               </Button>
               <Button
                 size="sm"
@@ -339,7 +346,7 @@ function PurchaseOrderCard({
                 <DropdownMenuItem asChild>
                   <Link href={`/compras/${order.id}/aprobar`}>
                     <Check className="mr-2 h-4 w-4" />
-                    Aprobar orden
+                    {approveListCopy?.primaryButtonApprove ?? 'Aprobar'} (pantalla completa)
                   </Link>
                 </DropdownMenuItem>
               )}
@@ -576,6 +583,7 @@ export function PurchaseOrdersListMobile({ effectiveAuthLimitFromParent, isLoadi
       toast({
         title: 'Viabilidad registrada',
         description: `La orden ${order.order_id} tiene viabilidad administrativa registrada.`,
+        variant: 'success',
       })
       const pendingIds = scopedOrders
         .filter(o => o.status === PurchaseOrderStatus.PendingApproval && !o.is_adjustment)
@@ -612,37 +620,60 @@ export function PurchaseOrdersListMobile({ effectiveAuthLimitFromParent, isLoadi
         })
       })
 
-      const responseData = await response.json()
+      const responseData = await response.json() as Record<string, unknown>
 
       if (!response.ok) {
         // Handle specific error cases
         if (responseData.details) {
-          throw new Error(responseData.details)
+          throw new Error(String(responseData.details))
         }
-        throw new Error(responseData.error || responseData.message || 'Error en la aprobación')
+        throw new Error(String(responseData.error || responseData.message || 'Error en la aprobación'))
       }
 
-      // Update local state
-      const updatedOrders = orders.map(o => 
-        o.id === orderToApprove.id 
-          ? { ...o, status: newStatus === 'approved' ? PurchaseOrderStatus.Approved : PurchaseOrderStatus.Rejected }
-          : o
-      )
-      setOrders(updatedOrders)
-      const pendingIds = updatedOrders
-        .filter((o) => {
-          if (o.status !== PurchaseOrderStatus.PendingApproval || o.is_adjustment) return false
-          if (allowedPlantIds === null) return true
-          const pid = getPurchaseOrderPlantId(o)
-          return pid != null && allowedPlantIds.has(pid)
+      if (approvalAction === 'reject') {
+        setOrders((prev) =>
+          prev.map((o) => (o.id === orderToApprove.id ? { ...o, status: PurchaseOrderStatus.Rejected } : o))
+        )
+        toast({
+          title: 'Orden rechazada',
+          description: `La orden ${orderToApprove.order_id} ha sido rechazada.`,
         })
+      } else if (purchaseOrderStaysPendingAfterApproveResponse(responseData)) {
+        const nowIso = new Date().toISOString()
+        const uid = profile?.id
+        setOrders((prev) =>
+          prev.map((o) =>
+            o.id === orderToApprove.id
+              ? {
+                  ...o,
+                  status: PurchaseOrderStatus.PendingApproval,
+                  ...(uid ? { authorized_by: uid, authorization_date: nowIso } : {}),
+                }
+              : o
+          )
+        )
+        const { title, description } = getApproveSuccessToastContent(responseData, orderToApprove.order_id)
+        toast({ title, description, variant: 'success' })
+      } else {
+        setOrders((prev) =>
+          prev.map((o) => (o.id === orderToApprove.id ? { ...o, status: PurchaseOrderStatus.Approved } : o))
+        )
+        const { title, description } = getApproveSuccessToastContent(responseData, orderToApprove.order_id)
+        toast({ title, description, variant: 'success' })
+      }
+
+      const basePendingIds = scopedOrders
+        .filter((o) => o.status === PurchaseOrderStatus.PendingApproval && !o.is_adjustment)
         .map((o) => o.id)
-      await loadApprovalContext(pendingIds)
-      
-      toast({
-        title: approvalAction === 'approve' ? "Orden aprobada" : "Orden rechazada",
-        description: `La orden ${orderToApprove.order_id} ha sido ${approvalAction === 'approve' ? 'aprobada' : 'rechazada'} exitosamente.`,
-      })
+
+      let idsToRefresh = basePendingIds
+      if (approvalAction === 'approve' && !purchaseOrderStaysPendingAfterApproveResponse(responseData)) {
+        idsToRefresh = basePendingIds.filter((id) => id !== orderToApprove.id)
+      } else if (approvalAction === 'reject') {
+        idsToRefresh = basePendingIds.filter((id) => id !== orderToApprove.id)
+      }
+
+      await loadApprovalContext(idsToRefresh)
       
       setShowApprovalDialog(false)
       setOrderToApprove(null)
@@ -810,6 +841,14 @@ export function PurchaseOrdersListMobile({ effectiveAuthLimitFromParent, isLoadi
   };
 
   const hasActiveFilters = selectedAssetId || fromDate || toDate
+
+  const approvalDialogCopy =
+    orderToApprove && approvalAction === 'approve'
+      ? getListApprovalCopy(
+          approvalContext[orderToApprove.id]?.workflowStage,
+          profile?.role
+        )
+      : null
 
   return (
     <PullToRefresh onRefresh={handleRefresh}>
@@ -1050,11 +1089,32 @@ export function PurchaseOrdersListMobile({ effectiveAuthLimitFromParent, isLoadi
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              {approvalAction === 'approve' ? 'Confirmar Aprobación' : 'Confirmar Rechazo'}
+              {approvalAction === 'approve'
+                ? approvalDialogCopy?.dialogTitleApprove ?? 'Confirmar aprobación'
+                : 'Confirmar rechazo'}
             </AlertDialogTitle>
             <AlertDialogDescription>
               {orderToApprove && (
                 <div className="space-y-3 mt-4">
+                  {approvalAction === 'approve' && approvalContext[orderToApprove.id]?.workflowStage && (
+                    <div className="flex items-center gap-2 p-2 rounded-lg bg-muted/50">
+                      <span className="text-sm font-medium text-muted-foreground">Etapa:</span>
+                      <Badge
+                        variant="outline"
+                        className={cn(
+                          'font-medium',
+                          approvalContext[orderToApprove.id].workflowStage === 'Validación técnica' &&
+                            'bg-blue-50 text-blue-700 border-blue-200',
+                          approvalContext[orderToApprove.id].workflowStage === 'Viabilidad administrativa' &&
+                            'bg-amber-50 text-amber-700 border-amber-200',
+                          approvalContext[orderToApprove.id].workflowStage === 'Aprobación final' &&
+                            'bg-emerald-50 text-emerald-700 border-emerald-200'
+                        )}
+                      >
+                        {approvalContext[orderToApprove.id].workflowStage}
+                      </Badge>
+                    </div>
+                  )}
                   <div className="p-4 bg-muted rounded-lg space-y-2">
                     <div className="grid grid-cols-1 gap-2 text-sm">
                       <div>
@@ -1080,7 +1140,8 @@ export function PurchaseOrdersListMobile({ effectiveAuthLimitFromParent, isLoadi
                     <div className="flex items-center space-x-2 text-green-700 bg-green-50 p-3 rounded-lg">
                       <Check className="h-4 w-4" />
                       <span className="font-medium text-sm">
-                        ¿Confirmas que quieres aprobar esta orden de compra?
+                        {approvalDialogCopy?.dialogConfirmApprove ??
+                          '¿Confirmas que quieres aprobar esta orden de compra?'}
                       </span>
                     </div>
                   ) : (
@@ -1119,7 +1180,7 @@ export function PurchaseOrdersListMobile({ effectiveAuthLimitFromParent, isLoadi
                   {approvalAction === 'approve' ? (
                     <>
                       <Check className="mr-2 h-4 w-4" />
-                      Aprobar
+                      {approvalDialogCopy?.primaryButtonApprove ?? 'Aprobar'}
                     </>
                   ) : (
                     <>

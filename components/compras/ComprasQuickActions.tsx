@@ -18,6 +18,8 @@ import {
 import { Check, FileText, MoreHorizontal, Package, Shield, ShoppingCart, Trash2, X } from "lucide-react"
 import { PurchaseOrderStatus } from "@/types"
 import type { ApprovalContextItem } from "@/types/purchase-orders"
+import { getListApprovalCopy } from "@/lib/purchase-orders/advance-workflow-response"
+import { useAuthZustand } from "@/hooks/use-auth-zustand"
 import type { PurchaseOrderWithWorkOrder } from "./useComprasData"
 import { ComprasQuotationAccess } from "./ComprasQuotationAccess"
 
@@ -42,6 +44,8 @@ export function ComprasQuickActions({
   onRecordViability,
   onDelete,
 }: ComprasQuickActionsProps) {
+  const { profile } = useAuthZustand()
+  const listCopy = getListApprovalCopy(approvalCtx?.workflowStage, profile?.role)
   const canShowApproval = approvalCtx?.canApprove || approvalCtx?.canRecordViability
   const canApprove = approvalCtx?.canApprove
   const canRecordViability = approvalCtx?.canRecordViability && !approvalCtx?.canApprove
@@ -59,12 +63,12 @@ export function ComprasQuickActions({
                       size="sm"
                       className="h-7 bg-green-600 hover:bg-green-700 cursor-pointer"
                       onClick={() => onApprove(order)}
-                      aria-label="Aprobar orden"
+                      aria-label={listCopy.approveAria}
                     >
                       <Check className="h-3.5 w-3.5" />
                     </Button>
                   </TooltipTrigger>
-                  <TooltipContent>Aprobar</TooltipContent>
+                  <TooltipContent>{listCopy.approveTooltip}</TooltipContent>
                 </Tooltip>
                 <Tooltip>
                   <TooltipTrigger asChild>

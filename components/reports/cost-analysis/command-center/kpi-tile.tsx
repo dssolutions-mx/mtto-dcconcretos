@@ -1,6 +1,6 @@
 'use client'
 
-import { ArrowDownRight, ArrowUpRight, Minus } from 'lucide-react'
+import { AlertCircle, ArrowDownRight, ArrowUpRight, Minus } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Sparkline } from './sparkline'
 import { formatDelta } from '../formatters'
@@ -27,6 +27,12 @@ type Props = {
   invertDeltaColor?: boolean
   series?: number[]
   accent?: Accent
+  /**
+   * Distinguishes a genuine zero from a data gap. When set to 'awaiting-entry',
+   * the tile replaces the "-100%" delta with an amber "sin captura" indicator —
+   * useful when the current month has no manual adjustments yet.
+   */
+  emptyReason?: 'awaiting-entry' | 'no-data'
 }
 
 export function KpiTile({
@@ -39,6 +45,7 @@ export function KpiTile({
   invertDeltaColor = false,
   series,
   accent = 'revenue',
+  emptyReason,
 }: Props) {
   const styles = ACCENT_STYLES[accent]
   const hasDelta = delta !== undefined && delta !== 0
@@ -49,6 +56,10 @@ export function KpiTile({
       ? 'text-emerald-600 dark:text-emerald-400'
       : 'text-rose-600 dark:text-rose-400'
   const Arrow = !hasDelta ? Minus : (delta ?? 0) > 0 ? ArrowUpRight : ArrowDownRight
+
+  // Override the delta rendering when the tile is flagged as "awaiting entry" — a -100% here
+  // almost always reflects missing capture, not a genuine drop.
+  const showAwaiting = emptyReason === 'awaiting-entry'
 
   return (
     <div className="relative flex min-h-[136px] flex-col overflow-hidden rounded-2xl border border-border/60 bg-card px-4 py-3.5 sm:px-5 sm:py-4">
@@ -68,19 +79,26 @@ export function KpiTile({
       {subValue && <p className="mt-1 text-xs text-muted-foreground tabular-num">{subValue}</p>}
 
       <div className="mt-auto flex items-end justify-between gap-3 pt-3">
-        <div className={cn('flex items-center gap-1 text-xs font-medium tabular-num', deltaClass)}>
-          <Arrow className="h-3.5 w-3.5" />
-          {hasDelta ? (
-            <>
-              <span>{formatDelta(delta ?? 0, deltaIsPercent)}</span>
-              {deltaPct !== null && deltaPct !== undefined && !deltaIsPercent && (
-                <span className="text-muted-foreground">({deltaPct > 0 ? '+' : ''}{deltaPct.toFixed(1)}%)</span>
-              )}
-            </>
-          ) : (
-            <span className="text-muted-foreground">sin cambio</span>
-          )}
-        </div>
+        {showAwaiting ? (
+          <div className="flex items-center gap-1 text-xs font-medium tabular-num text-amber-600 dark:text-amber-400">
+            <AlertCircle className="h-3.5 w-3.5" />
+            <span>sin captura</span>
+          </div>
+        ) : (
+          <div className={cn('flex items-center gap-1 text-xs font-medium tabular-num', deltaClass)}>
+            <Arrow className="h-3.5 w-3.5" />
+            {hasDelta ? (
+              <>
+                <span>{formatDelta(delta ?? 0, deltaIsPercent)}</span>
+                {deltaPct !== null && deltaPct !== undefined && !deltaIsPercent && (
+                  <span className="text-muted-foreground">({deltaPct > 0 ? '+' : ''}{deltaPct.toFixed(1)}%)</span>
+                )}
+              </>
+            ) : (
+              <span className="text-muted-foreground">sin cambio</span>
+            )}
+          </div>
+        )}
 
         {series && series.length > 1 && (
           <div className="flex-shrink-0" style={{ width: 96 }}>

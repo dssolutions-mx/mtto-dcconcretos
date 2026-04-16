@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { AlertCircle, CheckCircle2 } from 'lucide-react'
 import { shiftMonthString } from '@/lib/reports/month-utils'
+import type { CostAnalysisResponse } from '@/lib/reports/cost-analysis-aggregate'
 import { useCostAnalysisData } from './hooks/use-cost-analysis-data'
 import { useToast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
@@ -18,6 +19,8 @@ import { CostStackChart } from './cost-structure/cost-stack-chart'
 import { UnitCostChart } from './cost-structure/unit-cost-chart'
 import { IndirectExplorer } from './cost-structure/indirect-explorer'
 import { NominaExplorer } from './cost-structure/nomina-explorer'
+import { ManttoTypeSplit } from './cost-structure/mantto-type-split'
+import { formatCurrency, formatMonthLabel } from './formatters'
 import { EbitdaWaterfall } from './profitability/ebitda-waterfall'
 import { MarginLadderChart } from './profitability/margin-ladder-chart'
 import { PlantMatrix } from './plant-matrix/plant-matrix'
@@ -138,6 +141,7 @@ export function CostAnalysisDashboard() {
         filterOptions={filterOptions}
         loading={loading}
         onRefresh={runLoad}
+        lastUpdatedAt={data?.dataFreshness?.manualAdjustments?.lastUpdatedAt ?? null}
       />
 
       {error && (
@@ -211,6 +215,9 @@ export function CostAnalysisDashboard() {
               title="Estructura de costos"
               description="Composición y evolución de cada componente del costo."
             />
+
+            {data.reconciliation && <ReconciliationCallout reconciliation={data.reconciliation} months={data.months} />}
+
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
               <Card>
                 <CardHeader className="pb-2">
@@ -231,6 +238,18 @@ export function CostAnalysisDashboard() {
                 </CardContent>
               </Card>
             </div>
+
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base">Mantenimiento · correctivo vs preventivo</CardTitle>
+                <CardDescription className="text-xs">
+                  Gasto de órdenes de compra vinculadas a órdenes de trabajo, clasificado por tipo (correctivo / preventivo / inspección).
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <ManttoTypeSplit data={data} />
+              </CardContent>
+            </Card>
 
             <Card>
               <CardHeader className="pb-2">
@@ -323,6 +342,57 @@ function ReconciliationBadge({ ok, label }: { ok: boolean; label: string }) {
     <div className={cn('flex items-center gap-1.5 tabular-num', ok ? 'text-emerald-600' : 'text-amber-600')}>
       <Icon className="h-3.5 w-3.5" />
       <span>{label}</span>
+    </div>
+  )
+}
+
+type ReconciliationShape = CostAnalysisResponse['reconciliation']
+
+/**
+ * Promotes a drifted reconciliation state into a prominent amber section-top callout.
+ * Only renders when there's a non-zero delta >|$0.02| on any visible month.
+ */
+function ReconciliationCallout({
+  reconciliation,
+  months,
+}: {
+  reconciliation: ReconciliationShape
+  months: string[]
+}) {
+  if (!reconciliation) return null
+  const EPS = 0.02
+  const flagged: Array<{ month: string; kind: 'otros' | 'nomina'; delta: number }> = []
+  for (const m of months) {
+    const otros = reconciliation.otrosDiffByMonth?.[m] ?? 0
+    if (Math.abs(otros) > EPS) flagged.push({ month: m, kind: 'otros', delta: otros })
+    const nomina = reconciliation.nominaDiffByMonth?.[m] ?? 0
+    if (Math.abs(nomina) > EPS) flagged.push({ month: m, kind: 'nomina', delta: nomina })
+  }
+  if (flagged.length === 0) return null
+
+  // Keep only the 3 most recent offenders to avoid spam
+  flagged.sort((a, b) => (a.month < b.month ? 1 : -1))
+  const visible = flagged.slice(0, 3)
+
+  return (
+    <div className="callout-attention">
+      <p className="text-sm font-medium">Diferencia detectada entre desglose y total</p>
+      <p className="mt-0.5 text-xs opacity-80">
+        Algunas sumas por categoría o departamento no coinciden con el total mensual. Revisar capturas duplicadas o ajustes eliminados.
+      </p>
+      <ul className="mt-2 space-y-0.5 text-xs tabular-num">
+        {visible.map(f => (
+          <li key={`${f.month}-${f.kind}`} className="flex items-center gap-2">
+            <span className="font-medium">{formatMonthLabel(f.month)}</span>
+            <span className="text-muted-foreground">
+              {f.kind === 'otros' ? 'Otros indirectos' : 'Nómina'}
+            </span>
+            <span className={cn(f.delta > 0 ? 'text-rose-600' : 'text-emerald-600')}>
+              Δ {f.delta > 0 ? '+' : ''}{formatCurrency(f.delta)}
+            </span>
+          </li>
+        ))}
+      </ul>
     </div>
   )
 }
