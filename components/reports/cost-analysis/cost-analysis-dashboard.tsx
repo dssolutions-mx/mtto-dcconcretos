@@ -2,21 +2,30 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
-import { Label } from '@/components/ui/label'
-import { Input } from '@/components/ui/input'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Switch } from '@/components/ui/switch'
-import { Loader2, RefreshCw } from 'lucide-react'
+import { AlertCircle, CheckCircle2 } from 'lucide-react'
 import { shiftMonthString } from '@/lib/reports/month-utils'
 import { useCostAnalysisData } from './hooks/use-cost-analysis-data'
-import { CostKpiCards } from './cost-kpi-cards'
-import { MonthTrendChart } from './month-trend-chart'
-import { CategoryBreakdownChart } from './category-breakdown-chart'
-import { CategoryDetailTable } from './category-detail-table'
-import { DepartmentDistribution } from './department-distribution'
-import { PlantComparisonTable } from './plant-comparison-table'
 import { useToast } from '@/hooks/use-toast'
+import { cn } from '@/lib/utils'
+
+import { FilterBar } from './filters/filter-bar'
+import { computePresetRange, type RangePreset, type ViewMode } from './filters/view-mode'
+import { CommandCenter } from './command-center/command-center'
+import { RevenueCompositionChart } from './revenue/revenue-composition-chart'
+import { PriceVolumeChart } from './revenue/price-volume-chart'
+import { PlantRevenueRanking } from './revenue/plant-revenue-ranking'
+import { CostStackChart } from './cost-structure/cost-stack-chart'
+import { UnitCostChart } from './cost-structure/unit-cost-chart'
+import { IndirectExplorer } from './cost-structure/indirect-explorer'
+import { NominaExplorer } from './cost-structure/nomina-explorer'
+import { EbitdaWaterfall } from './profitability/ebitda-waterfall'
+import { MarginLadderChart } from './profitability/margin-ladder-chart'
+import { PlantMatrix } from './plant-matrix/plant-matrix'
+
+type FilterOptions = {
+  businessUnits: Array<{ id: string; name: string; code: string }>
+  plants: Array<{ id: string; name: string; code: string; business_unit_id: string }>
+}
 
 function monthsInclusiveRange(fromYm: string, toYm: string): string[] {
   let a = fromYm.slice(0, 7)
@@ -32,43 +41,58 @@ function monthsInclusiveRange(fromYm: string, toYm: string): string[] {
   return out
 }
 
-type FilterOptions = {
-  businessUnits: Array<{ id: string; name: string; code: string }>
-  plants: Array<{ id: string; name: string; code: string; business_unit_id: string }>
+function SectionHeader({ eyebrow, title, description }: { eyebrow: string; title: string; description?: string }) {
+  return (
+    <div className="space-y-0.5">
+      <p className="text-[11px] font-medium uppercase tracking-widest text-muted-foreground">{eyebrow}</p>
+      <h2 className="text-xl font-semibold tracking-tight sm:text-2xl">{title}</h2>
+      {description && <p className="text-sm text-muted-foreground">{description}</p>}
+    </div>
+  )
+}
+
+function SectionSkeleton({ height = 320 }: { height?: number }) {
+  return (
+    <div
+      className="animate-pulse rounded-2xl border border-border/40 bg-card"
+      style={{ height }}
+    />
+  )
 }
 
 export function CostAnalysisDashboard() {
   const { toast } = useToast()
-  const now = new Date()
-  const defaultTo = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
-  const defaultFrom = shiftMonthString(defaultTo, -5)
+  const ytd = computePresetRange('ytd')
 
-  const [monthFrom, setMonthFrom] = useState(defaultFrom)
-  const [monthTo, setMonthTo] = useState(defaultTo)
+  const [preset, setPreset] = useState<RangePreset>('ytd')
+  const [monthFrom, setMonthFrom] = useState(ytd.from)
+  const [monthTo, setMonthTo] = useState(ytd.to)
   const [businessUnitId, setBusinessUnitId] = useState<string>('')
   const [plantId, setPlantId] = useState<string>('')
-  const [perM3, setPerM3] = useState(false)
-  const [expandedCategoryId, setExpandedCategoryId] = useState<string | null>(null)
+  const [viewMode, setViewMode] = useState<ViewMode>('absolute')
   const [filterOptions, setFilterOptions] = useState<FilterOptions | null>(null)
 
   const { data, loading, error, load } = useCostAnalysisData()
 
   const months = useMemo(() => monthsInclusiveRange(monthFrom, monthTo), [monthFrom, monthTo])
 
+  // Apply preset whenever it changes (non-custom)
+  useEffect(() => {
+    if (preset === 'custom') return
+    const r = computePresetRange(preset)
+    setMonthFrom(r.from)
+    setMonthTo(r.to)
+  }, [preset])
+
   const refreshFilters = useCallback(async () => {
     try {
       const r = await fetch('/api/reports/gerencial/ingresos-gastos', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          month: monthTo,
-          skipPreviousMonth: true,
-        }),
+        body: JSON.stringify({ month: monthTo, skipPreviousMonth: true }),
       })
       const j = await r.json()
-      if (r.ok && j.filters) {
-        setFilterOptions(j.filters as FilterOptions)
-      }
+      if (r.ok && j.filters) setFilterOptions(j.filters as FilterOptions)
     } catch {
       /* ignore */
     }
@@ -77,9 +101,6 @@ export function CostAnalysisDashboard() {
   useEffect(() => {
     void refreshFilters()
   }, [refreshFilters])
-
-  const availablePlants =
-    filterOptions?.plants.filter(p => !businessUnitId || p.business_unit_id === businessUnitId) || []
 
   const runLoad = useCallback(() => {
     if (months.length === 0) {
@@ -97,135 +118,211 @@ export function CostAnalysisDashboard() {
     runLoad()
   }, [runLoad])
 
+  const showLoadingShell = loading && !data
+
   return (
-    <div className="space-y-10">
-      <Card>
-        <CardHeader className="pb-4">
-          <CardTitle className="text-lg">Filtros</CardTitle>
-          <CardDescription>Rango de meses, unidad de negocio y planta (mismos criterios que Ingresos vs Gastos).</CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-4">
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
-            <div>
-              <Label htmlFor="from">Desde</Label>
-              <Input id="from" type="month" value={monthFrom} onChange={e => setMonthFrom(e.target.value)} />
-            </div>
-            <div>
-              <Label htmlFor="to">Hasta</Label>
-              <Input id="to" type="month" value={monthTo} onChange={e => setMonthTo(e.target.value)} />
-            </div>
-            <div>
-              <Label>Unidad de negocio</Label>
-              <Select
-                value={businessUnitId || 'all'}
-                onValueChange={v => {
-                  setBusinessUnitId(v === 'all' ? '' : v)
-                  setPlantId('')
-                }}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Todas" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Todas</SelectItem>
-                  {(filterOptions?.businessUnits || []).map(bu => (
-                    <SelectItem key={bu.id} value={bu.id}>
-                      {bu.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label>Planta</Label>
-              <Select value={plantId || 'all'} onValueChange={v => setPlantId(v === 'all' ? '' : v)}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Todas" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Todas</SelectItem>
-                  {availablePlants.map(p => (
-                    <SelectItem key={p.id} value={p.id}>
-                      {p.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex items-end gap-2">
-              <Switch id="perm3" checked={perM3} onCheckedChange={setPerM3} />
-              <Label htmlFor="perm3" className="cursor-pointer">
-                Ver unitarios (/ m³)
-              </Label>
-            </div>
+    <div className="space-y-8">
+      <FilterBar
+        monthFrom={monthFrom}
+        monthTo={monthTo}
+        onMonthFromChange={setMonthFrom}
+        onMonthToChange={setMonthTo}
+        preset={preset}
+        onPresetChange={setPreset}
+        businessUnitId={businessUnitId}
+        onBusinessUnitChange={setBusinessUnitId}
+        plantId={plantId}
+        onPlantChange={setPlantId}
+        viewMode={viewMode}
+        onViewModeChange={setViewMode}
+        filterOptions={filterOptions}
+        loading={loading}
+        onRefresh={runLoad}
+      />
+
+      {error && (
+        <div className="callout-critical">
+          <p className="text-sm font-medium">Error al cargar datos</p>
+          <p className="mt-0.5 text-xs opacity-80">{error}</p>
+        </div>
+      )}
+
+      {showLoadingShell && (
+        <div className="space-y-8">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div key={i} className="h-[136px] animate-pulse rounded-2xl border border-border/40 bg-card" />
+            ))}
           </div>
-          <div className="flex flex-wrap gap-2">
-            <Button onClick={runLoad} disabled={loading}>
-              {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
-              Actualizar análisis
-            </Button>
-          </div>
-          {error && <p className="text-sm text-destructive">{error}</p>}
-        </CardContent>
-      </Card>
+          <SectionSkeleton height={360} />
+          <SectionSkeleton height={360} />
+        </div>
+      )}
 
       {data && data.months.length > 0 && (
         <>
-          <section className="space-y-4">
-            <h2 className="text-xl font-semibold tracking-tight">Resumen</h2>
-            <CostKpiCards data={data} perM3={perM3} />
+          {/* §2 Command Center */}
+          <section className="space-y-3">
+            <CommandCenter data={data} viewMode={viewMode} />
           </section>
 
+          {/* §3 Ingresos */}
           <section className="space-y-4">
-            <h2 className="text-xl font-semibold tracking-tight">Evolución de costos</h2>
-            <Card>
-              <CardContent className="pt-6">
-                <MonthTrendChart data={data} perM3={perM3} />
-              </CardContent>
-            </Card>
-          </section>
-
-          <section className="space-y-4">
-            <h2 className="text-xl font-semibold tracking-tight">Gastos indirectos por categoría</h2>
-            <p className="text-sm text-muted-foreground">
-              Montos por clasificación de costos manuales (puede excluir autoconsumo del cotizador, que no tiene categoría
-              aquí).
-            </p>
-            <Card>
-              <CardContent className="pt-6">
-                <CategoryBreakdownChart data={data} onCategoryClick={id => setExpandedCategoryId(id)} />
-              </CardContent>
-            </Card>
-            <CategoryDetailTable
-              data={data}
-              expandedCategoryId={expandedCategoryId}
-              onExpandedCategoryId={setExpandedCategoryId}
+            <SectionHeader
+              eyebrow="Ingresos"
+              title="Ventas y volumen"
+              description="Concreto, bombeo y dinámica precio–volumen."
             />
-          </section>
-
-          <section className="space-y-4">
-            <h2 className="text-xl font-semibold tracking-tight">Nómina por departamento</h2>
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-base">Composición de ingresos</CardTitle>
+                  <CardDescription className="text-xs">Concreto + bombeo por mes.</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <RevenueCompositionChart data={data} />
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-base">Precio vs volumen</CardTitle>
+                  <CardDescription className="text-xs">Precio unitario y m³ entregados.</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <PriceVolumeChart data={data} />
+                </CardContent>
+              </Card>
+            </div>
             <Card>
-              <CardContent className="pt-6">
-                <DepartmentDistribution data={data} />
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base">Ranking de plantas · ingresos</CardTitle>
+                <CardDescription className="text-xs">Ordenado por ventas del último mes, con variación vs mes anterior.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <PlantRevenueRanking data={data} />
               </CardContent>
             </Card>
           </section>
 
+          {/* §4 Estructura de costos */}
           <section className="space-y-4">
-            <h2 className="text-xl font-semibold tracking-tight">Comparativo por planta</h2>
+            <SectionHeader
+              eyebrow="Gastos"
+              title="Estructura de costos"
+              description="Composición y evolución de cada componente del costo."
+            />
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-base">Costos por mes</CardTitle>
+                  <CardDescription className="text-xs">Materia prima + operativos por categoría.</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <CostStackChart data={data} />
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-base">Costo unitario ($ / m³)</CardTitle>
+                  <CardDescription className="text-xs">Economía por m³ de cada componente.</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <UnitCostChart data={data} />
+                </CardContent>
+              </Card>
+            </div>
+
             <Card>
-              <CardContent className="pt-6">
-                <PlantComparisonTable data={data} />
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base">Gasto indirecto · explorador</CardTitle>
+                <CardDescription className="text-xs">Seleccione una categoría para ver su tendencia y subcategorías.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <IndirectExplorer data={data} />
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base">Nómina · explorador por departamento</CardTitle>
+                <CardDescription className="text-xs">Departamentos ordenados por nómina del último mes.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <NominaExplorer data={data} />
               </CardContent>
             </Card>
           </section>
+
+          {/* §5 Rentabilidad */}
+          <section className="space-y-4">
+            <SectionHeader
+              eyebrow="Rentabilidad"
+              title="De ventas a EBITDA"
+              description="Cómo se convierte cada peso de ventas en margen operativo."
+            />
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">
+              <Card className="lg:col-span-3">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-base">Cascada del EBITDA</CardTitle>
+                  <CardDescription className="text-xs">Mes actual. Cada deducción y adición al resultado.</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <EbitdaWaterfall data={data} />
+                </CardContent>
+              </Card>
+              <Card className="lg:col-span-2">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-base">Escalera de márgenes</CardTitle>
+                  <CardDescription className="text-xs">Spread vs EBITDA como % de ventas, por mes.</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <MarginLadderChart data={data} />
+                </CardContent>
+              </Card>
+            </div>
+          </section>
+
+          {/* §6 Plant Matrix */}
+          <section className="space-y-4">
+            <SectionHeader
+              eyebrow="Investigación"
+              title="Matriz de plantas"
+              description="Cada planta, cada métrica. Click en una fila para abrir su P&L."
+            />
+            <PlantMatrix data={data} />
+          </section>
+
+          {/* Reconciliation footer */}
+          {data.reconciliation && (
+            <div className="flex flex-wrap items-center gap-4 border-t border-border/50 pt-4 text-xs text-muted-foreground">
+              <ReconciliationBadge
+                ok={data.reconciliation.nominaDepartmentSumMatchesSummary}
+                label="Nómina: suma por departamento = total"
+              />
+              <ReconciliationBadge
+                ok={data.reconciliation.otrosCategorySumMatchesSummary}
+                label="Otros indirectos: suma por categoría = total"
+              />
+            </div>
+          )}
         </>
       )}
 
       {data && data.months.length === 0 && !loading && (
-        <p className="text-sm text-muted-foreground">No hay meses en el rango seleccionado.</p>
+        <div className="callout-attention">
+          <p className="text-sm">No hay meses en el rango seleccionado.</p>
+        </div>
       )}
+    </div>
+  )
+}
+
+function ReconciliationBadge({ ok, label }: { ok: boolean; label: string }) {
+  const Icon = ok ? CheckCircle2 : AlertCircle
+  return (
+    <div className={cn('flex items-center gap-1.5 tabular-num', ok ? 'text-emerald-600' : 'text-amber-600')}>
+      <Icon className="h-3.5 w-3.5" />
+      <span>{label}</span>
     </div>
   )
 }

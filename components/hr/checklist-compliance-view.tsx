@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -8,10 +8,25 @@ import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion'
 import { Progress } from '@/components/ui/progress'
-import { AlertTriangle, CheckCircle, Clock, TrendingDown, Calendar, CalendarDays } from 'lucide-react'
+import { AlertTriangle, CheckCircle, CheckCircle2, Clock, TrendingDown, Calendar, CalendarDays, Truck } from 'lucide-react'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
+import { cn } from '@/lib/utils'
+import type { ChecklistDosificadorViewPayload } from '@/types/checklist-dosificador-view'
+
+function formatUTCDateKey(d: Date): string {
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`
+}
+
+function computeUtcRangeInclusive(days: number): { from: string; to: string } {
+  const now = new Date()
+  const to = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()))
+  const from = new Date(to)
+  from.setUTCDate(from.getUTCDate() - (days - 1))
+  return { from: formatUTCDateKey(from), to: formatUTCDateKey(to) }
+}
 
 interface ComplianceReport {
   business_unit_id: string
@@ -100,6 +115,12 @@ export default function ChecklistComplianceView() {
   const [data, setData] = useState<ComplianceData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [mainTab, setMainTab] = useState('detailed')
+
+  const [dosificadorData, setDosificadorData] = useState<ChecklistDosificadorViewPayload | null>(null)
+  const [dosificadorLoading, setDosificadorLoading] = useState(false)
+  const [dosificadorError, setDosificadorError] = useState<string | null>(null)
+  const [dosificadorRangeDays, setDosificadorRangeDays] = useState('14')
   
   // Filters
   const [businessUnit, setBusinessUnit] = useState('all')
@@ -170,6 +191,36 @@ export default function ChecklistComplianceView() {
   useEffect(() => {
     fetchData()
   }, [businessUnit, plant, severity, frequencyType, period])
+
+  const fetchDosificador = useCallback(async () => {
+    try {
+      setDosificadorLoading(true)
+      setDosificadorError(null)
+      const days = Math.min(90, Math.max(1, parseInt(dosificadorRangeDays, 10) || 14))
+      const { from, to } = computeUtcRangeInclusive(days)
+      const params = new URLSearchParams({ from, to })
+      if (businessUnit !== 'all') params.set('business_unit', businessUnit)
+      if (plant !== 'all') params.set('plant', plant)
+      const response = await fetch(`/api/hr/checklist-dosificador-view?${params}`)
+      if (!response.ok) {
+        const j = await response.json().catch(() => ({}))
+        throw new Error(j.error || 'Error al cargar la vista dosificador')
+      }
+      const result = (await response.json()) as ChecklistDosificadorViewPayload
+      setDosificadorData(result)
+    } catch (err) {
+      console.error('Error fetching dosificador view:', err)
+      setDosificadorError(err instanceof Error ? err.message : 'Error desconocido')
+      setDosificadorData(null)
+    } finally {
+      setDosificadorLoading(false)
+    }
+  }, [businessUnit, plant, dosificadorRangeDays])
+
+  useEffect(() => {
+    if (mainTab !== 'dosificador') return
+    void fetchDosificador()
+  }, [mainTab, fetchDosificador])
 
   const getStatusIcon = (status: string) => {
     switch (status) {
@@ -616,9 +667,20 @@ export default function ChecklistComplianceView() {
       </Card>
 
       {/* Main Content */}
-      <Tabs defaultValue="detailed" className="space-y-4">
-        <TabsList>
+      <Tabs
+        value={mainTab}
+        onValueChange={(v) => {
+          setMainTab(v)
+          if (v === 'dosificador') {
+            setDosificadorLoading(true)
+            setDosificadorError(null)
+          }
+        }}
+        className="space-y-4"
+      >
+        <TabsList className="flex flex-wrap h-auto gap-1">
           <TabsTrigger value="detailed">Vista Detallada</TabsTrigger>
+          <TabsTrigger value="dosificador">Vista Dosificador</TabsTrigger>
           <TabsTrigger value="daily">Checklists Diarios</TabsTrigger>
           <TabsTrigger value="weekly">Checklists Semanales</TabsTrigger>
           <TabsTrigger value="monthly">Checklists Mensuales</TabsTrigger>
@@ -712,6 +774,166 @@ export default function ChecklistComplianceView() {
                   </TableBody>
                 </Table>
               </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="dosificador">
+          <Card>
+            <CardHeader>
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                <div className="space-y-1">
+                  <CardTitle className="flex items-center gap-2">
+                    <Truck className="h-5 w-5 text-muted-foreground" />
+                    Vista Dosificador
+                  </CardTitle>
+                  <CardDescription>
+                    Inspección diaria (checklists con frecuencia &quot;diario&quot;) por planta y por día.
+                    Las fechas del rango y los días mostrados usan calendario UTC, alineado con el tablero del
+                    dosificador.
+                  </CardDescription>
+                </div>
+                <div className="flex flex-col gap-1.5 sm:items-end">
+                  <span className="text-xs font-medium text-muted-foreground">Rango (UTC)</span>
+                  <Select value={dosificadorRangeDays} onValueChange={setDosificadorRangeDays}>
+                    <SelectTrigger className="w-[220px]">
+                      <SelectValue placeholder="Período" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="7">Últimos 7 días</SelectItem>
+                      <SelectItem value="14">Últimos 14 días</SelectItem>
+                      <SelectItem value="30">Últimos 30 días</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {dosificadorData && (
+                    <p className="text-xs text-muted-foreground tabular-nums">
+                      {dosificadorData.fromKey} → {dosificadorData.toKey}
+                    </p>
+                  )}
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <p className="text-sm text-muted-foreground">
+                Usa los filtros de <strong>Unidad de Negocio</strong> y <strong>Planta</strong> arriba para
+                acotar el alcance. Esta vista incluye activos operativos con programación diaria en el rango,
+                tanto completados como pendientes.
+              </p>
+              {dosificadorLoading && (
+                <div className="space-y-4">
+                  <div className="h-10 animate-pulse rounded-md bg-muted/60" />
+                  <div className="h-40 animate-pulse rounded-md bg-muted/50" />
+                </div>
+              )}
+              {dosificadorError && (
+                <div className="rounded-lg border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+                  {dosificadorError}
+                  <Button variant="outline" size="sm" className="mt-3" onClick={() => void fetchDosificador()}>
+                    Reintentar
+                  </Button>
+                </div>
+              )}
+              {!dosificadorLoading && !dosificadorError && dosificadorData && dosificadorData.plants.length === 0 && (
+                <p className="text-sm text-muted-foreground">
+                  No hay programaciones de checklist diario en el rango y filtros seleccionados.
+                </p>
+              )}
+              {!dosificadorLoading &&
+                !dosificadorError &&
+                dosificadorData?.plants.map((p) => (
+                  <Card key={p.plantId} className="border-border/80 shadow-sm">
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-lg">{p.plantName}</CardTitle>
+                      <CardDescription>{p.businessUnitName}</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <Accordion type="multiple" className="w-full">
+                        {p.days.map((day) => (
+                          <AccordionItem key={`${p.plantId}-${day.dayKey}`} value={`${p.plantId}-${day.dayKey}`}>
+                            <AccordionTrigger className="text-left hover:no-underline">
+                              <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                                <span className="font-mono text-sm tabular-nums">{day.dayKey}</span>
+                                <span className="text-sm text-muted-foreground">
+                                  <span className="text-emerald-700 dark:text-emerald-400">{day.summary.completed} listos</span>
+                                  <span className="mx-1">·</span>
+                                  <span className="text-amber-800 dark:text-amber-200">{day.summary.pending} pendientes</span>
+                                  <span className="mx-1">·</span>
+                                  {day.summary.total} activos
+                                </span>
+                              </span>
+                            </AccordionTrigger>
+                            <AccordionContent>
+                              <div className="overflow-x-auto rounded-md border">
+                                <Table>
+                                  <TableHeader>
+                                    <TableRow>
+                                      <TableHead>Código</TableHead>
+                                      <TableHead>Activo</TableHead>
+                                      <TableHead>Estado</TableHead>
+                                      <TableHead>Operador asignado</TableHead>
+                                      <TableHead>Checklist</TableHead>
+                                      <TableHead>Registro de completado</TableHead>
+                                      <TableHead>Hora (UTC)</TableHead>
+                                    </TableRow>
+                                  </TableHeader>
+                                  <TableBody>
+                                    {day.rows.map((row) => {
+                                      const ok = row.readiness === 'listo'
+                                      return (
+                                        <TableRow
+                                          key={row.scheduleId}
+                                          className={cn(!ok && 'bg-amber-50/60 dark:bg-amber-950/20')}
+                                        >
+                                          <TableCell className="font-medium tabular-nums">{row.assetCode ?? '—'}</TableCell>
+                                          <TableCell>
+                                            <div className="max-w-[200px] truncate" title={row.assetName ?? ''}>
+                                              {row.assetName ?? '—'}
+                                            </div>
+                                          </TableCell>
+                                          <TableCell>
+                                            {ok ? (
+                                              <Badge className="gap-1 bg-emerald-100 text-emerald-900 dark:bg-emerald-900/40 dark:text-emerald-100">
+                                                <CheckCircle2 className="h-3 w-3" />
+                                                Listo
+                                              </Badge>
+                                            ) : (
+                                              <Badge variant="secondary" className="gap-1 bg-amber-100 text-amber-900 dark:bg-amber-950/40 dark:text-amber-100">
+                                                <AlertTriangle className="h-3 w-3" />
+                                                Pendiente
+                                              </Badge>
+                                            )}
+                                          </TableCell>
+                                          <TableCell className="text-sm">
+                                            {row.operatorName ?? (
+                                              <span className="text-muted-foreground italic">Sin asignar</span>
+                                            )}
+                                          </TableCell>
+                                          <TableCell className="text-sm text-muted-foreground">
+                                            {row.checklistName ?? '—'}
+                                          </TableCell>
+                                          <TableCell className="text-sm">
+                                            {row.completedByLabel ?? (
+                                              <span className="text-muted-foreground">—</span>
+                                            )}
+                                          </TableCell>
+                                          <TableCell className="text-sm tabular-nums text-muted-foreground">
+                                            {row.completionTime
+                                              ? format(new Date(row.completionTime), 'dd/MM/yyyy HH:mm', { locale: es })
+                                              : '—'}
+                                          </TableCell>
+                                        </TableRow>
+                                      )
+                                    })}
+                                  </TableBody>
+                                </Table>
+                              </div>
+                            </AccordionContent>
+                          </AccordionItem>
+                        ))}
+                      </Accordion>
+                    </CardContent>
+                  </Card>
+                ))}
             </CardContent>
           </Card>
         </TabsContent>

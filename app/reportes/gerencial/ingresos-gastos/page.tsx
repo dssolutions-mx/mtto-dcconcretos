@@ -11,7 +11,11 @@ import { RefreshCw, Download, AlertCircle, ChevronRight, ChevronDown, Loader2, A
 import { useToast } from '@/hooks/use-toast'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { VolumeUpdateSheet } from '@/components/manual-costs/volume-update-dialog'
-import { groupCostDetailEntriesByAdjustment } from '@/components/reports/ingresos-gastos/helpers/cost-detail-rows'
+import {
+  buildDeptPathRenderGroups,
+  groupCostDetailEntriesByAdjustment,
+  isGroupedDetailRedundant,
+} from '@/components/reports/ingresos-gastos/helpers/cost-detail-rows'
 import { IngresosGastosActions } from '@/components/reports/ingresos-gastos/ingresos-gastos-actions'
 
 type PlantData = {
@@ -99,6 +103,9 @@ type CostDetails = {
       amount: number
       is_distributed: boolean
       distribution_method: string | null
+      notes?: string | null
+      is_bonus?: boolean
+      is_cash_payment?: boolean
     }>
   }>
 }
@@ -110,6 +117,9 @@ const formatNumber = (num: number, decimals: number = 2) =>
   new Intl.NumberFormat('es-MX', { minimumFractionDigits: decimals, maximumFractionDigits: decimals }).format(num)
 
 const formatPercent = (pct: number) => `${formatNumber(pct, 2)}%`
+
+/** Aligns with aggregation in toggleCostExpansion so the same concept is never split by stray spaces. */
+const normalizeCostDeptLabelKey = (name: string) => String(name || '').trim().replace(/\s+/g, ' ')
 
 export default function IngresosGastosPage() {
   const { toast } = useToast()
@@ -129,6 +139,8 @@ export default function IngresosGastosPage() {
   const [expandedCosts, setExpandedCosts] = useState<Map<string, boolean>>(new Map())
   // State for expanded departments: Map<`${plantId}-${category}-${department}`, boolean>
   const [expandedDepartments, setExpandedDepartments] = useState<Map<string, boolean>>(new Map())
+  /** Collapsible sections for grouped main categories (default: expanded when key missing). */
+  const [expandedCategoryGroups, setExpandedCategoryGroups] = useState<Map<string, boolean>>(new Map())
   // State for cost details: Map<`${plantId}-${category}`, CostDetails>
   const [costDetails, setCostDetails] = useState<Map<string, CostDetails>>(new Map())
   // State for loading cost details: Map<`${plantId}-${category}`, boolean>
@@ -156,6 +168,7 @@ export default function IngresosGastosPage() {
   useEffect(() => {
     setExpandedCosts(new Map())
     setExpandedDepartments(new Map())
+    setExpandedCategoryGroups(new Map())
     setCostDetails(new Map())
     setLoadingCostDetails(new Map())
   }, [selectedMonth, businessUnitId, plantId])
@@ -259,8 +272,11 @@ export default function IngresosGastosPage() {
       setLoadingCostDetails(prev => new Map(prev).set(key, true))
       try {
         // Fetch details for all plants in parallel
+        const scopePlantIds = plants.map(p => p.plant_id).join(',')
         const detailPromises = plants.map(plant =>
-          fetch(`/api/reports/gerencial/ingresos-gastos/details?month=${selectedMonth}&plantId=${plant.plant_id}&category=${category}`)
+          fetch(
+            `/api/reports/gerencial/ingresos-gastos/details?month=${selectedMonth}&plantId=${plant.plant_id}&category=${category}&scopePlantIds=${encodeURIComponent(scopePlantIds)}`
+          )
             .then(res => res.ok ? res.json() : null)
             .catch(() => null)
         )
@@ -278,15 +294,20 @@ export default function IngresosGastosPage() {
             amount: number
             is_distributed: boolean
             distribution_method: string | null
+            notes?: string | null
+            is_bonus?: boolean
+            is_cash_payment?: boolean
           }>>
         }>()
         
+        const normalizeDeptKey = (name: string) => String(name || '').trim().replace(/\s+/g, ' ')
+
         allDetails.forEach((details, plantIndex) => {
           if (!details?.departments) return
           const plant = plants[plantIndex]
-          
+
           details.departments.forEach((dept: any) => {
-            const deptKey = dept.department
+            const deptKey = normalizeDeptKey(dept.department)
             if (!departmentMap.has(deptKey)) {
               departmentMap.set(deptKey, {
                 department: deptKey,
@@ -294,10 +315,11 @@ export default function IngresosGastosPage() {
                 entriesByPlant: new Map()
               })
             }
-            
+
             const deptData = departmentMap.get(deptKey)!
             deptData.total += dept.total
-            deptData.entriesByPlant.set(plant.plant_id, dept.entries)
+            const prev = deptData.entriesByPlant.get(plant.plant_id) || []
+            deptData.entriesByPlant.set(plant.plant_id, [...prev, ...(dept.entries || [])])
           })
         })
         
@@ -337,6 +359,19 @@ export default function IngresosGastosPage() {
       const newMap = new Map(prev)
       newMap.set(key, !(prev.get(key) || false))
       return newMap
+    })
+  }
+
+  const categoryGroupStateKey = (section: 'nomina' | 'otros_indirectos', mainLabel: string) =>
+    `${section}-cat::${mainLabel}`
+
+  const toggleCategoryGroupExpansion = (section: 'nomina' | 'otros_indirectos', mainLabel: string) => {
+    const key = categoryGroupStateKey(section, mainLabel)
+    setExpandedCategoryGroups(prev => {
+      const next = new Map(prev)
+      const isOpen = next.get(key) !== false
+      next.set(key, !isOpen)
+      return next
     })
   }
 
@@ -815,12 +850,19 @@ export default function IngresosGastosPage() {
         return buPlants.reduce((sum, p) => sum + getValue(p), 0)
       
       case 'unit': {
+        if (metricKey === 'costo_cem_m3') {
+          const totalVolume = buPlants.reduce((sum, p) => sum + p.volumen_concreto, 0)
+          if (totalVolume === 0) return 0
+          return (
+            buPlants.reduce((sum, p) => sum + p.costo_cem_m3 * p.volumen_concreto, 0) / totalVolume
+          )
+        }
+
         // For unit costs, we need to find the corresponding total and divide by volume
         // Map metric keys to their corresponding total metric keys
         const unitToTotalMap: Record<string, string> = {
           'pv_unitario': 'ventas_total',
           'costo_mp_unitario': 'costo_mp_total',
-          'costo_cem_m3': 'costo_mp_total', // Approximate - uses MP total
           'diesel_unitario': 'diesel_total',
           'mantto_unitario': 'mantto_total',
           'nomina_unitario': 'nomina_total',
@@ -845,10 +887,6 @@ export default function IngresosGastosPage() {
         } else if (metricKey === 'costo_mp_unitario') {
           const totalMP = buPlants.reduce((sum, p) => sum + p.costo_mp_total, 0)
           return totalMP / totalVolume
-        } else if (metricKey === 'costo_cem_m3') {
-          // This is tricky - we'd need total cement cost, but we can approximate
-          const totalMP = buPlants.reduce((sum, p) => sum + p.costo_mp_total, 0)
-          return totalMP / totalVolume // Approximation
         } else if (metricKey === 'diesel_unitario') {
           const totalDiesel = buPlants.reduce((sum, p) => sum + p.diesel_total, 0)
           return totalDiesel / totalVolume
@@ -901,10 +939,20 @@ export default function IngresosGastosPage() {
           if (totalVentas === 0) return 0
           return (totalEbitda / totalVentas) * 100
         }
+
+        if (metricKey === 'costo_cem_pct') {
+          const totalVolume = buPlants.reduce((sum, p) => sum + p.volumen_concreto, 0)
+          if (totalVolume === 0) return 0
+          const weightedCem =
+            buPlants.reduce((sum, p) => sum + p.costo_cem_m3 * p.volumen_concreto, 0) / totalVolume
+          const totalVentas = buPlants.reduce((sum, p) => sum + p.ventas_total, 0)
+          const weightedPv = totalVentas / totalVolume
+          if (weightedPv === 0) return 0
+          return (weightedCem / weightedPv) * 100
+        }
         
         // For percentages, we need the numerator (cost) and denominator (sales)
         const percentToNumeratorMap: Record<string, (p: PlantData) => number> = {
-          'costo_cem_pct': p => p.costo_mp_total, // Approximation
           'costo_mp_pct': p => p.costo_mp_total,
           'diesel_pct': p => p.diesel_total,
           'mantto_pct': p => p.mantto_total,
@@ -974,6 +1022,14 @@ export default function IngresosGastosPage() {
         return totalBombeo / totalBombeoVol
       }
 
+      if (metricKey === 'costo_cem_m3') {
+        const totalVolume = sourcePlants.reduce((sum, p) => sum + p.volumen_concreto, 0)
+        if (totalVolume === 0) return 0
+        return (
+          sourcePlants.reduce((sum, p) => sum + p.costo_cem_m3 * p.volumen_concreto, 0) / totalVolume
+        )
+      }
+
       const totalVolume = sourcePlants.reduce((sum, p) => sum + p.volumen_concreto, 0)
       if (totalVolume === 0) return 0
 
@@ -981,7 +1037,6 @@ export default function IngresosGastosPage() {
       const unitToTotalMap: Record<string, (p: PlantData) => number> = {
         'pv_unitario': p => p.ventas_total,
         'costo_mp_unitario': p => p.costo_mp_total,
-        'costo_cem_m3': p => p.costo_mp_total, // Approximate - uses MP total
         'diesel_unitario': p => p.diesel_total,
         'mantto_unitario': p => p.mantto_total,
         'nomina_unitario': p => p.nomina_total,
@@ -1017,10 +1072,20 @@ export default function IngresosGastosPage() {
         if (totalVentas === 0) return 0
         return (totalEbitda / totalVentas) * 100
       }
+
+      if (metricKey === 'costo_cem_pct') {
+        const totalVolume = sourcePlants.reduce((sum, p) => sum + p.volumen_concreto, 0)
+        if (totalVolume === 0) return 0
+        const weightedCem =
+          sourcePlants.reduce((sum, p) => sum + p.costo_cem_m3 * p.volumen_concreto, 0) / totalVolume
+        const totalVentas = sourcePlants.reduce((sum, p) => sum + p.ventas_total, 0)
+        const weightedPv = totalVentas / totalVolume
+        if (weightedPv === 0) return 0
+        return (weightedCem / weightedPv) * 100
+      }
       
       // For other percentages, recalculate from numerator/denominator
       const percentToNumeratorMap: Record<string, (p: PlantData) => number> = {
-        'costo_cem_pct': p => p.costo_mp_total,
         'costo_mp_pct': p => p.costo_mp_total,
         'diesel_pct': p => p.diesel_total,
         'mantto_pct': p => p.mantto_total,
@@ -1741,16 +1806,16 @@ export default function IngresosGastosPage() {
                     
                     if (details?.departments) {
                       details.departments.forEach(dept => {
-                        if (!departmentMap.has(dept.department)) {
-                          departmentMap.set(dept.department, {
-                            department: dept.department,
+                        const dk = normalizeCostDeptLabelKey(dept.department)
+                        if (!departmentMap.has(dk)) {
+                          departmentMap.set(dk, {
+                            department: dk,
                             totalsByPlant: new Map(),
                             entriesByPlant: new Map()
                           })
                         }
-                        
-                        const deptData = departmentMap.get(dept.department)!
-                        // Group entries by plant
+
+                        const deptData = departmentMap.get(dk)!
                         dept.entries.forEach(entry => {
                           const plantId = (entry as any).plantId || 'unknown'
                           if (!deptData.totalsByPlant.has(plantId)) {
@@ -1762,7 +1827,140 @@ export default function IngresosGastosPage() {
                         })
                       })
                     }
-                    
+
+                    type NominaDeptAgg = {
+                      department: string
+                      totalsByPlant: Map<string, number>
+                      entriesByPlant: Map<
+                        string,
+                        Array<{
+                          id: string
+                          description: string | null
+                          subcategory: string | null
+                          amount: number
+                          plantId?: string
+                          notes?: string | null
+                          is_bonus?: boolean
+                          is_cash_payment?: boolean
+                          is_distributed?: boolean
+                          distribution_method?: string | null
+                        }>
+                      >
+                    }
+
+                    const renderNominaDeptRows = (
+                      deptName: string,
+                      deptData: NominaDeptAgg,
+                      rowLabel: string,
+                      labelPlClass: string
+                    ) => {
+                      const deptKey = `nomina-${deptName}`
+                      const isDeptExpanded = expandedDepartments.get(deptKey) || false
+                      const grandTotal = Array.from(deptData.totalsByPlant.values()).reduce((sum, val) => sum + val, 0)
+                      const nominaDetailLines = groupCostDetailEntriesByAdjustment(
+                        Array.from(deptData.entriesByPlant.entries()).flatMap(([pid, entries]) =>
+                          entries.map(e => ({
+                            ...e,
+                            plantId: (e as { plantId?: string }).plantId || pid,
+                          }))
+                        ) as any,
+                        () => '',
+                        {
+                          lineCategory: 'nomina',
+                          strategy: 'display-label',
+                          deptCompositeName: deptName,
+                          sortDetailLines: 'amount-desc',
+                        }
+                      )
+                      const plantIdsForDetail = plants.map(p => p.plant_id)
+                      const nominaDetailTotalsMismatch = plantIdsForDetail.some(pid => {
+                        const sumLines = nominaDetailLines.reduce(
+                          (s, l) => s + (l.amountsByPlant.get(pid) || 0),
+                          0
+                        )
+                        return Math.abs(sumLines - (deptData.totalsByPlant.get(pid) || 0)) > 0.05
+                      })
+                      const nominaDetailRedundant =
+                        !nominaDetailTotalsMismatch &&
+                        isGroupedDetailRedundant(
+                          nominaDetailLines,
+                          deptData.totalsByPlant,
+                          plantIdsForDetail
+                        )
+
+                      return (
+                        <React.Fragment key={deptKey}>
+                          <tr className="bg-muted/20">
+                            <td
+                              className={`sticky left-0 z-10 bg-muted/30 ${labelPlClass} p-3 border-r-2 font-medium`}
+                            >
+                              <button
+                                onClick={() => toggleDepartmentExpansion('nomina', deptName)}
+                                className="flex items-center gap-2 hover:opacity-70 transition-opacity text-left"
+                              >
+                                {isDeptExpanded ? (
+                                  <ChevronDown className="w-4 h-4 shrink-0" />
+                                ) : (
+                                  <ChevronRight className="w-4 h-4 shrink-0" />
+                                )}
+                                {rowLabel}
+                              </button>
+                            </td>
+                            {plants.map(plant => (
+                              <td key={plant.plant_id} className="text-right p-3 border-r">
+                                {formatCurrency(deptData.totalsByPlant.get(plant.plant_id) || 0)}
+                              </td>
+                            ))}
+                            {renderGrandTotalCell(grandTotal, formatCurrency)}
+                          </tr>
+                          {isDeptExpanded && nominaDetailTotalsMismatch && (
+                            <tr key={`${deptKey}-sum-warning`} className="bg-amber-50/80 dark:bg-amber-950/20">
+                              <td
+                                colSpan={plantColumnCount + 2}
+                                className="pl-10 p-2 text-amber-900 dark:text-amber-200 text-xs border-r-2"
+                              >
+                                La suma de movimientos no coincide con el total de esta fila; revise datos o
+                                distribuciones.
+                              </td>
+                            </tr>
+                          )}
+                          {isDeptExpanded && nominaDetailRedundant && (
+                            <tr key={`${deptKey}-sin-subpartidas`} className="bg-muted/10">
+                              <td
+                                colSpan={plantColumnCount + 2}
+                                className="pl-10 p-2 text-muted-foreground text-sm italic border-r-2"
+                              >
+                                El desglose coincide con los totales de esta fila; no hay subpartidas adicionales.
+                              </td>
+                            </tr>
+                          )}
+                          {isDeptExpanded &&
+                            !nominaDetailRedundant &&
+                            nominaDetailLines.map(line => {
+                              const rowGrand = Array.from(line.amountsByPlant.values()).reduce((s, v) => s + v, 0)
+                              return (
+                                <tr key={`${deptName}-${line.rowKey}`} className="bg-muted/10">
+                                  <td className="sticky left-0 z-10 bg-background pl-10 p-3 border-r-2">
+                                    <div className="font-medium leading-snug">{line.label}</div>
+                                    {line.caption ? (
+                                      <div className="text-xs text-muted-foreground mt-1 leading-snug">
+                                        {line.caption}
+                                      </div>
+                                    ) : null}
+                                  </td>
+                                  {plants.map(p => (
+                                    <td key={p.plant_id} className="text-right p-3 border-r">
+                                      {formatCurrency(line.amountsByPlant.get(p.plant_id) || 0)}
+                                    </td>
+                                  ))}
+                                  {renderGrandTotalCell(rowGrand, formatCurrency)}
+                                </tr>
+                              )
+                            })}
+                        </React.Fragment>
+                      )
+                    }
+
                     return (
                       <>
                         {isLoading ? (
@@ -1773,65 +1971,56 @@ export default function IngresosGastosPage() {
                             </td>
                           </tr>
                         ) : departmentMap.size > 0 ? (
-                          Array.from(departmentMap.entries()).map(([deptName, deptData]) => {
-                            const deptKey = `nomina-${deptName}`
-                            const isDeptExpanded = expandedDepartments.get(deptKey) || false
-                            const grandTotal = Array.from(deptData.totalsByPlant.values()).reduce((sum, val) => sum + val, 0)
-                            
-                            return (
-                              <React.Fragment key={deptKey}>
-                                <tr className="bg-muted/20">
-                                  <td className="sticky left-0 z-10 bg-muted/30 pl-6 p-3 border-r-2 font-medium">
-                                    <button
-                                      onClick={() => toggleDepartmentExpansion('nomina', deptName)}
-                                      className="flex items-center gap-2 hover:opacity-70 transition-opacity"
-                                    >
-                                      {isDeptExpanded ? (
-                                        <ChevronDown className="w-4 h-4" />
-                                      ) : (
-                                        <ChevronRight className="w-4 h-4" />
-                                      )}
-                                      {deptName}
-                                    </button>
-                                  </td>
-                                  {plants.map(plant => (
-                                    <td key={plant.plant_id} className="text-right p-3 border-r">
-                                      {formatCurrency(deptData.totalsByPlant.get(plant.plant_id) || 0)}
-                                    </td>
-                                  ))}
-                                  {renderGrandTotalCell(grandTotal, formatCurrency)}
-                                </tr>
-                                {isDeptExpanded &&
-                                  groupCostDetailEntriesByAdjustment(
-                                    Array.from(deptData.entriesByPlant.entries()).flatMap(([pid, entries]) =>
-                                      entries.map(e => ({
-                                        ...e,
-                                        plantId: (e as { plantId?: string }).plantId || pid,
-                                      }))
-                                    ) as any,
-                                    e => e.description || e.subcategory || 'Sin descripción'
-                                  ).map(line => {
-                                    const rowGrand = Array.from(line.amountsByPlant.values()).reduce(
-                                      (s, v) => s + v,
-                                      0
-                                    )
+                          buildDeptPathRenderGroups(Array.from(departmentMap.entries()) as [string, NominaDeptAgg][]).map(
+                            group =>
+                              group.kind === 'single' ? (
+                                renderNominaDeptRows(group.deptName, group.data, group.deptName, 'pl-6')
+                              ) : (
+                                <React.Fragment key={`nomina-cat-${group.mainLabel}`}>
+                                  {(() => {
+                                    const catKey = categoryGroupStateKey('nomina', group.mainLabel)
+                                    const isCatExpanded = expandedCategoryGroups.get(catKey) !== false
                                     return (
-                                      <tr key={`${deptName}-${line.rowKey}`} className="bg-muted/10">
-                                        <td className="sticky left-0 z-10 bg-background pl-10 p-3 border-r-2">
-                                          {line.label}
-                                        </td>
-                                        {plants.map(p => (
-                                          <td key={p.plant_id} className="text-right p-3 border-r">
-                                            {formatCurrency(line.amountsByPlant.get(p.plant_id) || 0)}
+                                      <>
+                                        <tr className="bg-muted/35 dark:bg-muted/20">
+                                          <td className="sticky left-0 z-10 bg-muted/40 pl-2 p-2 border-r-2">
+                                            <button
+                                              type="button"
+                                              onClick={() => toggleCategoryGroupExpansion('nomina', group.mainLabel)}
+                                              className="flex items-center gap-2 w-full text-left text-sm font-semibold hover:opacity-80"
+                                            >
+                                              {isCatExpanded ? (
+                                                <ChevronDown className="w-4 h-4 shrink-0" />
+                                              ) : (
+                                                <ChevronRight className="w-4 h-4 shrink-0" />
+                                              )}
+                                              {group.mainLabel}
+                                            </button>
                                           </td>
-                                        ))}
-                                        {renderGrandTotalCell(rowGrand, formatCurrency)}
-                                      </tr>
+                                          {plants.map(plant => (
+                                            <td
+                                              key={plant.plant_id}
+                                              className="text-right p-2 border-r text-sm font-semibold"
+                                            >
+                                              {formatCurrency(group.headerTotalsByPlant.get(plant.plant_id) || 0)}
+                                            </td>
+                                          ))}
+                                          {renderGrandTotalCell(
+                                            Array.from(group.headerTotalsByPlant.values()).reduce((s, v) => s + v, 0),
+                                            formatCurrency
+                                          )}
+                                        </tr>
+                                        {isCatExpanded
+                                          ? group.rows.map(({ deptName, data, detailLabel }) =>
+                                              renderNominaDeptRows(deptName, data, detailLabel, 'pl-8')
+                                            )
+                                          : null}
+                                      </>
                                     )
-                                  })}
-                              </React.Fragment>
-                            )
-                          })
+                                  })()}
+                                </React.Fragment>
+                              )
+                          )
                         ) : (
                           <tr>
                             <td colSpan={plantColumnCount + 2} className="pl-6 p-3 text-muted-foreground">
@@ -1916,16 +2105,16 @@ export default function IngresosGastosPage() {
                     
                     if (details?.departments) {
                       details.departments.forEach(dept => {
-                        if (!departmentMap.has(dept.department)) {
-                          departmentMap.set(dept.department, {
-                            department: dept.department,
+                        const dk = normalizeCostDeptLabelKey(dept.department)
+                        if (!departmentMap.has(dk)) {
+                          departmentMap.set(dk, {
+                            department: dk,
                             totalsByPlant: new Map(),
                             entriesByPlant: new Map()
                           })
                         }
-                        
-                        const deptData = departmentMap.get(dept.department)!
-                        // Group entries by plant
+
+                        const deptData = departmentMap.get(dk)!
                         dept.entries.forEach(entry => {
                           const plantId = (entry as any).plantId || 'unknown'
                           if (!deptData.totalsByPlant.has(plantId)) {
@@ -1937,7 +2126,138 @@ export default function IngresosGastosPage() {
                         })
                       })
                     }
-                    
+
+                    type OtrosDeptAgg = {
+                      department: string
+                      totalsByPlant: Map<string, number>
+                      entriesByPlant: Map<
+                        string,
+                        Array<{
+                          id: string
+                          description: string | null
+                          subcategory: string | null
+                          amount: number
+                          plantId?: string
+                          expense_category?: string | null
+                          expense_subcategory?: string | null
+                          notes?: string | null
+                          is_bonus?: boolean
+                          is_cash_payment?: boolean
+                          is_distributed?: boolean
+                          distribution_method?: string | null
+                        }>
+                      >
+                    }
+
+                    const renderOtrosDeptRows = (
+                      deptName: string,
+                      deptData: OtrosDeptAgg,
+                      rowLabel: string,
+                      labelPlClass: string
+                    ) => {
+                      const deptKey = `otros_indirectos-${deptName}`
+                      const isDeptExpanded = expandedDepartments.get(deptKey) || false
+                      const grandTotal = Array.from(deptData.totalsByPlant.values()).reduce((sum, val) => sum + val, 0)
+                      const otrosDetailLines = groupCostDetailEntriesByAdjustment(
+                        Array.from(deptData.entriesByPlant.entries()).flatMap(([pid, entries]) =>
+                          entries.map(e => ({
+                            ...e,
+                            plantId: (e as { plantId?: string }).plantId || pid,
+                          }))
+                        ) as any,
+                        () => '',
+                        {
+                          lineCategory: 'otros',
+                          strategy: 'display-label',
+                          deptCompositeName: deptName,
+                          sortDetailLines: 'amount-desc',
+                        }
+                      )
+                      const otrosPlantIds = plants.map(p => p.plant_id)
+                      const otrosDetailTotalsMismatch = otrosPlantIds.some(pid => {
+                        const sumLines = otrosDetailLines.reduce(
+                          (s, l) => s + (l.amountsByPlant.get(pid) || 0),
+                          0
+                        )
+                        return Math.abs(sumLines - (deptData.totalsByPlant.get(pid) || 0)) > 0.05
+                      })
+                      const otrosDetailRedundant =
+                        !otrosDetailTotalsMismatch &&
+                        isGroupedDetailRedundant(otrosDetailLines, deptData.totalsByPlant, otrosPlantIds)
+
+                      return (
+                        <React.Fragment key={deptKey}>
+                          <tr className="bg-muted/20">
+                            <td
+                              className={`sticky left-0 z-10 bg-muted/30 ${labelPlClass} p-3 border-r-2 font-medium`}
+                            >
+                              <button
+                                onClick={() => toggleDepartmentExpansion('otros_indirectos', deptName)}
+                                className="flex items-center gap-2 hover:opacity-70 transition-opacity text-left"
+                              >
+                                {isDeptExpanded ? (
+                                  <ChevronDown className="w-4 h-4 shrink-0" />
+                                ) : (
+                                  <ChevronRight className="w-4 h-4 shrink-0" />
+                                )}
+                                {rowLabel}
+                              </button>
+                            </td>
+                            {plants.map(plant => (
+                              <td key={plant.plant_id} className="text-right p-3 border-r">
+                                {formatCurrency(deptData.totalsByPlant.get(plant.plant_id) || 0)}
+                              </td>
+                            ))}
+                            {renderGrandTotalCell(grandTotal, formatCurrency)}
+                          </tr>
+                          {isDeptExpanded && otrosDetailTotalsMismatch && (
+                            <tr key={`${deptKey}-sum-warning`} className="bg-amber-50/80 dark:bg-amber-950/20">
+                              <td
+                                colSpan={plantColumnCount + 2}
+                                className="pl-10 p-2 text-amber-900 dark:text-amber-200 text-xs border-r-2"
+                              >
+                                La suma de movimientos no coincide con el total de esta fila; revise datos o
+                                distribuciones.
+                              </td>
+                            </tr>
+                          )}
+                          {isDeptExpanded && otrosDetailRedundant && (
+                            <tr key={`${deptKey}-sin-subpartidas`} className="bg-muted/10">
+                              <td
+                                colSpan={plantColumnCount + 2}
+                                className="pl-10 p-2 text-muted-foreground text-sm italic border-r-2"
+                              >
+                                El desglose coincide con los totales de esta fila; no hay subpartidas adicionales.
+                              </td>
+                            </tr>
+                          )}
+                          {isDeptExpanded &&
+                            !otrosDetailRedundant &&
+                            otrosDetailLines.map(line => {
+                              const rowGrand = Array.from(line.amountsByPlant.values()).reduce((s, v) => s + v, 0)
+                              return (
+                                <tr key={`${deptName}-${line.rowKey}`} className="bg-muted/10">
+                                  <td className="sticky left-0 z-10 bg-background pl-10 p-3 border-r-2">
+                                    <div className="font-medium leading-snug">{line.label}</div>
+                                    {line.caption ? (
+                                      <div className="text-xs text-muted-foreground mt-1 leading-snug">
+                                        {line.caption}
+                                      </div>
+                                    ) : null}
+                                  </td>
+                                  {plants.map(p => (
+                                    <td key={p.plant_id} className="text-right p-3 border-r">
+                                      {formatCurrency(line.amountsByPlant.get(p.plant_id) || 0)}
+                                    </td>
+                                  ))}
+                                  {renderGrandTotalCell(rowGrand, formatCurrency)}
+                                </tr>
+                              )
+                            })}
+                        </React.Fragment>
+                      )
+                    }
+
                     return (
                       <>
                         {isLoading ? (
@@ -1948,73 +2268,58 @@ export default function IngresosGastosPage() {
                             </td>
                           </tr>
                         ) : departmentMap.size > 0 ? (
-                          Array.from(departmentMap.entries()).map(([deptName, deptData]) => {
-                            const deptKey = `otros_indirectos-${deptName}`
-                            const isDeptExpanded = expandedDepartments.get(deptKey) || false
-                            const grandTotal = Array.from(deptData.totalsByPlant.values()).reduce((sum, val) => sum + val, 0)
-                            
-                            return (
-                              <React.Fragment key={deptKey}>
-                                <tr className="bg-muted/20">
-                                  <td className="sticky left-0 z-10 bg-muted/30 pl-6 p-3 border-r-2 font-medium">
-                                    <button
-                                      onClick={() => toggleDepartmentExpansion('otros_indirectos', deptName)}
-                                      className="flex items-center gap-2 hover:opacity-70 transition-opacity"
-                                    >
-                                      {isDeptExpanded ? (
-                                        <ChevronDown className="w-4 h-4" />
-                                      ) : (
-                                        <ChevronRight className="w-4 h-4" />
-                                      )}
-                                      {deptName}
-                                    </button>
-                                  </td>
-                                  {plants.map(plant => (
-                                    <td key={plant.plant_id} className="text-right p-3 border-r">
-                                      {formatCurrency(deptData.totalsByPlant.get(plant.plant_id) || 0)}
-                                    </td>
-                                  ))}
-                                  {renderGrandTotalCell(grandTotal, formatCurrency)}
-                                </tr>
-                                {isDeptExpanded &&
-                                  groupCostDetailEntriesByAdjustment(
-                                    Array.from(deptData.entriesByPlant.entries()).flatMap(([pid, entries]) =>
-                                      entries.map(e => ({
-                                        ...e,
-                                        plantId: (e as { plantId?: string }).plantId || pid,
-                                      }))
-                                    ) as any,
-                                    e => {
-                                      const x = e as { expense_subcategory?: string | null }
-                                      return (
-                                        x.expense_subcategory ||
-                                        e.description ||
-                                        e.subcategory ||
-                                        'Sin descripción'
-                                      )
-                                    }
-                                  ).map(line => {
-                                    const rowGrand = Array.from(line.amountsByPlant.values()).reduce(
-                                      (s, v) => s + v,
-                                      0
-                                    )
+                          buildDeptPathRenderGroups(Array.from(departmentMap.entries()) as [string, OtrosDeptAgg][]).map(
+                            group =>
+                              group.kind === 'single' ? (
+                                renderOtrosDeptRows(group.deptName, group.data, group.deptName, 'pl-6')
+                              ) : (
+                                <React.Fragment key={`otros-cat-${group.mainLabel}`}>
+                                  {(() => {
+                                    const catKey = categoryGroupStateKey('otros_indirectos', group.mainLabel)
+                                    const isCatExpanded = expandedCategoryGroups.get(catKey) !== false
                                     return (
-                                      <tr key={`${deptName}-${line.rowKey}`} className="bg-muted/10">
-                                        <td className="sticky left-0 z-10 bg-background pl-10 p-3 border-r-2">
-                                          {line.label}
-                                        </td>
-                                        {plants.map(p => (
-                                          <td key={p.plant_id} className="text-right p-3 border-r">
-                                            {formatCurrency(line.amountsByPlant.get(p.plant_id) || 0)}
+                                      <>
+                                        <tr className="bg-muted/35 dark:bg-muted/20">
+                                          <td className="sticky left-0 z-10 bg-muted/40 pl-2 p-2 border-r-2">
+                                            <button
+                                              type="button"
+                                              onClick={() =>
+                                                toggleCategoryGroupExpansion('otros_indirectos', group.mainLabel)
+                                              }
+                                              className="flex items-center gap-2 w-full text-left text-sm font-semibold hover:opacity-80"
+                                            >
+                                              {isCatExpanded ? (
+                                                <ChevronDown className="w-4 h-4 shrink-0" />
+                                              ) : (
+                                                <ChevronRight className="w-4 h-4 shrink-0" />
+                                              )}
+                                              {group.mainLabel}
+                                            </button>
                                           </td>
-                                        ))}
-                                        {renderGrandTotalCell(rowGrand, formatCurrency)}
-                                      </tr>
+                                          {plants.map(plant => (
+                                            <td
+                                              key={plant.plant_id}
+                                              className="text-right p-2 border-r text-sm font-semibold"
+                                            >
+                                              {formatCurrency(group.headerTotalsByPlant.get(plant.plant_id) || 0)}
+                                            </td>
+                                          ))}
+                                          {renderGrandTotalCell(
+                                            Array.from(group.headerTotalsByPlant.values()).reduce((s, v) => s + v, 0),
+                                            formatCurrency
+                                          )}
+                                        </tr>
+                                        {isCatExpanded
+                                          ? group.rows.map(({ deptName, data, detailLabel }) =>
+                                              renderOtrosDeptRows(deptName, data, detailLabel, 'pl-8')
+                                            )
+                                          : null}
+                                      </>
                                     )
-                                  })}
-                              </React.Fragment>
-                            )
-                          })
+                                  })()}
+                                </React.Fragment>
+                              )
+                          )
                         ) : (
                           <tr>
                             <td colSpan={plantColumnCount + 2} className="pl-6 p-3 text-muted-foreground">

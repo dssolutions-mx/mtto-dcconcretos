@@ -6,6 +6,7 @@ import type { Database } from '@/types/supabase-types'
 import { calculateDieselCostsFIFO } from '@/lib/fifo-diesel-costs'
 import { buildAssignmentHistoryMap, resolveAssetPlantAtTimestamp } from '@/lib/reporting/asset-plant-attribution'
 import { reportsVerbose } from '@/lib/reports/debug'
+import { computeMergedOperatingHoursByAsset } from '@/lib/reports/merged-operating-hours'
 
 export type GerencialReportBody = {
   dateFrom: string
@@ -546,6 +547,8 @@ export async function runGerencialReport(
         diesel_liters: 0,
         diesel_cost: 0,
         hours_worked: 0,
+        /** Sum of diesel_transactions.hours_consumed in period (before horometer/checklist merge) */
+        hours_worked_diesel_consumed: 0,
         liters_per_hour: 0,
         kilometers_worked: 0,
         liters_per_km: 0,
@@ -595,15 +598,45 @@ export async function runGerencialReport(
     })
 
     // Efficiency: use diesel-only SUM of generated columns (matches breakdown modal)
-    dieselByAsset.forEach((assetId, txs) => {
+    const dieselConsumedHoursByAsset = new Map<string, number>()
+    dieselByAsset.forEach((txs, assetId) => {
       const asset = assetMap.get(assetId)
       if (!asset) return
-      const hours_worked = txs.reduce((sum: number, t: any) => sum + Number(t.hours_consumed || 0), 0)
+      const hours_consumed_sum = txs.reduce((sum: number, t: any) => sum + Number(t.hours_consumed || 0), 0)
       const kilometers_worked = txs.reduce((sum: number, t: any) => sum + Number(t.kilometers_consumed || 0), 0)
-      asset.hours_worked = hours_worked
+      asset.hours_worked_diesel_consumed = hours_consumed_sum
+      dieselConsumedHoursByAsset.set(assetId, hours_consumed_sum)
       asset.kilometers_worked = kilometers_worked
-      asset.liters_per_hour = hours_worked > 0 && asset.diesel_liters > 0 ? asset.diesel_liters / hours_worked : 0
-      asset.liters_per_km = kilometers_worked > 0 && asset.diesel_liters > 0 ? asset.diesel_liters / kilometers_worked : 0
+      asset.liters_per_km =
+        kilometers_worked > 0 && asset.diesel_liters > 0 ? asset.diesel_liters / kilometers_worked : 0
+    })
+
+    const realAssetIds = [...assetMap.keys()].filter((id) => !String(id).startsWith('unmatched_'))
+    const { hoursByAsset: mergedHoursByAsset, diagnostics: hoursMergeDiagnostics } =
+      await computeMergedOperatingHoursByAsset(supabase as unknown as SupabaseClient, {
+        assetIds: realAssetIds,
+        dateFromStart,
+        dateToExclusive,
+        dateToExclusiveStr,
+        dieselConsumedHoursByAsset,
+        periodDieselConsumptionTxs: (dieselTxs || []) as Array<{
+          asset_id: string | null
+          hours_consumed?: number | null
+          transaction_type?: string | null
+        }>,
+      })
+
+    mergedHoursByAsset.forEach((hours, assetId) => {
+      const asset = assetMap.get(assetId)
+      if (!asset) return
+      asset.hours_worked = hours
+      asset.liters_per_hour = hours > 0 && asset.diesel_liters > 0 ? asset.diesel_liters / hours : 0
+    })
+    assetMap.forEach((asset, id) => {
+      if (String(id).startsWith('unmatched_')) return
+      if (mergedHoursByAsset.has(id)) return
+      asset.hours_worked = 0
+      asset.liters_per_hour = 0
     })
 
     // Separate POs by purpose to track cash vs inventory expenses
@@ -902,6 +935,7 @@ export async function runGerencialReport(
             concrete_m3: 0,
             total_m3: 0,
             remisiones_count: 0,
+            hours_worked_diesel_consumed: 0,
             _is_unmatched: true
           })
         }
@@ -1153,6 +1187,10 @@ export async function runGerencialReport(
       restocking_pos_count: restockingPOs.length
     }
 
+    const totalHoursDieselConsumedOnly = assetsArrayAll
+      .filter((a: any) => !a._is_unmatched)
+      .reduce((s, a: any) => s + Number(a.hours_worked_diesel_consumed || 0), 0)
+
     return {
       summary: {
         totalSales,
@@ -1164,7 +1202,14 @@ export async function runGerencialReport(
         totalConcreteM3,
         totalDieselL,
         totalRemisiones,
-        costRevenueRatio
+        costRevenueRatio,
+        total_hours: totalHours,
+        total_hours_diesel_consumed_only: totalHoursDieselConsumedOnly,
+        hours_attribution: {
+          ...hoursMergeDiagnostics,
+          method:
+            'Por activo: max(horas por avance de horómetro diésel + lecturas de checklist en el periodo, suma de hours_consumed en consumos).',
+        },
       },
       businessUnits: Array.from(buMap.values()),
       plants: Array.from(plantMap.values()),

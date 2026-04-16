@@ -44,6 +44,19 @@ const fmtNum = (n: number, d = 0) =>
 
 const fmtPct = (n: number) => `${fmtNum(n, 1)}%`
 
+/** Recharts default tooltip is low-contrast on light UI */
+const CHART_TOOLTIP_PROPS = {
+  contentStyle: {
+    backgroundColor: '#171717',
+    border: 'none',
+    borderRadius: '6px',
+    padding: '8px 12px',
+    boxShadow: '0 4px 12px rgba(0,0,0,0.12)',
+  } as React.CSSProperties,
+  labelStyle: { color: '#fafafa', fontWeight: 600 } as React.CSSProperties,
+  itemStyle: { color: '#e5e5e5' } as React.CSSProperties,
+}
+
 function shortMoneyK(n: number): string {
   if (n >= 1_000_000) return `${fmtNum(n / 1_000_000, 1)}M`
   if (n >= 1_000) return `${fmtNum(n / 1_000, 1)}K`
@@ -56,8 +69,24 @@ function shortM3(n: number): string {
   return fmtNum(n, 0)
 }
 
+type HoursAttribution = {
+  method?: string
+  diesel_consumption_tx_in_period?: number
+  diesel_tx_with_hours_consumed?: number
+  diesel_hours_consumed_sum?: number
+  diesel_horometer_rows_extended?: number
+  checklist_rows_extended?: number
+  assets_with_positive_hours?: number
+  assets_with_merged_track?: number
+}
+
 type GerencialJson = {
-  summary: GerencialSummaryForRollup & { totalSales?: number }
+  summary: GerencialSummaryForRollup & {
+    totalSales?: number
+    total_hours?: number
+    total_hours_diesel_consumed_only?: number
+    hours_attribution?: HoursAttribution
+  }
   assets: GerencialAssetForRollup[]
   filters: {
     businessUnits: { id: string; name: string }[]
@@ -190,17 +219,26 @@ export function ExecutiveAnalyticalReportClient() {
     const p1 = t > 0 ? (a.value / t) * 100 : 0
     const p2 = b && b.name !== a.name ? (b.value / t) * 100 : 0
     const n = rollup.summary.asset_count
-    const catCount = rollup.categories.filter((c) => c.maintenance_cost > 0).length
-    const extra =
-      rollup.unallocated_maintenance > 0.01
-        ? ' Parte del gasto corresponde a órdenes no vinculadas a un activo en el periodo.'
+    const equipmentSlices = pieMaintenance.filter((s) => s.name !== 'Sin asignar a activo')
+    const hasUnassigned = pieMaintenance.some((s) => s.name === 'Sin asignar a activo')
+    const segmentParts: string[] = []
+    if (equipmentSlices.length > 0) {
+      segmentParts.push(
+        `${equipmentSlices.length} categoría${equipmentSlices.length === 1 ? '' : 's'} de equipo`
+      )
+    }
+    if (hasUnassigned) segmentParts.push('gasto sin asignar a activo')
+    const segmentSentence =
+      segmentParts.length > 0
+        ? ` El gráfico muestra ${pieMaintenance.length} segmento${pieMaintenance.length === 1 ? '' : 's'}: ${segmentParts.join(' y ')}.`
         : ''
     return `${a.name} concentra el mayor gasto (${fmtPct(p1)} del total)${
       b && b.name !== a.name ? `; le sigue ${b.name} (${fmtPct(p2)})` : ''
-    }. El análisis cubre ${n} unidades con costo por activo${
-      catCount > 0 ? ` en ${catCount} categorías de equipo` : ''
-    }.${extra}`
+    }. El análisis incluye ${n} unidades en el listado de activos.${segmentSentence}`
   }, [rollup, pieMaintenance])
+
+  const hasOperatingHours = rollup ? rollup.summary.total_hours > 0 : false
+  const hoursAttr = raw?.summary?.hours_attribution
 
   const availablePlants = useMemo(() => {
     if (!raw?.filters?.plants) return []
@@ -219,7 +257,7 @@ export function ExecutiveAnalyticalReportClient() {
   return (
     <div
       data-executive-analytical-report
-      className="executive-analytical-report max-w-5xl mx-auto px-4 py-8 md:px-8 text-[#1a1a1a]"
+      className="executive-analytical-report max-w-5xl mx-auto px-4 py-8 md:px-10 text-[#1a1a1a]"
       style={
         {
           ['--er-canvas' as string]: '#fafafa',
@@ -342,8 +380,11 @@ export function ExecutiveAnalyticalReportClient() {
 
           {/* Métricas generales */}
           <section className="executive-report-avoid-break space-y-8">
-            <h2 className="text-xl font-semibold tracking-tight">Métricas generales</h2>
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-6 md:gap-10">
+            <div className="flex flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between">
+              <h2 className="text-xl font-semibold tracking-tight text-[#111]">Métricas generales</h2>
+              <p className="text-xs text-[#525252]">Totales según reporte gerencial del periodo.</p>
+            </div>
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-x-6 gap-y-8 md:gap-x-10 items-start">
               <Kpi
                 value={shortMoneyK(rollup.summary.total_maintenance)}
                 label="Gasto total"
@@ -364,12 +405,9 @@ export function ExecutiveAnalyticalReportClient() {
               <Kpi value={String(rollup.summary.asset_count)} label="Equipos" sub="unidades en el análisis" />
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div
-                className="rounded-lg border border-[var(--er-border)] p-6"
-                style={{ background: 'var(--er-accent)' }}
-              >
-                <h3 className="text-sm font-semibold text-[#1a1a1a] mb-4">Distribución de gastos (mantenimiento)</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8">
+              <div className="rounded-lg border border-[var(--er-border)] bg-[#fafafa] pl-4 pr-6 py-6 border-l-[3px] border-l-[var(--er-accent)]">
+                <h3 className="text-sm font-semibold text-[#111] mb-4">Distribución de gastos (mantenimiento)</h3>
                 <ul className="space-y-2 text-sm text-[#262626]">
                   <li>
                     Correctivo: {fmtMoneyFull(rollup.summary.total_corrective)} (
@@ -385,21 +423,30 @@ export function ExecutiveAnalyticalReportClient() {
                       : '0%'}
                     )
                   </li>
-                  <li className="pt-2 font-medium">
+                  <li className="pt-2 font-medium text-[#111]">
                     Ratio correctivo/preventivo:{' '}
                     {rollup.summary.corrective_to_preventive_ratio != null
                       ? `${fmtNum(rollup.summary.corrective_to_preventive_ratio, 2)}:1`
                       : 'N/D'}
                   </li>
+                  {rollup.summary.total_preventive <= 0 && rollup.summary.total_corrective > 0 && (
+                    <li className="pt-3 mt-3 border-t border-[var(--er-border)] text-xs text-[#525252] leading-relaxed">
+                      No hay órdenes clasificadas como preventivas en el periodo (revisar tipo de OT).
+                    </li>
+                  )}
                 </ul>
               </div>
               <div className="rounded-lg border border-[var(--er-border)] bg-white p-6">
-                <h3 className="text-sm font-semibold text-[#111] mb-4">Operación</h3>
-                <ul className="space-y-2 text-sm text-[var(--er-muted)]">
+                <h3 className="text-sm font-semibold text-[#111] mb-1">Operación</h3>
+                <p className="text-xs text-[#525252] mb-4">
+                  Horas operativas: horómetro en consumos, checklists completados y/o horas por transacción — el mayor
+                  por activo.
+                </p>
+                <ul className="space-y-3 text-sm text-[#525252]">
                   <li>
-                    Total de horas trabajadas:{' '}
+                    Horas operativas:{' '}
                     <span className="text-[#111] font-medium tabular-nums">
-                      {fmtNum(rollup.summary.total_hours, 0)} horas
+                      {fmtNum(rollup.summary.total_hours, 0)} h
                     </span>
                   </li>
                   <li>
@@ -408,7 +455,7 @@ export function ExecutiveAnalyticalReportClient() {
                   </li>
                   <li title="Indicador pendiente de definición en el sistema">
                     Cobertura de horas: <span className="text-[#111] font-medium">N/D</span>
-                    <span className="block text-xs mt-1 text-[var(--er-muted)]">
+                    <span className="block text-xs mt-1 text-[#737373]">
                       Métrica por definir (fórmula operativa pendiente).
                     </span>
                   </li>
@@ -419,19 +466,19 @@ export function ExecutiveAnalyticalReportClient() {
 
           {/* Distribución por categoría */}
           <section className="executive-report-avoid-break space-y-6 executive-report-break-after">
-            <h2 className="text-xl font-semibold tracking-tight">Distribución por categoría</h2>
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-center">
-              <div className="h-72 w-full">
+            <h2 className="text-xl font-semibold tracking-tight text-[#111]">Distribución por categoría</h2>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-10 items-start">
+              <div className="min-h-[280px] w-full overflow-visible py-2">
                 {pieMaintenance.length > 0 ? (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
+                  <ResponsiveContainer width="100%" height={280}>
+                    <PieChart margin={{ top: 12, right: 12, bottom: 12, left: 12 }}>
                       <Pie
                         data={pieMaintenance}
                         dataKey="value"
                         nameKey="name"
                         cx="50%"
                         cy="50%"
-                        outerRadius={110}
+                        outerRadius={92}
                         stroke="#fff"
                         strokeWidth={1}
                       >
@@ -439,11 +486,14 @@ export function ExecutiveAnalyticalReportClient() {
                           <Cell key={e.name} fill={e.fill} />
                         ))}
                       </Pie>
-                      <Tooltip formatter={(v: number) => fmtMoney(v)} />
+                      <Tooltip
+                        {...CHART_TOOLTIP_PROPS}
+                        formatter={(v: number | string) => fmtMoney(Number(v))}
+                      />
                     </PieChart>
                   </ResponsiveContainer>
                 ) : (
-                  <p className="text-sm text-[var(--er-muted)]">Sin gastos de mantenimiento en el periodo.</p>
+                  <p className="text-sm text-[#525252]">Sin gastos de mantenimiento en el periodo.</p>
                 )}
               </div>
               <div>
@@ -459,7 +509,7 @@ export function ExecutiveAnalyticalReportClient() {
                   ))}
                 </ul>
                 {categoryNarrative && (
-                  <p className="mt-6 text-sm leading-relaxed text-[var(--er-muted)] border-l-2 border-[var(--er-border)] pl-4">
+                  <p className="mt-6 text-sm leading-relaxed text-[#525252] border-l-2 border-[#d4d4d4] pl-4">
                     {categoryNarrative}
                   </p>
                 )}
@@ -496,7 +546,7 @@ export function ExecutiveAnalyticalReportClient() {
                         ? `${fmtNum(c.corrective_to_preventive_ratio, 2)}:1`
                         : 'N/D'}
                     </li>
-                    <li>{fmtNum(c.hours_worked, 0)} horas</li>
+                    <li>{fmtNum(c.hours_worked, 0)} h operativas</li>
                   </ul>
                 </div>
               ))}
@@ -513,27 +563,48 @@ export function ExecutiveAnalyticalReportClient() {
             </div>
           </section>
 
-          {/* Horas */}
+          {/* Horas operativas (diésel + checklist) */}
           <section className="executive-report-avoid-break space-y-6">
-            <div className="flex flex-wrap items-baseline justify-between gap-2">
-              <h2 className="text-xl font-semibold tracking-tight">Distribución de horas trabajadas</h2>
-              <p className="text-sm text-[var(--er-muted)] tabular-nums">
-                Total: {fmtNum(rollup.summary.total_hours, 0)} horas
-              </p>
+            <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between border-b border-[var(--er-border)] pb-4">
+              <div className="min-w-0 flex-1">
+                <h2 className="text-xl font-semibold tracking-tight text-[#111]">
+                  Distribución de horas operativas
+                </h2>
+                <p className="text-xs text-[#525252] mt-1 max-w-2xl leading-relaxed">
+                  Por activo se usa el mayor entre: avance de horómetro en consumos de diésel, lecturas de horas en
+                  checklists completados, y la suma de <span className="whitespace-nowrap">hours_consumed</span> por
+                  transacción. Así se alinea con el reporte gerencial y el resumen por activo; no sustituye un odómetro
+                  oficial si faltan lecturas.
+                </p>
+              </div>
+              <div className="shrink-0 text-left sm:text-right">
+                <p className="text-xs font-medium uppercase tracking-wide text-[#737373]">Total periodo</p>
+                <p className="text-lg font-semibold tabular-nums text-[#111]">
+                  {fmtNum(rollup.summary.total_hours, 0)} h
+                </p>
+                {raw.summary?.total_hours_diesel_consumed_only != null &&
+                  raw.summary.total_hours_diesel_consumed_only > 0 &&
+                  rollup.summary.total_hours !== raw.summary.total_hours_diesel_consumed_only && (
+                    <p className="text-xs text-[#737373] mt-1 max-w-[220px] sm:ml-auto">
+                      Solo por <span className="whitespace-nowrap">hours_consumed</span>:{' '}
+                      {fmtNum(raw.summary.total_hours_diesel_consumed_only, 1)} h
+                    </p>
+                  )}
+              </div>
             </div>
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-              <div className="h-64 lg:col-span-1">
-                {pieHours.length > 0 ? (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
+            {hasOperatingHours ? (
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 lg:gap-10 items-start">
+                <div className="min-h-[260px] w-full overflow-visible py-2 lg:col-span-1">
+                  <ResponsiveContainer width="100%" height={260}>
+                    <PieChart margin={{ top: 12, right: 12, bottom: 12, left: 12 }}>
                       <Pie
                         data={pieHours}
                         dataKey="value"
                         nameKey="name"
                         cx="50%"
                         cy="50%"
-                        innerRadius={48}
-                        outerRadius={80}
+                        innerRadius={44}
+                        outerRadius={72}
                         stroke="#fff"
                         strokeWidth={1}
                       >
@@ -541,33 +612,81 @@ export function ExecutiveAnalyticalReportClient() {
                           <Cell key={e.name} fill={e.fill} />
                         ))}
                       </Pie>
-                      <Tooltip formatter={(v: number) => fmtNum(Number(v), 0) + ' h'} />
+                      <Tooltip
+                        {...CHART_TOOLTIP_PROPS}
+                        formatter={(v: number | string) => `${fmtNum(Number(v), 0)} h`}
+                      />
                     </PieChart>
                   </ResponsiveContainer>
-                ) : (
-                  <p className="text-sm text-[var(--er-muted)]">Sin horas registradas.</p>
+                </div>
+                <div className="lg:col-span-2 grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  {top3Hours.map((t) => (
+                    <div
+                      key={t.name}
+                      className="flex flex-col items-center justify-center rounded-lg border border-[var(--er-border)] py-6 px-3 bg-white"
+                    >
+                      <span className="text-2xl font-semibold tabular-nums text-[#111]">
+                        {fmtPct(t.pct)}
+                      </span>
+                      <span className="text-xs font-medium text-[#525252] mt-2 text-center">{t.name}</span>
+                      <span className="text-sm tabular-nums text-[#404040] mt-1">{fmtNum(t.hours, 0)} h</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="rounded-lg border border-[var(--er-border)] bg-[#fafafa] p-6 space-y-4 max-w-4xl">
+                <p className="font-medium text-[#111]">Sin horas operativas calculadas en el periodo</p>
+                <p className="text-sm text-[#525252] leading-relaxed">
+                  Puede haber producción (m³) y mantenimiento sin que exista una cadena válida de lecturas (horómetro en
+                  diésel o checklist) o <span className="whitespace-nowrap">hours_consumed</span> en consumos. Revise el
+                  detalle numérico siguiente o cargue lecturas en consumos y checklists.
+                </p>
+                {hoursAttr && (
+                  <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-3 text-sm border-t border-[var(--er-border)] pt-4">
+                    <dt className="text-[#525252]">Consumos diésel (periodo, con activo)</dt>
+                    <dd className="font-medium tabular-nums text-[#111] text-right sm:text-left">
+                      {hoursAttr.diesel_consumption_tx_in_period ?? '—'}
+                    </dd>
+                    <dt className="text-[#525252]">Consumos con horas declaradas (hours_consumed &gt; 0)</dt>
+                    <dd className="font-medium tabular-nums text-[#111] text-right sm:text-left">
+                      {hoursAttr.diesel_tx_with_hours_consumed ?? '—'}
+                    </dd>
+                    <dt className="text-[#525252]">Suma hours_consumed en periodo</dt>
+                    <dd className="font-medium tabular-nums text-[#111] text-right sm:text-left">
+                      {hoursAttr.diesel_hours_consumed_sum != null
+                        ? `${fmtNum(hoursAttr.diesel_hours_consumed_sum, 1)} h`
+                        : '—'}
+                    </dd>
+                    <dt className="text-[#525252]">Lecturas horómetro (ventana ±30 días)</dt>
+                    <dd className="font-medium tabular-nums text-[#111] text-right sm:text-left">
+                      {hoursAttr.diesel_horometer_rows_extended ?? '—'}
+                    </dd>
+                    <dt className="text-[#525252]">Checklists con horómetro equipo (ventana ±30 días)</dt>
+                    <dd className="font-medium tabular-nums text-[#111] text-right sm:text-left">
+                      {hoursAttr.checklist_rows_extended ?? '—'}
+                    </dd>
+                    <dt className="text-[#525252]">Activos con horas &gt; 0</dt>
+                    <dd className="font-medium tabular-nums text-[#111] text-right sm:text-left">
+                      {hoursAttr.assets_with_positive_hours ?? '—'}
+                    </dd>
+                  </dl>
                 )}
               </div>
-              <div className="lg:col-span-2 grid grid-cols-1 sm:grid-cols-3 gap-4">
-                {top3Hours.map((t) => (
-                  <div
-                    key={t.name}
-                    className="flex flex-col items-center justify-center rounded-lg border border-[var(--er-border)] py-6 px-3 bg-white"
-                  >
-                    <span className="text-2xl font-semibold tabular-nums text-[#111]">
-                      {fmtPct(t.pct)}
-                    </span>
-                    <span className="text-xs font-medium text-[var(--er-muted)] mt-2 text-center">{t.name}</span>
-                    <span className="text-sm tabular-nums text-[#444] mt-1">{fmtNum(t.hours, 0)} horas</span>
-                  </div>
-                ))}
-              </div>
-            </div>
+            )}
           </section>
 
           {/* Top 10 gasto */}
           <section className="executive-report-avoid-break space-y-4">
-            <h2 className="text-xl font-semibold tracking-tight">Top 10 equipos por gasto (mantenimiento)</h2>
+            <h2 className="text-xl font-semibold tracking-tight text-[#111]">
+              Top 10 equipos por gasto (mantenimiento)
+            </h2>
+            {rollup.top10_by_maintenance.length < 10 && rollup.top10_by_maintenance.length > 0 && (
+              <p className="text-sm text-[#525252]">
+                Se muestran {rollup.top10_by_maintenance.length} equipo
+                {rollup.top10_by_maintenance.length === 1 ? '' : 's'} con gasto de mantenimiento en el periodo.
+              </p>
+            )}
             <ol className="space-y-4">
               {rollup.top10_by_maintenance.map((r, i) => (
                 <li key={r.id} className="flex gap-4">
@@ -606,7 +725,7 @@ export function ExecutiveAnalyticalReportClient() {
                     >
                       <XAxis type="number" tickFormatter={(v) => fmtMoney(Number(v))} />
                       <YAxis type="category" dataKey="code" width={88} tick={{ fontSize: 11 }} />
-                      <Tooltip formatter={(v: number) => fmtMoney(v)} />
+                      <Tooltip {...CHART_TOOLTIP_PROPS} formatter={(v: number) => fmtMoney(v)} />
                       <Bar dataKey="maintenance_cost" radius={[0, 4, 4, 0]}>
                         {rollup.mixer_bar_rows.map((row, i) => (
                           <Cell
@@ -674,8 +793,8 @@ export function ExecutiveAnalyticalReportClient() {
 
           {/* Operativas + metadatos */}
           <section className="executive-report-avoid-break space-y-8">
-            <h2 className="text-xl font-semibold tracking-tight">Métricas operativas y resumen</h2>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+            <h2 className="text-xl font-semibold tracking-tight text-[#111]">Métricas operativas y resumen</h2>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-8 md:gap-10 items-start">
               <Kpi
                 value={rollup.summary.cost_per_m3 != null ? fmtNum(rollup.summary.cost_per_m3, 2) : '—'}
                 label="Costo por m³"
@@ -683,27 +802,34 @@ export function ExecutiveAnalyticalReportClient() {
               />
               <Kpi
                 value={
-                  rollup.summary.cost_per_hour_global != null
+                  hasOperatingHours && rollup.summary.cost_per_hour_global != null
                     ? fmtNum(rollup.summary.cost_per_hour_global, 2)
-                    : '—'
+                    : 'N/D'
                 }
                 label="Costo por hora"
-                sub="MXN (mantenimiento / horas)"
+                sub={
+                  hasOperatingHours
+                    ? 'MXN por hora (mantenimiento total / horas operativas)'
+                    : 'Requiere horas operativas en el periodo'
+                }
               />
               <Kpi
                 value={
-                  rollup.summary.production_per_hour != null
+                  hasOperatingHours && rollup.summary.production_per_hour != null
                     ? fmtNum(rollup.summary.production_per_hour, 2)
-                    : '—'
+                    : 'N/D'
                 }
                 label="Producción por hora"
-                sub="m³/h"
+                sub={
+                  hasOperatingHours ? 'm³ por hora operativa' : 'Requiere horas operativas en el periodo'
+                }
               />
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8">
               <div>
-                <h3 className="text-sm font-semibold mb-3">Mayor utilización (horas)</h3>
+                <h3 className="text-sm font-semibold text-[#111] mb-1">Mayor utilización (horas operativas)</h3>
+                <p className="text-xs text-[#525252] mb-3">Ranking por horas operativas calculadas por activo.</p>
                 <div className="grid grid-cols-2 gap-3">
                   {topAssetsByHours.map((a, idx) => (
                     <div
@@ -713,43 +839,44 @@ export function ExecutiveAnalyticalReportClient() {
                       }`}
                       style={{ background: 'var(--er-card-tint)' }}
                     >
-                      <p className="font-semibold">{a.asset_code}</p>
-                      <p className="text-sm text-[var(--er-muted)] tabular-nums">
-                        {fmtNum(Number(a.hours_worked || 0), 0)} horas
+                      <p className="font-semibold text-[#111]">{a.asset_code}</p>
+                      <p className="text-sm text-[#525252] tabular-nums">
+                        {fmtNum(Number(a.hours_worked || 0), 0)} h
                       </p>
                     </div>
                   ))}
                 </div>
               </div>
-              <div
-                className="rounded-lg border border-[var(--er-border)] p-6"
-                style={{ background: 'var(--er-accent)' }}
-              >
-                <h3 className="text-sm font-semibold text-[#1a1a1a] mb-4">Información del análisis</h3>
+              <div className="rounded-lg border border-[var(--er-border)] bg-[#fafafa] pl-4 pr-6 py-6 border-l-[3px] border-l-[var(--er-accent)]">
+                <h3 className="text-sm font-semibold text-[#111] mb-4">Información del análisis</h3>
                 <dl className="space-y-2 text-sm text-[#262626]">
                   <div className="flex justify-between gap-4">
-                    <dt className="text-[#404040]">Periodo</dt>
-                    <dd className="font-medium tabular-nums text-right">
+                    <dt className="text-[#525252]">Periodo</dt>
+                    <dd className="font-medium tabular-nums text-right text-[#111]">
                       {rollup.period.dateFrom} — {rollup.period.dateTo}
                     </dd>
                   </div>
                   <div className="flex justify-between gap-4">
-                    <dt className="text-[#404040]">Equipos</dt>
-                    <dd className="font-medium text-right">{rollup.summary.asset_count} unidades</dd>
+                    <dt className="text-[#525252]">Equipos</dt>
+                    <dd className="font-medium text-right text-[#111]">{rollup.summary.asset_count} unidades</dd>
                   </div>
                   <div className="flex justify-between gap-4">
-                    <dt className="text-[#404040]">Categorías</dt>
-                    <dd className="font-medium text-right">7 tipos</dd>
+                    <dt className="text-[#525252]">Categorías modelo</dt>
+                    <dd className="font-medium text-right text-[#111]">7 tipos</dd>
                   </div>
                   <div className="flex justify-between gap-4">
-                    <dt className="text-[#404040]">Cobertura horas</dt>
-                    <dd className="font-medium text-right">N/D</dd>
+                    <dt className="text-[#525252]">Cobertura horas</dt>
+                    <dd className="font-medium text-right text-[#111]">N/D</dd>
                   </div>
                   <div className="flex justify-between gap-4">
-                    <dt className="text-[#404040]">Fuente</dt>
-                    <dd className="font-medium text-right">Reporte gerencial</dd>
+                    <dt className="text-[#525252]">Fuente</dt>
+                    <dd className="font-medium text-right text-[#111]">Reporte gerencial</dd>
                   </div>
                 </dl>
+                <p className="mt-4 text-xs text-[#737373] leading-relaxed border-t border-[var(--er-border)] pt-3">
+                  Horas y ratios que las usan siguen la misma regla que el reporte gerencial: horómetro, checklist y/o
+                  hours_consumed por consumo.
+                </p>
               </div>
             </div>
           </section>

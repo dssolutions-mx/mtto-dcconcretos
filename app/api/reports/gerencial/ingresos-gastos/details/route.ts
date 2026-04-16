@@ -10,6 +10,15 @@ export async function GET(req: NextRequest) {
     const month = searchParams.get('month') // YYYY-MM format
     const plantId = searchParams.get('plantId')
     const category = searchParams.get('category') // 'nomina' | 'otros_indirectos'
+    /** Comma-separated plant UUIDs in the same scope as the Ingresos vs Gastos table (for distribution divisors). */
+    const scopePlantIdsParam = searchParams.get('scopePlantIds')
+    const scopePlantIdSet = new Set(
+      (scopePlantIdsParam || '')
+        .split(',')
+        .map(s => s.trim())
+        .filter(Boolean)
+    )
+    const useScopeForSplits = scopePlantIdSet.size > 0
 
     if (!month || !plantId || !category) {
       return NextResponse.json(
@@ -98,6 +107,9 @@ export async function GET(req: NextRequest) {
       department: string | null
       is_distributed: boolean
       distribution_method: string | null
+      notes: string | null
+      is_bonus: boolean
+      is_cash_payment: boolean
     }> = []
 
     ;(adjustments || []).forEach(adj => {
@@ -112,7 +124,10 @@ export async function GET(req: NextRequest) {
           amount: Number(adj.amount || 0),
           department: adj.department,
           is_distributed: Boolean(adj.is_distributed),
-          distribution_method: adj.distribution_method
+          distribution_method: adj.distribution_method,
+          notes: adj.notes ?? null,
+          is_bonus: Boolean(adj.is_bonus),
+          is_cash_payment: Boolean(adj.is_cash_payment),
         })
       }
 
@@ -130,12 +145,18 @@ export async function GET(req: NextRequest) {
               amount: Number(dist.amount || 0),
               department: dist.department || adj.department,
               is_distributed: true,
-              distribution_method: adj.distribution_method
+              distribution_method: adj.distribution_method,
+              notes: adj.notes ?? null,
+              is_bonus: Boolean(adj.is_bonus),
+              is_cash_payment: Boolean(adj.is_cash_payment),
             })
           } else if (dist.business_unit_id) {
             const buPlantIds = plantsByBusinessUnit.get(dist.business_unit_id) || []
-            if (buPlantIds.includes(plantId) && buPlantIds.length > 0) {
-              const amountPerPlant = Number(dist.amount || 0) / buPlantIds.length
+            const scopedBu = useScopeForSplits
+              ? buPlantIds.filter(id => scopePlantIdSet.has(id))
+              : buPlantIds
+            if (scopedBu.includes(plantId) && scopedBu.length > 0) {
+              const amountPerPlant = Number(dist.amount || 0) / scopedBu.length
               entries.push({
                 id: `${adj.id}-${dist.id}-bu`,
                 description: adj.description,
@@ -145,13 +166,19 @@ export async function GET(req: NextRequest) {
                 amount: amountPerPlant,
                 department: dist.department || adj.department,
                 is_distributed: true,
-                distribution_method: adj.distribution_method
+                distribution_method: adj.distribution_method,
+                notes: adj.notes ?? null,
+                is_bonus: Boolean(adj.is_bonus),
+                is_cash_payment: Boolean(adj.is_cash_payment),
               })
             }
           } else if (dist.department) {
             const departmentPlants = departmentToPlants.get(dist.department) || []
-            if (departmentPlants.includes(plantId)) {
-              const amountPerPlant = Number(dist.amount || 0) / departmentPlants.length
+            const targets = useScopeForSplits
+              ? departmentPlants.filter(pid => scopePlantIdSet.has(pid))
+              : departmentPlants
+            if (targets.includes(plantId) && targets.length > 0) {
+              const amountPerPlant = Number(dist.amount || 0) / targets.length
               entries.push({
                 id: `${adj.id}-${dist.id}-dept`,
                 description: adj.description,
@@ -161,7 +188,10 @@ export async function GET(req: NextRequest) {
                 amount: amountPerPlant,
                 department: dist.department,
                 is_distributed: true,
-                distribution_method: adj.distribution_method
+                distribution_method: adj.distribution_method,
+                notes: adj.notes ?? null,
+                is_bonus: Boolean(adj.is_bonus),
+                is_cash_payment: Boolean(adj.is_cash_payment),
               })
             }
           }
@@ -212,6 +242,9 @@ export async function GET(req: NextRequest) {
           amount: number
           is_distributed: boolean
           distribution_method: string | null
+          notes: string | null
+          is_bonus: boolean
+          is_cash_payment: boolean
         }>
       }> = []
 
@@ -258,7 +291,10 @@ export async function GET(req: NextRequest) {
                 expense_subcategory: e.expense_subcategory,
                 amount: e.amount,
                 is_distributed: e.is_distributed,
-                distribution_method: e.distribution_method
+                distribution_method: e.distribution_method,
+                notes: e.notes,
+                is_bonus: e.is_bonus,
+                is_cash_payment: e.is_cash_payment,
               }))
             })
           } else {
@@ -278,7 +314,10 @@ export async function GET(req: NextRequest) {
                   expense_subcategory: e.expense_subcategory,
                   amount: e.amount,
                   is_distributed: e.is_distributed,
-                  distribution_method: e.distribution_method
+                  distribution_method: e.distribution_method,
+                  notes: e.notes,
+                  is_bonus: e.is_bonus,
+                  is_cash_payment: e.is_cash_payment,
                 }))
               })
             })
@@ -315,7 +354,10 @@ export async function GET(req: NextRequest) {
                 expense_subcategory: 'Instalación / Autoconsumo',
                 amount: autoconsumoTotal,
                 is_distributed: false,
-                distribution_method: null
+                distribution_method: null,
+                notes: null,
+                is_bonus: false,
+                is_cash_payment: false,
               }]
             }
             departments.unshift(autoconsumoDept)
@@ -351,7 +393,10 @@ export async function GET(req: NextRequest) {
           expense_subcategory: e.expense_subcategory,
           amount: e.amount,
           is_distributed: e.is_distributed,
-          distribution_method: e.distribution_method
+          distribution_method: e.distribution_method,
+          notes: e.notes,
+          is_bonus: e.is_bonus,
+          is_cash_payment: e.is_cash_payment,
         }))
       }))
 
