@@ -264,7 +264,7 @@ export async function PUT(
     if (body.new_status === 'validated') {
       const { data: purchaseOrder } = await supabase
         .from('purchase_orders')
-        .select('id, po_purpose, work_order_type, approval_amount, total_amount')
+        .select('id, status, po_purpose, work_order_type, approval_amount, total_amount')
         .eq('id', id)
         .maybeSingle()
 
@@ -279,7 +279,13 @@ export async function PUT(
         approvalAmount: amountForViability,
       })
 
-      if (policy.requiresViability) {
+      // "Validar comprobante" sends new_status = validated after receipt_uploaded. The viability
+      // shortcut must only run during pending_approval; otherwise status can be overwritten with
+      // approved and the workflow rewinds (special_order + requiresViability).
+      const viabilityIntercept =
+        policy.requiresViability && purchaseOrder?.status === 'pending_approval'
+
+      if (viabilityIntercept) {
         const canReviewViability =
           checkViabilityReviewAuthority(actor) || checkGMEscalationAuthority(actor)
 
@@ -345,7 +351,14 @@ export async function PUT(
           workflow_advanced: false,
           viability_recorded: true,
         })
-      } else if (!canValidateReceipts(actor)) {
+      }
+
+      const receiptValidationStatuses: readonly string[] = ['receipt_uploaded', 'fulfilled']
+      if (
+        purchaseOrder?.status &&
+        receiptValidationStatuses.includes(purchaseOrder.status) &&
+        !canValidateReceipts(actor)
+      ) {
         return NextResponse.json({
           error: 'Solo Gerencia General o Área Administrativa con límites de autorización asignados pueden validar comprobantes.'
         }, { status: 403 })

@@ -140,10 +140,10 @@ export function WorkflowStatusDisplay({
           if (orderData && ['approved', 'purchased', 'fulfilled', 'receipt_uploaded', 'validated', 'completed'].includes(orderData.status)) {
             const receiptsResponse = await fetch(`/api/purchase-orders/${purchaseOrderId}/receipts`)
             if (receiptsResponse.ok) {
-              const receipts = await receiptsResponse.json()
-              if (receipts.length > 0) {
-                // Use the most recent receipt
-                setReceiptUrl(receipts[0].file_url)
+              const payload = await receiptsResponse.json()
+              const list = Array.isArray(payload) ? payload : payload.receipts ?? []
+              if (list.length > 0) {
+                setReceiptUrl(list[0].file_url)
               }
             }
           }
@@ -1627,10 +1627,10 @@ export function WorkflowStatusDisplay({
                     <div className="space-y-4">
                       <div className="space-y-2">
                         <Label>Comprobante a Validar</Label>
-                        <div className="p-4 border rounded-lg bg-blue-50">
+                        <div className="p-4 border rounded-lg bg-blue-50 space-y-3">
                           <div className="flex items-center space-x-3">
-                            <Receipt className="h-6 w-6 text-blue-600" />
-                            <div className="flex-1">
+                            <Receipt className="h-6 w-6 text-blue-600 shrink-0" />
+                            <div className="flex-1 min-w-0">
                               <p className="font-medium">Comprobante subido</p>
                               <p className="text-sm text-muted-foreground">
                                 Revisa el archivo antes de validar
@@ -1640,11 +1640,25 @@ export function WorkflowStatusDisplay({
                               href={receiptUrl} 
                               target="_blank" 
                               rel="noopener noreferrer"
-                              className="flex items-center space-x-1 text-blue-600 hover:underline"
+                              className="flex items-center space-x-1 text-blue-600 hover:underline shrink-0"
                             >
                               <ExternalLink className="h-4 w-4" />
                               <span>Ver Comprobante</span>
                             </a>
+                          </div>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2 border-t border-blue-200/80 text-sm">
+                            <div>
+                              <p className="text-xs text-muted-foreground">Monto autorizado</p>
+                              <p className="font-semibold tabular-nums">{formatCurrency(purchaseOrderAmount)}</p>
+                            </div>
+                            <div>
+                              <p className="text-xs text-muted-foreground">Monto real (comprobante)</p>
+                              <p className="font-semibold tabular-nums text-green-700">
+                                {actualAmount.trim() !== ""
+                                  ? formatCurrency(actualAmount)
+                                  : "—"}
+                              </p>
+                            </div>
                           </div>
                         </div>
                       </div>
@@ -1674,7 +1688,7 @@ export function WorkflowStatusDisplay({
                       isUpdating || 
                       isUploading ||
                       (requiresNotes && !notes.trim()) ||
-                      (primaryAction === 'receipt_uploaded' && !uploadedFile) ||
+                      (primaryAction === 'receipt_uploaded' && !uploadedFile && !receiptUrl) ||
                       !canPerformAction
                     }
                     className="w-full"

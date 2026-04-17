@@ -441,7 +441,11 @@ export function PurchaseOrderDetailsMobile({
       {order.notes && (
         <Card>
           <CardHeader className="p-5 md:p-6">
-            <CardTitle className="text-lg">Notas</CardTitle>
+            <CardTitle className="text-lg">
+              {order.status === "receipt_uploaded"
+                ? "Notas / justificación del comprobante"
+                : "Notas"}
+            </CardTitle>
           </CardHeader>
           <CardContent className="p-5 md:p-6 pt-0">
             <p className="text-sm whitespace-pre-wrap">{order.notes}</p>
@@ -543,7 +547,9 @@ export function PurchaseOrderDetailsMobile({
       {/* Receipts - after approval */}
       {order.po_type &&
        order.status &&
-       ['approved', 'purchased', 'receipt_uploaded', 'completed', 'validated'].includes(order.status) && (
+       ["approved", "purchased", "ordered", "receipt_uploaded", "fulfilled", "validated"].includes(
+         order.status
+       ) && (
         <ReceiptDisplaySection purchaseOrderId={order.id} poType={order.po_type} />
       )}
 

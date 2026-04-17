@@ -352,7 +352,9 @@ async function PurchaseOrderDetailsContent({ id }: { id: string }) {
                   <Separator />
                   <div className="py-3 space-y-1.5">
                     <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
-                      Notas
+                      {order.status === "receipt_uploaded"
+                        ? "Notas / justificación del comprobante"
+                        : "Notas"}
                     </p>
                     <p className="text-sm whitespace-pre-wrap break-words">{order.notes}</p>
                   </div>
