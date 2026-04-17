@@ -12,6 +12,8 @@ import { createClient } from '@supabase/supabase-js'
 import * as fs from 'fs'
 import * as path from 'path'
 
+import { normalizeManualAdjustmentSpanishLabel } from '../lib/reports/manual-adjustment-typography'
+
 require('dotenv').config({ path: '.env.local' })
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!
@@ -196,9 +198,14 @@ async function createManualCost(
     plant_id: entry.plantId || null,
     period_month: PERIOD_MONTH,
     category: 'otros_indirectos',
-    department: entry.department || null,
-    expense_category: entry.expenseCategory,
-    expense_subcategory: entry.expenseSubcategory || null,
+    department:
+      (normalizeManualAdjustmentSpanishLabel(entry.department) ?? entry.department) || null,
+    expense_category:
+      normalizeManualAdjustmentSpanishLabel(entry.expenseCategory) ?? entry.expenseCategory,
+    expense_subcategory:
+      normalizeManualAdjustmentSpanishLabel(entry.expenseSubcategory) ??
+      entry.expenseSubcategory ||
+      null,
     description: entry.description,
     amount: entry.amount,
     notes: entry.notes || null,

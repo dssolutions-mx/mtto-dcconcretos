@@ -37,6 +37,7 @@ test-results/
 
 # Script outputs (employee sync dry-runs, etc.)
 scripts/out/
+scripts/output/
 
 # macOS
 .DS_Store

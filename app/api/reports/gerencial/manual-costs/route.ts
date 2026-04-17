@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createServerSupabase } from '@/lib/supabase-server'
 import { EXPENSE_CATEGORIES, getExpenseCategoryById, isValidSubcategory, getValidCategoryIds } from '@/lib/constants/expense-categories'
 import { revalidateIngresosGastosReportCache } from '@/lib/reports/ingresos-gastos-cache'
+import {
+  normalizeManualAdjustmentDepartment,
+  normalizeManualAdjustmentOptionalLabel,
+} from '@/lib/reports/manual-adjustment-typography'
 
 // GET: Fetch manual costs for a specific month
 export async function GET(req: NextRequest) {
@@ -119,8 +123,9 @@ export async function POST(req: NextRequest) {
         )
       }
 
-      // Validate expense subcategory if provided
-      if (expenseSubcategory && !isValidSubcategory(expenseCategory, expenseSubcategory)) {
+      // Validate expense subcategory if provided (normalize typography before catalog check)
+      const expenseSubNorm = normalizeManualAdjustmentOptionalLabel(expenseSubcategory)
+      if (expenseSubNorm && !isValidSubcategory(expenseCategory, expenseSubNorm)) {
         return NextResponse.json(
           { error: `expenseSubcategory "${expenseSubcategory}" is not valid for expenseCategory "${expenseCategory}"` },
           { status: 400 }
@@ -201,10 +206,13 @@ export async function POST(req: NextRequest) {
       plant_id: plantId || null, // Only store plant if directly assigned (not distributed)
       period_month: periodMonth,
       category,
-      department: department || null,
-      subcategory: subcategory || null,
+      department: normalizeManualAdjustmentDepartment(department),
+      subcategory: normalizeManualAdjustmentOptionalLabel(subcategory),
       expense_category: category === 'otros_indirectos' ? expenseCategory : null,
-      expense_subcategory: category === 'otros_indirectos' ? (expenseSubcategory || null) : null,
+      expense_subcategory:
+        category === 'otros_indirectos'
+          ? normalizeManualAdjustmentOptionalLabel(expenseSubcategory)
+          : null,
       description: description || null,
       amount: totalAmount,
       notes: notes || null,
@@ -246,7 +254,7 @@ export async function POST(req: NextRequest) {
           adjustment_id: adjustment.id,
           business_unit_id: dist.businessUnitId || null,
           plant_id: dist.plantId || null,
-          department: dist.department || null,
+          department: normalizeManualAdjustmentDepartment(dist.department),
           percentage: calculatedPercentage,
           amount: calculatedAmount,
           volume_m3: dist.volumeM3 || null,
@@ -337,7 +345,7 @@ export async function PUT(req: NextRequest) {
     // Fetch current adjustment to check category and if it's distributed
     const { data: currentAdjustment, error: fetchError } = await supabase
       .from('manual_financial_adjustments')
-      .select('id, category, is_distributed, amount')
+      .select('id, category, is_distributed, amount, expense_category')
       .eq('id', id)
       .single()
 
@@ -368,7 +376,8 @@ export async function PUT(req: NextRequest) {
       // Validate expense subcategory if provided
       if (expenseSubcategory !== undefined && expenseSubcategory) {
         const categoryToValidate = expenseCategory || currentAdjustment.expense_category
-        if (categoryToValidate && !isValidSubcategory(categoryToValidate, expenseSubcategory)) {
+        const expenseSubNorm = normalizeManualAdjustmentOptionalLabel(expenseSubcategory)
+        if (categoryToValidate && expenseSubNorm && !isValidSubcategory(categoryToValidate, expenseSubNorm)) {
           return NextResponse.json(
             { error: `expenseSubcategory "${expenseSubcategory}" is not valid for expenseCategory "${categoryToValidate}"` },
             { status: 400 }
@@ -390,8 +399,8 @@ export async function PUT(req: NextRequest) {
       updated_at: new Date().toISOString()
     }
 
-    if (department !== undefined) updateData.department = department
-    if (subcategory !== undefined) updateData.subcategory = subcategory
+    if (department !== undefined) updateData.department = normalizeManualAdjustmentDepartment(department)
+    if (subcategory !== undefined) updateData.subcategory = normalizeManualAdjustmentOptionalLabel(subcategory)
     if (description !== undefined) updateData.description = description
     if (amount !== undefined) updateData.amount = parseFloat(amount)
     if (notes !== undefined) updateData.notes = notes
@@ -402,7 +411,9 @@ export async function PUT(req: NextRequest) {
     // Handle expense category fields
     if (category === 'otros_indirectos') {
       if (expenseCategory !== undefined) updateData.expense_category = expenseCategory
-      if (expenseSubcategory !== undefined) updateData.expense_subcategory = expenseSubcategory || null
+      if (expenseSubcategory !== undefined) {
+        updateData.expense_subcategory = normalizeManualAdjustmentOptionalLabel(expenseSubcategory)
+      }
     } else {
       // Clear expense category fields if switching from otros_indirectos to nomina (shouldn't happen, but handle it)
       if (expenseCategory !== undefined) updateData.expense_category = null
@@ -475,7 +486,7 @@ export async function PUT(req: NextRequest) {
             adjustment_id: id,
             business_unit_id: dist.businessUnitId || null,
             plant_id: dist.plantId || null,
-            department: dist.department || null,
+            department: normalizeManualAdjustmentDepartment(dist.department),
             percentage: calculatedPercentage,
             amount: calculatedAmount,
             volume_m3: dist.volumeM3 || null,
