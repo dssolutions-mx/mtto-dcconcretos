@@ -54,7 +54,7 @@
 | Route or API | Enforcement | Verified file | POL / SOP | Status |
 |--------------|-------------|---------------|-----------|--------|
 | (nav + pages) | `ModulePermissions.assets` via sidebar / guards | `components/sidebar.tsx` | POL002 Movimientos | UNVERIFIED per-route |
-| Asset operators API | `loadActorContext` | `app/api/asset-operators/route.ts`, `transfer/route.ts` | POL002 asignación | PARTIAL |
+| Asset operators API | `loadActorContext` + `assertMayMutateAssetOperatorRow` / `assertMayTransferAssetOperator` (RH/GG/GM global; JUN/JP scoped to BU/plant) | `app/api/asset-operators/route.ts`, `transfer/route.ts` | POL002 asignación | OK |
 
 ---
 

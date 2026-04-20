@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
-import { loadActorContext, canManageAssetOperators } from '@/lib/auth/server-authorization'
+import {
+  assertMayMutateAssetOperatorRow,
+  loadActorContext,
+} from '@/lib/auth/server-authorization'
 
 export async function GET(request: NextRequest) {
   try {
@@ -92,9 +95,6 @@ export async function POST(request: NextRequest) {
     }
 
     const actor = await loadActorContext(supabase, user.id)
-    if (!canManageAssetOperators(actor)) {
-      return NextResponse.json({ error: 'Forbidden: Only RH or General Management can manage asset operators' }, { status: 403 })
-    }
 
     const {
       asset_id,
@@ -109,6 +109,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ 
         error: 'Asset ID and Operator ID are required' 
       }, { status: 400 })
+    }
+
+    const postGate = await assertMayMutateAssetOperatorRow(supabase, actor, {
+      assetId: asset_id,
+      operatorId: operator_id,
+    })
+    if (!postGate.ok) {
+      return NextResponse.json({ error: postGate.error }, { status: postGate.status })
     }
 
     // Check if active assignment already exists
@@ -209,9 +217,6 @@ export async function PUT(request: NextRequest) {
     }
 
     const putActor = await loadActorContext(supabase, user.id)
-    if (!canManageAssetOperators(putActor)) {
-      return NextResponse.json({ error: 'Forbidden: Only RH or General Management can manage asset operators' }, { status: 403 })
-    }
 
     const {
       id,
@@ -225,6 +230,24 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ 
         error: 'Assignment ID is required' 
       }, { status: 400 })
+    }
+
+    const { data: existingPut, error: existingPutErr } = await supabase
+      .from('asset_operators')
+      .select('asset_id, operator_id')
+      .eq('id', id)
+      .maybeSingle()
+
+    if (existingPutErr || !existingPut) {
+      return NextResponse.json({ error: 'Assignment not found' }, { status: 404 })
+    }
+
+    const putGate = await assertMayMutateAssetOperatorRow(supabase, putActor, {
+      assetId: existingPut.asset_id,
+      operatorId: existingPut.operator_id,
+    })
+    if (!putGate.ok) {
+      return NextResponse.json({ error: putGate.error }, { status: putGate.status })
     }
 
     // Update the assignment
@@ -283,9 +306,6 @@ export async function DELETE(request: NextRequest) {
     }
 
     const delActor = await loadActorContext(supabase, user.id)
-    if (!canManageAssetOperators(delActor)) {
-      return NextResponse.json({ error: 'Forbidden: Only RH or General Management can manage asset operators' }, { status: 403 })
-    }
 
     if (!id) {
       return NextResponse.json({ 
@@ -296,12 +316,20 @@ export async function DELETE(request: NextRequest) {
     // First, get the assignment details before deleting
     const { data: assignmentToDelete, error: fetchError } = await supabase
       .from('asset_operators')
-      .select('asset_id, assignment_type')
+      .select('asset_id, operator_id, assignment_type')
       .eq('id', id)
-      .single()
+      .maybeSingle()
 
     if (fetchError || !assignmentToDelete) {
       return NextResponse.json({ error: 'Assignment not found' }, { status: 404 })
+    }
+
+    const delGate = await assertMayMutateAssetOperatorRow(supabase, delActor, {
+      assetId: assignmentToDelete.asset_id,
+      operatorId: assignmentToDelete.operator_id,
+    })
+    if (!delGate.ok) {
+      return NextResponse.json({ error: delGate.error }, { status: delGate.status })
     }
 
     // Soft delete by setting status to 'inactive' and end_date

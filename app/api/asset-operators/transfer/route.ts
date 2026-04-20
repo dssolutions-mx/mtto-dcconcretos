@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
-import { loadActorContext, canManageAssetOperators } from '@/lib/auth/server-authorization'
+import {
+  assertMayTransferAssetOperator,
+  loadActorContext,
+} from '@/lib/auth/server-authorization'
 
 export async function POST(request: NextRequest) {
   try {
@@ -14,9 +17,6 @@ export async function POST(request: NextRequest) {
     }
 
     const transferActor = await loadActorContext(supabase, user.id)
-    if (!canManageAssetOperators(transferActor)) {
-      return NextResponse.json({ error: 'Forbidden: Only RH or General Management can transfer operators' }, { status: 403 })
-    }
 
     const {
       operator_id,
@@ -32,6 +32,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ 
         error: 'Operator ID and target Asset ID are required' 
       }, { status: 400 })
+    }
+
+    const transferGate = await assertMayTransferAssetOperator(supabase, transferActor, {
+      operatorId: operator_id,
+      toAssetId: to_asset_id,
+      fromAssetId: from_asset_id || null,
+    })
+    if (!transferGate.ok) {
+      return NextResponse.json({ error: transferGate.error }, { status: transferGate.status })
     }
 
     // Check if operator exists and is active

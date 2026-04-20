@@ -57,7 +57,7 @@ DROP FUNCTION IF EXISTS public.user_has_warehouse_permission(uuid, uuid, text);
 
 ## 3. RH Ownership Routes
 
-**What changed:** These routes now call `loadActorContext` + `canManageComplianceSanctions`/`canManageAssetOperators`/`canReviewComplianceDispute` instead of hardcoded `allowedRoles` arrays:
+**What changed:** These routes now call `loadActorContext` + `canManageComplianceSanctions`/`assertMayMutateAssetOperatorRow` (asset-operators) / `canReviewComplianceDispute` instead of hardcoded `allowedRoles` arrays:
 - `app/api/compliance/sanctions/route.ts`
 - `app/api/compliance/sanctions/[id]/route.ts`
 - `app/api/compliance/incidents/[id]/dispute/review/route.ts`

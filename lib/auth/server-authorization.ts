@@ -15,7 +15,14 @@ import {
   type RoleScope,
 } from '@/lib/auth/role-model'
 import { getAuthorizationLimit } from '@/lib/auth/role-permissions'
-import { isJunOrJefePlantaActor } from '@/lib/auth/operator-scope'
+import {
+  isJefePlantaActor,
+  isJefeUnidadNegocioActor,
+  isJunOrJefePlantaActor,
+  operatorRowVisibleToJun,
+  type ActorForOperatorScope,
+  type OperatorPlacementRow,
+} from '@/lib/auth/operator-scope'
 
 export interface ActorProfile {
   id: string
@@ -379,11 +386,219 @@ export function canValidateReceipts(
   return limit > 0
 }
 
-export function canManageAssetOperators(actor: ActorContext | null): boolean {
+/**
+ * RH / GG / Gerente de Mantenimiento — full asset–operator mutations without BU/plant scope checks.
+ */
+export function canManageAssetOperatorsGlobally(actor: ActorContext | null): boolean {
   if (!actor) {
     return false
   }
-  return checkRHOwnershipAuthority(actor) || actor.profile.role === 'GERENCIA_GENERAL'
+  return (
+    checkRHOwnershipAuthority(actor) ||
+    actor.profile.role === 'GERENCIA_GENERAL' ||
+    actor.profile.role === 'GERENTE_MANTENIMIENTO'
+  )
+}
+
+/**
+ * Who may call asset-operators APIs at all (global managers or Jefe de Unidad / Jefe de Planta with scoped asserts).
+ */
+export function canAttemptAssetOperatorMutation(actor: ActorContext | null): boolean {
+  if (!actor) {
+    return false
+  }
+  if (canManageAssetOperatorsGlobally(actor)) {
+    return true
+  }
+  return (
+    actor.profile.role === 'JEFE_UNIDAD_NEGOCIO' || actor.profile.role === 'JEFE_PLANTA'
+  )
+}
+
+export type AssetOperatorAssertResult =
+  | { ok: true }
+  | { ok: false; error: string; status: number }
+
+function actorForOperatorScope(actor: ActorContext): ActorForOperatorScope {
+  return {
+    userId: actor.userId,
+    profile: {
+      role: actor.profile.role,
+      business_unit_id: actor.profile.business_unit_id,
+      plant_id: actor.profile.plant_id,
+    },
+  }
+}
+
+/**
+ * Scoped checks for Jefe de Unidad de Negocio / Jefe de Planta when mutating asset–operator rows.
+ * Call only when the actor is not {@link canManageAssetOperatorsGlobally}.
+ */
+export async function assertActorMayMutateAssetOperator(
+  supabase: SupabaseClient,
+  actor: ActorContext,
+  params: { assetId: string; operatorId: string }
+): Promise<AssetOperatorAssertResult> {
+  const scoped = actorForOperatorScope(actor)
+
+  if (isJefeUnidadNegocioActor(scoped)) {
+    if (!actor.profile.business_unit_id) {
+      return { ok: false, error: 'Tu perfil no tiene unidad de negocio asignada', status: 403 }
+    }
+    const buId = actor.profile.business_unit_id
+
+    const { data: plantsInBu } = await supabase
+      .from('plants')
+      .select('id')
+      .eq('business_unit_id', buId)
+
+    const plantIdsInBusinessUnit = (plantsInBu ?? []).map((p) => p.id)
+
+    const { data: assetRow, error: assetErr } = await supabase
+      .from('assets')
+      .select('id, plant_id, plants:plant_id(business_unit_id)')
+      .eq('id', params.assetId)
+      .maybeSingle()
+
+    if (assetErr || !assetRow) {
+      return { ok: false, error: 'Activo no encontrado', status: 404 }
+    }
+
+    if (!assetRow.plant_id) {
+      return {
+        ok: false,
+        error: 'El activo debe tener planta asignada para esta operación',
+        status: 403,
+      }
+    }
+
+    const plantData = Array.isArray(assetRow.plants) ? assetRow.plants[0] : assetRow.plants
+    const assetBuId = (plantData as { business_unit_id?: string } | null)?.business_unit_id
+    if (!assetBuId || assetBuId !== buId) {
+      return {
+        ok: false,
+        error: 'La planta del activo debe pertenecer a tu unidad de negocio',
+        status: 403,
+      }
+    }
+
+    const { data: opRow, error: opErr } = await supabase
+      .from('profiles')
+      .select('id, plant_id, business_unit_id')
+      .eq('id', params.operatorId)
+      .maybeSingle()
+
+    if (opErr || !opRow) {
+      return { ok: false, error: 'Operador no encontrado', status: 404 }
+    }
+
+    const opPlacement: OperatorPlacementRow = {
+      plant_id: opRow.plant_id,
+      business_unit_id: opRow.business_unit_id,
+    }
+
+    if (!operatorRowVisibleToJun(opPlacement, buId, plantIdsInBusinessUnit)) {
+      return {
+        ok: false,
+        error: 'No puedes asignar este operador a este activo según tu alcance',
+        status: 403,
+      }
+    }
+
+    return { ok: true }
+  }
+
+  if (isJefePlantaActor(scoped)) {
+    if (!actor.profile.plant_id) {
+      return { ok: false, error: 'Tu perfil no tiene planta asignada', status: 403 }
+    }
+    const jpPlantId = actor.profile.plant_id
+
+    const { data: assetRow, error: assetErr } = await supabase
+      .from('assets')
+      .select('id, plant_id')
+      .eq('id', params.assetId)
+      .maybeSingle()
+
+    if (assetErr || !assetRow) {
+      return { ok: false, error: 'Activo no encontrado', status: 404 }
+    }
+
+    if (assetRow.plant_id !== jpPlantId) {
+      return { ok: false, error: 'Solo puedes gestionar activos de tu planta', status: 403 }
+    }
+
+    const { data: opRow, error: opErr } = await supabase
+      .from('profiles')
+      .select('id, plant_id')
+      .eq('id', params.operatorId)
+      .maybeSingle()
+
+    if (opErr || !opRow) {
+      return { ok: false, error: 'Operador no encontrado', status: 404 }
+    }
+
+    if (opRow.plant_id !== jpPlantId) {
+      return { ok: false, error: 'Solo puedes asignar operadores de tu planta', status: 403 }
+    }
+
+    return { ok: true }
+  }
+
+  return {
+    ok: false,
+    error: 'No tienes permiso para gestionar asignaciones operador-activo',
+    status: 403,
+  }
+}
+
+/**
+ * Full gate for asset_operators POST/PUT/DELETE and transfer: session, role eligibility, then BU/plant scope for JUN/JP.
+ */
+export async function assertMayMutateAssetOperatorRow(
+  supabase: SupabaseClient,
+  actor: ActorContext | null,
+  params: { assetId: string; operatorId: string }
+): Promise<AssetOperatorAssertResult> {
+  if (!actor) {
+    return { ok: false, error: 'Unauthorized', status: 401 }
+  }
+  if (!canAttemptAssetOperatorMutation(actor)) {
+    return {
+      ok: false,
+      error:
+        'Forbidden: Only RH, Gerencia General, Gerente de Mantenimiento, Jefe de Unidad de Negocio or Jefe de Planta can manage asset operators',
+      status: 403,
+    }
+  }
+  if (canManageAssetOperatorsGlobally(actor)) {
+    return { ok: true }
+  }
+  return assertActorMayMutateAssetOperator(supabase, actor, params)
+}
+
+/**
+ * Transfer: require scope on target asset (and source asset when provided) for the same operator.
+ */
+export async function assertMayTransferAssetOperator(
+  supabase: SupabaseClient,
+  actor: ActorContext | null,
+  params: { operatorId: string; toAssetId: string; fromAssetId?: string | null }
+): Promise<AssetOperatorAssertResult> {
+  const toResult = await assertMayMutateAssetOperatorRow(supabase, actor, {
+    assetId: params.toAssetId,
+    operatorId: params.operatorId,
+  })
+  if (!toResult.ok) {
+    return toResult
+  }
+  if (params.fromAssetId) {
+    return assertMayMutateAssetOperatorRow(supabase, actor, {
+      assetId: params.fromAssetId,
+      operatorId: params.operatorId,
+    })
+  }
+  return { ok: true }
 }
 
 export function canReviewComplianceDispute(actor: ActorContext | null): boolean {

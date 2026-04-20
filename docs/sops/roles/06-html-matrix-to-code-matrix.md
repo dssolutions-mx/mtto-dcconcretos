@@ -78,7 +78,7 @@ Columns below: **SOP ID** | **Row label (from matrix)** | **Primary POL refs** |
 
 | ID | Row | POL | Modules | Notes | Status |
 |----|-----|-----|---------|-------|--------|
-| SOP-MATRIX-ROW-asignacion-operador-equipo | Registrar asignación operador-equipo | POL002 asignación | `personnel`, `assets` | `app/api/asset-operators/*` | PARTIAL |
+| SOP-MATRIX-ROW-asignacion-operador-equipo | Registrar asignación operador-equipo | POL002 asignación | `personnel`, `assets` | `app/api/asset-operators/*` | OK |
 | SOP-MATRIX-ROW-notif-asignacion | Recibir notificación de asignación | POL002 | — | | UNVERIFIED |
 | SOP-MATRIX-ROW-solicitar-alta-rh | Solicitar alta de usuario a RH | POL001 Alta | `personnel` | | UNVERIFIED |
 | SOP-MATRIX-ROW-procesar-alta-baja | Procesar alta/baja de usuario | POL001/002 RRHH | `personnel` | `update-authorization`, operators API | PARTIAL |
