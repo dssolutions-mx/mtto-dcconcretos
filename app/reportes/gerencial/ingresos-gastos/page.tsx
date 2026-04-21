@@ -388,7 +388,7 @@ export default function IngresosGastosPage() {
     // Build headers first to know column count
     const headers = ['Métrica']
     if (groupByBusinessUnit && groupedPlants) {
-      Object.entries(groupedPlants).forEach(([buId, buPlants]) => {
+      Object.entries(groupedPlants).forEach(([buId]) => {
         const buName = businessUnitNames.get(buId) || 'Sin Unidad'
         headers.push(buName)
       })
@@ -427,34 +427,37 @@ export default function IngresosGastosPage() {
     // Helper to add a row with metadata tracking
     const addRow = (label: string, getValue: (plant: PlantData) => number, formatFn: (val: number) => string, metricKey: string, isTotalRow = false) => {
       const row: any[] = [label]
+      const isPctRow = getMetricType(metricKey) === 'percent'
+      // API/UI use 0–100 for percents; Excel 0.00% expects 0–1
+      const x = (v: number) => (isPctRow ? v / 100 : v)
       if (groupByBusinessUnit && groupedPlants) {
         // Use calculateBUValue for correct aggregation
         const metricType = getMetricType(metricKey)
-        Object.entries(groupedPlants).forEach(([buId, buPlants]) => {
+        Object.entries(groupedPlants).forEach(([, buPlants]) => {
           const buValue = calculateBUValue(buPlants, getValue, metricType, metricKey)
-          row.push(buValue) // Store as number for proper Excel formatting
+          row.push(x(buValue))
         })
         const grandTotal = calculateGrandTotal(getValue, metricKey)
-        row.push(grandTotal)
+        row.push(x(grandTotal))
         if (hasComparison) {
-          const previousTotal = calculateGrandTotal(getValue, metricKey, previousPlants)
+          const previousTotal = calculateGrandTotal(getValue, metricKey, previousPlantsAligned)
           const delta = grandTotal - previousTotal
           const deltaPct = previousTotal === 0 ? null : (delta / previousTotal) * 100
-          row.push(delta)
+          row.push(x(delta))
           row.push(deltaPct === null ? null : deltaPct / 100)
         }
       } else {
         plants.forEach(plant => {
-          row.push(getValue(plant)) // Store as number
+          row.push(x(getValue(plant)))
         })
         const grandTotal = calculateGrandTotal(getValue, metricKey)
-        row.push(grandTotal)
+        row.push(x(grandTotal))
 
         if (hasComparison) {
-          const previousTotal = calculateGrandTotal(getValue, metricKey, previousPlants)
+          const previousTotal = calculateGrandTotal(getValue, metricKey, previousPlantsAligned)
           const delta = grandTotal - previousTotal
           const deltaPct = previousTotal === 0 ? null : (delta / previousTotal) * 100
-          row.push(delta)
+          row.push(x(delta))
           row.push(deltaPct === null ? null : deltaPct / 100) // store as decimal for Excel percent
         }
       }
@@ -1115,6 +1118,18 @@ export default function IngresosGastosPage() {
       }, 0)
       return weightedSum / totalVolume
     }
+
+    // Consumption: volume-weighted average of kg/m³ (matches calculateBUValue)
+    if (metricKey && getMetricType(metricKey) === 'consumption') {
+      const totalVolume = sourcePlants.reduce((sum, p) => sum + p.volumen_concreto, 0)
+      if (totalVolume === 0) return 0
+      const totalConsumption = sourcePlants.reduce((sum, p) => {
+        const consumoPerM3 = getValue(p)
+        const volumen = p.volumen_concreto
+        return sum + consumoPerM3 * volumen
+      }, 0)
+      return totalConsumption / totalVolume
+    }
     
     // For non-percentages, sum normally
     return sourcePlants.reduce((sum, plant) => sum + getValue(plant), 0)
@@ -1247,7 +1262,9 @@ export default function IngresosGastosPage() {
         <>
           {Object.entries(groupedPlants).map(([buId, buPlants]) => {
             const buValue = calculateBUValue(buPlants, getValue, metricType, metricKey)
-            const prevBuPlants = groupedPlantsPrevious?.[buId] || []
+            const prevBuPlants = buPlants
+              .map(p => (p.plant_code ? previousPlantMap.get(p.plant_code) : undefined))
+              .filter((x): x is PlantData => x != null)
             const prevBuValue = calculateBUValue(prevBuPlants, getValue, metricType, metricKey)
             const delta = buValue - prevBuValue
             const deltaPct = prevBuValue === 0 ? null : (delta / prevBuValue) * 100
@@ -1282,7 +1299,7 @@ export default function IngresosGastosPage() {
     }
   }
 
-  const previousPlants = data?.comparison?.plants || []
+  const previousPlants = React.useMemo(() => data?.comparison?.plants ?? [], [data])
   const previousPlantMap = React.useMemo(() => {
     const map = new Map<string, PlantData>()
     previousPlants.forEach(p => {
@@ -1293,14 +1310,16 @@ export default function IngresosGastosPage() {
     return map
   }, [previousPlants])
 
-  const groupedPlantsPrevious = groupByBusinessUnit
-    ? previousPlants.reduce((acc, plant) => {
-        const buId = plant.business_unit_id || 'unassigned'
-        if (!acc[buId]) acc[buId] = []
-        acc[buId].push(plant)
-        return acc
-      }, {} as Record<string, PlantData[]>)
-    : null
+  /** Previous-month rows for the same plants as the visible grid (fair Δ / grand-total vs mes anterior). */
+  const previousPlantsAligned = React.useMemo(() => {
+    const codeSet = new Set(plants.map(p => p.plant_code).filter(Boolean))
+    const idSet = new Set(plants.map(p => p.plant_id).filter(Boolean))
+    return previousPlants.filter(
+      p =>
+        (p.plant_code && codeSet.has(p.plant_code)) ||
+        (!!p.plant_id && idSet.has(p.plant_id))
+    )
+  }, [previousPlants, plants])
 
   const comparisonLabel = React.useMemo(() => {
     return data?.comparison?.month || data?.comparisonMonth || 'mes anterior'
@@ -1515,7 +1534,7 @@ export default function IngresosGastosPage() {
                       (val) => formatNumber(val, 2),
                       false,
                       true,
-                      calculateGrandTotal(p => p.volumen_concreto, 'volumen_concreto', previousPlants),
+                      calculateGrandTotal(p => p.volumen_concreto, 'volumen_concreto', previousPlantsAligned),
                       'volumen_concreto'
                     )}
                   </tr>
@@ -1527,7 +1546,7 @@ export default function IngresosGastosPage() {
                       (val) => formatNumber(val, 2),
                       false,
                       true,
-                      calculateGrandTotal(p => p.fc_ponderada, 'fc_ponderada', previousPlants),
+                      calculateGrandTotal(p => p.fc_ponderada, 'fc_ponderada', previousPlantsAligned),
                       'fc_ponderada'
                     )}
                   </tr>
@@ -1539,7 +1558,7 @@ export default function IngresosGastosPage() {
                       (val) => formatNumber(val, 2),
                       false,
                       true,
-                      calculateGrandTotal(p => p.edad_ponderada, 'edad_ponderada', previousPlants),
+                      calculateGrandTotal(p => p.edad_ponderada, 'edad_ponderada', previousPlantsAligned),
                       'edad_ponderada'
                     )}
                   </tr>
@@ -1551,7 +1570,7 @@ export default function IngresosGastosPage() {
                       formatCurrency,
                       false,
                       true,
-                      calculateGrandTotal(p => p.pv_unitario, 'pv_unitario', previousPlants),
+                      calculateGrandTotal(p => p.pv_unitario, 'pv_unitario', previousPlantsAligned),
                       'pv_unitario'
                     )}
                   </tr>
@@ -1563,7 +1582,7 @@ export default function IngresosGastosPage() {
                       formatCurrency,
                       true,
                       true,
-                      calculateGrandTotal(p => p.ventas_total, 'ventas_total', previousPlants),
+                      calculateGrandTotal(p => p.ventas_total, 'ventas_total', previousPlantsAligned),
                       'ventas_total'
                     )}
                   </tr>
@@ -1582,7 +1601,7 @@ export default function IngresosGastosPage() {
                       formatCurrency,
                       false,
                       true,
-                      calculateGrandTotal(p => p.costo_mp_unitario, 'costo_mp_unitario', previousPlants),
+                      calculateGrandTotal(p => p.costo_mp_unitario, 'costo_mp_unitario', previousPlantsAligned),
                       'costo_mp_unitario'
                     )}
                   </tr>
@@ -1594,7 +1613,7 @@ export default function IngresosGastosPage() {
                       (val) => formatNumber(val, 2),
                       false,
                       true,
-                      calculateGrandTotal(p => p.consumo_cem_m3, 'consumo_cem_m3', previousPlants),
+                      calculateGrandTotal(p => p.consumo_cem_m3, 'consumo_cem_m3', previousPlantsAligned),
                       'consumo_cem_m3'
                     )}
                   </tr>
@@ -1606,7 +1625,7 @@ export default function IngresosGastosPage() {
                       formatCurrency,
                       false,
                       true,
-                      calculateGrandTotal(p => p.costo_cem_m3, 'costo_cem_m3', previousPlants),
+                      calculateGrandTotal(p => p.costo_cem_m3, 'costo_cem_m3', previousPlantsAligned),
                       'costo_cem_m3'
                     )}
                   </tr>
@@ -1618,7 +1637,7 @@ export default function IngresosGastosPage() {
                       formatPercent,
                       false,
                       true,
-                      calculateGrandTotal(p => p.costo_cem_pct, 'costo_cem_pct', previousPlants),
+                      calculateGrandTotal(p => p.costo_cem_pct, 'costo_cem_pct', previousPlantsAligned),
                       'costo_cem_pct'
                     )}
                   </tr>
@@ -1630,7 +1649,7 @@ export default function IngresosGastosPage() {
                       formatCurrency,
                       true,
                       true,
-                      calculateGrandTotal(p => p.costo_mp_total, 'costo_mp_total', previousPlants),
+                      calculateGrandTotal(p => p.costo_mp_total, 'costo_mp_total', previousPlantsAligned),
                       'costo_mp_total'
                     )}
                   </tr>
@@ -1642,7 +1661,7 @@ export default function IngresosGastosPage() {
                       formatPercent,
                       false,
                       true,
-                      calculateGrandTotal(p => p.costo_mp_pct, 'costo_mp_pct', previousPlants),
+                      calculateGrandTotal(p => p.costo_mp_pct, 'costo_mp_pct', previousPlantsAligned),
                       'costo_mp_pct'
                     )}
                   </tr>
@@ -1661,7 +1680,7 @@ export default function IngresosGastosPage() {
                       formatCurrency,
                       false,
                       true,
-                      calculateGrandTotal(p => p.spread_unitario, 'spread_unitario', previousPlants),
+                      calculateGrandTotal(p => p.spread_unitario, 'spread_unitario', previousPlantsAligned),
                       'spread_unitario'
                     )}
                   </tr>
@@ -1673,7 +1692,7 @@ export default function IngresosGastosPage() {
                       formatPercent,
                       false,
                       true,
-                      calculateGrandTotal(p => p.spread_unitario_pct, 'spread_unitario_pct', previousPlants),
+                      calculateGrandTotal(p => p.spread_unitario_pct, 'spread_unitario_pct', previousPlantsAligned),
                       'spread_unitario_pct'
                     )}
                   </tr>
@@ -1692,7 +1711,7 @@ export default function IngresosGastosPage() {
                       formatCurrency,
                       false,
                       true,
-                      calculateGrandTotal(p => p.diesel_total, 'diesel_total', previousPlants),
+                      calculateGrandTotal(p => p.diesel_total, 'diesel_total', previousPlantsAligned),
                       'diesel_total'
                     )}
                   </tr>
@@ -1704,7 +1723,7 @@ export default function IngresosGastosPage() {
                       formatCurrency,
                       false,
                       true,
-                      calculateGrandTotal(p => p.diesel_unitario, 'diesel_unitario', previousPlants),
+                      calculateGrandTotal(p => p.diesel_unitario, 'diesel_unitario', previousPlantsAligned),
                       'diesel_unitario'
                     )}
                   </tr>
@@ -1716,7 +1735,7 @@ export default function IngresosGastosPage() {
                       formatPercent,
                       false,
                       true,
-                      calculateGrandTotal(p => p.diesel_pct, 'diesel_pct', previousPlants),
+                      calculateGrandTotal(p => p.diesel_pct, 'diesel_pct', previousPlantsAligned),
                       'diesel_pct'
                     )}
                   </tr>
@@ -1728,7 +1747,7 @@ export default function IngresosGastosPage() {
                       formatCurrency,
                       false,
                       true,
-                      calculateGrandTotal(p => p.mantto_total, 'mantto_total', previousPlants),
+                      calculateGrandTotal(p => p.mantto_total, 'mantto_total', previousPlantsAligned),
                       'mantto_total'
                     )}
                   </tr>
@@ -1740,7 +1759,7 @@ export default function IngresosGastosPage() {
                       formatCurrency,
                       false,
                       true,
-                      calculateGrandTotal(p => p.mantto_unitario, 'mantto_unitario', previousPlants),
+                      calculateGrandTotal(p => p.mantto_unitario, 'mantto_unitario', previousPlantsAligned),
                       'mantto_unitario'
                     )}
                   </tr>
@@ -1752,7 +1771,7 @@ export default function IngresosGastosPage() {
                       formatPercent,
                       false,
                       true,
-                      calculateGrandTotal(p => p.mantto_pct, 'mantto_pct', previousPlants),
+                      calculateGrandTotal(p => p.mantto_pct, 'mantto_pct', previousPlantsAligned),
                       'mantto_pct'
                     )}
                   </tr>
@@ -1778,7 +1797,7 @@ export default function IngresosGastosPage() {
                       formatCurrency,
                       false,
                       true,
-                      calculateGrandTotal(p => p.nomina_total, 'nomina_total', previousPlants),
+                      calculateGrandTotal(p => p.nomina_total, 'nomina_total', previousPlantsAligned),
                       'nomina_total'
                     )}
                   </tr>
@@ -2039,7 +2058,7 @@ export default function IngresosGastosPage() {
                       formatCurrency,
                       false,
                       true,
-                      calculateGrandTotal(p => p.nomina_unitario, 'nomina_unitario', previousPlants),
+                      calculateGrandTotal(p => p.nomina_unitario, 'nomina_unitario', previousPlantsAligned),
                       'nomina_unitario'
                     )}
                   </tr>
@@ -2051,7 +2070,7 @@ export default function IngresosGastosPage() {
                       formatPercent,
                       false,
                       true,
-                      calculateGrandTotal(p => p.nomina_pct, 'nomina_pct', previousPlants),
+                      calculateGrandTotal(p => p.nomina_pct, 'nomina_pct', previousPlantsAligned),
                       'nomina_pct'
                     )}
                   </tr>
@@ -2077,7 +2096,7 @@ export default function IngresosGastosPage() {
                       formatCurrency,
                       false,
                       true,
-                      calculateGrandTotal(p => p.otros_indirectos_total, 'otros_indirectos_total', previousPlants),
+                      calculateGrandTotal(p => p.otros_indirectos_total, 'otros_indirectos_total', previousPlantsAligned),
                       'otros_indirectos_total'
                     )}
                   </tr>
@@ -2338,7 +2357,7 @@ export default function IngresosGastosPage() {
                       formatCurrency,
                       false,
                       true,
-                      calculateGrandTotal(p => p.otros_indirectos_unitario, 'otros_indirectos_unitario', previousPlants),
+                      calculateGrandTotal(p => p.otros_indirectos_unitario, 'otros_indirectos_unitario', previousPlantsAligned),
                       'otros_indirectos_unitario'
                     )}
                   </tr>
@@ -2350,7 +2369,7 @@ export default function IngresosGastosPage() {
                       formatPercent,
                       false,
                       true,
-                      calculateGrandTotal(p => p.otros_indirectos_pct, 'otros_indirectos_pct', previousPlants),
+                      calculateGrandTotal(p => p.otros_indirectos_pct, 'otros_indirectos_pct', previousPlantsAligned),
                       'otros_indirectos_pct'
                     )}
                   </tr>
@@ -2362,7 +2381,7 @@ export default function IngresosGastosPage() {
                       formatCurrency,
                       true,
                       true,
-                      calculateGrandTotal(p => p.total_costo_op, 'total_costo_op', previousPlants),
+                      calculateGrandTotal(p => p.total_costo_op, 'total_costo_op', previousPlantsAligned),
                       'total_costo_op'
                     )}
                   </tr>
@@ -2374,7 +2393,7 @@ export default function IngresosGastosPage() {
                       formatPercent,
                       false,
                       true,
-                      calculateGrandTotal(p => p.total_costo_op_pct, 'total_costo_op_pct', previousPlants),
+                      calculateGrandTotal(p => p.total_costo_op_pct, 'total_costo_op_pct', previousPlantsAligned),
                       'total_costo_op_pct'
                     )}
                   </tr>
@@ -2393,7 +2412,7 @@ export default function IngresosGastosPage() {
                       formatCurrency,
                       true,
                       true,
-                      calculateGrandTotal(p => p.ebitda, 'ebitda', previousPlants),
+                      calculateGrandTotal(p => p.ebitda, 'ebitda', previousPlantsAligned),
                       'ebitda'
                     )}
                   </tr>
@@ -2405,7 +2424,7 @@ export default function IngresosGastosPage() {
                       formatPercent,
                       false,
                       true,
-                      calculateGrandTotal(p => p.ebitda_pct, 'ebitda_pct', previousPlants),
+                      calculateGrandTotal(p => p.ebitda_pct, 'ebitda_pct', previousPlantsAligned),
                       'ebitda_pct'
                     )}
                   </tr>
@@ -2466,7 +2485,7 @@ export default function IngresosGastosPage() {
                           (val) => formatNumber(val, 2),
                           false,
                           true,
-                          calculateGrandTotal(p => p.ingresos_bombeo_vol || 0, 'ingresos_bombeo_vol', previousPlants),
+                          calculateGrandTotal(p => p.ingresos_bombeo_vol || 0, 'ingresos_bombeo_vol', previousPlantsAligned),
                           'ingresos_bombeo_vol'
                         )}
                       </tr>
@@ -2478,7 +2497,7 @@ export default function IngresosGastosPage() {
                           formatCurrency,
                           false,
                           true,
-                          calculateGrandTotal(p => p.ingresos_bombeo_unit || 0, 'ingresos_bombeo_unit', previousPlants),
+                          calculateGrandTotal(p => p.ingresos_bombeo_unit || 0, 'ingresos_bombeo_unit', previousPlantsAligned),
                           'ingresos_bombeo_unit'
                         )}
                       </tr>
@@ -2490,7 +2509,7 @@ export default function IngresosGastosPage() {
                           formatCurrency,
                           false,
                           true,
-                          calculateGrandTotal(p => p.ingresos_bombeo_total || 0, 'ingresos_bombeo_total', previousPlants),
+                          calculateGrandTotal(p => p.ingresos_bombeo_total || 0, 'ingresos_bombeo_total', previousPlantsAligned),
                           'ingresos_bombeo_total'
                         )}
                       </tr>
@@ -2509,7 +2528,7 @@ export default function IngresosGastosPage() {
                           formatCurrency,
                           true,
                           true,
-                          calculateGrandTotal(p => p.ebitda_con_bombeo || 0, 'ebitda_con_bombeo', previousPlants),
+                          calculateGrandTotal(p => p.ebitda_con_bombeo || 0, 'ebitda_con_bombeo', previousPlantsAligned),
                           'ebitda_con_bombeo'
                         )}
                       </tr>
@@ -2521,7 +2540,7 @@ export default function IngresosGastosPage() {
                           formatPercent,
                           false,
                           true,
-                          calculateGrandTotal(p => p.ebitda_con_bombeo_pct || 0, 'ebitda_con_bombeo_pct', previousPlants),
+                          calculateGrandTotal(p => p.ebitda_con_bombeo_pct || 0, 'ebitda_con_bombeo_pct', previousPlantsAligned),
                           'ebitda_con_bombeo_pct'
                         )}
                       </tr>
