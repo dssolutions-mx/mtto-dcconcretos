@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -83,6 +83,18 @@ export function MoveConflictDialog({
   onCancel
 }: MoveConflictDialogProps) {
   const [selectedStrategy, setSelectedStrategy] = useState<ResolutionStrategy | null>(null)
+
+  useEffect(() => {
+    if (!open || !conflictData) {
+      setSelectedStrategy(null)
+      return
+    }
+    if (conflictData.type === 'asset_move' && conflictData.canTransfer) {
+      setSelectedStrategy('transfer_operators')
+    } else {
+      setSelectedStrategy(null)
+    }
+  }, [open, conflictData])
 
   if (!conflictData) return null
 

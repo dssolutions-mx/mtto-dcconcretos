@@ -158,6 +158,24 @@ Registro obligatorio: fecha compra, proveedor, factura, periodo de garantía, fe
 - ✅ Coinciden → exitoso
 - ⚠️ No coinciden → incidencia (daño en origen, traslado, o error de registro)
 
+### Registro en sistema: planta del activo y operadores (MantenPro)
+
+Cuando el activo **cambia de planta en la plataforma**, la **planta del perfil del operador** debe mantenerse alineada con el equipo que opera; si no, el operador puede perder visibilidad (RLS) o quedar incoherente con inventario y checklists.
+
+**Rutas en aplicación (referencia técnica):**
+
+| Acción | ¿Actualiza operadores al mover planta del activo? |
+|--------|---------------------------------------------------|
+| Gestión → **Asignación de plantas** (drag-and-drop o diálogo “Mover activo”) | Sí: el sistema detecta conflictos y ofrece **transferir operadores** (misma unidad de negocio), **desasignar**, o **mantener** (solo si es intencional; riesgo de acceso). |
+| **Flota** → edición masiva “Mover a planta…” | Alineado con la misma lógica: si el activo tiene operadores asignados y hace falta decisión explícita (p. ej. distinta unidad de negocio), el sistema **bloquea** y pide usar Asignación de plantas o desasignar antes. |
+| Cambio de planta del **operador** (RRHH / registro de personal) con activos en otras plantas | Flujo distinto: resuelve conflictos sobre **activos** ligados al operador. |
+
+**Criterio operativo:**
+
+- Misma unidad de negocio: preferir **transferir operadores** con el movimiento del activo.
+- Distinta unidad de negocio: **desasignar** operadores del activo en sistema y completar reasignación de personal según RRHH/JP/JUN; no depender de “mantener” salvo caso excepcional documentado.
+- Tras cualquier movimiento físico, verificar en sistema que planta del activo, asignaciones `asset_operators` y planta del operador coinciden con la realidad operativa.
+
 ### Proceso: asignación de personal
 
 Responsable: JP o JUN, con notificación a Gerente de Mtto y RRHH. Registrar <24h.
