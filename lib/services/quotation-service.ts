@@ -74,6 +74,7 @@ export class QuotationService {
           file_storage_path: request.file_storage_path ?? null,
           file_url: request.file_url ?? null,
           file_name: request.file_name,
+          additional_files: request.additional_files ?? [],
           status: QuotationStatus.PENDING,
           created_by: user_id
         })

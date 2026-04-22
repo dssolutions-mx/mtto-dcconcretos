@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import {
   Dialog,
   DialogContent,
@@ -9,14 +9,16 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Badge } from "@/components/ui/badge"
 import { EnhancedQuotationUploader } from "./EnhancedQuotationUploader"
 import { QuotationComparisonTable } from "./QuotationComparisonTable"
 import { QuotationComparisonCard } from "./QuotationComparisonCard"
 import { QuotationSelectionDialog } from "./QuotationSelectionDialog"
 import { QuotationFileButton } from "./QuotationFileButton"
-import { PurchaseOrderQuotation, QuotationComparisonResponse, QuotationStatus } from "@/types/purchase-orders"
+import {
+  PurchaseOrderQuotation,
+  QuotationComparisonResponse,
+  QuotationStatus,
+} from "@/types/purchase-orders"
 import { QuotationService } from "@/lib/services/quotation-service"
 import { toast } from "sonner"
 import { AlertCircle, CheckCircle2, FileText, Upload } from "lucide-react"
@@ -33,6 +35,10 @@ interface QuotationComparisonManagerProps {
   className?: string
   /** When true, use compact layout (cards only, collapsible upload) */
   compact?: boolean
+  /** From server: whether viewer is Coordinador, Encargado deprecado, o Ejecutivo (misma política) */
+  isViewerCoordinator?: boolean
+  /** From server: puede add/edit/delete cotizaciones (alcance + pre-viabilidad) */
+  coordinatorQuotationUnlocked?: boolean
 }
 
 export function QuotationComparisonManager({
@@ -42,7 +48,9 @@ export function QuotationComparisonManager({
   quotationSelectionStatus,
   poPurpose,
   className = "",
-  compact: compactProp
+  compact: compactProp,
+  isViewerCoordinator = false,
+  coordinatorQuotationUnlocked = true,
 }: QuotationComparisonManagerProps) {
   const router = useRouter()
   const isMobile = useIsMobile()
@@ -54,17 +62,9 @@ export function QuotationComparisonManager({
   const [selectedQuotationId, setSelectedQuotationId] = useState<string | null>(null)
   const [selectionDialogOpen, setSelectionDialogOpen] = useState(false)
   const [addQuotationOpen, setAddQuotationOpen] = useState(false)
+  const [editingQuotation, setEditingQuotation] = useState<PurchaseOrderQuotation | null>(null)
 
-  // Skip if using inventory (no purchase needed)
-  if (poPurpose === 'work_order_inventory') {
-    return null
-  }
-
-  useEffect(() => {
-    loadQuotations()
-  }, [purchaseOrderId])
-
-  const loadQuotations = async () => {
+  const loadQuotations = useCallback(async () => {
     setIsLoading(true)
     try {
       const [quotationsData, comparisonData] = await Promise.all([
@@ -80,28 +80,45 @@ export function QuotationComparisonManager({
     } finally {
       setIsLoading(false)
     }
-  }
+  }, [purchaseOrderId])
 
-  const handleQuotationAdded = async (quotation: PurchaseOrderQuotation) => {
+  useEffect(() => {
+    if (poPurpose === 'work_order_inventory') {
+      setIsLoading(false)
+      return
+    }
+    void loadQuotations()
+  }, [loadQuotations, poPurpose])
+
+  const handleQuotationAdded = async () => {
     await loadQuotations()
     setAddQuotationOpen(false)
-  }
-
-  const handleQuotationRemoved = async (quotationId: string) => {
-    await loadQuotations()
   }
 
   const handleDeleteQuotation = async (quotationId: string) => {
     if (!confirm('¿Eliminar esta cotización?')) return
     try {
       const res = await fetch(`/api/purchase-orders/quotations/${quotationId}`, { method: 'DELETE' })
-      if (!res.ok) throw new Error('Error al eliminar')
+      if (!res.ok) {
+        const j = (await res.json().catch(() => ({}))) as { error?: string }
+        throw new Error(j.error || "Error al eliminar")
+      }
       await loadQuotations()
       toast.success('Cotización eliminada')
-    } catch {
-      toast.error('No se pudo eliminar')
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "No se pudo eliminar")
     }
   }
+
+  const handleOpenEdit = (quotationId: string) => {
+    const q = quotations.find((x) => x.id === quotationId)
+    if (q) setEditingQuotation(q)
+  }
+
+  const rowUnlocked = !isViewerCoordinator || coordinatorQuotationUnlocked
+  /** Plant + pre-viability for coordinador/ejecutivo; everyone else is unrestricted here (API/RLS still apply) */
+  const canMutate = rowUnlocked
+  const showAddQuotation = !isViewerCoordinator || coordinatorQuotationUnlocked
 
   const handleSelectQuotation = (quotationId: string) => {
     setSelectedQuotationId(quotationId)
@@ -147,12 +164,17 @@ export function QuotationComparisonManager({
   const lowestPrice = comparison?.comparison.summary.lowest_price || 0
   const fastestDelivery = comparison?.comparison.summary.fastest_delivery || 0
 
+  if (poPurpose === "work_order_inventory") {
+    return null
+  }
+
   if (isLoading) {
     return <div className={cn("text-center py-6 text-muted-foreground text-sm", className)}>Cargando cotizaciones...</div>
   }
 
-  // Minimal: 1 quotation selected -> one compact row (no status bar, no full card)
-  const singleSelected = compact && quotations.length === 1 && selectedQuotationData
+  // 1 fila mínima solo si además no hay acciones (si canMutate, mostramos tarjeta con "Editar" y archivo)
+  const singleSelected =
+    compact && quotations.length === 1 && selectedQuotationData && !canMutate
 
   // Status bar only when NOT single-selected (would duplicate)
   const statusMessage = !singleSelected && quotationSelectionRequired && (() => {
@@ -218,8 +240,9 @@ export function QuotationComparisonManager({
                   isBestPrice={isBestPrice}
                   isFastestDelivery={isFastestDelivery}
                   onSelect={quotationSelectionStatus === 'pending_selection' ? handleSelectQuotation : undefined}
-                  onDelete={handleDeleteQuotation}
-                  showActions={quotationSelectionStatus === 'pending_selection'}
+                  onDelete={canMutate ? handleDeleteQuotation : undefined}
+                  onEdit={canMutate ? handleOpenEdit : undefined}
+                  showSelectActions={quotationSelectionStatus === 'pending_selection'}
                 />
               )
             })}
@@ -244,8 +267,9 @@ export function QuotationComparisonManager({
                       isBestPrice={isBestPrice}
                       isFastestDelivery={isFastestDelivery}
                       onSelect={quotationSelectionStatus === 'pending_selection' ? handleSelectQuotation : undefined}
-                      onDelete={handleDeleteQuotation}
-                      showActions={quotationSelectionStatus === 'pending_selection'}
+                      onDelete={canMutate ? handleDeleteQuotation : undefined}
+                      onEdit={canMutate ? handleOpenEdit : undefined}
+                      showSelectActions={quotationSelectionStatus === 'pending_selection'}
                     />
                   )
                 })}
@@ -256,6 +280,8 @@ export function QuotationComparisonManager({
                 <QuotationComparisonTable
                   comparison={comparison.comparison}
                   onSelect={quotationSelectionStatus === 'pending_selection' ? handleSelectQuotation : undefined}
+                  onEdit={canMutate ? handleOpenEdit : undefined}
+                  onDelete={canMutate ? handleDeleteQuotation : undefined}
                 />
               )}
             </TabsContent>
@@ -268,31 +294,61 @@ export function QuotationComparisonManager({
       )}
 
       {/* Add quotation - modal, form only when asked */}
-      <Dialog open={addQuotationOpen} onOpenChange={setAddQuotationOpen}>
-        <DialogTrigger asChild>
-          <button
-            type="button"
-            className={cn(
-              "flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors cursor-pointer",
-              compact ? "py-1" : "rounded-lg border bg-muted/30 px-4 py-2"
-            )}
-          >
-            <Upload className="h-3.5 w-3.5" />
-            {quotations.length > 0 ? "Agregar otra cotización" : "Agregar cotización"}
-          </button>
-        </DialogTrigger>
-        <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
+      {showAddQuotation ? (
+        <Dialog open={addQuotationOpen} onOpenChange={setAddQuotationOpen}>
+          <DialogTrigger asChild>
+            <button
+              type="button"
+              className={cn(
+                "flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors cursor-pointer",
+                compact ? "py-1" : "rounded-lg border bg-muted/30 px-4 py-2"
+              )}
+            >
+              <Upload className="h-3.5 w-3.5" />
+              {quotations.length > 0 ? "Agregar otra cotización" : "Agregar cotización"}
+            </button>
+          </DialogTrigger>
+          <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Nueva cotización</DialogTitle>
+            </DialogHeader>
+            <EnhancedQuotationUploader
+              purchaseOrderId={purchaseOrderId}
+              workOrderId={workOrderId}
+              onQuotationAdded={handleQuotationAdded}
+              existingQuotations={quotations}
+              compact
+            />
+          </DialogContent>
+        </Dialog>
+      ) : isViewerCoordinator ? (
+        <p className="text-xs text-muted-foreground py-1">
+          No puede agregar ni modificar cotizaciones: viabilidad administrativa ya registrada, la orden
+          fuera de su alcance, o estado de la orden no permitido.
+        </p>
+      ) : null}
+
+      <Dialog open={editingQuotation != null} onOpenChange={(o) => !o && setEditingQuotation(null)}>
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Nueva cotización</DialogTitle>
+            <DialogTitle>Editar cotización</DialogTitle>
           </DialogHeader>
-          <EnhancedQuotationUploader
-            purchaseOrderId={purchaseOrderId}
-            workOrderId={workOrderId}
-            onQuotationAdded={handleQuotationAdded}
-            onQuotationRemoved={handleQuotationRemoved}
-            existingQuotations={quotations}
-            compact
-          />
+          {editingQuotation && (
+            <EnhancedQuotationUploader
+              key={editingQuotation.id}
+              mode="edit"
+              initialQuotation={editingQuotation}
+              purchaseOrderId={purchaseOrderId}
+              workOrderId={workOrderId}
+              onQuotationUpdated={async () => {
+                await loadQuotations()
+                setEditingQuotation(null)
+                router.refresh()
+              }}
+              existingQuotations={quotations}
+              compact={false}
+            />
+          )}
         </DialogContent>
       </Dialog>
 

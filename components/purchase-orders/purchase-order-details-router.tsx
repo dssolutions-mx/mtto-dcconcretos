@@ -122,6 +122,8 @@ interface PurchaseOrderDetailsRouterProps {
   items: any[]
   desktopContent: ReactNode
   fulfillmentHints?: POFulfillmentHints | null
+  isViewerCoordinator?: boolean
+  coordinatorQuotationUnlocked?: boolean
 }
 
 export function PurchaseOrderDetailsRouter({
@@ -133,6 +135,8 @@ export function PurchaseOrderDetailsRouter({
   items,
   desktopContent,
   fulfillmentHints,
+  isViewerCoordinator = false,
+  coordinatorQuotationUnlocked = true,
 }: PurchaseOrderDetailsRouterProps) {
   const isMobile = useIsMobile()
   const searchParams = useSearchParams()
@@ -154,6 +158,8 @@ export function PurchaseOrderDetailsRouter({
         isImageFile={isImageFile}
         isPdfFile={isPdfFile}
         fulfillmentHints={fulfillmentHints}
+        isViewerCoordinator={isViewerCoordinator}
+        coordinatorQuotationUnlocked={coordinatorQuotationUnlocked}
       />
     )
   }

@@ -6014,6 +6014,7 @@ export type Database = {
       }
       purchase_order_quotations: {
         Row: {
+          additional_files: Json
           created_at: string | null
           created_by: string | null
           delivery_days: number | null
@@ -6037,6 +6038,7 @@ export type Database = {
           validity_date: string | null
         }
         Insert: {
+          additional_files?: Json
           created_at?: string | null
           created_by?: string | null
           delivery_days?: number | null
@@ -6060,6 +6062,7 @@ export type Database = {
           validity_date?: string | null
         }
         Update: {
+          additional_files?: Json
           created_at?: string | null
           created_by?: string | null
           delivery_days?: number | null

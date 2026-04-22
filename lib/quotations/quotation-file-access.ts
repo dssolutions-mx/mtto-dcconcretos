@@ -4,9 +4,16 @@ type AppSupabase = any
 
 export const QUOTATIONS_STORAGE_BUCKET = 'quotations'
 
+export type QuotationExtraFile = {
+  file_storage_path: string
+  file_name?: string | null
+}
+
 export type QuotationFileFields = {
   file_storage_path?: string | null
   file_url?: string | null
+  file_name?: string | null
+  additional_files?: QuotationExtraFile[] | null
 }
 
 /**
@@ -51,8 +58,13 @@ export function resolveQuotationsObjectPath(q: QuotationFileFields): string | nu
   return fromUrl ? normalizeStoragePathSegment(fromUrl) : null
 }
 
+function hasPath(p: string | null | undefined): boolean {
+  return Boolean(p?.trim())
+}
+
 export function quotationHasFile(q: QuotationFileFields): boolean {
-  return Boolean(resolveQuotationsObjectPath(q) || q.file_url?.trim())
+  if (resolveQuotationsObjectPath(q) || q.file_url?.trim()) return true
+  return Boolean(q.additional_files?.some((a) => hasPath(a.file_storage_path)))
 }
 
 /**
@@ -91,4 +103,21 @@ export async function openQuotationFileInNewTab(
     return true
   }
   return false
+}
+
+/**
+ * Open a file in the quotations bucket by storage path (for extra attachments).
+ */
+export async function openQuotationPathInNewTab(
+  supabase: AppSupabase,
+  storagePath: string
+): Promise<boolean> {
+  const p = storagePath?.trim()
+  if (!p) return false
+  const { data, error } = await supabase.storage
+    .from(QUOTATIONS_STORAGE_BUCKET)
+    .createSignedUrl(normalizeStoragePathSegment(p), 3600 * 24 * 7)
+  if (error || !data?.signedUrl) return false
+  window.open(data.signedUrl, "_blank", "noopener,noreferrer")
+  return true
 }

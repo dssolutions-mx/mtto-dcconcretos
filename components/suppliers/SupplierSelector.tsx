@@ -38,6 +38,10 @@ interface SupplierSelectorProps {
   onManualInputChange?: (value: string) => void
   creationEnabled?: boolean
   businessUnitId?: string
+  /** Nombre almacenado sin `supplier_id` (ej. al editar una cotización) */
+  initialManualName?: string | null
+  /** Nombre a mostrar si el id del padrón no está en la lista cargada */
+  registryNameFallback?: string | null
 }
 
 interface SupplierSuggestion {
@@ -57,7 +61,9 @@ export function SupplierSelector({
   allowManualInput = false,
   onManualInputChange,
   creationEnabled = true,
-  businessUnitId
+  businessUnitId,
+  initialManualName,
+  registryNameFallback,
 }: SupplierSelectorProps) {
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
   const [loading, setLoading] = useState(false)
@@ -160,17 +166,29 @@ export function SupplierSelector({
     )
   }, [suppliers, searchTerm])
 
-  // Get selected supplier details
+  // Get selected supplier details (y fallback si el id no está en el padrón cargado)
   useEffect(() => {
-    if (value && suppliers.length > 0) {
-      const supplier = suppliers.find(s => s.id === value)
-      if (supplier) {
-        setSelectedSupplier(supplier)
-      }
+    if (!value) {
+      setSelectedSupplier(null)
+      return
+    }
+    if (suppliers.length === 0) return
+    const supplier = suppliers.find((s) => s.id === value)
+    if (supplier) {
+      setSelectedSupplier(supplier)
+    } else if (registryNameFallback?.trim()) {
+      setSelectedSupplier({
+        id: value,
+        name: registryNameFallback.trim(),
+        supplier_type: "company",
+        status: "active",
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      } as Supplier)
     } else {
       setSelectedSupplier(null)
     }
-  }, [value, suppliers])
+  }, [value, suppliers, registryNameFallback])
 
   const getTypeBadge = (type: string) => {
     const typeConfig = {
@@ -355,6 +373,28 @@ export function SupplierSelector({
                 variant="ghost"
                 size="sm"
                 onClick={handleClearSelection}
+              >
+                Cambiar
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      ) : !value && initialManualName?.trim() ? (
+        <Card className="border-border/80 bg-muted/20">
+          <CardContent className="p-3">
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <h4 className="font-medium text-sm">Proveedor (solo nombre)</h4>
+                <p className="text-sm text-muted-foreground">{initialManualName.trim()}</p>
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  if (initialManualName) setManualName(initialManualName)
+                  setShowDialog(true)
+                }}
               >
                 Cambiar
               </Button>

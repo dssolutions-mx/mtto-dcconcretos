@@ -38,6 +38,8 @@ interface PurchaseOrderDetailsMobileProps {
   isImageFile: (url: string) => boolean
   isPdfFile: (url: string) => boolean
   fulfillmentHints?: POFulfillmentHints | null
+  isViewerCoordinator?: boolean
+  coordinatorQuotationUnlocked?: boolean
 }
 
 export function PurchaseOrderDetailsMobile({
@@ -54,6 +56,8 @@ export function PurchaseOrderDetailsMobile({
   isImageFile,
   isPdfFile,
   fulfillmentHints,
+  isViewerCoordinator = false,
+  coordinatorQuotationUnlocked = true,
 }: PurchaseOrderDetailsMobileProps) {
   
   return (
@@ -395,6 +399,8 @@ export function PurchaseOrderDetailsMobile({
                   quotationSelectionStatus={order.quotation_selection_status}
                   poPurpose={order.po_purpose}
                   className="space-y-4"
+                  isViewerCoordinator={isViewerCoordinator}
+                  coordinatorQuotationUnlocked={coordinatorQuotationUnlocked}
                 />
               </CardContent>
             </CollapsibleContent>

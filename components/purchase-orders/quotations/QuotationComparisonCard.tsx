@@ -3,7 +3,7 @@
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Star, Clock, DollarSign, CheckCircle2, XCircle, FileText, TrendingDown, Zap, Trash2 } from "lucide-react"
+import { Star, Clock, DollarSign, CheckCircle2, XCircle, FileText, TrendingDown, Zap, Trash2, Pencil } from "lucide-react"
 import { PurchaseOrderQuotation } from "@/types/purchase-orders"
 import { QuotationFileButton } from "@/components/purchase-orders/quotations/QuotationFileButton"
 import { quotationHasFile } from "@/lib/quotations/quotation-file-access"
@@ -18,7 +18,10 @@ interface QuotationComparisonCardProps {
   onSelect?: (quotationId: string) => void
   onReject?: (quotationId: string) => void
   onDelete?: (quotationId: string) => void
+  onEdit?: (quotationId: string) => void
   showActions?: boolean
+  /** When false, Seleccionar is hidden; row can still show edit/delete if callbacks passed */
+  showSelectActions?: boolean
 }
 
 export function QuotationComparisonCard({
@@ -29,8 +32,11 @@ export function QuotationComparisonCard({
   onSelect,
   onReject,
   onDelete,
-  showActions = true
+  onEdit,
+  showActions = true,
+  showSelectActions: showSelectActionsProp,
 }: QuotationComparisonCardProps) {
+  const showSelectActions = showSelectActionsProp ?? showActions
   const supplier = quotation.supplier as Supplier | undefined
   
   return (
@@ -164,18 +170,31 @@ export function QuotationComparisonCard({
           </div>
         )}
 
-        {/* Actions */}
-        {!isSelected && quotation.status === QuotationStatus.PENDING && (showActions || onDelete) && (
-          <div className="flex gap-2 mt-auto pt-4">
-            {showActions && onSelect && (
+        {/* Acciones: comparación / no elegida aún (pendiente) */}
+        {quotation.status === QuotationStatus.PENDING &&
+          ((showSelectActions && onSelect) || onEdit || onDelete) && (
+          <div className="flex flex-wrap gap-2 mt-auto pt-4">
+            {showSelectActions && onSelect && (
               <Button size="sm" className="flex-1" onClick={() => onSelect(quotation.id)}>
                 <CheckCircle2 className="h-4 w-4 mr-2" />
                 Seleccionar
               </Button>
             )}
-            {showActions && onReject && (
+            {showSelectActions && onReject && (
               <Button size="sm" variant="outline" onClick={() => onReject(quotation.id)}>
                 <XCircle className="h-4 w-4" />
+              </Button>
+            )}
+            {onEdit && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => onEdit(quotation.id)}
+                title="Editar cotización"
+                className="gap-1"
+              >
+                <Pencil className="h-4 w-4" />
+                Editar
               </Button>
             )}
             {onDelete && (
@@ -189,6 +208,22 @@ export function QuotationComparisonCard({
                 <Trash2 className="h-4 w-4" />
               </Button>
             )}
+          </div>
+        )}
+
+        {/* Cotización elegida: solo editar (no eliminar) */}
+        {quotation.status === QuotationStatus.SELECTED && onEdit && (
+          <div className="flex flex-wrap gap-2 mt-auto pt-4">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => onEdit(quotation.id)}
+              title="Editar cotización seleccionada"
+              className="gap-1"
+            >
+              <Pencil className="h-4 w-4" />
+              Editar
+            </Button>
           </div>
         )}
       </CardContent>

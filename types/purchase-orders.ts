@@ -403,6 +403,8 @@ export interface PurchaseOrderQuotation {
   /** Path within bucket `quotations` — stable; use for new records */
   file_storage_path?: string | null
   file_name?: string
+  /** Extra files in the same bucket (see lib/quotations/quotation-file-access) */
+  additional_files?: { file_storage_path: string; file_name?: string | null }[] | null
   status: QuotationStatus
   selected_at?: string
   selected_by?: string
@@ -431,6 +433,7 @@ export interface CreateQuotationRequest {
   file_url?: string
   file_storage_path?: string | null
   file_name?: string
+  additional_files?: { file_storage_path: string; file_name?: string | null }[] | null
 }
 
 export interface SelectQuotationRequest {

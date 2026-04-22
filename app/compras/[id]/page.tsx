@@ -22,6 +22,8 @@ import {
 import { TypeBadge } from "@/components/purchase-orders/shared/TypeBadge"
 import { ReceiptDisplaySection } from "@/components/purchase-orders/ReceiptDisplaySection"
 import { PurchaseOrderDetailsRouter } from "@/components/purchase-orders/purchase-order-details-router"
+import { loadActorContext } from "@/lib/auth/server-authorization"
+import { computeCoordinatorQuotationUiState } from "@/lib/purchase-orders/coordinator-quotation-mutations"
 import { PurchaseOrderWorkOrderLink } from "@/components/purchase-orders/purchase-order-work-order-link"
 import { EditPOButton } from "@/components/purchase-orders/EditPOButton"
 import { QuotationComparisonManager } from "@/components/purchase-orders/quotations/QuotationComparisonManager"
@@ -180,6 +182,14 @@ async function PurchaseOrderDetailsContent({ id }: { id: string }) {
     fetchName(order.authorized_by),
     fetchName(order.approved_by),
   ])
+
+  const { data: auth } = await supabase.auth.getUser()
+  const actor = auth.user ? await loadActorContext(supabase, auth.user.id) : null
+  const coordinatorQuotationUi = computeCoordinatorQuotationUiState(actor, {
+    plant_id: order.plant_id,
+    viability_state: order.viability_state,
+    status: order.status,
+  })
 
   // ── Desktop layout ─────────────────────────────────────────────────────────
   const hasCatalogItems = items.some((i: any) => i.part_id || i.partNumber)
@@ -456,6 +466,8 @@ async function PurchaseOrderDetailsContent({ id }: { id: string }) {
                   quotationSelectionRequired={order.quotation_selection_required || false}
                   quotationSelectionStatus={order.quotation_selection_status}
                   poPurpose={order.po_purpose}
+                  isViewerCoordinator={coordinatorQuotationUi.isViewerCoordinator}
+                  coordinatorQuotationUnlocked={coordinatorQuotationUi.coordinatorQuotationUnlocked}
                 />
               </CardContent>
             </Card>
@@ -540,6 +552,8 @@ async function PurchaseOrderDetailsContent({ id }: { id: string }) {
         items={items}
         desktopContent={desktopContent}
         fulfillmentHints={workflowFulfillmentHints}
+        isViewerCoordinator={coordinatorQuotationUi.isViewerCoordinator}
+        coordinatorQuotationUnlocked={coordinatorQuotationUi.coordinatorQuotationUnlocked}
       />
     </Suspense>
   )

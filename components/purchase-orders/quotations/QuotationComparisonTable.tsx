@@ -4,7 +4,7 @@ import { useState, useMemo } from "react"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { ArrowUpDown, ArrowUp, ArrowDown, CheckCircle2, FileText, Star } from "lucide-react"
+import { ArrowUpDown, ArrowUp, ArrowDown, CheckCircle2, FileText, Star, Pencil, Trash2 } from "lucide-react"
 import { PurchaseOrderQuotation, QuotationComparison } from "@/types/purchase-orders"
 import { QuotationStatus } from "@/types/purchase-orders"
 import { QuotationFileButton } from "@/components/purchase-orders/quotations/QuotationFileButton"
@@ -13,6 +13,8 @@ import { quotationHasFile } from "@/lib/quotations/quotation-file-access"
 interface QuotationComparisonTableProps {
   comparison: QuotationComparison
   onSelect?: (quotationId: string) => void
+  onEdit?: (quotationId: string) => void
+  onDelete?: (quotationId: string) => void
 }
 
 type SortField = 'supplier' | 'price' | 'delivery' | 'rating'
@@ -21,6 +23,8 @@ type SortDirection = 'asc' | 'desc'
 export function QuotationComparisonTable({
   comparison,
   onSelect,
+  onEdit,
+  onDelete,
 }: QuotationComparisonTableProps) {
   const [sortField, setSortField] = useState<SortField>('price')
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc')
@@ -211,6 +215,31 @@ export function QuotationComparisonTable({
                         onClick={() => onSelect(quotation.id)}
                       >
                         Seleccionar
+                      </Button>
+                    )}
+                    {onEdit &&
+                      (quotation.status === QuotationStatus.PENDING ||
+                        quotation.status === QuotationStatus.SELECTED) && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => onEdit(quotation.id)}
+                        title="Editar cotización"
+                        className="gap-1"
+                      >
+                        <Pencil className="h-4 w-4" />
+                        Editar
+                      </Button>
+                    )}
+                    {!isSelected && quotation.status === QuotationStatus.PENDING && onDelete && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => onDelete(quotation.id)}
+                        title="Eliminar"
+                        className="text-destructive hover:text-destructive"
+                      >
+                        <Trash2 className="h-4 w-4" />
                       </Button>
                     )}
                   </div>

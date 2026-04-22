@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
-import { QuotationService } from '@/lib/services/quotation-service'
+import { loadActorContext } from '@/lib/auth/server-authorization'
+import { coordinatorQuotationMutationAllowed } from '@/lib/purchase-orders/coordinator-quotation-mutations'
 import { CreateQuotationRequest } from '@/types/purchase-orders'
 
 /**
@@ -16,6 +17,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ 
         error: 'User not authenticated' 
       }, { status: 401 })
+    }
+
+    const actor = await loadActorContext(supabase, user.id)
+    if (!actor) {
+      return NextResponse.json({ error: 'Perfil de usuario no encontrado' }, { status: 403 })
     }
     
     const body: CreateQuotationRequest = await request.json()
@@ -37,7 +43,7 @@ export async function POST(request: NextRequest) {
     // Verify PO exists and check po_purpose
     const { data: po, error: poError } = await supabase
       .from('purchase_orders')
-      .select('id, po_purpose, requires_quote')
+      .select('id, po_purpose, requires_quote, plant_id, viability_state, status')
       .eq('id', body.purchase_order_id)
       .single()
     
@@ -57,6 +63,15 @@ export async function POST(request: NextRequest) {
         error: 'Quotations not required for inventory-only purchase orders' 
       }, { status: 400 })
     }
+
+    const coordGate = coordinatorQuotationMutationAllowed(actor, {
+      plant_id: po.plant_id,
+      viability_state: po.viability_state,
+      status: po.status,
+    })
+    if (!coordGate.ok) {
+      return NextResponse.json({ error: coordGate.message }, { status: 403 })
+    }
     
     // Create quotation
     const { data, error } = await supabase
@@ -74,6 +89,7 @@ export async function POST(request: NextRequest) {
         file_storage_path: body.file_storage_path ?? null,
         file_url: body.file_url ?? null,
         file_name: body.file_name,
+        additional_files: body.additional_files ?? [],
         status: 'pending',
         created_by: user.id
       })
