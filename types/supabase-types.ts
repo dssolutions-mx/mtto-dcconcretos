@@ -12,6 +12,31 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "12.2.3 (519615d)"
   }
+  graphql_public: {
+    Tables: {
+      [_ in never]: never
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      graphql: {
+        Args: {
+          extensions?: Json
+          operationName?: string
+          query?: string
+          variables?: Json
+        }
+        Returns: Json
+      }
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
+  }
   public: {
     Tables: {
       additional_expenses: {
@@ -523,6 +548,90 @@ export type Database = {
           },
         ]
       }
+      asset_field_verifications: {
+        Row: {
+          asset_id: string
+          field: string
+          id: string
+          value_hash: string | null
+          verified_at: string
+          verified_by: string
+        }
+        Insert: {
+          asset_id: string
+          field: string
+          id?: string
+          value_hash?: string | null
+          verified_at?: string
+          verified_by: string
+        }
+        Update: {
+          asset_id?: string
+          field?: string
+          id?: string
+          value_hash?: string | null
+          verified_at?: string
+          verified_by?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "asset_field_verifications_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "active_assets_without_recent_inspection"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "asset_field_verifications_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "asset_operators_full"
+            referencedColumns: ["asset_uuid"]
+          },
+          {
+            foreignKeyName: "asset_field_verifications_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "assets"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "asset_field_verifications_verified_by_fkey"
+            columns: ["verified_by"]
+            isOneToOne: false
+            referencedRelation: "asset_operators_full"
+            referencedColumns: ["operator_uuid"]
+          },
+          {
+            foreignKeyName: "asset_field_verifications_verified_by_fkey"
+            columns: ["verified_by"]
+            isOneToOne: false
+            referencedRelation: "authorization_limits"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "asset_field_verifications_verified_by_fkey"
+            columns: ["verified_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "asset_field_verifications_verified_by_fkey"
+            columns: ["verified_by"]
+            isOneToOne: false
+            referencedRelation: "user_authorization_summary"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "asset_field_verifications_verified_by_fkey"
+            columns: ["verified_by"]
+            isOneToOne: false
+            referencedRelation: "user_roles_summary"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       asset_name_mappings: {
         Row: {
           asset_id: string | null
@@ -793,6 +902,7 @@ export type Database = {
           current_kilometers: number | null
           department: string | null
           department_id: string | null
+          fabrication_year: number | null
           id: string
           initial_hours: number | null
           initial_kilometers: number | null
@@ -831,6 +941,7 @@ export type Database = {
           current_kilometers?: number | null
           department?: string | null
           department_id?: string | null
+          fabrication_year?: number | null
           id?: string
           initial_hours?: number | null
           initial_kilometers?: number | null
@@ -869,6 +980,7 @@ export type Database = {
           current_kilometers?: number | null
           department?: string | null
           department_id?: string | null
+          fabrication_year?: number | null
           id?: string
           initial_hours?: number | null
           initial_kilometers?: number | null
@@ -966,6 +1078,96 @@ export type Database = {
             columns: ["primary_component_id"]
             isOneToOne: false
             referencedRelation: "assets"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      assets_audit_log: {
+        Row: {
+          after_value: string | null
+          asset_id: string
+          before_value: string | null
+          created_at: string
+          field: string
+          id: string
+          source: string
+          user_id: string
+        }
+        Insert: {
+          after_value?: string | null
+          asset_id: string
+          before_value?: string | null
+          created_at?: string
+          field: string
+          id?: string
+          source?: string
+          user_id: string
+        }
+        Update: {
+          after_value?: string | null
+          asset_id?: string
+          before_value?: string | null
+          created_at?: string
+          field?: string
+          id?: string
+          source?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "assets_audit_log_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "active_assets_without_recent_inspection"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "assets_audit_log_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "asset_operators_full"
+            referencedColumns: ["asset_uuid"]
+          },
+          {
+            foreignKeyName: "assets_audit_log_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "assets"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "assets_audit_log_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "asset_operators_full"
+            referencedColumns: ["operator_uuid"]
+          },
+          {
+            foreignKeyName: "assets_audit_log_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "authorization_limits"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "assets_audit_log_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "assets_audit_log_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "user_authorization_summary"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "assets_audit_log_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "user_roles_summary"
             referencedColumns: ["id"]
           },
         ]
@@ -3729,30 +3931,51 @@ export type Database = {
       }
       ingresos_gastos_kpi_plant_month: {
         Row: {
+          compute_version: number
+          computed_at: string
           id: string
+          payload: Json
           period_month: string
           plant_id: string
-          payload: Json
-          computed_at: string
-          compute_version: number
         }
         Insert: {
+          compute_version?: number
+          computed_at?: string
           id?: string
+          payload: Json
           period_month: string
           plant_id: string
-          payload: Json
-          computed_at?: string
-          compute_version?: number
         }
         Update: {
+          compute_version?: number
+          computed_at?: string
           id?: string
+          payload?: Json
           period_month?: string
           plant_id?: string
-          payload?: Json
-          computed_at?: string
-          compute_version?: number
         }
         Relationships: [
+          {
+            foreignKeyName: "ingresos_gastos_kpi_plant_month_plant_id_fkey"
+            columns: ["plant_id"]
+            isOneToOne: false
+            referencedRelation: "asset_operators_full"
+            referencedColumns: ["asset_plant_uuid"]
+          },
+          {
+            foreignKeyName: "ingresos_gastos_kpi_plant_month_plant_id_fkey"
+            columns: ["plant_id"]
+            isOneToOne: false
+            referencedRelation: "asset_operators_full"
+            referencedColumns: ["operator_plant_uuid"]
+          },
+          {
+            foreignKeyName: "ingresos_gastos_kpi_plant_month_plant_id_fkey"
+            columns: ["plant_id"]
+            isOneToOne: false
+            referencedRelation: "inventory_low_stock_alerts"
+            referencedColumns: ["plant_id"]
+          },
           {
             foreignKeyName: "ingresos_gastos_kpi_plant_month_plant_id_fkey"
             columns: ["plant_id"]
@@ -6020,6 +6243,7 @@ export type Database = {
           total_amount: number | null
           updated_at: string | null
           updated_by: string | null
+          viability_checked_by: string | null
           viability_state: string | null
           work_order_id: string | null
           work_order_type: string | null
@@ -6092,6 +6316,7 @@ export type Database = {
           total_amount?: number | null
           updated_at?: string | null
           updated_by?: string | null
+          viability_checked_by?: string | null
           viability_state?: string | null
           work_order_id?: string | null
           work_order_type?: string | null
@@ -6164,6 +6389,7 @@ export type Database = {
           total_amount?: number | null
           updated_at?: string | null
           updated_by?: string | null
+          viability_checked_by?: string | null
           viability_state?: string | null
           work_order_id?: string | null
           work_order_type?: string | null
@@ -7017,6 +7243,79 @@ export type Database = {
           },
         ]
       }
+      supplier_verification_events: {
+        Row: {
+          action: string
+          actor_id: string
+          checklist_snapshot: Json | null
+          created_at: string
+          id: string
+          notes: string | null
+          supplier_id: string
+        }
+        Insert: {
+          action: string
+          actor_id: string
+          checklist_snapshot?: Json | null
+          created_at?: string
+          id?: string
+          notes?: string | null
+          supplier_id: string
+        }
+        Update: {
+          action?: string
+          actor_id?: string
+          checklist_snapshot?: Json | null
+          created_at?: string
+          id?: string
+          notes?: string | null
+          supplier_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "supplier_verification_events_actor_id_fkey"
+            columns: ["actor_id"]
+            isOneToOne: false
+            referencedRelation: "asset_operators_full"
+            referencedColumns: ["operator_uuid"]
+          },
+          {
+            foreignKeyName: "supplier_verification_events_actor_id_fkey"
+            columns: ["actor_id"]
+            isOneToOne: false
+            referencedRelation: "authorization_limits"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "supplier_verification_events_actor_id_fkey"
+            columns: ["actor_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "supplier_verification_events_actor_id_fkey"
+            columns: ["actor_id"]
+            isOneToOne: false
+            referencedRelation: "user_authorization_summary"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "supplier_verification_events_actor_id_fkey"
+            columns: ["actor_id"]
+            isOneToOne: false
+            referencedRelation: "user_roles_summary"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "supplier_verification_events_supplier_id_fkey"
+            columns: ["supplier_id"]
+            isOneToOne: false
+            referencedRelation: "suppliers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       supplier_work_history: {
         Row: {
           asset_id: string | null
@@ -7126,51 +7425,6 @@ export type Database = {
             columns: ["work_order_id"]
             isOneToOne: false
             referencedRelation: "work_orders_with_checklist_status"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      supplier_verification_events: {
-        Row: {
-          action: string
-          actor_id: string
-          checklist_snapshot: Json | null
-          created_at: string
-          id: string
-          notes: string | null
-          supplier_id: string
-        }
-        Insert: {
-          action: string
-          actor_id: string
-          checklist_snapshot?: Json | null
-          created_at?: string
-          id?: string
-          notes?: string | null
-          supplier_id: string
-        }
-        Update: {
-          action?: string
-          actor_id?: string
-          checklist_snapshot?: Json | null
-          created_at?: string
-          id?: string
-          notes?: string | null
-          supplier_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "supplier_verification_events_actor_id_fkey"
-            columns: ["actor_id"]
-            isOneToOne: false
-            referencedRelation: "profiles"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "supplier_verification_events_supplier_id_fkey"
-            columns: ["supplier_id"]
-            isOneToOne: false
-            referencedRelation: "suppliers"
             referencedColumns: ["id"]
           },
         ]
@@ -7305,7 +7559,35 @@ export type Database = {
             foreignKeyName: "suppliers_verified_by_fkey"
             columns: ["verified_by"]
             isOneToOne: false
+            referencedRelation: "asset_operators_full"
+            referencedColumns: ["operator_uuid"]
+          },
+          {
+            foreignKeyName: "suppliers_verified_by_fkey"
+            columns: ["verified_by"]
+            isOneToOne: false
+            referencedRelation: "authorization_limits"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "suppliers_verified_by_fkey"
+            columns: ["verified_by"]
+            isOneToOne: false
             referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "suppliers_verified_by_fkey"
+            columns: ["verified_by"]
+            isOneToOne: false
+            referencedRelation: "user_authorization_summary"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "suppliers_verified_by_fkey"
+            columns: ["verified_by"]
+            isOneToOne: false
+            referencedRelation: "user_roles_summary"
             referencedColumns: ["id"]
           },
         ]
@@ -7489,6 +7771,24 @@ export type Database = {
           },
         ]
       }
+      trust_field_policies: {
+        Row: {
+          field: string
+          severity: string
+          window_days: number | null
+        }
+        Insert: {
+          field: string
+          severity?: string
+          window_days?: number | null
+        }
+        Update: {
+          field?: string
+          severity?: string
+          window_days?: number | null
+        }
+        Relationships: []
+      }
       unit_conversions: {
         Row: {
           conversion_factor: number
@@ -7609,6 +7909,75 @@ export type Database = {
             foreignKeyName: "user_admin_context_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: true
+            referencedRelation: "user_roles_summary"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      user_saved_views: {
+        Row: {
+          config: Json
+          created_at: string
+          id: string
+          is_shared: boolean
+          name: string
+          scope: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          config?: Json
+          created_at?: string
+          id?: string
+          is_shared?: boolean
+          name: string
+          scope?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          config?: Json
+          created_at?: string
+          id?: string
+          is_shared?: boolean
+          name?: string
+          scope?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_saved_views_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "asset_operators_full"
+            referencedColumns: ["operator_uuid"]
+          },
+          {
+            foreignKeyName: "user_saved_views_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "authorization_limits"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "user_saved_views_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "user_saved_views_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "user_authorization_summary"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "user_saved_views_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
             referencedRelation: "user_roles_summary"
             referencedColumns: ["id"]
           },
@@ -7751,6 +8120,7 @@ export type Database = {
           related_issues_count: number | null
           requested_by: string | null
           required_parts: Json | null
+          required_tasks: Json | null
           reserved_parts_summary: Json | null
           scope: string | null
           service_order_id: string | null
@@ -7802,6 +8172,7 @@ export type Database = {
           related_issues_count?: number | null
           requested_by?: string | null
           required_parts?: Json | null
+          required_tasks?: Json | null
           reserved_parts_summary?: Json | null
           scope?: string | null
           service_order_id?: string | null
@@ -7853,6 +8224,7 @@ export type Database = {
           related_issues_count?: number | null
           requested_by?: string | null
           required_parts?: Json | null
+          required_tasks?: Json | null
           reserved_parts_summary?: Json | null
           scope?: string | null
           service_order_id?: string | null
@@ -8055,6 +8427,17 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      asset_conflicts: {
+        Row: {
+          asset_id: string | null
+          conflict_type: string | null
+          detail: string | null
+          equipment_model_id: string | null
+          payload: Json | null
+          severity: string | null
+        }
+        Relationships: []
       }
       asset_operator_assignments: {
         Row: {
@@ -8557,6 +8940,101 @@ export type Database = {
           },
         ]
       }
+      diesel_asset_consumption_by_warehouse: {
+        Row: {
+          asset_category: string | null
+          asset_code: string | null
+          asset_id: string | null
+          asset_name: string | null
+          avg_consumption_per_transaction: number | null
+          avg_liters_per_hour_tx: number | null
+          avg_liters_per_km_tx: number | null
+          consumption_last_30_days: number | null
+          exception_asset_name: string | null
+          first_consumption: string | null
+          last_consumption: string | null
+          plant_id: string | null
+          plant_name: string | null
+          product_type: string | null
+          total_consumption: number | null
+          transaction_count: number | null
+          transactions_last_30_days: number | null
+          warehouse_id: string | null
+          warehouse_name: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "diesel_transactions_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "active_assets_without_recent_inspection"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "diesel_transactions_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "asset_operators_full"
+            referencedColumns: ["asset_uuid"]
+          },
+          {
+            foreignKeyName: "diesel_transactions_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "assets"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "diesel_transactions_warehouse_id_fkey"
+            columns: ["warehouse_id"]
+            isOneToOne: false
+            referencedRelation: "diesel_current_inventory"
+            referencedColumns: ["warehouse_id"]
+          },
+          {
+            foreignKeyName: "diesel_transactions_warehouse_id_fkey"
+            columns: ["warehouse_id"]
+            isOneToOne: false
+            referencedRelation: "diesel_warehouses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "diesel_transactions_warehouse_id_fkey"
+            columns: ["warehouse_id"]
+            isOneToOne: false
+            referencedRelation: "monthly_inventory_summary"
+            referencedColumns: ["warehouse_id"]
+          },
+          {
+            foreignKeyName: "diesel_warehouses_plant_id_fkey"
+            columns: ["plant_id"]
+            isOneToOne: false
+            referencedRelation: "asset_operators_full"
+            referencedColumns: ["asset_plant_uuid"]
+          },
+          {
+            foreignKeyName: "diesel_warehouses_plant_id_fkey"
+            columns: ["plant_id"]
+            isOneToOne: false
+            referencedRelation: "asset_operators_full"
+            referencedColumns: ["operator_plant_uuid"]
+          },
+          {
+            foreignKeyName: "diesel_warehouses_plant_id_fkey"
+            columns: ["plant_id"]
+            isOneToOne: false
+            referencedRelation: "inventory_low_stock_alerts"
+            referencedColumns: ["plant_id"]
+          },
+          {
+            foreignKeyName: "diesel_warehouses_plant_id_fkey"
+            columns: ["plant_id"]
+            isOneToOne: false
+            referencedRelation: "plants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       diesel_asset_consumption_summary: {
         Row: {
           activity_status: string | null
@@ -8599,48 +9077,6 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
-      }
-      diesel_asset_consumption_by_warehouse: {
-        Row: {
-          asset_category: string | null
-          asset_code: string | null
-          asset_id: string | null
-          asset_name: string | null
-          avg_consumption_per_transaction: number | null
-          avg_liters_per_hour_tx: number | null
-          avg_liters_per_km_tx: number | null
-          consumption_last_30_days: number | null
-          exception_asset_name: string | null
-          first_consumption: string | null
-          last_consumption: string | null
-          plant_name: string | null
-          plant_id: string | null
-          product_type: string | null
-          total_consumption: number | null
-          transaction_count: number | null
-          transactions_last_30_days: number | null
-          warehouse_id: string | null
-          warehouse_name: string | null
-        }
-        Relationships: []
-      }
-      diesel_monthly_consumption_by_asset: {
-        Row: {
-          asset_category: string | null
-          asset_id: string | null
-          exception_asset_name: string | null
-          period_first_tx: string | null
-          period_last_tx: string | null
-          plant_id: string | null
-          total_hours_consumed: number | null
-          total_km_consumed: number | null
-          total_liters: number | null
-          transaction_count: number | null
-          warehouse_id: string | null
-          warehouse_name: string | null
-          year_month: string | null
-        }
-        Relationships: []
       }
       diesel_current_inventory: {
         Row: {
@@ -8715,6 +9151,95 @@ export type Database = {
           warehouse_name: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "diesel_transactions_warehouse_id_fkey"
+            columns: ["warehouse_id"]
+            isOneToOne: false
+            referencedRelation: "diesel_current_inventory"
+            referencedColumns: ["warehouse_id"]
+          },
+          {
+            foreignKeyName: "diesel_transactions_warehouse_id_fkey"
+            columns: ["warehouse_id"]
+            isOneToOne: false
+            referencedRelation: "diesel_warehouses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "diesel_transactions_warehouse_id_fkey"
+            columns: ["warehouse_id"]
+            isOneToOne: false
+            referencedRelation: "monthly_inventory_summary"
+            referencedColumns: ["warehouse_id"]
+          },
+          {
+            foreignKeyName: "diesel_warehouses_plant_id_fkey"
+            columns: ["plant_id"]
+            isOneToOne: false
+            referencedRelation: "asset_operators_full"
+            referencedColumns: ["asset_plant_uuid"]
+          },
+          {
+            foreignKeyName: "diesel_warehouses_plant_id_fkey"
+            columns: ["plant_id"]
+            isOneToOne: false
+            referencedRelation: "asset_operators_full"
+            referencedColumns: ["operator_plant_uuid"]
+          },
+          {
+            foreignKeyName: "diesel_warehouses_plant_id_fkey"
+            columns: ["plant_id"]
+            isOneToOne: false
+            referencedRelation: "inventory_low_stock_alerts"
+            referencedColumns: ["plant_id"]
+          },
+          {
+            foreignKeyName: "diesel_warehouses_plant_id_fkey"
+            columns: ["plant_id"]
+            isOneToOne: false
+            referencedRelation: "plants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      diesel_monthly_consumption_by_asset: {
+        Row: {
+          asset_category: string | null
+          asset_id: string | null
+          exception_asset_name: string | null
+          period_first_tx: string | null
+          period_last_tx: string | null
+          plant_id: string | null
+          total_hours_consumed: number | null
+          total_km_consumed: number | null
+          total_liters: number | null
+          transaction_count: number | null
+          warehouse_id: string | null
+          warehouse_name: string | null
+          year_month: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "diesel_transactions_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "active_assets_without_recent_inspection"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "diesel_transactions_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "asset_operators_full"
+            referencedColumns: ["asset_uuid"]
+          },
+          {
+            foreignKeyName: "diesel_transactions_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "assets"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "diesel_transactions_warehouse_id_fkey"
             columns: ["warehouse_id"]
@@ -9588,22 +10113,22 @@ export type Database = {
             }
             Returns: Json
           }
+      apply_supplier_verification_event: {
+        Args: {
+          p_action: string
+          p_checklist_snapshot: Json
+          p_new_status: string
+          p_notes: string
+          p_supplier_id: string
+        }
+        Returns: undefined
+      }
       approve_additional_expense: {
         Args: { p_approved_by: string; p_expense_id: string }
         Returns: boolean
       }
       approve_purchase_order: {
         Args: { p_approved_by: string; p_purchase_order_id: string }
-        Returns: undefined
-      }
-      apply_supplier_verification_event: {
-        Args: {
-          p_action: string
-          p_checklist_snapshot?: Json | null
-          p_new_status: string
-          p_notes?: string | null
-          p_supplier_id: string
-        }
         Returns: undefined
       }
       assign_operator_to_asset: {
@@ -9663,6 +10188,7 @@ export type Database = {
         Args: { p_asset_id: string; p_maintenance_interval: number }
         Returns: string
       }
+      call_refresh_ingresos_kpi_rollup: { Args: never; Returns: undefined }
       can_asset_operate: { Args: { p_asset_id: string }; Returns: boolean }
       can_manage_user: { Args: { target_user_id: string }; Returns: boolean }
       can_user_access_plant: {
@@ -9787,6 +10313,48 @@ export type Database = {
           p_template_id: string
         }
         Returns: string
+      }
+      diesel_analytics_assets_in_period: {
+        Args: {
+          p_from?: string
+          p_plant_ids?: string[]
+          p_to?: string
+          p_warehouse_id?: string
+        }
+        Returns: {
+          asset_category: string
+          asset_code: string
+          asset_id: string
+          asset_name: string
+          avg_consumption_per_transaction: number
+          exception_asset_name: string
+          first_consumption: string
+          last_consumption: string
+          plant_id: string
+          plant_name: string
+          sum_hours_consumed: number
+          sum_km_consumed: number
+          total_consumption: number
+          transaction_count: number
+          warehouse_id: string
+          warehouse_name: string
+        }[]
+      }
+      diesel_analytics_overview_totals: {
+        Args: { p_from?: string; p_plant_ids?: string[]; p_to?: string }
+        Returns: Json
+      }
+      diesel_analytics_warehouse_period: {
+        Args: { p_from?: string; p_plant_ids?: string[]; p_to?: string }
+        Returns: {
+          consumption_liters: number
+          entry_liters: number
+          net_flow: number
+          plant_id: string
+          plant_name: string
+          warehouse_id: string
+          warehouse_name: string
+        }[]
       }
       ensure_asset_uuid: {
         Args: { p_asset_reference: string }
@@ -10060,56 +10628,6 @@ export type Database = {
         }[]
       }
       get_diesel_backdating_threshold_minutes: { Args: never; Returns: number }
-      diesel_analytics_assets_in_period: {
-        Args: {
-          p_from?: string | null
-          p_plant_ids?: string[] | null
-          p_to?: string | null
-          p_warehouse_id?: string | null
-        }
-        Returns: {
-          asset_category: string | null
-          asset_code: string | null
-          asset_id: string | null
-          asset_name: string | null
-          avg_consumption_per_transaction: number | null
-          exception_asset_name: string | null
-          first_consumption: string | null
-          last_consumption: string | null
-          plant_id: string | null
-          plant_name: string | null
-          sum_hours_consumed: number | null
-          sum_km_consumed: number | null
-          total_consumption: number | null
-          transaction_count: number | null
-          warehouse_id: string | null
-          warehouse_name: string | null
-        }[]
-      }
-      diesel_analytics_overview_totals: {
-        Args: {
-          p_from?: string | null
-          p_plant_ids?: string[] | null
-          p_to?: string | null
-        }
-        Returns: Json
-      }
-      diesel_analytics_warehouse_period: {
-        Args: {
-          p_from?: string | null
-          p_plant_ids?: string[] | null
-          p_to?: string | null
-        }
-        Returns: {
-          consumption_liters: number | null
-          entry_liters: number | null
-          net_flow: number | null
-          plant_id: string | null
-          plant_name: string | null
-          warehouse_id: string | null
-          warehouse_name: string | null
-        }[]
-      }
       get_expected_next_reading: {
         Args: { p_asset_id: string; p_reading_type?: string }
         Returns: Json
@@ -10728,6 +11246,9 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
+  graphql_public: {
+    Enums: {},
+  },
   public: {
     Enums: {
       assignment_type: ["primary", "secondary"],

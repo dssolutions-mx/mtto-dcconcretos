@@ -16,7 +16,7 @@
     "sync:dry": "node -r dotenv/config scripts/sync_missing_employees.mjs --dry-run",
     "sync:run": "node -r dotenv/config scripts/sync_missing_employees.mjs",
     "email:manager-snapshot": "npx tsx scripts/email/generate-manager-snapshot-email.ts",
-    "gen:db-types": "supabase gen types typescript --linked -o types/supabase-types.ts",
+    "gen:db-types": "sh -c 'supabase gen types typescript --linked > types/supabase-types.ts'",
     "verify:kpi-rollup": "npx tsx scripts/verify-kpi-rollup-consistency.ts"
   },
   "dependencies": {
@@ -55,6 +55,7 @@
     "@supabase/ssr": "^0.6.1",
     "@supabase/supabase-js": "latest",
     "@tanstack/react-table": "^8.21.3",
+    "@tanstack/react-virtual": "^3.13.24",
     "@vercel/analytics": "^1.5.0",
     "@zumer/snapdom": "^2.1.0",
     "autoprefixer": "^10.4.20",

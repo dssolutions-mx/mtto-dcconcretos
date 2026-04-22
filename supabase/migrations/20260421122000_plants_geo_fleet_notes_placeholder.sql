@@ -1,0 +1,4 @@
+-- PR3 placeholders: uncomment and adjust when implementing geographic lens + node notes
+-- ALTER TABLE public.plants ADD COLUMN IF NOT EXISTS latitude double precision;
+-- ALTER TABLE public.plants ADD COLUMN IF NOT EXISTS longitude double precision;
+-- CREATE TABLE IF NOT EXISTS public.fleet_node_notes (...);

@@ -550,3 +550,5 @@ export interface AuthorizationMatrix {
   warehouse_responsibility_source?: WarehouseResponsibilitySource;
   warehouse_responsibility?: WarehouseResponsibilityInput;
 }
+
+export * from './fleet';

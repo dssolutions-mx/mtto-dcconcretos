@@ -25,7 +25,12 @@ export async function GET() {
           plants (
             id,
             name,
-            code
+            code,
+            business_units (
+              id,
+              name,
+              code
+            )
           ),
           departments (
             id,

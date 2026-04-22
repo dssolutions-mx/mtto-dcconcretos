@@ -87,3 +87,21 @@ export function getTableHeaderLabel(unit: MaintenanceUnit): string {
   return unit === 'kilometers' ? 'Próximo a los' : 'Próximo a las';
 }
 
+/** Which reading columns are tracked for this model's maintenance_unit (raw DB value). */
+export function getTrackedReadingFieldsForModelUnit(
+  raw: string | null | undefined
+): Array<'current_hours' | 'current_kilometers'> {
+  const u = (raw ?? 'hours').toLowerCase();
+  if (u === 'kilometers' || u === 'kilometres') return ['current_kilometers'];
+  if (u === 'both') return ['current_hours', 'current_kilometers'];
+  if (u === 'none') return [];
+  return ['current_hours'];
+}
+
+/** Primary reading field for "confirm reading" shortcuts (first tracked field). */
+export function getPrimaryReadingField(
+  raw: string | null | undefined
+): 'current_hours' | 'current_kilometers' | null {
+  const fields = getTrackedReadingFieldsForModelUnit(raw);
+  return fields[0] ?? null;
+}

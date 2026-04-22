@@ -118,6 +118,12 @@ export function GeneralInfoTab({
                 <div>
                   <span className="font-medium">Categoría:</span> {selectedModel.category}
                 </div>
+                {selectedModel.year_introduced != null && (
+                  <div>
+                    <span className="font-medium">Año del modelo (catálogo):</span>{' '}
+                    {selectedModel.year_introduced}
+                  </div>
+                )}
                 {selectedModel.maintenanceIntervals && selectedModel.maintenanceIntervals.length > 0 && (
                   <div className="col-span-2">
                     <span className="font-medium">Intervalos de Mantenimiento:</span>
