@@ -516,8 +516,8 @@ export function ComprasModule({
       </Card>
 
       <AlertDialog open={showApprovalDialog} onOpenChange={setShowApprovalDialog}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
+        <AlertDialogContent className="max-h-[90dvh] flex flex-col gap-4 overflow-hidden">
+          <AlertDialogHeader className="shrink-0">
             <AlertDialogTitle>
               {approvalAction === "approve"
                 ? approvalDialogCopy?.dialogTitleApprove ?? "Confirmar aprobación"
@@ -530,7 +530,7 @@ export function ComprasModule({
             </AlertDialogDescription>
           </AlertDialogHeader>
           {orderToApprove && (
-            <div className="space-y-3 mt-4">
+            <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain pr-1 -mr-1">
               {approvalContext[orderToApprove.id]?.workflowStage && (
                 <div className="flex items-center gap-2 p-2 rounded-lg bg-muted/50">
                   <span className="text-sm font-medium text-muted-foreground">Etapa:</span>
@@ -716,7 +716,7 @@ export function ComprasModule({
               <div className="text-xs text-muted-foreground">Tu límite de autorización: {formatCurrencyLocal(userAuthLimit)}</div>
             </div>
           )}
-          <AlertDialogFooter>
+          <AlertDialogFooter className="shrink-0">
             <AlertDialogCancel disabled={isApproving}>Cancelar</AlertDialogCancel>
             <AlertDialogAction
               onClick={confirmApproval}
