@@ -4,6 +4,7 @@ import { insertAssetAuditLog } from '@/lib/fleet/audit'
 import {
   canFleetEdit,
   canEditAssetAtPlant,
+  canFleetBulkAssignAssetToPlant,
   type FleetActor,
 } from '@/lib/fleet/fleet-api-auth'
 import type { SupabaseClient } from '@supabase/supabase-js'
@@ -162,8 +163,10 @@ export async function PATCH(request: NextRequest) {
               return NextResponse.json({ error: 'Planta destino no encontrada' }, { status: 404 })
             }
             if (
-              !canEditAssetAtPlant(
+              !canFleetBulkAssignAssetToPlant(
                 actor,
+                oldPid,
+                buId ?? null,
                 normalizedNew,
                 destPlantRow.business_unit_id ?? null
               )

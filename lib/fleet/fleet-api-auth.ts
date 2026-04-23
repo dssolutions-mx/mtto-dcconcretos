@@ -44,18 +44,15 @@ export function canEditAssetAtPlant(
       plantBusinessUnitId === actor.business_unit_id
     )
   }
-  if (
-    actor.role === 'JEFE_PLANTA' ||
-    (actor.role === 'COORDINADOR_MANTENIMIENTO' && actor.plant_id)
-  ) {
+  // Coordinador with BU on profile: BU-wide (matches executeAssetPlantReassignment before plant-only branch)
+  if (actor.role === 'COORDINADOR_MANTENIMIENTO' && actor.business_unit_id) {
+    return plantBusinessUnitId === actor.business_unit_id
+  }
+  if (actor.role === 'JEFE_PLANTA') {
     return !!assetPlantId && assetPlantId === actor.plant_id
   }
-  if (
-    actor.role === 'COORDINADOR_MANTENIMIENTO' &&
-    actor.business_unit_id &&
-    !actor.plant_id
-  ) {
-    return plantBusinessUnitId === actor.business_unit_id
+  if (actor.role === 'COORDINADOR_MANTENIMIENTO' && actor.plant_id) {
+    return !!assetPlantId && assetPlantId === actor.plant_id
   }
   if (actor.role === 'GERENTE_MANTENIMIENTO') {
     if (actor.plant_id) {
@@ -65,6 +62,44 @@ export function canEditAssetAtPlant(
       return plantBusinessUnitId === actor.business_unit_id
     }
     return true
+  }
+  return false
+}
+
+/**
+ * Whether fleet bulk may set an asset's plant to `toPlantId`, given its current plant.
+ * Destination-only checks using canEditAssetAtPlant fail for JP / plant-only Coordinador when moving
+ * off their plant within policy; this matches plant reassignment scope (at least one side is "my" plant for plant-scoped roles).
+ */
+export function canFleetBulkAssignAssetToPlant(
+  actor: FleetActor,
+  fromPlantId: string | null,
+  _fromPlantBuId: string | null,
+  toPlantId: string,
+  toPlantBuId: string | null
+): boolean {
+  if (!canFleetEdit(actor)) return false
+  if (actor.role === 'GERENCIA_GENERAL') return true
+  if (actor.role === 'JEFE_UNIDAD_NEGOCIO') {
+    return !!toPlantBuId && toPlantBuId === actor.business_unit_id
+  }
+  if (actor.role === 'COORDINADOR_MANTENIMIENTO' && actor.business_unit_id) {
+    return toPlantBuId === actor.business_unit_id
+  }
+  if (actor.role === 'GERENTE_MANTENIMIENTO') {
+    if (actor.plant_id) {
+      return toPlantId === actor.plant_id || fromPlantId === actor.plant_id
+    }
+    if (actor.business_unit_id && toPlantBuId) {
+      return toPlantBuId === actor.business_unit_id
+    }
+    return true
+  }
+  if (actor.role === 'JEFE_PLANTA') {
+    return toPlantId === actor.plant_id || fromPlantId === actor.plant_id
+  }
+  if (actor.role === 'COORDINADOR_MANTENIMIENTO' && actor.plant_id) {
+    return toPlantId === actor.plant_id || fromPlantId === actor.plant_id
   }
   return false
 }

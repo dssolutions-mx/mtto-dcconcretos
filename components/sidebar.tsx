@@ -521,6 +521,32 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                         </Link>
                       </Button>
                     )}
+                    {ui.canShowEditButton('assets') && (
+                      <>
+                        <Button
+                          variant={isPathActive("/gestion/activos/asignacion-plantas") ? "secondary" : "ghost"}
+                          className={cn("w-full justify-start pl-8", navItemClasses)}
+                          asChild
+                          onClick={handleLinkClick}
+                        >
+                          <Link href="/gestion/activos/asignacion-plantas">
+                            <Package className="mr-2 h-4 w-4" />
+                            Activos a Plantas
+                          </Link>
+                        </Button>
+                        <Button
+                          variant={isPathActive("/activos/asignacion") ? "secondary" : "ghost"}
+                          className={cn("w-full justify-start pl-8", navItemClasses)}
+                          asChild
+                          onClick={handleLinkClick}
+                        >
+                          <Link href="/activos/asignacion">
+                            <UserCheck className="mr-2 h-4 w-4" />
+                            Asignación de Activos
+                          </Link>
+                        </Button>
+                      </>
+                    )}
                   </CollapsibleContent>
                 </Collapsible>
               </div>
@@ -576,6 +602,32 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                           Activos
                         </Link>
                       </Button>
+                    )}
+                    {ui.canShowEditButton('assets') && (
+                      <>
+                        <Button
+                          variant={isPathActive("/gestion/activos/asignacion-plantas") ? "secondary" : "ghost"}
+                          className={cn("w-full justify-start pl-8", navItemClasses)}
+                          asChild
+                          onClick={handleLinkClick}
+                        >
+                          <Link href="/gestion/activos/asignacion-plantas">
+                            <Package className="mr-2 h-4 w-4" />
+                            Activos a Plantas
+                          </Link>
+                        </Button>
+                        <Button
+                          variant={isPathActive("/activos/asignacion") ? "secondary" : "ghost"}
+                          className={cn("w-full justify-start pl-8", navItemClasses)}
+                          asChild
+                          onClick={handleLinkClick}
+                        >
+                          <Link href="/activos/asignacion">
+                            <UserCheck className="mr-2 h-4 w-4" />
+                            Asignación de Activos
+                          </Link>
+                        </Button>
+                      </>
                     )}
                   </CollapsibleContent>
                 </Collapsible>
@@ -1089,7 +1141,11 @@ type NavSection =
 
 function buildNavigationSections(
   profile: { role?: string; business_role?: string | null },
-  ui: { shouldShowInNavigation: (m: keyof ModulePermissions) => boolean; canShowCreateButton?: (m: keyof ModulePermissions) => boolean },
+  ui: {
+    shouldShowInNavigation: (m: keyof ModulePermissions) => boolean
+    canShowCreateButton?: (m: keyof ModulePermissions) => boolean
+    canShowEditButton?: (m: keyof ModulePermissions) => boolean
+  },
   pathname: string,
   isPathActive: (path: string) => boolean,
   isSectionActive: (paths: string[]) => boolean,
@@ -1109,12 +1165,33 @@ function buildNavigationSections(
     if (ui.shouldShowInNavigation('assets')) {
       equipmentItems.push({ href: "/activos", icon: Package, label: "Activos", active: isPathActive("/activos") })
     }
+    if (ui.canShowEditButton?.('assets')) {
+      equipmentItems.push(
+        {
+          href: "/gestion/activos/asignacion-plantas",
+          icon: Package,
+          label: "Activos a Plantas",
+          active: isPathActive("/gestion/activos/asignacion-plantas"),
+        },
+        {
+          href: "/activos/asignacion",
+          icon: UserCheck,
+          label: "Asignación de Activos",
+          active: isPathActive("/activos/asignacion"),
+        }
+      )
+    }
     if (equipmentItems.length > 0) {
       sections.push({
         id: "equipment",
         icon: Wrench,
         label: "Equipos",
-        active: isSectionActive(["/modelos", "/activos"]),
+        active: isSectionActive([
+          "/modelos",
+          "/activos",
+          "/gestion/activos/asignacion-plantas",
+          "/activos/asignacion",
+        ]),
         items: equipmentItems,
       })
     }
@@ -1205,7 +1282,7 @@ function buildNavigationSections(
       { href: "/gestion/asignaciones", icon: Target, label: "Asignaciones Organizacionales", active: isPathActive("/gestion/asignaciones"), badge: "Nuevo" },
       { href: "/gestion/personal", icon: Users, label: "Gestión de Personal", active: isPathActive("/gestion/personal") || isPathActive("/personal") },
     ]
-    if (ui.canShowCreateButton?.('assets') || profile.role === 'AREA_ADMINISTRATIVA') {
+    if (ui.canShowEditButton?.('assets') || profile.role === 'AREA_ADMINISTRATIVA') {
       orgItems.push(
         { href: "/gestion/activos/asignacion-plantas", icon: Package, label: "Activos a Plantas", active: isPathActive("/gestion/activos/asignacion-plantas") },
         { href: "/activos/asignacion", icon: UserCheck, label: "Asignación de Activos", active: isPathActive("/activos/asignacion") }
