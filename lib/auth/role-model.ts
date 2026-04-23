@@ -296,6 +296,10 @@ export const ROLES_PINNED_TO_PROFILE_ROLE_FOR_PERMISSIONS = new Set<LegacyDbRole
   'JEFE_PLANTA',
   'ENCARGADO_MANTENIMIENTO',
   'DOSIFICADOR',
+  // Operational maintenance roles: DB `role` is authoritative; a stale `business_role`
+  // must not strip assets/maintenance nav (e.g. COORDINADOR with business_role OPERADOR).
+  'COORDINADOR_MANTENIMIENTO',
+  'GERENTE_MANTENIMIENTO',
 ])
 
 /**

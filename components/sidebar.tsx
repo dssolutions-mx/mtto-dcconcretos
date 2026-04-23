@@ -188,6 +188,10 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
     pathname === '/dashboard/operator' ||
     pathname === '/dashboard/dosificador'
 
+  /** HR Organización vs. asset-only: coordinador has personnel:none but assets:read_write — show section without HR links. */
+  const showOrganizationNav =
+    ui.shouldShowInNavigation('personnel') || ui.canShowEditButton('assets')
+
   return (
     <div className={cn("pb-12", className)} role="navigation" aria-label="Navegación principal">
       <div className="space-y-4 py-4" data-tour="sidebar" id="sidebar-nav">
@@ -381,7 +385,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
             )}
 
             {/* Organization Section */}
-            {ui.shouldShowInNavigation('personnel') && (
+            {showOrganizationNav && (
               <div className="px-4">
                 <Collapsible open={organizationOpen} onOpenChange={setOrganizationOpen}>
                   <CollapsibleTrigger asChild>
@@ -402,33 +406,37 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                     </Button>
                   </CollapsibleTrigger>
                   <CollapsibleContent className="space-y-1 mt-2 transition-all duration-200 ease-in-out motion-reduce:transition-none">
-                    <Button
-                      variant={isPathActive("/gestion/asignaciones") ? "secondary" : "ghost"}
-                      className="w-full justify-start pl-8 font-semibold"
-                      asChild
-                      onClick={handleLinkClick}
-                      data-tour="asignaciones-organizacionales-nav"
-                    >
-                      <Link href="/gestion/asignaciones">
-                        <Target className="mr-2 h-4 w-4" />
-                        Asignaciones Organizacionales
-                        <Badge variant="secondary" className="ml-auto text-xs">Nuevo</Badge>
-                      </Link>
-                    </Button>
-                    <div className="pl-8 pt-1 pb-2">
-                      <p className="text-xs text-gray-500 mb-2">Páginas individuales:</p>
-                    </div>
-                    <Button
-                      variant={isPathActive("/gestion/personal") || isPathActive("/personal") ? "secondary" : "ghost"}
-                      className={cn("w-full justify-start pl-8", navItemClasses)}
-                      asChild
-                      onClick={handleLinkClick}
-                    >
-                      <Link href="/gestion/personal">
-                        <Users className="mr-2 h-4 w-4" />
-                        Gestión de Personal
-                      </Link>
-                    </Button>
+                    {ui.shouldShowInNavigation('personnel') && (
+                      <>
+                        <Button
+                          variant={isPathActive("/gestion/asignaciones") ? "secondary" : "ghost"}
+                          className="w-full justify-start pl-8 font-semibold"
+                          asChild
+                          onClick={handleLinkClick}
+                          data-tour="asignaciones-organizacionales-nav"
+                        >
+                          <Link href="/gestion/asignaciones">
+                            <Target className="mr-2 h-4 w-4" />
+                            Asignaciones Organizacionales
+                            <Badge variant="secondary" className="ml-auto text-xs">Nuevo</Badge>
+                          </Link>
+                        </Button>
+                        <div className="pl-8 pt-1 pb-2">
+                          <p className="text-xs text-gray-500 mb-2">Páginas individuales:</p>
+                        </div>
+                        <Button
+                          variant={isPathActive("/gestion/personal") || isPathActive("/personal") ? "secondary" : "ghost"}
+                          className={cn("w-full justify-start pl-8", navItemClasses)}
+                          asChild
+                          onClick={handleLinkClick}
+                        >
+                          <Link href="/gestion/personal">
+                            <Users className="mr-2 h-4 w-4" />
+                            Gestión de Personal
+                          </Link>
+                        </Button>
+                      </>
+                    )}
                     {(ui.canShowEditButton('assets') || profile.role === 'AREA_ADMINISTRATIVA') && (
                       <>
                         <Button
@@ -521,32 +529,6 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                         </Link>
                       </Button>
                     )}
-                    {ui.canShowEditButton('assets') && (
-                      <>
-                        <Button
-                          variant={isPathActive("/gestion/activos/asignacion-plantas") ? "secondary" : "ghost"}
-                          className={cn("w-full justify-start pl-8", navItemClasses)}
-                          asChild
-                          onClick={handleLinkClick}
-                        >
-                          <Link href="/gestion/activos/asignacion-plantas">
-                            <Package className="mr-2 h-4 w-4" />
-                            Activos a Plantas
-                          </Link>
-                        </Button>
-                        <Button
-                          variant={isPathActive("/activos/asignacion") ? "secondary" : "ghost"}
-                          className={cn("w-full justify-start pl-8", navItemClasses)}
-                          asChild
-                          onClick={handleLinkClick}
-                        >
-                          <Link href="/activos/asignacion">
-                            <UserCheck className="mr-2 h-4 w-4" />
-                            Asignación de Activos
-                          </Link>
-                        </Button>
-                      </>
-                    )}
                   </CollapsibleContent>
                 </Collapsible>
               </div>
@@ -602,32 +584,6 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                           Activos
                         </Link>
                       </Button>
-                    )}
-                    {ui.canShowEditButton('assets') && (
-                      <>
-                        <Button
-                          variant={isPathActive("/gestion/activos/asignacion-plantas") ? "secondary" : "ghost"}
-                          className={cn("w-full justify-start pl-8", navItemClasses)}
-                          asChild
-                          onClick={handleLinkClick}
-                        >
-                          <Link href="/gestion/activos/asignacion-plantas">
-                            <Package className="mr-2 h-4 w-4" />
-                            Activos a Plantas
-                          </Link>
-                        </Button>
-                        <Button
-                          variant={isPathActive("/activos/asignacion") ? "secondary" : "ghost"}
-                          className={cn("w-full justify-start pl-8", navItemClasses)}
-                          asChild
-                          onClick={handleLinkClick}
-                        >
-                          <Link href="/activos/asignacion">
-                            <UserCheck className="mr-2 h-4 w-4" />
-                            Asignación de Activos
-                          </Link>
-                        </Button>
-                      </>
                     )}
                   </CollapsibleContent>
                 </Collapsible>
@@ -877,7 +833,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
         )}
 
         {/* Organization Section */}
-        {ui.shouldShowInNavigation('personnel') && (
+        {showOrganizationNav && (
           <div className="px-4">
             <Collapsible open={organizationOpen} onOpenChange={setOrganizationOpen}>
               <CollapsibleTrigger asChild>
@@ -898,33 +854,37 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                 </Button>
               </CollapsibleTrigger>
               <CollapsibleContent className="space-y-1 mt-2 transition-all duration-200 ease-in-out motion-reduce:transition-none">
-                <Button
-                  variant={isPathActive("/gestion/asignaciones") ? "secondary" : "ghost"}
-                  className="w-full justify-start pl-8 font-semibold"
-                  asChild
-                  onClick={handleLinkClick}
-                  data-tour="asignaciones-organizacionales-nav"
-                >
-                  <Link href="/gestion/asignaciones">
-                    <Target className="mr-2 h-4 w-4" />
-                    Asignaciones Organizacionales
-                    <Badge variant="secondary" className="ml-auto text-xs">Nuevo</Badge>
-                  </Link>
-                </Button>
-                <div className="pl-8 pt-1 pb-2">
-                  <p className="text-xs text-gray-500 mb-2">Páginas individuales:</p>
-                </div>
-                <Button
-                  variant={isPathActive("/gestion/personal") || isPathActive("/personal") ? "secondary" : "ghost"}
-                  className={cn("w-full justify-start pl-8", navItemClasses)}
-                  asChild
-                  onClick={handleLinkClick}
-                >
-                  <Link href="/gestion/personal">
-                    <Users className="mr-2 h-4 w-4" />
-                    Gestión de Personal
-                  </Link>
-                </Button>
+                {ui.shouldShowInNavigation('personnel') && (
+                  <>
+                    <Button
+                      variant={isPathActive("/gestion/asignaciones") ? "secondary" : "ghost"}
+                      className="w-full justify-start pl-8 font-semibold"
+                      asChild
+                      onClick={handleLinkClick}
+                      data-tour="asignaciones-organizacionales-nav"
+                    >
+                      <Link href="/gestion/asignaciones">
+                        <Target className="mr-2 h-4 w-4" />
+                        Asignaciones Organizacionales
+                        <Badge variant="secondary" className="ml-auto text-xs">Nuevo</Badge>
+                      </Link>
+                    </Button>
+                    <div className="pl-8 pt-1 pb-2">
+                      <p className="text-xs text-gray-500 mb-2">Páginas individuales:</p>
+                    </div>
+                    <Button
+                      variant={isPathActive("/gestion/personal") || isPathActive("/personal") ? "secondary" : "ghost"}
+                      className={cn("w-full justify-start pl-8", navItemClasses)}
+                      asChild
+                      onClick={handleLinkClick}
+                    >
+                      <Link href="/gestion/personal">
+                        <Users className="mr-2 h-4 w-4" />
+                        Gestión de Personal
+                      </Link>
+                    </Button>
+                  </>
+                )}
                 {(ui.canShowEditButton('assets') || profile.role === 'AREA_ADMINISTRATIVA') && (
                   <>
                     <Button
@@ -1165,33 +1125,12 @@ function buildNavigationSections(
     if (ui.shouldShowInNavigation('assets')) {
       equipmentItems.push({ href: "/activos", icon: Package, label: "Activos", active: isPathActive("/activos") })
     }
-    if (ui.canShowEditButton?.('assets')) {
-      equipmentItems.push(
-        {
-          href: "/gestion/activos/asignacion-plantas",
-          icon: Package,
-          label: "Activos a Plantas",
-          active: isPathActive("/gestion/activos/asignacion-plantas"),
-        },
-        {
-          href: "/activos/asignacion",
-          icon: UserCheck,
-          label: "Asignación de Activos",
-          active: isPathActive("/activos/asignacion"),
-        }
-      )
-    }
     if (equipmentItems.length > 0) {
       sections.push({
         id: "equipment",
         icon: Wrench,
         label: "Equipos",
-        active: isSectionActive([
-          "/modelos",
-          "/activos",
-          "/gestion/activos/asignacion-plantas",
-          "/activos/asignacion",
-        ]),
+        active: isSectionActive(["/modelos", "/activos"]),
         items: equipmentItems,
       })
     }
@@ -1276,12 +1215,18 @@ function buildNavigationSections(
     })
   }
 
-  // Organization
-  if (ui.shouldShowInNavigation('personnel')) {
-    const orgItems: NavItem[] = [
-      { href: "/gestion/asignaciones", icon: Target, label: "Asignaciones Organizacionales", active: isPathActive("/gestion/asignaciones"), badge: "Nuevo" },
-      { href: "/gestion/personal", icon: Users, label: "Gestión de Personal", active: isPathActive("/gestion/personal") || isPathActive("/personal") },
-    ]
+  // Organization (full HR when personnel module; asset links only when assets write without personnel — e.g. Coordinador)
+  const showOrganizationSection =
+    ui.shouldShowInNavigation('personnel') || Boolean(ui.canShowEditButton?.('assets'))
+
+  if (showOrganizationSection) {
+    const orgItems: NavItem[] = []
+    if (ui.shouldShowInNavigation('personnel')) {
+      orgItems.push(
+        { href: "/gestion/asignaciones", icon: Target, label: "Asignaciones Organizacionales", active: isPathActive("/gestion/asignaciones"), badge: "Nuevo" },
+        { href: "/gestion/personal", icon: Users, label: "Gestión de Personal", active: isPathActive("/gestion/personal") || isPathActive("/personal") }
+      )
+    }
     if (ui.canShowEditButton?.('assets') || profile.role === 'AREA_ADMINISTRATIVA') {
       orgItems.push(
         { href: "/gestion/activos/asignacion-plantas", icon: Package, label: "Activos a Plantas", active: isPathActive("/gestion/activos/asignacion-plantas") },
