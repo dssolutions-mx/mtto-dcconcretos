@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
+import { createAdminClient } from '@/lib/supabase-admin'
 import {
   assertMayMutateAssetOperatorRow,
   loadActorContext,
 } from '@/lib/auth/server-authorization'
+import { alignOperatorProfileToAssetPlant } from '@/lib/assets/align-operator-profile-with-asset-plant'
 
 export async function GET(request: NextRequest) {
   try {
@@ -117,6 +119,15 @@ export async function POST(request: NextRequest) {
     })
     if (!postGate.ok) {
       return NextResponse.json({ error: postGate.error }, { status: postGate.status })
+    }
+
+    const adminClient = createAdminClient()
+    const align = await alignOperatorProfileToAssetPlant(supabase, adminClient, {
+      assetId: asset_id,
+      operatorId: operator_id,
+    })
+    if (!align.ok) {
+      return NextResponse.json({ error: align.error }, { status: align.status })
     }
 
     // Check if active assignment already exists

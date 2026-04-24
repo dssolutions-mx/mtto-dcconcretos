@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
+import { createAdminClient } from '@/lib/supabase-admin'
 import {
   assertMayTransferAssetOperator,
   loadActorContext,
 } from '@/lib/auth/server-authorization'
+import { alignOperatorProfileToAssetPlant } from '@/lib/assets/align-operator-profile-with-asset-plant'
 
 export async function POST(request: NextRequest) {
   try {
@@ -41,6 +43,15 @@ export async function POST(request: NextRequest) {
     })
     if (!transferGate.ok) {
       return NextResponse.json({ error: transferGate.error }, { status: transferGate.status })
+    }
+
+    const adminClient = createAdminClient()
+    const align = await alignOperatorProfileToAssetPlant(supabase, adminClient, {
+      assetId: to_asset_id,
+      operatorId: operator_id,
+    })
+    if (!align.ok) {
+      return NextResponse.json({ error: align.error }, { status: align.status })
     }
 
     // Check if operator exists and is active

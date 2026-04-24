@@ -2,7 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/types/supabase-types'
 import { checkAssetOperatorConflicts } from '@/lib/utils/conflict-detection'
 import { bundleAssetIdsFromRow } from '@/lib/composite-asset-bundle'
-import { shouldUpdateOperatorProfileForPlantTransfer } from '@/lib/assets/should-update-operator-profile-for-plant-transfer'
+import { syncAssignedOperatorProfilesToPlant } from '@/lib/assets/align-operator-profile-with-asset-plant'
 
 export { shouldUpdateOperatorProfileForPlantTransfer } from '@/lib/assets/should-update-operator-profile-for-plant-transfer'
 
@@ -277,64 +277,24 @@ export async function executeAssetPlantReassignment(
           },
         }
       }
-
-      const { data: newPlant } = await supabase
-        .from('plants')
-        .select('business_unit_id')
-        .eq('id', plantId)
-        .single()
-
-      if (!newPlant) {
-        return { ok: false, status: 404, body: { error: 'Target plant not found' } }
-      }
-
-      const transferErrors: { operator_id: string; message: string }[] = []
-
-      for (const operator of conflictCheck.affected_operators) {
-        if (
-          !shouldUpdateOperatorProfileForPlantTransfer(operator, newPlant.business_unit_id ?? null)
-        ) {
-          transferErrors.push({
-            operator_id: operator.id,
-            message:
-              'El perfil del operador no permite transferencia automática (unidad de negocio distinta).',
-          })
-          continue
-        }
-
-        const { error: updateOpError } = await adminClient
-          .from('profiles')
-          .update({
-            plant_id: plantId,
-            business_unit_id: newPlant.business_unit_id,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', operator.id)
-
-        if (updateOpError) {
-          console.error(`executeAssetPlantReassignment: operator ${operator.id}`, updateOpError)
-          transferErrors.push({
-            operator_id: operator.id,
-            message: updateOpError.message,
-          })
-        }
-      }
-
-      if (transferErrors.length > 0) {
-        return {
-          ok: false,
-          status: 500,
-          body: {
-            error:
-              'No se pudieron actualizar uno o más operadores al mover el activo. Revisa permisos o datos del operador.',
-            transfer_errors: transferErrors,
-          },
-        }
-      }
     } else if (effectiveResolve === 'keep') {
       console.warn(
         `Asset ${assetId} moved to plant ${plantId} with operators that may lose access`
       )
+    }
+  }
+
+  if (plantId) {
+    const syncProfiles = await syncAssignedOperatorProfilesToPlant(supabase, adminClient, {
+      bundleAssetIds,
+      targetPlantId: plantId,
+    })
+    if (!syncProfiles.ok) {
+      return {
+        ok: false,
+        status: syncProfiles.status,
+        body: { error: syncProfiles.error },
+      }
     }
   }
 
