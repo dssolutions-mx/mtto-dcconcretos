@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, useMemo } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
@@ -37,6 +37,7 @@ import { SupplierSelector } from "@/components/suppliers/SupplierSelector"
 import { Supplier } from "@/types/suppliers"
 import { PartAutocomplete, PartSuggestion } from "@/components/inventory/part-autocomplete"
 import { useUserPlant } from "@/hooks/use-user-plant"
+import { useCoordinatorQuotationPlantGate } from "@/hooks/use-coordinator-quotation-preflight"
 import { format } from "date-fns"
 import { toast } from "sonner"
 import { buildPurchaseOrderRoutingContext } from "@/lib/purchase-orders/routing-context"
@@ -409,6 +410,16 @@ export function SpecialOrderForm({
 
   const effectivePlantId =
     workOrder?.plant_id || workOrder?.asset?.plant_id || selectedPlantId || undefined
+
+  const quotationGatePo = useMemo(
+    () => ({
+      plant_id: effectivePlantId ?? null,
+      viability_state: "pending" as const,
+      status: "draft" as const,
+    }),
+    [effectivePlantId]
+  )
+  const quotationPlantGate = useCoordinatorQuotationPlantGate(quotationGatePo)
 
   // Handle form input changes
   const handleInputChange = (field: string, value: unknown) => {
@@ -1143,6 +1154,13 @@ export function SpecialOrderForm({
           </div>
         </AlertDescription>
       </Alert>
+
+      {quotationPlantGate.showBlocker && quotationPlantGate.blockerMessage ? (
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>{quotationPlantGate.blockerMessage}</AlertDescription>
+        </Alert>
+      ) : null}
 
       {/* Plant first on standalone so availability checks use the correct plant */}
       {!workOrderId && (

@@ -79,6 +79,16 @@ export async function DELETE(
       status: po.status,
     })
     if (!coordGate.ok) {
+      console.warn('[purchase-orders/quotations] DELETE coordinator gate denied', {
+        userId: user.id,
+        quotation_id,
+        purchase_order_id: quotation.purchase_order_id,
+        po_plant_id: po.plant_id,
+        actor_plant_id: actor.profile.plant_id,
+        actor_scope: actor.scope,
+        actor_role: actor.profile.role,
+        message: coordGate.message,
+      })
       return NextResponse.json({ error: coordGate.message }, { status: 403 })
     }
     
@@ -147,6 +157,16 @@ export async function PATCH(
       status: po.status,
     })
     if (!coordGate.ok) {
+      console.warn('[purchase-orders/quotations] PATCH coordinator gate denied', {
+        userId: user.id,
+        quotation_id,
+        purchase_order_id: quotation.purchase_order_id,
+        po_plant_id: po.plant_id,
+        actor_plant_id: actor.profile.plant_id,
+        actor_scope: actor.scope,
+        actor_role: actor.profile.role,
+        message: coordGate.message,
+      })
       return NextResponse.json({ error: coordGate.message }, { status: 403 })
     }
 

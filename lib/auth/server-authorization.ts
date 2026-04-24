@@ -104,17 +104,13 @@ export function resolveEffectiveBusinessRole(
 }
 
 /**
- * Build full actor context for authorization decisions.
+ * Build actor context from an already-loaded profile (pure; safe for client bundles).
+ * Mirrors {@link loadActorContext} resolution rules.
  */
-export async function loadActorContext(
-  supabase: SupabaseClient,
-  userId: string
-): Promise<ActorContext | null> {
-  const profile = await loadActorProfile(supabase, userId)
-  if (!profile) {
-    return null
-  }
-
+export function buildActorContextFromProfile(
+  userId: string,
+  profile: ActorProfile
+): ActorContext {
   const effectiveBusinessRole = resolveEffectiveBusinessRole(profile)
   const roleScope = effectiveBusinessRole
     ? getRoleScopeFromBusinessRole(effectiveBusinessRole)
@@ -138,6 +134,21 @@ export async function loadActorContext(
     scope: roleScope,
     authorizationLimit,
   }
+}
+
+/**
+ * Build full actor context for authorization decisions.
+ */
+export async function loadActorContext(
+  supabase: SupabaseClient,
+  userId: string
+): Promise<ActorContext | null> {
+  const profile = await loadActorProfile(supabase, userId)
+  if (!profile) {
+    return null
+  }
+
+  return buildActorContextFromProfile(userId, profile)
 }
 
 function getRoleScopeFromBusinessRole(

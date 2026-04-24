@@ -531,7 +531,7 @@ export class PurchaseOrderService {
   private static async withResolvedPlantId(
     request: CreatePurchaseOrderRequest
   ): Promise<CreatePurchaseOrderRequest> {
-    if (request.plant_id || !request.work_order_id) {
+    if (!request.work_order_id) {
       return request
     }
 
@@ -547,16 +547,22 @@ export class PurchaseOrderService {
       .eq('id', request.work_order_id)
       .maybeSingle()
 
-    const plantId = workOrder?.plant_id || workOrder?.asset?.plant_id
+    const asset = workOrder?.asset as
+      | { plant_id?: string | null }
+      | { plant_id?: string | null }[]
+      | null
+      | undefined
+    const assetPlant = Array.isArray(asset) ? asset[0]?.plant_id : asset?.plant_id
+    const plantIdFromWo = workOrder?.plant_id || assetPlant
 
-    if (!plantId) {
-      return request
+    if (plantIdFromWo) {
+      return {
+        ...request,
+        plant_id: plantIdFromWo,
+      }
     }
 
-    return {
-      ...request,
-      plant_id: plantId,
-    }
+    return request
   }
 
   private static async resolveWorkOrderType(

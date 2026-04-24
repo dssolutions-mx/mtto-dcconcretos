@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
@@ -32,6 +32,7 @@ import { QuotationFormForCreation } from "./QuotationFormForCreation"
 import { usePurchaseOrders } from "@/hooks/usePurchaseOrders"
 import { createClient } from "@/lib/supabase"
 import { useUserPlant } from "@/hooks/use-user-plant"
+import { useCoordinatorQuotationPlantGate } from "@/hooks/use-coordinator-quotation-preflight"
 import { SupplierSelector } from "@/components/suppliers/SupplierSelector"
 import { Supplier } from "@/types/suppliers"
 import { format } from "date-fns"
@@ -184,6 +185,20 @@ export function DirectServiceForm({
   
   // Plant selection for standalone orders - simplified since userPlants now contains all available plants
   const [selectedPlantId, setSelectedPlantId] = useState<string>("")
+
+  const quotationGatePo = useMemo(() => {
+    const plant =
+      workOrder?.plant_id ||
+      workOrder?.asset?.plant_id ||
+      (selectedPlantId.trim() !== "" ? selectedPlantId : null) ||
+      null
+    return {
+      plant_id: plant,
+      viability_state: "pending" as const,
+      status: "draft" as const,
+    }
+  }, [workOrder?.plant_id, workOrder?.asset?.plant_id, selectedPlantId])
+  const quotationPlantGate = useCoordinatorQuotationPlantGate(quotationGatePo)
 
   // Load work order data and recent service providers
   useEffect(() => {
@@ -797,6 +812,12 @@ export function DirectServiceForm({
         workflowHintLines={reviewWorkflowLines}
       />
     <form onSubmit={handleSubmit} className="space-y-6 pb-24 md:pb-28">
+      {quotationPlantGate.showBlocker && quotationPlantGate.blockerMessage ? (
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>{quotationPlantGate.blockerMessage}</AlertDescription>
+        </Alert>
+      ) : null}
       <PurchaseOrderCreationStepper reviewOpen={reviewOpen} />
       <p className="text-xs text-muted-foreground">
         La orden solo se registra en el sistema al confirmar en el paso 2 (resumen).

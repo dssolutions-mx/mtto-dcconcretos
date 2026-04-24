@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useMemo } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
@@ -34,6 +34,7 @@ import { QuotationFormForCreation } from "./QuotationFormForCreation"
 import { usePurchaseOrders } from "@/hooks/usePurchaseOrders"
 import { createClient } from "@/lib/supabase"
 import { useUserPlant } from "@/hooks/use-user-plant"
+import { useCoordinatorQuotationPlantGate } from "@/hooks/use-coordinator-quotation-preflight"
 import { toast } from "sonner"
 import { SupplierSelector } from "@/components/suppliers/SupplierSelector"
 import { Supplier } from "@/types/suppliers"
@@ -193,6 +194,20 @@ export function DirectPurchaseForm({
     file_name?: string
   }
   const [quotations, setQuotations] = useState<QuotationFormData[]>([])
+
+  const quotationGatePo = useMemo(() => {
+    const plant =
+      workOrder?.plant_id ||
+      workOrder?.asset?.plant_id ||
+      (selectedPlantId.trim() !== "" ? selectedPlantId : null) ||
+      null
+    return {
+      plant_id: plant,
+      viability_state: "pending" as const,
+      status: "draft" as const,
+    }
+  }, [workOrder?.plant_id, workOrder?.asset?.plant_id, selectedPlantId])
+  const quotationPlantGate = useCoordinatorQuotationPlantGate(quotationGatePo)
 
   const normalizeQuotations = (nextQuotations: QuotationFormData[]): QuotationFormData[] =>
     nextQuotations.map((quotation) => ({
@@ -1124,6 +1139,12 @@ export function DirectPurchaseForm({
       <p className="text-xs text-muted-foreground">
         La orden solo se registra en el sistema al confirmar en el paso 2 (resumen).
       </p>
+      {quotationPlantGate.showBlocker && quotationPlantGate.blockerMessage ? (
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>{quotationPlantGate.blockerMessage}</AlertDescription>
+        </Alert>
+      ) : null}
       {/* Header */}
       <Card>
         <CardHeader>

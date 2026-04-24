@@ -4,6 +4,26 @@
 
 export type MaintenanceUnit = 'hours' | 'kilometers';
 
+/** Asset / component with optional nested model maintenance_unit (DB shape varies). */
+export type MaintenanceUnitSource = {
+  equipment_models?: { maintenance_unit?: string | null } | null;
+  model?: { maintenance_unit?: string | null } | null;
+  maintenance_unit?: string | null;
+};
+
+/** Minimal maintenance_history row for meter / preventive KPI helpers. */
+export type MaintenanceHistoryMeterRow = {
+  type?: string | null;
+  maintenance_plan_id?: string | null;
+  date?: string | null;
+  hours?: unknown;
+  kilometers?: unknown;
+};
+
+export type MaintenanceIntervalMeterRow = {
+  id?: string | null;
+};
+
 /** Short label for model forms and lists (includes `both` / `none`). */
 export function formatMaintenanceUnitLabel(unit: string | null | undefined): string {
   switch (unit) {
@@ -25,13 +45,81 @@ export function formatMaintenanceUnitLabel(unit: string | null | undefined): str
  * @param assetOrComponent - Asset or component object with equipment_models or model property
  * @returns Maintenance unit, defaults to 'hours'
  */
-export function getMaintenanceUnit(assetOrComponent: any): MaintenanceUnit {
-  const unit = 
+export function getMaintenanceUnit(
+  assetOrComponent: MaintenanceUnitSource | null | undefined
+): MaintenanceUnit {
+  const unit =
     assetOrComponent?.equipment_models?.maintenance_unit ||
     assetOrComponent?.model?.maintenance_unit ||
     assetOrComponent?.maintenance_unit;
-  
-  return (unit === 'kilometers' || unit === 'kilometres') ? 'kilometers' : 'hours';
+
+  return unit === "kilometers" || unit === "kilometres" ? "kilometers" : "hours";
+}
+
+/** Raw `equipment_models.maintenance_unit` (hours, kilometers, both, none, …). */
+export function getRawModelMaintenanceUnit(
+  assetOrComponent: MaintenanceUnitSource | null | undefined
+): string | null {
+  const unit =
+    assetOrComponent?.equipment_models?.maintenance_unit ??
+    assetOrComponent?.model?.maintenance_unit ??
+    assetOrComponent?.maintenance_unit ??
+    null;
+  return typeof unit === "string" ? unit.trim().toLowerCase() : null;
+}
+
+/** Maintenance history `type` counts as preventive (EN/ES, case-insensitive). */
+export function isPreventiveMaintenanceHistoryType(type: string | null | undefined): boolean {
+  const t = type?.toLowerCase();
+  return t === "preventive" || t === "preventivo";
+}
+
+/**
+ * Preventive rows whose `maintenance_plan_id` matches a model interval id
+ * (same rule as asset detail upcoming-maintenance).
+ */
+export function filterPreventiveHistoryForIntervals(
+  history: MaintenanceHistoryMeterRow[],
+  maintenanceIntervals: MaintenanceIntervalMeterRow[]
+): MaintenanceHistoryMeterRow[] {
+  if (!history?.length || !maintenanceIntervals?.length) return [];
+  return history.filter((m) => {
+    if (!isPreventiveMaintenanceHistoryType(m?.type) || !m?.maintenance_plan_id) return false;
+    return maintenanceIntervals.some((interval) => interval.id === m.maintenance_plan_id);
+  });
+}
+
+/** Highest meter reading among plan-linked preventive history (hours or km per `unit`). */
+export function getMaxPreventiveMeterReading(
+  history: MaintenanceHistoryMeterRow[],
+  maintenanceIntervals: MaintenanceIntervalMeterRow[],
+  unit: MaintenanceUnit
+): number {
+  const preventive = filterPreventiveHistoryForIntervals(history, maintenanceIntervals);
+  const values = preventive.map((m) => getMaintenanceValue(m, unit)).filter((v) => v > 0);
+  if (!values.length) return 0;
+  return Math.max(...values);
+}
+
+/** Newest preventive row among those tied for the max meter reading (by `date` desc). */
+export function getLastPreventiveHistoryAtMaxMeter(
+  history: MaintenanceHistoryMeterRow[],
+  maintenanceIntervals: MaintenanceIntervalMeterRow[],
+  unit: MaintenanceUnit
+): MaintenanceHistoryMeterRow | null {
+  const preventive = filterPreventiveHistoryForIntervals(history, maintenanceIntervals);
+  const readings = preventive
+    .map((m) => getMaintenanceValue(m, unit))
+    .filter((v) => v > 0);
+  if (!readings.length) return null;
+  const max = Math.max(...readings);
+  const tied = preventive.filter((m) => getMaintenanceValue(m, unit) === max);
+  tied.sort((a, b) => {
+    const da = new Date(a?.date ?? 0).getTime();
+    const db = new Date(b?.date ?? 0).getTime();
+    return db - da;
+  });
+  return tied[0] ?? null;
 }
 
 /**
@@ -40,8 +128,11 @@ export function getMaintenanceUnit(assetOrComponent: any): MaintenanceUnit {
  * @param unit - Maintenance unit ('hours' or 'kilometers')
  * @returns Current hours or kilometers value
  */
-export function getCurrentValue(assetOrComponent: any, unit: MaintenanceUnit): number {
-  if (unit === 'kilometers') {
+export function getCurrentValue(
+  assetOrComponent: { current_hours?: unknown; current_kilometers?: unknown } | null | undefined,
+  unit: MaintenanceUnit
+): number {
+  if (unit === "kilometers") {
     return Number(assetOrComponent?.current_kilometers) || 0;
   }
   return Number(assetOrComponent?.current_hours) || 0;
@@ -53,8 +144,11 @@ export function getCurrentValue(assetOrComponent: any, unit: MaintenanceUnit): n
  * @param unit - Maintenance unit ('hours' or 'kilometers')
  * @returns Maintenance hours or kilometers value
  */
-export function getMaintenanceValue(maintenance: any, unit: MaintenanceUnit): number {
-  if (unit === 'kilometers') {
+export function getMaintenanceValue(
+  maintenance: MaintenanceHistoryMeterRow | null | undefined,
+  unit: MaintenanceUnit
+): number {
+  if (unit === "kilometers") {
     return Number(maintenance?.kilometers) || 0;
   }
   return Number(maintenance?.hours) || 0;

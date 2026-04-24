@@ -1,5 +1,11 @@
+import type { UserProfile } from '@/types/auth-store'
 import { effectiveRoleForPermissions } from '@/lib/auth/role-model'
-import { checkScopeOverPlant, type ActorContext } from '@/lib/auth/server-authorization'
+import {
+  buildActorContextFromProfile,
+  checkScopeOverPlant,
+  type ActorContext,
+  type ActorProfile,
+} from '@/lib/auth/server-authorization'
 
 /** Raw DB role that maps to coordinador for workflow (deprecated enum). */
 const LEGACY_COORDINATOR_ROLE = 'ENCARGADO_MANTENIMIENTO'
@@ -42,6 +48,66 @@ export interface PoForCoordinatorQuotationCheck {
 }
 
 /**
+ * Plant scope for quotation mutations (Coordinador / legacy Encargado / Ejecutivo gate).
+ * Aligns with `useUserPlant` (@/hooks/use-user-plant): when `profiles.plant_id` is null, the client
+ * treats the user as having access to all plants (`user_authorization_summary`); the server
+ * must not deny quotation writes solely because a WO-resolved PO has a concrete `plant_id`.
+ */
+function quotationMutationPlantScopeOk(
+  actor: ActorContext | null | undefined,
+  plantId: string | null
+): boolean {
+  if (checkScopeOverPlant(actor, plantId)) {
+    return true
+  }
+  if (!actor || !isQuotationViabilityGatedRole(actor)) {
+    return false
+  }
+  if (actor.scope !== 'plant') {
+    return false
+  }
+  const own = actor.profile.plant_id
+  if (own != null && String(own).trim() !== '') {
+    return false
+  }
+  return true
+}
+
+export function userProfileToActorProfile(profile: UserProfile): ActorProfile {
+  return {
+    id: profile.id,
+    role: profile.role,
+    business_role: profile.business_role ?? null,
+    role_scope: profile.role_scope ?? null,
+    business_unit_id: profile.business_unit_id ?? null,
+    plant_id: profile.plant_id ?? null,
+    can_authorize_up_to: profile.can_authorize_up_to ?? 0,
+  }
+}
+
+/**
+ * Client-side preflight: same rules as the quotations API gate, using the session profile.
+ */
+export function computeCoordinatorQuotationPreflightFromUserProfile(
+  userId: string,
+  profile: UserProfile,
+  po: PoForCoordinatorQuotationCheck
+): {
+  isViewerCoordinator: boolean
+  coordinatorQuotationUnlocked: boolean
+  blockerMessage: string | null
+} {
+  const actor = buildActorContextFromProfile(userId, userProfileToActorProfile(profile))
+  const gate = coordinatorQuotationMutationAllowed(actor, po)
+  const gated = isQuotationViabilityGatedRole(actor)
+  return {
+    isViewerCoordinator: gated,
+    coordinatorQuotationUnlocked: gate.ok,
+    blockerMessage: gate.ok ? null : gate.message,
+  }
+}
+
+/**
  * For Coordinador / Ejecutivo: plant scope + not after viability. Others: always "ok".
  * Returns a result suitable for API 403 responses.
  */
@@ -65,7 +131,7 @@ export function coordinatorQuotationMutationAllowed(
       message: 'No se pueden modificar cotizaciones en este estado de la orden.',
     }
   }
-  if (!checkScopeOverPlant(actor, po.plant_id ?? null)) {
+  if (!quotationMutationPlantScopeOk(actor, po.plant_id ?? null)) {
     return {
       ok: false,
       message: 'No autorizado: la orden no pertenece a su planta o alcance.',

@@ -931,6 +931,7 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
                 maintenanceUnit={maintenanceUnit}
                 maintenanceHistory={maintenanceHistory}
                 combinedMaintenanceHistory={combinedMaintenanceHistory}
+                maintenanceIntervals={maintenanceIntervals}
                 pendingTasksCount={
                   pendingIncidentsCount +
                   pendingChecklists.length +

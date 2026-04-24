@@ -70,6 +70,18 @@ export async function POST(request: NextRequest) {
       status: po.status,
     })
     if (!coordGate.ok) {
+      console.warn('[purchase-orders/quotations] POST coordinator gate denied', {
+        userId: user.id,
+        purchase_order_id: body.purchase_order_id,
+        po_plant_id: po.plant_id,
+        po_status: po.status,
+        po_viability_state: po.viability_state,
+        actor_plant_id: actor.profile.plant_id,
+        actor_business_unit_id: actor.profile.business_unit_id,
+        actor_scope: actor.scope,
+        actor_role: actor.profile.role,
+        message: coordGate.message,
+      })
       return NextResponse.json({ error: coordGate.message }, { status: 403 })
     }
     
