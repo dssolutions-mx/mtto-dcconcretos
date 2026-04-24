@@ -123,7 +123,9 @@ export function StatusMaintenanceTab({
               <Calendar className="h-5 w-5" />
               Próximos Mantenimientos
             </CardTitle>
-            <CardDescription>Mantenimientos programados para este activo</CardDescription>
+            <CardDescription>
+              Preventivos programados y vencidos (incluye cuotas no hechas en ciclos anteriores cuando el medidor ya avanzó).
+            </CardDescription>
           </CardHeader>
           <CardContent>
             {upcomingLoading ? (

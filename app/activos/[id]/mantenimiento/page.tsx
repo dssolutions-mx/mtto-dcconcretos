@@ -23,6 +23,7 @@ import {
   getTableHeaderLabel,
   type MaintenanceUnit 
 } from "@/lib/utils/maintenance-units";
+import { findEarliestUnpaidPreventiveDue } from "@/lib/utils/cyclic-preventive-due";
 
 interface MaintenancePageProps {
   params: Promise<{
@@ -222,6 +223,20 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
                   const isFirstCycleOnly = (interval as any).is_first_cycle_only === true;
                   const category = (interval as any).maintenance_category || 'standard';
 
+                  const earliestUnpaid = findEarliestUnpaidPreventiveDue(
+                    { id: String(interval.id), interval_value: interval.interval_value, type: interval.type },
+                    {
+                      currentValue: componentValue,
+                      maxInterval,
+                      currentCycle: currentCycleNum,
+                      preventiveHistory: componentPreventiveHistory,
+                      maintenanceIntervals: intervals,
+                      maintenanceUnit: componentUnit,
+                      isRecurring,
+                      isFirstCycleOnly,
+                    }
+                  );
+
                   // Calculate next due value for current cycle (unit-agnostic)
                   let nextDueValue: number | null = null;
                   let status = 'not_applicable';
@@ -279,6 +294,12 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
                     }
                   }
 
+                  if (earliestUnpaid !== null && earliestUnpaid.due <= componentValue) {
+                    status = 'overdue';
+                    nextDueValue = earliestUnpaid.due;
+                    cycleForService = earliestUnpaid.cycle;
+                  }
+
                   // Add component information to the interval
                   processedIntervals.push({
                     interval_id: interval.id,
@@ -317,6 +338,10 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
                 const statusB = statusOrder[b.status as keyof typeof statusOrder] || 0;
 
                 if (statusA !== statusB) return statusB - statusA;
+
+                if (a.status === 'overdue' && b.status === 'overdue') {
+                  return (Number(a.next_due_value) || 0) - (Number(b.next_due_value) || 0);
+                }
                 
                 // Then by cycle (older cycles first for overdue items)
                 if (a.current_cycle !== b.current_cycle) {
@@ -374,6 +399,20 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
               const isRecurring = (interval as any).is_recurring !== false; // Default to true
               const isFirstCycleOnly = (interval as any).is_first_cycle_only === true; // Default to false
               const category = (interval as any).maintenance_category || 'standard';
+
+              const earliestUnpaid = findEarliestUnpaidPreventiveDue(
+                { id: String(interval.id), interval_value: interval.interval_value, type: interval.type },
+                {
+                  currentValue,
+                  maxInterval,
+                  currentCycle: currentCycleNum,
+                  preventiveHistory,
+                  maintenanceIntervals: intervals,
+                  maintenanceUnit,
+                  isRecurring,
+                  isFirstCycleOnly,
+                }
+              );
 
               // Calculate next due value for current cycle (unit-agnostic)
               let nextDueValue: number | null = null;
@@ -435,6 +474,12 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
                 }
               }
 
+              if (earliestUnpaid !== null && earliestUnpaid.due <= currentValue) {
+                status = 'overdue';
+                nextDueValue = earliestUnpaid.due;
+                cycleForService = earliestUnpaid.cycle;
+              }
+
               return {
                 interval_id: interval.id,
                 interval_value: interval.interval_value,
@@ -466,6 +511,10 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
               const statusB = statusOrder[b.status as keyof typeof statusOrder] || 0;
 
               if (statusA !== statusB) return statusB - statusA;
+
+              if (a.status === 'overdue' && b.status === 'overdue') {
+                return (Number(a.next_due_value) || 0) - (Number(b.next_due_value) || 0);
+              }
               
               // Then by cycle (older cycles first for overdue items)
               if (a.current_cycle !== b.current_cycle) {

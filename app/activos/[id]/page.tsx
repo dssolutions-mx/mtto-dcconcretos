@@ -37,6 +37,7 @@ import {
   getUnitDisplayName,
   type MaintenanceUnit 
 } from "@/lib/utils/maintenance-units";
+import { findEarliestUnpaidPreventiveDue } from "@/lib/utils/cyclic-preventive-due";
 import { expandAssetIdsForOperatorChecklists } from "@/lib/composite-operator-scope";
 
 export default function AssetDetailsPage({ params }: { params: Promise<{ id: string }> }) {
@@ -398,6 +399,20 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
         // Handle new fields with fallbacks for backward compatibility
         const isRecurring = (interval as any).is_recurring !== false; // Default to true
         const isFirstCycleOnly = (interval as any).is_first_cycle_only === true; // Default to false
+
+        const earliestUnpaid = findEarliestUnpaidPreventiveDue(
+          { id: String(interval.id), interval_value: interval.interval_value, type: interval.type },
+          {
+            currentValue,
+            maxInterval,
+            currentCycle,
+            preventiveHistory,
+            maintenanceIntervals,
+            maintenanceUnit,
+            isRecurring,
+            isFirstCycleOnly,
+          }
+        );
         
         // Calculate next due value for current cycle (unit-agnostic, same logic as maintenance page)
         let nextDueValue: number | null = null;
@@ -530,6 +545,19 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
              urgency = 'low';
            }
         }
+
+        if (earliestUnpaid !== null && earliestUnpaid.due <= currentValue) {
+          status = 'overdue';
+          nextDueValue = earliestUnpaid.due;
+          cycleForService = earliestUnpaid.cycle;
+          const valueOverdue = currentValue - earliestUnpaid.due;
+          valueRemaining = -valueOverdue;
+          progress = 100;
+          wasPerformed = false;
+          lastMaintenanceDate = null;
+          const iv = intervalValue || 1;
+          urgency = valueOverdue > iv * 0.5 ? 'high' : 'medium';
+        }
         
         return {
           intervalId: interval.id,
@@ -577,8 +605,12 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
         if (urgencyA !== urgencyB) {
           return urgencyB - urgencyA;
         }
-        
-          return a.intervalValue - b.intervalValue;
+
+        if (a.status === 'overdue' && b.status === 'overdue') {
+          return (Number(a.targetValue) || 0) - (Number(b.targetValue) || 0);
+        }
+
+        return a.intervalValue - b.intervalValue;
         });
         
         setUpcomingMaintenances(sorted);
