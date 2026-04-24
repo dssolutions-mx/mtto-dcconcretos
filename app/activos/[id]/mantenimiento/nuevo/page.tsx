@@ -32,6 +32,7 @@ import {
   getUnitDisplayName,
   type MaintenanceUnit 
 } from "@/lib/utils/maintenance-units";
+import { findEarliestUnpaidPreventiveDue } from "@/lib/utils/cyclic-preventive-due";
 import { PartAutocomplete, type PartSuggestion } from "@/components/inventory/part-autocomplete";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 
@@ -429,12 +430,20 @@ export default function NewMaintenancePage({ params }: NewMaintenancePageProps) 
         // Fetch maintenance history for status calculation
         const { data: maintenanceHistory = [] } = await supabase
           .from("maintenance_history")
-          .select("maintenance_plan_id, hours, kilometers, date")
+          .select("maintenance_plan_id, hours, kilometers, date, type")
           .eq("asset_id", assetId);
 
-        type IntervalLike = { id: string; name: string | null; interval_value: number; description?: string | null };
+        type IntervalLike = {
+          id: string;
+          name: string | null;
+          interval_value: number;
+          description?: string | null;
+          type?: string | null;
+          is_recurring?: boolean | null;
+          is_first_cycle_only?: boolean | null;
+        };
         let rawIntervals: { id: string; intervalId: string }[] = [];
-        let intervalDetails: Map<string, IntervalLike> = new Map();
+        const intervalDetails: Map<string, IntervalLike> = new Map();
 
         // 1) Try maintenance_plans for this asset
         const { data: plans } = await supabase
@@ -449,7 +458,10 @@ export default function NewMaintenancePage({ params }: NewMaintenancePageProps) 
               id: p.interval_id,
               name: p.name,
               interval_value: p.interval_value ?? 0,
-              description: null
+              description: null,
+              type: null,
+              is_recurring: true,
+              is_first_cycle_only: false,
             });
           });
         } else {
@@ -461,7 +473,7 @@ export default function NewMaintenancePage({ params }: NewMaintenancePageProps) 
           }
           const { data: intervals } = await supabase
             .from("maintenance_intervals")
-            .select("id, name, interval_value, description")
+            .select("id, name, interval_value, description, type, is_recurring, is_first_cycle_only")
             .eq("model_id", modelId)
             .order("interval_value", { ascending: true });
 
@@ -470,13 +482,51 @@ export default function NewMaintenancePage({ params }: NewMaintenancePageProps) 
             return;
           }
           rawIntervals = intervals.map((i) => ({ id: i.id, intervalId: i.id }));
-          intervals.forEach((i) => intervalDetails.set(i.id, i));
+          intervals.forEach((i) => intervalDetails.set(i.id, i as IntervalLike));
         }
 
-        const intervals = rawIntervals.map((r) => {
-          const det = intervalDetails.get(r.intervalId);
-          return { ...r, ...det, interval_value: det?.interval_value ?? 0 };
-        }).filter(Boolean) as { id: string; intervalId: string; name: string | null; interval_value: number }[];
+        const detailIds = [...intervalDetails.keys()].filter(Boolean) as string[];
+        if (detailIds.length > 0) {
+          const { data: miEnrichment } = await supabase
+            .from("maintenance_intervals")
+            .select("id, type, is_recurring, is_first_cycle_only")
+            .in("id", detailIds);
+          (miEnrichment || []).forEach((row) => {
+            const cur = intervalDetails.get(row.id);
+            if (cur) {
+              intervalDetails.set(row.id, {
+                ...cur,
+                type: row.type ?? cur.type ?? "hours",
+                is_recurring: row.is_recurring ?? cur.is_recurring ?? true,
+                is_first_cycle_only: row.is_first_cycle_only ?? cur.is_first_cycle_only ?? false,
+              });
+            }
+          });
+        }
+
+        const intervals = rawIntervals
+          .map((r) => {
+            const det = intervalDetails.get(r.intervalId);
+            if (!det) return null;
+            return {
+              id: r.id,
+              intervalId: r.intervalId,
+              name: det.name,
+              interval_value: det.interval_value ?? 0,
+              type: det.type ?? "hours",
+              is_recurring: det.is_recurring !== false,
+              is_first_cycle_only: det.is_first_cycle_only === true,
+            };
+          })
+          .filter(Boolean) as {
+            id: string;
+            intervalId: string;
+            name: string | null;
+            interval_value: number;
+            type: string;
+            is_recurring: boolean;
+            is_first_cycle_only: boolean;
+          }[];
 
         if (intervals.length === 0) {
           setLoadingCycles(false);
@@ -488,15 +538,42 @@ export default function NewMaintenancePage({ params }: NewMaintenancePageProps) 
         const currentCycleStartValue = (currentCycleNum - 1) * maxInterval;
         const currentCycleEndValue = currentCycleNum * maxInterval;
 
-        const preventiveHistory = maintenanceHistory.filter((m: any) =>
-          intervals.some((i) => i.intervalId === m.maintenance_plan_id)
-        );
+        const preventiveHistory = maintenanceHistory.filter((m: any) => {
+          const typeLower = m?.type?.toLowerCase?.() ?? "";
+          const isPreventive = typeLower === "preventive" || typeLower === "preventivo";
+          if (!isPreventive || !m?.maintenance_plan_id) return false;
+          return intervals.some((i) => i.intervalId === m.maintenance_plan_id);
+        });
         const currentCycleMaintenances = preventiveHistory.filter((m: any) => {
           const mValue = getMaintenanceValue(m, unit);
           return mValue > currentCycleStartValue && mValue < currentCycleEndValue;
         });
 
+        const catalogForCyclic = intervals.map((i) => ({
+          id: i.intervalId,
+          interval_value: i.interval_value,
+          type: i.type,
+        }));
+
         const processed: CycleOption[] = intervals.map((interval) => {
+          const earliestUnpaid = findEarliestUnpaidPreventiveDue(
+            {
+              id: String(interval.intervalId),
+              interval_value: interval.interval_value,
+              type: interval.type,
+            },
+            {
+              currentValue,
+              maxInterval,
+              currentCycle: currentCycleNum,
+              preventiveHistory,
+              maintenanceIntervals: catalogForCyclic,
+              maintenanceUnit: unit,
+              isRecurring: interval.is_recurring,
+              isFirstCycleOnly: interval.is_first_cycle_only,
+            }
+          );
+
           let nextDueValue = (currentCycleNum - 1) * maxInterval + interval.interval_value;
           let status: CycleOption["status"] = "scheduled";
           let overdueBy: number | undefined;
@@ -510,9 +587,14 @@ export default function NewMaintenancePage({ params }: NewMaintenancePageProps) 
             if (wasPerformed) {
               status = "completed";
             } else {
+              const dueVal = Number(nextDueValue);
               const isCovered = currentCycleMaintenances.some((m: any) => {
                 const performed = intervals.find((i) => i.intervalId === m.maintenance_plan_id);
-                return performed && performed.interval_value >= interval.interval_value;
+                if (!performed) return false;
+                const sameUnit = performed.type === interval.type;
+                const higherOrEqual = performed.interval_value >= interval.interval_value;
+                const performedAtValue = getMaintenanceValue(m, unit);
+                return sameUnit && higherOrEqual && performedAtValue >= dueVal;
               });
               if (isCovered) status = "covered";
               else if (currentValue >= nextDueValue) {
@@ -523,6 +605,13 @@ export default function NewMaintenancePage({ params }: NewMaintenancePageProps) 
                 dueIn = Math.round(nextDueValue - currentValue);
               }
             }
+          }
+
+          if (earliestUnpaid !== null && earliestUnpaid.due <= currentValue) {
+            status = "overdue";
+            nextDueValue = earliestUnpaid.due;
+            overdueBy = Math.round(currentValue - earliestUnpaid.due);
+            dueIn = undefined;
           }
 
           const label = interval.name || `${interval.interval_value}${getUnitLabel(unit)}`;
@@ -545,6 +634,9 @@ export default function NewMaintenancePage({ params }: NewMaintenancePageProps) 
         relevant.sort((a, b) => {
           const diff = (statusOrder[b.status] || 0) - (statusOrder[a.status] || 0);
           if (diff !== 0) return diff;
+          if (a.status === "overdue" && b.status === "overdue") {
+            return (Number(a.nextDueValue) || 0) - (Number(b.nextDueValue) || 0);
+          }
           return a.interval_value - b.interval_value;
         });
         if (relevant.length > 0) {
