@@ -49,6 +49,7 @@ import {
 import { PurchaseOrderCreationActionRail } from "@/components/purchase-orders/creation/PurchaseOrderCreationActionRail"
 import { usePurchaseOrderReviewOpenChange } from "@/components/purchase-orders/creation/usePurchaseOrderReviewOpenChange"
 import { getCreationWorkflowSummaryLines } from "@/lib/purchase-orders/creation-workflow-copy"
+import { resolveBusinessUnitIdForSupplierPadron } from "@/lib/purchase-orders/supplier-padron-business-unit"
 
 interface DirectServiceFormProps {
   workOrderId?: string
@@ -185,6 +186,17 @@ export function DirectServiceForm({
   
   // Plant selection for standalone orders - simplified since userPlants now contains all available plants
   const [selectedPlantId, setSelectedPlantId] = useState<string>("")
+
+  const supplierPadronBusinessUnitId = useMemo(
+    () =>
+      resolveBusinessUnitIdForSupplierPadron(userPlants, {
+        hasWorkOrder: Boolean(workOrderId),
+        workOrderPlantId: workOrder?.plant_id,
+        workOrderAssetPlantId: workOrder?.asset?.plant_id,
+        selectedPlantIdForStandalone: selectedPlantId,
+      }),
+    [workOrderId, workOrder?.plant_id, workOrder?.asset?.plant_id, selectedPlantId, userPlants]
+  )
 
   const quotationGatePo = useMemo(() => {
     const plant =
@@ -1160,7 +1172,7 @@ export function DirectServiceForm({
                       handleInputChange('service_provider', name)
                       handleInputChange('supplier', name)
                     }}
-                    businessUnitId={userPlants?.[0]?.business_unit_id}
+                    businessUnitId={supplierPadronBusinessUnitId}
                   />
                 </div>
               </CardContent>
@@ -1194,7 +1206,7 @@ export function DirectServiceForm({
                   handleInputChange('service_provider', name)
                   handleInputChange('supplier', name)
                 }}
-                businessUnitId={userPlants?.[0]?.business_unit_id}
+                businessUnitId={supplierPadronBusinessUnitId}
               />
             </div>
           </div>

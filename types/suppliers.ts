@@ -42,6 +42,9 @@ export interface Supplier {
   business_unit_id?: string
   business_unit_ids?: string[]
 
+  /** If true, available for every business unit (all plants) in purchase flows */
+  serves_all_business_units?: boolean
+
   // System fields
   status: SupplierStatus
   created_at: string
@@ -281,6 +284,7 @@ export interface CreateSupplierRequest {
   payment_methods?: PaymentMethod[]
   notes?: string
   business_unit_id?: string
+  serves_all_business_units?: boolean
 }
 
 export interface UpdateSupplierRequest extends Partial<CreateSupplierRequest> {

@@ -120,6 +120,7 @@ export function SupplierForm({ supplier, onSuccess, onCancel, onDuplicateBlocked
 
   const [contacts, setContacts] = useState<ContactRow[]>([])
   const [selectedBUs, setSelectedBUs] = useState<string[]>([])
+  const [servesAllBusinessUnits, setServesAllBusinessUnits] = useState(false)
   const [businessUnits, setBusinessUnits] = useState<{ id: string; name: string }[]>([])
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [newSpecialty, setNewSpecialty] = useState('')
@@ -180,6 +181,9 @@ export function SupplierForm({ supplier, onSuccess, onCancel, onDuplicateBlocked
         } else if (supplier.business_unit_id) {
           setSelectedBUs([supplier.business_unit_id])
         }
+        setServesAllBusinessUnits(!!supplier.serves_all_business_units)
+      } else {
+        setServesAllBusinessUnits(false)
       }
     }
     load()
@@ -258,6 +262,7 @@ export function SupplierForm({ supplier, onSuccess, onCancel, onDuplicateBlocked
           bank_account_info: bankInfo,
           // Keep legacy single BU field as the first selected BU
           business_unit_id: selectedBUs[0] || null,
+          serves_all_business_units: servesAllBusinessUnits,
         })
       })
 
@@ -682,9 +687,27 @@ export function SupplierForm({ supplier, onSuccess, onCancel, onDuplicateBlocked
               <Building2 className="w-4 h-4" />
               Unidades de Negocio
             </CardTitle>
-            <CardDescription>Selecciona las unidades de negocio que atiende este proveedor</CardDescription>
+            <CardDescription>
+              Indica el alcance del proveedor en el padrón al crear órdenes de compra por planta
+            </CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-4">
+            <div className="flex items-start gap-3 rounded-md border border-border/80 bg-muted/20 p-3">
+              <Checkbox
+                id="serves-all-bu"
+                checked={servesAllBusinessUnits}
+                onCheckedChange={(v) => setServesAllBusinessUnits(v === true)}
+                className="mt-0.5"
+              />
+              <div className="space-y-1 min-w-0">
+                <Label htmlFor="serves-all-bu" className="cursor-pointer font-medium leading-snug">
+                  Todas las unidades de negocio (todas las plantas)
+                </Label>
+                <p className="text-sm text-muted-foreground">
+                  Aparece en el padrón al comprar desde cualquier planta, sin marcar cada unidad abajo.
+                </p>
+              </div>
+            </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
               {businessUnits.map(bu => (
                 <div key={bu.id} className="flex items-center space-x-2">

@@ -117,6 +117,9 @@ export async function PUT(
       const n = normalizeIndustry(body.industry as string)
       updateData.industry = n || body.industry
     }
+    if (body.serves_all_business_units !== undefined) {
+      updateData.serves_all_business_units = Boolean(body.serves_all_business_units)
+    }
 
     // Check if supplier exists and user has permission
     const { data: existingSupplier, error: fetchError } = await supabase

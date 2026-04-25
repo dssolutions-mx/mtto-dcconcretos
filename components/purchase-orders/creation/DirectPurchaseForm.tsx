@@ -50,6 +50,7 @@ import {
 import { PurchaseOrderCreationActionRail } from "@/components/purchase-orders/creation/PurchaseOrderCreationActionRail"
 import { usePurchaseOrderReviewOpenChange } from "@/components/purchase-orders/creation/usePurchaseOrderReviewOpenChange"
 import { getCreationWorkflowSummaryLines } from "@/lib/purchase-orders/creation-workflow-copy"
+import { resolveBusinessUnitIdForSupplierPadron } from "@/lib/purchase-orders/supplier-padron-business-unit"
 import {
   getIntentVersusLinesErrors,
   getIntentVersusLinesSoftWarning,
@@ -194,6 +195,17 @@ export function DirectPurchaseForm({
     file_name?: string
   }
   const [quotations, setQuotations] = useState<QuotationFormData[]>([])
+
+  const supplierPadronBusinessUnitId = useMemo(
+    () =>
+      resolveBusinessUnitIdForSupplierPadron(userPlants, {
+        hasWorkOrder: Boolean(workOrderId),
+        workOrderPlantId: workOrder?.plant_id,
+        workOrderAssetPlantId: workOrder?.asset?.plant_id,
+        selectedPlantIdForStandalone: selectedPlantId,
+      }),
+    [workOrderId, workOrder?.plant_id, workOrder?.asset?.plant_id, selectedPlantId, userPlants]
+  )
 
   const quotationGatePo = useMemo(() => {
     const plant =
@@ -1415,7 +1427,7 @@ export function DirectPurchaseForm({
                     onManualInputChange={(name) => {
                       handleInputChange('supplier', name)
                     }}
-                    businessUnitId={userPlants?.[0]?.business_unit_id}
+                    businessUnitId={supplierPadronBusinessUnitId}
                   />
                 )
               })()}
@@ -1455,7 +1467,7 @@ export function DirectPurchaseForm({
                         showPerformance={true}
                         allowManualInput={true}
                         onManualInputChange={(name) => handleInputChange('supplier', name)}
-                        businessUnitId={userPlants?.[0]?.business_unit_id}
+                        businessUnitId={supplierPadronBusinessUnitId}
                       />
                     )
                   })()}

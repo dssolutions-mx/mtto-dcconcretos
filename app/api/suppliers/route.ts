@@ -7,6 +7,21 @@ import {
   supplierDuplicateNameBuResponse,
 } from '@/lib/suppliers/supplier-write-errors'
 
+/** PostgREST OR: BU column, junction membership, or global padrón flag */
+function businessUnitScopeOr(
+  businessUnitId: string,
+  junctionSupplierIds: string[]
+): string {
+  const parts = [
+    'serves_all_business_units.eq.true',
+    `business_unit_id.eq.${businessUnitId}`,
+  ]
+  if (junctionSupplierIds.length > 0) {
+    parts.push(`id.in.(${junctionSupplierIds.join(',')})`)
+  }
+  return parts.join(',')
+}
+
 export async function GET(request: NextRequest) {
   try {
     const supabase = await createClient()
@@ -25,6 +40,16 @@ export async function GET(request: NextRequest) {
     const limit = parseInt(searchParams.get('limit') || '50')
     const offset = parseInt(searchParams.get('offset') || '0')
     const includeStatusCounts = searchParams.get('include_status_counts') === '1'
+
+    // Suppliers linked in supplier_business_units (many BU) as well as suppliers.business_unit_id
+    let junctionSupplierIds: string[] = []
+    if (business_unit_id) {
+      const { data: jRows } = await supabase
+        .from('supplier_business_units')
+        .select('supplier_id')
+        .eq('business_unit_id', business_unit_id)
+      junctionSupplierIds = [...new Set((jRows ?? []).map((r) => r.supplier_id as string))]
+    }
 
     // Build the query
     let dbQuery = supabase
@@ -65,7 +90,9 @@ export async function GET(request: NextRequest) {
     }
 
     if (business_unit_id) {
-      dbQuery = dbQuery.eq('business_unit_id', business_unit_id)
+      dbQuery = dbQuery.or(
+        businessUnitScopeOr(business_unit_id, junctionSupplierIds)
+      )
     }
 
     if (min_rating) {
@@ -102,7 +129,11 @@ export async function GET(request: NextRequest) {
       }
       if (city) q = q.eq('city', city)
       if (state) q = q.eq('state', state)
-      if (business_unit_id) q = q.eq('business_unit_id', business_unit_id)
+      if (business_unit_id) {
+        q = q.or(
+          businessUnitScopeOr(business_unit_id, junctionSupplierIds)
+        )
+      }
       if (min_rating) q = q.gte('rating', parseFloat(min_rating))
       if (query) {
         q = q.or(`name.ilike.%${query}%,business_name.ilike.%${query}%,contact_person.ilike.%${query}%`)
@@ -225,6 +256,9 @@ export async function POST(request: NextRequest) {
       if (val !== undefined && val !== null && val !== '') {
         insertData[key] = val
       }
+    }
+    if (body.serves_all_business_units === true) {
+      insertData.serves_all_business_units = true
     }
     if (body.business_unit_id === '' || body.business_unit_id === undefined) {
       insertData.business_unit_id = null

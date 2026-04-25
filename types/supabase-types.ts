@@ -7441,6 +7441,7 @@ export type Database = {
           business_hours: Json | null
           business_name: string | null
           business_unit_id: string | null
+          serves_all_business_units: boolean
           certifications: string[] | null
           city: string | null
           contact_person: string | null
@@ -7480,6 +7481,7 @@ export type Database = {
           business_hours?: Json | null
           business_name?: string | null
           business_unit_id?: string | null
+          serves_all_business_units?: boolean
           certifications?: string[] | null
           city?: string | null
           contact_person?: string | null
@@ -7519,6 +7521,7 @@ export type Database = {
           business_hours?: Json | null
           business_name?: string | null
           business_unit_id?: string | null
+          serves_all_business_units?: boolean
           certifications?: string[] | null
           city?: string | null
           contact_person?: string | null
