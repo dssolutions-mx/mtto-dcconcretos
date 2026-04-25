@@ -6,20 +6,18 @@ import {
   isSupplierNameBusinessUnitUniqueViolation,
   supplierDuplicateNameBuResponse,
 } from '@/lib/suppliers/supplier-write-errors'
+import { canWriteSupplier } from '@/lib/auth/supplier-padron-permissions'
+import { getSupplierActor, getSupplierJunctionBusinessUnitIds } from '@/lib/api/supplier-actor'
 
-interface RouteParams {
-  params: {
-    id: string
-  }
-}
+type RouteParams = { params: Promise<{ id: string }> }
 
 export async function GET(
-  request: NextRequest,
+  _request: NextRequest,
   { params }: RouteParams
 ) {
   try {
     const supabase = await createClient()
-    const { id } = params
+    const { id } = await params
 
     const { data: supplier, error } = await supabase
       .from('suppliers')
@@ -68,9 +66,8 @@ export async function PUT(
 ) {
   try {
     const supabase = await createClient()
-    const { id } = params
+    const { id } = await params
 
-    // Get the authenticated user
     const { data: { user }, error: authError } = await supabase.auth.getUser()
 
     if (authError || !user) {
@@ -81,61 +78,24 @@ export async function PUT(
     }
 
     const body: UpdateSupplierRequest = await request.json()
-
-    // Allowlist: only update allowed columns (prevents mass assignment)
-    const allowedFields = [
-      'name', 'business_name', 'tax_id', 'contact_person', 'email', 'phone',
-      'mobile_phone', 'address', 'city', 'state', 'postal_code', 'country',
-      'supplier_type', 'industry', 'specialties', 'payment_terms', 'payment_methods',
-      'notes', 'business_unit_id', 'status'
-    ] as const
-    const updateData: Record<string, unknown> = {}
-    for (const key of allowedFields) {
-      const val = body[key as keyof UpdateSupplierRequest]
-      if (val !== undefined && val !== null && val !== '') {
-        updateData[key] = val
-      }
-    }
-    if (body.name !== undefined) {
-      const trimmed = typeof body.name === 'string' ? body.name.trim() : ''
-      if (!trimmed) {
-        return NextResponse.json({ error: 'Name cannot be empty' }, { status: 400 })
-      }
-      updateData.name = trimmed
-    }
-    if (
-      'business_unit_id' in body &&
-      (body.business_unit_id === '' || body.business_unit_id === null)
-    ) {
-      updateData.business_unit_id = null
-    }
-    // Normalize specialties and industry if provided
-    if (Array.isArray(body.specialties)) {
-      updateData.specialties = body.specialties.map(s => normalizeSpecialty(String(s)))
-    }
-    if (typeof body.industry !== 'undefined') {
-      const n = normalizeIndustry(body.industry as string)
-      updateData.industry = n || body.industry
-    }
-    if (body.serves_all_business_units !== undefined) {
-      updateData.serves_all_business_units = Boolean(body.serves_all_business_units)
+    const actor = await getSupplierActor(supabase)
+    if (!actor.profile) {
+      return NextResponse.json({ error: 'Perfil de usuario requerido' }, { status: 403 })
     }
 
-    // Check if supplier exists and user has permission
-    const { data: existingSupplier, error: fetchError } = await supabase
+    const { data: fullRow, error: fetchError } = await supabase
       .from('suppliers')
-      .select('id, created_by')
+      .select('id, created_by, business_unit_id, serves_all_business_units, name, status, tax_id, alias_of')
       .eq('id', id)
       .single()
 
-    if (fetchError) {
-      if (fetchError.code === 'PGRST116') {
+    if (fetchError || !fullRow) {
+      if (fetchError?.code === 'PGRST116' || !fullRow) {
         return NextResponse.json(
           { error: 'Supplier not found' },
           { status: 404 }
         )
       }
-
       console.error('Error fetching supplier:', fetchError)
       return NextResponse.json(
         { error: 'Error fetching supplier' },
@@ -143,21 +103,122 @@ export async function PUT(
       )
     }
 
-    // Check permissions (user can only update suppliers they created)
-    if (existingSupplier.created_by !== user.id) {
+    const fullSupplier = {
+      id: fullRow.id,
+      created_by: fullRow.created_by,
+      business_unit_id: fullRow.business_unit_id,
+      serves_all_business_units: (fullRow as { serves_all_business_units?: boolean | null })
+        .serves_all_business_units ?? false,
+    }
+
+    const junctionIds = await getSupplierJunctionBusinessUnitIds(supabase, id)
+
+    const canWrite = canWriteSupplier(
+      user.id,
+      actor.profile.role,
+      actor.profile.business_unit_id,
+      {
+        id: fullSupplier.id,
+        created_by: fullSupplier.created_by,
+        business_unit_id: fullSupplier.business_unit_id,
+        serves_all_business_units: fullSupplier.serves_all_business_units,
+      },
+      junctionIds
+    )
+
+    if (!canWrite) {
       return NextResponse.json(
-        { error: 'Permission denied' },
+        { error: 'No tienes permisos para editar este proveedor' },
         { status: 403 }
       )
     }
 
-    // Update the supplier
+    const b = { ...body } as UpdateSupplierRequest & { status?: string; alias_of?: string | null; bank_account_info?: unknown; business_hours?: unknown }
+    if (b.status === 'active_certified') {
+      delete b.status
+    }
+
+    // Allowlist
+    const allowedFields = [
+      'name', 'business_name', 'tax_id', 'contact_person', 'email', 'phone',
+      'mobile_phone', 'address', 'city', 'state', 'postal_code', 'country',
+      'supplier_type', 'industry', 'specialties', 'payment_terms', 'payment_methods',
+      'notes', 'business_unit_id', 'status', 'bank_account_info', 'certifications',
+      'business_hours', 'tax_document_url', 'alias_of',
+    ] as const
+
+    const updateData: Record<string, unknown> = {}
+    for (const key of allowedFields) {
+      if (key === 'alias_of') {
+        if (Object.prototype.hasOwnProperty.call(b, 'alias_of')) {
+          const v = (b as Record<string, unknown>)['alias_of']
+          if (v === null || v === undefined || v === '') {
+            updateData.alias_of = null
+          } else if (typeof v === 'string' && v === id) {
+            return NextResponse.json({ error: 'alias_of no puede ser el mismo registro' }, { status: 400 })
+          } else if (typeof v === 'string') {
+            updateData.alias_of = v
+          }
+        }
+        continue
+      }
+      const val = b[key as keyof UpdateSupplierRequest] as unknown
+      if (val === undefined) continue
+      if (key === 'notes' || key === 'contact_person' || key === 'tax_id' || key === 'email') {
+        if (val === null || val === '') {
+          updateData[key] = null
+        } else {
+          updateData[key] = val
+        }
+        continue
+      }
+      if (val !== null && val !== '') {
+        updateData[key] = val
+      }
+    }
+
+    if (b.name !== undefined) {
+      const trimmed = typeof b.name === 'string' ? b.name.trim() : ''
+      if (!trimmed) {
+        return NextResponse.json({ error: 'Name cannot be empty' }, { status: 400 })
+      }
+      updateData.name = trimmed
+    }
+    if (
+      'business_unit_id' in b &&
+      (b.business_unit_id === '' || b.business_unit_id === null)
+    ) {
+      updateData.business_unit_id = null
+    }
+    if (Array.isArray(b.specialties)) {
+      updateData.specialties = b.specialties.map(s => normalizeSpecialty(String(s)))
+    }
+    if (typeof b.industry !== 'undefined') {
+      const n = normalizeIndustry(b.industry as string)
+      updateData.industry = n || b.industry
+    }
+    if (b.serves_all_business_units !== undefined) {
+      updateData.serves_all_business_units = Boolean(b.serves_all_business_units)
+    }
+    if (b.bank_account_info !== undefined) {
+      updateData.bank_account_info = b.bank_account_info
+    }
+    if (b.business_hours !== undefined) {
+      updateData.business_hours = b.business_hours
+    }
+    if (Array.isArray(b.certifications)) {
+      updateData.certifications = b.certifications
+    }
+    if (b.alias_of === null) {
+      updateData.alias_of = null
+    }
+
     const { data: supplier, error } = await supabase
       .from('suppliers')
       .update({
         ...updateData,
         updated_by: user.id
-      })
+      } as never)
       .eq('id', id)
       .select()
       .single()
@@ -189,14 +250,13 @@ export async function PUT(
 }
 
 export async function DELETE(
-  request: NextRequest,
+  _request: NextRequest,
   { params }: RouteParams
 ) {
   try {
     const supabase = await createClient()
-    const { id } = params
+    const { id } = await params
 
-    // Get the authenticated user
     const { data: { user }, error: authError } = await supabase.auth.getUser()
 
     if (authError || !user) {
@@ -206,21 +266,24 @@ export async function DELETE(
       )
     }
 
-    // Check if supplier exists and user has permission
-    const { data: existingSupplier, error: fetchError } = await supabase
+    const actor = await getSupplierActor(supabase)
+    if (!actor.profile) {
+      return NextResponse.json({ error: 'Perfil de usuario requerido' }, { status: 403 })
+    }
+
+    const { data: fullRow, error: fetchError } = await supabase
       .from('suppliers')
-      .select('id, created_by, status')
+      .select('id, created_by, business_unit_id, serves_all_business_units')
       .eq('id', id)
       .single()
 
-    if (fetchError) {
-      if (fetchError.code === 'PGRST116') {
+    if (fetchError || !fullRow) {
+      if (fetchError?.code === 'PGRST116' || !fullRow) {
         return NextResponse.json(
           { error: 'Supplier not found' },
           { status: 404 }
         )
       }
-
       console.error('Error fetching supplier:', fetchError)
       return NextResponse.json(
         { error: 'Error fetching supplier' },
@@ -228,15 +291,29 @@ export async function DELETE(
       )
     }
 
-    // Check permissions (user can only update suppliers they created)
-    if (existingSupplier.created_by !== user.id) {
+    const s = {
+      id: fullRow.id,
+      created_by: fullRow.created_by,
+      business_unit_id: (fullRow as { business_unit_id: string | null }).business_unit_id,
+      serves_all_business_units: (fullRow as { serves_all_business_units: boolean | null })
+        .serves_all_business_units ?? false,
+    }
+    const junctionIds = await getSupplierJunctionBusinessUnitIds(supabase, id)
+    if (
+      !canWriteSupplier(
+        user.id,
+        actor.profile.role,
+        actor.profile.business_unit_id,
+        s,
+        junctionIds
+      )
+    ) {
       return NextResponse.json(
-        { error: 'Permission denied' },
+        { error: 'No tienes permisos para desactivar este proveedor' },
         { status: 403 }
       )
     }
 
-    // Instead of deleting, set status to 'inactive' for audit purposes
     const { data: supplier, error } = await supabase
       .from('suppliers')
       .update({

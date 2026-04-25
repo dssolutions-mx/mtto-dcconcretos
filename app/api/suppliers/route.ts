@@ -6,6 +6,8 @@ import {
   isSupplierNameBusinessUnitUniqueViolation,
   supplierDuplicateNameBuResponse,
 } from '@/lib/suppliers/supplier-write-errors'
+import { canCreateSupplier } from '@/lib/auth/supplier-padron-permissions'
+import { getSupplierActor } from '@/lib/api/supplier-actor'
 
 /** PostgREST OR: BU column, junction membership, or global padrón flag */
 function businessUnitScopeOr(
@@ -40,6 +42,7 @@ export async function GET(request: NextRequest) {
     const limit = parseInt(searchParams.get('limit') || '50')
     const offset = parseInt(searchParams.get('offset') || '0')
     const includeStatusCounts = searchParams.get('include_status_counts') === '1'
+    const includeAliases = searchParams.get('include_aliases') === '1'
 
     // Suppliers linked in supplier_business_units (many BU) as well as suppliers.business_unit_id
     let junctionSupplierIds: string[] = []
@@ -99,6 +102,10 @@ export async function GET(request: NextRequest) {
       dbQuery = dbQuery.gte('rating', parseFloat(min_rating))
     }
 
+    if (!includeAliases) {
+      dbQuery = dbQuery.is('alias_of', null)
+    }
+
     if (query) {
       dbQuery = dbQuery.or(`name.ilike.%${query}%,business_name.ilike.%${query}%,contact_person.ilike.%${query}%`)
     }
@@ -135,6 +142,9 @@ export async function GET(request: NextRequest) {
         )
       }
       if (min_rating) q = q.gte('rating', parseFloat(min_rating))
+      if (!includeAliases) {
+        q = q.is('alias_of', null)
+      }
       if (query) {
         q = q.or(`name.ilike.%${query}%,business_name.ilike.%${query}%,contact_person.ilike.%${query}%`)
       }
@@ -233,6 +243,21 @@ export async function POST(request: NextRequest) {
     }
 
     const body: CreateSupplierRequest = await request.json()
+    const actor = await getSupplierActor(supabase)
+    if (!actor.profile) {
+      return NextResponse.json({ error: 'Perfil de usuario requerido' }, { status: 403 })
+    }
+    if (
+      !canCreateSupplier(actor.profile.role, actor.profile.business_unit_id, {
+        business_unit_id: body.business_unit_id,
+        serves_all_business_units: body.serves_all_business_units,
+      })
+    ) {
+      return NextResponse.json(
+        { error: 'No tienes permisos para dar de alta proveedores en el padrón' },
+        { status: 403 }
+      )
+    }
 
     const name = typeof body.name === 'string' ? body.name.trim() : ''
     if (!name || !body.supplier_type) {
@@ -247,15 +272,43 @@ export async function POST(request: NextRequest) {
       'name', 'business_name', 'tax_id', 'contact_person', 'email', 'phone',
       'mobile_phone', 'address', 'city', 'state', 'postal_code', 'country',
       'supplier_type', 'industry', 'payment_terms', 'payment_methods', 'notes',
-      'business_unit_id'
+      'business_unit_id', 'business_hours', 'bank_account_info', 'certifications', 'status',
     ] as const
     const insertData: Record<string, unknown> = { name }
     for (const key of allowedFields) {
       if (key === 'name') continue
       const val = body[key as keyof CreateSupplierRequest]
+      if (key === 'notes' && val === '') {
+        insertData.notes = null
+        continue
+      }
+      if (key === 'notes' && (val === null || val === undefined)) {
+        continue
+      }
+      if (key === 'status' && (val === 'active_certified' || val === 'pending')) {
+        if (val === 'active_certified') {
+          // Certification must use verification path
+          continue
+        }
+        insertData.status = val
+        continue
+      }
+      if (key === 'status' && typeof val === 'string' && val.length > 0) {
+        insertData.status = val
+        continue
+      }
       if (val !== undefined && val !== null && val !== '') {
         insertData[key] = val
       }
+    }
+    if (Object.prototype.hasOwnProperty.call(body, 'bank_account_info') && (body as { bank_account_info?: unknown }).bank_account_info !== undefined) {
+      insertData.bank_account_info = (body as { bank_account_info?: unknown }).bank_account_info
+    }
+    if (Object.prototype.hasOwnProperty.call(body, 'business_hours') && (body as { business_hours?: unknown }).business_hours !== undefined) {
+      insertData.business_hours = (body as { business_hours?: unknown }).business_hours
+    }
+    if (Array.isArray((body as { certifications?: string[] }).certifications)) {
+      insertData.certifications = (body as { certifications: string[] }).certifications
     }
     if (body.serves_all_business_units === true) {
       insertData.serves_all_business_units = true
@@ -267,6 +320,9 @@ export async function POST(request: NextRequest) {
     // Normalize specialties and industry
     const normalizedSpecialties = (body.specialties || []).map(s => normalizeSpecialty(String(s)))
     const normalizedIndustry = normalizeIndustry(body.industry) || body.industry
+    if (!insertData.status) {
+      insertData.status = 'active'
+    }
 
     // Create the supplier
     const { data: supplier, error } = await supabase
@@ -276,7 +332,6 @@ export async function POST(request: NextRequest) {
         specialties: normalizedSpecialties,
         industry: normalizedIndustry,
         created_by: user.id,
-        status: 'active'
       })
       .select()
       .single()

@@ -50,6 +50,7 @@ function buildQuery(params: {
   if (params.type !== "all") sp.set("type", params.type)
   sp.set("limit", String(params.limit))
   sp.set("offset", String(params.offset))
+  sp.set("include_aliases", "0")
   if (params.includeStatusCounts) sp.set("include_status_counts", "1")
   return sp.toString()
 }

@@ -12,6 +12,7 @@ import {
   type LegacyDbRole,
   type RoleScope,
 } from '@/lib/auth/role-model'
+import { isNonJefePadronEditorRole } from '@/lib/auth/supplier-padron-permissions'
 
 export type AccessLevel = 'none' | 'read' | 'read_write' | 'full' | 'full_auth'
 
@@ -530,6 +531,20 @@ export function isGMEscalator(userRole: string): boolean {
 
 export function isRHOwner(userRole: string): boolean {
   return isRHOwnerRole(userRole)
+}
+
+// Suppliers padrón — re-exported from a focused module
+export {
+  isNonJefePadronEditorRole,
+  isSupplierPadronViewer,
+  canCreateSupplier,
+  canWriteSupplier,
+  jefeMayWriteSupplier,
+  canWriteBusinessUnitJunction,
+} from '@/lib/auth/supplier-padron-permissions'
+
+export function canManageSupplierPadron(userRole: string | null | undefined): boolean {
+  return isNonJefePadronEditorRole(userRole) || userRole === 'JEFE_UNIDAD_NEGOCIO'
 }
 
 /**

@@ -1,7 +1,9 @@
 "use client"
 
 import React, { useState, useEffect, useMemo } from "react"
+import Link from "next/link"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -50,6 +52,8 @@ import { Supplier, SupplierContact, SupplierService, SupplierWorkHistory, Suppli
 import { SupplierPerformanceChart } from "./SupplierPerformanceChart"
 import { ReportIssueDialog } from "./ReportIssueDialog"
 import { SupplierVerificationPanel } from "./supplier-verification-panel"
+import { SupplierUsagePanel } from "./SupplierUsagePanel"
+import { useToast } from "@/hooks/use-toast"
 import { createClient } from "@/lib/supabase"
 import { calculateAllMetrics, SupplierMetrics, getPostingDate } from "@/lib/suppliers/metrics"
 import { ArrowUp, ArrowDown, Minus, TrendingUp as TrendingUpIcon, AlertCircle } from "lucide-react"
@@ -120,7 +124,9 @@ export function SupplierDetails({
   showVerificationPanel = false,
   canVerifyPurchases = false,
 }: SupplierDetailsProps) {
+  const { toast } = useToast()
   const [supplierData, setSupplierData] = useState<Supplier | null>(null)
+  const [aliasTargetLabel, setAliasTargetLabel] = useState<string | null>(null)
   const [contacts, setContacts] = useState<SupplierContact[]>([])
   const [services, setServices] = useState<SupplierService[]>([])
   const [workHistory, setWorkHistory] = useState<SupplierWorkHistory[]>([])
@@ -318,6 +324,23 @@ export function SupplierDetails({
   }
 
   const displaySupplier = supplierData || supplier
+
+  useEffect(() => {
+    const aid = displaySupplier.alias_of
+    if (!aid) {
+      setAliasTargetLabel(null)
+      return
+    }
+    void (async () => {
+      const r = await fetch(`/api/suppliers/${aid}`)
+      if (!r.ok) {
+        setAliasTargetLabel(aid)
+        return
+      }
+      const j = (await r.json()) as { supplier: { name: string } }
+      setAliasTargetLabel(j.supplier?.name || aid)
+    })()
+  }, [displaySupplier.alias_of, displaySupplier.id])
 
   const formatAmount = (value?: number | null) => {
     if (value === null || value === undefined) return 'N/A'
@@ -585,6 +608,45 @@ export function SupplierDetails({
         </div>
       </div>
 
+      {displaySupplier.alias_of && (
+        <Alert className="border-amber-500/50 bg-amber-500/5">
+          <AlertTitle>Registro marcado como duplicado (alias)</AlertTitle>
+          <AlertDescription className="flex flex-col sm:flex-row sm:items-center gap-2 flex-wrap">
+            <span>
+              Apunta al registro canónico:{" "}
+              <Link className="font-medium underline" href={`/suppliers/${displaySupplier.alias_of}`}>
+                {aliasTargetLabel || displaySupplier.alias_of}
+              </Link>
+            </span>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={async () => {
+                const r = await fetch(`/api/suppliers/${displaySupplier.id}/alias`, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ alias_of: null }),
+                })
+                if (r.ok) {
+                  toast({ title: "Marca de duplicado eliminada" })
+                  void loadSupplierDetails()
+                } else {
+                  const d = (await r.json().catch(() => ({}))) as { error?: string }
+                  toast({
+                    title: "No se pudo quitar",
+                    description: d.error,
+                    variant: "destructive",
+                  })
+                }
+              }}
+            >
+              Quitar marca
+            </Button>
+          </AlertDescription>
+        </Alert>
+      )}
+
       {/* Key Metrics Cards - 6 Cards with Trends */}
       {loading ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -769,6 +831,7 @@ export function SupplierDetails({
       <Tabs defaultValue="overview" className="space-y-4">
         <TabsList>
           <TabsTrigger value="overview">Información General</TabsTrigger>
+          <TabsTrigger value="usage">Uso y alcance</TabsTrigger>
           <TabsTrigger value="contacts">Contactos</TabsTrigger>
           <TabsTrigger value="services">Servicios</TabsTrigger>
           <TabsTrigger value="orders">
@@ -790,6 +853,10 @@ export function SupplierDetails({
             )}
           </TabsTrigger>
         </TabsList>
+
+        <TabsContent value="usage" className="space-y-4">
+          <SupplierUsagePanel supplierId={displaySupplier.id} />
+        </TabsContent>
 
         <TabsContent value="overview" className="space-y-4">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

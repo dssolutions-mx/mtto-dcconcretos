@@ -9,7 +9,8 @@ export function isSupplierNameBusinessUnitUniqueViolation(error: {
 }): boolean {
   return (
     error.code === '23505' ||
-    (error.message?.includes('suppliers_name_business_unit_unique') ?? false)
+    (error.message?.includes('suppliers_name_business_unit_unique') ?? false) ||
+    (error.message?.includes('uq_suppliers_name_bu_normalized') ?? false)
   )
 }
 

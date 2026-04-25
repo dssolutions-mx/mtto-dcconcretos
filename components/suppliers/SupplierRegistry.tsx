@@ -4,6 +4,9 @@ import { useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import { Plus } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { SupplierDuplicatesPanel } from "@/components/suppliers/SupplierDuplicatesPanel"
+import { isSupplierPadronViewer } from "@/lib/auth/role-permissions"
 import {
   Dialog,
   DialogContent,
@@ -43,9 +46,10 @@ export function SupplierRegistry({
 }: SupplierRegistryProps) {
   const router = useRouter()
   const { toast } = useToast()
-  const { hasCreateAccess, hasWriteAccess } = useAuthZustand()
+  const { hasCreateAccess, hasWriteAccess, profile } = useAuthZustand()
   const canCreate = hasCreateAccess("purchases")
   const canWrite = hasWriteAccess("purchases")
+  const canSeeDupTab = isSupplierPadronViewer(profile?.role ?? null)
 
   const [statusFilter, setStatusFilter] = useState<string>("all")
   const [typeFilter, setTypeFilter] = useState<string>(filterByType || "all")
@@ -186,6 +190,17 @@ export function SupplierRegistry({
         </p>
       )}
 
+      <Tabs defaultValue="padron" className="w-full">
+        <TabsList className="mb-1">
+          <TabsTrigger value="padron">Padrón</TabsTrigger>
+          {canSeeDupTab && <TabsTrigger value="duplicados">Duplicados</TabsTrigger>}
+        </TabsList>
+        {canSeeDupTab && (
+          <TabsContent value="duplicados" className="mt-4">
+            <SupplierDuplicatesPanel />
+          </TabsContent>
+        )}
+        <TabsContent value="padron" className="mt-0 space-y-5">
       <SuppliersKpiStrip
         loading={loading && !statusCounts}
         statusFilter={statusFilter}
@@ -248,6 +263,9 @@ export function SupplierRegistry({
           </Button>
         </div>
       )}
+
+        </TabsContent>
+      </Tabs>
 
       {canCreate && (
         <button

@@ -44,6 +44,9 @@ export interface Supplier {
 
   /** If true, available for every business unit (all plants) in purchase flows */
   serves_all_business_units?: boolean
+  /** Points to canonical supplier when this row is a duplicate/alias (no merge) */
+  alias_of?: string | null
+  notes?: string | null
 
   // System fields
   status: SupplierStatus
@@ -285,10 +288,20 @@ export interface CreateSupplierRequest {
   notes?: string
   business_unit_id?: string
   serves_all_business_units?: boolean
+  alias_of?: string | null
+  notes?: string | null
 }
 
 export interface UpdateSupplierRequest extends Partial<CreateSupplierRequest> {
   status?: SupplierStatus
+  business_hours?: BusinessHours
+  bank_account_info?: BankAccountInfo
+  tax_document_url?: string
+  tax_exempt?: boolean
+  serves_all_business_units?: boolean
+  alias_of?: string | null
+  certifications?: string[] | null
+  notes?: string | null
 }
 
 export interface SupplierSearchRequest {
@@ -401,6 +414,9 @@ export interface SupplierFormData {
 
   // Multi business unit
   business_unit_ids?: string[]
+
+  notes?: string
+  status?: string
 }
 
 // Component Props Types

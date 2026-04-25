@@ -1,6 +1,7 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef, useCallback } from "react"
+import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -25,6 +26,8 @@ import {
   BankAccountInfo,
 } from "@/types/suppliers"
 import { createClient } from "@/lib/supabase"
+import { useAuthZustand } from "@/hooks/use-auth-zustand"
+import { canManageSupplierPadron } from "@/lib/auth/role-permissions"
 
 interface SupplierFormProps {
   supplier?: Supplier
@@ -88,8 +91,10 @@ const emptyContact = (): ContactRow => ({
 })
 
 export function SupplierForm({ supplier, onSuccess, onCancel, onDuplicateBlocked }: SupplierFormProps) {
+  const { profile } = useAuthZustand()
+  const canSetStatus = canManageSupplierPadron(profile?.role ?? null)
   const [createDuplicateMessage, setCreateDuplicateMessage] = useState<string | null>(null)
-  const [formData, setFormData] = useState<SupplierFormData & { bank_account_info: BankAccountInfo }>({
+  const [formData, setFormData] = useState<SupplierFormData & { bank_account_info: BankAccountInfo; notes: string; status: string }>({
     name: supplier?.name || '',
     business_name: supplier?.business_name || '',
     tax_id: supplier?.tax_id || '',
@@ -116,6 +121,8 @@ export function SupplierForm({ supplier, onSuccess, onCancel, onDuplicateBlocked
       account_holder: '',
       account_type: 'checking',
     },
+    notes: (supplier as { notes?: string } | undefined)?.notes || '',
+    status: supplier?.status || 'active',
   })
 
   const [contacts, setContacts] = useState<ContactRow[]>([])
@@ -125,6 +132,11 @@ export function SupplierForm({ supplier, onSuccess, onCancel, onDuplicateBlocked
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [newSpecialty, setNewSpecialty] = useState('')
   const [newCertification, setNewCertification] = useState('')
+  const [nameDup, setNameDup] = useState<Supplier[]>([])
+  const [nameCheckLoading, setNameCheckLoading] = useState(false)
+  const [inlineDupMessage, setInlineDupMessage] = useState<string | null>(null)
+  const buSnapshotRef = useRef<string[]>([])
+  const nameBlurTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const handleInputChange = (field: keyof typeof formData, value: any) => {
     setFormData(prev => ({ ...prev, [field]: value }))
@@ -149,25 +161,23 @@ export function SupplierForm({ supplier, onSuccess, onCancel, onDuplicateBlocked
       if (buData) setBusinessUnits(buData as any)
 
       if (supplier?.id) {
-        // Load existing contacts
-        const { data: contactData } = await supabase
-          .from('supplier_contacts')
-          .select('*')
-          .eq('supplier_id', supplier.id)
-          .eq('is_active', true)
-          .order('is_primary', { ascending: false })
-
-        if (contactData && contactData.length > 0) {
-          setContacts(contactData.map(c => ({
-            id: c.id,
-            contact_type: c.contact_type as ContactType,
-            name: c.name || '',
-            position: c.position || '',
-            email: c.email || '',
-            phone: c.phone || '',
-            mobile_phone: c.mobile_phone || '',
-            is_primary: c.is_primary || false,
-          })))
+        const cr = await fetch(`/api/suppliers/${supplier.id}/contacts`)
+        if (cr.ok) {
+          const cj = await cr.json() as { contacts: Array<Record<string, unknown>> }
+          const list = cj.contacts || []
+          const act = list.filter(c => c.is_active !== false)
+          if (act.length > 0) {
+            setContacts(act.map(c => ({
+              id: c.id as string,
+              contact_type: c.contact_type as ContactType,
+              name: (c.name as string) || '',
+              position: (c.position as string) || '',
+              email: (c.email as string) || '',
+              phone: (c.phone as string) || '',
+              mobile_phone: (c.mobile_phone as string) || '',
+              is_primary: (c.is_primary as boolean) || false,
+            })))
+          }
         }
 
         // Load existing business unit associations
@@ -177,13 +187,19 @@ export function SupplierForm({ supplier, onSuccess, onCancel, onDuplicateBlocked
           .eq('supplier_id', supplier.id)
 
         if (buAssoc && buAssoc.length > 0) {
-          setSelectedBUs(buAssoc.map(r => r.business_unit_id))
+          const ids = buAssoc.map(r => r.business_unit_id)
+          setSelectedBUs(ids)
+          buSnapshotRef.current = [...ids]
         } else if (supplier.business_unit_id) {
           setSelectedBUs([supplier.business_unit_id])
+          buSnapshotRef.current = [supplier.business_unit_id]
+        } else {
+          buSnapshotRef.current = []
         }
         setServesAllBusinessUnits(!!supplier.serves_all_business_units)
       } else {
         setServesAllBusinessUnits(false)
+        buSnapshotRef.current = []
       }
     }
     load()
@@ -237,14 +253,40 @@ export function SupplierForm({ supplier, onSuccess, onCancel, onDuplicateBlocked
     )
   }
 
+  const checkNameSimilar = useCallback(async () => {
+    const q = formData.name?.trim()
+    if (!q || q.length < 2) {
+      setNameDup([])
+      setInlineDupMessage(null)
+      return
+    }
+    setNameCheckLoading(true)
+    setInlineDupMessage(null)
+    try {
+      const bu = selectedBUs[0] || ''
+      const u = new URLSearchParams({ query: q, limit: '6', include_aliases: '0' })
+      if (bu) u.set('business_unit_id', bu)
+      const res = await fetch(`/api/suppliers?${u.toString()}`)
+      if (!res.ok) return
+      const j = await res.json() as { suppliers: Supplier[] }
+      const other = (j.suppliers || []).filter(
+        s => s.id !== supplier?.id
+      )
+      setNameDup(other)
+      if (other.length > 0) {
+        setInlineDupMessage('Hay proveedores con un nombre similar en el padrón')
+      }
+    } finally {
+      setNameCheckLoading(false)
+    }
+  }, [formData.name, selectedBUs, supplier?.id])
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsSubmitting(true)
     setCreateDuplicateMessage(null)
 
     try {
-      const supabase = createClient()
-
       // Save supplier via API
       const url = supplier ? `/api/suppliers/${supplier.id}` : '/api/suppliers'
       const method = supplier ? 'PUT' : 'POST'
@@ -254,16 +296,25 @@ export function SupplierForm({ supplier, onSuccess, onCancel, onDuplicateBlocked
         ? formData.bank_account_info
         : undefined
 
+      const bodyPayload: Record<string, unknown> = {
+        ...formData,
+        bank_account_info: bankInfo,
+        business_unit_id: selectedBUs[0] || null,
+        serves_all_business_units: servesAllBusinessUnits,
+        business_hours: formData.business_hours,
+        notes: formData.notes || null,
+      }
+      if (canSetStatus) {
+        bodyPayload.status = formData.status
+      }
+      if (!supplier) {
+        delete bodyPayload.status
+      }
+
       const response = await fetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...formData,
-          bank_account_info: bankInfo,
-          // Keep legacy single BU field as the first selected BU
-          business_unit_id: selectedBUs[0] || null,
-          serves_all_business_units: servesAllBusinessUnits,
-        })
+        body: JSON.stringify(bodyPayload)
       })
 
       const result = await response.json()
@@ -288,48 +339,66 @@ export function SupplierForm({ supplier, onSuccess, onCancel, onDuplicateBlocked
       const savedSupplier: Supplier = result.supplier
       const supplierId = savedSupplier.id
 
-      // Save contacts to supplier_contacts
-      if (contacts.length > 0) {
-        // Delete existing contacts for this supplier
-        await supabase
-          .from('supplier_contacts')
-          .delete()
-          .eq('supplier_id', supplierId)
-
-        // Insert new contacts
-        const contactsToInsert = contacts
-          .filter(c => c.name.trim())
-          .map(c => ({
-            supplier_id: supplierId,
-            contact_type: c.contact_type,
-            name: c.name,
-            position: c.position || null,
-            email: c.email || null,
-            phone: c.phone || null,
-            mobile_phone: c.mobile_phone || null,
-            is_primary: c.is_primary,
-            is_active: true,
-          }))
-
-        if (contactsToInsert.length > 0) {
-          await supabase.from('supplier_contacts').insert(contactsToInsert)
+      const resList = await fetch(`/api/suppliers/${supplierId}/contacts`)
+      const serverContacts = resList.ok
+        ? ((await resList.json()) as { contacts: { id: string }[] }).contacts
+        : []
+      const wantIds = new Set(contacts.filter(c => c.id).map(c => c.id!))
+      for (const ex of serverContacts) {
+        if (!wantIds.has(ex.id)) {
+          await fetch(`/api/suppliers/${supplierId}/contacts/${ex.id}`, { method: 'DELETE' })
+        }
+      }
+      for (const c of contacts.filter(c => c.name.trim())) {
+        if (c.id) {
+          await fetch(`/api/suppliers/${supplierId}/contacts/${c.id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contact_type: c.contact_type,
+              name: c.name,
+              position: c.position || null,
+              email: c.email || null,
+              phone: c.phone || null,
+              mobile_phone: c.mobile_phone || null,
+              is_primary: c.is_primary,
+              is_active: true,
+            }),
+          })
+        } else {
+          await fetch(`/api/suppliers/${supplierId}/contacts`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contact_type: c.contact_type,
+              name: c.name,
+              position: c.position || null,
+              email: c.email || null,
+              phone: c.phone || null,
+              mobile_phone: c.mobile_phone || null,
+              is_primary: c.is_primary,
+            }),
+          })
         }
       }
 
-      // Save business unit associations
-      await supabase
-        .from('supplier_business_units')
-        .delete()
-        .eq('supplier_id', supplierId)
-
-      if (selectedBUs.length > 0) {
-        await supabase.from('supplier_business_units').insert(
-          selectedBUs.map(buId => ({
-            supplier_id: supplierId,
-            business_unit_id: buId,
-          }))
+      const prev = buSnapshotRef.current
+      const toAdd = selectedBUs.filter(buId => !prev.includes(buId))
+      const toRemove = prev.filter(buId => !selectedBUs.includes(buId))
+      for (const buId of toRemove) {
+        await fetch(
+          `/api/suppliers/${supplierId}/business-units?business_unit_id=${encodeURIComponent(buId)}`,
+          { method: 'DELETE' }
         )
       }
+      for (const buId of toAdd) {
+        await fetch(`/api/suppliers/${supplierId}/business-units`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ business_unit_id: buId }),
+        })
+      }
+      buSnapshotRef.current = [...selectedBUs]
 
       onSuccess?.(savedSupplier)
     } catch (error) {
@@ -363,9 +432,37 @@ export function SupplierForm({ supplier, onSuccess, onCancel, onDuplicateBlocked
                 id="name"
                 value={formData.name}
                 onChange={(e) => handleInputChange('name', e.target.value)}
+                onBlur={() => {
+                  if (nameBlurTimer.current) clearTimeout(nameBlurTimer.current)
+                  nameBlurTimer.current = setTimeout(() => { void checkNameSimilar() }, 400)
+                }}
                 required
                 placeholder="Nombre del proveedor"
               />
+              {nameCheckLoading && (
+                <p className="text-xs text-muted-foreground">Buscando nombres similares…</p>
+              )}
+              {inlineDupMessage && nameDup.length > 0 && (
+                <Alert className="border-amber-500/50 bg-amber-500/5">
+                  <CircleAlert className="h-4 w-4" />
+                  <AlertTitle>Posible duplicado</AlertTitle>
+                  <AlertDescription className="space-y-1">
+                    <p>{inlineDupMessage}</p>
+                    <ul className="list-disc pl-4 text-sm">
+                      {nameDup.slice(0, 5).map(s => (
+                        <li key={s.id}>
+                          <Link className="underline" href={`/suppliers/${s.id}`} target="_blank" rel="noreferrer">
+                            {s.name}
+                          </Link>
+                          {' '}
+                          <span className="text-muted-foreground">({s.status})</span>
+                        </li>
+                      ))}
+                    </ul>
+                    <p className="text-xs">Puedes abrir el registro, continuar con este alta o luego marcar duplicado como alias.</p>
+                  </AlertDescription>
+                </Alert>
+              )}
             </div>
             <div className="space-y-2">
               <Label htmlFor="business_name">Razón Social</Label>
@@ -467,6 +564,92 @@ export function SupplierForm({ supplier, onSuccess, onCancel, onDuplicateBlocked
                 placeholder="12345"
               />
             </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Comunicación y notas */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Comunicación y notas</CardTitle>
+          <CardDescription>Contacto principal, canales y observaciones internas</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="contact_person">Persona de contacto</Label>
+              <Input
+                id="contact_person"
+                value={formData.contact_person || ''}
+                onChange={(e) => handleInputChange('contact_person', e.target.value)}
+                placeholder="Nombre de quien atiende"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="email_top">Email</Label>
+              <Input
+                id="email_top"
+                type="email"
+                value={formData.email || ''}
+                onChange={(e) => handleInputChange('email', e.target.value)}
+                placeholder="correo@empresa.com"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="phone_top">Teléfono fijo</Label>
+              <Input
+                id="phone_top"
+                value={formData.phone || ''}
+                onChange={(e) => handleInputChange('phone', e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="mobile_top">Celular</Label>
+              <Input
+                id="mobile_top"
+                value={formData.mobile_phone || ''}
+                onChange={(e) => handleInputChange('mobile_phone', e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="country">País</Label>
+              <Input
+                id="country"
+                value={formData.country || ''}
+                onChange={(e) => handleInputChange('country', e.target.value)}
+              />
+            </div>
+            {canSetStatus && (
+              <div className="space-y-2">
+                <Label>Estado en padrón</Label>
+                <Select
+                  value={formData.status}
+                  onValueChange={(v) => handleInputChange('status', v)}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="pending">Pendiente</SelectItem>
+                    <SelectItem value="active">Activo</SelectItem>
+                    <SelectItem value="active_certified">Activo certificado</SelectItem>
+                    <SelectItem value="inactive">Inactivo</SelectItem>
+                    <SelectItem value="suspended">Suspendido</SelectItem>
+                    <SelectItem value="blacklisted">Lista negra</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="notes">Notas internas</Label>
+            <Textarea
+              id="notes"
+              value={formData.notes}
+              onChange={(e) => handleInputChange('notes', e.target.value)}
+              rows={3}
+              placeholder="Comentarios solo para el equipo (no visibles al proveedor)"
+            />
           </div>
         </CardContent>
       </Card>

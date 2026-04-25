@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useMemo } from "react"
+import { useState, useEffect, useMemo, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
@@ -80,8 +80,9 @@ export function SupplierSelectorMobile({
     setLoading(true)
     try {
       const params = new URLSearchParams({
-        status: 'active',
-        limit: '50' // Reduced for mobile
+        status: 'all',
+        limit: '200',
+        include_aliases: '0',
       })
 
       if (filterByType) {
@@ -92,7 +93,10 @@ export function SupplierSelectorMobile({
       const data = await response.json()
 
       if (response.ok) {
-        setSuppliers(data.suppliers || [])
+        const eligible = (data.suppliers || []).filter(
+          (s: Supplier) => s.status === "active" || s.status === "active_certified"
+        )
+        setSuppliers(eligible)
       } else {
         console.error('Error loading suppliers:', data.error)
       }
@@ -168,16 +172,45 @@ export function SupplierSelectorMobile({
     )
   }, [suppliers, searchTerm])
 
-  // Get selected supplier details
+  const onChangeRef = useRef(onChange)
+  onChangeRef.current = onChange
+
+  // Get selected supplier details; alias → canónico
   useEffect(() => {
-    if (value && suppliers.length > 0) {
-      const supplier = suppliers.find(s => s.id === value)
-      if (supplier) {
-        setSelectedSupplier(supplier)
-      }
-    } else {
+    if (!value) {
       setSelectedSupplier(null)
+      return
     }
+    const supplier = suppliers.find((s) => s.id === value)
+    if (supplier) {
+      setSelectedSupplier(supplier)
+      return
+    }
+    void (async () => {
+      const r = await fetch(`/api/suppliers/${value}`)
+      if (!r.ok) {
+        setSelectedSupplier(null)
+        return
+      }
+      const d = (await r.json()) as { supplier: Supplier }
+      const row = d.supplier
+      if (!row) {
+        setSelectedSupplier(null)
+        return
+      }
+      if (row.alias_of) {
+        const c = await fetch(`/api/suppliers/${row.alias_of}`)
+        if (c.ok) {
+          const cj = (await c.json()) as { supplier: Supplier }
+          if (cj.supplier) {
+            setSelectedSupplier(cj.supplier)
+            onChangeRef.current(cj.supplier)
+            return
+          }
+        }
+      }
+      setSelectedSupplier(row)
+    })()
   }, [value, suppliers])
 
   const getTypeBadge = (type: string) => {

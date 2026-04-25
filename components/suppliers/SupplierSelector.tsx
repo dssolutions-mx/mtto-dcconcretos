@@ -87,7 +87,8 @@ export function SupplierSelector({
       // Load all non-suspended suppliers — filter to active/certified client-side
       const params = new URLSearchParams({
         status: 'all',
-        limit: '200'
+        limit: '200',
+        include_aliases: '0',
       })
 
       if (filterByType) {
@@ -166,17 +167,21 @@ export function SupplierSelector({
     )
   }, [suppliers, searchTerm])
 
-  // Get selected supplier details (y fallback si el id no está en el padrón cargado)
+  // Get selected supplier details; resolver alias → canónico (lista excluye alias)
+  const onChangeRef = useRef(onChange)
+  onChangeRef.current = onChange
+
   useEffect(() => {
     if (!value) {
       setSelectedSupplier(null)
       return
     }
-    if (suppliers.length === 0) return
     const supplier = suppliers.find((s) => s.id === value)
     if (supplier) {
       setSelectedSupplier(supplier)
-    } else if (registryNameFallback?.trim()) {
+      return
+    }
+    if (registryNameFallback?.trim()) {
       setSelectedSupplier({
         id: value,
         name: registryNameFallback.trim(),
@@ -185,9 +190,33 @@ export function SupplierSelector({
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       } as Supplier)
-    } else {
-      setSelectedSupplier(null)
+      return
     }
+    void (async () => {
+      const r = await fetch(`/api/suppliers/${value}`)
+      if (!r.ok) {
+        setSelectedSupplier(null)
+        return
+      }
+      const d = (await r.json()) as { supplier: Supplier }
+      const row = d.supplier
+      if (!row) {
+        setSelectedSupplier(null)
+        return
+      }
+      if (row.alias_of) {
+        const c = await fetch(`/api/suppliers/${row.alias_of}`)
+        if (c.ok) {
+          const cj = (await c.json()) as { supplier: Supplier }
+          if (cj.supplier) {
+            setSelectedSupplier(cj.supplier)
+            onChangeRef.current(cj.supplier)
+            return
+          }
+        }
+      }
+      setSelectedSupplier(row)
+    })()
   }, [value, suppliers, registryNameFallback])
 
   const getTypeBadge = (type: string) => {
