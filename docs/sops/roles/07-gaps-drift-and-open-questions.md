@@ -43,3 +43,8 @@ Documented verbatim in [00-sources-and-conventions.md](./00-sources-and-conventi
 - **Shipped behavior:** JUN/JP may **POST** scoped operator registration (digital equivalent of *solicitud*: form + audit line in `notas_rh` / policy copy in UI). RRHH retains **unscoped** registration and governance pages and is the role expected to work **most intensively** on personnel in the product.
 - **Queue workflow (declined):** A separate JUN/JP → RH **ticket/queue** for alta (beyond the in-flow audit) is **out of scope** — product decision: avoid extra bureaucracy. If legal ever challenges direct `createUser` for JUN/JP, that is a **policy conversation**, not a committed roadmap item here.
 - **Optional RH / GG notifications** for personnel movements remain **out of product** unless ops explicitly requests them (matrix rows may stay **UNVERIFIED** in [06-html-matrix-to-code-matrix.md](./06-html-matrix-to-code-matrix.md) until then).
+
+## Multi-plant Jefe de Planta
+
+- **Settled in product:** A person can have **one** role `JEFE_PLANTA` and **several** plants in scope via `profile_managed_plants` + primary `profiles.plant_id` — same matrix row as JP, **not** a separate enum and **not** JUN (BU-wide) semantics. If HR/payroll later needs a distinct payroll code, that would be a separate field mapped to the same app permissions, not a new `user_role` for authorization.
+- **Open:** whether cross–business-unit plant pairs for one JP are allowed; if restricted, add validation when saving `profile_managed_plants` (compare `plants.business_unit_id`).

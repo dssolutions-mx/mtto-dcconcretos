@@ -19,6 +19,15 @@ export type FleetActor = {
   role: string
   business_unit_id: string | null
   plant_id: string | null
+  /** Union of primary + `profile_managed_plants` for Jefe de Planta (optional on client). */
+  managed_plant_ids?: string[]
+}
+
+function fleetManagedPlantIds(actor: FleetActor): string[] {
+  if (actor.managed_plant_ids && actor.managed_plant_ids.length > 0) {
+    return actor.managed_plant_ids
+  }
+  return actor.plant_id ? [actor.plant_id] : []
 }
 
 export function canFleetEdit(actor: FleetActor | null): boolean {
@@ -49,7 +58,7 @@ export function canEditAssetAtPlant(
     return plantBusinessUnitId === actor.business_unit_id
   }
   if (actor.role === 'JEFE_PLANTA') {
-    return !!assetPlantId && assetPlantId === actor.plant_id
+    return !!assetPlantId && fleetManagedPlantIds(actor).includes(assetPlantId)
   }
   if (actor.role === 'COORDINADOR_MANTENIMIENTO' && actor.plant_id) {
     return !!assetPlantId && assetPlantId === actor.plant_id
@@ -96,7 +105,10 @@ export function canFleetBulkAssignAssetToPlant(
     return true
   }
   if (actor.role === 'JEFE_PLANTA') {
-    return toPlantId === actor.plant_id || fromPlantId === actor.plant_id
+    const m = fleetManagedPlantIds(actor)
+    return (
+      (!!toPlantId && m.includes(toPlantId)) || (!!fromPlantId && m.includes(fromPlantId))
+    )
   }
   if (actor.role === 'COORDINADOR_MANTENIMIENTO' && actor.plant_id) {
     return toPlantId === actor.plant_id || fromPlantId === actor.plant_id

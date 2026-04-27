@@ -17,6 +17,8 @@ export interface UserProfile {
   role_scope?: RoleScope | null
   warehouse_responsibility?: WarehouseResponsibility | WarehouseResponsibilityInput | null
   plant_id: string | null
+  /** When loaded (e.g. from RPC), all plants the user may act on; else client falls back to `plant_id`. */
+  managed_plant_ids?: string[] | null
   business_unit_id: string | null
   can_authorize_up_to: number
   status: string

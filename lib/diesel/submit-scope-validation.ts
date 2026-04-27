@@ -68,12 +68,14 @@ export async function validateDieselTransactionScope(
     return { error: 'No se pudo validar tu perfil. Intenta de nuevo.' }
   }
 
-  if (
-    profile.role === 'JEFE_PLANTA' &&
-    profile.plant_id &&
-    effectivePlantId !== profile.plant_id
-  ) {
-    return { error: 'Solo puedes registrar movimientos en tu planta asignada' }
+  if (profile.role === 'JEFE_PLANTA') {
+    const { data: scoped, error: rpcErr } = await supabase.rpc('profile_scoped_plant_ids', {
+      p_user_id: opts.userId,
+    })
+    const allowed = !rpcErr && Array.isArray(scoped) && scoped.length > 0 ? scoped : profile.plant_id ? [profile.plant_id] : []
+    if (allowed.length === 0 || !allowed.includes(effectivePlantId)) {
+      return { error: 'Solo puedes registrar movimientos en tus plantas asignadas' }
+    }
   }
 
   return null

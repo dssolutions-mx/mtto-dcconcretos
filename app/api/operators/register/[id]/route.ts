@@ -8,6 +8,7 @@ import {
   canViewOperatorsList,
   checkRHOwnershipAuthority,
   checkScopeOverBusinessUnit,
+  managedPlantIdsForProfile,
 } from '@/lib/auth/server-authorization'
 import {
   operatorRowVisibleToJun,
@@ -77,6 +78,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
           role: actor.profile.role,
           business_unit_id: actor.profile.business_unit_id,
           plant_id: actor.profile.plant_id,
+          managed_plant_ids: actor.profile.managed_plant_ids,
         },
       }
       if (actor.profile.role === 'JEFE_UNIDAD_NEGOCIO' && actor.profile.business_unit_id) {
@@ -94,11 +96,13 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         ) {
           return NextResponse.json({ error: 'No puedes editar este perfil' }, { status: 403 })
         }
-      } else if (actor.profile.role === 'JEFE_PLANTA' && actor.profile.plant_id) {
+      } else if (actor.profile.role === 'JEFE_PLANTA') {
+        const jpPlants = managedPlantIdsForProfile(actor.profile)
         if (
+          jpPlants.length === 0 ||
           !operatorRowVisibleToJp(
             { plant_id: row.plant_id, business_unit_id: row.business_unit_id },
-            actor.profile.plant_id
+            jpPlants
           )
         ) {
           return NextResponse.json({ error: 'No puedes editar este perfil' }, { status: 403 })
@@ -134,6 +138,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
             role: actor.profile.role,
             business_unit_id: actor.profile.business_unit_id,
             plant_id: actor.profile.plant_id,
+            managed_plant_ids: actor.profile.managed_plant_ids,
           },
         },
         mergedPlant,
@@ -355,14 +360,16 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         ) {
           return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 })
         }
-      } else if (actor.profile.role === 'JEFE_PLANTA' && actor.profile.plant_id) {
+      } else if (actor.profile.role === 'JEFE_PLANTA') {
+        const jpPlants = managedPlantIdsForProfile(actor.profile)
         if (
+          jpPlants.length === 0 ||
           !operatorRowVisibleToJp(
             {
               plant_id: operator.plant_id,
               business_unit_id: operator.business_unit_id,
             },
-            actor.profile.plant_id
+            jpPlants
           )
         ) {
           return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 })
@@ -374,7 +381,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
               plant_id: operator.plant_id,
               business_unit_id: operator.business_unit_id,
             },
-            actor.profile.plant_id
+            [actor.profile.plant_id]
           )
         ) {
           return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 })

@@ -31,6 +31,12 @@ export interface ActorProfile {
   role_scope?: string | null
   business_unit_id: string | null
   plant_id: string | null
+  /**
+   * Union of `profiles.plant_id` and `profile_managed_plants` (see `profile_scoped_plant_ids` RPC).
+   * Populated in {@link loadActorContext}; for client-only {@link buildActorContextFromProfile} use
+   * a single-plant fallback from `plant_id` when this is empty.
+   */
+  managed_plant_ids: string[]
   can_authorize_up_to: number | null
 }
 
@@ -69,11 +75,22 @@ export async function loadActorProfile(
     role_scope: (data as { role_scope?: string | null }).role_scope ?? null,
     business_unit_id: data.business_unit_id ?? null,
     plant_id: data.plant_id ?? null,
+    managed_plant_ids: data.plant_id ? [data.plant_id] : [],
     can_authorize_up_to:
       typeof data.can_authorize_up_to === 'number'
         ? data.can_authorize_up_to
         : Number(data.can_authorize_up_to) || 0,
   }
+}
+
+/** Effective plant scope for a profile (RPC in server path, or primary plant on the client). */
+export function managedPlantIdsForProfile(
+  profile: Pick<ActorProfile, 'plant_id' | 'managed_plant_ids'>
+): string[] {
+  if (profile.managed_plant_ids.length > 0) {
+    return profile.managed_plant_ids
+  }
+  return profile.plant_id ? [profile.plant_id] : []
 }
 
 /**
@@ -111,25 +128,29 @@ export function buildActorContextFromProfile(
   userId: string,
   profile: ActorProfile
 ): ActorContext {
-  const effectiveBusinessRole = resolveEffectiveBusinessRole(profile)
+  const profileNorm: ActorProfile = {
+    ...profile,
+    managed_plant_ids: managedPlantIdsForProfile(profile),
+  }
+  const effectiveBusinessRole = resolveEffectiveBusinessRole(profileNorm)
   const roleScope = effectiveBusinessRole
     ? getRoleScopeFromBusinessRole(effectiveBusinessRole)
     : 'plant'
   const permRole =
     effectiveRoleForPermissions({
-      role: profile.role,
-      business_role: profile.business_role,
+      role: profileNorm.role,
+      business_role: profileNorm.business_role,
     }) ??
-    profile.business_role ??
-    profile.role
+    profileNorm.business_role ??
+    profileNorm.role
   const authorizationLimit =
-    (profile.can_authorize_up_to ?? 0) > 0
-      ? (profile.can_authorize_up_to ?? 0)
+    (profileNorm.can_authorize_up_to ?? 0) > 0
+      ? (profileNorm.can_authorize_up_to ?? 0)
       : getAuthorizationLimit(permRole)
 
   return {
     userId,
-    profile,
+    profile: profileNorm,
     effectiveBusinessRole,
     scope: roleScope,
     authorizationLimit,
@@ -148,7 +169,15 @@ export async function loadActorContext(
     return null
   }
 
-  return buildActorContextFromProfile(userId, profile)
+  const { data: scoped, error: rpcError } = await supabase.rpc('profile_scoped_plant_ids', {
+    p_user_id: userId,
+  })
+  let managed = profile.managed_plant_ids
+  if (!rpcError && Array.isArray(scoped)) {
+    managed =
+      scoped.length > 0 ? scoped : profile.plant_id ? [profile.plant_id] : []
+  }
+  return buildActorContextFromProfile(userId, { ...profile, managed_plant_ids: managed })
 }
 
 function getRoleScopeFromBusinessRole(
@@ -211,7 +240,8 @@ export function checkScopeOverPlant(
   if (!plantId) {
     return true
   }
-  return actor.profile.plant_id === plantId || actor.profile.business_unit_id != null
+  const managed = managedPlantIdsForProfile(actor.profile)
+  return managed.includes(plantId)
 }
 
 /**
@@ -437,6 +467,7 @@ function actorForOperatorScope(actor: ActorContext): ActorForOperatorScope {
       role: actor.profile.role,
       business_unit_id: actor.profile.business_unit_id,
       plant_id: actor.profile.plant_id,
+      managed_plant_ids: actor.profile.managed_plant_ids,
     },
   }
 }
@@ -520,10 +551,10 @@ export async function assertActorMayMutateAssetOperator(
   }
 
   if (isJefePlantaActor(scoped)) {
-    if (!actor.profile.plant_id) {
+    const jpPlants = managedPlantIdsForProfile(actor.profile)
+    if (jpPlants.length === 0) {
       return { ok: false, error: 'Tu perfil no tiene planta asignada', status: 403 }
     }
-    const jpPlantId = actor.profile.plant_id
 
     const { data: assetRow, error: assetErr } = await supabase
       .from('assets')
@@ -535,8 +566,8 @@ export async function assertActorMayMutateAssetOperator(
       return { ok: false, error: 'Activo no encontrado', status: 404 }
     }
 
-    if (assetRow.plant_id !== jpPlantId) {
-      return { ok: false, error: 'Solo puedes gestionar activos de tu planta', status: 403 }
+    if (!assetRow.plant_id || !jpPlants.includes(assetRow.plant_id)) {
+      return { ok: false, error: 'Solo puedes gestionar activos de tus plantas asignadas', status: 403 }
     }
 
     const { data: opRow, error: opErr } = await supabase
@@ -549,8 +580,8 @@ export async function assertActorMayMutateAssetOperator(
       return { ok: false, error: 'Operador no encontrado', status: 404 }
     }
 
-    if (opRow.plant_id !== jpPlantId) {
-      return { ok: false, error: 'Solo puedes asignar operadores de tu planta', status: 403 }
+    if (!opRow.plant_id || !jpPlants.includes(opRow.plant_id)) {
+      return { ok: false, error: 'Solo puedes asignar operadores de tus plantas asignadas', status: 403 }
     }
 
     return { ok: true }

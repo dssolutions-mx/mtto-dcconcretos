@@ -13,6 +13,14 @@ export type PlantReassignmentActor = {
   role: string
   plant_id: string | null
   business_unit_id: string | null
+  managed_plant_ids?: string[]
+}
+
+function actorManagedPlants(actor: PlantReassignmentActor): string[] {
+  if (actor.managed_plant_ids && actor.managed_plant_ids.length > 0) {
+    return actor.managed_plant_ids
+  }
+  return actor.plant_id ? [actor.plant_id] : []
 }
 
 type CurrentAssetRow = {
@@ -74,13 +82,16 @@ async function rolePlantScopeError(
   plantId: string | null
 ): Promise<PlantReassignmentResult | null> {
   if (actor.role === 'JEFE_PLANTA') {
-    if (currentAsset.plant_id !== actor.plant_id && plantId !== actor.plant_id) {
+    const m = actorManagedPlants(actor)
+    const currentIn = currentAsset.plant_id != null && m.includes(currentAsset.plant_id)
+    const targetIn = plantId != null && m.includes(plantId)
+    if (!currentIn && !targetIn) {
       return {
         ok: false,
         status: 403,
         body: {
           error:
-            'Como Jefe de Planta, solo puedes asignar activos a tu planta o mover activos ya asignados a tu planta',
+            'Como Jefe de Planta, solo puedes asignar activos a una de tus plantas o mover activos ya asignados a una de tus plantas',
         },
       }
     }

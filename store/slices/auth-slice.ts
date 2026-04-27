@@ -596,7 +596,7 @@ export const createAuthSlice: StateCreator<
         .from('profiles')
         .select(`
           *,
-          plants(id, name),
+          plants!profiles_plant_id_fkey(id, name),
           business_units(id, name)
         `)
         .eq('id', userId)

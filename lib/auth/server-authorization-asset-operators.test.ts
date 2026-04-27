@@ -13,6 +13,10 @@ import {
 
 function baseActor(overrides: Partial<ActorContext["profile"]> & { userId?: string }): ActorContext {
   const userId = overrides.userId ?? "actor-1"
+  const plantId = overrides.plant_id ?? null
+  const managed =
+    overrides.managed_plant_ids ??
+    (plantId ? [plantId] : [] as string[])
   return {
     userId,
     profile: {
@@ -21,7 +25,8 @@ function baseActor(overrides: Partial<ActorContext["profile"]> & { userId?: stri
       business_role: null,
       role_scope: null,
       business_unit_id: overrides.business_unit_id ?? "bu-a",
-      plant_id: overrides.plant_id ?? null,
+      plant_id: plantId,
+      managed_plant_ids: managed,
       can_authorize_up_to: 0,
     },
     effectiveBusinessRole: "JEFE_UNIDAD_NEGOCIO",
@@ -191,6 +196,31 @@ test("assertActorMayMutateAssetOperator rejects JP when operator is on another p
     operatorId: "op-1",
   })
   assert.equal(r.ok, false)
+})
+
+test("assertActorMayMutateAssetOperator allows two-plant JP on second managed plant", async () => {
+  const supabase = mockSupabase({
+    plantRows: [{ id: "p2" }],
+    assetsById: {
+      "asset-1": { plant_id: "p2" },
+    },
+    operatorById: {
+      "op-1": { id: "op-1", plant_id: "p2" },
+    },
+  })
+  const actor = baseActor({
+    role: "JEFE_PLANTA",
+    business_unit_id: "bu-a",
+    plant_id: "p1",
+    managed_plant_ids: ["p1", "p2"],
+  })
+  actor.effectiveBusinessRole = "JEFE_PLANTA"
+  actor.scope = "plant"
+  const r = await assertActorMayMutateAssetOperator(supabase, actor, {
+    assetId: "asset-1",
+    operatorId: "op-1",
+  })
+  assert.equal(r.ok, true)
 })
 
 test("assertMayMutateAssetOperatorRow returns 401 when actor is null", async () => {

@@ -13,6 +13,7 @@ function actor(overrides: Partial<FleetActor> & Pick<FleetActor, 'role'>): Fleet
     role: overrides.role,
     business_unit_id: overrides.business_unit_id ?? null,
     plant_id: overrides.plant_id ?? null,
+    managed_plant_ids: overrides.managed_plant_ids,
   }
 }
 
@@ -28,6 +29,19 @@ test('canFleetBulkAssignAssetToPlant: JP cannot move when neither side is home p
   const jp = actor({ role: 'JEFE_PLANTA', plant_id: 'p-home' })
   assert.equal(
     canFleetBulkAssignAssetToPlant(jp, 'p-a', 'bu1', 'p-b', 'bu1'),
+    false
+  )
+})
+
+test('canFleetBulkAssignAssetToPlant: two-plant JP can move between managed plants', () => {
+  const jp = actor({
+    role: 'JEFE_PLANTA',
+    plant_id: 'p1',
+    managed_plant_ids: ['p1', 'p2'],
+  })
+  assert.equal(canFleetBulkAssignAssetToPlant(jp, 'p1', 'bu1', 'p2', 'bu1'), true)
+  assert.equal(
+    canFleetBulkAssignAssetToPlant(jp, 'p3', 'bu1', 'p4', 'bu1'),
     false
   )
 })

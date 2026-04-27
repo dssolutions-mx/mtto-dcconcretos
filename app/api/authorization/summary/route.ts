@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
-import { loadActorContext, canUpdateUserAuthorization } from '@/lib/auth/server-authorization'
+import {
+  loadActorContext,
+  canUpdateUserAuthorization,
+  managedPlantIdsForProfile,
+} from '@/lib/auth/server-authorization'
 
 // GET - Fetch authorization summary
 export async function GET(request: NextRequest) {
@@ -28,7 +32,7 @@ export async function GET(request: NextRequest) {
 
     const { data: currentUserProfile, error: profileError } = await supabase
       .from('profiles')
-      .select('*, business_units(name), plants(name)')
+      .select('*, business_units(name), plants!profiles_plant_id_fkey(name)')
       .eq('id', user.id)
       .single()
 
@@ -132,8 +136,11 @@ export async function GET(request: NextRequest) {
     // Apply scope-based filtering based on current user's role
     if (currentUserProfile.role === 'JEFE_UNIDAD_NEGOCIO' && currentUserProfile.business_unit_id) {
       query = query.eq('business_unit_id', currentUserProfile.business_unit_id)
-    } else if (currentUserProfile.role === 'JEFE_PLANTA' && currentUserProfile.plant_id) {
-      query = query.eq('plant_id', currentUserProfile.plant_id)
+    } else if (currentUserProfile.role === 'JEFE_PLANTA' && actor) {
+      const managed = managedPlantIdsForProfile(actor.profile)
+      if (managed.length > 0) {
+        query = query.in('plant_id', managed)
+      }
     }
     // GERENCIA_GENERAL, AREA_ADMINISTRATIVA, GERENTE_MANTENIMIENTO: global scope, no filter
 
@@ -176,8 +183,11 @@ export async function GET(request: NextRequest) {
 
       if (currentUserProfile.role === 'JEFE_UNIDAD_NEGOCIO' && currentUserProfile.business_unit_id) {
         inactiveQuery = inactiveQuery.eq('business_unit_id', currentUserProfile.business_unit_id)
-      } else if (currentUserProfile.role === 'JEFE_PLANTA' && currentUserProfile.plant_id) {
-        inactiveQuery = inactiveQuery.eq('plant_id', currentUserProfile.plant_id)
+      } else if (currentUserProfile.role === 'JEFE_PLANTA' && actor) {
+        const managed = managedPlantIdsForProfile(actor.profile)
+        if (managed.length > 0) {
+          inactiveQuery = inactiveQuery.in('plant_id', managed)
+        }
       }
 
       const { data: inactiveProfiles, error: inactiveError } = await inactiveQuery

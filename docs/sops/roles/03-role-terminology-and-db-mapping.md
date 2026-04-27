@@ -75,6 +75,10 @@ This table links **POL-OPE-001 / POL-OPE-002** Spanish labels to **stored `profi
 | Mecánicos / Auxiliares | MECANICO | MECANICO | POL001; POL002 (mecánico in flows) |
 | Jefe de Unidad de Negocio | JEFE_UNIDAD_NEGOCIO | JEFE_UNIDAD_NEGOCIO | POL001; POL002 |
 | Jefe de Planta | JEFE_PLANTA | JEFE_PLANTA | POL001; POL002 |
+
+### Multi-plant Jefe de Planta (“Jefe de Plantas”)
+
+**Same SOP row and `ModulePermissions` as a single-plant Jefe de Planta** (`JEFE_PLANTA` only — not `JEFE_UNIDAD_NEGOCIO`). **Scope** is the **union of plants** stored in `profile_managed_plants` plus the primary `profiles.plant_id` (see SQL helper `profile_scoped_plant_ids` and the `user_plants_expanded` view for the client). UI may show “Jefe de Planta” with two plants listed, or “Jefe de Plantas” when the user has more than one plant in scope; that is a product/HR copy choice, not a different DB role.
 | Dosificadores / Operadores | DOSIFICADOR or OPERADOR | OPERADOR when resolved from either | POL001; POL002 |
 | Administración | AREA_ADMINISTRATIVA | AREA_ADMINISTRATIVA | POL001; POL002 |
 | Encargado de Almacén | ENCARGADO_ALMACEN | ENCARGADO_ALMACEN | POL002 |

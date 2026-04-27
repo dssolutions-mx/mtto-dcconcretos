@@ -45,6 +45,8 @@ interface UserRegistrationFormData {
   can_authorize_up_to: string
   provisional_password: string
   notes: string
+  /** RH: extra plants for a new Jefe de Planta (in addition to primary `plant_id`). */
+  jefe_extra_plant_ids: string[]
 }
 
 const LINE_MANAGER_REGISTER_ROLES = [
@@ -154,7 +156,8 @@ export function UserRegistrationTool({
     business_unit_id: '',
     can_authorize_up_to: '0',
     provisional_password: '',
-    notes: ''
+    notes: '',
+    jefe_extra_plant_ids: [],
   })
 
   // Load data on component mount
@@ -329,18 +332,23 @@ export function UserRegistrationTool({
     setLoading(true)
 
     try {
+      const { jefe_extra_plant_ids, ...formPayload } = formData
       const response = await fetch('/api/operators/register', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          ...formData,
+          ...formPayload,
           can_authorize_up_to: parseFloat(formData.can_authorize_up_to) || 0,
           hire_date: formData.hire_date || new Date().toISOString(),
           password: formData.provisional_password,
           plant_id: formData.plant_id || null,
-          business_unit_id: formData.business_unit_id || null
+          business_unit_id: formData.business_unit_id || null,
+          additional_plant_ids:
+            formData.role === 'JEFE_PLANTA' && !lineManagerOnly && jefe_extra_plant_ids.length > 0
+              ? jefe_extra_plant_ids
+              : undefined,
         }),
       })
 
@@ -416,7 +424,8 @@ export function UserRegistrationTool({
         business_unit_id: '',
         can_authorize_up_to: '0',
         provisional_password: '',
-        notes: ''
+        notes: '',
+        jefe_extra_plant_ids: [],
       })
 
       setOpen(false)
@@ -692,6 +701,34 @@ export function UserRegistrationTool({
                   <Badge variant="secondary" className="text-xs">
                     Este rol requiere selección de planta
                   </Badge>
+                )}
+                {!lineManagerOnly && formData.role === 'JEFE_PLANTA' && formData.plant_id && (
+                  <div className="space-y-2 rounded-md border p-3">
+                    <span className="text-sm font-medium">Plantas adicionales a cargo (opcional)</span>
+                    <p className="text-xs text-muted-foreground">Además de la planta principal arriba.</p>
+                    <div className="flex max-h-32 flex-col gap-2 overflow-y-auto">
+                      {filteredPlants
+                        .filter((p) => p.id !== formData.plant_id)
+                        .map((plant) => (
+                          <label key={plant.id} className="flex items-center gap-2 text-sm">
+                            <input
+                              type="checkbox"
+                              className="rounded border border-input"
+                              checked={formData.jefe_extra_plant_ids.includes(plant.id)}
+                              onChange={(e) => {
+                                setFormData((prev) => {
+                                  const s = new Set(prev.jefe_extra_plant_ids)
+                                  if (e.target.checked) s.add(plant.id)
+                                  else s.delete(plant.id)
+                                  return { ...prev, jefe_extra_plant_ids: [...s] }
+                                })
+                              }}
+                            />
+                            {plant.name} ({plant.code})
+                          </label>
+                        ))}
+                    </div>
+                  </div>
                 )}
               </div>
 

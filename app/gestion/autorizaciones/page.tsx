@@ -19,6 +19,7 @@ import { toast } from 'sonner'
 import { useAuthZustand } from '@/hooks/use-auth-zustand'
 import { getRoleDisplayName } from '@/lib/auth/role-permissions'
 import { canManageUserAuthorizationClient } from '@/lib/auth/client-authorization'
+import { createClient } from '@/lib/supabase'
 
 interface BusinessUnit {
   id: string
@@ -124,6 +125,8 @@ export default function AuthorizationManagementPage() {
     individual_limit: '',
     business_unit_id: '',
     plant_id: '',
+    /** JEFE_PLANTA: full scope (includes primary `plant_id`). */
+    managed_plant_ids: [] as string[],
     position: '',
     notes: ''
   })
@@ -313,7 +316,15 @@ export default function AuthorizationManagementPage() {
           business_unit_id: userEditForm.business_unit_id === 'unassigned' ? null : userEditForm.business_unit_id,
           plant_id: userEditForm.plant_id === 'unassigned' ? null : userEditForm.plant_id,
           position: userEditForm.position,
-          notes: userEditForm.notes
+          notes: userEditForm.notes,
+          managed_plant_ids:
+            userEditForm.role === 'JEFE_PLANTA' && userEditForm.plant_id !== 'unassigned'
+              ? (() => {
+                  const primary = userEditForm.plant_id
+                  const set = new Set([...userEditForm.managed_plant_ids, primary])
+                  return [...set]
+                })()
+              : undefined,
         })
       })
 
@@ -434,6 +445,7 @@ export default function AuthorizationManagementPage() {
       individual_limit: '',
       business_unit_id: '',
       plant_id: '',
+      managed_plant_ids: [],
       position: '',
       notes: ''
     })
@@ -450,17 +462,31 @@ export default function AuthorizationManagementPage() {
 
 
   const openUserEditDialog = (user: UserProfile) => {
-    setUserEditForm({
-      user_id: user.user_id,
-      role: user.role,
-      individual_limit: user.individual_limit.toString(),
-      business_unit_id: user.business_unit_id || 'unassigned',
-      plant_id: user.plant_id || 'unassigned',
-      position: user.position || '',
-      notes: ''
-    })
-    setSelectedUser(user)
-    setShowUserEditDialog(true)
+    void (async () => {
+      let managed: string[] = user.plant_id ? [user.plant_id] : []
+      if (user.role === 'JEFE_PLANTA') {
+        const supabase = createClient()
+        const { data } = await supabase
+          .from('profile_managed_plants')
+          .select('plant_id')
+          .eq('profile_id', user.user_id)
+        if (data && data.length > 0) {
+          managed = data.map((r) => r.plant_id)
+        }
+      }
+      setUserEditForm({
+        user_id: user.user_id,
+        role: user.role,
+        individual_limit: user.individual_limit.toString(),
+        business_unit_id: user.business_unit_id || 'unassigned',
+        plant_id: user.plant_id || 'unassigned',
+        managed_plant_ids: managed,
+        position: user.position || '',
+        notes: '',
+      })
+      setSelectedUser(user)
+      setShowUserEditDialog(true)
+    })()
   }
 
   const getRoleColor = (role: string) => {
@@ -781,7 +807,21 @@ export default function AuthorizationManagementPage() {
                   <Select
                     value={userEditForm.role}
                     onValueChange={(value) =>
-                      setUserEditForm(prev => ({ ...prev, role: value }))
+                      setUserEditForm((prev) => {
+                        if (value === 'JEFE_PLANTA' && prev.plant_id && prev.plant_id !== 'unassigned') {
+                          return {
+                            ...prev,
+                            role: value,
+                            managed_plant_ids: prev.managed_plant_ids.length
+                              ? prev.managed_plant_ids
+                              : [prev.plant_id],
+                          }
+                        }
+                        if (value !== 'JEFE_PLANTA' && prev.role === 'JEFE_PLANTA') {
+                          return { ...prev, role: value, managed_plant_ids: [] }
+                        }
+                        return { ...prev, role: value }
+                      })
                     }
                   >
                     <SelectTrigger>
@@ -828,11 +868,17 @@ export default function AuthorizationManagementPage() {
                   </Select>
                 </div>
                 <div>
-                  <Label>Planta</Label>
+                  <Label>Planta (principal)</Label>
                   <Select
                     value={userEditForm.plant_id}
                     onValueChange={(value) =>
-                      setUserEditForm(prev => ({ ...prev, plant_id: value }))
+                      setUserEditForm((prev) => {
+                        if (prev.role === 'JEFE_PLANTA' && value && value !== 'unassigned') {
+                          const s = new Set([...prev.managed_plant_ids, value])
+                          return { ...prev, plant_id: value, managed_plant_ids: [...s] }
+                        }
+                        return { ...prev, plant_id: value }
+                      })
                     }
                   >
                     <SelectTrigger>
@@ -850,6 +896,42 @@ export default function AuthorizationManagementPage() {
                      </SelectContent>
                   </Select>
                 </div>
+                {userEditForm.role === 'JEFE_PLANTA' && (
+                  <div className="col-span-2 space-y-2 rounded-md border p-3">
+                    <Label>Plantas bajo responsabilidad</Label>
+                    <p className="text-sm text-muted-foreground">
+                      Incluye la planta principal y, si aplica, plantas adicionales. Debe reflejarse
+                      al menos la planta principal.
+                    </p>
+                    <div className="flex max-h-40 flex-col gap-2 overflow-y-auto pr-1">
+                      {plants
+                        .filter(
+                          (p) =>
+                            !userEditForm.business_unit_id ||
+                            userEditForm.business_unit_id === 'unassigned' ||
+                            p.business_unit_id === userEditForm.business_unit_id
+                        )
+                        .map((plant) => (
+                          <label key={plant.id} className="flex items-center gap-2 text-sm">
+                            <input
+                              type="checkbox"
+                              className="rounded border border-input"
+                              checked={userEditForm.managed_plant_ids.includes(plant.id)}
+                              onChange={(e) => {
+                                setUserEditForm((prev) => {
+                                  const next = new Set(prev.managed_plant_ids)
+                                  if (e.target.checked) next.add(plant.id)
+                                  else next.delete(plant.id)
+                                  return { ...prev, managed_plant_ids: [...next] }
+                                })
+                              }}
+                            />
+                            {plant.name}
+                          </label>
+                        ))}
+                    </div>
+                  </div>
+                )}
                 <div className="col-span-2">
                   <Label>Posición</Label>
                   <Input

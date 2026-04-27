@@ -14,14 +14,17 @@ export async function PATCH(request: NextRequest) {
       individual_limit,
       business_unit_id,
       plant_id,
+      managed_plant_ids,
       position,
-      notes
+      notes,
     } = body as {
       user_id?: string
       role?: string
       individual_limit?: number
       business_unit_id?: string | null
       plant_id?: string | null
+      /** Full set of plants for JEFE_PLANTA (primary must match `plant_id` when both sent). */
+      managed_plant_ids?: string[] | null
       position?: string
       notes?: string
     }
@@ -44,6 +47,21 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ 
         error: 'No tienes permisos para actualizar autorizaciones de usuario' 
       }, { status: 403 })
+    }
+
+    if (managed_plant_ids !== undefined && Array.isArray(managed_plant_ids)) {
+      if (managed_plant_ids.length === 0) {
+        return NextResponse.json(
+          { error: 'Jefe de Planta requiere al menos una planta en el alcance' },
+          { status: 400 }
+        )
+      }
+      if (plant_id && !managed_plant_ids.includes(plant_id)) {
+        return NextResponse.json(
+          { error: 'La planta principal debe estar en la lista de plantas asignadas' },
+          { status: 400 }
+        )
+      }
     }
 
     // Update user profile
@@ -72,6 +90,49 @@ export async function PATCH(request: NextRequest) {
     if (updateError) {
       console.error('Error updating user profile:', updateError)
       return NextResponse.json({ error: updateError.message }, { status: 500 })
+    }
+
+    const effectiveRole = (updatedProfile as { role?: string }).role
+    if (
+      effectiveRole === 'JEFE_PLANTA' &&
+      managed_plant_ids !== undefined &&
+      Array.isArray(managed_plant_ids)
+    ) {
+      const primary = (updatedProfile as { plant_id?: string | null }).plant_id
+      if (primary && !managed_plant_ids.includes(primary)) {
+        return NextResponse.json(
+          { error: 'La planta principal debe estar en la lista de plantas asignadas' },
+          { status: 400 }
+        )
+      }
+      const toInsert = [...new Set(managed_plant_ids.filter(Boolean))]
+      if (toInsert.length > 0) {
+        await supabase
+          .from('profile_managed_plants')
+          .delete()
+          .eq('profile_id', user_id)
+        const { error: pmpErr } = await supabase.from('profile_managed_plants').insert(
+          toInsert.map((pid) => ({ profile_id: user_id, plant_id: pid }))
+        )
+        if (pmpErr) {
+          console.error('profile_managed_plants sync:', pmpErr)
+          return NextResponse.json(
+            { error: 'No se pudo actualizar el alcance de plantas del Jefe de Planta' },
+            { status: 500 }
+          )
+        }
+      }
+    } else if (effectiveRole === 'JEFE_PLANTA' && plant_id !== undefined && managed_plant_ids === undefined) {
+      const p = (updatedProfile as { plant_id?: string | null }).plant_id
+      if (p) {
+        await supabase.from('profile_managed_plants').delete().eq('profile_id', user_id)
+        const { error: insErr } = await supabase
+          .from('profile_managed_plants')
+          .insert({ profile_id: user_id, plant_id: p })
+        if (insErr) {
+          console.warn('profile_managed_plants single-plant sync:', insErr)
+        }
+      }
     }
 
     // Log the change for audit purposes (simplified)

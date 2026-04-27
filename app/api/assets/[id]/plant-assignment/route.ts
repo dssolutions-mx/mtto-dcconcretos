@@ -37,6 +37,10 @@ export async function PATCH(
       business_unit_id: string | null
     }
 
+    const { data: managedIds } = await supabase.rpc('profile_scoped_plant_ids', {
+      p_user_id: user.id,
+    })
+
     const resolvedParams = await params
     const assetId = resolvedParams.id
     const { plant_id, notes, resolve_conflicts } = await request.json()
@@ -50,6 +54,7 @@ export async function PATCH(
         role: currentProfile.role,
         plant_id: currentProfile.plant_id,
         business_unit_id: currentProfile.business_unit_id,
+        managed_plant_ids: Array.isArray(managedIds) ? managedIds : undefined,
       },
       assetId,
       plantId: plant_id ?? null,

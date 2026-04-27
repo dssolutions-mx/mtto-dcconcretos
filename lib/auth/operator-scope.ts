@@ -9,7 +9,17 @@ export interface ActorForOperatorScope {
     role: string
     business_unit_id: string | null
     plant_id: string | null
+    /** When set (e.g. server {@link loadActorContext}), union of primary + junction plants for JEFE_PLANTA. */
+    managed_plant_ids?: string[]
   }
+}
+
+export function managedPlantIdsForOperatorActor(actor: ActorForOperatorScope): string[] {
+  const m = actor.profile.managed_plant_ids
+  if (m && m.length > 0) {
+    return m
+  }
+  return actor.profile.plant_id ? [actor.profile.plant_id] : []
 }
 
 /** Roles JUN/JP may register (line / field staff only). */
@@ -67,9 +77,12 @@ export function operatorRowVisibleToJun(
 
 export function operatorRowVisibleToJp(
   op: OperatorPlacementRow,
-  jpPlantId: string
+  jpManagedPlantIds: string[]
 ): boolean {
-  return op.plant_id === jpPlantId
+  if (!op.plant_id) {
+    return false
+  }
+  return jpManagedPlantIds.includes(op.plant_id)
 }
 
 /**
@@ -84,11 +97,12 @@ export function validateJunJpCreatePlacement(
   | { ok: true }
   | { ok: false; error: string } {
   if (isJefePlantaActor(actor)) {
-    if (!actor.profile.plant_id) {
+    const managed = managedPlantIdsForOperatorActor(actor)
+    if (managed.length === 0) {
       return { ok: false, error: 'Tu perfil no tiene planta asignada' }
     }
-    if (validatedPlantId !== actor.profile.plant_id) {
-      return { ok: false, error: 'La planta debe ser tu planta asignada' }
+    if (validatedPlantId == null || !managed.includes(validatedPlantId)) {
+      return { ok: false, error: 'La planta debe ser una de tus plantas asignadas' }
     }
     if (plantBusinessUnitId && validatedBusinessUnitId && plantBusinessUnitId !== validatedBusinessUnitId) {
       return { ok: false, error: 'La unidad de negocio no coincide con la planta' }
@@ -125,20 +139,21 @@ export function validateJunJpPatchPlacement(
   | { ok: true; plant_id: string | null; business_unit_id: string | null }
   | { ok: false; error: string } {
   if (isJefePlantaActor(actor)) {
-    if (!actor.profile.plant_id) {
+    const managed = managedPlantIdsForOperatorActor(actor)
+    if (managed.length === 0) {
       return { ok: false, error: 'Tu perfil no tiene planta asignada' }
     }
     if (plant_id === null && business_unit_id === null) {
       return { ok: true, plant_id: null, business_unit_id: null }
     }
-    if (plant_id === actor.profile.plant_id) {
+    if (plant_id && managed.includes(plant_id)) {
       const bu = plantBusinessUnitForNewPlant
       if (!bu) {
         return { ok: false, error: 'Planta no encontrada' }
       }
       return { ok: true, plant_id, business_unit_id: bu }
     }
-    return { ok: false, error: 'Solo puedes asignar a tu planta o dejar sin asignar' }
+    return { ok: false, error: 'Solo puedes asignar a una de tus plantas o dejar sin asignar' }
   }
 
   if (isJefeUnidadNegocioActor(actor)) {

@@ -74,6 +74,12 @@ function quotationMutationPlantScopeOk(
 }
 
 export function userProfileToActorProfile(profile: UserProfile): ActorProfile {
+  const managed =
+    profile.managed_plant_ids && profile.managed_plant_ids.length > 0
+      ? profile.managed_plant_ids
+      : profile.plant_id
+        ? [profile.plant_id]
+        : []
   return {
     id: profile.id,
     role: profile.role,
@@ -81,6 +87,7 @@ export function userProfileToActorProfile(profile: UserProfile): ActorProfile {
     role_scope: profile.role_scope ?? null,
     business_unit_id: profile.business_unit_id ?? null,
     plant_id: profile.plant_id ?? null,
+    managed_plant_ids: managed,
     can_authorize_up_to: profile.can_authorize_up_to ?? 0,
   }
 }

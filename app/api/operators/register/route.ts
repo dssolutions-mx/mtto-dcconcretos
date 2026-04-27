@@ -6,6 +6,7 @@ import {
   canCreateOperators,
   canViewOperatorsList,
   checkRHOwnershipAuthority,
+  managedPlantIdsForProfile,
 } from '@/lib/auth/server-authorization'
 import { normalizeRoleForPersistence } from '@/lib/auth/role-model'
 import {
@@ -35,6 +36,25 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 })
     }
 
+    const payload = (await request.json()) as {
+      nombre: string
+      apellido: string
+      email: string
+      telefono?: string
+      phone_secondary?: string
+      role: string
+      employee_code: string
+      position?: string
+      shift?: string
+      hire_date?: string
+      plant_id?: string
+      business_unit_id?: string
+      can_authorize_up_to?: string | number
+      notes?: string
+      password: string
+      /** RH/GG: extra plants for JEFE_PLANTA — `profile_managed_plants` in addition to primary `plant_id`. */
+      additional_plant_ids?: string[]
+    }
     const {
       nombre,
       apellido,
@@ -50,8 +70,11 @@ export async function POST(request: NextRequest) {
       business_unit_id,
       can_authorize_up_to,
       notes,
-      password
-    } = await request.json()
+      password,
+    } = payload
+    const additional_plant_ids = Array.isArray(payload.additional_plant_ids)
+      ? payload.additional_plant_ids.filter((id) => typeof id === 'string' && id.length > 0)
+      : []
 
     const normalizedRole = normalizeRoleForPersistence(role)
 
@@ -75,6 +98,7 @@ export async function POST(request: NextRequest) {
           role: actor.profile.role,
           business_unit_id: actor.profile.business_unit_id,
           plant_id: actor.profile.plant_id,
+          managed_plant_ids: actor.profile.managed_plant_ids,
         },
       }) &&
       !rhOrGg
@@ -122,6 +146,7 @@ export async function POST(request: NextRequest) {
           role: actor.profile.role,
           business_unit_id: actor.profile.business_unit_id,
           plant_id: actor.profile.plant_id,
+          managed_plant_ids: actor.profile.managed_plant_ids,
         },
       }) &&
       !rhOrGg
@@ -133,6 +158,7 @@ export async function POST(request: NextRequest) {
             role: actor.profile.role,
             business_unit_id: actor.profile.business_unit_id,
             plant_id: actor.profile.plant_id,
+            managed_plant_ids: actor.profile.managed_plant_ids,
           },
         },
         validatedPlantId,
@@ -230,6 +256,7 @@ export async function POST(request: NextRequest) {
                 role: actor.profile.role,
                 business_unit_id: actor.profile.business_unit_id,
                 plant_id: actor.profile.plant_id,
+                managed_plant_ids: actor.profile.managed_plant_ids,
               },
             }) &&
             !rhOrGg
@@ -240,6 +267,7 @@ export async function POST(request: NextRequest) {
                 role: actor.profile.role,
                 business_unit_id: actor.profile.business_unit_id,
                 plant_id: actor.profile.plant_id,
+                managed_plant_ids: actor.profile.managed_plant_ids,
               },
             })
             return [tag, base].filter(Boolean).join('\n') || tag
@@ -297,6 +325,23 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    if (normalizedRole.role === 'JEFE_PLANTA' && rhOrGg) {
+      const toInsert = new Set<string>()
+      if (validatedPlantId) toInsert.add(validatedPlantId)
+      for (const id of additional_plant_ids) {
+        toInsert.add(id)
+      }
+      if (toInsert.size > 0) {
+        const { error: pmpErr } = await supabase.from('profile_managed_plants').upsert(
+          [...toInsert].map((plant_id) => ({ profile_id: newUserId, plant_id })),
+          { onConflict: 'profile_id,plant_id' }
+        )
+        if (pmpErr) {
+          console.error('profile_managed_plants for new JP:', pmpErr)
+        }
+      }
+    }
+
     return NextResponse.json({
       ...operator,
       user: { profile: operator },
@@ -351,6 +396,14 @@ export async function GET(request: NextRequest) {
     const rhOrGgView =
       checkRHOwnershipAuthority(actor) || actor.profile.role === 'GERENCIA_GENERAL'
 
+    if (
+      !rhOrGgView &&
+      actor.profile.role === 'JEFE_PLANTA' &&
+      managedPlantIdsForProfile(actor.profile).length === 0
+    ) {
+      return NextResponse.json([])
+    }
+
     let query = supabase
       .from('profiles')
       .select(`
@@ -391,8 +444,9 @@ export async function GET(request: NextRequest) {
         if (business_unit_id) {
           query = query.eq('business_unit_id', business_unit_id)
         }
-      } else if (actor.profile.role === 'JEFE_PLANTA' && actor.profile.plant_id) {
-        query = query.eq('plant_id', actor.profile.plant_id)
+      } else if (actor.profile.role === 'JEFE_PLANTA') {
+        const jpPlants = managedPlantIdsForProfile(actor.profile)
+        query = query.in('plant_id', jpPlants)
       } else if (actor.profile.role === 'DOSIFICADOR' && actor.profile.plant_id) {
         query = query.eq('plant_id', actor.profile.plant_id)
       } else if (actor.profile.role === 'JEFE_UNIDAD_NEGOCIO' && actor.profile.business_unit_id) {
@@ -441,13 +495,18 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    if (!rhOrGgView && actor.profile.role === 'JEFE_PLANTA' && actor.profile.plant_id) {
-      list = list.filter((op) =>
-        operatorRowVisibleToJp(
-          { plant_id: op.plant_id, business_unit_id: op.business_unit_id },
-          actor.profile.plant_id!
+    if (!rhOrGgView && actor.profile.role === 'JEFE_PLANTA') {
+      const jpPlants = managedPlantIdsForProfile(actor.profile)
+      if (jpPlants.length > 0) {
+        list = list.filter((op) =>
+          operatorRowVisibleToJp(
+            { plant_id: op.plant_id, business_unit_id: op.business_unit_id },
+            jpPlants
+          )
         )
-      )
+      } else {
+        list = []
+      }
     }
 
     if (!rhOrGgView && actor.profile.role === 'DOSIFICADOR' && actor.profile.plant_id) {

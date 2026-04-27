@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { toast } from 'react-hot-toast'
+import { createClient } from '@/lib/supabase'
 
 export interface PersonnelBoardProfile {
   id: string
@@ -48,6 +49,7 @@ export interface PersonnelBoardBusinessUnit {
 }
 
 export function usePersonnelBoardData(profile: {
+  id?: string | null
   role?: string | null
   business_unit_id?: string | null
   plant_id?: string | null
@@ -97,15 +99,30 @@ export function usePersonnelBoardData(profile: {
             filteredPlants.some((p: PersonnelBoardPlant) => p.id === op.plant_id) ||
             (!op.plant_id && !op.business_unit_id)
         )
-      } else if (profile?.role === 'JEFE_PLANTA' && profile?.plant_id) {
-        const userPlant = rawPlants.find((p: PersonnelBoardPlant) => p.id === profile.plant_id)
-        if (userPlant) {
-          filteredBusinessUnits = rawBusinessUnits.filter(
-            (bu: PersonnelBoardBusinessUnit) => bu.id === userPlant.business_unit_id
+      } else if (profile?.role === 'JEFE_PLANTA' && profile?.id) {
+        const supabase = createClient()
+        const { data: managedIds } = await supabase.rpc('profile_scoped_plant_ids', {
+          p_user_id: profile.id,
+        })
+        const plantIds: string[] =
+          Array.isArray(managedIds) && managedIds.length > 0
+            ? managedIds
+            : profile.plant_id
+              ? [profile.plant_id]
+              : []
+        if (plantIds.length > 0) {
+          const plantSet = new Set(plantIds)
+          filteredPlants = rawPlants.filter((p: PersonnelBoardPlant) => plantSet.has(p.id))
+          const buIds = [
+            ...new Set(
+              filteredPlants.map((p: PersonnelBoardPlant) => p.business_unit_id).filter(Boolean)
+            ),
+          ] as string[]
+          filteredBusinessUnits = rawBusinessUnits.filter((bu: PersonnelBoardBusinessUnit) =>
+            buIds.includes(bu.id)
           )
-          filteredPlants = rawPlants.filter((p: PersonnelBoardPlant) => p.id === profile.plant_id)
           filteredOperators = rawOperators.filter(
-            (op: PersonnelBoardProfile) => op.plant_id === profile.plant_id
+            (op: PersonnelBoardProfile) => op.plant_id != null && plantSet.has(op.plant_id)
           )
         }
       }

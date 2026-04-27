@@ -6012,6 +6012,39 @@ export type Database = {
           },
         ]
       }
+      profile_managed_plants: {
+        Row: {
+          created_at: string
+          plant_id: string
+          profile_id: string
+        }
+        Insert: {
+          created_at?: string
+          plant_id: string
+          profile_id: string
+        }
+        Update: {
+          created_at?: string
+          plant_id?: string
+          profile_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "profile_managed_plants_plant_id_fkey"
+            columns: ["plant_id"]
+            isOneToOne: false
+            referencedRelation: "plants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "profile_managed_plants_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       purchase_order_quotations: {
         Row: {
           additional_files: Json
@@ -9974,6 +10007,24 @@ export type Database = {
           },
         ]
       }
+      user_plants_expanded: {
+        Row: {
+          business_unit_id: string | null
+          business_unit_name: string | null
+          plant_id: string | null
+          plant_name: string | null
+          user_id: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "profiles_business_unit_id_fkey"
+            columns: ["business_unit_id"]
+            isOneToOne: false
+            referencedRelation: "business_units"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_roles_summary: {
         Row: {
           apellido: string | null
@@ -10806,6 +10857,10 @@ export type Database = {
           p_user_id: string
         }
         Returns: number
+      }
+      profile_scoped_plant_ids: {
+        Args: { p_user_id: string }
+        Returns: string[]
       }
       get_user_effective_authorization: {
         Args: { p_user_id: string }

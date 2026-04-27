@@ -30,11 +30,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Perfil no encontrado o inactivo' }, { status: 403 })
     }
 
+    const { data: managedIds } = await supabase.rpc('profile_scoped_plant_ids', {
+      p_user_id: user.id,
+    })
+
     const actor: FleetActor = {
       id: profile.id,
       role: profile.role,
       business_unit_id: profile.business_unit_id,
       plant_id: profile.plant_id,
+      managed_plant_ids: Array.isArray(managedIds) ? managedIds : undefined,
     }
 
     if (!canFleetVerify(actor)) {
