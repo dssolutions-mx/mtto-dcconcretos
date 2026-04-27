@@ -79,9 +79,31 @@ const workOrderCompletionSchema = z.object({
       name: z.string().optional(),
       part_name: z.string().optional(),
       description: z.string().optional(),
-      quantity: z.coerce.number().int().min(1),
-      unit_price: z.coerce.number().min(0),
-      total_price: z.coerce.number().min(0),
+      // Allow 0: OC/estimates sometimes list 0 cantidad; we still submit the line for trazabilidad
+      quantity: z.preprocess(
+        (v) => {
+          const n = Number(v)
+          if (Number.isNaN(n) || n < 0) return 0
+          return Math.floor(n)
+        },
+        z.number().int().min(0, "La cantidad no puede ser negativa")
+      ),
+      unit_price: z.preprocess(
+        (v) => {
+          const n = Number(v)
+          if (Number.isNaN(n) || n < 0) return 0
+          return n
+        },
+        z.number().min(0, "El precio no puede ser negativo")
+      ),
+      total_price: z.preprocess(
+        (v) => {
+          const n = Number(v)
+          if (Number.isNaN(n) || n < 0) return 0
+          return n
+        },
+        z.number().min(0)
+      ),
     })
   ).optional(),
   labor_hours: z.coerce.number().min(0, "Las horas de trabajo no pueden ser negativas"),
@@ -99,6 +121,20 @@ const workOrderCompletionSchema = z.object({
 })
 
 type WorkOrderCompletionFormValues = z.infer<typeof workOrderCompletionSchema>
+
+/** RHF+Zod nested field errors (e.g. parts_used.0.quantity) have no .message on the parent key */
+function collectNestedErrorMessages(err: unknown): string[] {
+  if (err == null) return []
+  if (Array.isArray(err)) return err.flatMap((x) => collectNestedErrorMessages(x))
+  if (typeof err === "object" && "message" in err) {
+    const m = (err as { message?: string }).message
+    if (typeof m === "string" && m.length > 0) return [m]
+  }
+  if (typeof err === "object" && err !== null) {
+    return Object.values(err as Record<string, unknown>).flatMap((v) => collectNestedErrorMessages(v))
+  }
+  return []
+}
 
 interface WorkOrderCompletionFormProps {
   workOrderId: string
@@ -1432,11 +1468,18 @@ export function WorkOrderCompletionForm({ workOrderId, initialData }: WorkOrderC
                 <div className="mt-4 p-3 border border-destructive rounded-md bg-destructive/10 text-sm">
                   <p className="font-semibold mb-1">Por favor, corrige los siguientes errores:</p>
                   <ul className="list-disc list-inside">
-                    {Object.entries(form.formState.errors).map(([field, error]) => (
-                      <li key={field}>
-                        {field}: {error?.message}
-                      </li>
-                    ))}
+                    {Object.entries(form.formState.errors).map(([field, error]) => {
+                      const nested = collectNestedErrorMessages(error)
+                      const line =
+                        nested.length > 0
+                          ? nested.join(" — ")
+                          : (error as { message?: string })?.message || "Revisa los datos de este bloque."
+                      return (
+                        <li key={field}>
+                          {field}: {line}
+                        </li>
+                      )
+                    })}
                   </ul>
                 </div>
               )}
