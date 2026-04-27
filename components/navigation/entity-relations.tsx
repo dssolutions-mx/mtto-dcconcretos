@@ -14,6 +14,8 @@ type EntityRelationsProps = {
   purchaseOrderId?: string | null
   /** Multiple purchase orders linked to the same work order */
   purchaseOrderIds?: string[] | null
+  /** When set (e.g. from OT detail), each chip shows id + label and links to /compras/{id} */
+  purchaseOrderLinks?: Array<{ id: string; label: string }> | null
   /** Optional intent-aware labels (e.g. "Origen: incidente", "OC relacionada") */
   labels?: {
     asset?: string
@@ -31,15 +33,28 @@ export function EntityRelations({
   checklistId,
   purchaseOrderId,
   purchaseOrderIds,
+  purchaseOrderLinks,
   labels,
   className,
 }: EntityRelationsProps) {
-  const poIds =
-    purchaseOrderIds && purchaseOrderIds.length > 0
-      ? purchaseOrderIds
-      : purchaseOrderId
-        ? [purchaseOrderId]
-        : []
+  const poChips: Array<{ id: string; label: string }> =
+    purchaseOrderLinks && purchaseOrderLinks.length > 0
+      ? purchaseOrderLinks
+      : (() => {
+          const poIds =
+            purchaseOrderIds && purchaseOrderIds.length > 0
+              ? purchaseOrderIds
+              : purchaseOrderId
+                ? [purchaseOrderId]
+                : []
+          return poIds.map((id, idx) => ({
+            id,
+            label:
+              poIds.length > 1
+                ? `${labels?.purchaseOrder ?? "OC"} ${idx + 1}`
+                : labels?.purchaseOrder ?? "OC relacionada",
+          }))
+        })()
 
   return (
     <div
@@ -83,17 +98,13 @@ export function EntityRelations({
         />
       )}
 
-      {poIds.map((poId, idx) => (
+      {poChips.map((po) => (
         <RelationChip
-          key={poId}
-          href={`/compras/${poId}`}
+          key={po.id}
+          href={`/compras/${po.id}`}
           icon={<ShoppingCart className="h-4 w-4" aria-hidden="true" />}
-          label={
-            poIds.length > 1
-              ? `${labels?.purchaseOrder ?? "OC"} ${idx + 1}`
-              : labels?.purchaseOrder ?? "OC relacionada"
-          }
-          ariaLabel={labels?.purchaseOrder ?? "Ver orden de compra"}
+          label={po.label}
+          ariaLabel={`Ver orden de compra ${po.label}`}
         />
       ))}
     </div>

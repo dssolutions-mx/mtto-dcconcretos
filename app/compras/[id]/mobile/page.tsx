@@ -98,6 +98,15 @@ async function PurchaseOrderDetailsMobileContent({ id }: { id: string }) {
       workOrder = workOrderData;
     }
   }
+
+  let linkedPurchaseOrderCount = 0;
+  if (order.work_order_id) {
+    const { count } = await supabase
+      .from("purchase_orders")
+      .select("id", { count: "exact", head: true })
+      .eq("work_order_id", order.work_order_id);
+    linkedPurchaseOrderCount = count ?? 0;
+  }
   
   // Parse JSON items and merge with quotation items when applicable
   const rawItems = typeof order.items === 'string' ? JSON.parse(order.items) : order.items
@@ -228,6 +237,7 @@ async function PurchaseOrderDetailsMobileContent({ id }: { id: string }) {
       getPurchaseOrderTypeInfo={getPurchaseOrderTypeInfo}
       isImageFile={isImageFile}
       isPdfFile={isPdfFile}
+      linkedPurchaseOrderCount={linkedPurchaseOrderCount}
     />
   )
 } 

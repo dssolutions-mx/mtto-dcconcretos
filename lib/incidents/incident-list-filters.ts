@@ -5,10 +5,18 @@ export type LifecycleFilter = "all" | "open" | "resolved"
 
 export type IncidentesPageFilters = {
   assetIdFromUrl: string | null
+  /** UUID of plant (from asset.plant_id) or "all" */
+  plantFilter: string
   lifecycleFilter: LifecycleFilter
   statusFilter: string
   typeFilter: string
   searchTerm: string
+}
+
+function incidentAssetPlantId(incident: Record<string, unknown>): string | null {
+  const assets = incident.assets as { plant_id?: string | null } | null | undefined
+  const pid = assets?.plant_id
+  return typeof pid === "string" && pid.length > 0 ? pid : null
 }
 
 export function filterIncidentsForIncidentesPage(
@@ -18,6 +26,7 @@ export function filterIncidentsForIncidentesPage(
 ): Record<string, unknown>[] {
   return incidents.filter((incident) => {
     if (f.assetIdFromUrl && incident.asset_id !== f.assetIdFromUrl) return false
+    if (f.plantFilter !== "all" && incidentAssetPlantId(incident) !== f.plantFilter) return false
     if (f.lifecycleFilter === "open" && isIncidentResolvedForDashboard(String(incident.status ?? ""))) return false
     if (f.lifecycleFilter === "resolved" && !isIncidentResolvedForDashboard(String(incident.status ?? ""))) return false
     if (f.statusFilter !== "all" && String(incident.status ?? "") !== f.statusFilter) return false
@@ -50,7 +59,7 @@ const LIFECYCLE_LABELS: Record<LifecycleFilter, string> = {
 
 export function buildIncidentesFilterSummary(
   f: IncidentesPageFilters,
-  opts?: { assetLabel?: string | null },
+  opts?: { assetLabel?: string | null; plantLabel?: string | null },
 ): string {
   const parts: string[] = []
   parts.push(`Vista: ${LIFECYCLE_LABELS[f.lifecycleFilter]}`)
@@ -58,5 +67,6 @@ export function buildIncidentesFilterSummary(
   if (f.typeFilter !== "all") parts.push(`Tipo: ${f.typeFilter}`)
   if (f.searchTerm.trim()) parts.push(`Búsqueda: ${f.searchTerm.trim()}`)
   if (f.assetIdFromUrl && opts?.assetLabel) parts.push(`Activo (URL): ${opts.assetLabel}`)
+  if (f.plantFilter !== "all" && opts?.plantLabel) parts.push(`Planta: ${opts.plantLabel}`)
   return parts.join(" · ")
 }

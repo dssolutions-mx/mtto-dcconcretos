@@ -113,6 +113,15 @@ async function PurchaseOrderDetailsContent({ id }: { id: string }) {
     if (data) workOrder = data
   }
 
+  let linkedPurchaseOrderCount = 0
+  if (order.work_order_id) {
+    const { count } = await supabase
+      .from("purchase_orders")
+      .select("id", { count: "exact", head: true })
+      .eq("work_order_id", order.work_order_id)
+    linkedPurchaseOrderCount = count ?? 0
+  }
+
   // Items
   const rawItems =
     typeof order.items === "string" ? JSON.parse(order.items) : order.items
@@ -508,6 +517,7 @@ async function PurchaseOrderDetailsContent({ id }: { id: string }) {
               <PurchaseOrderWorkOrderLink
                 workOrder={workOrder}
                 isAdjustment={order.is_adjustment || false}
+                linkedPurchaseOrderCount={linkedPurchaseOrderCount}
               />
             </CardContent>
           </Card>
@@ -554,6 +564,7 @@ async function PurchaseOrderDetailsContent({ id }: { id: string }) {
         fulfillmentHints={workflowFulfillmentHints}
         isViewerCoordinator={coordinatorQuotationUi.isViewerCoordinator}
         coordinatorQuotationUnlocked={coordinatorQuotationUi.coordinatorQuotationUnlocked}
+        linkedPurchaseOrderCount={linkedPurchaseOrderCount}
       />
     </Suspense>
   )

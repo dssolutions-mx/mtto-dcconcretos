@@ -120,6 +120,19 @@ export default async function WorkOrderDetailsPage({
   const purchaseOrder = Array.isArray(extendedWorkOrder.purchase_order) 
     ? extendedWorkOrder.purchase_order[0] 
     : extendedWorkOrder.purchase_order
+
+  /** All OCs for this OT: by `work_order_id`, plus legacy FK-only row if missing from that list */
+  const linkedPOsById = new Map<string, Record<string, unknown>>()
+  for (const po of (allPurchaseOrders ?? []) as Array<Record<string, unknown>>) {
+    if (po?.id) linkedPOsById.set(String(po.id), po)
+  }
+  const fkPo = purchaseOrder as Record<string, unknown> | null | undefined
+  if (fkPo?.id && !linkedPOsById.has(String(fkPo.id))) {
+    linkedPOsById.set(String(fkPo.id), fkPo)
+  }
+  const linkedPOsForSidebar = [...linkedPOsById.values()].sort((a, b) =>
+    String(a.created_at ?? "").localeCompare(String(b.created_at ?? ""))
+  )
   
   // Check if work order is completed
   const isCompleted = extendedWorkOrder.status === WorkOrderStatus.Completed
@@ -437,11 +450,19 @@ export default async function WorkOrderDetailsPage({
       (nonAdjustmentPOs[0] as { id: string } | undefined)?.id) ??
     null
   const purchaseOrderIdsForRelations = (allPurchaseOrders ?? []).map((p: { id: string }) => p.id)
+  const purchaseOrdersSummaryForHub =
+    linkedPOsForSidebar.length > 0
+      ? linkedPOsForSidebar.map((po) => ({
+          id: String(po.id),
+          order_id: (po.order_id as string | null | undefined) ?? null,
+          is_adjustment: Boolean(po.is_adjustment),
+        }))
+      : null
   const hasSidebarContent = Boolean(
     extendedWorkOrder.incident_id ||
       extendedWorkOrder.purchase_order_id ||
       linkedPoCount > 0 ||
-      purchaseOrder ||
+      linkedPOsForSidebar.length > 0 ||
       isCompleted ||
       requiredTasks.length > 0
   )
@@ -750,7 +771,16 @@ export default async function WorkOrderDetailsPage({
         {hasSidebarContent && (
           <div className="flex flex-col gap-5 xl:sticky xl:top-4 xl:self-start">
             <WorkOrderRelationshipHub
-            assetId={null}
+            assetId={extendedWorkOrder.asset_id ?? extendedWorkOrder.asset?.id ?? null}
+            assetLinkLabel={
+              extendedWorkOrder.asset
+                ? String(
+                    extendedWorkOrder.asset.asset_id ||
+                      extendedWorkOrder.asset.name ||
+                      "Activo"
+                  )
+                : null
+            }
             workOrderId={null}
             incidentId={extendedWorkOrder.incident_id ?? null}
             checklistId={
@@ -766,6 +796,7 @@ export default async function WorkOrderDetailsPage({
             }
             purchaseOrderId={extendedWorkOrder.purchase_order_id ?? null}
             purchaseOrderIds={purchaseOrderIdsForRelations}
+            purchaseOrdersSummary={purchaseOrdersSummaryForHub}
             isIncidentOrigin={!!extendedWorkOrder.incident_id}
             isChecklistOrigin={
               !!extendedWorkOrder.checklist_id &&
@@ -778,36 +809,70 @@ export default async function WorkOrderDetailsPage({
             checklistOriginName={originData.originName}
             />
 
-            {purchaseOrder && (
-              <Card>
+            {linkedPOsForSidebar.length > 0 && (
+              <Card id="work-order-linked-purchase-orders">
                 <CardHeader className="pb-2 px-4 pt-4">
-                  <CardTitle className="text-base">Orden de Compra</CardTitle>
-                  <CardDescription className="text-xs">OC relacionada a esta orden de trabajo</CardDescription>
+                  <CardTitle className="text-base">
+                    {linkedPOsForSidebar.length === 1
+                      ? "Orden de compra"
+                      : "Órdenes de compra"}
+                  </CardTitle>
+                  <CardDescription className="text-xs">
+                    {linkedPOsForSidebar.length === 1
+                      ? "Vinculada a esta orden de trabajo"
+                      : `${linkedPOsForSidebar.length} órdenes vinculadas — abra cada una en Compras`}
+                  </CardDescription>
                 </CardHeader>
-                <CardContent className="space-y-3 px-4 pb-4 pt-0">
-                  <div className="space-y-1">
-                    <p className="text-xs font-medium text-muted-foreground">Número</p>
-                    <p className="font-medium">{purchaseOrder.order_id}</p>
-                  </div>
-                  
-                  <div className="space-y-1">
-                    <p className="text-xs font-medium text-muted-foreground">Proveedor</p>
-                    <p>{purchaseOrder.supplier}</p>
-                  </div>
-                  
-                  <div className="space-y-1">
-                    <p className="text-xs font-medium text-muted-foreground">Estado</p>
-                    <Badge>{purchaseOrder.status}</Badge>
-                  </div>
-                  
-                  <div className="space-y-1">
-                    <p className="text-xs font-medium text-muted-foreground">Monto</p>
-                    <p className="font-medium">${Number(purchaseOrder.total_amount).toFixed(2)}</p>
-                  </div>
-                  
-                  <Button variant="outline" size="sm" asChild className="w-full no-print">
-                    <Link href={`/compras/${purchaseOrder.id}`}>Ver orden de compra</Link>
-                  </Button>
+                <CardContent className="space-y-4 px-4 pb-4 pt-0">
+                  {linkedPOsForSidebar.map((po) => {
+                    const poId = String(po.id)
+                    const isAdj = Boolean(po.is_adjustment)
+                    return (
+                      <div
+                        key={poId}
+                        className="rounded-lg border bg-card p-3 space-y-2 no-print"
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <p className="font-medium text-sm">
+                            {String(po.order_id ?? poId.slice(0, 8))}
+                          </p>
+                          {isAdj ? (
+                            <Badge variant="secondary" className="text-xs">
+                              Ajuste
+                            </Badge>
+                          ) : null}
+                        </div>
+                        {po.supplier != null && (
+                          <div className="space-y-0.5">
+                            <p className="text-xs font-medium text-muted-foreground">Proveedor</p>
+                            <p className="text-sm">{String(po.supplier)}</p>
+                          </div>
+                        )}
+                        {po.status != null && (
+                          <div className="space-y-0.5">
+                            <p className="text-xs font-medium text-muted-foreground">Estado</p>
+                            <Badge variant="outline" className="text-xs">
+                              {String(po.status)}
+                            </Badge>
+                          </div>
+                        )}
+                        {po.total_amount != null && po.total_amount !== "" && (
+                          <div className="space-y-0.5">
+                            <p className="text-xs font-medium text-muted-foreground">Monto</p>
+                            <p className="text-sm font-medium">
+                              ${Number(po.total_amount).toFixed(2)}
+                            </p>
+                          </div>
+                        )}
+                        <Button variant="default" size="sm" asChild className="w-full">
+                          <Link href={`/compras/${poId}`}>
+                            <ShoppingCart className="mr-2 h-4 w-4" />
+                            Ver en Compras
+                          </Link>
+                        </Button>
+                      </div>
+                    )
+                  })}
                 </CardContent>
               </Card>
             )}

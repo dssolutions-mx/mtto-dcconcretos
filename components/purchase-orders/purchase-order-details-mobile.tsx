@@ -40,6 +40,7 @@ interface PurchaseOrderDetailsMobileProps {
   fulfillmentHints?: POFulfillmentHints | null
   isViewerCoordinator?: boolean
   coordinatorQuotationUnlocked?: boolean
+  linkedPurchaseOrderCount?: number
 }
 
 export function PurchaseOrderDetailsMobile({
@@ -58,6 +59,7 @@ export function PurchaseOrderDetailsMobile({
   fulfillmentHints,
   isViewerCoordinator = false,
   coordinatorQuotationUnlocked = true,
+  linkedPurchaseOrderCount = 0,
 }: PurchaseOrderDetailsMobileProps) {
   
   return (
@@ -439,6 +441,13 @@ export function PurchaseOrderDetailsMobile({
                 Ver Orden de Trabajo
               </Link>
             </Button>
+            {linkedPurchaseOrderCount > 1 && (
+              <Button asChild variant="link" size="sm" className="w-full h-auto py-1 text-xs">
+                <Link href={`/ordenes/${workOrder.id}#work-order-linked-purchase-orders`}>
+                  Ver las {linkedPurchaseOrderCount} OCs vinculadas a esta OT
+                </Link>
+              </Button>
+            )}
           </CardContent>
         </Card>
       )}

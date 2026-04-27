@@ -124,6 +124,8 @@ interface PurchaseOrderDetailsRouterProps {
   fulfillmentHints?: POFulfillmentHints | null
   isViewerCoordinator?: boolean
   coordinatorQuotationUnlocked?: boolean
+  /** OCs with same `work_order_id` (for link back to OT multi-OC section) */
+  linkedPurchaseOrderCount?: number
 }
 
 export function PurchaseOrderDetailsRouter({
@@ -137,6 +139,7 @@ export function PurchaseOrderDetailsRouter({
   fulfillmentHints,
   isViewerCoordinator = false,
   coordinatorQuotationUnlocked = true,
+  linkedPurchaseOrderCount = 0,
 }: PurchaseOrderDetailsRouterProps) {
   const isMobile = useIsMobile()
   const searchParams = useSearchParams()
@@ -160,6 +163,7 @@ export function PurchaseOrderDetailsRouter({
         fulfillmentHints={fulfillmentHints}
         isViewerCoordinator={isViewerCoordinator}
         coordinatorQuotationUnlocked={coordinatorQuotationUnlocked}
+        linkedPurchaseOrderCount={linkedPurchaseOrderCount}
       />
     )
   }

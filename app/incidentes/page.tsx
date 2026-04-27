@@ -27,6 +27,8 @@ function IncidentsPageContent() {
   const { toast } = useToast()
   const assetIdFromUrl = searchParams.get("assetId")
   const assetFromUrl = searchParams.get("asset")
+  const plantIdFromUrl = searchParams.get("plantId")
+  const plantFilter = plantIdFromUrl ?? "all"
 
   const [incidents, setIncidents] = useState<Record<string, unknown>[]>([])
   const [assets, setAssets] = useState<Record<string, unknown>[]>([])
@@ -109,15 +111,47 @@ function IncidentsPageContent() {
     return asset ? String(asset.name ?? asset.asset_id ?? "Activo") : "Activo"
   }, [assetIdFromUrl, assets])
 
+  const plantOptions = useMemo(() => {
+    const map = new Map<string, string>()
+    assets.forEach((raw) => {
+      const a = raw as Record<string, unknown>
+      const pid = a.plant_id
+      if (typeof pid !== "string" || !pid) return
+      const plants = a.plants as { name?: string; code?: string } | null | undefined
+      const label = plants?.name ? String(plants.name) : plants?.code ? String(plants.code) : pid
+      if (!map.has(pid)) map.set(pid, label)
+    })
+    return Array.from(map.entries())
+      .map(([id, label]) => ({ id, label }))
+      .sort((x, y) => x.label.localeCompare(y.label, "es"))
+  }, [assets])
+
+  const prefilledPlantName = useMemo(() => {
+    if (plantFilter === "all") return null
+    return plantOptions.find((p) => p.id === plantFilter)?.label ?? "Planta"
+  }, [plantFilter, plantOptions])
+
+  const setPlantQuery = useCallback(
+    (value: string) => {
+      const p = new URLSearchParams(searchParams.toString())
+      if (value === "all") p.delete("plantId")
+      else p.set("plantId", value)
+      const qs = p.toString()
+      router.replace(qs ? `/incidentes?${qs}` : "/incidentes")
+    },
+    [router, searchParams],
+  )
+
   const incidentesFilters = useMemo(
     () => ({
       assetIdFromUrl,
+      plantFilter,
       lifecycleFilter,
       statusFilter,
       typeFilter,
       searchTerm,
     }),
-    [assetIdFromUrl, lifecycleFilter, statusFilter, typeFilter, searchTerm],
+    [assetIdFromUrl, plantFilter, lifecycleFilter, statusFilter, typeFilter, searchTerm],
   )
 
   const filteredIncidents = useMemo(
@@ -130,14 +164,24 @@ function IncidentsPageContent() {
       buildIncidentesFilterSummary(
         {
           assetIdFromUrl,
+          plantFilter,
           lifecycleFilter,
           statusFilter,
           typeFilter,
           searchTerm,
         },
-        { assetLabel: prefilledAssetName },
+        { assetLabel: prefilledAssetName, plantLabel: prefilledPlantName },
       ),
-    [assetIdFromUrl, lifecycleFilter, statusFilter, typeFilter, searchTerm, prefilledAssetName],
+    [
+      assetIdFromUrl,
+      plantFilter,
+      lifecycleFilter,
+      statusFilter,
+      typeFilter,
+      searchTerm,
+      prefilledAssetName,
+      prefilledPlantName,
+    ],
   )
 
   const handleSnapshotPdfReady = useCallback(
@@ -189,7 +233,7 @@ function IncidentsPageContent() {
     setStatusFilter("all")
     setTypeFilter("all")
     setLifecycleFilter("all")
-    if (assetIdFromUrl || assetFromUrl) {
+    if (assetIdFromUrl || assetFromUrl || plantIdFromUrl) {
       router.replace("/incidentes")
     }
   }
@@ -351,7 +395,20 @@ function IncidentsPageContent() {
               ))}
             </SelectContent>
           </Select>
-          {(searchTerm || statusFilter !== "all" || typeFilter !== "all" || lifecycleFilter !== "all" || assetIdFromUrl || assetFromUrl) && (
+          <Select value={plantFilter} onValueChange={setPlantQuery}>
+            <SelectTrigger className="w-full sm:w-[180px]">
+              <SelectValue placeholder="Planta" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todas las plantas</SelectItem>
+              {plantOptions.map((pl) => (
+                <SelectItem key={pl.id} value={pl.id}>
+                  {pl.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {(searchTerm || statusFilter !== "all" || typeFilter !== "all" || lifecycleFilter !== "all" || assetIdFromUrl || assetFromUrl || plantIdFromUrl) && (
             <button
               type="button"
               onClick={clearFilters}
@@ -363,16 +420,28 @@ function IncidentsPageContent() {
           )}
         </div>
 
-        {prefilledAssetName && (
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={clearFilters}
-              className="inline-flex items-center gap-1 rounded-md border px-2.5 py-0.5 text-xs font-medium transition-colors hover:bg-muted cursor-pointer"
-            >
-              Filtro por activo: {prefilledAssetName}
-              <X className="h-3 w-3" />
-            </button>
+        {(prefilledAssetName || prefilledPlantName) && (
+          <div className="flex flex-wrap items-center gap-2">
+            {prefilledAssetName && (
+              <button
+                type="button"
+                onClick={clearFilters}
+                className="inline-flex items-center gap-1 rounded-md border px-2.5 py-0.5 text-xs font-medium transition-colors hover:bg-muted cursor-pointer"
+              >
+                Filtro por activo: {prefilledAssetName}
+                <X className="h-3 w-3" />
+              </button>
+            )}
+            {prefilledPlantName && (
+              <button
+                type="button"
+                onClick={() => setPlantQuery("all")}
+                className="inline-flex items-center gap-1 rounded-md border px-2.5 py-0.5 text-xs font-medium transition-colors hover:bg-muted cursor-pointer"
+              >
+                Planta: {prefilledPlantName}
+                <X className="h-3 w-3" />
+              </button>
+            )}
           </div>
         )}
 

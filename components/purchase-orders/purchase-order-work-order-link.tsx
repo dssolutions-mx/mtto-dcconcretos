@@ -24,6 +24,8 @@ interface PurchaseOrderWorkOrderLinkProps {
   workOrder?: WorkOrder | null;
   purchaseOrderType?: 'original' | 'adjustment';
   isAdjustment?: boolean;
+  /** Count of PO rows with same `work_order_id` (includes this OC). When > 1, show link to OT OC list. */
+  linkedPurchaseOrderCount?: number;
   className?: string;
 }
 
@@ -75,6 +77,7 @@ export function PurchaseOrderWorkOrderLink({
   workOrder, 
   purchaseOrderType = 'original',
   isAdjustment = false,
+  linkedPurchaseOrderCount = 0,
   className = "" 
 }: PurchaseOrderWorkOrderLinkProps) {
   
@@ -182,6 +185,17 @@ export function PurchaseOrderWorkOrderLink({
             Esta orden de compra fue generada para cubrir gastos adicionales durante la ejecución del trabajo
           </span>
         </div>
+      )}
+
+      {linkedPurchaseOrderCount > 1 && (
+        <p className="text-xs text-muted-foreground">
+          <Link
+            href={`/ordenes/${workOrder.id}#work-order-linked-purchase-orders`}
+            className="font-medium text-primary hover:underline"
+          >
+            Ver las {linkedPurchaseOrderCount} órdenes de compra vinculadas a esta OT
+          </Link>
+        </p>
       )}
     </div>
   );
