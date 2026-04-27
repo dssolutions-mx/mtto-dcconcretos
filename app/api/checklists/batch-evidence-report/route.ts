@@ -267,25 +267,33 @@ function generateConsolidatedReportHTML(reportData: any): string {
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
       <title>Reporte Consolidado de Evidencias - ${plant}</title>
       <style>
+        :root {
+          --dc-navy: #1B365D;
+          --dc-green: #00A64F;
+        }
+        @page { margin: 12mm; size: A4; }
         body {
           font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
           line-height: 1.5;
-          color: #333;
+          color: #1e293b;
           max-width: 210mm;
           margin: 0 auto;
           padding: 20px;
-          background: white;
+          background: #fafafa;
         }
         
         .header {
           text-align: center;
           margin-bottom: 30px;
-          border-bottom: 3px solid #2563eb;
-          padding-bottom: 20px;
+          border-bottom: 4px solid var(--dc-navy);
+          border-left: 4px solid var(--dc-green);
+          padding: 20px 16px 20px 20px;
+          background: white;
+          border-radius: 0 12px 12px 0;
         }
         
         .header h1 {
-          color: #2563eb;
+          color: var(--dc-navy);
           margin: 0 0 10px 0;
           font-size: 28px;
           font-weight: bold;
@@ -293,7 +301,8 @@ function generateConsolidatedReportHTML(reportData: any): string {
         
         .header .subtitle {
           font-size: 18px;
-          color: #1f2937;
+          color: var(--dc-green);
+          font-weight: 600;
           margin-bottom: 10px;
         }
         
@@ -303,15 +312,15 @@ function generateConsolidatedReportHTML(reportData: any): string {
         }
         
         .summary-section {
-          background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
-          border: 2px solid #0369a1;
+          background: linear-gradient(135deg, #f8fafc 0%, #f0fdf4 100%);
+          border: 2px solid var(--dc-navy);
           border-radius: 12px;
           padding: 25px;
           margin-bottom: 30px;
         }
         
         .summary-title {
-          color: #0369a1;
+          color: var(--dc-navy);
           margin: 0 0 20px 0;
           font-size: 20px;
           text-align: center;
@@ -347,7 +356,7 @@ function generateConsolidatedReportHTML(reportData: any): string {
         
         .period-info {
           text-align: center;
-          color: #0369a1;
+          color: var(--dc-navy);
           font-weight: 500;
         }
         
@@ -497,7 +506,7 @@ function generateConsolidatedReportHTML(reportData: any): string {
           padding: 8px;
           border-radius: 4px;
           font-size: 12px;
-          border-left: 3px solid #2563eb;
+          border-left: 3px solid var(--dc-navy);
         }
         
         .issues-section {
@@ -546,7 +555,7 @@ function generateConsolidatedReportHTML(reportData: any): string {
         }
         
         .print-button {
-          background: #2563eb;
+          background: var(--dc-navy);
           color: white;
           border: none;
           padding: 12px 20px;
@@ -557,7 +566,7 @@ function generateConsolidatedReportHTML(reportData: any): string {
         }
         
         .print-button:hover {
-          background: #1d4ed8;
+          background: #102a4a;
         }
         
         .footer {
@@ -592,19 +601,19 @@ function generateConsolidatedReportHTML(reportData: any): string {
       </div>
 
       <div class="summary-section">
-        <h2 class="summary-title">📊 Resumen Ejecutivo del Período</h2>
+        <h2 class="summary-title">Resumen ejecutivo del período</h2>
         
         <div class="summary-stats">
           <div class="stat-card">
-            <div class="stat-number" style="color: #2563eb;">${summary.total_checklists}</div>
+            <div class="stat-number" style="color: #1B365D;">${summary.total_checklists}</div>
             <div class="stat-label">Checklists Completados</div>
           </div>
           <div class="stat-card">
-            <div class="stat-number" style="color: #7c3aed;">${summary.total_assets}</div>
+            <div class="stat-number" style="color: #1B365D;">${summary.total_assets}</div>
             <div class="stat-label">Activos Evaluados</div>
           </div>
           <div class="stat-card">
-            <div class="stat-number" style="color: #059669;">${summary.total_items}</div>
+            <div class="stat-number" style="color: #00A64F;">${summary.total_items}</div>
             <div class="stat-label">Total de Ítems</div>
           </div>
           <div class="stat-card">
@@ -630,13 +639,13 @@ function generateConsolidatedReportHTML(reportData: any): string {
         </div>
         
         <div class="period-info">
-          📅 Período: ${formatDateShort(periodStart)} - ${formatDateShort(periodEnd)}
+          Período: ${formatDateShort(periodStart)} — ${formatDateShort(periodEnd)}
         </div>
       </div>
 
       <div class="checklists-container">
-        <h2 style="color: #1f2937; margin-bottom: 20px; border-bottom: 2px solid #e5e7eb; padding-bottom: 10px;">
-          📋 Detalle de Checklists Completados (${checklists.length})
+        <h2 style="color: #1B365D; margin-bottom: 20px; border-bottom: 2px solid #e5e7eb; padding-bottom: 10px;">
+          Detalle de checklists completados (${checklists.length})
         </h2>
         
         ${checklists.map((checklistData: any, index: number) => {
@@ -690,7 +699,7 @@ function generateConsolidatedReportHTML(reportData: any): string {
 
               <div class="checklist-summary">
                 <div class="summary-item">
-                  <div class="summary-number" style="color: #2563eb;">${totalItems}</div>
+                  <div class="summary-number" style="color: #1B365D;">${totalItems}</div>
                   <div class="summary-text">Total Ítems</div>
                 </div>
                 <div class="summary-item">

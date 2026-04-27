@@ -18,6 +18,7 @@ import { CompletedChecklistResultsSummary } from "./completed-checklist-results-
 import { CompletedChecklistItemsBySection } from "./completed-checklist-items-by-section"
 import { CompletedChecklistIssuesCard } from "./completed-checklist-issues-card"
 import { CompletedChecklistExecutionInfo } from "./completed-checklist-execution-info"
+import { ChecklistEvidencePdfExport } from "@/components/checklists/checklist-evidence-pdf-export"
 
 export function CompletedChecklistDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params)
@@ -131,7 +132,10 @@ export function CompletedChecklistDetailPage({ params }: { params: Promise<{ id:
         heading={`Checklist: ${data.checklists?.name || 'Checklist'}`}
         text={`Detalles del checklist completado el ${formatDate(data.completion_date)}`}
       >
-        <CompletedChecklistHeader assetId={data.asset_id} onBack={() => router.back()} />
+        <div className="flex flex-wrap items-center gap-2">
+          <ChecklistEvidencePdfExport completedChecklistId={data.id} initialData={data} />
+          <CompletedChecklistHeader assetId={data.asset_id} onBack={() => router.back()} />
+        </div>
       </DashboardHeader>
 
       <div className="space-y-6">

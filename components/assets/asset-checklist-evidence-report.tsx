@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -25,6 +25,7 @@ import {
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
 import { SecurityConfig, SecurityTalkData } from "@/types"
+import { generateDomSnapshotPdf, waitForImagesInContainer } from "@/lib/pdf/dom-snapshot-pdf"
 
 interface Asset {
   id: string
@@ -131,9 +132,11 @@ export function AssetChecklistEvidenceReport({
   onClose, 
   dateRange 
 }: AssetChecklistEvidenceReportProps) {
+  const reportPdfRef = useRef<HTMLDivElement>(null)
   const [data, setData] = useState<ReportData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [pdfExporting, setPdfExporting] = useState(false)
   const [operatorDirectory, setOperatorDirectory] = useState<Record<string, { nombre: string; apellido: string; employee_code?: string }>>({})
 
   useEffect(() => {
@@ -214,10 +217,22 @@ export function AssetChecklistEvidenceReport({
     window.print()
   }
 
-  const handleExportPDF = () => {
-    // This would integrate with a PDF generation service
-    // For now, we'll use the browser's print to PDF functionality
-    window.print()
+  const handleExportPDF = async () => {
+    const el = reportPdfRef.current
+    if (!el || !data) return
+    setPdfExporting(true)
+    try {
+      await waitForImagesInContainer(el)
+      await generateDomSnapshotPdf(
+        el,
+        `reporte-evidencias-${data.asset?.asset_id ?? assetId}-${format(new Date(), "yyyy-MM-dd-HHmm")}`,
+      )
+    } catch (err) {
+      console.error(err)
+      handlePrint()
+    } finally {
+      setPdfExporting(false)
+    }
   }
 
   const getOperatorDisplayName = (operatorId: string) => {
@@ -529,24 +544,24 @@ export function AssetChecklistEvidenceReport({
   }
 
   return (
-    <div className="min-h-screen bg-white report-container">
-      {/* Header - Hidden when printing */}
-      <div className="print:hidden bg-white border-b p-4 sticky top-0 z-10">
+    <div ref={reportPdfRef} className="min-h-screen bg-white report-container">
+      {/* Header — excluded from raster PDF via no-print-snapshot */}
+      <div className="no-print-snapshot print:hidden bg-white border-b p-4 sticky top-0 z-10">
         <div className="max-w-4xl mx-auto flex items-center justify-between">
           <div>
             <h1 className="text-xl font-semibold">Reporte de Evidencias de Checklist</h1>
             <p className="text-sm text-gray-600">{data.asset?.name || 'Activo'} ({data.asset?.asset_id || 'Sin ID'})</p>
           </div>
           <div className="flex gap-2">
-            <Button onClick={handlePrint}>
+            <Button onClick={handlePrint} disabled={pdfExporting}>
               <Printer className="h-4 w-4 mr-2" />
               Imprimir
             </Button>
-            <Button variant="outline" onClick={handleExportPDF}>
+            <Button variant="outline" onClick={() => void handleExportPDF()} disabled={pdfExporting}>
               <Download className="h-4 w-4 mr-2" />
-              PDF
+              {pdfExporting ? "Generando…" : "PDF"}
             </Button>
-            <Button variant="outline" onClick={onClose}>
+            <Button variant="outline" onClick={onClose} disabled={pdfExporting}>
               <X className="h-4 w-4 mr-2" />
               Cerrar
             </Button>

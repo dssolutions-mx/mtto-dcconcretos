@@ -8,15 +8,16 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { 
   Camera, 
-  Eye, 
   Image as ImageIcon,
   Download,
   ZoomIn,
   Calendar,
   User,
   MapPin,
-  ExternalLink
+  ExternalLink,
+  FileDown,
 } from "lucide-react"
+import { ChecklistEvidencePdfExport } from "@/components/checklists/checklist-evidence-pdf-export"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
 import { createBrowserClient } from '@supabase/ssr'
@@ -156,19 +157,29 @@ export function CompletedChecklistEvidenceViewer({
   }
 
   return (
-    <Dialog>
-      <DialogTrigger asChild>
-        {trigger || (
-          <Button 
-            variant="outline" 
-            size="sm"
-            onClick={loadEvidences}
-          >
-            <Camera className="h-4 w-4 mr-2" />
-            Ver Evidencias
+    <div className="flex flex-wrap items-center gap-2">
+      <ChecklistEvidencePdfExport
+        completedChecklistId={completedChecklistId}
+        trigger={
+          <Button type="button" variant="outline" size="sm" className="cursor-pointer">
+            <FileDown className="h-4 w-4 mr-2" />
+            Reporte PDF
           </Button>
-        )}
-      </DialogTrigger>
+        }
+      />
+      <Dialog>
+        <DialogTrigger asChild>
+          {trigger || (
+            <Button 
+              variant="outline" 
+              size="sm"
+              onClick={loadEvidences}
+            >
+              <Camera className="h-4 w-4 mr-2" />
+              Ver Evidencias
+            </Button>
+          )}
+        </DialogTrigger>
       
       <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
@@ -358,5 +369,6 @@ export function CompletedChecklistEvidenceViewer({
         </Dialog>
       )}
     </Dialog>
+    </div>
   )
 } 
