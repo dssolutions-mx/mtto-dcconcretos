@@ -38,6 +38,11 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { useToast } from "@/hooks/use-toast"
+import {
+  type WorkOrderListRow,
+  getLinkedPOIdsForWorkOrderRow,
+  ocStatusSummaryForRow,
+} from "@/lib/work-orders/linked-purchase-orders"
 
 function getPriorityVariant(priority: string | null) {
   switch (priority) {
@@ -164,11 +169,12 @@ function WorkOrderCard({
   getPurchaseOrderStatus,
   onDeleteOrder
 }: { 
-  order: WorkOrderWithAsset
+  order: WorkOrderListRow
   getTechnicianName: (techId: string | null) => string
   getPurchaseOrderStatus: (poId: string | null) => string
-  onDeleteOrder: (order: WorkOrderWithAsset) => void
+  onDeleteOrder: (order: WorkOrderListRow) => void
 }) {
+  const linkedPoIds = getLinkedPOIdsForWorkOrderRow(order)
   return (
     <Card className="w-full h-fit hover:shadow-md transition-shadow">
       <CardHeader className="pb-3">
@@ -217,12 +223,19 @@ function WorkOrderCard({
                 <Eye className="h-4 w-4" />
               </Link>
             </Button>
-            {order.purchase_order_id ? (
-              <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" asChild>
-                <Link href={`/compras/${order.purchase_order_id}`} title="Ver OC">
-                  <ShoppingCart className="h-4 w-4" />
-                </Link>
-              </Button>
+            {linkedPoIds.length > 0 ? (
+              <div className="flex items-center gap-0.5 shrink-0">
+                {linkedPoIds.slice(0, 3).map((poId) => (
+                  <Button key={poId} variant="ghost" size="icon" className="h-8 w-8 shrink-0" asChild>
+                    <Link href={`/compras/${poId}`} title="Ver OC">
+                      <ShoppingCart className="h-4 w-4" />
+                    </Link>
+                  </Button>
+                ))}
+                {linkedPoIds.length > 3 ? (
+                  <span className="text-[10px] text-muted-foreground px-0.5">+{linkedPoIds.length - 3}</span>
+                ) : null}
+              </div>
             ) : null}
           </div>
         </div>
@@ -288,14 +301,18 @@ function WorkOrderCard({
         </div>
         
         {/* Purchase Order Status */}
-        {order.purchase_order_id && (
+        {linkedPoIds.length > 0 && (
           <div className="flex items-center gap-2 text-sm">
             <ShoppingCart className="h-4 w-4 text-muted-foreground shrink-0" />
-            <Badge 
-              variant={getPurchaseOrderStatusVariant(getPurchaseOrderStatus(order.purchase_order_id))} 
-              className={`text-xs ${getPurchaseOrderStatusClass(getPurchaseOrderStatus(order.purchase_order_id))}`}
+            <Badge
+              variant={getPurchaseOrderStatusVariant(
+                getPurchaseOrderStatus(linkedPoIds[0] ?? null)
+              )}
+              className={`text-xs ${getPurchaseOrderStatusClass(
+                getPurchaseOrderStatus(linkedPoIds[0] ?? null)
+              )}`}
             >
-              OC: {getPurchaseOrderStatus(order.purchase_order_id)}
+              OC: {ocStatusSummaryForRow(order, getPurchaseOrderStatus)}
             </Badge>
           </div>
         )}
@@ -337,13 +354,13 @@ export function WorkOrdersList() {
     activeFilterCount,
   } = useWorkOrderFilters()
 
-  const [workOrders, setWorkOrders] = useState<WorkOrderWithAsset[]>([])
+  const [workOrders, setWorkOrders] = useState<WorkOrderListRow[]>([])
   const [totalCount, setTotalCount] = useState(0)
   const [isLoading, setIsLoading] = useState(true)
   const [technicians, setTechnicians] = useState<Record<string, Profile>>({})
   const [purchaseOrderStatuses, setPurchaseOrderStatuses] = useState<Record<string, string>>({})
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
-  const [orderToDelete, setOrderToDelete] = useState<WorkOrderWithAsset | null>(null)
+  const [orderToDelete, setOrderToDelete] = useState<WorkOrderListRow | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
 
   // Load work orders — single API call (server does parallel fetches, minimal payload)
@@ -361,7 +378,7 @@ export function WorkOrdersList() {
         purchaseOrderStatuses: statusMap,
         totalCount: total,
       } = await res.json()
-      setWorkOrders((workOrdersData ?? []) as WorkOrderWithAsset[])
+      setWorkOrders((workOrdersData ?? []) as WorkOrderListRow[])
       setTechnicians((techMap ?? {}) as Record<string, Profile>)
       setPurchaseOrderStatuses((statusMap ?? {}) as Record<string, string>)
       setTotalCount(total ?? workOrdersData?.length ?? 0)
@@ -403,7 +420,7 @@ export function WorkOrdersList() {
   /** When groupByAsset: group filtered orders by asset_id for UI rendering (grouping is UI-only) */
   const groupedOrders = useMemo(() => {
     if (!filters.groupByAsset) return null
-    const map = new Map<string | null, WorkOrderWithAsset[]>()
+    const map = new Map<string | null, WorkOrderListRow[]>()
     for (const o of filteredOrders) {
       const key = o.asset_id ?? null
       const arr = map.get(key) ?? []
@@ -467,7 +484,7 @@ export function WorkOrdersList() {
   }
 
   // Delete work order function
-  const handleDeleteWorkOrder = async (order: WorkOrderWithAsset) => {
+  const handleDeleteWorkOrder = async (order: WorkOrderListRow) => {
     setOrderToDelete(order)
     setDeleteDialogOpen(true)
   }
@@ -722,7 +739,7 @@ export function WorkOrdersList() {
   )
 }
 
-type GroupedOrdersItem = { assetId: string | null; label: string; orders: WorkOrderWithAsset[] }
+type GroupedOrdersItem = { assetId: string | null; label: string; orders: WorkOrderListRow[] }
 
 // Mobile View Component
 function MobileView({ 
@@ -735,12 +752,12 @@ function MobileView({
   hasActiveFilters,
   onClearFilters,
 }: {
-  orders: WorkOrderWithAsset[]
+  orders: WorkOrderListRow[]
   groupedOrders: GroupedOrdersItem[] | null
   isLoading: boolean
   getTechnicianName: (techId: string | null) => string
   getPurchaseOrderStatus: (poId: string | null) => string
-  onDeleteOrder: (order: WorkOrderWithAsset) => void
+  onDeleteOrder: (order: WorkOrderListRow) => void
   hasActiveFilters?: boolean
   onClearFilters?: () => void
 }) {
@@ -888,12 +905,12 @@ function DesktopView({
   filters,
   onSortChange,
 }: {
-  orders: WorkOrderWithAsset[]
+  orders: WorkOrderListRow[]
   groupedOrders: GroupedOrdersItem[] | null
   isLoading: boolean
   getTechnicianName: (techId: string | null) => string
   getPurchaseOrderStatus: (poId: string | null) => string
-  onDeleteOrder: (order: WorkOrderWithAsset) => void
+  onDeleteOrder: (order: WorkOrderListRow) => void
   hasActiveFilters?: boolean
   onClearFilters?: () => void
   filters: WorkOrderFilters
@@ -934,7 +951,7 @@ function DesktopView({
     )
   }
 
-  const renderTable = (ordersToRender: WorkOrderWithAsset[]) => (
+  const renderTable = (ordersToRender: WorkOrderListRow[]) => (
     <TooltipProvider delayDuration={300}>
     <div className="rounded-xl border border-border/60 overflow-x-auto bg-white">
     <Table className="w-full min-w-[860px]">
@@ -1053,11 +1070,27 @@ function DesktopView({
               <TableCell className="py-3 px-3 text-xs" onClick={(e) => e.stopPropagation()}>
                 <div className="flex items-center gap-2">
                   <span className="truncate max-w-[80px]" title={getTechnicianName(order.assigned_to)}>{getTechnicianName(order.assigned_to)}</span>
-                  {order.purchase_order_id ? (
-                    <Link href={`/compras/${order.purchase_order_id}`} title="Ver OC" className="shrink-0 text-muted-foreground hover:text-foreground">
-                      <ShoppingCart className="h-4 w-4" />
-                    </Link>
-                  ) : null}
+                  {(() => {
+                    const poIdsRow = getLinkedPOIdsForWorkOrderRow(order)
+                    if (poIdsRow.length === 0) return null
+                    return (
+                      <span className="flex items-center gap-0.5 shrink-0">
+                        {poIdsRow.slice(0, 2).map((poId) => (
+                          <Link
+                            key={poId}
+                            href={`/compras/${poId}`}
+                            title="Ver OC"
+                            className="text-muted-foreground hover:text-foreground"
+                          >
+                            <ShoppingCart className="h-4 w-4" />
+                          </Link>
+                        ))}
+                        {poIdsRow.length > 2 ? (
+                          <span className="text-[10px] text-muted-foreground">+{poIdsRow.length - 2}</span>
+                        ) : null}
+                      </span>
+                    )
+                  })()}
                 </div>
               </TableCell>
             </TableRow>

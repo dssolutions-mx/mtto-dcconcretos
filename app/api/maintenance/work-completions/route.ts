@@ -68,11 +68,12 @@ export async function POST(request: Request) {
     }
 
     const data = await request.json()
-    const { 
+    const {
       workOrderId,
       completionData,
       maintenanceHistoryData,
-      additionalExpenses
+      additionalExpenses,
+      purchase_order_ids_for_adjustment,
     } = data
 
     console.log("API recibió los siguientes datos:", JSON.stringify({
@@ -114,6 +115,10 @@ export async function POST(request: Request) {
         { status: 400 }
       )
     }
+
+    const adjustmentPoIds: string[] = Array.isArray(purchase_order_ids_for_adjustment)
+      ? purchase_order_ids_for_adjustment.filter((x: unknown) => typeof x === "string" && x.length > 0)
+      : []
 
     console.log("API: Procesando datos de la orden de trabajo y las partes usadas");
     
@@ -365,7 +370,18 @@ export async function POST(request: Request) {
     // Process additional expenses if there are any
     let additionalExpenseIds = [];
     let requiresAdjustment = false;
-    
+
+    const { data: linkedPosForValidation } = await supabase
+      .from("purchase_orders")
+      .select("id, is_adjustment")
+      .eq("work_order_id", workOrderId)
+
+    const nonAdjustmentPoIds = new Set(
+      (linkedPosForValidation ?? [])
+        .filter((r: { is_adjustment?: boolean | null }) => !r.is_adjustment)
+        .map((r: { id: string }) => r.id)
+    )
+
     if (additionalExpenses && additionalExpenses.length > 0) {
       // Calculate total of additional expenses
       const totalAdditionalExpenses = additionalExpenses.reduce(
@@ -400,24 +416,42 @@ export async function POST(request: Request) {
         }
       }
       
-      // Flag that purchase order adjustment is required
-      if (additionalExpenseIds.length > 0 && existingOrder.purchase_order_id) {
-        requiresAdjustment = true;
-        
-        // Mark the purchase order as requiring adjustment
-        const { error: poUpdateError } = await supabase
-          .from("purchase_orders")
-          .update({
-            requires_adjustment: true,
-            adjustment_amount: totalAdditionalExpenses,
-            adjustment_reason: "Gastos adicionales en orden de trabajo",
-            updated_at: new Date().toISOString(),
-            adjustment_status: "pendiente"
-          })
-          .eq("id", existingOrder.purchase_order_id);
-          
-        if (poUpdateError) {
-          console.error("Error al marcar orden de compra para ajuste:", poUpdateError);
+      // Flag selected purchase orders for adjustment (user-picked; at least one when POs exist)
+      if (additionalExpenseIds.length > 0) {
+        if (nonAdjustmentPoIds.size > 0) {
+          if (adjustmentPoIds.length === 0) {
+            return NextResponse.json(
+              {
+                error:
+                  "Seleccione al menos una orden de compra para marcar con requerimiento de ajuste por gastos adicionales.",
+              },
+              { status: 400 }
+            )
+          }
+          for (const pid of adjustmentPoIds) {
+            if (!nonAdjustmentPoIds.has(pid)) {
+              return NextResponse.json(
+                { error: "Una o más órdenes de compra seleccionadas no pertenecen a esta orden de trabajo." },
+                { status: 400 }
+              )
+            }
+          }
+          requiresAdjustment = true
+
+          const { error: poUpdateError } = await supabase
+            .from("purchase_orders")
+            .update({
+              requires_adjustment: true,
+              adjustment_amount: totalAdditionalExpenses,
+              adjustment_reason: "Gastos adicionales en orden de trabajo",
+              updated_at: new Date().toISOString(),
+              adjustment_status: "pendiente",
+            })
+            .in("id", adjustmentPoIds)
+
+          if (poUpdateError) {
+            console.error("Error al marcar órdenes de compra para ajuste:", poUpdateError)
+          }
         }
       }
     }

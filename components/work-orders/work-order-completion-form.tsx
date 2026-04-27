@@ -113,6 +113,12 @@ export function WorkOrderCompletionForm({ workOrderId, initialData }: WorkOrderC
   const [showEvidenceDialog, setShowEvidenceDialog] = useState(false)
   const [costSource, setCostSource] = useState<'estimated' | 'quoted' | 'confirmed'>('estimated')
   const [purchaseOrderId, setPurchaseOrderId] = useState<string | null>(null)
+  /** Non-adjustment POs linked to this work order (for requires_adjustment + adjustment OC) */
+  const [nonAdjustmentPurchaseOrders, setNonAdjustmentPurchaseOrders] = useState<
+    Array<{ id: string; order_id?: string | null }>
+  >([])
+  /** When ≥2 regular OCs, user selects which get requires_adjustment */
+  const [adjustmentPoIdsSelected, setAdjustmentPoIdsSelected] = useState<string[]>([])
   const [requiredTasks, setRequiredTasks] = useState<any[]>([])
   const [completedTasks, setCompletedTasks] = useState<Record<string, boolean>>({})
   const [maintenanceUnit, setMaintenanceUnit] = useState<MaintenanceUnit>('hours')
@@ -171,6 +177,19 @@ export function WorkOrderCompletionForm({ workOrderId, initialData }: WorkOrderC
 
         if (orderError) throw orderError
         setWorkOrder(orderData)
+
+        const regularPos = (allPurchaseOrders ?? []).filter((po: { is_adjustment?: boolean | null }) => !po.is_adjustment)
+        setNonAdjustmentPurchaseOrders(
+          regularPos.map((po: { id: string; order_id?: string | null }) => ({
+            id: po.id,
+            order_id: po.order_id ?? null,
+          }))
+        )
+        if (regularPos.length === 1) {
+          setAdjustmentPoIdsSelected([regularPos[0].id as string])
+        } else {
+          setAdjustmentPoIdsSelected([])
+        }
         
         // Detect maintenance unit from asset model
         const unit = getMaintenanceUnit(orderData.asset || {})
@@ -472,6 +491,46 @@ export function WorkOrderCompletionForm({ workOrderId, initialData }: WorkOrderC
           completed_at: updatedData.completion_date.toISOString()
         }));
 
+      const additionalExpensesPayload =
+        updatedData.has_additional_expenses &&
+        Array.isArray(updatedData.additional_expenses) &&
+        updatedData.additional_expenses.length > 0
+          ? updatedData.additional_expenses.filter(
+              (expense) =>
+                expense.description.trim() !== "" &&
+                parseFloat(expense.amount.toString()) > 0 &&
+                expense.justification.trim() !== ""
+            )
+          : null
+
+      const hasAdjExpenseApi =
+        !!additionalExpensesPayload && additionalExpensesPayload.length > 0
+
+      const purchaseOrderIdsForAdjustment: string[] | undefined = (() => {
+        if (!hasAdjExpenseApi || nonAdjustmentPurchaseOrders.length === 0) return undefined
+        if (nonAdjustmentPurchaseOrders.length === 1) {
+          return [nonAdjustmentPurchaseOrders[0].id]
+        }
+        return adjustmentPoIdsSelected.filter((id) =>
+          nonAdjustmentPurchaseOrders.some((p) => p.id === id)
+        )
+      })()
+
+      if (
+        hasAdjExpenseApi &&
+        nonAdjustmentPurchaseOrders.length > 0 &&
+        (!purchaseOrderIdsForAdjustment || purchaseOrderIdsForAdjustment.length === 0)
+      ) {
+        toast({
+          variant: "destructive",
+          title: "Selección requerida",
+          description:
+            "Hay más de una orden de compra en esta OT. Seleccione al menos una OC para marcar con requerimiento de ajuste por los gastos adicionales.",
+        })
+        setIsLoading(false)
+        return
+      }
+
       // Preparar datos para la API - ajustar según lo que el backend realmente acepta
         const formattedData = {
           workOrderId,
@@ -517,13 +576,8 @@ export function WorkOrderCompletionForm({ workOrderId, initialData }: WorkOrderC
           resolution_details: updatedData.resolution_details,
           technician_notes: updatedData.technician_notes || ''
         } : null,
-        additionalExpenses: updatedData.has_additional_expenses && Array.isArray(updatedData.additional_expenses) && updatedData.additional_expenses.length > 0 
-          ? updatedData.additional_expenses.filter(expense => 
-              expense.description.trim() !== '' && 
-              parseFloat(expense.amount.toString()) > 0 &&
-              expense.justification.trim() !== ''
-            )
-          : null
+        additionalExpenses: additionalExpensesPayload,
+        purchase_order_ids_for_adjustment: purchaseOrderIdsForAdjustment,
       };
       
       console.log("Datos formateados para enviar a API:", JSON.stringify(formattedData));
@@ -581,12 +635,12 @@ export function WorkOrderCompletionForm({ workOrderId, initialData }: WorkOrderC
         
         // Generar automáticamente la orden de compra para gastos adicionales
         try {
-          // Get purchase order ID from work order if exists
-          let originalPurchaseOrderId = null;
-          if (workOrder && workOrder.purchase_order_id) {
-            originalPurchaseOrderId = workOrder.purchase_order_id;
-          }
-          
+          const adjIds = formattedData.purchase_order_ids_for_adjustment
+          let originalPurchaseOrderId: string | null =
+            adjIds && adjIds.length > 0
+              ? adjIds[0]
+              : nonAdjustmentPurchaseOrders[0]?.id ?? workOrder?.purchase_order_id ?? null
+
           console.log("Generando automáticamente orden de compra para gastos adicionales");
           const poResponse = await fetch('/api/maintenance/generate-adjustment-po', {
             method: 'POST',
@@ -681,12 +735,31 @@ export function WorkOrderCompletionForm({ workOrderId, initialData }: WorkOrderC
         });
         return;
       }
-      
-      // Get purchase order ID from work order if exists
-      let originalPurchaseOrderId = null;
-      if (workOrder && workOrder.purchase_order_id) {
-        originalPurchaseOrderId = workOrder.purchase_order_id;
+
+      const adjIdsManual =
+        nonAdjustmentPurchaseOrders.length === 1
+          ? [nonAdjustmentPurchaseOrders[0].id]
+          : adjustmentPoIdsSelected.filter((id) =>
+              nonAdjustmentPurchaseOrders.some((p) => p.id === id)
+            )
+
+      if (
+        nonAdjustmentPurchaseOrders.length > 0 &&
+        adjIdsManual.length === 0
+      ) {
+        toast({
+          variant: "destructive",
+          title: "Selección requerida",
+          description:
+            "Seleccione al menos una orden de compra para la OC de ajuste (esta OT tiene varias OCs).",
+        })
+        return
       }
+
+      const originalPurchaseOrderId: string | null =
+        adjIdsManual.length > 0
+          ? adjIdsManual[0]
+          : nonAdjustmentPurchaseOrders[0]?.id ?? workOrder?.purchase_order_id ?? null
       
       // Call API to generate adjustment PO
       const response = await fetch('/api/maintenance/generate-adjustment-po', {
@@ -1091,7 +1164,15 @@ export function WorkOrderCompletionForm({ workOrderId, initialData }: WorkOrderC
                     <FormControl>
                       <Switch
                         checked={field.value}
-                        onCheckedChange={field.onChange}
+                        onCheckedChange={(checked) => {
+                          field.onChange(checked)
+                          if (checked && nonAdjustmentPurchaseOrders.length === 1) {
+                            setAdjustmentPoIdsSelected([nonAdjustmentPurchaseOrders[0].id])
+                          }
+                          if (!checked && nonAdjustmentPurchaseOrders.length > 1) {
+                            setAdjustmentPoIdsSelected([])
+                          }
+                        }}
                       />
                     </FormControl>
                   </FormItem>
@@ -1194,6 +1275,40 @@ export function WorkOrderCompletionForm({ workOrderId, initialData }: WorkOrderC
                     <Plus className="h-4 w-4 mr-2" />
                     Agregar gasto adicional
                   </Button>
+
+                  {nonAdjustmentPurchaseOrders.length >= 2 && (
+                    <div className="space-y-3 pt-4 border-t">
+                      <div>
+                        <p className="text-sm font-medium">
+                          Órdenes de compra a marcar para ajuste
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Seleccione al menos una OC (no de ajuste) asociada a esta orden de trabajo. La primera
+                          seleccionada se usará como referencia si se genera una OC de ajuste automática.
+                        </p>
+                      </div>
+                      <div className="space-y-2">
+                        {nonAdjustmentPurchaseOrders.map((po) => (
+                          <label
+                            key={po.id}
+                            className="flex items-center gap-2 rounded-md border p-3 cursor-pointer hover:bg-muted/50"
+                          >
+                            <Checkbox
+                              checked={adjustmentPoIdsSelected.includes(po.id)}
+                              onCheckedChange={(c) => {
+                                setAdjustmentPoIdsSelected((prev) =>
+                                  c === true ? [...prev, po.id] : prev.filter((x) => x !== po.id)
+                                )
+                              }}
+                            />
+                            <span className="text-sm">
+                              {po.order_id ? String(po.order_id) : po.id}
+                            </span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

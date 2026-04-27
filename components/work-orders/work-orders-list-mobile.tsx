@@ -20,8 +20,12 @@ import {
   AlertTriangle, Wrench, CalendarDays, ListChecks, Plus, ShoppingCart, Filter,
   ChevronRight, Calendar, Clock, Package
 } from "lucide-react"
-import { createClient } from "@/lib/supabase"
 import { useIsMobile } from "@/hooks/use-mobile"
+import {
+  type WorkOrderListRow,
+  getLinkedPOIdsForWorkOrderRow,
+  ocStatusSummaryForRow,
+} from "@/lib/work-orders/linked-purchase-orders"
 import Link from "next/link"
 import { WorkOrder, WorkOrderWithAsset, WorkOrderStatus, MaintenanceType, ServiceOrderPriority, Asset, Profile, PurchaseOrderStatus } from "@/types"
 import { 
@@ -110,10 +114,11 @@ function WorkOrderCard({
   getTechnicianName, 
   getPurchaseOrderStatus 
 }: { 
-  order: WorkOrderWithAsset
+  order: WorkOrderListRow
   getTechnicianName: (techId: string | null) => string
   getPurchaseOrderStatus: (poId: string | null) => string
 }) {
+  const linkedPoIds = getLinkedPOIdsForWorkOrderRow(order)
   return (
     <Card className="w-full h-fit hover:shadow-md transition-shadow">
       <CardHeader className="pb-3">
@@ -173,15 +178,15 @@ function WorkOrderCard({
         )}
         
         {/* Purchase Order Status */}
-        {order.purchase_order_id && (
+        {linkedPoIds.length > 0 && (
           <div className="flex items-center gap-2 text-sm">
             <ShoppingCart className="h-4 w-4 text-muted-foreground shrink-0" />
             <Badge 
-              variant={getPurchaseOrderStatusVariant(getPurchaseOrderStatus(order.purchase_order_id))} 
-              className={`text-xs ${getPurchaseOrderStatusClass(getPurchaseOrderStatus(order.purchase_order_id))}`}
+              variant={getPurchaseOrderStatusVariant(getPurchaseOrderStatus(linkedPoIds[0] ?? null))} 
+              className={`text-xs ${getPurchaseOrderStatusClass(getPurchaseOrderStatus(linkedPoIds[0] ?? null))}`}
               size="sm"
             >
-              OC: {getPurchaseOrderStatus(order.purchase_order_id)}
+              OC: {ocStatusSummaryForRow(order, getPurchaseOrderStatus)}
             </Badge>
           </div>
         )}
@@ -220,7 +225,7 @@ function WorkOrderCard({
 export function WorkOrdersList() {
   const isMobile = useIsMobile()
   const [searchTerm, setSearchTerm] = useState("")
-  const [workOrders, setWorkOrders] = useState<WorkOrderWithAsset[]>([]) 
+  const [workOrders, setWorkOrders] = useState<WorkOrderListRow[]>([]) 
   const [isLoading, setIsLoading] = useState(true)
   const [activeTab, setActiveTab] = useState<string>("all")
   const [typeFilter, setTypeFilter] = useState<string>("all")
@@ -231,86 +236,15 @@ export function WorkOrdersList() {
   const loadWorkOrders = async () => {
     try {
       setIsLoading(true)
-      const supabase = createClient()
-
-      // Load work orders first
-      const { data, error } = await supabase
-        .from("work_orders")
-        .select(`
-          *,
-          asset:assets (
-            id,
-            name,
-            asset_id
-          )
-        `)
-        .order("created_at", { ascending: false })
-
-      if (error) {
-        console.error("Error al cargar órdenes de trabajo:", error)
-        throw error
+      const res = await fetch("/api/work-orders/list", { cache: "no-store" })
+      if (!res.ok) {
+        console.error("Error al cargar órdenes de trabajo:", res.status)
+        throw new Error(String(res.status))
       }
-
-      setWorkOrders(data as WorkOrderWithAsset[])
-
-      // Get unique technician IDs from work orders
-      const assignedIds = data
-        .filter(order => order.assigned_to)
-        .map(order => order.assigned_to as string)
-      const uniqueAssignedIds = [...new Set(assignedIds)]
-
-      // Load technicians: active ones + assigned to work orders (even if inactive) so names always show
-      const techMap: Record<string, Profile> = {}
-
-      const { data: activeTechs, error: activeTechError } = await supabase
-        .from("profiles")
-        .select("id, nombre, apellido")
-        .eq("is_active", true)
-        .limit(500)
-
-      if (!activeTechError && activeTechs) {
-        activeTechs.forEach(tech => {
-          techMap[tech.id] = tech
-        })
-      }
-
-      if (uniqueAssignedIds.length > 0) {
-        const { data: assignedTechs, error: assignedTechError } = await supabase
-          .from("profiles")
-          .select("id, nombre, apellido")
-          .in("id", uniqueAssignedIds)
-
-        if (!assignedTechError && assignedTechs) {
-          assignedTechs.forEach(tech => {
-            techMap[tech.id] = tech
-          })
-        }
-      }
-
-      setTechnicians(techMap)
-
-      // Load purchase order statuses
-      const poIds = data
-        .filter(order => order.purchase_order_id)
-        .map(order => order.purchase_order_id as string)
-      
-      if (poIds.length > 0) {
-        const { data: poData, error: poError } = await supabase
-          .from("purchase_orders")
-          .select("id, status")
-          .in("id", poIds)
-          
-        if (poError) {
-          console.error("Error al cargar estados de órdenes de compra:", poError)
-        } else if (poData) {
-          const statusMap: Record<string, string> = {}
-          poData.forEach(po => {
-            statusMap[po.id] = po.status
-          })
-          setPurchaseOrderStatuses(statusMap)
-        }
-      }
-
+      const json = await res.json()
+      setWorkOrders((json.workOrders ?? []) as WorkOrderListRow[])
+      setTechnicians((json.technicians ?? {}) as Record<string, Profile>)
+      setPurchaseOrderStatuses((json.purchaseOrderStatuses ?? {}) as Record<string, string>)
     } catch (error) {
       console.error("Error al cargar órdenes de trabajo:", error)
       setWorkOrders([]) 
@@ -508,7 +442,7 @@ function MobileView({
   getTechnicianName, 
   getPurchaseOrderStatus 
 }: {
-  orders: WorkOrderWithAsset[]
+  orders: WorkOrderListRow[]
   isLoading: boolean
   getTechnicianName: (techId: string | null) => string
   getPurchaseOrderStatus: (poId: string | null) => string
@@ -553,7 +487,7 @@ function DesktopView({
   getTechnicianName, 
   getPurchaseOrderStatus 
 }: {
-  orders: WorkOrderWithAsset[]
+  orders: WorkOrderListRow[]
   isLoading: boolean
   getTechnicianName: (techId: string | null) => string
   getPurchaseOrderStatus: (poId: string | null) => string
@@ -594,7 +528,9 @@ function DesktopView({
           </TableRow>
         </TableHeader>
         <TableBody>
-          {orders.map((order) => (
+          {orders.map((order) => {
+            const linkedPoIds = getLinkedPOIdsForWorkOrderRow(order)
+            return (
             <TableRow key={order.id}>
               <TableCell className="font-medium">{order.order_id}</TableCell>
               <TableCell>
@@ -617,12 +553,12 @@ function DesktopView({
                 </Badge>
               </TableCell>
               <TableCell>
-                {order.purchase_order_id ? (
+                {linkedPoIds.length > 0 ? (
                   <Badge 
-                    variant={getPurchaseOrderStatusVariant(getPurchaseOrderStatus(order.purchase_order_id))} 
-                    className={getPurchaseOrderStatusClass(getPurchaseOrderStatus(order.purchase_order_id))}
+                    variant={getPurchaseOrderStatusVariant(getPurchaseOrderStatus(linkedPoIds[0] ?? null))} 
+                    className={getPurchaseOrderStatusClass(getPurchaseOrderStatus(linkedPoIds[0] ?? null))}
                   >
-                    {getPurchaseOrderStatus(order.purchase_order_id)}
+                    {ocStatusSummaryForRow(order, getPurchaseOrderStatus)}
                   </Badge>
                 ) : (
                   order.type === MaintenanceType.Preventive && order.required_parts ? (
@@ -656,7 +592,7 @@ function DesktopView({
                         <span>Editar OT</span>
                       </Link>
                     </DropdownMenuItem>
-                    {!order.purchase_order_id && order.required_parts && (
+                    {linkedPoIds.length === 0 && order.required_parts && (
                       <DropdownMenuItem asChild>
                         <Link href={`/ordenes/${order.id}/generar-oc`}>
                           <ShoppingCart className="mr-2 h-4 w-4" />
@@ -664,14 +600,30 @@ function DesktopView({
                         </Link>
                       </DropdownMenuItem>
                     )}
-                    {order.purchase_order_id && (
-                      <DropdownMenuItem asChild>
-                        <Link href={`/compras/${order.purchase_order_id}`}>
-                          <ShoppingCart className="mr-2 h-4 w-4" />
-                          <span>Ver OC</span>
-                        </Link>
-                      </DropdownMenuItem>
-                    )}
+                    {linkedPoIds.length > 0 &&
+                      order.status !== WorkOrderStatus.Completed &&
+                      order.required_parts && (
+                        <DropdownMenuItem asChild>
+                          <Link href={`/ordenes/${order.id}/generar-oc`}>
+                            <ShoppingCart className="mr-2 h-4 w-4" />
+                            <span>Nueva solicitud de refacciones</span>
+                          </Link>
+                        </DropdownMenuItem>
+                      )}
+                    {linkedPoIds.map((poId) => {
+                      const meta = order.linked_purchase_orders?.find((p) => p.id === poId)
+                      const ocLabel = meta?.order_id ? String(meta.order_id) : "OC"
+                      return (
+                        <DropdownMenuItem key={poId} asChild>
+                          <Link href={`/compras/${poId}`}>
+                            <ShoppingCart className="mr-2 h-4 w-4" />
+                            <span>
+                              {linkedPoIds.length > 1 ? `Ver ${ocLabel}` : "Ver OC"}
+                            </span>
+                          </Link>
+                        </DropdownMenuItem>
+                      )
+                    })}
                     <DropdownMenuItem>
                       <ListChecks className="mr-2 h-4 w-4" />
                       <span>Ver Checklist</span> 
@@ -701,7 +653,7 @@ function DesktopView({
                 </DropdownMenu>
               </TableCell>
             </TableRow>
-          ))}
+          )})}
         </TableBody>
       </Table>
     </div>

@@ -8,6 +8,13 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { ArrowLeft, ShoppingCart, Loader2 } from "lucide-react"
 import Link from "next/link"
 import { toast } from "@/components/ui/use-toast"
@@ -39,6 +46,11 @@ export default function GenerateAdjustmentPOPage({ params }: { params: Promise<{
   const [workOrder, setWorkOrder] = useState<WorkOrderData | null>(null)
   const [expenses, setExpenses] = useState<AdditionalExpenseData[]>([])
   const [supplier, setSupplier] = useState("Gastos Adicionales")
+  /** Non-adjustment OCs linked to this OT (reference for adjustment OC) */
+  const [regularPurchaseOrders, setRegularPurchaseOrders] = useState<
+    Array<{ id: string; order_id: string | null }>
+  >([])
+  const [originalPoId, setOriginalPoId] = useState<string>("")
   
   // Load work order and approved expenses
   useEffect(() => {
@@ -63,6 +75,27 @@ export default function GenerateAdjustmentPOPage({ params }: { params: Promise<{
         }
         
         setWorkOrder(workOrderData)
+
+        const { data: posRows } = await supabase
+          .from("purchase_orders")
+          .select("id, order_id")
+          .eq("work_order_id", id)
+          .or("is_adjustment.eq.false,is_adjustment.is.null")
+
+        const regular = (posRows ?? []).filter((r) => r.id)
+        setRegularPurchaseOrders(regular.map((r) => ({ id: r.id, order_id: r.order_id })))
+
+        if (regular.length === 1) {
+          setOriginalPoId(regular[0].id)
+        } else if (
+          regular.length > 1 &&
+          workOrderData.purchase_order_id &&
+          regular.some((r) => r.id === workOrderData.purchase_order_id)
+        ) {
+          setOriginalPoId(workOrderData.purchase_order_id)
+        } else {
+          setOriginalPoId("")
+        }
         
         // Get approved expenses without an adjustment PO
         try {
@@ -153,6 +186,16 @@ export default function GenerateAdjustmentPOPage({ params }: { params: Promise<{
       if (expenses.length === 0) {
         throw new Error("No hay gastos adicionales aprobados para generar orden de compra")
       }
+
+      let originalPurchaseOrderId: string | null = null
+      if (regularPurchaseOrders.length >= 2) {
+        if (!originalPoId) {
+          throw new Error("Seleccione la orden de compra original cuando la OT tiene varias OCs.")
+        }
+        originalPurchaseOrderId = originalPoId
+      } else if (regularPurchaseOrders.length === 1) {
+        originalPurchaseOrderId = regularPurchaseOrders[0].id
+      }
       
       // Call the API to generate the adjustment purchase order
       const response = await fetch('/api/maintenance/generate-adjustment-po', {
@@ -163,7 +206,7 @@ export default function GenerateAdjustmentPOPage({ params }: { params: Promise<{
         credentials: 'include',
         body: JSON.stringify({
           workOrderId: workOrder.id,
-          originalPurchaseOrderId: workOrder.purchase_order_id,
+          originalPurchaseOrderId,
           additionalExpenses: expenses,
           supplier: supplier
         }),
@@ -280,8 +323,38 @@ export default function GenerateAdjustmentPOPage({ params }: { params: Promise<{
             <h3 className="font-medium mb-2">Información de la Orden</h3>
             <p><span className="text-muted-foreground">Orden de Trabajo:</span> {workOrder.order_id}</p>
             <p><span className="text-muted-foreground">Descripción:</span> {workOrder.description}</p>
-            {workOrder.purchase_order_id && (
-              <p><span className="text-muted-foreground">Orden de Compra Original:</span> <Link href={`/compras/${workOrder.purchase_order_id}`} className="underline">Ver OC original</Link></p>
+            {regularPurchaseOrders.length > 0 && (
+              <div className="space-y-2 pt-2">
+                <Label>OC original (referencia para el ajuste)</Label>
+                <Select
+                  value={originalPoId || undefined}
+                  onValueChange={setOriginalPoId}
+                  disabled={regularPurchaseOrders.length === 1}
+                >
+                  <SelectTrigger className="max-w-md">
+                    <SelectValue placeholder="Seleccione una OC" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {regularPurchaseOrders.map((po) => (
+                      <SelectItem key={po.id} value={po.id}>
+                        {po.order_id ?? po.id}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {originalPoId ? (
+                  <p className="text-sm">
+                    <Link href={`/compras/${originalPoId}`} className="underline text-primary">
+                      Ver OC seleccionada
+                    </Link>
+                  </p>
+                ) : null}
+                {regularPurchaseOrders.length >= 2 ? (
+                  <p className="text-xs text-muted-foreground">
+                    Hay varias órdenes de compra en esta OT; elija cuál es la referencia para esta OC de ajuste.
+                  </p>
+                ) : null}
+              </div>
             )}
           </div>
           
@@ -340,7 +413,10 @@ export default function GenerateAdjustmentPOPage({ params }: { params: Promise<{
           </Button>
           <Button 
             onClick={handleGeneratePO}
-            disabled={isSubmitting}
+            disabled={
+              isSubmitting ||
+              (regularPurchaseOrders.length >= 2 && !originalPoId)
+            }
           >
             {isSubmitting ? (
               <>

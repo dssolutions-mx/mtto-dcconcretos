@@ -8,7 +8,10 @@ export interface WorkOrderRelationshipHubProps {
   workOrderId: string | null
   incidentId: string | null
   checklistId: string | null
-  purchaseOrderId: string | null
+  /** Legacy single OC pointer on work_orders */
+  purchaseOrderId?: string | null
+  /** All OC ids linked to this OT (`purchase_orders.work_order_id`) */
+  purchaseOrderIds?: string[] | null
   /** When incident is the origin, use "Origen: incidente" */
   isIncidentOrigin?: boolean
   /** When checklist is the origin, use "Origen: checklist" or checklist name */
@@ -21,11 +24,14 @@ export function WorkOrderRelationshipHub({
   workOrderId,
   incidentId,
   checklistId,
-  purchaseOrderId,
+  purchaseOrderId = null,
+  purchaseOrderIds = null,
   isIncidentOrigin,
   isChecklistOrigin,
   checklistOriginName,
 }: WorkOrderRelationshipHubProps) {
+  const poCount = (purchaseOrderIds?.length ?? 0) + (purchaseOrderId && !purchaseOrderIds?.length ? 1 : 0)
+
   const labels = {
     incident: isIncidentOrigin ? "Origen: incidente" : undefined,
     checklist:
@@ -34,11 +40,21 @@ export function WorkOrderRelationshipHub({
         : isChecklistOrigin
           ? "Origen: checklist"
           : undefined,
-    purchaseOrder: purchaseOrderId ? "OC relacionada" : undefined,
+    purchaseOrder:
+      (purchaseOrderIds?.length ?? 0) > 1
+        ? "Órdenes de compra"
+        : poCount > 0
+          ? "OC relacionada"
+          : undefined,
   }
 
   const hasRelations =
-    assetId || workOrderId || incidentId || checklistId || purchaseOrderId
+    assetId ||
+    workOrderId ||
+    incidentId ||
+    checklistId ||
+    purchaseOrderId ||
+    (purchaseOrderIds && purchaseOrderIds.length > 0)
 
   if (!hasRelations) return null
 
@@ -54,7 +70,8 @@ export function WorkOrderRelationshipHub({
           workOrderId={workOrderId}
           incidentId={incidentId}
           checklistId={checklistId}
-          purchaseOrderId={purchaseOrderId}
+          purchaseOrderId={purchaseOrderIds?.length ? null : purchaseOrderId}
+          purchaseOrderIds={purchaseOrderIds?.length ? purchaseOrderIds : null}
           labels={labels}
         />
       </CardContent>

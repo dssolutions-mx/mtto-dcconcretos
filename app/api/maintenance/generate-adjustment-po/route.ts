@@ -120,6 +120,23 @@ export async function POST(request: Request) {
       )
     }
 
+    const { data: siblings, error: siblingsError } = await supabase
+      .from("purchase_orders")
+      .select("id, is_adjustment")
+      .eq("work_order_id", workOrderId)
+
+    if (siblingsError) {
+      return NextResponse.json({ error: "No se pudieron listar órdenes de compra de la OT" }, { status: 500 })
+    }
+
+    const regularPoRows = (siblings ?? []).filter((r: { is_adjustment?: boolean | null }) => !r.is_adjustment)
+    if (regularPoRows.length >= 2 && !originalPurchaseOrderId) {
+      return NextResponse.json(
+        { error: "Seleccione la orden de compra original cuando existen varias ÓC para esta OT." },
+        { status: 400 }
+      )
+    }
+
     // Get original purchase order if exists
     let originalPurchaseOrder = null
     if (originalPurchaseOrderId) {
@@ -130,13 +147,25 @@ export async function POST(request: Request) {
         .single()
 
       if (!poError && poData) {
+        if (poData.work_order_id !== workOrderId) {
+          return NextResponse.json(
+            { error: "La orden de compra original no pertenece a esta orden de trabajo." },
+            { status: 400 }
+          )
+        }
+        if (poData.is_adjustment) {
+          return NextResponse.json(
+            { error: "La orden de compra original no puede ser una OC de ajuste." },
+            { status: 400 }
+          )
+        }
         originalPurchaseOrder = poData
       }
     }
 
     // Calculate total amount of additional expenses
-    const totalAmount = additionalExpenses.reduce(
-      (sum: number, expense: any) => sum + (parseFloat(expense.amount) || 0), 
+    const totalAmount = normalizedExpenses.reduce(
+      (sum: number, expense: { amount: number }) => sum + (parseFloat(String(expense.amount)) || 0),
       0
     )
 

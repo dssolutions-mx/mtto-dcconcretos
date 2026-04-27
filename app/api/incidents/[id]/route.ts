@@ -47,9 +47,10 @@ export async function GET(
       }
     }
 
-    // Fetch work order order_id and purchase_order_id if linked
+    // Fetch work order order_id and linked purchase orders if linked
     let workOrderOrderId: string | null = null
     let purchaseOrderId: string | null = null
+    let purchase_order_ids: string[] = []
     if (incident.work_order_id) {
       const { data: wo } = await supabase
         .from('work_orders')
@@ -60,6 +61,11 @@ export async function GET(
         workOrderOrderId = wo.order_id
         purchaseOrderId = wo.purchase_order_id
       }
+      const { data: pos } = await supabase
+        .from('purchase_orders')
+        .select('id')
+        .eq('work_order_id', incident.work_order_id)
+      purchase_order_ids = (pos ?? []).map((p: { id: string }) => p.id)
     }
 
     const processed = {
@@ -68,6 +74,7 @@ export async function GET(
       asset_display_name: incident.assets?.name || 'Activo no encontrado',
       asset_code: incident.assets?.asset_id || 'N/A',
       purchase_order_id: purchaseOrderId,
+      purchase_order_ids,
       work_order_order_id: workOrderOrderId
     }
 

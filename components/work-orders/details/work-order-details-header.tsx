@@ -25,8 +25,10 @@ export interface WorkOrderDetailsHeaderProps {
   orderId: string
   status: string | null
   workOrderId: string
-  /** Target PO ID for "Ver OC Existente" link (when has PO) */
+  /** Canonical / first OC id for legacy flows */
   targetPOId: string | null
+  /** Non-adjustment OCs linked via `purchase_orders.work_order_id` */
+  linkedPurchaseOrders?: Array<{ id: string; order_id?: string | null }>
   hasPurchaseOrder: boolean
   hasRelatedPOs: boolean
   shouldShowGeneratePO: boolean
@@ -38,12 +40,23 @@ export function WorkOrderDetailsHeader({
   status,
   workOrderId,
   targetPOId,
+  linkedPurchaseOrders = [],
   hasPurchaseOrder,
   hasRelatedPOs,
   shouldShowGeneratePO,
   isCompleted,
 }: WorkOrderDetailsHeaderProps) {
-  const hasExistingPO = (hasPurchaseOrder || hasRelatedPOs) && !!targetPOId
+  const poLinks: Array<{ id: string; label: string }> =
+    linkedPurchaseOrders.length > 0
+      ? linkedPurchaseOrders.map((po) => ({
+          id: po.id,
+          label: po.order_id ? String(po.order_id) : po.id.slice(0, 8),
+        }))
+      : targetPOId
+        ? [{ id: targetPOId, label: "OC" }]
+        : []
+
+  const hasExistingPO = hasPurchaseOrder || hasRelatedPOs
   const shouldPrioritizePurchaseFlow = !hasExistingPO && shouldShowGeneratePO && !isCompleted
 
   return (
@@ -86,20 +99,21 @@ export function WorkOrderDetailsHeader({
           </Link>
         </Button>
 
-        {hasExistingPO ? (
-          <Button variant="outline" asChild>
-            <Link href={`/compras/${targetPOId!}`}>
-              <ShoppingCart className="mr-2 h-4 w-4" />
-              Ver OC Existente
-            </Link>
-          </Button>
-        ) : null}
+        {poLinks.length > 0 &&
+          poLinks.map((po) => (
+            <Button key={po.id} variant="outline" size="sm" asChild>
+              <Link href={`/compras/${po.id}`}>
+                <ShoppingCart className="mr-2 h-4 w-4" />
+                {poLinks.length > 1 ? `Ver ${po.label}` : "Ver OC"}
+              </Link>
+            </Button>
+          ))}
 
         {!shouldPrioritizePurchaseFlow && !isCompleted && shouldShowGeneratePO && (
           <Button variant="outline" asChild>
             <Link href={`/ordenes/${workOrderId}/generar-oc`}>
               <ShoppingCart className="mr-2 h-4 w-4" />
-              Solicitar refacciones
+              {poLinks.length > 0 ? "Nueva OC" : "Solicitar refacciones"}
             </Link>
           </Button>
         )}

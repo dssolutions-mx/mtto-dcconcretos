@@ -12,6 +12,8 @@ type EntityRelationsProps = {
   incidentId?: string | null
   checklistId?: string | null
   purchaseOrderId?: string | null
+  /** Multiple purchase orders linked to the same work order */
+  purchaseOrderIds?: string[] | null
   /** Optional intent-aware labels (e.g. "Origen: incidente", "OC relacionada") */
   labels?: {
     asset?: string
@@ -28,9 +30,17 @@ export function EntityRelations({
   incidentId,
   checklistId,
   purchaseOrderId,
+  purchaseOrderIds,
   labels,
   className,
 }: EntityRelationsProps) {
+  const poIds =
+    purchaseOrderIds && purchaseOrderIds.length > 0
+      ? purchaseOrderIds
+      : purchaseOrderId
+        ? [purchaseOrderId]
+        : []
+
   return (
     <div
       className={cn("flex flex-wrap gap-2", className)}
@@ -73,14 +83,19 @@ export function EntityRelations({
         />
       )}
 
-      {purchaseOrderId && (
+      {poIds.map((poId, idx) => (
         <RelationChip
-          href={`/compras/${purchaseOrderId}`}
+          key={poId}
+          href={`/compras/${poId}`}
           icon={<ShoppingCart className="h-4 w-4" aria-hidden="true" />}
-          label={labels?.purchaseOrder ?? "OC relacionada"}
+          label={
+            poIds.length > 1
+              ? `${labels?.purchaseOrder ?? "OC"} ${idx + 1}`
+              : labels?.purchaseOrder ?? "OC relacionada"
+          }
           ariaLabel={labels?.purchaseOrder ?? "Ver orden de compra"}
         />
-      )}
+      ))}
     </div>
   )
 }

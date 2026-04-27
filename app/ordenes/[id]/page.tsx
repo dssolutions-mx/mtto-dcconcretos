@@ -58,23 +58,26 @@ interface ServiceOrderPageProps {
   }>
 }
 
-// Helper function to determine if Generate Purchase Order button should be shown
-function shouldShowGenerateOrderButton(workOrder: ExtendedWorkOrder): boolean {
-  // Don't show if already has a purchase order
-  if (workOrder.purchase_order_id) return false;
-  
-  // Show if work order has required parts (traditional flow)
-  if (workOrder.required_parts && Array.isArray(workOrder.required_parts) && workOrder.required_parts.length > 0) return true;
-  
-  // Show if work order has estimated cost > 0 (from incidents with cost information)
-  if (workOrder.estimated_cost && typeof workOrder.estimated_cost === 'number' && workOrder.estimated_cost > 0) return true;
-  
-  // Show for corrective orders (likely need parts/materials)
+// Helper: allow soliciting additional OCs until the OT is completed (multi-OC per OT).
+function shouldShowGenerateOrderButton(
+  workOrder: ExtendedWorkOrder,
+  linkedPurchaseOrderCount: number
+): boolean {
+  if (workOrder.status === WorkOrderStatus.Completed) return false;
+
+  if (workOrder.required_parts && Array.isArray(workOrder.required_parts) && workOrder.required_parts.length > 0)
+    return true;
+
+  if (workOrder.estimated_cost && typeof workOrder.estimated_cost === "number" && workOrder.estimated_cost > 0)
+    return true;
+
   if (workOrder.type === MaintenanceType.Corrective) return true;
-  
-  // Show for preventive maintenance that typically requires parts
+
   if (workOrder.type === MaintenanceType.Preventive) return true;
-  
+
+  // OTs that already have linked OCs can still add another OC until completed.
+  if (linkedPurchaseOrderCount > 0) return true;
+
   return false;
 }
 
@@ -310,27 +313,34 @@ export default async function WorkOrderDetailsPage({
   let partsSource = 'estimated';
   
   if (allPurchaseOrders && allPurchaseOrders.length > 0) {
-    // Find the main purchase order (not adjustment)
-    const mainPO = allPurchaseOrders.find(po => !po.is_adjustment);
-    if (mainPO && mainPO.items) {
-      const poItems = typeof mainPO.items === 'string' ? JSON.parse(mainPO.items) : mainPO.items;
-      if (poItems && Array.isArray(poItems) && poItems.length > 0) {
-        // Transform PO items to match our parts format
-        displayParts = poItems.map((item: any) => {
+    const regularPOs = allPurchaseOrders.filter((po: { is_adjustment?: boolean }) => !po.is_adjustment);
+    const merged: typeof displayParts = [];
+    let anyConfirmed = false;
+    for (const po of regularPOs) {
+      if (!po.items) continue;
+      try {
+        const poItems = typeof po.items === "string" ? JSON.parse(po.items) : po.items;
+        if (!poItems || !Array.isArray(poItems) || poItems.length === 0) continue;
+        for (const item of poItems) {
           const quantity = Number(item.quantity) || 1;
           const unitPrice = Number(item.unit_price || item.price || 0);
-          const totalPrice = Number(item.total_price) || (quantity * unitPrice);
-          
-          return {
+          const totalPrice = Number(item.total_price) || quantity * unitPrice;
+          merged.push({
             name: item.name || item.description || item.item,
-            partNumber: item.part_number || item.code || 'N/A',
-            quantity: quantity,
+            partNumber: item.part_number || item.code || "N/A",
+            quantity,
             unit_price: unitPrice,
-            total_price: totalPrice
-          };
-        });
-        partsSource = mainPO.actual_amount ? 'confirmed' : 'quoted';
+            total_price: totalPrice,
+          });
+        }
+        if (po.actual_amount) anyConfirmed = true;
+      } catch {
+        /* skip malformed items */
       }
+    }
+    if (merged.length > 0) {
+      displayParts = merged;
+      partsSource = anyConfirmed ? "confirmed" : "quoted";
     }
   }
   
@@ -419,11 +429,18 @@ export default async function WorkOrderDetailsPage({
     { label: `OT ${extendedWorkOrder.order_id}` },
   ].filter(Boolean) as { label: string; href?: string }[]
 
+  const linkedPoCount = allPurchaseOrders?.length ?? 0
+  const nonAdjustmentPOs =
+    (allPurchaseOrders ?? []).filter((po: { is_adjustment?: boolean }) => !po.is_adjustment) ?? []
   const targetPOId =
-    (extendedWorkOrder.purchase_order_id || (allPurchaseOrders?.[0] as { id: string } | undefined)?.id) ?? null
+    (extendedWorkOrder.purchase_order_id ||
+      (nonAdjustmentPOs[0] as { id: string } | undefined)?.id) ??
+    null
+  const purchaseOrderIdsForRelations = (allPurchaseOrders ?? []).map((p: { id: string }) => p.id)
   const hasSidebarContent = Boolean(
     extendedWorkOrder.incident_id ||
       extendedWorkOrder.purchase_order_id ||
+      linkedPoCount > 0 ||
       purchaseOrder ||
       isCompleted ||
       requiredTasks.length > 0
@@ -438,15 +455,16 @@ export default async function WorkOrderDetailsPage({
         status={extendedWorkOrder.status}
         workOrderId={id}
         targetPOId={targetPOId}
-        hasPurchaseOrder={!!extendedWorkOrder.purchase_order_id}
-        hasRelatedPOs={(allPurchaseOrders?.length ?? 0) > 0}
-        shouldShowGeneratePO={shouldShowGenerateOrderButton(extendedWorkOrder)}
+        linkedPurchaseOrders={nonAdjustmentPOs as Array<{ id: string; order_id?: string }>}
+        hasPurchaseOrder={!!(extendedWorkOrder.purchase_order_id || linkedPoCount > 0)}
+        hasRelatedPOs={linkedPoCount > 0}
+        shouldShowGeneratePO={shouldShowGenerateOrderButton(extendedWorkOrder, linkedPoCount)}
         isCompleted={isCompleted}
       />
 
       <WorkOrderLifecycleStrip
         status={extendedWorkOrder.status}
-        hasPurchaseOrder={!!extendedWorkOrder.purchase_order_id}
+        hasPurchaseOrder={!!(extendedWorkOrder.purchase_order_id || linkedPoCount > 0)}
         incidentId={extendedWorkOrder.incident_id}
         incidentAssetId={incidentAssetId}
       />
@@ -641,7 +659,7 @@ export default async function WorkOrderDetailsPage({
                   </div>
                 </div>
                 
-                {(!extendedWorkOrder.purchase_order_id && (!allPurchaseOrders || allPurchaseOrders.length === 0)) && extendedWorkOrder.type === MaintenanceType.Preventive && (
+                {nonAdjustmentPOs.length === 0 && extendedWorkOrder.type === MaintenanceType.Preventive && (
                   <div className="mt-4 no-print">
                     <Button asChild>
                       <Link href={`/ordenes/${id}/generar-oc`}>
@@ -651,15 +669,17 @@ export default async function WorkOrderDetailsPage({
                     </Button>
                   </div>
                 )}
-                
-                {(extendedWorkOrder.purchase_order_id || (allPurchaseOrders && allPurchaseOrders.length > 0)) && (
-                  <div className="mt-4 no-print">
-                    <Button variant="outline" asChild>
-                      <Link href={`/compras/${extendedWorkOrder.purchase_order_id || allPurchaseOrders?.[0]?.id}`}>
-                        <ShoppingCart className="mr-2 h-4 w-4" />
-                        Ver orden de compra relacionada
-                      </Link>
-                    </Button>
+
+                {nonAdjustmentPOs.length > 0 && (
+                  <div className="mt-4 no-print flex flex-wrap gap-2">
+                    {nonAdjustmentPOs.map((po: { id: string; order_id?: string }) => (
+                      <Button key={po.id} variant="outline" size="sm" asChild>
+                        <Link href={`/compras/${po.id}`}>
+                          <ShoppingCart className="mr-2 h-4 w-4" />
+                          Ver OC {po.order_id || po.id.slice(0, 8)}
+                        </Link>
+                      </Button>
+                    ))}
                   </div>
                 )}
               </CardContent>
@@ -745,6 +765,7 @@ export default async function WorkOrderDetailsPage({
                 : (extendedWorkOrder.preventive_checklist_id ?? extendedWorkOrder.checklist_id ?? null)
             }
             purchaseOrderId={extendedWorkOrder.purchase_order_id ?? null}
+            purchaseOrderIds={purchaseOrderIdsForRelations}
             isIncidentOrigin={!!extendedWorkOrder.incident_id}
             isChecklistOrigin={
               !!extendedWorkOrder.checklist_id &&

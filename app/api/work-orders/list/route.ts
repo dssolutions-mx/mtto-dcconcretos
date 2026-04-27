@@ -53,9 +53,41 @@ export async function GET() {
     }
 
     const assignedIds = [...new Set(workOrders.filter((o) => o.assigned_to).map((o) => o.assigned_to as string))]
-    const poIds = workOrders
-      .filter((o) => o.purchase_order_id)
-      .map((o) => o.purchase_order_id as string)
+    const workOrderIds = workOrders.map((o) => o.id).filter(Boolean)
+
+    const linkedByWorkOrder: Record<
+      string,
+      Array<{ id: string; order_id: string; status: string | null }>
+    > = {}
+
+    if (workOrderIds.length > 0) {
+      const { data: linkedPOs, error: linkedErr } = await supabase
+        .from("purchase_orders")
+        .select("id, order_id, status, work_order_id")
+        .in("work_order_id", workOrderIds)
+
+      if (!linkedErr && linkedPOs) {
+        for (const row of linkedPOs) {
+          const wid = row.work_order_id as string
+          if (!wid) continue
+          if (!linkedByWorkOrder[wid]) linkedByWorkOrder[wid] = []
+          linkedByWorkOrder[wid].push({
+            id: row.id,
+            order_id: row.order_id as string,
+            status: row.status,
+          })
+        }
+      }
+    }
+
+    const poIdSet = new Set<string>()
+    for (const o of workOrders) {
+      if (o.purchase_order_id) poIdSet.add(o.purchase_order_id as string)
+      for (const p of linkedByWorkOrder[o.id] ?? []) {
+        poIdSet.add(p.id)
+      }
+    }
+    const poIds = [...poIdSet]
 
     // Batch 2: assigned technicians + purchase order statuses (parallel)
     const [assignedResult, poResult] = await Promise.all([
@@ -80,11 +112,16 @@ export async function GET() {
       })
     }
 
+    const enrichedWorkOrders = workOrders.map((o) => ({
+      ...o,
+      linked_purchase_orders: linkedByWorkOrder[o.id] ?? [],
+    }))
+
     return NextResponse.json({
-      workOrders,
+      workOrders: enrichedWorkOrders,
       technicians: techMap,
       purchaseOrderStatuses,
-      totalCount: workOrders.length,
+      totalCount: enrichedWorkOrders.length,
     })
   } catch (err) {
     console.error("Work orders list API error:", err)
