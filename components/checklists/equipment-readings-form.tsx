@@ -9,6 +9,11 @@ import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Gauge, MapPin, Clock, TrendingUp, AlertTriangle, Info } from "lucide-react"
 import type { VisibleMeters } from "@/lib/checklist/checklist-execution-helpers"
+import {
+  formatIntegerMeterReading,
+  METER_INTEGER_ENTRY_HINT,
+  parseIntegerMeterReading,
+} from "@/lib/utils/meter-integer-input"
 
 interface EquipmentReadingsFormProps {
   assetId: string
@@ -61,14 +66,15 @@ export function EquipmentReadingsForm({
   const showHours = visibleMeters === "hours" || visibleMeters === "both"
   const showKm = visibleMeters === "kilometers" || visibleMeters === "both"
 
-  const formatNumber = (num: number | null) => {
-    if (num === null || num === undefined) return "N/A"
-    return num.toLocaleString()
-  }
-
   const validateReadings = async () => {
-    const hPayload = showHours && hoursReading ? parseInt(hoursReading, 10) : null
-    const kPayload = showKm && kilometersReading ? parseInt(kilometersReading, 10) : null
+    const hPayload =
+      showHours && hoursReading.trim() !== ""
+        ? parseIntegerMeterReading(hoursReading)
+        : null
+    const kPayload =
+      showKm && kilometersReading.trim() !== ""
+        ? parseIntegerMeterReading(kilometersReading)
+        : null
 
     if (!hPayload && !kPayload) {
       setValidation(null)
@@ -112,8 +118,14 @@ export function EquipmentReadingsForm({
 
   useEffect(() => {
     onReadingsChange({
-      hours_reading: showHours && hoursReading ? parseInt(hoursReading, 10) : null,
-      kilometers_reading: showKm && kilometersReading ? parseInt(kilometersReading, 10) : null,
+      hours_reading:
+        showHours && hoursReading.trim() !== ""
+          ? parseIntegerMeterReading(hoursReading)
+          : null,
+      kilometers_reading:
+        showKm && kilometersReading.trim() !== ""
+          ? parseIntegerMeterReading(kilometersReading)
+          : null,
     })
   }, [hoursReading, kilometersReading, onReadingsChange, showHours, showKm])
 
@@ -161,13 +173,17 @@ export function EquipmentReadingsForm({
           {showHours && (
             <div className="text-center">
               <div className="text-sm font-medium text-gray-600">Horas Actuales</div>
-              <div className="text-lg font-semibold text-gray-900">{formatNumber(currentHours)} h</div>
+              <div className="text-lg font-semibold text-gray-900 tabular-nums">
+                {formatIntegerMeterReading(currentHours)} h
+              </div>
             </div>
           )}
           {showKm && (
             <div className="text-center">
               <div className="text-sm font-medium text-gray-600">Kilómetros Actuales</div>
-              <div className="text-lg font-semibold text-gray-900">{formatNumber(currentKilometers)} km</div>
+              <div className="text-lg font-semibold text-gray-900 tabular-nums">
+                {formatIntegerMeterReading(currentKilometers)} km
+              </div>
             </div>
           )}
           <div className="text-center">
@@ -188,13 +204,14 @@ export function EquipmentReadingsForm({
               </Label>
               <Input
                 id="hours_reading"
-                type="number"
-                min="0"
-                placeholder={`Actual: ${formatNumber(currentHours)}`}
+                type="text"
+                inputMode="numeric"
+                autoComplete="off"
+                placeholder={`Actual: ${formatIntegerMeterReading(currentHours)}`}
                 value={hoursReading}
                 onChange={(e) => setHoursReading(e.target.value)}
                 disabled={disabled}
-                className={`${
+                className={`font-mono tabular-nums ${
                   validation?.errors?.some((error) => error.toLowerCase().includes("hora"))
                     ? "border-red-500"
                     : validation && hoursReading
@@ -202,9 +219,10 @@ export function EquipmentReadingsForm({
                       : ""
                 }`}
               />
+              <p className="text-xs text-muted-foreground">{METER_INTEGER_ENTRY_HINT}</p>
               {validation?.expected_hours && (
                 <div className="text-xs text-gray-600">
-                  Estimado: {formatNumber(validation.expected_hours.expected_reading)} h
+                  Estimado: {formatIntegerMeterReading(validation.expected_hours.expected_reading)} h
                   {validation.expected_hours.average_daily_usage > 0 && (
                     <span className="ml-2">
                       (Promedio: {validation.expected_hours.average_daily_usage.toFixed(1)} h/día)
@@ -224,13 +242,14 @@ export function EquipmentReadingsForm({
               </Label>
               <Input
                 id="kilometers_reading"
-                type="number"
-                min="0"
-                placeholder={`Actual: ${formatNumber(currentKilometers)}`}
+                type="text"
+                inputMode="numeric"
+                autoComplete="off"
+                placeholder={`Actual: ${formatIntegerMeterReading(currentKilometers)}`}
                 value={kilometersReading}
                 onChange={(e) => setKilometersReading(e.target.value)}
                 disabled={disabled}
-                className={`${
+                className={`font-mono tabular-nums ${
                   validation?.errors?.some(
                     (error) =>
                       error.toLowerCase().includes("kilómet") || error.toLowerCase().includes("kilomet")
@@ -241,9 +260,10 @@ export function EquipmentReadingsForm({
                       : ""
                 }`}
               />
+              <p className="text-xs text-muted-foreground">{METER_INTEGER_ENTRY_HINT}</p>
               {validation?.expected_kilometers && (
                 <div className="text-xs text-gray-600">
-                  Estimado: {formatNumber(validation.expected_kilometers.expected_reading)} km
+                  Estimado: {formatIntegerMeterReading(validation.expected_kilometers.expected_reading)} km
                   {validation.expected_kilometers.average_daily_usage > 0 && (
                     <span className="ml-2">
                       (Promedio: {validation.expected_kilometers.average_daily_usage.toFixed(1)} km/día)
@@ -308,14 +328,16 @@ export function EquipmentReadingsForm({
           <div className="p-4 bg-green-50 rounded-lg border border-green-200">
             <div className="text-sm text-green-800 space-y-1">
               <div className="font-medium">✓ Lecturas válidas</div>
-              {hoursReading && showHours && (
+              {hoursReading && showHours && parseIntegerMeterReading(hoursReading) != null && (
                 <div>
-                  Incremento de horas: +{parseInt(hoursReading, 10) - (currentHours || 0)} h
+                  Incremento de horas: +
+                  {parseIntegerMeterReading(hoursReading)! - (currentHours || 0)} h
                 </div>
               )}
-              {kilometersReading && showKm && (
+              {kilometersReading && showKm && parseIntegerMeterReading(kilometersReading) != null && (
                 <div>
-                  Incremento de kilómetros: +{parseInt(kilometersReading, 10) - (currentKilometers || 0)} km
+                  Incremento de kilómetros: +
+                  {parseIntegerMeterReading(kilometersReading)! - (currentKilometers || 0)} km
                 </div>
               )}
             </div>

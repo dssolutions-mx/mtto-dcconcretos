@@ -1,6 +1,13 @@
 import { createClient } from '@/lib/supabase-server'
 import { NextResponse } from 'next/server'
 
+function toIntOrNull(value: unknown): number | null {
+  if (value === null || value === undefined) return null
+  const n = Number(value)
+  if (!Number.isFinite(n)) return null
+  return Math.trunc(n)
+}
+
 export async function POST(request: Request) {
   try {
     const supabase = await createClient()
@@ -22,8 +29,8 @@ export async function POST(request: Request) {
     const { data: validationResult, error: validationError } = await supabase
       .rpc('validate_equipment_readings', {
         p_asset_id: asset_id,
-        p_hours_reading: hours_reading,
-        p_kilometers_reading: kilometers_reading
+        p_hours_reading: toIntOrNull(hours_reading),
+        p_kilometers_reading: toIntOrNull(kilometers_reading)
       })
 
     if (validationError) {
@@ -36,10 +43,11 @@ export async function POST(request: Request) {
 
     return NextResponse.json(validationResult)
     
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Error in readings validation:', error)
+    const message = error instanceof Error ? error.message : 'Unknown error'
     return NextResponse.json(
-      { error: 'Error interno del servidor', details: error.message },
+      { error: 'Error interno del servidor', details: message },
       { status: 500 }
     )
   }

@@ -6,6 +6,11 @@ import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { AlertTriangle, TrendingUp, CheckCircle2, Info } from "lucide-react"
+import {
+  formatIntegerMeterReading,
+  METER_INTEGER_ENTRY_HINT,
+  parseIntegerMeterReading,
+} from "@/lib/utils/meter-integer-input"
 
 interface ReadingCaptureProps {
   assetId: string
@@ -38,16 +43,16 @@ export function ReadingCapture({
   const showHours = true
   const showKilometers = true
 
+  /* eslint-disable react-hooks/set-state-in-effect -- validity flags derived from controlled inputs (same pattern as before parse fix) */
   // Validate hours reading
   useEffect(() => {
-    if (!showHours || hoursReading === "") {
+    if (!showHours || hoursReading.trim() === "") {
       setHoursValid(null)
       return
     }
 
-    const reading = parseInt(hoursReading)
-    
-    if (isNaN(reading) || reading < 0) {
+    const reading = parseIntegerMeterReading(hoursReading)
+    if (reading === null) {
       setHoursValid(false)
       return
     }
@@ -79,14 +84,13 @@ export function ReadingCapture({
 
   // Validate kilometers reading
   useEffect(() => {
-    if (!showKilometers || kilometersReading === "") {
+    if (!showKilometers || kilometersReading.trim() === "") {
       setKilometersValid(null)
       return
     }
 
-    const reading = parseInt(kilometersReading)
-    
-    if (isNaN(reading) || reading < 0) {
+    const reading = parseIntegerMeterReading(kilometersReading)
+    if (reading === null) {
       setKilometersValid(false)
       return
     }
@@ -115,8 +119,9 @@ export function ReadingCapture({
 
     setKilometersValid(true)
   }, [kilometersReading, currentKilometers, showKilometers])
+  /* eslint-enable react-hooks/set-state-in-effect */
 
-  // Notify parent of readings changes
+  // Notify parent of readings
   useEffect(() => {
     const readings: {
       hours_reading?: number | null
@@ -124,21 +129,15 @@ export function ReadingCapture({
     } = {}
 
     if (showHours) {
-      const hours = hoursReading === "" ? null : parseInt(hoursReading)
-      if (!isNaN(hours as any) && hours !== null) {
-        readings.hours_reading = hours
-      } else {
-        readings.hours_reading = null
-      }
+      const hours =
+        hoursReading.trim() === "" ? null : parseIntegerMeterReading(hoursReading)
+      readings.hours_reading = hours
     }
 
     if (showKilometers) {
-      const km = kilometersReading === "" ? null : parseInt(kilometersReading)
-      if (!isNaN(km as any) && km !== null) {
-        readings.kilometers_reading = km
-      } else {
-        readings.kilometers_reading = null
-      }
+      const km =
+        kilometersReading.trim() === "" ? null : parseIntegerMeterReading(kilometersReading)
+      readings.kilometers_reading = km
     }
 
     onReadingsChange(readings)
@@ -146,15 +145,15 @@ export function ReadingCapture({
 
   const getHoursIncrement = () => {
     if (!hoursReading || currentHours === null) return null
-    const reading = parseInt(hoursReading)
-    if (isNaN(reading)) return null
+    const reading = parseIntegerMeterReading(hoursReading)
+    if (reading === null) return null
     return reading - currentHours
   }
 
   const getKilometersIncrement = () => {
     if (!kilometersReading || currentKilometers === null) return null
-    const reading = parseInt(kilometersReading)
-    if (isNaN(reading)) return null
+    const reading = parseIntegerMeterReading(kilometersReading)
+    if (reading === null) return null
     return reading - currentKilometers
   }
 
@@ -183,8 +182,8 @@ export function ReadingCapture({
               Horómetro (Horas)
             </Label>
             {currentHours !== null && (
-              <Badge variant="outline" className="text-xs">
-                Actual: {currentHours.toLocaleString()}h
+              <Badge variant="outline" className="text-xs tabular-nums">
+                Actual: {formatIntegerMeterReading(currentHours)}h
               </Badge>
             )}
           </div>
@@ -192,9 +191,14 @@ export function ReadingCapture({
           <div className="relative">
             <Input
               id="hours-reading"
-              type="number"
+              type="text"
               inputMode="numeric"
-              placeholder={currentHours !== null ? `Mayor a ${currentHours}` : "Ej: 5000"}
+              autoComplete="off"
+              placeholder={
+                currentHours !== null
+                  ? `Mayor a ${formatIntegerMeterReading(currentHours)}`
+                  : "Ej: 5000"
+              }
               value={hoursReading}
               onChange={(e) => setHoursReading(e.target.value)}
               onWheel={(e) => e.currentTarget.blur()}
@@ -204,7 +208,7 @@ export function ReadingCapture({
                 }
               }}
               disabled={disabled}
-              className={`h-12 text-base ${
+              className={`h-12 text-base font-mono tabular-nums ${
                 hoursValid === false ? 'border-red-500' : 
                 hoursValid === true ? 'border-green-500' : ''
               }`}
@@ -216,6 +220,7 @@ export function ReadingCapture({
               <AlertTriangle className="absolute right-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-red-500" />
             )}
           </div>
+          <p className="text-xs text-muted-foreground">{METER_INTEGER_ENTRY_HINT}</p>
 
           {/* Increment display */}
           {hoursReading && currentHours !== null && (
@@ -226,7 +231,8 @@ export function ReadingCapture({
                   <span className={`font-medium ${
                     (getHoursIncrement() ?? 0) < 0 ? 'text-orange-600' : 'text-blue-600'
                   }`}>
-                    {getHoursIncrement()! >= 0 ? '+' : ''}{getHoursIncrement()!.toLocaleString()} horas
+                    {getHoursIncrement()! >= 0 ? '+' : ''}
+                    {formatIntegerMeterReading(getHoursIncrement()!)} horas
                   </span>
                 </>
               )}
@@ -239,7 +245,11 @@ export function ReadingCapture({
               ⚠️ La lectura parece incorrecta. Verifica el horómetro del equipo.
             </p>
           )}
-          {hoursValid === null && hoursReading && currentHours !== null && parseInt(hoursReading) < currentHours && (
+          {hoursValid === null &&
+            hoursReading &&
+            currentHours !== null &&
+            parseIntegerMeterReading(hoursReading) != null &&
+            parseIntegerMeterReading(hoursReading)! < currentHours && (
             <p className="text-sm text-orange-600">
               ⚠️ La lectura es menor a la actual. ¿Se reinició el horómetro?
             </p>
@@ -255,8 +265,8 @@ export function ReadingCapture({
               Odómetro (Kilómetros)
             </Label>
             {currentKilometers !== null && (
-              <Badge variant="outline" className="text-xs">
-                Actual: {currentKilometers.toLocaleString()}km
+              <Badge variant="outline" className="text-xs tabular-nums">
+                Actual: {formatIntegerMeterReading(currentKilometers)}km
               </Badge>
             )}
           </div>
@@ -264,9 +274,14 @@ export function ReadingCapture({
           <div className="relative">
             <Input
               id="km-reading"
-              type="number"
+              type="text"
               inputMode="numeric"
-              placeholder={currentKilometers !== null ? `Mayor a ${currentKilometers}` : "Ej: 50000"}
+              autoComplete="off"
+              placeholder={
+                currentKilometers !== null
+                  ? `Mayor a ${formatIntegerMeterReading(currentKilometers)}`
+                  : "Ej: 50000"
+              }
               value={kilometersReading}
               onChange={(e) => setKilometersReading(e.target.value)}
               onWheel={(e) => e.currentTarget.blur()}
@@ -276,7 +291,7 @@ export function ReadingCapture({
                 }
               }}
               disabled={disabled}
-              className={`h-12 text-base ${
+              className={`h-12 text-base font-mono tabular-nums ${
                 kilometersValid === false ? 'border-red-500' : 
                 kilometersValid === true ? 'border-green-500' : ''
               }`}
@@ -288,6 +303,7 @@ export function ReadingCapture({
               <AlertTriangle className="absolute right-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-red-500" />
             )}
           </div>
+          <p className="text-xs text-muted-foreground">{METER_INTEGER_ENTRY_HINT}</p>
 
           {/* Increment display */}
           {kilometersReading && currentKilometers !== null && (
@@ -298,7 +314,8 @@ export function ReadingCapture({
                   <span className={`font-medium ${
                     (getKilometersIncrement() ?? 0) < 0 ? 'text-orange-600' : 'text-blue-600'
                   }`}>
-                    {getKilometersIncrement()! >= 0 ? '+' : ''}{getKilometersIncrement()!.toLocaleString()} km
+                    {getKilometersIncrement()! >= 0 ? '+' : ''}
+                    {formatIntegerMeterReading(getKilometersIncrement()!)} km
                   </span>
                 </>
               )}
@@ -311,7 +328,11 @@ export function ReadingCapture({
               ⚠️ La lectura parece incorrecta. Verifica el odómetro del equipo.
             </p>
           )}
-          {kilometersValid === null && kilometersReading && currentKilometers !== null && parseInt(kilometersReading) < currentKilometers && (
+          {kilometersValid === null &&
+            kilometersReading &&
+            currentKilometers !== null &&
+            parseIntegerMeterReading(kilometersReading) != null &&
+            parseIntegerMeterReading(kilometersReading)! < currentKilometers && (
             <p className="text-sm text-orange-600">
               ⚠️ La lectura es menor a la actual. ¿Se reinició el odómetro?
             </p>

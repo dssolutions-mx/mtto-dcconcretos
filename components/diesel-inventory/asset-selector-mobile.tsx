@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Card, CardContent } from "@/components/ui/card"
 import { toast } from "sonner"
+import { formatIntegerMeterReading } from "@/lib/utils/meter-integer-input"
 
 interface Asset {
   id: string
@@ -30,7 +31,7 @@ interface Asset {
 }
 
 interface AssetSelectorMobileProps {
-  onSelect: (asset: Asset) => void
+  onSelect: (asset: Asset | null) => void
   selectedAssetId?: string | null
   plantFilter?: string | null // Optional plant filter
   businessUnitFilter?: boolean // Auto-filter by user's business unit
@@ -199,7 +200,7 @@ export function AssetSelectorMobile({
   const handleClear = () => {
     setSelectedAsset(null)
     setSearchTerm("")
-    onSelect(null as any)
+    onSelect(null)
   }
 
   if (loading) {
@@ -234,12 +235,12 @@ export function AssetSelectorMobile({
                   <div className="flex gap-3 mt-2">
                     {selectedAsset.current_hours !== null && (
                       <Badge variant="outline" className="text-xs">
-                        ⏱️ {selectedAsset.current_hours.toLocaleString()}h
+                        ⏱️ {formatIntegerMeterReading(selectedAsset.current_hours)}h
                       </Badge>
                     )}
                     {selectedAsset.current_kilometers !== null && (
                       <Badge variant="outline" className="text-xs">
-                        📏 {selectedAsset.current_kilometers.toLocaleString()}km
+                        📏 {formatIntegerMeterReading(selectedAsset.current_kilometers)}km
                       </Badge>
                     )}
                   </div>
@@ -357,12 +358,12 @@ export function AssetSelectorMobile({
                             <div className="flex gap-2 mt-1.5">
                               {asset.current_hours !== null && (
                                 <Badge variant="outline" className="text-xs px-1.5 py-0">
-                                  ⏱️ {asset.current_hours.toLocaleString()}h
+                                  ⏱️ {formatIntegerMeterReading(asset.current_hours)}h
                                 </Badge>
                               )}
                               {asset.current_kilometers !== null && (
                                 <Badge variant="outline" className="text-xs px-1.5 py-0">
-                                  📏 {asset.current_kilometers.toLocaleString()}km
+                                  📏 {formatIntegerMeterReading(asset.current_kilometers)}km
                                 </Badge>
                               )}
                             </div>

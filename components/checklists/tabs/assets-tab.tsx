@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState } from "react"
 import { useAssets } from "@/hooks/useSupabase"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -24,6 +24,7 @@ import {
 } from "lucide-react"
 import Link from "next/link"
 import { EquipmentModel, Asset } from "@/types"
+import { formatIntegerMeterReading } from "@/lib/utils/meter-integer-input"
 
 interface AssetsTabProps {
   model: EquipmentModel
@@ -85,15 +86,11 @@ export function AssetsTab({ model }: AssetsTabProps) {
     }
   }
 
-  const formatHours = (hours?: number) => {
-    if (!hours) return "0 hrs"
-    return `${hours.toLocaleString()} hrs`
-  }
+  const formatHours = (hours?: number) =>
+    `${formatIntegerMeterReading(hours ?? 0, "0")} hrs`
 
-  const formatKilometers = (km?: number) => {
-    if (!km) return "0 km"
-    return `${km.toLocaleString()} km`
-  }
+  const formatKilometers = (km?: number) =>
+    `${formatIntegerMeterReading(km ?? 0, "0")} km`
 
   if (loading) {
     return (
