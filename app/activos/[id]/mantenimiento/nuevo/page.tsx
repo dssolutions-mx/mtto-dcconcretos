@@ -799,8 +799,8 @@ export default function NewMaintenancePage({ params }: NewMaintenancePageProps) 
         }));
       }
 
-      // Agregar tareas requeridas del plan de mantenimiento
-      if (rawParam && maintenancePlan?.maintenance_tasks && maintenancePlan.maintenance_tasks.length > 0) {
+      // Agregar tareas requeridas del plan de mantenimiento (siempre que el plan traiga tareas)
+      if (maintenancePlan?.maintenance_tasks && maintenancePlan.maintenance_tasks.length > 0) {
         const tasksData = maintenancePlan.maintenance_tasks.map((task: MaintenanceTask & { type?: string; estimated_time?: number; requires_specialist?: boolean }) => ({
           id: task.id,
           description: task.description,

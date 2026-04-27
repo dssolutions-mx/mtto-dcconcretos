@@ -281,8 +281,11 @@ export async function POST(request: Request) {
         // Override hours/kilometers with equipment_hours/equipment_kilometers from completionData if available
         hours: isKilometers ? null : (completionData.equipment_hours || maintenanceHistoryData?.hours || null),
         kilometers: isKilometers ? (completionData.equipment_kilometers || maintenanceHistoryData?.kilometers || null) : null,
-        // Completed tasks from preventive work orders (task-based flow)
-        completed_tasks: completionData.completed_tasks ?? maintenanceHistoryData?.completed_tasks ?? null,
+        // Completed tasks from preventive work orders (full per-task list with completed: true/false)
+        completed_tasks:
+          completionData.completed_tasks !== undefined && completionData.completed_tasks !== null
+            ? completionData.completed_tasks
+            : maintenanceHistoryData?.completed_tasks ?? null,
       };
 
       // Derive required NOT NULL fields for maintenance_history

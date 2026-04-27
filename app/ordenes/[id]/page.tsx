@@ -34,6 +34,7 @@ import { WorkOrderRecurrenceCard } from "@/components/work-orders/details/work-o
 import { WorkOrderRelationshipHub } from "@/components/work-orders/details/work-order-relationship-hub"
 import { WorkOrderDetailsRouter } from "@/components/work-orders/work-order-details-router"
 import { WorkOrderContextBand } from "@/components/work-orders/details/work-order-context-band"
+import { isTaskMarkedCompleted, parseCompletedTasksJson } from "@/lib/work-orders/parse-completed-tasks"
 
 // Extended type for work order with completed_at field and recurrence data
 type ExtendedWorkOrder = WorkOrderComplete & {
@@ -137,18 +138,19 @@ export default async function WorkOrderDetailsPage({
   // Check if work order is completed
   const isCompleted = extendedWorkOrder.status === WorkOrderStatus.Completed
   
-  // Fetch maintenance history if the work order is completed
+  // Fetch maintenance history if the work order is completed (latest row — multiple rows can exist)
   let maintenanceHistory = null
   if (isCompleted && extendedWorkOrder.asset?.id) {
-    const { data: historyData } = await supabase
+    const { data: historyRows } = await supabase
       .from("maintenance_history")
       .select("*")
       .eq("work_order_id", extendedWorkOrder.id)
       .eq("asset_id", extendedWorkOrder.asset.id)
-      .single()
-      
-    if (historyData) {
-      maintenanceHistory = historyData
+      .order("date", { ascending: false })
+      .limit(1)
+
+    if (historyRows?.[0]) {
+      maintenanceHistory = historyRows[0]
     }
   }
 
@@ -372,19 +374,14 @@ export default async function WorkOrderDetailsPage({
       : extendedWorkOrder.required_tasks
     : []
 
-  // Parse completed tasks from maintenance history if completed
-  let completedTaskIds: string[] = []
-  if (isCompleted && maintenanceHistory?.completed_tasks) {
-    const completedTasksData = typeof maintenanceHistory.completed_tasks === 'string'
-      ? JSON.parse(maintenanceHistory.completed_tasks)
-      : maintenanceHistory.completed_tasks
-
-    if (Array.isArray(completedTasksData)) {
-      completedTaskIds = completedTasksData
-        .filter((t: { completed?: boolean }) => t.completed === true)
-        .map((t: { task_id?: string; id?: string }) => t.task_id || t.id)
-    }
-  }
+  // Parse completed tasks from maintenance history (full list with completed true/false, or legacy "only done" rows)
+  const { completedById: completedTasksMap } =
+    isCompleted && maintenanceHistory?.completed_tasks
+      ? parseCompletedTasksJson(maintenanceHistory.completed_tasks)
+      : { completedById: new Map<string, boolean>() }
+  const completedTaskIds: string[] = [...completedTasksMap.entries()]
+    .filter(([, done]) => done)
+    .map(([id]) => id)
 
   // Parse evidence photos
   const creationPhotos: EvidenceItem[] = extendedWorkOrder.creation_photos 
@@ -951,20 +948,21 @@ export default async function WorkOrderDetailsPage({
               <CardHeader className="pb-2 px-4 pt-4">
                 <CardTitle className="text-base flex items-center justify-between">
                   Tareas de Mantenimiento
-                  {isCompleted && completedTaskIds.length > 0 && (
-                    <Badge variant="default">
+                  {isCompleted && (
+                    <Badge variant={completedTaskIds.length === requiredTasks.length ? "default" : "secondary"}>
                       {completedTaskIds.length} de {requiredTasks.length} completadas
                     </Badge>
                   )}
                 </CardTitle>
                 <CardDescription className="text-xs">
-                  Tareas requeridas del plan de mantenimiento
+                  Tareas requeridas del plan de mantenimiento. El resumen proviene del cierre de la orden (puede ser
+                  parcial).
                 </CardDescription>
               </CardHeader>
               <CardContent className="px-4 pb-4 pt-0">
                 <div className="space-y-3">
                   {requiredTasks.map((task: { id: string; description: string; type?: string; estimated_time?: number; requires_specialist?: boolean; parts?: Array<{ name: string; part_number?: string; quantity: number }> }, index: number) => {
-                    const taskCompleted = completedTaskIds.includes(task.id)
+                    const taskCompleted = isTaskMarkedCompleted(completedTasksMap, task, index)
                     return (
                       <div
                         key={task.id || index}

@@ -28,6 +28,7 @@ import { EvidenceUpload, type EvidencePhoto } from "@/components/ui/evidence-upl
 import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { getMaintenanceUnit, getCurrentValue, getUnitLabel, getUnitDisplayName, type MaintenanceUnit } from "@/lib/utils/maintenance-units"
+import { taskKeyFromRequiredTask, type TaskCompletionRow } from "@/lib/work-orders/parse-completed-tasks"
 
 // Date picker component
 function DatePicker({ date, setDate }: { date: Date | undefined, setDate: (date: Date | undefined) => void }) {
@@ -215,8 +216,9 @@ export function WorkOrderCompletionForm({ workOrderId, initialData }: WorkOrderC
             if (Array.isArray(tasks) && tasks.length > 0) {
               setRequiredTasks(tasks)
               const initialCompleted: Record<string, boolean> = {}
-              tasks.forEach((task: { id: string }) => {
-                if (task.id) initialCompleted[task.id] = false
+              tasks.forEach((task: { id?: string | null }, index: number) => {
+                const key = taskKeyFromRequiredTask(task, index)
+                initialCompleted[key] = false
               })
               setCompletedTasks(initialCompleted)
             }
@@ -482,14 +484,20 @@ export function WorkOrderCompletionForm({ workOrderId, initialData }: WorkOrderC
         parts_used: formattedParts
       };
 
-      // Prepare completed tasks data
-      const completedTasksData = requiredTasks
-        .filter((task: { id: string }) => completedTasks[task.id])
-        .map((task: { id: string }) => ({
-          task_id: task.id,
-          completed: true,
-          completed_at: updatedData.completion_date.toISOString()
-        }));
+      // Full task completion record (persisted on maintenance_history.completed_tasks)
+      const completedAtIso = updatedData.completion_date.toISOString()
+      const completedTasksPayload: TaskCompletionRow[] | null =
+        requiredTasks.length > 0
+          ? requiredTasks.map((task: { id?: string | null; description?: string }, index: number) => {
+              const key = taskKeyFromRequiredTask(task, index)
+              return {
+                task_id: key,
+                description: task.description,
+                completed: completedTasks[key] === true,
+                completed_at: completedTasks[key] === true ? completedAtIso : undefined,
+              }
+            })
+          : null
 
       const additionalExpensesPayload =
         updatedData.has_additional_expenses &&
@@ -545,7 +553,7 @@ export function WorkOrderCompletionForm({ workOrderId, initialData }: WorkOrderC
             completion_date: updatedData.completion_date.toISOString(),
             completion_time: updatedData.completion_time,
             parts_used: formattedParts,
-            completed_tasks: completedTasksData.length > 0 ? completedTasksData : undefined,
+            completed_tasks: completedTasksPayload ?? undefined,
             completion_photos: completionEvidence.map(evidence => ({
               url: evidence.url,
               description: evidence.description,
@@ -570,7 +578,7 @@ export function WorkOrderCompletionForm({ workOrderId, initialData }: WorkOrderC
           findings: updatedData.technician_notes || null,
           actions: updatedData.resolution_details,
           // maintenance_plan_id on maintenance_history is set server-side from WO → maintenance_plans.interval_id
-          completed_tasks: completedTasksData.length > 0 ? completedTasksData : null,
+          completed_tasks: completedTasksPayload,
           // Incluir todos los campos de completion que no van en work_orders
           downtime_hours: updatedData.downtime_hours,
           resolution_details: updatedData.resolution_details,
@@ -913,7 +921,8 @@ export function WorkOrderCompletionForm({ workOrderId, initialData }: WorkOrderC
                   <div>
                     <h3 className="text-md font-medium">Tareas de Mantenimiento</h3>
                     <p className="text-sm text-muted-foreground">
-                      Marque las tareas que fueron completadas durante este mantenimiento
+                      Indique qué actividades del plan se realizaron en esta visita. Puede cerrar la orden aunque no
+                      haya hecho todas; documente en los detalles de resolución lo pendiente o el motivo.
                     </p>
                   </div>
                   <Badge variant="outline">
@@ -921,25 +930,37 @@ export function WorkOrderCompletionForm({ workOrderId, initialData }: WorkOrderC
                   </Badge>
                 </div>
 
+                {Object.values(completedTasks).filter(Boolean).length < requiredTasks.length && (
+                  <Alert>
+                    <AlertTitle className="text-sm">Cierre con tareas parciales</AlertTitle>
+                    <AlertDescription className="text-xs">
+                      No es obligatorio marcar todas. Lo marcado se guarda en el historial del activo; use la resolución
+                      para dejar constancia de lo faltante.
+                    </AlertDescription>
+                  </Alert>
+                )}
+
                 <div className="border rounded-md p-4 space-y-4">
-                  {requiredTasks.map((task: { id: string; description: string; type?: string; estimated_time?: number; requires_specialist?: boolean; parts?: Array<{ name: string; part_number?: string; quantity: number }> }) => (
+                  {requiredTasks.map((task: { id?: string | null; description: string; type?: string; estimated_time?: number; requires_specialist?: boolean; parts?: Array<{ name: string; part_number?: string; quantity: number }> }, index: number) => {
+                    const taskKey = taskKeyFromRequiredTask(task, index)
+                    return (
                     <div
-                      key={task.id}
+                      key={taskKey}
                       className={cn(
                         "border rounded-md p-4 space-y-3 transition-colors",
-                        completedTasks[task.id] && "bg-green-50 border-green-200"
+                        completedTasks[taskKey] && "bg-green-50 border-green-200"
                       )}
                     >
                       <div className="flex items-start justify-between">
                         <div className="flex items-start gap-3 flex-1">
                           <div className="pt-1">
                             <Checkbox
-                              id={`task-${task.id}`}
-                              checked={completedTasks[task.id] || false}
+                              id={`task-${taskKey}`}
+                              checked={completedTasks[taskKey] || false}
                               onCheckedChange={(checked) => {
-                                setCompletedTasks(prev => ({
+                                setCompletedTasks((prev) => ({
                                   ...prev,
-                                  [task.id]: checked === true
+                                  [taskKey]: checked === true,
                                 }))
                               }}
                               className="h-5 w-5"
@@ -988,7 +1009,8 @@ export function WorkOrderCompletionForm({ workOrderId, initialData }: WorkOrderC
                         </div>
                       </div>
                     </div>
-                  ))}
+                    )
+                  })}
                 </div>
               </div>
             )}
