@@ -7353,6 +7353,22 @@ export type Database = {
         Returns: Json
       }
       process_po_email_action: { Args: { p_token: string }; Returns: Json }
+      purchase_orders_by_work_order_ids: {
+        Args: { p_work_order_ids: string[] }
+        Returns: {
+          id: string
+          order_id: string
+          status: string | null
+          work_order_id: string
+        }[]
+      }
+      purchase_orders_id_status_by_ids: {
+        Args: { p_ids: string[] }
+        Returns: {
+          id: string
+          status: string | null
+        }[]
+      }
       recalc_balances_from: {
         Args: { p_transaction_id: string }
         Returns: undefined

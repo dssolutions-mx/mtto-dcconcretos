@@ -61,12 +61,14 @@ export async function GET() {
     > = {}
 
     if (workOrderIds.length > 0) {
-      const { data: linkedPOs, error: linkedErr } = await supabase
-        .from("purchase_orders")
-        .select("id, order_id, status, work_order_id")
-        .in("work_order_id", workOrderIds)
+      const { data: linkedPOs, error: linkedErr } = await supabase.rpc(
+        "purchase_orders_by_work_order_ids",
+        { p_work_order_ids: workOrderIds }
+      )
 
-      if (!linkedErr && linkedPOs) {
+      if (linkedErr) {
+        console.error("Error fetching linked purchase_orders (RPC):", linkedErr)
+      } else if (linkedPOs) {
         for (const row of linkedPOs) {
           const wid = row.work_order_id as string
           if (!wid) continue
@@ -95,7 +97,7 @@ export async function GET() {
         ? supabase.from("profiles").select("id, nombre, apellido").in("id", assignedIds)
         : Promise.resolve({ data: [], error: null }),
       poIds.length > 0
-        ? supabase.from("purchase_orders").select("id, status").in("id", poIds)
+        ? supabase.rpc("purchase_orders_id_status_by_ids", { p_ids: poIds })
         : Promise.resolve({ data: [], error: null }),
     ])
 
@@ -106,9 +108,11 @@ export async function GET() {
     }
 
     const purchaseOrderStatuses: Record<string, string> = {}
-    if (!poResult.error && poResult.data) {
+    if (poResult.error) {
+      console.error("Error fetching purchase order statuses (RPC):", poResult.error)
+    } else if (poResult.data) {
       poResult.data.forEach((po) => {
-        purchaseOrderStatuses[po.id] = po.status
+        purchaseOrderStatuses[po.id] = po.status ?? ""
       })
     }
 
