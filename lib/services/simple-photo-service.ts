@@ -1,3 +1,6 @@
+import type { DieselEvidenceImageMetadata } from "@/lib/photos/diesel-evidence-image-metadata"
+import { extractDieselEvidenceMetadata } from "@/lib/photos/extract-image-exif"
+
 export interface PhotoUploadResult {
   id: string
   preview: string
@@ -5,6 +8,8 @@ export interface PhotoUploadResult {
   progress?: number
   error?: string
   url?: string
+  /** EXIF etc. from original file (before compression); same payload sent on upload-complete event */
+  evidenceImageMetadata?: DieselEvidenceImageMetadata | null
 }
 
 export interface PhotoUploadOptions {
@@ -114,8 +119,10 @@ class SimplePhotoService {
   ): Promise<PhotoUploadResult> {
     try {
       const photoId = `photo_${checklistId}_${itemId}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
-      
-      // Compress image and generate preview
+
+      const evidenceImageMetadata = await extractDieselEvidenceMetadata(file)
+
+      // Compress image and generate preview (strips EXIF from uploaded bytes)
       const { compressed, preview, metadata } = await this.compressImage(file, options)
       
       const photoData = {
@@ -133,7 +140,8 @@ class SimplePhotoService {
         timestamp: Date.now(),
         uploaded: false,
         uploadAttempts: 0,
-        metadata
+        metadata,
+        evidenceImageMetadata
       }
       
       this.photos.set(photoId, photoData)
@@ -147,7 +155,8 @@ class SimplePhotoService {
       return {
         id: photoId,
         preview,
-        status: navigator.onLine ? 'uploading' : 'stored'
+        status: navigator.onLine ? 'uploading' : 'stored',
+        evidenceImageMetadata
       }
     } catch (error) {
       console.error('Error storing photo:', error)
@@ -180,7 +189,7 @@ class SimplePhotoService {
       const photo = this.photos.get(photoId)
       if (!photo || photo.uploaded) return
       
-      this.emitUploadEvent(photoId, 'uploading')
+      this.emitUploadEvent(photoId, 'uploading', undefined, undefined, photo.evidenceImageMetadata)
       
       try {
         const uploadResult = await this.uploadPhotoToServer(photo)
@@ -193,7 +202,7 @@ class SimplePhotoService {
           photo.preview = ''
           this.photos.set(photoId, photo)
           
-          this.emitUploadEvent(photoId, 'uploaded', uploadResult.url)
+          this.emitUploadEvent(photoId, 'uploaded', uploadResult.url, undefined, photo.evidenceImageMetadata)
         } else {
           throw new Error(uploadResult.error || 'Upload failed')
         }
@@ -209,7 +218,7 @@ class SimplePhotoService {
             this.uploadQueue.push(photoId)
           }, Math.pow(2, photo.uploadAttempts) * 1000)
         } else {
-          this.emitUploadEvent(photoId, 'failed', undefined, error instanceof Error ? error.message : 'Max retries exceeded')
+          this.emitUploadEvent(photoId, 'failed', undefined, error instanceof Error ? error.message : 'Max retries exceeded', photo.evidenceImageMetadata)
         }
       }
     } finally {
@@ -283,7 +292,8 @@ class SimplePhotoService {
       status: photo.uploaded ? 'uploaded' : 
               photo.uploadAttempts > 0 ? 'uploading' : 'stored',
       url: photo.uploadUrl,
-      error: photo.uploadError
+      error: photo.uploadError,
+      evidenceImageMetadata: photo.evidenceImageMetadata ?? null
     }
   }
 
@@ -307,10 +317,16 @@ class SimplePhotoService {
   }
 
   // Event emission for status updates
-  private emitUploadEvent(photoId: string, status: string, url?: string, error?: string) {
+  private emitUploadEvent(
+    photoId: string,
+    status: string,
+    url?: string,
+    error?: string,
+    evidenceImageMetadata?: DieselEvidenceImageMetadata | null
+  ) {
     if (this.isClient) {
       window.dispatchEvent(new CustomEvent('photo-upload-status', {
-        detail: { photoId, status, url, error }
+        detail: { photoId, status, url, error, evidenceImageMetadata }
       }))
     }
   }

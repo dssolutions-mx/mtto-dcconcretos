@@ -17,7 +17,9 @@
     "sync:run": "node -r dotenv/config scripts/sync_missing_employees.mjs",
     "email:manager-snapshot": "npx tsx scripts/email/generate-manager-snapshot-email.ts",
     "gen:db-types": "sh -c 'supabase gen types typescript --linked > types/supabase-types.ts'",
-    "verify:kpi-rollup": "npx tsx scripts/verify-kpi-rollup-consistency.ts"
+    "verify:kpi-rollup": "npx tsx scripts/verify-kpi-rollup-consistency.ts",
+    "verify:asset-meter-view": "npx tsx scripts/verify-asset-meter-view-parity.ts",
+    "verify:merged-hours-view": "npx tsx scripts/verify-merged-hours-from-view.ts"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
@@ -67,6 +69,7 @@
     "driver.js": "^1.4.0",
     "embla-carousel-react": "8.5.1",
     "exceljs": "^4.4.0",
+    "exifreader": "^4.38.1",
     "framer-motion": "^12.23.26",
     "html2canvas": "^1.4.1",
     "idb": "^8.0.3",

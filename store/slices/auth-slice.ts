@@ -576,17 +576,37 @@ export const createAuthSlice: StateCreator<
 
   loadProfile: async (userId) => {
     console.log(`👤 Loading profile for user ${userId}`)
-    
+
+    const supabase = createClient()
+
+    const withJefePlantaScope = async (p: UserProfile): Promise<UserProfile> => {
+      if (p.role !== 'JEFE_PLANTA') return p
+      const { data: scoped, error: rpcError } = await supabase.rpc('profile_scoped_plant_ids', {
+        p_user_id: userId,
+      })
+      if (rpcError || !Array.isArray(scoped) || scoped.length === 0) {
+        return {
+          ...p,
+          managed_plant_ids: p.plant_id ? [p.plant_id] : [],
+        }
+      }
+      return { ...p, managed_plant_ids: (scoped as string[]).filter(Boolean) }
+    }
+
     const cachedProfile = get().getCachedProfile(userId)
     if (cachedProfile) {
       console.log('🎯 Using cached profile')
-      // Always clear loading; callers (e.g. initialize) set isLoading true before loadProfile,
-      // and the early return previously left isLoading stuck — dashboard spun forever.
-      set({ profile: cachedProfile, isLoading: false } as Partial<AuthStore>)
-      return
+      try {
+        const next = await withJefePlantaScope(cachedProfile)
+        get().setCachedProfile(userId, next)
+        set({ profile: next, isLoading: false } as Partial<AuthStore>)
+        return
+      } catch (mergeErr) {
+        console.error('Failed to merge Jefe de Planta scope, using cache:', mergeErr)
+        set({ profile: cachedProfile, isLoading: false } as Partial<AuthStore>)
+        return
+      }
     }
-    
-    const supabase = createClient()
     
     try {
       console.log('🌐 Fetching profile from database...')
@@ -619,11 +639,13 @@ export const createAuthSlice: StateCreator<
       }
       
       console.log('✅ Profile loaded successfully:', profile.email)
+
+      const merged = await withJefePlantaScope(profile as UserProfile)
       
-      get().setCachedProfile(userId, profile)
+      get().setCachedProfile(userId, merged)
       
       set({ 
-        profile,
+        profile: merged,
         isLoading: false 
       } as Partial<AuthStore>)
       

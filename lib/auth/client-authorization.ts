@@ -44,6 +44,22 @@ export function canAccessRHReportingNav(profile: {
   )
 }
 
+/**
+ * Jefe de Planta: plants the user may act on. Prefer `managed_plant_ids` from
+ * `profile_scoped_plant_ids` (set in the auth store after load); otherwise primary `plant_id` only.
+ */
+export function jefePlantaClientPlantScope(profile: {
+  role?: string | null
+  plant_id?: string | null
+  managed_plant_ids?: string[] | null
+} | null): string[] {
+  if (profile?.role !== 'JEFE_PLANTA') return []
+  const m = profile.managed_plant_ids
+  if (m && m.length > 0) return m
+  if (profile.plant_id) return [profile.plant_id]
+  return []
+}
+
 export function canManageUserAuthorizationClient(profile: {
   role?: string | null
   business_role?: string | null

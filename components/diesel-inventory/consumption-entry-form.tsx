@@ -32,6 +32,8 @@ import {
   validateDieselTransactionScope
 } from "@/lib/diesel/submit-scope-validation"
 import { getLocalDateString, getLocalTimeString } from "@/lib/diesel/date-utils"
+import type { DieselEvidenceImageMetadata } from "@/lib/photos/diesel-evidence-image-metadata"
+import type { Json } from "@/types/supabase-types"
 
 interface ConsumptionEntryFormProps {
   productType: 'diesel' | 'urea'
@@ -85,6 +87,8 @@ export function ConsumptionEntryForm({
   
   // Evidence photos
   const [machinePhoto, setMachinePhoto] = useState<string | null>(null)
+  const [machineEvidenceMetadata, setMachineEvidenceMetadata] =
+    useState<DieselEvidenceImageMetadata | null>(null)
 
   // Validation state
   const [cuentaLitrosValid, setCuentaLitrosValid] = useState<boolean | null>(null)
@@ -698,7 +702,8 @@ export function ConsumptionEntryForm({
           category: 'machine_display',
           photo_url: machinePhoto,
           description: `Display de la máquina - ${quantityLiters}L | Cuenta litros: ${cuentaLitros}L`,
-          created_by: user.id
+          created_by: user.id,
+          metadata: machineEvidenceMetadata as Json
         })
         if (evidenceError) {
           console.error('Evidence insert error:', evidenceError)
@@ -751,6 +756,7 @@ export function ConsumptionEntryForm({
       setCuentaLitros("")
       setCuentaLitrosManuallyEdited(false)
       setMachinePhoto(null)
+      setMachineEvidenceMetadata(null)
       setNotes("")
       setReadings({})
       setPreviousCuentaLitros(null)
@@ -1260,7 +1266,10 @@ export function ConsumptionEntryForm({
                     checklistId={`diesel-consumption-${assetType === 'formal' ? selectedAsset?.id : exceptionAssetName || 'exception'}`}
                     itemId="machine-display"
                     currentPhotoUrl={machinePhoto}
-                    onPhotoChange={(url) => setMachinePhoto(url)}
+                    onPhotoChange={(url, _id, meta) => {
+                      setMachinePhoto(url)
+                      setMachineEvidenceMetadata(meta ?? null)
+                    }}
                     disabled={loading}
                     category="machine_display"
                   />

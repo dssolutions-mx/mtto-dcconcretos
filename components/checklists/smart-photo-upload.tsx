@@ -16,6 +16,7 @@ import {
   WifiOff,
 } from "lucide-react"
 import { toast } from "sonner"
+import type { DieselEvidenceImageMetadata } from "@/lib/photos/diesel-evidence-image-metadata"
 
 interface PhotoUploadResult {
   id: string
@@ -24,13 +25,18 @@ interface PhotoUploadResult {
   progress?: number
   error?: string
   url?: string
+  evidenceImageMetadata?: DieselEvidenceImageMetadata | null
 }
 
 interface SmartPhotoUploadProps {
   checklistId: string
   itemId: string
   currentPhotoUrl?: string | null
-  onPhotoChange: (url: string | null, photoId?: string) => void
+  onPhotoChange: (
+    url: string | null,
+    photoId?: string,
+    evidenceImageMetadata?: DieselEvidenceImageMetadata | null
+  ) => void
   disabled?: boolean
   category?: string
   className?: string
@@ -84,18 +90,19 @@ export function SmartPhotoUpload({
     if (typeof window === 'undefined') return
     
     const handleUploadStatus = (event: CustomEvent) => {
-      const { photoId, status, url, error } = event.detail
+      const { photoId, status, url, error, evidenceImageMetadata } = event.detail
       
       if (photo && photo.id === photoId) {
         setPhoto(prev => prev ? {
           ...prev,
           status: status as any,
           url: url || prev.url,
-          error: error
+          error: error,
+          evidenceImageMetadata: evidenceImageMetadata ?? prev.evidenceImageMetadata
         } : null)
         
         if (status === 'uploaded' && url) {
-          onPhotoChange(url, photoId)
+          onPhotoChange(url, photoId, evidenceImageMetadata ?? null)
           toast.success("Foto subida exitosamente")
         } else if (status === 'failed') {
           toast.error(`Error al subir foto: ${error}`)
@@ -146,17 +153,17 @@ export function SmartPhotoUpload({
       
       // If we got an immediate upload URL, update parent
       if (result.url) {
-        onPhotoChange(result.url, result.id)
+        onPhotoChange(result.url, result.id, result.evidenceImageMetadata ?? null)
       }
       
       // Show appropriate feedback
       if (isOnline) {
         toast.success("Foto guardada - subiendo en segundo plano", {
-          description: "La foto se está subiendo automáticamente"
+          description: "La foto se est? subiendo autom?ticamente"
         })
       } else {
-        toast.info("Foto guardada sin conexión", {
-          description: "Se subirá automáticamente cuando vuelva la conexión"
+        toast.info("Foto guardada sin conexi?n", {
+          description: "Se subir? autom?ticamente cuando vuelva la conexi?n"
         })
       }
       
@@ -195,7 +202,7 @@ export function SmartPhotoUpload({
     }
     
     setPhoto(null)
-    onPhotoChange(null)
+    onPhotoChange(null, undefined, null)
     toast.success("Foto eliminada")
   }
 
@@ -225,7 +232,7 @@ export function SmartPhotoUpload({
       case 'stored':
         return (
           <Badge variant="secondary" className="text-xs">
-            {isOnline ? 'En cola' : 'Sin conexión'}
+            {isOnline ? 'En cola' : 'Sin conexi?n'}
           </Badge>
         )
       case 'uploading':
@@ -242,7 +249,7 @@ export function SmartPhotoUpload({
   return (
     <div className={`space-y-3 ${className}`}>
       <div className="flex items-center justify-between">
-        <Label>Fotografía</Label>
+        <Label>Fotograf?a</Label>
         <div className="flex items-center gap-2">
           {!isOnline && (
             <WifiOff className="h-4 w-4 text-gray-500" />
@@ -297,7 +304,7 @@ export function SmartPhotoUpload({
             <Alert>
               <WifiOff className="h-4 w-4" />
               <AlertDescription className="text-sm">
-                Foto guardada localmente. Se subirá automáticamente cuando vuelva la conexión.
+                Foto guardada localmente. Se subir? autom?ticamente cuando vuelva la conexi?n.
               </AlertDescription>
             </Alert>
           )}
@@ -364,7 +371,7 @@ export function SmartPhotoUpload({
           {!isOnline && (
             <p className="flex items-center justify-center gap-1 text-center text-xs text-gray-500">
               <WifiOff className="h-3 w-3 shrink-0" />
-              Sin conexión - se guardará localmente
+              Sin conexi?n - se guardar? localmente
             </p>
           )}
         </div>

@@ -1,6 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createServerSupabase } from '@/lib/supabase-server'
 import { buildAssignmentHistoryMap, resolveAssetPlantAtTimestamp } from '@/lib/reporting/asset-plant-attribution'
+import {
+  checklistReadingEventTimeMs,
+  fetchDieselConsumptionCostRowsForAssets,
+  fetchDieselHorometerFromMeterView,
+  meterHorometerRowsInReportWindow,
+  type DieselHorometerRowForMerge,
+} from '@/lib/reports/merged-operating-hours'
 
 type Body = {
   dateFrom: string
@@ -187,69 +194,50 @@ export async function POST(req: NextRequest) {
       }
     })
 
-    // Calculate diesel and hours worked using the SAME logic as gerencial API
-    // This ensures consistency and avoids internal HTTP call issues
-    // Note: dateFromStart, dateToExclusive, and dateToExclusiveStr are already defined above
-
-    // Fetch diesel transactions (only diesel, not urea; exclude transfers - same as gerencial)
-    const { data: dieselTxs } = await supabase
-      .from('diesel_transactions')
-      .select(`
-        id,
-        asset_id,
-        quantity_liters,
-        transaction_type,
-        unit_cost,
-        product_id,
-        transaction_date,
-        horometer_reading,
-        previous_horometer,
-        diesel_warehouses!inner(product_type)
-      `)
-      .eq('diesel_warehouses.product_type', 'diesel')
-      .neq('is_transfer', true)
-      .gte('transaction_date', dateFromStr)
-      .lt('transaction_date', dateToExclusiveStr)
-
-    // Fetch checklist equipment hours (extend window to capture progression)
-    // Extended window: 30 days before period start to get baseline readings
-    const assetIdsForHours = assets.map(a => a.id)
+    // Diesel: horometer curve from `asset_meter_reading_events` (one extended fetch; in-period rows sliced in memory).
+    // Liters/cost from `diesel_transactions` (fields not on the view). Same diesel membership: warehouse + product diesel.
     const extendedStart = new Date(dateFromStart)
-    extendedStart.setDate(extendedStart.getDate() - 30)
-    const { data: hoursData } = await supabase
-      .from('completed_checklists')
-      .select('asset_id, equipment_hours_reading, reading_timestamp')
-      .gte('reading_timestamp', extendedStart.toISOString())
-      .lt('reading_timestamp', dateToExclusive.toISOString())
-      .in('asset_id', assetIdsForHours)
-      .not('equipment_hours_reading', 'is', null)
-    
-    // Also fetch diesel readings from extended period to validate checklist readings
-    // This helps filter out incorrect checklist readings by comparing with diesel data
-    const { data: dieselTxsForValidation } = await supabase
-      .from('diesel_transactions')
-      .select(`
-        asset_id,
-        transaction_date,
-        horometer_reading,
-        diesel_warehouses!inner(product_type)
-      `)
-      .eq('diesel_warehouses.product_type', 'diesel')
-      .neq('is_transfer', true)
-      .gte('transaction_date', extendedStart.toISOString().slice(0, 10))
-      .lt('transaction_date', dateToExclusiveStr)
-      .in('asset_id', assetIdsForHours)
-      .not('horometer_reading', 'is', null)
+    extendedStart.setUTCDate(extendedStart.getUTCDate() - 30)
+    const extendedStartDateStr = extendedStart.toISOString().slice(0, 10)
+    const periodStartMs = dateFromStart.getTime()
+    const periodEndExclusiveMs = dateToExclusive.getTime()
 
-    // Fetch diesel products for pricing
-    const productIds = Array.from(new Set((dieselTxs || []).map(t => t.product_id).filter(Boolean)))
-    const { data: products } = await supabase
-      .from('diesel_products')
-      .select('id, price_per_liter')
-      .in('id', productIds)
+    const [checklistsRes, dieselHorometerExtended, dieselCostRows] = await Promise.all([
+      supabase
+        .from('completed_checklists')
+        .select('asset_id, equipment_hours_reading, reading_timestamp, completion_date')
+        .in('asset_id', assetIds)
+        .gte('completion_date', extendedStartDateStr)
+        .lt('completion_date', dateToExclusiveStr)
+        .not('equipment_hours_reading', 'is', null),
+      fetchDieselHorometerFromMeterView(supabase, {
+        assetIds,
+        eventAtGte: extendedStartDateStr,
+        eventAtLt: dateToExclusiveStr,
+      }),
+      fetchDieselConsumptionCostRowsForAssets(supabase, {
+        assetIds,
+        transactionDateGte: dateFromStr,
+        transactionDateLt: dateToExclusiveStr,
+      }),
+    ])
+
+    const hoursData = checklistsRes.data
+    const dieselHorometerInPeriod = meterHorometerRowsInReportWindow(
+      dieselHorometerExtended,
+      periodStartMs,
+      periodEndExclusiveMs
+    )
+
+    const productIds = Array.from(new Set(dieselCostRows.map((t) => t.product_id).filter(Boolean)))
+    let products: { id: string; price_per_liter?: number | null }[] = []
+    if (productIds.length > 0) {
+      const { data } = await supabase.from('diesel_products').select('id, price_per_liter').in('id', productIds)
+      products = data || []
+    }
 
     const priceByProduct = new Map<string, number>()
-    ;(products || []).forEach(p => priceByProduct.set(p.id, Number(p.price_per_liter || 0)))
+    products.forEach((p) => priceByProduct.set(p.id, Number(p.price_per_liter || 0)))
 
     // Build asset map with diesel and hours data (same logic as gerencial API)
     const gerencialAssetsMap = new Map<string, any>()
@@ -268,8 +256,15 @@ export async function POST(req: NextRequest) {
       })
     })
 
-    // Aggregate diesel by asset
-    const dieselByAsset = new Map<string, any[]>()
+    const dieselByAsset = new Map<string, DieselHorometerRowForMerge[]>()
+    for (const row of dieselHorometerInPeriod) {
+      if (!dieselByAsset.has(row.asset_id)) dieselByAsset.set(row.asset_id, [])
+      dieselByAsset.get(row.asset_id)!.push(row)
+    }
+    for (const tx of dieselCostRows) {
+      if (!tx.asset_id) continue
+      if (!dieselByAsset.has(tx.asset_id)) dieselByAsset.set(tx.asset_id, [])
+    }
     type ReadingEvent = { ts: number, val: number }
     const checklistEventsByAsset = new Map<string, ReadingEvent[]>()
     
@@ -278,7 +273,7 @@ export async function POST(req: NextRequest) {
     const dieselValidationByAsset = new Map<string, number[]>()
     const dieselValidationByAssetRaw = new Map<string, Array<{ val: number, date: string }>>()
     
-    ;(dieselTxsForValidation || []).forEach((t: any) => {
+    dieselHorometerExtended.forEach((t) => {
       if (!t.asset_id || !t.horometer_reading) return
       const val = Number(t.horometer_reading)
       if (!Number.isNaN(val)) {
@@ -327,23 +322,23 @@ export async function POST(req: NextRequest) {
     ;(hoursData || []).forEach((h: any) => {
       if (!h.asset_id) return
       const val = Number(h.equipment_hours_reading)
-      const ts = new Date(h.reading_timestamp).getTime()
+      const ts = checklistReadingEventTimeMs({
+        reading_timestamp: h.reading_timestamp,
+        completion_date: h.completion_date,
+      })
       if (Number.isNaN(val) || Number.isNaN(ts)) return
       if (!checklistEventsByAsset.has(h.asset_id)) checklistEventsByAsset.set(h.asset_id, [])
       checklistEventsByAsset.get(h.asset_id)!.push({ ts, val })
     })
     
-    ;(dieselTxs || []).forEach(tx => {
-      if (tx.transaction_type !== 'consumption' || !tx.asset_id) return
-      if (!dieselByAsset.has(tx.asset_id)) dieselByAsset.set(tx.asset_id, [])
-      dieselByAsset.get(tx.asset_id)!.push(tx)
-
+    dieselCostRows.forEach((tx) => {
+      if (!tx.asset_id) return
       const asset = gerencialAssetsMap.get(tx.asset_id)
       if (!asset) return
       const qty = Number(tx.quantity_liters || 0)
       const price = Number(tx.unit_cost || 0) || priceByProduct.get(tx.product_id || '') || 0
       const cost = qty * price
-      
+
       asset.diesel_liters += qty
       asset.diesel_cost += cost
     })
@@ -358,12 +353,12 @@ export async function POST(req: NextRequest) {
       const asset = gerencialAssetsMap.get(assetId)
       if (!asset) return
       const events: ReadingEvent[] = []
-      // Diesel transaction events (use transaction_date timestamp)
+      // Diesel meter points from unified view (in report period); timestamps match `transaction_date` on source tx.
       // Only use horometer_reading, not previous_horometer (prevents 0-time deltas)
       // Filter out diesel readings with unrealistic jumps
       const txs = dieselByAsset.get(assetId) || []
       const dieselReadingsRaw: Array<{ ts: number, val: number }> = []
-      txs.forEach((t: any) => {
+      txs.forEach((t) => {
         const tts = new Date(t.transaction_date).getTime()
         if (!Number.isNaN(tts) && t.horometer_reading != null) {
           const v = Number(t.horometer_reading)

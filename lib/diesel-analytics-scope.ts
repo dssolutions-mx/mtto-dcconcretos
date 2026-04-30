@@ -8,8 +8,9 @@ export type DieselScope = {
 
 /**
  * Resolves which plants the current user may see for diesel analytics.
- * - plant_id on profile → single plant
- * - Jefe de unidad / similar with business_unit_id only → all plants in BU
+ * - JEFE_PLANTA: `profile_scoped_plant_ids` (primary + `profile_managed_plants`), with BU from profile
+ * - other roles with `plant_id` → single plant
+ * - jefe de unidad / no plant but with `business_unit_id` → all plants in BU
  * - neither → null plantIds means "no extra filter" (RLS still applies on rows)
  */
 export async function getDieselPlantScope(
@@ -30,6 +31,23 @@ export async function getDieselPlantScope(
 
   if (!profile) {
     return { plantIds: [], businessUnitId: null }
+  }
+
+  if (profile.role === "JEFE_PLANTA") {
+    const { data: scoped, error: rpcError } = await supabase.rpc(
+      "profile_scoped_plant_ids",
+      { p_user_id: user.id }
+    )
+    const ids =
+      !rpcError && Array.isArray(scoped) && scoped.length > 0
+        ? (scoped as string[]).filter(Boolean)
+        : profile.plant_id
+          ? [profile.plant_id]
+          : []
+    return {
+      plantIds: ids.length ? ids : [],
+      businessUnitId: profile.business_unit_id,
+    }
   }
 
   if (profile.plant_id) {

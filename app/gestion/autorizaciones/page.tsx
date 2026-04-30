@@ -18,7 +18,7 @@ import { formatCurrency } from '@/lib/utils'
 import { toast } from 'sonner'
 import { useAuthZustand } from '@/hooks/use-auth-zustand'
 import { getRoleDisplayName } from '@/lib/auth/role-permissions'
-import { canManageUserAuthorizationClient } from '@/lib/auth/client-authorization'
+import { canManageUserAuthorizationClient, jefePlantaClientPlantScope } from '@/lib/auth/client-authorization'
 import { createClient } from '@/lib/supabase'
 
 interface BusinessUnit {
@@ -178,6 +178,9 @@ export default function AuthorizationManagementPage() {
         if (profile?.role === 'JEFE_UNIDAD_NEGOCIO' && profile?.business_unit_id) {
           // JEFE_UNIDAD_NEGOCIO can only see their business unit
           businessUnitsData = businessUnitsData.filter((bu: BusinessUnit) => bu.id === profile.business_unit_id)
+        } else if (profile?.role === 'JEFE_PLANTA' && profile?.business_unit_id) {
+          // Jefe de Planta is tied to a BU; plant scope is still limited to managed plants
+          businessUnitsData = businessUnitsData.filter((bu: BusinessUnit) => bu.id === profile.business_unit_id)
         }
         // GERENCIA_GENERAL and AREA_ADMINISTRATIVA can see all business units
         
@@ -203,9 +206,14 @@ export default function AuthorizationManagementPage() {
         if (profile?.role === 'JEFE_UNIDAD_NEGOCIO' && profile?.business_unit_id) {
           // JEFE_UNIDAD_NEGOCIO can only see plants in their business unit
           plantsData = plantsData.filter((plant: Plant) => plant.business_unit_id === profile.business_unit_id)
-        } else if (profile?.role === 'JEFE_PLANTA' && profile?.plant_id) {
-          // JEFE_PLANTA can only see their plant
-          plantsData = plantsData.filter((plant: Plant) => plant.id === profile.plant_id)
+        } else if (profile?.role === 'JEFE_PLANTA') {
+          // Jefe de Planta: primary plant + profile_managed_plants (auth store)
+          const jpPlants = jefePlantaClientPlantScope(profile)
+          if (jpPlants.length > 0) {
+            plantsData = plantsData.filter((plant: Plant) => jpPlants.includes(plant.id))
+          } else {
+            plantsData = []
+          }
         }
         // GERENCIA_GENERAL and AREA_ADMINISTRATIVA can see all plants
         
@@ -243,11 +251,15 @@ export default function AuthorizationManagementPage() {
           filteredUsers = allUsers.filter(user => 
             user.business_unit_id === profile.business_unit_id
           )
-        } else if (profile?.role === 'JEFE_PLANTA' && profile?.plant_id) {
-          // JEFE_PLANTA can only manage users in their plant
-          filteredUsers = allUsers.filter(user => 
-            user.plant_id === profile.plant_id
-          )
+        } else if (profile?.role === 'JEFE_PLANTA') {
+          const jpPlants = jefePlantaClientPlantScope(profile)
+          if (jpPlants.length > 0) {
+            filteredUsers = allUsers.filter(
+              (user) => user.plant_id && jpPlants.includes(user.plant_id)
+            )
+          } else {
+            filteredUsers = []
+          }
         }
         // GERENCIA_GENERAL and AREA_ADMINISTRATIVA can see all users
         

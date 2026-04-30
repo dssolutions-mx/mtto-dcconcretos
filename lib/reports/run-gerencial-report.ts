@@ -6,7 +6,10 @@ import type { Database } from '@/types/supabase-types'
 import { calculateDieselCostsFIFO } from '@/lib/fifo-diesel-costs'
 import { buildAssignmentHistoryMap, resolveAssetPlantAtTimestamp } from '@/lib/reporting/asset-plant-attribution'
 import { reportsVerbose } from '@/lib/reports/debug'
-import { computeMergedOperatingHoursByAsset } from '@/lib/reports/merged-operating-hours'
+import {
+  computeMergedOperatingHoursByAsset,
+  fetchDieselPeriodConsumptionTxsForReportAssets,
+} from '@/lib/reports/merged-operating-hours'
 
 export type GerencialReportBody = {
   dateFrom: string
@@ -179,44 +182,24 @@ export async function runGerencialReport(
         return true
       })
 
-    // Fetch diesel transactions with asset info (only diesel, not urea, exclude transfers)
-    // CRITICAL: Exclude transfers (is_transfer = true) from consumption reports
-    // Transfers are inventory movements between plants, not actual consumption
-    const dieselQuery = supabase
-      .from('diesel_transactions')
-      .select(`
-        id,
-        asset_id,
-        quantity_liters,
-        transaction_type,
-        unit_cost,
-        product_id,
-        transaction_date,
-        horometer_reading,
-        previous_horometer,
-        kilometer_reading,
-        previous_kilometer,
-        hours_consumed,
-        kilometers_consumed,
-        is_transfer,
-        diesel_warehouses!inner(product_type)
-      `)
-      .eq('diesel_warehouses.product_type', 'diesel')
-      .neq('is_transfer', true) // Explicitly exclude transfers (is_transfer = true)
-      .gte('transaction_date', dateFromStr)
-      .lt('transaction_date', dateToExclusiveStr)
+    const reportAssetIds = assets.map((a) => a.id)
 
-    const { data: dieselTxs } = await dieselQuery
+    const dieselTxs = await fetchDieselPeriodConsumptionTxsForReportAssets(supabase as SupabaseClient, {
+      assetIds: reportAssetIds,
+      transactionDateGte: dateFromStr,
+      transactionDateLt: dateToExclusiveStr,
+    })
 
     // Fetch diesel products for pricing
-    const productIds = Array.from(new Set((dieselTxs || []).map(t => t.product_id).filter(Boolean)))
-    const { data: products } = await supabase
-      .from('diesel_products')
-      .select('id, price_per_liter')
-      .in('id', productIds)
+    const productIds = Array.from(new Set(dieselTxs.map((t) => t.product_id).filter(Boolean)))
+    let products: { id: string; price_per_liter?: number | null }[] = []
+    if (productIds.length > 0) {
+      const { data } = await supabase.from('diesel_products').select('id, price_per_liter').in('id', productIds)
+      products = data || []
+    }
 
     const priceByProduct = new Map<string, number>()
-    ;(products || []).forEach(p => priceByProduct.set(p.id, Number(p.price_per_liter || 0)))
+    products.forEach((p) => priceByProduct.set(p.id, Number(p.price_per_liter || 0)))
 
     // Calculate FIFO diesel costs per transaction
     // Get plant codes for all plants in the report
@@ -565,7 +548,7 @@ export async function runGerencialReport(
 
     // Aggregate diesel by asset
     const dieselByAsset = new Map<string, any[]>()
-    ;(dieselTxs || []).forEach(tx => {
+    dieselTxs.forEach((tx) => {
       // CRITICAL: Double-check to exclude transfers (defense in depth)
       if (tx.is_transfer === true) {
         if (reportsVerbose) {
@@ -619,7 +602,7 @@ export async function runGerencialReport(
         dateToExclusive,
         dateToExclusiveStr,
         dieselConsumedHoursByAsset,
-        periodDieselConsumptionTxs: (dieselTxs || []) as Array<{
+        periodDieselConsumptionTxs: dieselTxs as Array<{
           asset_id: string | null
           hours_consumed?: number | null
           transaction_type?: string | null
@@ -1148,7 +1131,7 @@ export async function runGerencialReport(
         totalMaintenanceCost,
         totalPreventiveCost,
         totalCorrectiveCost,
-        dieselTxCount: (dieselTxs || []).length,
+        dieselTxCount: dieselTxs.length,
         purchaseOrdersCount: filteredPurchaseOrders.length,
         additionalExpensesCount: (additionalExpenses || []).length,
         salesRowsCount: salesRows.length,

@@ -259,6 +259,8 @@ export async function PATCH(request: NextRequest) {
         const bStr = b == null ? '' : String(b)
         const aStr = a == null ? '' : String(a)
         if (bStr === aStr) continue
+        // Meter columns: DB trigger `trg_assets_meter_audit` writes assets_audit_log (source db_trigger_asset_meter).
+        if (k === 'current_hours' || k === 'current_kilometers') continue
         const err = await insertAssetAuditLog(auditDb, {
           asset_id: assetId,
           user_id: user.id,

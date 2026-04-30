@@ -2,12 +2,237 @@
  * Operating hours for gerencial / executive views: merges diesel horometer progression
  * with checklist equipment hour readings (same approach as asset-maintenance-summary).
  * Falls back to summing diesel transaction `hours_consumed` when horometer deltas are unavailable.
+ *
+ * `asset_meter_reading_events` is raw (no jump filter in SQL). Parity vs merged output uses
+ * `buildMergedHoursReadingEventsForAsset` fed either table rows or view rows (same diesel + checklist IDs).
+ *
+ * Extended-window diesel horometer points are loaded from `asset_meter_reading_events` (diesel branch matches
+ * warehouse + product diesel filters in SQL) instead of querying `diesel_transactions` directly.
+ *
+ * The view is a normal SQL view (no materialization): each read reflects current `diesel_transactions` /
+ * `completed_checklists` / audit rows. Liters and money still come from `diesel_transactions` because those
+ * columns are not exposed on the view. Gerencial uses `fetchDieselPeriodConsumptionTxsForReportAssets` for
+ * the same diesel row scope as the summary API, scoped to report assets.
  */
 import type { SupabaseClient } from '@supabase/supabase-js'
 
-type ReadingEvent = { ts: number; val: number }
+const METER_VIEW_ASSET_CHUNK = 100
+
+/** Diesel consumption rows with horometer, same membership as the view diesel branch (warehouse + product diesel). */
+export type DieselHorometerRowForMerge = {
+  asset_id: string
+  transaction_date: string
+  horometer_reading?: number | null
+}
+
+/** Liters/cost fields from `diesel_transactions` (consumption rows, diesel warehouse + diesel product). */
+export type DieselConsumptionCostRow = {
+  asset_id: string | null
+  quantity_liters: number | null
+  transaction_type: string | null
+  unit_cost: number | null
+  product_id: string | null
+}
+
+/**
+ * Chunked read of diesel horometer progression from `asset_meter_reading_events`.
+ * `eventAtGte` / `eventAtLt` use the same calendar bounds as `diesel_transactions.transaction_date` filters (YYYY-MM-DD strings).
+ */
+export async function fetchDieselHorometerFromMeterView(
+  supabase: SupabaseClient,
+  params: {
+    assetIds: string[]
+    eventAtGte: string
+    eventAtLt: string
+  }
+): Promise<DieselHorometerRowForMerge[]> {
+  const { assetIds, eventAtGte, eventAtLt } = params
+  const out: DieselHorometerRowForMerge[] = []
+  for (let i = 0; i < assetIds.length; i += METER_VIEW_ASSET_CHUNK) {
+    const chunk = assetIds.slice(i, i + METER_VIEW_ASSET_CHUNK)
+    const { data } = await supabase
+      .from('asset_meter_reading_events')
+      .select('asset_id, event_at, hours_reading')
+      .in('asset_id', chunk)
+      .eq('source_kind', 'diesel_consumption')
+      .not('hours_reading', 'is', null)
+      .gte('event_at', eventAtGte)
+      .lt('event_at', eventAtLt)
+
+    for (const row of data || []) {
+      const aid = row.asset_id
+      if (!aid) continue
+      out.push({
+        asset_id: aid,
+        transaction_date: String(row.event_at),
+        horometer_reading: row.hours_reading != null ? Number(row.hours_reading) : null,
+      })
+    }
+  }
+  return out
+}
+
+/**
+ * Subset of meter-view horometer rows whose `event_at` falls in [periodStartMs, periodEndExclusiveMs).
+ * Keeps one extended view fetch and splits in memory so validation (extended) and in-period diesel curve stay aligned.
+ */
+export function meterHorometerRowsInReportWindow(
+  rows: DieselHorometerRowForMerge[],
+  periodStartMs: number,
+  periodEndExclusiveMs: number
+): DieselHorometerRowForMerge[] {
+  return rows.filter((r) => {
+    const t = new Date(r.transaction_date).getTime()
+    return !Number.isNaN(t) && t >= periodStartMs && t < periodEndExclusiveMs
+  })
+}
+
+/** Consumption transactions for liters/cost; same diesel membership as `asset_meter_reading_events` diesel branch. */
+export async function fetchDieselConsumptionCostRowsForAssets(
+  supabase: SupabaseClient,
+  params: {
+    assetIds: string[]
+    transactionDateGte: string
+    transactionDateLt: string
+  }
+): Promise<DieselConsumptionCostRow[]> {
+  const { assetIds, transactionDateGte, transactionDateLt } = params
+  const out: DieselConsumptionCostRow[] = []
+  for (let i = 0; i < assetIds.length; i += METER_VIEW_ASSET_CHUNK) {
+    const chunk = assetIds.slice(i, i + METER_VIEW_ASSET_CHUNK)
+    const { data } = await supabase
+      .from('diesel_transactions')
+      .select(
+        `
+        asset_id,
+        quantity_liters,
+        transaction_type,
+        unit_cost,
+        product_id,
+        diesel_warehouses!inner(product_type),
+        diesel_products!inner(product_type)
+      `
+      )
+      .in('asset_id', chunk)
+      .eq('diesel_warehouses.product_type', 'diesel')
+      .eq('diesel_products.product_type', 'diesel')
+      .neq('is_transfer', true)
+      .eq('transaction_type', 'consumption')
+      .gte('transaction_date', transactionDateGte)
+      .lt('transaction_date', transactionDateLt)
+
+    for (const row of data || []) {
+      out.push({
+        asset_id: row.asset_id,
+        quantity_liters: row.quantity_liters != null ? Number(row.quantity_liters) : null,
+        transaction_type: row.transaction_type,
+        unit_cost: row.unit_cost != null ? Number(row.unit_cost) : null,
+        product_id: row.product_id,
+      })
+    }
+  }
+  return out
+}
+
+/**
+ * Consumption transactions in the report window for gerencial: FIFO, liters, generated hours/km, and
+ * `computeMergedOperatingHoursByAsset` diagnostics. Chunked by `asset_id`; same diesel membership as the
+ * meter view diesel branch (diesel warehouse + diesel product, non-transfer consumption).
+ */
+export type DieselPeriodConsumptionTxRow = {
+  id: string
+  asset_id: string | null
+  quantity_liters: number | null
+  transaction_type: string | null
+  unit_cost: number | null
+  product_id: string | null
+  transaction_date: string
+  horometer_reading: number | null
+  previous_horometer: number | null
+  kilometer_reading: number | null
+  previous_kilometer: number | null
+  hours_consumed: number | null
+  kilometers_consumed: number | null
+  is_transfer: boolean | null
+}
+
+export async function fetchDieselPeriodConsumptionTxsForReportAssets(
+  supabase: SupabaseClient,
+  params: {
+    assetIds: string[]
+    transactionDateGte: string
+    transactionDateLt: string
+  }
+): Promise<DieselPeriodConsumptionTxRow[]> {
+  const { assetIds, transactionDateGte, transactionDateLt } = params
+  if (assetIds.length === 0) return []
+  const out: DieselPeriodConsumptionTxRow[] = []
+  for (let i = 0; i < assetIds.length; i += METER_VIEW_ASSET_CHUNK) {
+    const chunk = assetIds.slice(i, i + METER_VIEW_ASSET_CHUNK)
+    const { data } = await supabase
+      .from('diesel_transactions')
+      .select(
+        `
+        id,
+        asset_id,
+        quantity_liters,
+        transaction_type,
+        unit_cost,
+        product_id,
+        transaction_date,
+        horometer_reading,
+        previous_horometer,
+        kilometer_reading,
+        previous_kilometer,
+        hours_consumed,
+        kilometers_consumed,
+        is_transfer,
+        diesel_warehouses!inner(product_type),
+        diesel_products!inner(product_type)
+      `
+      )
+      .in('asset_id', chunk)
+      .eq('diesel_warehouses.product_type', 'diesel')
+      .eq('diesel_products.product_type', 'diesel')
+      .neq('is_transfer', true)
+      .eq('transaction_type', 'consumption')
+      .gte('transaction_date', transactionDateGte)
+      .lt('transaction_date', transactionDateLt)
+
+    for (const row of data || []) {
+      if (!row.id) continue
+      out.push({
+        id: row.id,
+        asset_id: row.asset_id,
+        quantity_liters: row.quantity_liters != null ? Number(row.quantity_liters) : null,
+        transaction_type: row.transaction_type,
+        unit_cost: row.unit_cost != null ? Number(row.unit_cost) : null,
+        product_id: row.product_id,
+        transaction_date: String(row.transaction_date),
+        horometer_reading: numericOrNull(row.horometer_reading),
+        previous_horometer: numericOrNull(row.previous_horometer),
+        kilometer_reading: numericOrNull(row.kilometer_reading),
+        previous_kilometer: numericOrNull(row.previous_kilometer),
+        hours_consumed: numericOrNull(row.hours_consumed),
+        kilometers_consumed: numericOrNull(row.kilometers_consumed),
+        is_transfer: row.is_transfer ?? null,
+      })
+    }
+  }
+  return out
+}
+
+export type MergedHoursReadingEvent = { ts: number; val: number }
+
+type ReadingEvent = MergedHoursReadingEvent
 
 const MAX_HOURS_PER_DAY = 24
+
+function numericOrNull(v: unknown): number | null {
+  if (v == null || v === '') return null
+  const n = Number(v)
+  return Number.isFinite(n) ? n : null
+}
 
 function dieselReadingsFromTxs(
   txs: Array<{ transaction_date: string; horometer_reading?: number | null }>
@@ -71,9 +296,42 @@ function buildDieselValidationValues(
   return valid
 }
 
-function checklistTs(row: { reading_timestamp: string | null; completion_date: string }): number {
+/** Operational time for checklist meter row; aligns with `asset_meter_reading_events` checklist branch (UTC noon on completion calendar day when no reading_timestamp). */
+export function checklistReadingEventTimeMs(row: {
+  reading_timestamp: string | null
+  completion_date: string
+}): number {
   if (row.reading_timestamp) return new Date(row.reading_timestamp).getTime()
-  return new Date(`${row.completion_date}T12:00:00.000Z`).getTime()
+  const raw = row.completion_date
+  const datePart = raw.includes('T') ? raw.split('T')[0]! : raw.slice(0, 10)
+  return new Date(`${datePart}T12:00:00.000Z`).getTime()
+}
+
+/** Diesel + band-filtered checklist hour readings before `mergedHoursFromEvents` (same rules as gerencial). */
+export function buildMergedHoursReadingEventsForAsset(params: {
+  dieselTxs: Array<{ transaction_date: string; horometer_reading?: number | null }>
+  checklistReadingEvents: ReadingEvent[]
+}): ReadingEvent[] {
+  const { dieselTxs, checklistReadingEvents: chkEvents } = params
+  const events: ReadingEvent[] = []
+  const dieselReadings = dieselReadingsFromTxs(dieselTxs)
+  events.push(...dieselReadings)
+
+  const validationValues = buildDieselValidationValues(dieselTxs)
+  if (validationValues.length > 0 || dieselReadings.length > 0) {
+    const vals = validationValues.length > 0 ? validationValues : dieselReadings.map((e) => e.val)
+    const min = Math.min(...vals)
+    const max = Math.max(...vals)
+    const rng = max - min
+    const allowedMin = min - rng * 2
+    const allowedMax = max + rng * 2
+    chkEvents.forEach((e) => {
+      if (e.val >= allowedMin && e.val <= allowedMax) events.push(e)
+    })
+  } else {
+    events.push(...chkEvents)
+  }
+  return events
 }
 
 /**
@@ -215,44 +473,25 @@ export async function computeMergedOperatingHoursByAsset(
     .lt('completion_date', dateToExclusiveStr)
     .not('equipment_hours_reading', 'is', null)
 
-  const { data: dieselTxsExtended } = await supabase
-    .from('diesel_transactions')
-    .select(
-      `
-        asset_id,
-        transaction_date,
-        transaction_type,
-        horometer_reading,
-        diesel_warehouses!inner(product_type)
-      `
-    )
-    .eq('diesel_warehouses.product_type', 'diesel')
-    .neq('is_transfer', true)
-    .eq('transaction_type', 'consumption')
-    .gte('transaction_date', extendedStartDateStr)
-    .lt('transaction_date', dateToExclusiveStr)
-    .in('asset_id', assetIds)
-    .not('horometer_reading', 'is', null)
+  const dieselTxsExtended = await fetchDieselHorometerFromMeterView(supabase, {
+    assetIds,
+    eventAtGte: extendedStartDateStr,
+    eventAtLt: dateToExclusiveStr,
+  })
 
   const dieselByAsset = new Map<string, Array<{ transaction_date: string; horometer_reading?: number | null }>>()
-  for (const t of dieselTxsExtended || []) {
+  for (const t of dieselTxsExtended) {
     const aid = t.asset_id
     if (!aid) continue
     if (!dieselByAsset.has(aid)) dieselByAsset.set(aid, [])
     dieselByAsset.get(aid)!.push(t)
   }
 
-  const dieselValidationByAsset = new Map<string, number[]>()
-  dieselByAsset.forEach((txs, aid) => {
-    const v = buildDieselValidationValues(txs)
-    if (v.length > 0) dieselValidationByAsset.set(aid, v)
-  })
-
   const checklistEventsByAsset = new Map<string, ReadingEvent[]>()
   for (const h of hoursData || []) {
     if (!h.asset_id) continue
     const val = Number(h.equipment_hours_reading)
-    const ts = checklistTs({
+    const ts = checklistReadingEventTimeMs({
       reading_timestamp: h.reading_timestamp,
       completion_date: h.completion_date,
     })
@@ -271,26 +510,12 @@ export async function computeMergedOperatingHoursByAsset(
   let assets_with_merged_track = 0
 
   for (const assetId of allAssetIdsWithReadings) {
-    const events: ReadingEvent[] = []
     const txs = dieselByAsset.get(assetId) || []
-    const dieselReadings = dieselReadingsFromTxs(txs)
-    events.push(...dieselReadings)
-
     const chkEvents = checklistEventsByAsset.get(assetId) || []
-    const validationValues = dieselValidationByAsset.get(assetId) || []
-    if (validationValues.length > 0 || dieselReadings.length > 0) {
-      const vals = validationValues.length > 0 ? validationValues : dieselReadings.map((e) => e.val)
-      const min = Math.min(...vals)
-      const max = Math.max(...vals)
-      const rng = max - min
-      const allowedMin = min - rng * 2
-      const allowedMax = max + rng * 2
-      chkEvents.forEach((e) => {
-        if (e.val >= allowedMin && e.val <= allowedMax) events.push(e)
-      })
-    } else {
-      events.push(...chkEvents)
-    }
+    const events = buildMergedHoursReadingEventsForAsset({
+      dieselTxs: txs,
+      checklistReadingEvents: chkEvents,
+    })
 
     const merged = mergedHoursFromEvents(events, startMs, endMs)
     const consumed = dieselConsumedHoursByAsset.get(assetId) || 0
@@ -316,7 +541,7 @@ export async function computeMergedOperatingHoursByAsset(
       diesel_consumption_tx_in_period,
       diesel_tx_with_hours_consumed,
       diesel_hours_consumed_sum,
-      diesel_horometer_rows_extended: dieselTxsExtended?.length ?? 0,
+      diesel_horometer_rows_extended: dieselTxsExtended.length,
       checklist_rows_extended: hoursData?.length ?? 0,
       assets_with_positive_hours,
       assets_with_merged_track,
