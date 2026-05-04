@@ -129,7 +129,7 @@ export function SmartPhotoUpload({
     }
   }, [currentPhotoUrl, itemId, photo])
 
-  const handlePhotoUpload = async (file: File) => {
+  const handlePhotoUpload = async (file: File, captureSource: "camera" | "gallery") => {
     if (!photoService || disabled) return
     
     setUploading(true)
@@ -145,7 +145,8 @@ export function SmartPhotoUpload({
           maxWidth: 1920,
           maxHeight: 1080,
           immediate: true, // Start upload immediately if online
-          category
+          category,
+          captureSource,
         }
       )
       
@@ -175,10 +176,18 @@ export function SmartPhotoUpload({
     }
   }
 
-  const handleFileInputChange = (e: ChangeEvent<HTMLInputElement>) => {
+  const handleCameraFileChange = (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (file) {
-      void handlePhotoUpload(file)
+      void handlePhotoUpload(file, "camera")
+    }
+    e.target.value = ""
+  }
+
+  const handleGalleryFileChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) {
+      void handlePhotoUpload(file, "gallery")
     }
     e.target.value = ""
   }
@@ -355,7 +364,7 @@ export function SmartPhotoUpload({
             tabIndex={-1}
             aria-hidden
             disabled={disabled || uploading}
-            onChange={handleFileInputChange}
+            onChange={handleCameraFileChange}
           />
           <input
             ref={galleryInputRef}
@@ -366,7 +375,7 @@ export function SmartPhotoUpload({
             tabIndex={-1}
             aria-hidden
             disabled={disabled || uploading}
-            onChange={handleFileInputChange}
+            onChange={handleGalleryFileChange}
           />
           {!isOnline && (
             <p className="flex items-center justify-center gap-1 text-center text-xs text-gray-500">

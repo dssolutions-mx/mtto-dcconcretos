@@ -18,6 +18,10 @@ export interface PhotoUploadOptions {
   maxHeight?: number
   immediate?: boolean
   category?: string
+  /**
+   * `camera` = `<input capture>` — OS often strips EXIF; we still record `clientCaptureReceivedAt` as fallback.
+   */
+  captureSource?: "camera" | "gallery"
 }
 
 class SimplePhotoService {
@@ -120,7 +124,23 @@ class SimplePhotoService {
     try {
       const photoId = `photo_${checklistId}_${itemId}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
 
-      const evidenceImageMetadata = await extractDieselEvidenceMetadata(file)
+      const clientReceiveClock =
+        options.captureSource === "camera" ? new Date().toISOString() : undefined
+
+      let evidenceImageMetadata = await extractDieselEvidenceMetadata(file)
+
+      const fileLastModifiedAt =
+        file.lastModified > 0 ? new Date(file.lastModified).toISOString() : undefined
+      const missingExifTime = !evidenceImageMetadata.photoTaken?.raw
+
+      evidenceImageMetadata = {
+        ...evidenceImageMetadata,
+        ...(fileLastModifiedAt ? { fileLastModifiedAt } : {}),
+        ...(options.captureSource === "camera" && clientReceiveClock
+          ? { clientCaptureReceivedAt: clientReceiveClock }
+          : {}),
+        ...(missingExifTime ? { clientCaptureFallback: true as const } : {}),
+      }
 
       // Compress image and generate preview (strips EXIF from uploaded bytes)
       const { compressed, preview, metadata } = await this.compressImage(file, options)

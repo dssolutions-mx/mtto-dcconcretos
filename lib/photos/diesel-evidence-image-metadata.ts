@@ -25,4 +25,18 @@ export type DieselEvidenceImageMetadata = {
   exifReaderVersion?: string
   extractedAt: string
   exifError?: string
+  /**
+   * When the in-app camera (`capture`) delivers a file with no usable EXIF time (common on mobile browsers).
+   * ISO timestamp from the client clock when the `File` was received — approximates “momento de la toma”.
+   */
+  clientCaptureReceivedAt?: string
+  /**
+   * True when there is no usable EXIF date/time string; comparison uses file stamp and/or receive clock.
+   */
+  clientCaptureFallback?: boolean
+  /**
+   * `File.lastModified` as ISO (browser/OS). For a photo taken “now”, this often matches the capture instant
+   * even when EXIF is stripped — closer than “received in JS” for many devices.
+   */
+  fileLastModifiedAt?: string
 }

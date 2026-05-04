@@ -252,7 +252,7 @@ export function TransactionEvidenceModal({
               <div className="mb-4 space-y-3">
                 <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
                   <Camera className="h-4 w-4 shrink-0 text-muted-foreground" />
-                  Auditoría: hora registrada vs. foto (EXIF)
+                  Auditoría: hora registrada vs. hora de la foto
                 </div>
                 <Alert
                   className={cn(
@@ -277,8 +277,16 @@ export function TransactionEvidenceModal({
                       {timeComparison.severity === "aligned" && "Coherente (≤15 min)"}
                       {timeComparison.severity === "minor" && "Revisar (16–120 min)"}
                       {timeComparison.severity === "major" && "Gran discrepancia (>120 min)"}
-                      {timeComparison.severity === "unknown" && "Sin dato EXIF de hora"}
+                      {timeComparison.severity === "unknown" && "Sin dato de hora comparable"}
                     </Badge>
+                    {(timeComparison.approximationSource === "file_last_modified" ||
+                      timeComparison.approximationSource === "client_receive") && (
+                      <Badge variant="outline" className="text-xs border-dashed">
+                        {timeComparison.approximationSource === "file_last_modified"
+                          ? "Marca del archivo (últ. modif.)"
+                          : "Hora de recepción (navegador)"}
+                      </Badge>
+                    )}
                     {timeComparison.deltaMinutes != null && (
                       <span className="text-muted-foreground font-normal">
                         Δ {timeComparison.deltaMinutes > 0 ? "+" : ""}
@@ -296,7 +304,13 @@ export function TransactionEvidenceModal({
                       </div>
                       <div>
                         <div className="text-xs text-muted-foreground uppercase tracking-wide">
-                          Fecha/hora según cámara (EXIF)
+                          {timeComparison.approximationSource === "file_last_modified"
+                            ? "Hora aproximada (marca del archivo)"
+                            : timeComparison.approximationSource === "client_receive"
+                              ? "Hora aproximada (reloj al recibir la foto)"
+                              : timeComparison.approximationSource === "exif"
+                                ? "Fecha/hora según cámara (EXIF)"
+                                : "Fecha/hora de la imagen"}
                         </div>
                         <div className="font-medium tabular-nums">
                           {timeComparison.photoLabel ?? "—"}

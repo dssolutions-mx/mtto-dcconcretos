@@ -304,7 +304,8 @@ export function EvidenceCaptureSection({
           maxWidth: 1920,
           maxHeight: 1080,
           immediate: true,
-          category: selectedCategory
+          category: selectedCategory,
+          captureSource: "camera",
         }
       )
       
