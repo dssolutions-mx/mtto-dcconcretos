@@ -1,7 +1,8 @@
 /**
  * Operating hours for gerencial / executive views: merges diesel horometer progression
  * with checklist equipment hour readings (same approach as asset-maintenance-summary).
- * Falls back to summing diesel transaction `hours_consumed` when horometer deltas are unavailable.
+ * Trusted hours for reporting use merged-first policy (`resolveTrustedOperatingHours`): when the
+ * merged/capped curve yields positive hours, that value wins; otherwise sum of `hours_consumed`.
  *
  * `asset_meter_reading_events` is raw (no jump filter in SQL). Parity vs merged output uses
  * `buildMergedHoursReadingEventsForAsset` fed either table rows or view rows (same diesel + checklist IDs).
@@ -15,6 +16,7 @@
  * the same diesel row scope as the summary API, scoped to report assets.
  */
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { resolveTrustedOperatingHours } from '@/lib/reports/diesel-efficiency-hours-policy'
 
 const METER_VIEW_ASSET_CHUNK = 100
 
@@ -402,10 +404,12 @@ export type MergedHoursDiagnostics = {
   diesel_horometer_rows_extended: number
   /** Checklist rows in extended window with equipment reading */
   checklist_rows_extended: number
-  /** Assets where max(merged, consumed) > 0 */
+  /** Assets where trusted hours (merged-first policy) > 0 */
   assets_with_positive_hours: number
   /** Assets where merged horometer/checklist produced > 0 */
   assets_with_merged_track: number
+  /** Assets where merged and sum(raw hours_consumed) disagree materially */
+  assets_with_merge_fork: number
 }
 
 export async function computeMergedOperatingHoursByAsset(
@@ -424,7 +428,13 @@ export async function computeMergedOperatingHoursByAsset(
       transaction_type?: string | null
     }>
   }
-): Promise<{ hoursByAsset: Map<string, number>; diagnostics: MergedHoursDiagnostics }> {
+): Promise<{
+  hoursByAsset: Map<string, number>
+  hoursMergedByAsset: Map<string, number>
+  hoursSumByAsset: Map<string, number>
+  mergeForkByAsset: Map<string, boolean>
+  diagnostics: MergedHoursDiagnostics
+}> {
   const {
     assetIds,
     dateFromStart,
@@ -446,9 +456,15 @@ export async function computeMergedOperatingHoursByAsset(
   }
 
   const hoursByAsset = new Map<string, number>()
+  const hoursMergedByAsset = new Map<string, number>()
+  const hoursSumByAsset = new Map<string, number>()
+  const mergeForkByAsset = new Map<string, boolean>()
   if (assetIds.length === 0) {
     return {
       hoursByAsset,
+      hoursMergedByAsset,
+      hoursSumByAsset,
+      mergeForkByAsset,
       diagnostics: {
         diesel_consumption_tx_in_period,
         diesel_tx_with_hours_consumed,
@@ -457,6 +473,7 @@ export async function computeMergedOperatingHoursByAsset(
         checklist_rows_extended: 0,
         assets_with_positive_hours: 0,
         assets_with_merged_track: 0,
+        assets_with_merge_fork: 0,
       },
     }
   }
@@ -508,6 +525,7 @@ export async function computeMergedOperatingHoursByAsset(
   const endMs = dateToExclusive.getTime()
 
   let assets_with_merged_track = 0
+  let assets_with_merge_fork = 0
 
   for (const assetId of allAssetIdsWithReadings) {
     const txs = dieselByAsset.get(assetId) || []
@@ -519,15 +537,24 @@ export async function computeMergedOperatingHoursByAsset(
 
     const merged = mergedHoursFromEvents(events, startMs, endMs)
     const consumed = dieselConsumedHoursByAsset.get(assetId) || 0
-    const finalH = Math.max(merged, consumed)
+    const { trusted, mergeFork } = resolveTrustedOperatingHours(merged, consumed)
+    hoursMergedByAsset.set(assetId, merged)
+    hoursSumByAsset.set(assetId, consumed)
+    mergeForkByAsset.set(assetId, mergeFork)
+    if (mergeFork) assets_with_merge_fork++
     if (merged > 0) assets_with_merged_track++
-    if (finalH > 0) hoursByAsset.set(assetId, finalH)
+    if (trusted > 0) hoursByAsset.set(assetId, trusted)
   }
 
   for (const aid of assetIds) {
     if (hoursByAsset.has(aid)) continue
     const consumed = dieselConsumedHoursByAsset.get(aid) || 0
-    if (consumed > 0) hoursByAsset.set(aid, consumed)
+    if (consumed > 0) {
+      hoursByAsset.set(aid, consumed)
+      hoursMergedByAsset.set(aid, 0)
+      hoursSumByAsset.set(aid, consumed)
+      mergeForkByAsset.set(aid, false)
+    }
   }
 
   let assets_with_positive_hours = 0
@@ -537,6 +564,9 @@ export async function computeMergedOperatingHoursByAsset(
 
   return {
     hoursByAsset,
+    hoursMergedByAsset,
+    hoursSumByAsset,
+    mergeForkByAsset,
     diagnostics: {
       diesel_consumption_tx_in_period,
       diesel_tx_with_hours_consumed,
@@ -545,6 +575,7 @@ export async function computeMergedOperatingHoursByAsset(
       checklist_rows_extended: hoursData?.length ?? 0,
       assets_with_positive_hours,
       assets_with_merged_track,
+      assets_with_merge_fork,
     },
   }
 }

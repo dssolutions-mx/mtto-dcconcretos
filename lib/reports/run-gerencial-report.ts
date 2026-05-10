@@ -532,6 +532,10 @@ export async function runGerencialReport(
         hours_worked: 0,
         /** Sum of diesel_transactions.hours_consumed in period (before horometer/checklist merge) */
         hours_worked_diesel_consumed: 0,
+        /** Merged/capped horometer+checklist hours inside the report window (diagnostic) */
+        hours_worked_merged: 0,
+        /** True when merged hours and sum(hours_consumed) disagree materially (diagnostic) */
+        hours_merge_fork: false,
         liters_per_hour: 0,
         kilometers_worked: 0,
         liters_per_km: 0,
@@ -595,30 +599,39 @@ export async function runGerencialReport(
     })
 
     const realAssetIds = [...assetMap.keys()].filter((id) => !String(id).startsWith('unmatched_'))
-    const { hoursByAsset: mergedHoursByAsset, diagnostics: hoursMergeDiagnostics } =
-      await computeMergedOperatingHoursByAsset(supabase as unknown as SupabaseClient, {
-        assetIds: realAssetIds,
-        dateFromStart,
-        dateToExclusive,
-        dateToExclusiveStr,
-        dieselConsumedHoursByAsset,
-        periodDieselConsumptionTxs: dieselTxs as Array<{
-          asset_id: string | null
-          hours_consumed?: number | null
-          transaction_type?: string | null
-        }>,
-      })
+    const {
+      hoursByAsset: mergedHoursByAsset,
+      hoursMergedByAsset,
+      hoursSumByAsset,
+      mergeForkByAsset,
+      diagnostics: hoursMergeDiagnostics,
+    } = await computeMergedOperatingHoursByAsset(supabase as unknown as SupabaseClient, {
+      assetIds: realAssetIds,
+      dateFromStart,
+      dateToExclusive,
+      dateToExclusiveStr,
+      dieselConsumedHoursByAsset,
+      periodDieselConsumptionTxs: dieselTxs as Array<{
+        asset_id: string | null
+        hours_consumed?: number | null
+        transaction_type?: string | null
+      }>,
+    })
 
     mergedHoursByAsset.forEach((hours, assetId) => {
       const asset = assetMap.get(assetId)
       if (!asset) return
       asset.hours_worked = hours
+      asset.hours_worked_merged = hoursMergedByAsset.get(assetId) ?? 0
+      asset.hours_merge_fork = mergeForkByAsset.get(assetId) ?? false
       asset.liters_per_hour = hours > 0 && asset.diesel_liters > 0 ? asset.diesel_liters / hours : 0
     })
     assetMap.forEach((asset, id) => {
       if (String(id).startsWith('unmatched_')) return
       if (mergedHoursByAsset.has(id)) return
       asset.hours_worked = 0
+      asset.hours_worked_merged = hoursMergedByAsset.get(id) ?? 0
+      asset.hours_merge_fork = mergeForkByAsset.get(id) ?? false
       asset.liters_per_hour = 0
     })
 

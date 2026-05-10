@@ -377,6 +377,10 @@ export default function GerencialReportPage() {
             <FileText className="w-4 h-4 mr-2" />
             Ingresos vs Gastos
           </Button>
+          <Button variant="secondary" onClick={() => router.push('/reportes/eficiencia-diesel')}>
+            <Fuel className="w-4 h-4 mr-2" />
+            Eficiencia diésel
+          </Button>
         </div>
       </div>
 

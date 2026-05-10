@@ -15,6 +15,7 @@ import {
   fetchMeterViewRowsMatchingMergedTableWindows,
   splitMeterViewRowsForMergedHours,
 } from '../lib/reports/merged-hours-view-parity'
+import { resolveTrustedOperatingHours } from '../lib/reports/diesel-efficiency-hours-policy'
 
 config({ path: resolve(__dirname, '../.env.local') })
 
@@ -167,14 +168,14 @@ async function main() {
 
   const mergedTable = mergedHoursFromEvents(cloneEvents(eventsTable), startMs, endMs)
   const mergedView = mergedHoursFromEvents(cloneEvents(eventsView), startMs, endMs)
-  const finalTable = Math.max(mergedTable, consumed)
-  const finalView = Math.max(mergedView, consumed)
+  const finalTable = resolveTrustedOperatingHours(mergedTable, consumed).trusted
+  const finalView = resolveTrustedOperatingHours(mergedView, consumed).trusted
 
   console.log('=== merged hours: table pipeline vs view rowset (same source_ids) ===')
   console.log(`asset=${assetId} report [${dateFromStr}, ${dateToExclusiveStr}) ext window checklist+diesel`)
   console.log(`events built: table=${eventsTable.length} view=${eventsView.length}`)
   console.log(`mergedHoursFromEvents: table=${mergedTable.toFixed(4)} view=${mergedView.toFixed(4)}`)
-  console.log(`+ consumed fallback: table=${finalTable.toFixed(4)} view=${finalView.toFixed(4)}`)
+  console.log(`trusted hours (merged-first policy): table=${finalTable.toFixed(4)} view=${finalView.toFixed(4)}`)
   const hoursMatch = Math.abs(finalTable - finalView) < 0.01
   console.log(`HOURS FINAL MATCH: ${hoursMatch ? 'YES' : 'NO'} (eps 0.01)\n`)
 

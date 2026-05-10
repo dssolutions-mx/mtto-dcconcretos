@@ -175,7 +175,7 @@ export async function POST(request: NextRequest) {
       // Look up asset by UUID from mapping
       const { data: asset } = await supabase
         .from('assets')
-        .select('id, asset_id, name, current_horometer, current_kilometer, last_reading_date')
+        .select('id, asset_id, name, current_hours, current_kilometers, last_reading_date')
         .eq('id', assetMapping.asset_id)
         .maybeSingle()
 
@@ -191,16 +191,16 @@ export async function POST(request: NextRequest) {
         : reading.reading_date
       const checklistDate = asset.last_reading_date ? new Date(asset.last_reading_date) : null
       
-      if (checklistDate && asset.current_horometer != null) {
+      if (checklistDate && asset.current_hours != null) {
         const isDieselNewer = readingDate > checklistDate
-        const isDieselHigher = reading.horometer != null && reading.horometer > asset.current_horometer
+        const isDieselHigher = reading.horometer != null && reading.horometer > asset.current_hours
         
         const horoDiff = reading.horometer != null 
-          ? reading.horometer - asset.current_horometer 
+          ? reading.horometer - asset.current_hours
           : null
 
-        const kmDiff = reading.kilometer != null && asset.current_kilometer != null
-          ? reading.kilometer - asset.current_kilometer
+        const kmDiff = reading.kilometer != null && asset.current_kilometers != null
+          ? reading.kilometer - asset.current_kilometers
           : null
 
         // Determine if we should prompt
@@ -219,8 +219,8 @@ export async function POST(request: NextRequest) {
             diesel_kilometer: reading.kilometer,
             diesel_date: readingDate,
             diesel_row_number: reading.original_row_number,
-            checklist_horometer: asset.current_horometer,
-            checklist_kilometer: asset.current_kilometer,
+            checklist_horometer: asset.current_hours,
+            checklist_kilometer: asset.current_kilometers,
             checklist_date: checklistDate,
             checklist_source: `Last updated ${checklistDate.toLocaleDateString()}`,
             horometer_diff: horoDiff,
@@ -554,8 +554,8 @@ export async function POST(request: NextRequest) {
               const { error: updateError } = await supabase
                 .from('assets')
                 .update({
-                  current_horometer: reading.horometer != null ? Math.round(reading.horometer) : null,
-                  current_kilometer: reading.kilometer != null ? Math.round(reading.kilometer) : null,
+                  current_hours: reading.horometer != null ? Math.round(reading.horometer) : null,
+                  current_kilometers: reading.kilometer != null ? Math.round(reading.kilometer) : null,
                   last_reading_date: readingDate.toISOString(),
                   updated_at: new Date().toISOString()
                 })

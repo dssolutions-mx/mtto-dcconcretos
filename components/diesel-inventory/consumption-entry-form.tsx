@@ -34,6 +34,7 @@ import {
 import { getLocalDateString, getLocalTimeString } from "@/lib/diesel/date-utils"
 import type { DieselEvidenceImageMetadata } from "@/lib/photos/diesel-evidence-image-metadata"
 import type { Json } from "@/types/supabase-types"
+import { fetchLastDieselHorometerReading } from "@/lib/diesel/last-diesel-horometer-reading"
 
 interface ConsumptionEntryFormProps {
   productType: 'diesel' | 'urea'
@@ -650,13 +651,16 @@ export function ConsumptionEntryForm({
       }
       console.log('Step 3 ✓: Transaction data built:', transactionData)
 
-      // Add formal asset data
+      // Add formal asset data — chain previous_* from last diesel reading when available (cross-warehouse)
       if (assetType === 'formal' && selectedAsset) {
         transactionData.asset_id = selectedAsset.id
         transactionData.horometer_reading = readings.hours_reading || null
         transactionData.kilometer_reading = readings.kilometers_reading || null
-        transactionData.previous_horometer = selectedAsset.current_hours
-        transactionData.previous_kilometer = selectedAsset.current_kilometers
+        const lastMeters = await fetchLastDieselHorometerReading(supabase, selectedAsset.id)
+        transactionData.previous_horometer =
+          lastMeters.horometer ?? selectedAsset.current_hours ?? null
+        transactionData.previous_kilometer =
+          lastMeters.kilometer ?? selectedAsset.current_kilometers ?? null
       }
 
       // Add exception asset data (no asset_id, no readings per DB constraints)
