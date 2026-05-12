@@ -1,23 +1,48 @@
 type PostgrestLike = {
-  message?: string
-  details?: string | null
-  hint?: string | null
-  code?: string | null
+  message: string
+  details: string
+  hint: string
+  code: string
 }
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null
 }
 
-function asPostgrestLike(error: unknown): PostgrestLike | null {
+function readStringField(r: Record<string, unknown>, key: string): string {
+  const v = r[key]
+  return typeof v === "string" ? v : ""
+}
+
+/**
+ * PostgREST / Supabase errors are usually `PostgrestError` (extends Error) or a plain object.
+ * Do not require `message` to be present: some paths expose `code` + `details` only.
+ */
+function extractPostgrestLike(error: unknown): PostgrestLike | null {
   if (!isRecord(error)) return null
-  const message = error.message
-  if (typeof message !== "string") return null
-  return {
-    message,
-    details: typeof error.details === "string" ? error.details : null,
-    hint: typeof error.hint === "string" ? error.hint : null,
-    code: typeof error.code === "string" ? error.code : null,
+  const message = readStringField(error, "message")
+  const details = readStringField(error, "details")
+  const hint = readStringField(error, "hint")
+  const code = readStringField(error, "code")
+  if (!message && !details && !hint && !code) return null
+  return { message, details, hint, code }
+}
+
+function fallbackTechnicalSummary(error: unknown): string {
+  if (error === undefined || error === null) {
+    return "La operación falló sin mensaje del servidor. Cierra sesión, vuelve a entrar e intenta de nuevo."
+  }
+  if (typeof error === "string") return error
+  if (error instanceof Error && error.message.trim()) return error.message.trim()
+  const pg = extractPostgrestLike(error)
+  if (pg) {
+    const parts = [pg.code, pg.message, pg.details, pg.hint].filter((p) => p && p.trim())
+    if (parts.length) return parts.join(" — ")
+  }
+  try {
+    return JSON.stringify(error)
+  } catch {
+    return String(error)
   }
 }
 
@@ -31,12 +56,30 @@ export function describeDieselSaveError(
   error: unknown,
   operation: DieselSaveOperation = "consumption"
 ): string {
-  const pg = asPostgrestLike(error)
+  const pg = extractPostgrestLike(error)
   const message = pg?.message ?? (error instanceof Error ? error.message : "")
   const details = pg?.details ?? ""
   const hint = pg?.hint ?? ""
   const code = pg?.code ?? ""
   const combined = `${message} ${details} ${hint}`.toLowerCase()
+
+  if (code === "PGRST116" || combined.includes("cannot coerce the result to a single json object")) {
+    const zero =
+      details.toLowerCase().includes("0 rows") ||
+      message.toLowerCase().includes("0 rows") ||
+      combined.includes("contains 0 rows")
+    if (zero) {
+      return (
+        "El servidor no devolvió la fila creada (0 filas). Suele deberse a permisos (RLS): el consumo " +
+        "pudo guardarse pero tu usuario no puede leerlo, o el insert fue bloqueado de forma silenciosa. " +
+        "Actualiza la página, verifica tu rol y planta, o contacta a coordinación."
+      )
+    }
+    return (
+      "La consulta devolvió más de un resultado cuando se esperaba uno. " +
+      "Contacta a soporte con la hora del intento."
+    )
+  }
 
   if (
     code === "42501" ||
@@ -95,12 +138,22 @@ export function describeDieselSaveError(
     )
   }
 
-  return message || "Error desconocido"
+  if (error instanceof TypeError && combined.includes("fetch")) {
+    return "No hay conexión estable con el servidor. Revisa tu red e intenta de nuevo."
+  }
+
+  const trimmed = message.trim()
+  if (trimmed) return trimmed
+
+  const fb = fallbackTechnicalSummary(error).trim()
+  if (fb && fb !== "{}") return fb
+
+  return "Error desconocido"
 }
 
 /** True when Postgres rejected JSON/JSONB for invalid Unicode escapes (common with EXIF/XMP blobs). */
 export function isPostgresUnicodeJsonError(error: unknown): boolean {
-  const pg = asPostgrestLike(error)
+  const pg = extractPostgrestLike(error)
   const combined = `${pg?.message ?? ""} ${pg?.details ?? ""} ${pg?.hint ?? ""}`.toLowerCase()
   const code = pg?.code ?? ""
   return (
