@@ -31,6 +31,7 @@ import {
 } from "@/lib/diesel/submit-scope-validation"
 import { getLocalDateString, getLocalTimeString } from "@/lib/diesel/date-utils"
 import { describeDieselSaveError } from "@/lib/diesel/diesel-save-error-message"
+import { dieselInsertReturnedNoRowDescription } from "@/lib/diesel/insert-transaction-no-row-message"
 
 interface DieselAdjustmentFormProps {
   productType: 'diesel' | 'urea'
@@ -397,7 +398,7 @@ export function DieselAdjustmentForm({
           .eq('warehouse_id', selectedWarehouse)
           .order('transaction_date', { ascending: false })
           .limit(1)
-          .single()
+          .maybeSingle()
 
         const now = new Date()
         const deltaMinutes = Math.floor((now.getTime() - selectedIso.getTime()) / 60000)
@@ -492,11 +493,19 @@ export function DieselAdjustmentForm({
         .from('diesel_transactions')
         .insert([transactionData])
         .select()
-        .single()
+        .maybeSingle()
 
       if (transactionError) {
         console.error('Transaction insert error:', transactionError)
         throw transactionError
+      }
+      if (!transaction) {
+        console.warn('diesel_transactions insert: no row in response (possible RLS on RETURNING)')
+        toast.error('No se pudo confirmar el registro', {
+          description: dieselInsertReturnedNoRowDescription(productType),
+          duration: 14000,
+        })
+        return
       }
       console.log('Step 4 ✓: Transaction created:', transaction.id)
 

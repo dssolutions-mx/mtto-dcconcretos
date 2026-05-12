@@ -39,6 +39,7 @@ import {
   describeDieselSaveError,
   isPostgresUnicodeJsonError,
 } from "@/lib/diesel/diesel-save-error-message"
+import { dieselInsertReturnedNoRowDescription } from "@/lib/diesel/insert-transaction-no-row-message"
 
 interface ConsumptionEntryFormProps {
   productType: 'diesel' | 'urea'
@@ -547,7 +548,7 @@ export function ConsumptionEntryForm({
           .eq('warehouse_id', selectedWarehouse)
           .order('transaction_date', { ascending: false })
           .limit(1)
-          .single()
+          .maybeSingle()
 
         const now = new Date()
         const deltaMinutes = Math.floor((now.getTime() - selectedIso.getTime()) / 60000)
@@ -682,7 +683,7 @@ export function ConsumptionEntryForm({
         .from('diesel_transactions')
         .insert([transactionData])
         .select()
-        .single()
+        .maybeSingle()
 
       if (transactionError) {
         console.error('=== TRANSACTION INSERT ERROR ===')
@@ -692,6 +693,14 @@ export function ConsumptionEntryForm({
         console.error('Error hint:', transactionError.hint)
         console.error('Full error:', JSON.stringify(transactionError, null, 2))
         throw transactionError
+      }
+      if (!transaction) {
+        console.warn('diesel_transactions insert: no row in response (possible RLS on RETURNING)')
+        toast.error('No se pudo confirmar el registro', {
+          description: dieselInsertReturnedNoRowDescription(productType),
+          duration: 14000,
+        })
+        return
       }
       console.log('Step 4 ✓: Transaction created:', transaction.id)
       console.log('Transaction balance calculated by DB:', {

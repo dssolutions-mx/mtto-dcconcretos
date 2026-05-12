@@ -431,9 +431,15 @@ class OfflineDieselService {
       .from('diesel_transactions')
       .insert([updatedTransactionData])
       .select()
-      .single()
+      .maybeSingle()
 
     if (error) throw error
+    if (!data) {
+      throw new Error(
+        'Sincronización: el servidor no devolvió la fila del movimiento (posible permisos). ' +
+          'No reintentes en bucle: revisa el historial en línea antes de volver a sincronizar para evitar duplicados.'
+      )
+    }
 
     // Insert evidence records
     for (const photo of transactionPhotos) {
