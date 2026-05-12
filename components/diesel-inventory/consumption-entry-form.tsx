@@ -34,7 +34,11 @@ import {
 import { getLocalDateString, getLocalTimeString } from "@/lib/diesel/date-utils"
 import type { DieselEvidenceImageMetadata } from "@/lib/photos/diesel-evidence-image-metadata"
 import type { Json } from "@/types/supabase-types"
-import { fetchLastDieselHorometerReading } from "@/lib/diesel/last-diesel-horometer-reading"
+import { sanitizeValueForPostgresJsonb } from "@/lib/json/sanitize-for-postgres-jsonb"
+import {
+  describeDieselSaveError,
+  isPostgresUnicodeJsonError,
+} from "@/lib/diesel/diesel-save-error-message"
 
 interface ConsumptionEntryFormProps {
   productType: 'diesel' | 'urea'
@@ -651,16 +655,14 @@ export function ConsumptionEntryForm({
       }
       console.log('Step 3 ✓: Transaction data built:', transactionData)
 
-      // Add formal asset data — chain previous_* from last diesel reading when available (cross-warehouse)
+      // Formal asset: previous_horometer/kilometer are set in DB (BEFORE INSERT trigger) from
+      // chronologically prior consumption so backdated rows do not pick a "future" reading and fail check1.
       if (assetType === 'formal' && selectedAsset) {
         transactionData.asset_id = selectedAsset.id
         transactionData.horometer_reading = readings.hours_reading || null
         transactionData.kilometer_reading = readings.kilometers_reading || null
-        const lastMeters = await fetchLastDieselHorometerReading(supabase, selectedAsset.id)
-        transactionData.previous_horometer =
-          lastMeters.horometer ?? selectedAsset.current_hours ?? null
-        transactionData.previous_kilometer =
-          lastMeters.kilometer ?? selectedAsset.current_kilometers ?? null
+        transactionData.previous_horometer = null
+        transactionData.previous_kilometer = null
       }
 
       // Add exception asset data (no asset_id, no readings per DB constraints)
@@ -689,7 +691,7 @@ export function ConsumptionEntryForm({
         console.error('Error details:', transactionError.details)
         console.error('Error hint:', transactionError.hint)
         console.error('Full error:', JSON.stringify(transactionError, null, 2))
-        throw new Error(`Error al insertar transacción: ${transactionError.message}${transactionError.details ? ' - ' + transactionError.details : ''}`)
+        throw transactionError
       }
       console.log('Step 4 ✓: Transaction created:', transaction.id)
       console.log('Transaction balance calculated by DB:', {
@@ -700,15 +702,31 @@ export function ConsumptionEntryForm({
       // Upload evidence photo (machine display only)
       console.log('Step 5: Inserting evidence...')
       if (machinePhoto) {
-        const { error: evidenceError } = await supabase.from('diesel_evidence').insert({
+        const safeMeta = machineEvidenceMetadata
+          ? (sanitizeValueForPostgresJsonb(machineEvidenceMetadata) as Json)
+          : null
+        const evidenceRow = {
           transaction_id: transaction.id,
-          evidence_type: 'consumption',
-          category: 'machine_display',
+          evidence_type: 'consumption' as const,
+          category: 'machine_display' as const,
           photo_url: machinePhoto,
           description: `Display de la máquina - ${quantityLiters}L | Cuenta litros: ${cuentaLitros}L`,
           created_by: user.id,
-          metadata: machineEvidenceMetadata as Json
-        })
+          metadata: safeMeta,
+        }
+        let { error: evidenceError } = await supabase.from('diesel_evidence').insert(evidenceRow)
+        if (evidenceError && isPostgresUnicodeJsonError(evidenceError) && safeMeta != null) {
+          console.warn('diesel_evidence: retrying insert without metadata after unicode rejection')
+          ;({ error: evidenceError } = await supabase
+            .from('diesel_evidence')
+            .insert({ ...evidenceRow, metadata: null }))
+          if (!evidenceError) {
+            toast.warning('Evidencia guardada sin metadatos técnicos de la foto', {
+              description: 'La base de datos rechazó los datos EXIF; el consumo quedó registrado.',
+              duration: 5000,
+            })
+          }
+        }
         if (evidenceError) {
           console.error('Evidence insert error:', evidenceError)
           throw evidenceError
@@ -780,7 +798,7 @@ export function ConsumptionEntryForm({
       }
       
       toast.error("Error al registrar el consumo", {
-        description: error instanceof Error ? error.message : "Error desconocido"
+        description: describeDieselSaveError(error, "consumption"),
       })
     } finally {
       setLoading(false)

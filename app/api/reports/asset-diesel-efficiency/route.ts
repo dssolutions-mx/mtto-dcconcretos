@@ -25,7 +25,10 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url)
     const yearMonth = searchParams.get('yearMonth')
     const plantId = searchParams.get('plantId')
+    const assetId = searchParams.get('assetId')
 
+    // Typed client chain is narrowed for dynamic filters below.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Supabase builder chain not fully inferred here
     const sb = supabase as unknown as { from: (t: string) => any }
     let q = sb
       .from('asset_diesel_efficiency_monthly')
@@ -56,6 +59,7 @@ export async function GET(req: NextRequest) {
 
     if (yearMonth) q = q.eq('year_month', yearMonth)
     if (plantId) q = q.eq('plant_id', plantId)
+    if (assetId) q = q.eq('asset_id', assetId)
 
     const { data, error } = await q.limit(2000)
     if (error) {

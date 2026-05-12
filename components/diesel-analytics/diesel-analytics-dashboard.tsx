@@ -36,8 +36,9 @@ import {
   ExternalLink,
   Activity,
 } from "lucide-react"
-import { useRouter } from "next/navigation"
+import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { cn } from "@/lib/utils"
+import { HorometerValidationTab } from "@/components/diesel-analytics/horometer-validation-tab"
 
 type OverviewTotals = {
   total_consumption: number
@@ -89,6 +90,13 @@ type TxRow = {
   quantity_liters: number
   horometer_reading: number | null
   kilometer_reading: number | null
+  previous_horometer: number | null
+  hours_consumed: number | null
+  requires_validation: boolean | null
+  validated_at: string | null
+  validated_by_name: string | null
+  notes: string | null
+  validation_notes: string | null
   created_by_name: string
 }
 
@@ -121,6 +129,8 @@ function assetSlug(row: AssetRow): string {
 
 export function DieselAnalyticsDashboard() {
   const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
   const { from: defaultFrom, to: defaultTo } = useMemo(() => defaultDateRange(), [])
   const [dateFrom, setDateFrom] = useState(defaultFrom)
   const [dateTo, setDateTo] = useState(defaultTo)
@@ -277,6 +287,27 @@ export function DieselAnalyticsDashboard() {
     return Array.from(m.entries())
   }, [warehouses, assets])
 
+  const warehousesForValidation = useMemo(
+    () => warehouseOptions.map(([id, name]) => ({ id, name })),
+    [warehouseOptions]
+  )
+
+  const [mainTab, setMainTab] = useState<string>("warehouses")
+
+  useEffect(() => {
+    if (searchParams.get("tab") !== "validation") return
+    queueMicrotask(() => setMainTab("validation"))
+  }, [searchParams])
+
+  const onMainTabChange = (v: string) => {
+    setMainTab(v)
+    const p = new URLSearchParams(searchParams.toString())
+    if (v === "validation") p.set("tab", "validation")
+    else p.delete("tab")
+    const q = p.toString()
+    router.replace(q ? `${pathname}?${q}` : pathname, { scroll: false })
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
@@ -392,7 +423,7 @@ export function DieselAnalyticsDashboard() {
         </div>
       )}
 
-      <Tabs defaultValue="warehouses" className="space-y-4">
+      <Tabs value={mainTab} onValueChange={onMainTabChange} className="space-y-4">
         <TabsList className="flex flex-wrap h-auto gap-1">
           <TabsTrigger value="warehouses">Por almacén</TabsTrigger>
           <TabsTrigger value="assets">Activos</TabsTrigger>
@@ -400,6 +431,7 @@ export function DieselAnalyticsDashboard() {
           <TabsTrigger value="external" onClick={() => externalItems.length === 0 && loadExternal()}>
             Registro externos
           </TabsTrigger>
+          <TabsTrigger value="validation">Validación horómetro</TabsTrigger>
         </TabsList>
 
         <TabsContent value="warehouses" className="space-y-4">
@@ -603,7 +635,9 @@ export function DieselAnalyticsDashboard() {
                                           <TableHead>Fecha</TableHead>
                                           <TableHead className="text-right">L</TableHead>
                                           <TableHead>Horómetro</TableHead>
+                                          <TableHead className="text-right">Δ h</TableHead>
                                           <TableHead>Km</TableHead>
+                                          <TableHead>Validación</TableHead>
                                           <TableHead>Usuario</TableHead>
                                         </TableRow>
                                       </TableHeader>
@@ -619,8 +653,30 @@ export function DieselAnalyticsDashboard() {
                                             <TableCell className="tabular-nums text-xs">
                                               {t.horometer_reading ?? "—"}
                                             </TableCell>
+                                            <TableCell className="tabular-nums text-xs text-right">
+                                              {t.hours_consumed != null
+                                                ? Number(t.hours_consumed).toFixed(2)
+                                                : "—"}
+                                            </TableCell>
                                             <TableCell className="tabular-nums text-xs">
                                               {t.kilometer_reading ?? "—"}
+                                            </TableCell>
+                                            <TableCell className="text-xs">
+                                              {t.requires_validation ? (
+                                                <Badge variant="outline" className="text-[10px] mr-1">
+                                                  requiere
+                                                </Badge>
+                                              ) : null}
+                                              {t.validated_at ? (
+                                                <Badge variant="secondary" className="text-[10px]">
+                                                  ok
+                                                </Badge>
+                                              ) : null}
+                                              {t.validated_by_name ? (
+                                                <span className="block text-[10px] text-muted-foreground mt-0.5 truncate max-w-[100px]">
+                                                  {t.validated_by_name}
+                                                </span>
+                                              ) : null}
                                             </TableCell>
                                             <TableCell className="text-xs text-muted-foreground">
                                               {t.created_by_name}
@@ -716,6 +772,10 @@ export function DieselAnalyticsDashboard() {
               )}
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="validation" className="space-y-4">
+          <HorometerValidationTab warehouses={warehousesForValidation} />
         </TabsContent>
 
         <TabsContent value="external">

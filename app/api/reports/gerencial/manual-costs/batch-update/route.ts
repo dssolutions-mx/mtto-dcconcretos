@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createServerSupabase } from '@/lib/supabase-server'
 import { createClient } from '@supabase/supabase-js'
 import { revalidateIngresosGastosReportCache } from '@/lib/reports/ingresos-gastos-cache'
+import { cotizadorPlantFinancialUnifiedViewName } from '@/lib/reports/cotizador-financial-unified-view'
 
 // POST: Batch update multiple distributed adjustments with new volumes
 export async function POST(req: NextRequest) {
@@ -71,9 +72,10 @@ export async function POST(req: NextRequest) {
       { auth: { persistSession: false } }
     )
 
+    const financialView = cotizadorPlantFinancialUnifiedViewName(periodMonth)
     // Fetch current volumes from view (use period_start like ingresos-gastos endpoint)
     const { data: viewData } = await cotizadorSupabase
-      .from('vw_plant_financial_analysis_unified')
+      .from(financialView)
       .select('plant_code, volumen_concreto_m3')
       .eq('period_start', periodMonth)
 

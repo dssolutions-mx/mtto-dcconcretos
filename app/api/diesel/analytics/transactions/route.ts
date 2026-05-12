@@ -64,6 +64,11 @@ export async function GET(request: NextRequest) {
         hours_consumed,
         kilometers_consumed,
         notes,
+        requires_validation,
+        validated_at,
+        validated_by,
+        validation_notes,
+        validation_difference,
         created_by,
         diesel_products!inner(product_type),
         assets(asset_id, name)
@@ -105,8 +110,14 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    const userIds = [...new Set((rows ?? []).map((t: { created_by: string }) => t.created_by).filter(Boolean))]
-    let names: Record<string, string> = {}
+    const userIds = [
+      ...new Set(
+        (rows ?? []).flatMap((t: { created_by: string; validated_by: string | null }) =>
+          [t.created_by, t.validated_by].filter(Boolean) as string[]
+        )
+      ),
+    ]
+    const names: Record<string, string> = {}
     if (userIds.length > 0) {
       const { data: profs } = await supabase
         .from("profiles")
@@ -117,7 +128,27 @@ export async function GET(request: NextRequest) {
       })
     }
 
-    const transactions = (rows ?? []).map((t: any) => ({
+    type TxRowDb = {
+      id: string
+      transaction_date: string
+      quantity_liters: number
+      horometer_reading: number | null
+      kilometer_reading: number | null
+      previous_horometer: number | null
+      previous_kilometer: number | null
+      hours_consumed: number | null
+      kilometers_consumed: number | null
+      notes: string | null
+      requires_validation: boolean | null
+      validated_at: string | null
+      validated_by: string | null
+      validation_notes: string | null
+      validation_difference: number | null
+      created_by: string
+      assets: { asset_id: string | null; name: string | null } | null
+    }
+
+    const transactions = (rows ?? []).map((t: TxRowDb) => ({
       id: t.id,
       transaction_date: t.transaction_date,
       quantity_liters: t.quantity_liters,
@@ -128,6 +159,12 @@ export async function GET(request: NextRequest) {
       hours_consumed: t.hours_consumed,
       kilometers_consumed: t.kilometers_consumed,
       notes: t.notes,
+      requires_validation: t.requires_validation,
+      validated_at: t.validated_at,
+      validated_by: t.validated_by,
+      validated_by_name: t.validated_by ? names[t.validated_by] || "Usuario" : null,
+      validation_notes: t.validation_notes,
+      validation_difference: t.validation_difference,
       created_by_name: names[t.created_by] || "Usuario",
       asset_code: t.assets?.asset_id ?? null,
       asset_name: t.assets?.name ?? null,

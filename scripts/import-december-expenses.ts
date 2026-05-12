@@ -65,7 +65,7 @@ async function getPlantMapping(): Promise<Map<string, string>> {
   const mapping = new Map<string, string>()
   plants?.forEach(plant => {
     // Handle P001-P005 format
-    const codeMatch = plant.code.match(/P0?(\d+)/i)
+    const codeMatch = plant.code.match(/^P0?(\d+)$/i)
     if (codeMatch) {
       const num = codeMatch[1]
       const numInt = parseInt(num, 10)

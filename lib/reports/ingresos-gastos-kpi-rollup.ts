@@ -8,7 +8,8 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import type { Database, Json } from '@/types/supabase-types'
 import { INGRESOS_GASTOS_REPORT_TAG } from '@/lib/reports/ingresos-gastos-cache'
 
-export const KPI_ROLLUP_COMPUTE_VERSION = 2
+/** Bump when ingresos-gastos compute inputs change (e.g. Cotizador FIFO vs legacy MP view). */
+export const KPI_ROLLUP_COMPUTE_VERSION = 3
 
 const TABLE = 'ingresos_gastos_kpi_plant_month'
 

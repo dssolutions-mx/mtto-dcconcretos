@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createServerSupabase } from '@/lib/supabase-server'
 import { createClient } from '@supabase/supabase-js'
+import { cotizadorUsesFifoFinancialPipeline } from '@/lib/reports/cotizador-financial-unified-view'
 
 /**
  * Refresh historical financial analysis data for a specific month
  * 
- * This endpoint calls backfill_financial_analysis_month to recalculate and backfill
+ * This endpoint calls backfill_financial_analysis_month (legacy) or
+ * backfill_financial_analysis_month_fifo (from 2026-04 onward) to recalculate and backfill
  * historical financial data. This is different from refreshing materialized views.
  * 
  * Note: The views vw_pumping_analysis_unified and sales_assets_daily are now
@@ -72,13 +74,16 @@ export async function POST(req: NextRequest) {
       { auth: { persistSession: false } }
     )
 
-    // Call the backfill function via RPC
-    // This refreshes historical financial analysis data, not the materialized views
-    console.log(`[Refresh View] Calling backfill_financial_analysis_month for ${year}-${monthNum}`)
-    
-    const { data, error } = await cotizadorSupabase.rpc('backfill_financial_analysis_month', {
+    // Call the backfill function via RPC (FIFO pipeline from 2026-04 onward)
+    const useFifo = cotizadorUsesFifoFinancialPipeline(month)
+    const rpcName = useFifo
+      ? 'backfill_financial_analysis_month_fifo'
+      : 'backfill_financial_analysis_month'
+    console.log(`[Refresh View] Calling ${rpcName} for ${year}-${monthNum}`)
+
+    const { data, error } = await cotizadorSupabase.rpc(rpcName, {
       p_year: year,
-      p_month: monthNum
+      p_month: monthNum,
     })
 
     if (error) {
@@ -112,6 +117,7 @@ export async function POST(req: NextRequest) {
       month,
       year,
       monthNum,
+      cotizadorBackfillRpc: rpcName,
       plantsBackfilled: result.plants_backfilled || 0,
       periodStart: result.period_start,
       periodEnd: result.period_end,

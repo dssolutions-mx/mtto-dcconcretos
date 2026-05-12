@@ -2571,7 +2571,11 @@ export default function IngresosGastosPage() {
             <div className="mt-6 p-4 bg-muted/30 rounded-lg text-xs text-muted-foreground space-y-2">
               <p><strong>Fuentes de datos:</strong></p>
               <ul className="list-disc list-inside space-y-1 ml-2">
-                <li><strong>Ingresos y Materia Prima:</strong> Vista <code>vw_plant_financial_analysis_unified</code></li>
+                <li>
+                  <strong>Ingresos y Materia Prima (Cotizador):</strong> meses anteriores a abril 2026 —{' '}
+                  <code>vw_plant_financial_analysis_unified</code>; desde abril 2026 —{' '}
+                  <code>vw_plant_financial_analysis_unified_fifo</code> (costeo MP FIFO).
+                </li>
                 <li><strong>Ingresos Bombeo:</strong> Vista <code>vw_pumping_analysis_unified</code> (materializada, se actualiza cada hora)</li>
                 <li><strong>Diesel y Mantenimiento:</strong> Calculado automáticamente del sistema de mantenimiento</li>
                 <li><strong>Nómina y Otros Indirectos:</strong> Ingreso manual por administradores</li>

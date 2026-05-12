@@ -9,9 +9,9 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { DashboardHeader } from "@/components/dashboard/dashboard-header"
 import { DashboardShell } from "@/components/dashboard/dashboard-shell"
 import { getDieselPlantScope } from "@/lib/diesel-analytics-scope"
-import { 
-  Fuel, 
-  TruckIcon, 
+import {
+  Fuel,
+  TruckIcon,
   TrendingDown,
   TrendingUp,
   AlertTriangle,
@@ -21,7 +21,8 @@ import {
   BarChart3,
   Loader2,
   Info,
-  ArrowRightLeft
+  ArrowRightLeft,
+  ClipboardList,
 } from "lucide-react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
@@ -291,7 +292,7 @@ export default function DieselDashboardPage() {
       {/* Analytics & Reports */}
       <div>
         <h2 className="text-lg font-semibold mb-3">Reportes y Analíticas</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           <Button
             onClick={() => router.push('/diesel/historial')}
             className="h-16"
@@ -308,6 +309,15 @@ export default function DieselDashboardPage() {
           >
             <BarChart3 className="h-5 w-5 mr-2" />
             Analíticas y Consumo por Equipo
+          </Button>
+
+          <Button
+            onClick={() => router.push('/diesel/analytics?tab=validation')}
+            className="h-16"
+            variant="outline"
+          >
+            <ClipboardList className="h-5 w-5 mr-2" />
+            Validación horómetro
           </Button>
         </div>
       </div>

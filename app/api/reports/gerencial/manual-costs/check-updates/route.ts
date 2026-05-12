@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createServerSupabase } from '@/lib/supabase-server'
 import { createClient } from '@supabase/supabase-js'
+import { cotizadorPlantFinancialUnifiedViewName } from '@/lib/reports/cotizador-financial-unified-view'
 
 // GET: Check which distributed adjustments need volume updates
 export async function GET(req: NextRequest) {
@@ -62,8 +63,9 @@ export async function GET(req: NextRequest) {
       { auth: { persistSession: false } }
     )
 
+    const financialView = cotizadorPlantFinancialUnifiedViewName(periodMonth)
     const { data: viewData, error: viewError } = await cotizadorSupabase
-      .from('vw_plant_financial_analysis_unified')
+      .from(financialView)
       .select('plant_code, volumen_concreto_m3')
       .eq('period_start', periodMonth)
 

@@ -1,5 +1,7 @@
 "use client"
 
+import { Suspense } from "react"
+import { Loader2 } from "lucide-react"
 import { DashboardHeader } from "@/components/dashboard/dashboard-header"
 import { DashboardShell } from "@/components/dashboard/dashboard-shell"
 import { DieselAnalyticsDashboard } from "@/components/diesel-analytics/diesel-analytics-dashboard"
@@ -12,7 +14,15 @@ export default function DieselAnalyticsPage() {
         text="Resumen por periodo, almacenes, activos y excepciones de calidad de datos (sin telemetría)."
         id="diesel-analytics-header"
       />
-      <DieselAnalyticsDashboard />
+      <Suspense
+        fallback={
+          <div className="flex justify-center py-16 text-muted-foreground">
+            <Loader2 className="h-8 w-8 animate-spin" />
+          </div>
+        }
+      >
+        <DieselAnalyticsDashboard />
+      </Suspense>
     </DashboardShell>
   )
 }

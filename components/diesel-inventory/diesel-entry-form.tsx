@@ -29,6 +29,7 @@ import {
   validateDieselTransactionScope
 } from "@/lib/diesel/submit-scope-validation"
 import { getLocalDateString, getLocalTimeString } from "@/lib/diesel/date-utils"
+import { describeDieselSaveError } from "@/lib/diesel/diesel-save-error-message"
 
 interface DieselEntryFormProps {
   productType: 'diesel' | 'urea'
@@ -526,10 +527,17 @@ export function DieselEntryForm({
       }
 
       const evidenceResults = await Promise.all(evidencePromises)
-      const evidenceErrors = evidenceResults.filter(r => r.error)
-      
-      if (evidenceErrors.length > 0) {
-        console.error('Evidence insert errors:', evidenceErrors)
+      const firstEvidenceError = evidenceResults.find((r) => r.error)?.error
+      if (firstEvidenceError) {
+        console.error('Evidence insert errors:', evidenceResults.filter((r) => r.error))
+        const { error: rollbackErr } = await supabase
+          .from('diesel_transactions')
+          .delete()
+          .eq('id', transaction.id)
+        if (rollbackErr) {
+          console.error('Rollback after evidence failure failed:', rollbackErr)
+        }
+        throw firstEvidenceError
       }
       console.log('Step 5 ✓: Evidence inserted')
 
@@ -562,7 +570,7 @@ export function DieselEntryForm({
       console.error('Error details:', error)
       
       toast.error("Error al registrar la entrada", {
-        description: error instanceof Error ? error.message : "Error desconocido"
+        description: describeDieselSaveError(error, "entry"),
       })
     } finally {
       setLoading(false)

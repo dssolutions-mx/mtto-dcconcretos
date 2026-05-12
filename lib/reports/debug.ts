@@ -7,6 +7,8 @@
  * after manual financial adjustments mutate; wire it to `unstable_cache` when adding server cache.
  *
  * Phase D — `ingresos_gastos_kpi_plant_month` (see `lib/reports/ingresos-gastos-kpi-rollup.ts`):
+ * - `KPI_ROLLUP_COMPUTE_VERSION` — bumped when compute inputs change (e.g. Cotizador FIFO vs legacy MP);
+ *   rows with an older `compute_version` are ignored until the rollup refresh repopulates them.
  * - INGRESOS_GASTOS_KPI_ROLLUP_READ — rollup read is ON by default; set 0/false/off to disable.
  * - INGRESOS_GASTOS_KPI_ROLLUP_MAX_AGE_SECONDS — max snapshot age (default 90000 ≈ 25h for daily cron).
  * - INGRESOS_GASTOS_KPI_ROLLUP_CRON_SECRET or CRON_SECRET — Bearer / x-ingresos-kpi-secret for

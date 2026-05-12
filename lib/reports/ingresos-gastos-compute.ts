@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { runGerencialReport } from '@/lib/reports/run-gerencial-report'
 import { reportsVerbose } from '@/lib/reports/debug'
+import { cotizadorPlantFinancialUnifiedViewName } from '@/lib/reports/cotizador-financial-unified-view'
 import { attemptKpiRollupRead, kpiRollupReadEnabled } from '@/lib/reports/ingresos-gastos-kpi-rollup'
 import { shiftMonthString } from '@/lib/reports/month-utils'
 
@@ -754,18 +755,19 @@ export async function runIngresosGastosPost(params: {
 
       if (cotizadorSupabase) {
         let viewData: any[] | null = null
+        const financialView = cotizadorPlantFinancialUnifiedViewName(periodMonth)
         try {
           const { data: viewRows, error: viewError } = await cotizadorSupabase
-            .from('vw_plant_financial_analysis_unified')
+            .from(financialView)
             .select('*')
             .eq('period_start', periodMonth)
 
           if (viewError) {
-            console.error('View fetch error (cotizador):', viewError)
+            console.error(`View fetch error (cotizador ${financialView}):`, viewError)
           }
           viewData = viewRows || []
         } catch (err) {
-          console.error('Error querying vw_plant_financial_analysis_unified from cotizador:', err)
+          console.error(`Error querying ${financialView} from cotizador:`, err)
           viewData = []
         }
 
