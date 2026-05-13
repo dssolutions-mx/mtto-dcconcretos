@@ -1,11 +1,7 @@
 'use client'
 
 import { Suspense, useCallback, useEffect, useMemo, useState } from 'react'
-import Link from 'next/link'
-import { useSearchParams } from 'next/navigation'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Label } from '@/components/ui/label'
+import { useSearchParams, useRouter } from 'next/navigation'
 import {
   Select,
   SelectContent,
@@ -13,79 +9,40 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { RefreshCw, Download, MoreHorizontal, Fuel, Search, X } from 'lucide-react'
 import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from '@/components/ui/sheet'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
-import { RefreshCw, ExternalLink, Download, Gauge } from 'lucide-react'
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import { KpiStrip } from '@/components/reports/diesel-efficiency/kpi-strip'
+import { PlantBarStrip } from '@/components/reports/diesel-efficiency/plant-bar-strip'
+import { AssetTable } from '@/components/reports/diesel-efficiency/asset-table'
+import { DrillSheet } from '@/components/reports/diesel-efficiency/drill-sheet'
+import { AnomaliesList } from '@/components/reports/diesel-efficiency/anomalies-list'
+import { DataQualityList } from '@/components/reports/diesel-efficiency/data-quality-list'
+import type { EfficiencyRow, ViewMode } from '@/components/reports/diesel-efficiency/types'
 
-type GrainMode = 'trusted_monthly' | 'sql_monthly' | 'weekly' | 'daily'
-
-type TrustedRow = {
-  id: string
-  year_month: string
-  total_liters: number
-  hours_merged: number
-  hours_sum_raw: number
-  hours_trusted: number
-  kilometers_sum_raw: number
-  liters_per_hour_trusted: number | null
-  liters_per_km: number | null
-  concrete_m3: number | null
-  liters_per_m3: number | null
-  equipment_category: string | null
-  quality_flags: Record<string, unknown>
-  anomaly_flags: Record<string, unknown>
-  assets?: { id: string; asset_id: string | null; name: string | null } | null
+const MONTHS = ['2026-05', '2026-04', '2026-03', '2026-02', '2026-01']
+const MONTHS_LABEL: Record<string, string> = {
+  '2026-05': 'Mayo 2026',
+  '2026-04': 'Abril 2026',
+  '2026-03': 'Marzo 2026',
+  '2026-02': 'Febrero 2026',
+  '2026-01': 'Enero 2026',
 }
 
-type BucketRow = Record<string, unknown> & {
-  asset_id?: string
-  plant_id?: string
-  total_liters?: number
-  sum_hours_consumed?: number
-  sum_km_consumed?: number
-  transaction_count?: number
-  liters_per_sum_hour?: number | null
-  liters_per_sum_km?: number | null
-  asset_code?: string | null
-  asset_name?: string | null
+function prevMonth(ym: string): string {
+  const [ys, ms] = ym.split('-')
+  let y = Number(ys)
+  let m = Number(ms) - 1
+  if (m === 0) { m = 12; y-- }
+  return `${y}-${String(m).padStart(2, '0')}`
 }
 
-type MeterEvent = {
-  source_kind: string | null
-  source_id: string
-  event_at: string
-  hours_reading: number | null
-  hours_consumed: number | null
-  previous_hours: number | null
-  quantity_liters: number | null
-}
-
-const MONTHS = ['2026-01', '2026-02', '2026-03', '2026-04']
-
-function monthIsoRange(yearMonth: string): { from: string; to: string } {
-  const [ys, ms] = yearMonth.split('-')
-  const y = Number(ys)
-  const m = Number(ms)
-  const from = new Date(Date.UTC(y, m - 1, 1)).toISOString()
-  const to = new Date(Date.UTC(y, m, 1)).toISOString()
-  return { from, to }
-}
-
-function downloadCsv(filename: string, header: string[], lines: string[][]) {
+function downloadCsv(filename: string, header: string[], lines: (string | number | null | undefined)[][]) {
   const esc = (cell: string | number | null | undefined) => {
     const s = cell == null ? '' : String(cell)
     if (/[",\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`
@@ -95,76 +52,95 @@ function downloadCsv(filename: string, header: string[], lines: string[][]) {
   const blob = new Blob([body], { type: 'text/csv;charset=utf-8' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
-  a.href = url
-  a.download = filename
-  a.click()
+  a.href = url; a.download = filename; a.click()
   URL.revokeObjectURL(url)
 }
 
-function EficienciaDieselReportContent() {
+const VIEW_LABELS: Record<ViewMode, string> = {
+  fleet: 'Flota',
+  anomalies: 'Revisar consumo',
+  quality: 'Calidad de datos',
+}
+
+function EficienciaDieselContent() {
   const searchParams = useSearchParams()
-  const [yearMonth, setYearMonth] = useState('2026-04')
-  const [grain, setGrain] = useState<GrainMode>('trusted_monthly')
-  const [trustedRows, setTrustedRows] = useState<TrustedRow[]>([])
-  const [bucketRows, setBucketRows] = useState<BucketRow[]>([])
+  const router = useRouter()
+
+  const [yearMonth, setYearMonth] = useState(() => searchParams.get('mes') ?? '2026-05')
+  const [selectedBu, setSelectedBu] = useState<string | null>(null)
+  const [selectedPlant, setSelectedPlant] = useState<string | null>(null)
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
+  const [assetSearch, setAssetSearch] = useState('')
+  const [view, setView] = useState<ViewMode>(() => (searchParams.get('vista') as ViewMode) ?? 'fleet')
+
+  const [rows, setRows] = useState<EfficiencyRow[]>([])
+  const [prevRows, setPrevRows] = useState<EfficiencyRow[]>([])
   const [loading, setLoading] = useState(true)
   const [recomputing, setRecomputing] = useState(false)
-  const [message, setMessage] = useState<string | null>(null)
+  const [message, setMessage] = useState<{ text: string; ok: boolean } | null>(null)
+  const [lastComputed, setLastComputed] = useState<string | null>(null)
 
-  const [meterOpen, setMeterOpen] = useState(false)
-  const [meterLabel, setMeterLabel] = useState('')
-  const [meterLoading, setMeterLoading] = useState(false)
-  const [meterEvents, setMeterEvents] = useState<MeterEvent[]>([])
+  const [drillRow, setDrillRow] = useState<EfficiencyRow | null>(null)
+  const [drillOpen, setDrillOpen] = useState(false)
+  const [plantNames, setPlantNames] = useState<Record<string, string>>({})
+  const [plants, setPlants] = useState<{ id: string; name: string; business_unit_id: string | null }[]>([])
+  const [businessUnits, setBusinessUnits] = useState<{ id: string; name: string }[]>([])
 
   useEffect(() => {
-    const qm = searchParams.get('yearMonth')
-    if (qm && /^\d{4}-\d{2}$/.test(qm)) {
-      queueMicrotask(() => setYearMonth(qm))
-    }
-  }, [searchParams])
+    Promise.all([
+      fetch('/api/plants').then(r => r.json()),
+      fetch('/api/business-units').then(r => r.json()),
+    ]).then(([pj, bj]) => {
+      const ps: { id: string; name: string; business_unit_id: string | null }[] = pj.plants ?? []
+      setPlants(ps)
+      const names: Record<string, string> = {}
+      for (const p of ps) names[p.id] = p.name
+      setPlantNames(names)
+      setBusinessUnits(bj.business_units ?? [])
+    }).catch(() => {})
+  }, [])
 
-  const loadTrusted = useCallback(async () => {
-    const r = await fetch(`/api/reports/asset-diesel-efficiency?yearMonth=${encodeURIComponent(yearMonth)}`)
-    const j = await r.json()
-    if (!r.ok) throw new Error(j.error || 'Error al cargar')
-    setTrustedRows(j.rows || [])
-  }, [yearMonth])
+  // Sync URL params — do NOT include searchParams in deps, router.replace changes it causing infinite loop
+  useEffect(() => {
+    const params = new URLSearchParams()
+    params.set('mes', yearMonth)
+    params.set('vista', view)
+    router.replace(`?${params.toString()}`, { scroll: false })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [yearMonth, view])
 
-  const loadBuckets = useCallback(async () => {
-    const g = grain === 'sql_monthly' ? 'monthly' : grain === 'weekly' ? 'weekly' : 'daily'
-    const r = await fetch(
-      `/api/reports/diesel-efficiency-buckets?yearMonth=${encodeURIComponent(yearMonth)}&grain=${g}`
-    )
+  const loadRows = useCallback(async (ym: string): Promise<EfficiencyRow[]> => {
+    const r = await fetch(`/api/reports/asset-diesel-efficiency?yearMonth=${encodeURIComponent(ym)}`)
     const j = await r.json()
-    if (!r.ok) throw new Error(j.error || 'Error al cargar buckets')
-    setBucketRows(j.rows || [])
-  }, [yearMonth, grain])
+    if (!r.ok) throw new Error(j.error || 'Error al cargar datos')
+    return (j.rows ?? []) as EfficiencyRow[]
+  }, [])
 
   const load = useCallback(async () => {
     setLoading(true)
     setMessage(null)
     try {
-      if (grain === 'trusted_monthly') {
-        await loadTrusted()
-        setBucketRows([])
-      } else {
-        await loadBuckets()
-        setTrustedRows([])
-      }
+      const [curr, prev] = await Promise.all([
+        loadRows(yearMonth),
+        loadRows(prevMonth(yearMonth)),
+      ])
+      setRows(curr)
+      setPrevRows(prev)
+      const latest = curr.reduce((max: string | null, r) => {
+        if (!r.computed_at) return max
+        return !max || r.computed_at > max ? r.computed_at : max
+      }, null)
+      setLastComputed(latest)
     } catch (e) {
-      setMessage(e instanceof Error ? e.message : 'Error')
-      setTrustedRows([])
-      setBucketRows([])
+      setMessage({ text: e instanceof Error ? e.message : 'Error al cargar', ok: false })
+      setRows([])
+      setPrevRows([])
     } finally {
       setLoading(false)
     }
-  }, [grain, loadTrusted, loadBuckets])
+  }, [yearMonth, loadRows])
 
-  useEffect(() => {
-    queueMicrotask(() => {
-      void load()
-    })
-  }, [load])
+  useEffect(() => { void load() }, [load])
 
   const onRecompute = async () => {
     setRecomputing(true)
@@ -177,468 +153,364 @@ function EficienciaDieselReportContent() {
       })
       const j = await r.json()
       if (!r.ok) throw new Error(j.error || 'Error al recalcular')
-      setMessage(`Recalculado: ${j.upserted ?? 0} filas. ${(j.errors || []).join('; ')}`)
+      setMessage({ text: `Recalculado: ${j.upserted ?? 0} filas actualizadas.`, ok: true })
       await load()
     } catch (e) {
-      setMessage(e instanceof Error ? e.message : 'Error')
+      setMessage({ text: e instanceof Error ? e.message : 'Error', ok: false })
     } finally {
       setRecomputing(false)
     }
   }
 
-  const fmt = (n: number | null | undefined, d = 2) =>
-    n == null || !Number.isFinite(Number(n)) ? '—' : Number(n).toFixed(d)
-
-  const sortedTrusted = useMemo(
-    () =>
-      [...trustedRows].sort(
-        (a, b) => (b.liters_per_hour_trusted || 0) - (a.liters_per_hour_trusted || 0)
-      ),
-    [trustedRows]
-  )
-
-  const sortedBuckets = useMemo(() => {
-    const key =
-      grain === 'daily' ? 'bucket_day' : grain === 'weekly' ? 'bucket_week' : 'bucket_month'
-    return [...bucketRows].sort((a, b) => String(a[key]).localeCompare(String(b[key])))
-  }, [bucketRows, grain])
-
-  const openMeterSheet = async (assetId: string, label: string) => {
-    setMeterLabel(label)
-    setMeterOpen(true)
-    setMeterLoading(true)
-    setMeterEvents([])
-    try {
-      const { from, to } = monthIsoRange(yearMonth)
-      const r = await fetch(
-        `/api/assets/${assetId}/meter-events?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`
-      )
-      const j = await r.json()
-      if (!r.ok) throw new Error(j.error || 'Error')
-      setMeterEvents((j.events || []) as MeterEvent[])
-    } catch {
-      setMeterEvents([])
-    } finally {
-      setMeterLoading(false)
+  // Categories in current data
+  const categories = useMemo(() => {
+    const set = new Set<string>()
+    for (const r of rows) {
+      if (r.equipment_category) set.add(r.equipment_category)
     }
+    return Array.from(set).sort()
+  }, [rows])
+
+  // Plant IDs that belong to the selected BU
+  const buPlantIds = useMemo(() => {
+    if (!selectedBu) return null
+    return new Set(plants.filter(p => p.business_unit_id === selectedBu).map(p => p.id))
+  }, [selectedBu, plants])
+
+  // Plants that belong to the selected BU (for the plant dropdown)
+  const plantsForBu = useMemo(() => {
+    if (!selectedBu) return plants
+    return plants.filter(p => p.business_unit_id === selectedBu)
+  }, [selectedBu, plants])
+
+  const applyFilters = (source: EfficiencyRow[]) => {
+    let out = source
+    if (buPlantIds) out = out.filter(r => r.plant_id != null && buPlantIds.has(r.plant_id))
+    if (selectedPlant) out = out.filter(r => r.plant_id === selectedPlant)
+    if (selectedCategory) out = out.filter(r => r.equipment_category === selectedCategory)
+    if (assetSearch.trim()) {
+      const q = assetSearch.trim().toLowerCase()
+      out = out.filter(r =>
+        r.assets?.asset_id?.toLowerCase().includes(q) ||
+        r.assets?.name?.toLowerCase().includes(q)
+      )
+    }
+    return out
+  }
+
+  const filteredRows = useMemo(() => applyFilters(rows), [rows, buPlantIds, selectedPlant, selectedCategory, assetSearch])
+  const filteredPrevRows = useMemo(() => applyFilters(prevRows), [prevRows, buPlantIds, selectedPlant, selectedCategory, assetSearch])
+
+  const openDrill = (row: EfficiencyRow) => {
+    setDrillRow(row)
+    setDrillOpen(true)
   }
 
   const exportCsv = () => {
-    if (grain === 'trusted_monthly') {
-      downloadCsv(
-        `eficiencia-diesel-trusted-${yearMonth}.csv`,
-        [
-          'year_month',
-          'asset_code',
-          'asset_name',
-          'category',
-          'total_liters',
-          'hours_merged',
-          'hours_sum_raw',
-          'hours_trusted',
-          'L_h_trusted',
-          'L_km',
-          'm3',
-          'L_m3',
-          'data_quality_tier',
-          'efficiency_tier',
-          'merge_fork',
-        ],
-        sortedTrusted.map((r) => {
-          const q = r.quality_flags as { merge_fork?: boolean }
-          const a = r.anomaly_flags as {
-            data_quality_tier?: string
-            efficiency_tier?: string
-          }
-          return [
-            r.year_month,
-            r.assets?.asset_id ?? '',
-            r.assets?.name ?? '',
-            r.equipment_category ?? '',
-            r.total_liters,
-            r.hours_merged,
-            r.hours_sum_raw,
-            r.hours_trusted,
-            r.liters_per_hour_trusted ?? '',
-            r.liters_per_km ?? '',
-            r.concrete_m3 ?? '',
-            r.liters_per_m3 ?? '',
-            a.data_quality_tier ?? '',
-            a.efficiency_tier ?? '',
-            q.merge_fork ? 'yes' : 'no',
-          ]
-        })
-      )
-    } else {
-      const bk =
-        grain === 'daily' ? 'bucket_day' : grain === 'weekly' ? 'bucket_week' : 'bucket_month'
-      downloadCsv(
-        `eficiencia-diesel-sql-${grain}-${yearMonth}.csv`,
-        [
-          String(bk),
-          'plant_id',
-          'asset_id',
-          'asset_code',
-          'asset_name',
-          'total_liters',
-          'sum_hours_consumed',
-          'sum_km_consumed',
-          'tx_count',
-          'L_h_sum_hours',
-          'L_km_sum_km',
-        ],
-        sortedBuckets.map((r) => [
-          String(r[bk] ?? ''),
-          String(r.plant_id ?? ''),
-          String(r.asset_id ?? ''),
-          String(r.asset_code ?? ''),
-          String(r.asset_name ?? ''),
-          Number(r.total_liters ?? 0),
-          Number(r.sum_hours_consumed ?? 0),
-          Number(r.sum_km_consumed ?? 0),
-          Number(r.transaction_count ?? 0),
-          r.liters_per_sum_hour ?? '',
-          r.liters_per_sum_km ?? '',
-        ])
-      )
-    }
+    downloadCsv(
+      `eficiencia-diesel-${yearMonth}.csv`,
+      ['mes', 'codigo', 'nombre', 'categoria', 'litros', 'L_h', 'L_km', 'm3', 'L_m3', 'h_confiables', 'calidad_datos', 'eficiencia', 'salto_MoM', 'revisar'],
+      filteredRows.map((r) => [
+        r.year_month,
+        r.assets?.asset_id ?? '',
+        r.assets?.name ?? '',
+        r.equipment_category ?? '',
+        r.total_liters,
+        r.liters_per_hour_trusted ?? '',
+        r.liters_per_km ?? '',
+        r.concrete_m3 ?? '',
+        r.liters_per_m3 ?? '',
+        r.hours_trusted,
+        r.anomaly_flags.data_quality_tier,
+        r.anomaly_flags.efficiency_tier,
+        r.anomaly_flags.breakpoint_mom_lph ? 'sí' : 'no',
+        r.anomaly_flags.review_consumption_pattern ? 'sí' : 'no',
+      ])
+    )
   }
 
+  const anomalyCount = filteredRows.filter(
+    (r) =>
+      r.anomaly_flags.efficiency_tier === 'severe' ||
+      r.anomaly_flags.efficiency_tier === 'watch' ||
+      r.anomaly_flags.breakpoint_mom_lph ||
+      r.anomaly_flags.review_consumption_pattern
+  ).length
+
+  const qualityIssueCount = filteredRows.filter(
+    (r) => r.anomaly_flags.data_quality_tier !== 'ok' || r.quality_flags.negative_hours_consumed_count > 0
+  ).length
+
   return (
-    <div className="container mx-auto py-6 px-4 max-w-7xl space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Eficiencia diésel</h1>
-          <p className="text-muted-foreground max-w-3xl">
-            <strong>Mensual confiable</strong>: horas fusionadas primero; si no hay curva, suma de{' '}
-            <code className="text-xs">hours_consumed</code> (
-            <code className="text-xs">lib/reports/diesel-efficiency-hours-policy.ts</code>).{' '}
-            <strong>Diario / semanal / mensual SQL</strong>: vistas{' '}
-            <code className="text-xs">diesel_efficiency_bucket_*_mex</code> — denominador = suma de deltas en
-            transacciones (no curva fusionada).
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Button variant="outline" asChild>
-            <Link href="/reportes/gerencial">Reporte gerencial</Link>
-          </Button>
-          <Button variant="outline" asChild>
-            <Link href="/diesel/analytics">Analíticas diesel</Link>
-          </Button>
-          <Button variant="outline" onClick={() => load()} disabled={loading}>
-            <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
-            Actualizar
-          </Button>
-          <Button variant="outline" onClick={exportCsv} disabled={loading || (grain === 'trusted_monthly' ? sortedTrusted.length === 0 : sortedBuckets.length === 0)}>
-            <Download className="h-4 w-4 mr-2" />
-            Exportar CSV
-          </Button>
-          <Button onClick={onRecompute} disabled={recomputing}>
-            {recomputing ? 'Recalculando…' : 'Recalcular Ene–Abr 2026'}
-          </Button>
-        </div>
-      </div>
+    <div className="space-y-5 px-4 py-6 sm:px-6 lg:px-8">
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Filtros</CardTitle>
-          <CardDescription>
-            Mes calendario (América/Ciudad de México). Período adicional vía agregación SQL en pestaña de
-            granularidad.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-wrap gap-4 items-end">
-          <div className="w-48">
-            <Label>Mes</Label>
-            <Select value={yearMonth} onValueChange={setYearMonth}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {MONTHS.map((m) => (
-                  <SelectItem key={m} value={m}>
-                    {m}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+        {/* Page header */}
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-amber-100 border border-amber-200 flex-shrink-0">
+              <Fuel className="h-4.5 w-4.5 text-amber-700" />
+            </div>
+            <div>
+              <h1 className="text-xl font-semibold tracking-tight text-stone-900">
+                Eficiencia diésel
+              </h1>
+              {lastComputed && (
+                <p className="text-xs text-stone-400 mt-0.5">
+                  Calculado {new Date(lastComputed).toLocaleDateString('es-MX', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                </p>
+              )}
+            </div>
           </div>
-          <div className="w-72">
-            <Label>Granularidad / fuente</Label>
-            <Select value={grain} onValueChange={(v) => setGrain(v as GrainMode)}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="trusted_monthly">
-                  Mensual — horas confiables (materializado)
-                </SelectItem>
-                <SelectItem value="sql_monthly">Mensual — suma SQL (transacciones)</SelectItem>
-                <SelectItem value="weekly">Semanal — suma SQL</SelectItem>
-                <SelectItem value="daily">Diario — suma SQL</SelectItem>
-              </SelectContent>
-            </Select>
+          <div className="flex items-center gap-2 flex-wrap">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 border-stone-200 text-stone-600 hover:text-stone-900"
+              onClick={() => void load()}
+              disabled={loading}
+            >
+              <RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${loading ? 'animate-spin' : ''}`} />
+              Actualizar
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 border-stone-200 text-stone-600 hover:text-stone-900"
+              onClick={exportCsv}
+              disabled={filteredRows.length === 0}
+            >
+              <Download className="h-3.5 w-3.5 mr-1.5" />
+              Exportar CSV
+            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" className="h-8 w-8 p-0 border-stone-200">
+                  <MoreHorizontal className="h-4 w-4 text-stone-500" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="text-sm">
+                <DropdownMenuItem onClick={() => void onRecompute()} disabled={recomputing}>
+                  {recomputing ? 'Recalculando…' : 'Recalcular Ene–May 2026'}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
-        </CardContent>
-      </Card>
+        </div>
 
-      {message && (
-        <p className={`text-sm ${message.startsWith('Recalculado') ? 'text-green-700' : 'text-destructive'}`}>
-          {message}
-        </p>
-      )}
+        {/* Message banner */}
+        {message && (
+          <div className={[
+            'text-sm px-4 py-2.5 rounded-lg border',
+            message.ok
+              ? 'bg-green-50 border-green-200 text-green-800'
+              : 'bg-red-50 border-red-200 text-red-800',
+          ].join(' ')}>
+            {message.text}
+          </div>
+        )}
 
-      {grain === 'trusted_monthly' ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>Activos (eficiencia mensual)</CardTitle>
-            <CardDescription>
-              L/h con denominador confiable; banderas de calidad y anomalías. Enlace «Eventos» abre la línea de
-              tiempo <code className="text-xs">asset_meter_reading_events</code> del mes.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="overflow-x-auto">
-            {loading ? (
-              <p className="text-muted-foreground">Cargando…</p>
-            ) : sortedTrusted.length === 0 ? (
-              <p className="text-muted-foreground">
-                Sin datos para este mes. Ejecute migraciones Supabase y use «Recalcular» o{' '}
-                <code className="text-xs">npx tsx scripts/backfill-asset-diesel-efficiency-jan-apr-2026.ts</code>.
-              </p>
-            ) : (
-              <table className="w-full text-sm border-collapse">
-                <thead>
-                  <tr className="border-b text-left text-muted-foreground">
-                    <th className="py-2 pr-3">Código</th>
-                    <th className="py-2 pr-3">Nombre</th>
-                    <th className="py-2 pr-3">Categoría</th>
-                    <th className="py-2 pr-3 text-right">Litros</th>
-                    <th className="py-2 pr-3 text-right">h fusionadas</th>
-                    <th className="py-2 pr-3 text-right">h suma TX</th>
-                    <th className="py-2 pr-3 text-right">h confiables</th>
-                    <th className="py-2 pr-3 text-right">L/h</th>
-                    <th className="py-2 pr-3 text-right">L/km</th>
-                    <th className="py-2 pr-3 text-right">m³</th>
-                    <th className="py-2 pr-3 text-right">L/m³</th>
-                    <th className="py-2 pr-3">Calidad</th>
-                    <th className="py-2 pr-3">Eficiencia</th>
-                    <th className="py-2 pr-3">Drill</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {sortedTrusted.map((r) => {
-                    const q = r.quality_flags as { merge_fork?: boolean }
-                    const a = r.anomaly_flags as {
-                      data_quality_tier?: string
-                      efficiency_tier?: string
-                      breakpoint_mom_lph?: boolean
-                      review_consumption_pattern?: boolean
-                    }
-                    const aid = r.assets?.id
-                    const label = `${r.assets?.asset_id || ''} ${r.assets?.name || ''}`.trim()
-                    return (
-                      <tr key={r.id} className="border-b border-border/60">
-                        <td className="py-2 pr-3 font-mono">{r.assets?.asset_id || '—'}</td>
-                        <td className="py-2 pr-3">{r.assets?.name || '—'}</td>
-                        <td className="py-2 pr-3 text-muted-foreground">{r.equipment_category || '—'}</td>
-                        <td className="py-2 pr-3 text-right">{fmt(r.total_liters, 1)}</td>
-                        <td className="py-2 pr-3 text-right">{fmt(r.hours_merged, 2)}</td>
-                        <td className="py-2 pr-3 text-right">{fmt(r.hours_sum_raw, 2)}</td>
-                        <td className="py-2 pr-3 text-right">{fmt(r.hours_trusted, 2)}</td>
-                        <td className="py-2 pr-3 text-right">{fmt(r.liters_per_hour_trusted, 3)}</td>
-                        <td className="py-2 pr-3 text-right">{fmt(r.liters_per_km, 4)}</td>
-                        <td className="py-2 pr-3 text-right">{fmt(r.concrete_m3, 2)}</td>
-                        <td className="py-2 pr-3 text-right">{fmt(r.liters_per_m3, 3)}</td>
-                        <td className="py-2 pr-3">
-                          <div className="flex flex-wrap gap-1">
-                            <Badge variant="outline">{a.data_quality_tier || '—'}</Badge>
-                            {q.merge_fork ? (
-                              <Badge variant="secondary" title="Divergencia curva vs suma de hours_consumed">
-                                fork
-                              </Badge>
-                            ) : null}
-                          </div>
-                        </td>
-                        <td className="py-2 pr-3">
-                          <div className="flex flex-wrap gap-1">
-                            <Badge variant="outline">{a.efficiency_tier || '—'}</Badge>
-                            {a.breakpoint_mom_lph ? <Badge variant="destructive">MoM</Badge> : null}
-                            {a.review_consumption_pattern ? (
-                              <Badge variant="secondary" title="Revisar consumo (no implica sustracción)">
-                                revisar
-                              </Badge>
-                            ) : null}
-                          </div>
-                        </td>
-                        <td className="py-2 pr-3">
-                          <div className="flex flex-wrap gap-1">
-                            {aid ? (
-                              <>
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  className="h-8"
-                                  onClick={() => void openMeterSheet(aid, label)}
-                                >
-                                  <Gauge className="h-3.5 w-3.5 mr-1" />
-                                  Eventos
-                                </Button>
-                                <Button variant="ghost" size="sm" asChild>
-                                  <Link href={`/activos/${aid}`}>
-                                    <ExternalLink className="h-4 w-4" />
-                                  </Link>
-                                </Button>
-                                <Button variant="ghost" size="sm" asChild>
-                                  <Link href="/diesel/historial">Historial diesel</Link>
-                                </Button>
-                              </>
-                            ) : null}
-                          </div>
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
+        {/* Filter bar */}
+        <div className="flex flex-wrap items-center gap-2 p-3 bg-white border border-stone-900/[0.08] rounded-lg">
+          {/* Month */}
+          <Select value={yearMonth} onValueChange={setYearMonth}>
+            <SelectTrigger className="h-8 w-36 text-xs border-stone-200 bg-stone-50">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {MONTHS.map((m) => (
+                <SelectItem key={m} value={m} className="text-xs">{MONTHS_LABEL[m] ?? m}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <div className="w-px h-5 bg-stone-200" />
+
+          {/* Business unit */}
+          <Select value={selectedBu ?? '__all'} onValueChange={v => {
+            setSelectedBu(v === '__all' ? null : v)
+            setSelectedPlant(null)
+          }}>
+            <SelectTrigger className="h-8 w-40 text-xs border-stone-200 bg-stone-50">
+              <SelectValue placeholder="Unidad negocio" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__all" className="text-xs">Todas las UNs</SelectItem>
+              {businessUnits.map(bu => (
+                <SelectItem key={bu.id} value={bu.id} className="text-xs">{bu.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          {/* Plant */}
+          <Select value={selectedPlant ?? '__all'} onValueChange={v => setSelectedPlant(v === '__all' ? null : v)}>
+            <SelectTrigger className="h-8 w-40 text-xs border-stone-200 bg-stone-50">
+              <SelectValue placeholder="Planta" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__all" className="text-xs">Todas las plantas</SelectItem>
+              {plantsForBu.map(p => (
+                <SelectItem key={p.id} value={p.id} className="text-xs">{p.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          {/* Category */}
+          <Select value={selectedCategory ?? '__all'} onValueChange={(v) => setSelectedCategory(v === '__all' ? null : v)}>
+            <SelectTrigger className="h-8 w-36 text-xs border-stone-200 bg-stone-50">
+              <SelectValue placeholder="Categoría" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__all" className="text-xs">Todas las categorías</SelectItem>
+              {categories.map((c) => (
+                <SelectItem key={c} value={c} className="text-xs">{c}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <div className="w-px h-5 bg-stone-200" />
+
+          {/* Asset search */}
+          <div className="relative">
+            <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-stone-400 pointer-events-none" />
+            <input
+              type="text"
+              placeholder="Buscar activo…"
+              value={assetSearch}
+              onChange={e => setAssetSearch(e.target.value)}
+              className="h-8 pl-7 pr-7 text-xs border border-stone-200 bg-stone-50 rounded-md focus:outline-none focus:ring-2 focus:ring-amber-400/60 focus:border-transparent w-40"
+            />
+            {assetSearch && (
+              <button
+                onClick={() => setAssetSearch('')}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-700"
+              >
+                <X className="h-3 w-3" />
+              </button>
             )}
-          </CardContent>
-        </Card>
-      ) : (
-        <Card>
-          <CardHeader>
-            <CardTitle>Agregación SQL ({grain === 'sql_monthly' ? 'mensual' : grain === 'weekly' ? 'semanal' : 'diaria'})</CardTitle>
-            <CardDescription>
-              Suma de litros y de <code className="text-xs">hours_consumed</code> por bucket; L/h = litros / suma
-              horas. Útil para contrastar con la curva fusionada del modo mensual confiable.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="overflow-x-auto">
-            {loading ? (
-              <p className="text-muted-foreground">Cargando…</p>
-            ) : sortedBuckets.length === 0 ? (
-              <p className="text-muted-foreground">Sin filas en el bucket para este mes.</p>
-            ) : (
-              <table className="w-full text-sm border-collapse">
-                <thead>
-                  <tr className="border-b text-left text-muted-foreground">
-                    <th className="py-2 pr-3">Bucket</th>
-                    <th className="py-2 pr-3">Código</th>
-                    <th className="py-2 pr-3">Nombre</th>
-                    <th className="py-2 pr-3 text-right">Litros</th>
-                    <th className="py-2 pr-3 text-right">h suma</th>
-                    <th className="py-2 pr-3 text-right">km suma</th>
-                    <th className="py-2 pr-3 text-right">Tx</th>
-                    <th className="py-2 pr-3 text-right">L/h</th>
-                    <th className="py-2 pr-3">Drill</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {sortedBuckets.map((r, idx) => {
-                    const bk =
-                      grain === 'daily' ? 'bucket_day' : grain === 'weekly' ? 'bucket_week' : 'bucket_month'
-                    const aid = r.asset_id as string | undefined
-                    return (
-                      <tr key={`${String(r[bk])}-${aid}-${idx}`} className="border-b border-border/60">
-                        <td className="py-2 pr-3 font-mono text-xs">{String(r[bk] ?? '—')}</td>
-                        <td className="py-2 pr-3 font-mono">{r.asset_code || '—'}</td>
-                        <td className="py-2 pr-3">{r.asset_name || '—'}</td>
-                        <td className="py-2 pr-3 text-right">{fmt(Number(r.total_liters), 1)}</td>
-                        <td className="py-2 pr-3 text-right">{fmt(Number(r.sum_hours_consumed), 2)}</td>
-                        <td className="py-2 pr-3 text-right">{fmt(Number(r.sum_km_consumed), 2)}</td>
-                        <td className="py-2 pr-3 text-right">{Number(r.transaction_count ?? 0)}</td>
-                        <td className="py-2 pr-3 text-right">
-                          {fmt(r.liters_per_sum_hour != null ? Number(r.liters_per_sum_hour) : null, 3)}
-                        </td>
-                        <td className="py-2 pr-3">
-                          {aid ? (
-                            <div className="flex flex-wrap gap-1">
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className="h-8"
-                                onClick={() =>
-                                  void openMeterSheet(
-                                    aid,
-                                    `${r.asset_code || ''} ${r.asset_name || ''}`.trim()
-                                  )
-                                }
-                              >
-                                <Gauge className="h-3.5 w-3.5 mr-1" />
-                                Eventos
-                              </Button>
-                              <Button variant="ghost" size="sm" asChild>
-                                <Link href={`/activos/${aid}`}>
-                                  <ExternalLink className="h-4 w-4" />
-                                </Link>
-                              </Button>
-                            </div>
-                          ) : null}
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            )}
-          </CardContent>
-        </Card>
-      )}
+          </div>
 
-      <Sheet open={meterOpen} onOpenChange={setMeterOpen}>
-        <SheetContent className="sm:max-w-lg overflow-y-auto">
-          <SheetHeader>
-            <SheetTitle>Eventos de horómetro</SheetTitle>
-            <SheetDescription>
-              {meterLabel} · {yearMonth} · fuente unificada{' '}
-              <code className="text-xs">asset_meter_reading_events</code>
-            </SheetDescription>
-          </SheetHeader>
-          {meterLoading ? (
-            <p className="text-sm text-muted-foreground py-4">Cargando eventos…</p>
-          ) : meterEvents.length === 0 ? (
-            <p className="text-sm text-muted-foreground py-4">Sin eventos en el rango.</p>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Fecha</TableHead>
-                  <TableHead>Origen</TableHead>
-                  <TableHead className="text-right">Lectura h</TableHead>
-                  <TableHead className="text-right">h consumidas</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {meterEvents.map((ev) => (
-                  <TableRow key={`${ev.source_kind}-${ev.source_id}`}>
-                    <TableCell className="text-xs whitespace-nowrap">
-                      {new Date(ev.event_at).toLocaleString('es-MX')}
-                    </TableCell>
-                    <TableCell className="text-xs">{ev.source_kind || '—'}</TableCell>
-                    <TableCell className="text-right font-mono text-xs">
-                      {ev.hours_reading != null ? fmt(ev.hours_reading, 2) : '—'}
-                    </TableCell>
-                    <TableCell className="text-right font-mono text-xs">
-                      {ev.hours_consumed != null ? fmt(ev.hours_consumed, 2) : '—'}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
-        </SheetContent>
-      </Sheet>
+          <div className="ml-auto">
+            <span className="text-xs text-stone-400 tabular-num">
+              {filteredRows.length} activo{filteredRows.length !== 1 ? 's' : ''}
+            </span>
+          </div>
+        </div>
+
+        {/* KPI instrument cluster */}
+        {!loading && rows.length > 0 && (
+          <KpiStrip
+            rows={filteredRows}
+            prevRows={filteredPrevRows}
+            onFilterAnomaly={() => setView('anomalies')}
+            onFilterQuality={() => setView('quality')}
+          />
+        )}
+
+        {/* Plant breakdown */}
+        {!loading && rows.length > 0 && (
+          <PlantBarStrip
+            rows={filteredRows}
+            plantNames={plantNames}
+            selectedPlant={selectedPlant}
+            onSelectPlant={setSelectedPlant}
+          />
+        )}
+
+        {/* View tabs */}
+        <div className="bg-white border border-stone-900/[0.08] rounded-lg overflow-hidden">
+          {/* Tab strip */}
+          <div className="flex border-b border-stone-900/[0.08]">
+            {(Object.keys(VIEW_LABELS) as ViewMode[]).map((v) => {
+              const badge = v === 'anomalies' ? anomalyCount : v === 'quality' ? qualityIssueCount : null
+              return (
+                <button
+                  key={v}
+                  onClick={() => setView(v)}
+                  className={[
+                    'flex items-center gap-1.5 px-5 py-3 text-xs font-semibold border-b-2 transition-colors',
+                    view === v
+                      ? 'border-amber-600 text-amber-700 bg-amber-50/40'
+                      : 'border-transparent text-stone-500 hover:text-stone-700 hover:bg-stone-50',
+                  ].join(' ')}
+                >
+                  {VIEW_LABELS[v]}
+                  {badge != null && badge > 0 && (
+                    <span className={[
+                      'inline-flex items-center justify-center w-4 h-4 rounded-full text-[10px] font-bold',
+                      v === 'anomalies' ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700',
+                    ].join(' ')}>
+                      {badge > 9 ? '9+' : badge}
+                    </span>
+                  )}
+                </button>
+              )
+            })}
+          </div>
+
+          {/* Tab content */}
+          <div className={view === 'fleet' ? 'overflow-x-auto' : 'p-5'}>
+            {loading ? (
+              <div className="py-12 flex flex-col items-center gap-3">
+                <div className="w-8 h-8 border-2 border-amber-600 border-t-transparent rounded-full animate-spin" />
+                <p className="text-sm text-stone-400">Cargando datos de eficiencia…</p>
+              </div>
+            ) : rows.length === 0 ? (
+              <div className="py-14 flex flex-col items-center gap-3 text-center px-8">
+                <div className="w-12 h-12 rounded-full bg-stone-100 flex items-center justify-center">
+                  <Fuel className="h-5 w-5 text-stone-400" />
+                </div>
+                <div>
+                  <p className="font-semibold text-stone-700">Sin datos para {MONTHS_LABEL[yearMonth] ?? yearMonth}</p>
+                  <p className="text-sm text-stone-400 mt-1 max-w-md">
+                    Primero aplica la migración en Supabase, luego ejecuta el backfill o usa
+                    «Recalcular» en el menú ⋯ para calcular las métricas de este mes.
+                  </p>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="mt-2 border-stone-200 text-stone-600"
+                  onClick={() => void onRecompute()}
+                  disabled={recomputing}
+                >
+                  {recomputing ? 'Recalculando…' : 'Recalcular ahora'}
+                </Button>
+              </div>
+            ) : view === 'fleet' ? (
+              <AssetTable rows={filteredRows} prevRows={filteredPrevRows} onOpenDrill={openDrill} yearMonth={yearMonth} />
+            ) : view === 'anomalies' ? (
+              <AnomaliesList rows={filteredRows} onOpenDrill={openDrill} />
+            ) : (
+              <DataQualityList rows={filteredRows} onOpenDrill={openDrill} />
+            )}
+          </div>
+        </div>
+
+      {/* Drill-in sheet */}
+      <DrillSheet
+        row={drillRow}
+        yearMonth={yearMonth}
+        open={drillOpen}
+        onOpenChange={setDrillOpen}
+        onDataChanged={load}
+      />
     </div>
   )
 }
 
-export default function EficienciaDieselReportPage() {
+export default function EficienciaDieselPage() {
   return (
     <Suspense
       fallback={
-        <div className="container mx-auto py-10 px-4 text-muted-foreground">Cargando reporte…</div>
+        <div className="min-h-screen bg-stone-50 flex items-center justify-center">
+          <div className="flex items-center gap-3 text-stone-400">
+            <div className="w-5 h-5 border-2 border-amber-600 border-t-transparent rounded-full animate-spin" />
+            <span className="text-sm">Cargando eficiencia diésel…</span>
+          </div>
+        </div>
       }
     >
-      <EficienciaDieselReportContent />
+      <EficienciaDieselContent />
     </Suspense>
   )
 }

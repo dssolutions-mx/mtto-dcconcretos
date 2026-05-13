@@ -83,7 +83,7 @@ export async function computeAssetDieselEfficiencyMonths(
   let assetsQuery = supabase
     .from('assets')
     .select('id, asset_id, plant_id, status, equipment_models(category)')
-    .eq('status', 'activo')
+    .neq('status', 'retired')
   if (plantId) assetsQuery = assetsQuery.eq('plant_id', plantId)
   const { data: assetsData, error: assetsErr } = await assetsQuery
   if (assetsErr) throw assetsErr

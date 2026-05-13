@@ -337,60 +337,53 @@ export function buildMergedHoursReadingEventsForAsset(params: {
 }
 
 /**
- * Hours from merged horometer + checklist deltas inside [startMs, endMs) (end exclusive).
+ * Hours from merged horometer + checklist readings inside [startMs, endMs) (end exclusive).
+ *
+ * Uses the range between first and last readings of the month, with linear interpolation
+ * at both boundaries when there are bracketing events outside the window. This prorates
+ * the cross-month gap so partial-day usage at month edges is allocated correctly.
  */
 export function mergedHoursFromEvents(
   events: ReadingEvent[],
   startMs: number,
   endMs: number
 ): number {
-  if (events.length < 2) return 0
+  if (events.length === 0) return 0
   events.sort((a, b) => a.ts - b.ts)
-  const uniqueEvents: ReadingEvent[] = []
-  for (let i = 0; i < events.length; i++) {
-    const e = events[i]
-    const prev = uniqueEvents[uniqueEvents.length - 1]
-    if (!prev || prev.ts !== e.ts || prev.val !== e.val) uniqueEvents.push(e)
+  const unique: ReadingEvent[] = []
+  for (const e of events) {
+    const prev = unique[unique.length - 1]
+    if (!prev || prev.ts !== e.ts || prev.val !== e.val) unique.push(e)
   }
-  if (uniqueEvents.length < 2) return 0
 
-  let baselineIdx = -1
-  for (let i = uniqueEvents.length - 1; i >= 0; i--) {
-    if (uniqueEvents[i].ts < startMs) {
-      baselineIdx = i
-      break
-    }
-  }
-  if (baselineIdx === -1) {
-    for (let i = 0; i < uniqueEvents.length; i++) {
-      if (uniqueEvents[i].ts >= startMs) {
-        baselineIdx = i
-        break
-      }
-    }
-  }
-  if (baselineIdx === -1 || baselineIdx >= uniqueEvents.length - 1) return 0
+  const inMonth = unique.filter(e => e.ts >= startMs && e.ts < endMs)
+  if (inMonth.length === 0) return 0
 
-  let totalHours = 0
-  for (let i = baselineIdx; i < uniqueEvents.length - 1; i++) {
-    const current = uniqueEvents[i]
-    const next = uniqueEvents[i + 1]
-    if (next.ts < startMs) continue
-    if (current.ts >= endMs) break
-    const delta = next.val - current.val
-    if (delta < 0) continue
-    const timeDeltaDays = (next.ts - current.ts) / (1000 * 60 * 60 * 24)
-    if (timeDeltaDays < 1 / 24) continue
-    const hoursPerDay = timeDeltaDays > 0 ? delta / timeDeltaDays : 0
-    if (hoursPerDay > MAX_HOURS_PER_DAY && timeDeltaDays < 60) continue
-    let cappedDelta = delta
-    if (timeDeltaDays > 0) {
-      const maxReasonableDelta = MAX_HOURS_PER_DAY * timeDeltaDays
-      if (delta > maxReasonableDelta) cappedDelta = maxReasonableDelta
-    }
-    totalHours += cappedDelta
+  const firstInMonth = inMonth[0]!
+  const lastInMonth = inMonth[inMonth.length - 1]!
+
+  // Prorate start: interpolate at startMs between last-before and first-in-month
+  const lastBefore = unique.slice().reverse().find(e => e.ts < startMs) ?? null
+  let startVal: number
+  if (lastBefore && firstInMonth.ts > startMs && firstInMonth.val > lastBefore.val) {
+    const frac = (startMs - lastBefore.ts) / (firstInMonth.ts - lastBefore.ts)
+    startVal = lastBefore.val + frac * (firstInMonth.val - lastBefore.val)
+  } else {
+    startVal = firstInMonth.val
   }
-  return totalHours
+
+  // Prorate end: interpolate at endMs between last-in-month and first-after
+  const firstAfter = unique.find(e => e.ts >= endMs) ?? null
+  let endVal: number
+  if (firstAfter && lastInMonth.ts < endMs && firstAfter.val > lastInMonth.val) {
+    const frac = (endMs - lastInMonth.ts) / (firstAfter.ts - lastInMonth.ts)
+    endVal = lastInMonth.val + frac * (firstAfter.val - lastInMonth.val)
+  } else {
+    endVal = lastInMonth.val
+  }
+
+  const delta = endVal - startVal
+  return delta > 0 ? delta : 0
 }
 
 export type MergedHoursDiagnostics = {

@@ -827,6 +827,17 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                     Reportes
                   </Link>
                 </Button>
+                <Button
+                  variant={isPathActive("/reportes/eficiencia-diesel") ? "secondary" : "ghost"}
+                  className={cn("w-full justify-start pl-8", navItemClasses)}
+                  asChild
+                  onClick={handleLinkClick}
+                >
+                  <Link href="/reportes/eficiencia-diesel">
+                    <Fuel className="mr-2 h-4 w-4" />
+                    Eficiencia de Diesel
+                  </Link>
+                </Button>
               </CollapsibleContent>
             </Collapsible>
           </div>
