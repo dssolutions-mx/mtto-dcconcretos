@@ -629,7 +629,7 @@ export function EvidenceCaptureSection({
                       <Camera className="h-5 w-5 text-gray-400" />
                     )}
                     <span className="text-sm text-gray-600">
-                      {uploading ? 'Procesando y comprimiendo...' : 'Tomar foto o seleccionar archivo'}
+                      {uploading ? 'Procesando y comprimiendo...' : 'Tomar foto'}
                     </span>
                   </div>
                   <div className="text-xs text-gray-500 space-y-1">

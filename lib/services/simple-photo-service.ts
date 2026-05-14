@@ -1,6 +1,23 @@
 import type { DieselEvidenceImageMetadata } from "@/lib/photos/diesel-evidence-image-metadata"
 import { extractDieselEvidenceMetadata } from "@/lib/photos/extract-image-exif"
 
+/** Let the WebView finish the file-chooser / activity result before heavy JS (Exif, canvas). */
+function yieldToMainThread(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 0))
+}
+
+function emptyEvidenceMetadata(extractedAt: string): DieselEvidenceImageMetadata {
+  return {
+    photoTaken: null,
+    gps: null,
+    camera: { make: null, model: null, software: null },
+    exif: null,
+    iptc: null,
+    xmp: null,
+    extractedAt,
+  }
+}
+
 export interface PhotoUploadResult {
   id: string
   preview: string
@@ -19,7 +36,9 @@ export interface PhotoUploadOptions {
   immediate?: boolean
   category?: string
   /**
-   * `camera` = `<input capture>` — OS often strips EXIF; we still record `clientCaptureReceivedAt` as fallback.
+   * `camera` = direct capture / camera control: skip EXIF read (camera pipeline rarely has useful embedded metadata);
+   * use `clientCaptureReceivedAt` / `fileLastModifiedAt` instead.
+   * `gallery` = run full EXIF extraction on the original file before compression.
    */
   captureSource?: "camera" | "gallery"
 }
@@ -122,12 +141,20 @@ class SimplePhotoService {
     options: PhotoUploadOptions = {}
   ): Promise<PhotoUploadResult> {
     try {
+      await yieldToMainThread()
+
       const photoId = `photo_${checklistId}_${itemId}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
 
       const clientReceiveClock =
         options.captureSource === "camera" ? new Date().toISOString() : undefined
 
-      let evidenceImageMetadata = await extractDieselEvidenceMetadata(file)
+      const extractedAt = new Date().toISOString()
+      let evidenceImageMetadata: DieselEvidenceImageMetadata
+      if (options.captureSource === "camera") {
+        evidenceImageMetadata = emptyEvidenceMetadata(extractedAt)
+      } else {
+        evidenceImageMetadata = await extractDieselEvidenceMetadata(file)
+      }
 
       const fileLastModifiedAt =
         file.lastModified > 0 ? new Date(file.lastModified).toISOString() : undefined
