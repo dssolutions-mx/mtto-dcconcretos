@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   Sheet,
   SheetContent,
@@ -30,14 +30,29 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import type { EfficiencyRow, MeterEvent } from './types'
+import {
+  resolveTrustedOperatingHours,
+  resolveTrustedOperatingKilometers,
+} from '@/lib/reports/diesel-efficiency-hours-policy'
+import {
+  buildMergedHoursReadingEventsForAsset,
+  mergedHoursWindowDetails,
+  type MergedHoursWindowDetails,
+} from '@/lib/reports/merged-operating-hours'
+import { buildMergedKmReadingEventsForAsset } from '@/lib/reports/merged-operating-km'
+import { mexicoCityMonthWindowFromYm } from '@/lib/reports/mexico-city-report-window'
 
 type TrendPoint = {
   month: string
   lph: number | null
   lpk: number | null
+  lpm3: number | null
   liters: number
   hours_merged: number
   hours_sum_raw: number
+  km_merged: number
+  km_sum_raw: number
+  km_trusted: number
 }
 
 type Props = {
@@ -48,14 +63,10 @@ type Props = {
   onDataChanged?: () => void
 }
 
+/** Half-open meter/API window aligned with compute-asset-diesel-efficiency-monthly (America/Mexico_City). */
 function monthIsoRange(yearMonth: string): { from: string; to: string } {
-  const [ys, ms] = yearMonth.split('-')
-  const y = Number(ys)
-  const m = Number(ms)
-  return {
-    from: new Date(Date.UTC(y, m - 1, 1)).toISOString(),
-    to: new Date(Date.UTC(y, m, 1)).toISOString(),
-  }
+  const w = mexicoCityMonthWindowFromYm(yearMonth)
+  return { from: w.startInclusiveIso, to: w.endExclusiveIso }
 }
 
 const SOURCE_LABEL: Record<string, string> = {
@@ -130,7 +141,6 @@ function EventsTab({
   remisiones: RemisionEntry[]
 }) {
   const [editing, setEditing] = useState<EditState | null>(null)
-  const [collapsedDays, setCollapsedDays] = useState<Set<string>>(() => new Set())
   const [priorMonthExpanded, setPriorMonthExpanded] = useState(false)
   const [showRemisiones, setShowRemisiones] = useState(false)
   const [evidenceTxId, setEvidenceTxId] = useState<string | null>(null)
@@ -234,15 +244,6 @@ function EventsTab({
   }
 
   const hasContextEvents = events.some(ev => new Date(ev.event_at) < monthBoundaryDate)
-
-  const toggleDay = (dateLabel: string) => {
-    setCollapsedDays(prev => {
-      const next = new Set(prev)
-      if (next.has(dateLabel)) next.delete(dateLabel)
-      else next.add(dateLabel)
-      return next
-    })
-  }
 
   const evidenceEvent =
     evidenceTxId != null
@@ -587,19 +588,21 @@ function EventsTab({
 }
 
 function TrendTab({
-  row,
+  activeYearMonth,
+  trendSummaryRow,
+  trendSummaryLoading,
   trend,
   loading,
-  events,
-  yearMonth,
   onShowHorasBreakdown,
+  onShowKmBreakdown,
 }: {
-  row: EfficiencyRow
+  activeYearMonth: string
+  trendSummaryRow: EfficiencyRow | null
+  trendSummaryLoading: boolean
   trend: TrendPoint[]
   loading: boolean
-  events: MeterEvent[]
-  yearMonth: string
   onShowHorasBreakdown: () => void
+  onShowKmBreakdown?: () => void
 }) {
   if (loading) {
     return (
@@ -627,8 +630,89 @@ function TrendTab({
   const lphValues = trend.map(t => t.lph).filter((v): v is number => v != null && v > 0)
   const avgLph = lphValues.length > 0 ? lphValues.reduce((s, v) => s + v, 0) / lphValues.length : null
 
-  // Km-based asset: check if any event has km readings
-  const hasKm = row.kilometers_sum_raw > 0
+  const lpm3Values = trend.map(t => t.lpm3).filter((v): v is number => v != null && v > 0 && Number.isFinite(v))
+  const avgLpm3 = lpm3Values.length > 0 ? lpm3Values.reduce((s, v) => s + v, 0) / lpm3Values.length : null
+  const hasLpm3Trend = lpm3Values.length > 0
+
+  const trendHasKm = trend.some((t) => t.lpk != null && Number(t.lpk) > 0)
+
+  const snap = trendSummaryRow
+  const snapHasKm =
+    snap != null &&
+    ((snap.kilometers_trusted ?? 0) > 0 ||
+      (snap.kilometers_merged ?? 0) > 0 ||
+      snap.kilometers_sum_raw > 0)
+
+  const summaryStrip =
+    snap == null && trendSummaryLoading ? (
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mt-2">
+        <div className="h-[52px] bg-stone-100 rounded-md animate-pulse" />
+        <div className="h-[52px] bg-stone-100 rounded-md animate-pulse" />
+        <div className="h-[52px] bg-stone-100 rounded-md animate-pulse" />
+      </div>
+    ) : snap == null ? (
+      <p className="text-[11px] text-stone-500 mt-2 px-0.5">
+        Sin fila de eficiencia para <span className="font-mono">{activeYearMonth}</span>. Recalcula el mes en el listado
+        o revisa que exista consumo diésel para este activo.
+      </p>
+    ) : (
+      <>
+        <div
+          className={
+            snapHasKm ? 'grid grid-cols-2 sm:grid-cols-3 gap-2 mt-2' : 'grid grid-cols-2 gap-2 mt-2'
+          }
+        >
+          <div className="bg-stone-50 border border-stone-900/[0.06] rounded-md px-3 py-2">
+            <p className="text-[10px] font-medium uppercase tracking-widest text-stone-400">Litros mes</p>
+            <p className="text-sm font-semibold tabular-num text-stone-800 mt-0.5">
+              {snap.total_liters.toLocaleString('es-MX', { maximumFractionDigits: 0 })} L
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onShowHorasBreakdown}
+            className="bg-stone-50 border border-stone-900/[0.06] rounded-md px-3 py-2 text-left hover:bg-stone-100 hover:border-amber-300 transition-colors group"
+          >
+            <div className="flex items-center gap-1">
+              <p className="text-[10px] font-medium uppercase tracking-widest text-stone-400">h fusionadas</p>
+              <Info className="h-2.5 w-2.5 text-stone-300 group-hover:text-amber-500 transition-colors" />
+            </div>
+            <p className="text-sm font-semibold tabular-num text-stone-800 mt-0.5">{snap.hours_merged.toFixed(1)} h</p>
+          </button>
+          {snapHasKm ? (
+            <>
+              {onShowKmBreakdown ? (
+                <button
+                  type="button"
+                  onClick={onShowKmBreakdown}
+                  className="bg-stone-50 border border-stone-900/[0.06] rounded-md px-3 py-2 text-left hover:bg-stone-100 hover:border-sky-300 transition-colors group"
+                >
+                  <div className="flex items-center gap-1">
+                    <p className="text-[10px] font-medium uppercase tracking-widest text-stone-400">km fusionados</p>
+                    <Info className="h-2.5 w-2.5 text-stone-300 group-hover:text-sky-500 transition-colors" />
+                  </div>
+                  <p className="text-sm font-semibold tabular-num text-stone-800 mt-0.5">
+                    {(snap.kilometers_merged ?? 0).toFixed(0)} km
+                  </p>
+                </button>
+              ) : (
+                <div className="bg-stone-50 border border-stone-900/[0.06] rounded-md px-3 py-2">
+                  <p className="text-[10px] font-medium uppercase tracking-widest text-stone-400">km fusionados</p>
+                  <p className="text-sm font-semibold tabular-num text-stone-800 mt-0.5">
+                    {(snap.kilometers_merged ?? 0).toFixed(0)} km
+                  </p>
+                </div>
+              )}
+            </>
+          ) : (
+            <div className="bg-stone-50 border border-stone-900/[0.06] rounded-md px-3 py-2 sm:col-span-2">
+              <p className="text-[10px] font-medium uppercase tracking-widest text-stone-400">h suma TX</p>
+              <p className="text-sm font-semibold tabular-num text-stone-800 mt-0.5">{snap.hours_sum_raw.toFixed(1)} h</p>
+            </div>
+          )}
+        </div>
+      </>
+    )
 
   return (
     <div className="space-y-5 py-3">
@@ -678,7 +762,55 @@ function TrendTab({
         </ResponsiveContainer>
       </div>
 
-      {hasKm && (
+      {hasLpm3Trend && (
+        <div>
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-stone-400">L/m³ por mes</p>
+            {avgLpm3 != null && (
+              <span className="text-[10px] text-stone-400 font-mono">
+                Promedio <span className="font-semibold text-stone-600">{avgLpm3.toFixed(2)}</span> L/m³
+              </span>
+            )}
+          </div>
+          <ResponsiveContainer width="100%" height={120}>
+            <LineChart data={trend} margin={{ top: 4, right: 8, bottom: 0, left: -8 }}>
+              <CartesianGrid vertical={false} stroke="rgba(28,25,23,0.05)" />
+              <XAxis dataKey="month" tick={{ fontSize: 10, fill: '#A8A29E', fontFamily: 'inherit' }} tickLine={false} axisLine={false} />
+              <YAxis tick={{ fontSize: 10, fill: '#A8A29E', fontFamily: 'inherit' }} tickLine={false} axisLine={false} />
+              <Tooltip
+                formatter={(v: unknown, name: unknown) => [
+                  `${typeof v === 'number' ? v.toFixed(2) : v} L/m³`,
+                  name === 'avg' ? 'Promedio' : 'L/m³',
+                ] as [string, string]}
+                contentStyle={{ fontSize: 11, border: '1px solid rgba(28,25,23,0.1)', borderRadius: 6, boxShadow: 'none', background: '#fff', fontFamily: 'inherit' }}
+              />
+              <Line
+                type="monotone"
+                dataKey="lpm3"
+                stroke="#0F766E"
+                strokeWidth={2}
+                dot={{ fill: '#0F766E', r: 3 }}
+                activeDot={{ r: 4 }}
+                connectNulls={false}
+              />
+              {avgLpm3 != null && (
+                <Line
+                  type="monotone"
+                  dataKey={() => avgLpm3}
+                  name="avg"
+                  stroke="#D6D3D1"
+                  strokeWidth={1}
+                  strokeDasharray="4 3"
+                  dot={false}
+                  activeDot={false}
+                />
+              )}
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+
+      {trendHasKm && (
         <div>
           <p className="text-[10px] font-semibold uppercase tracking-widest text-stone-400 mb-2">L/km por mes</p>
           <ResponsiveContainer width="100%" height={80}>
@@ -713,7 +845,7 @@ function TrendTab({
 
       {hasFork && (
         <div className="callout-attention text-xs">
-          <p className="font-semibold text-amber-800 mb-1">Divergencia curva vs. suma de transacciones</p>
+          <p className="font-semibold text-amber-800 mb-1">Divergencia curva vs. suma de transacciones (horas)</p>
           <p className="text-amber-700">
             En algunos meses las horas de la curva fusionada y la suma de deltas de transacciones difieren
             más de 10%. Revisa los eventos del mes afectado en la pestaña Eventos.
@@ -721,26 +853,7 @@ function TrendTab({
         </div>
       )}
 
-      <div className="grid grid-cols-3 gap-2 mt-2">
-        <div className="bg-stone-50 border border-stone-900/[0.06] rounded-md px-3 py-2">
-          <p className="text-[10px] font-medium uppercase tracking-widest text-stone-400">Litros mes</p>
-          <p className="text-sm font-semibold tabular-num text-stone-800 mt-0.5">{row.total_liters.toLocaleString('es-MX', { maximumFractionDigits: 0 })} L</p>
-        </div>
-        <button
-          onClick={onShowHorasBreakdown}
-          className="bg-stone-50 border border-stone-900/[0.06] rounded-md px-3 py-2 text-left hover:bg-stone-100 hover:border-amber-300 transition-colors group"
-        >
-          <div className="flex items-center gap-1">
-            <p className="text-[10px] font-medium uppercase tracking-widest text-stone-400">h fusionadas</p>
-            <Info className="h-2.5 w-2.5 text-stone-300 group-hover:text-amber-500 transition-colors" />
-          </div>
-          <p className="text-sm font-semibold tabular-num text-stone-800 mt-0.5">{row.hours_merged.toFixed(1)} h</p>
-        </button>
-        <div className="bg-stone-50 border border-stone-900/[0.06] rounded-md px-3 py-2">
-          <p className="text-[10px] font-medium uppercase tracking-widest text-stone-400">{hasKm ? 'km suma TX' : 'h suma TX'}</p>
-          <p className="text-sm font-semibold tabular-num text-stone-800 mt-0.5">{hasKm ? (row.kilometers_sum_raw?.toFixed(0) ?? '—') + ' km' : row.hours_sum_raw.toFixed(1) + ' h'}</p>
-        </div>
-      </div>
+      {summaryStrip}
     </div>
   )
 }
@@ -770,8 +883,35 @@ function DataQualityTab({ row }: { row: EfficiencyRow }) {
 
   if (q.merge_fork) {
     issues.push({
-      label: 'Divergencia curva fusionada vs. suma TX',
+      label: 'Divergencia curva fusionada vs. suma TX (horas)',
       value: `Diferencia > 25% entre hours_merged y hours_sum_raw`,
+      severity: 'watch',
+    })
+  }
+
+  const nullKm = q.null_previous_kilometer_count ?? 0
+  if (nullKm > 0) {
+    const ratio = q.tx_count > 0 ? nullKm / q.tx_count : 0
+    issues.push({
+      label: 'Transacciones sin odómetro previo',
+      value: `${nullKm} de ${q.tx_count} (${(ratio * 100).toFixed(0)}%)`,
+      severity: ratio > 0.5 ? 'severe' : ratio > 0.15 ? 'watch' : 'ok',
+    })
+  }
+
+  const negKm = q.negative_kilometers_consumed_count ?? 0
+  if (negKm > 0) {
+    issues.push({
+      label: 'Deltas de kilómetros negativos',
+      value: `${negKm} transacción(es)`,
+      severity: 'severe',
+    })
+  }
+
+  if (q.merge_fork_km) {
+    issues.push({
+      label: 'Divergencia curva fusionada vs. suma TX (km)',
+      value: `Diferencia > 25% entre kilometers_merged y kilometers_sum_raw`,
       severity: 'watch',
     })
   }
@@ -834,7 +974,12 @@ function DataQualityTab({ row }: { row: EfficiencyRow }) {
         <p className="font-semibold text-stone-600 mb-1">¿Cómo corregir datos?</p>
         <p>Abre la pestaña <strong>Eventos</strong> y presiona el ícono de lápiz en cualquier carga de diésel para editar la lectura de horómetro y el horómetro previo. El Δh se calcula en tiempo real y el rollup se recalcula al guardar.</p>
         <p className="text-stone-400 text-[10px] mt-2">
-          Tx: {q.tx_count} · Nulos: {q.null_previous_horometer_count} · Negativos: {q.negative_hours_consumed_count}
+          Lo mismo aplica a <strong>odómetro</strong> y odómetro previo para corregir km y el cálculo de L/km confiable.
+        </p>
+        <p className="text-stone-400 text-[10px] mt-2">
+          Tx: {q.tx_count} · Horómetro nulos: {q.null_previous_horometer_count} · Horas negativas:{' '}
+          {q.negative_hours_consumed_count} · Odómetro nulos: {q.null_previous_kilometer_count ?? 0} · Km negativos:{' '}
+          {q.negative_kilometers_consumed_count ?? 0}
         </p>
       </div>
 
@@ -883,20 +1028,48 @@ export function DrillSheet({ row, yearMonth, open, onOpenChange, onDataChanged }
   const [trendLoading, setTrendLoading] = useState(false)
   const [activeTab, setActiveTab] = useState('trend')
   const [showHorasBreakdown, setShowHorasBreakdown] = useState(false)
+  const [showKmBreakdown, setShowKmBreakdown] = useState(false)
+  const [monthEfficiencyRow, setMonthEfficiencyRow] = useState<EfficiencyRow | null>(null)
+  const [monthEfficiencyLoading, setMonthEfficiencyLoading] = useState(false)
 
+  /* eslint-disable react-hooks/set-state-in-effect -- sheet month sync, efficiency snapshot, events/trend fetches */
   // Sync activeYearMonth when the parent opens a new sheet or changes month
   useEffect(() => {
     if (open) setActiveYearMonth(yearMonth)
   }, [open, yearMonth])
 
+  useEffect(() => {
+    if (!open || !row?.assets?.id) return
+    let cancelled = false
+    setMonthEfficiencyLoading(true)
+    setMonthEfficiencyRow(null)
+    fetch(
+      `/api/reports/asset-diesel-efficiency?yearMonth=${encodeURIComponent(activeYearMonth)}&assetId=${encodeURIComponent(row.assets.id)}`
+    )
+      .then((r) => r.json())
+      .then((j) => {
+        if (cancelled) return
+        const rows = (j.rows ?? []) as EfficiencyRow[]
+        setMonthEfficiencyRow(rows[0] ?? null)
+      })
+      .catch(() => {
+        if (!cancelled) setMonthEfficiencyRow(null)
+      })
+      .finally(() => {
+        if (!cancelled) setMonthEfficiencyLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [open, activeYearMonth, row?.assets?.id])
+
   const fetchEvents = (assetInternalId: string, ym: string) => {
     setEventsLoading(true)
     setEvents([])
     const { from, to } = monthIsoRange(ym)
-    const fromDate = new Date(from)
+    const fromMs = new Date(from).getTime()
     // 30-day lookback matches the server's extended window for finding prior-month anchor events
-    fromDate.setUTCDate(fromDate.getUTCDate() - 30)
-    const extendedFrom = fromDate.toISOString()
+    const extendedFrom = new Date(fromMs - 30 * 24 * 60 * 60 * 1000).toISOString()
     fetch(
       `/api/assets/${assetInternalId}/meter-events?from=${encodeURIComponent(extendedFrom)}&to=${encodeURIComponent(to)}`
     )
@@ -913,9 +1086,9 @@ export function DrillSheet({ row, yearMonth, open, onOpenChange, onDataChanged }
     const assetCode = row.assets.asset_id
     if (assetCode) {
       const { from, to } = monthIsoRange(activeYearMonth)
-      const fromDate = new Date(from)
-      fromDate.setUTCDate(fromDate.getUTCDate() - 4)
-      const fromStr = fromDate.toISOString().slice(0, 10)
+      const fromStr = new Date(new Date(from).getTime() - 4 * 24 * 60 * 60 * 1000)
+        .toISOString()
+        .slice(0, 10)
       const toStr = to.slice(0, 10)
       fetch(`/api/integrations/cotizador/remisiones?assetId=${encodeURIComponent(assetCode)}&from=${fromStr}&to=${toStr}`)
         .then((r) => r.json())
@@ -954,14 +1127,251 @@ export function DrillSheet({ row, yearMonth, open, onOpenChange, onDataChanged }
           month: ym.slice(2),
           lph: r?.liters_per_hour_trusted ?? null,
           lpk: r?.liters_per_km ?? null,
+          lpm3: r?.liters_per_m3 ?? null,
           liters: r?.total_liters ?? 0,
           hours_merged: r?.hours_merged ?? 0,
           hours_sum_raw: r?.hours_sum_raw ?? 0,
+          km_merged: r?.kilometers_merged ?? 0,
+          km_sum_raw: r?.kilometers_sum_raw ?? 0,
+          km_trusted: r?.kilometers_trusted ?? 0,
         }
       })
       setTrend(points)
     }).finally(() => setTrendLoading(false))
   }, [open, row, activeYearMonth])
+  /* eslint-enable react-hooks/set-state-in-effect */
+
+  const headerEfficiency =
+    row != null ? monthEfficiencyRow ?? (activeYearMonth === row.year_month ? row : null) : null
+
+  /** Same instant bounds as monthly compute (`mexicoCityMonthWindowFromYm`). */
+  const monthInstantBounds = useMemo(() => {
+    const { from, to } = monthIsoRange(activeYearMonth)
+    return { startMs: new Date(from).getTime(), endMs: new Date(to).getTime() }
+  }, [activeYearMonth])
+
+  /** Live merged hours from meter timeline (diesel + checklist only) — matches `computeMergedOperatingHoursByAsset`. */
+  const hoursLiveWindow = useMemo((): MergedHoursWindowDetails => {
+    const { startMs, endMs } = monthInstantBounds
+    const dieselTxs = events
+      .filter((e) => e.source_kind === 'diesel_consumption' && e.hours_reading != null)
+      .map((e) => ({ transaction_date: e.event_at, horometer_reading: Number(e.hours_reading) }))
+    const checklistReadingEvents = events
+      .filter((e) => e.source_kind === 'checklist_completion' && e.hours_reading != null)
+      .map((e) => ({ ts: new Date(e.event_at).getTime(), val: Number(e.hours_reading) }))
+    const curve = buildMergedHoursReadingEventsForAsset({ dieselTxs, checklistReadingEvents })
+    return mergedHoursWindowDetails(curve, startMs, endMs)
+  }, [events, monthInstantBounds])
+
+  const kmLiveWindow = useMemo((): MergedHoursWindowDetails => {
+    const { startMs, endMs } = monthInstantBounds
+    const dieselTxs = events
+      .filter((e) => e.source_kind === 'diesel_consumption' && e.km_reading != null)
+      .map((e) => ({ transaction_date: e.event_at, kilometer_reading: Number(e.km_reading) }))
+    const checklistReadingEvents = events
+      .filter((e) => e.source_kind === 'checklist_completion' && e.km_reading != null)
+      .map((e) => ({ ts: new Date(e.event_at).getTime(), val: Number(e.km_reading) }))
+    const curve = buildMergedKmReadingEventsForAsset({ dieselTxs, checklistReadingEvents })
+    return mergedHoursWindowDetails(curve, startMs, endMs)
+  }, [events, monthInstantBounds])
+
+  const hasHoursCurveInputs = useMemo(
+    () =>
+      events.some(
+        (e) =>
+          (e.source_kind === 'diesel_consumption' || e.source_kind === 'checklist_completion') &&
+          e.hours_reading != null
+      ),
+    [events]
+  )
+
+  const hasKmCurveInputs = useMemo(
+    () =>
+      events.some(
+        (e) =>
+          (e.source_kind === 'diesel_consumption' || e.source_kind === 'checklist_completion') &&
+          e.km_reading != null
+      ),
+    [events]
+  )
+
+  /** Drill KPIs follow the live curve once events are loaded (user-facing truth in this sheet). */
+  const displayEfficiencyRow = useMemo((): EfficiencyRow | null => {
+    if (headerEfficiency == null) return null
+    if (eventsLoading) return headerEfficiency
+    const out: EfficiencyRow = { ...headerEfficiency }
+    const liters = headerEfficiency.total_liters
+    if (hasHoursCurveInputs) {
+      const mergedH = hoursLiveWindow.hours
+      const trustedH = resolveTrustedOperatingHours(mergedH, headerEfficiency.hours_sum_raw).trusted
+      const lph =
+        trustedH > 0 && liters > 0 ? liters / trustedH : headerEfficiency.liters_per_hour_trusted
+      out.hours_merged = mergedH
+      out.hours_trusted = trustedH
+      out.liters_per_hour_trusted = lph ?? null
+    }
+    if (hasKmCurveInputs) {
+      const mergedK = kmLiveWindow.hours
+      const trustedKRes = resolveTrustedOperatingKilometers(mergedK, headerEfficiency.kilometers_sum_raw)
+      const lpk =
+        trustedKRes.trusted > 0 && liters > 0 ? liters / trustedKRes.trusted : headerEfficiency.liters_per_km
+      out.kilometers_merged = mergedK
+      out.kilometers_trusted = trustedKRes.trusted
+      out.liters_per_km = lpk ?? null
+    }
+    return out
+  }, [
+    headerEfficiency,
+    eventsLoading,
+    hasHoursCurveInputs,
+    hasKmCurveInputs,
+    hoursLiveWindow,
+    kmLiveWindow,
+  ])
+
+  const fmtHeaderNum = useCallback((n: number | null | undefined, d: number) =>
+    n == null || !Number.isFinite(Number(n))
+      ? '—'
+      : Number(n).toLocaleString('es-MX', { minimumFractionDigits: d, maximumFractionDigits: d }), [])
+
+  const dataQualityLabel =
+    headerEfficiency == null
+      ? '—'
+      : headerEfficiency.anomaly_flags.data_quality_tier === 'ok'
+        ? 'Confiable'
+        : headerEfficiency.anomaly_flags.data_quality_tier === 'watch'
+          ? 'Vigilar'
+          : 'Revisar'
+
+  const headerKpis = useMemo((): { label: string; value: string; title?: string }[] => {
+    const loading = monthEfficiencyLoading && displayEfficiencyRow == null
+    const plantM3 = displayEfficiencyRow?.plant_concrete_m3 ?? null
+    const litersPerM3Plant =
+      plantM3 != null &&
+      plantM3 > 0 &&
+      displayEfficiencyRow != null &&
+      displayEfficiencyRow.total_liters > 0
+        ? displayEfficiencyRow.total_liters / plantM3
+        : null
+
+    if (loading) {
+      return [
+        {
+          label: 'Total litros',
+          value: '…',
+        },
+        {
+          label: 'L/h confiable',
+          value: '…',
+        },
+        {
+          label: 'L/m³',
+          value: '…',
+          title:
+            'Litros del mes en MantenPro ÷ m³ de concreto Cotizador para esta unidad (sumado en todas las plantas donde despacha).',
+        },
+        {
+          label: 'm³ Cotizador',
+          value: '…',
+          title: 'Volumen de concreto atribuido a la unidad en Cotizador para este mes.',
+        },
+        {
+          label: 'L/km',
+          value: '…',
+        },
+        { label: 'Calidad datos', value: '…' },
+      ]
+    }
+
+    const hasAssetProductionM3 =
+      displayEfficiencyRow != null &&
+      displayEfficiencyRow.concrete_m3 != null &&
+      displayEfficiencyRow.concrete_m3 > 0
+
+    if (hasAssetProductionM3) {
+      return [
+        {
+          label: 'Total litros',
+          value:
+            displayEfficiencyRow != null
+              ? displayEfficiencyRow.total_liters.toLocaleString('es-MX', { maximumFractionDigits: 0 }) + ' L'
+              : '—',
+        },
+        {
+          label: 'L/h confiable',
+          value:
+            displayEfficiencyRow?.liters_per_hour_trusted != null
+              ? displayEfficiencyRow.liters_per_hour_trusted.toFixed(2)
+              : '—',
+        },
+        {
+          label: 'L/m³',
+          value:
+            displayEfficiencyRow?.liters_per_m3 != null ? fmtHeaderNum(displayEfficiencyRow.liters_per_m3, 2) : '—',
+          title:
+            'Litros del mes en MantenPro ÷ m³ de concreto Cotizador para esta unidad (sumado en todas las plantas donde despacha).',
+        },
+        {
+          label: 'm³ Cotizador',
+          value:
+            displayEfficiencyRow?.concrete_m3 != null
+              ? fmtHeaderNum(displayEfficiencyRow.concrete_m3, 1) + ' m³'
+              : '—',
+          title: 'Volumen de concreto atribuido a la unidad en Cotizador para este mes.',
+        },
+        {
+          label: 'L/km',
+          value:
+            displayEfficiencyRow?.liters_per_km != null ? fmtHeaderNum(displayEfficiencyRow.liters_per_km, 3) : '—',
+          title: 'Litros del mes ÷ km confiables (curva fusionada de odómetro + checklist cuando aplica; si no, suma de kilometers_consumed en transacciones).',
+        },
+        { label: 'Calidad datos', value: dataQualityLabel },
+      ]
+    }
+
+    const plantM3Title =
+      plantM3 != null && plantM3 > 0
+        ? `Diesel de este activo en el mes ÷ concreto total de la planta en Cotizador (${fmtHeaderNum(plantM3, 1)} m³). No es eficiencia de producción por unidad.`
+        : 'Diesel de este activo ÷ concreto total de la planta en Cotizador (mes). Sin volumen de planta en Cotizador para este mes o la planta no está mapeada.'
+
+    return [
+      {
+        label: 'Total litros',
+        value:
+          displayEfficiencyRow != null
+            ? displayEfficiencyRow.total_liters.toLocaleString('es-MX', { maximumFractionDigits: 0 }) + ' L'
+            : '—',
+      },
+      {
+        label: 'L/h confiable',
+        value:
+          displayEfficiencyRow?.liters_per_hour_trusted != null
+            ? displayEfficiencyRow.liters_per_hour_trusted.toFixed(2)
+            : '—',
+      },
+      { label: 'Calidad datos', value: dataQualityLabel },
+      {
+        label: 'Horas confiables',
+        value: displayEfficiencyRow != null ? fmtHeaderNum(displayEfficiencyRow.hours_trusted, 1) + ' h' : '—',
+        title: 'Horas operativas usadas para L/h confiable en este mes.',
+      },
+      {
+        label: 'Km totales',
+        value:
+          displayEfficiencyRow != null
+            ? fmtHeaderNum(displayEfficiencyRow.kilometers_trusted, 0) + ' km'
+            : '—',
+        title:
+          'Km confiables usados en L/km (fusionados si la curva tiene datos; si no, suma TX). Suma bruta TX: ' +
+          (displayEfficiencyRow != null ? fmtHeaderNum(displayEfficiencyRow.kilometers_sum_raw, 0) + ' km.' : '—'),
+      },
+      {
+        label: 'L/m³ planta',
+        value: litersPerM3Plant != null ? fmtHeaderNum(litersPerM3Plant, 2) : '—',
+        title: plantM3Title,
+      },
+    ]
+  }, [displayEfficiencyRow, monthEfficiencyLoading, dataQualityLabel, fmtHeaderNum])
 
   if (!row) return null
 
@@ -1014,30 +1424,13 @@ export function DrillSheet({ row, yearMonth, open, onOpenChange, onDataChanged }
               </div>
             </SheetDescription>
           </SheetHeader>
-          {/* Quick metrics — always from the original row (parent month); events/trends reflect activeYearMonth */}
+          {/* KPIs for the selected month (2×3) — driven by efficiency row for activeYearMonth */}
           <div className="grid grid-cols-3 gap-2 mt-4">
-            {[
-              { label: 'Total litros', value: row.total_liters.toLocaleString('es-MX', { maximumFractionDigits: 0 }) + ' L' },
-              {
-                label: 'L/h confiable',
-                value:
-                  row.liters_per_hour_trusted != null
-                    ? row.liters_per_hour_trusted.toFixed(2)
-                    : '—',
-              },
-              {
-                label: 'Calidad datos',
-                value:
-                  row.anomaly_flags.data_quality_tier === 'ok'
-                    ? 'Confiable'
-                    : row.anomaly_flags.data_quality_tier === 'watch'
-                    ? 'Vigilar'
-                    : 'Revisar',
-              },
-            ].map((stat) => (
+            {headerKpis.map((stat) => (
               <div
                 key={stat.label}
                 className="bg-white border border-stone-900/[0.06] rounded-md px-3 py-2"
+                title={stat.title}
               >
                 <p className="text-[10px] font-medium uppercase tracking-widest text-stone-400 leading-none">
                   {stat.label}
@@ -1059,12 +1452,20 @@ export function DrillSheet({ row, yearMonth, open, onOpenChange, onDataChanged }
 
             <TabsContent value="trend">
               <TrendTab
-                row={row}
+                activeYearMonth={activeYearMonth}
+                trendSummaryRow={displayEfficiencyRow}
+                trendSummaryLoading={monthEfficiencyLoading}
                 trend={trend}
                 loading={trendLoading}
-                events={events}
-                yearMonth={activeYearMonth}
                 onShowHorasBreakdown={() => setShowHorasBreakdown(true)}
+                onShowKmBreakdown={(() => {
+                  const eff = displayEfficiencyRow
+                  if (!eff) return undefined
+                  const t = eff.kilometers_trusted ?? 0
+                  const m = eff.kilometers_merged ?? 0
+                  const s = eff.kilometers_sum_raw ?? 0
+                  return t > 0 || m > 0 || s > 0 ? () => setShowKmBreakdown(true) : undefined
+                })()}
               />
             </TabsContent>
 
@@ -1076,14 +1477,80 @@ export function DrillSheet({ row, yearMonth, open, onOpenChange, onDataChanged }
                 remisiones={remisiones}
                 onRefresh={() => {
                   if (!row?.assets?.id) return
-                  fetchEvents(row.assets.id, activeYearMonth)
+                  const assetId = row.assets.id
+                  fetchEvents(assetId, activeYearMonth)
+                  setMonthEfficiencyLoading(true)
+                  fetch(
+                    `/api/reports/asset-diesel-efficiency?yearMonth=${encodeURIComponent(activeYearMonth)}&assetId=${encodeURIComponent(assetId)}`
+                  )
+                    .then((r) => r.json())
+                    .then((j) => {
+                      const rows = (j.rows ?? []) as EfficiencyRow[]
+                      setMonthEfficiencyRow(rows[0] ?? null)
+                    })
+                    .catch(() => {
+                      setMonthEfficiencyRow(null)
+                    })
+                    .finally(() => {
+                      setMonthEfficiencyLoading(false)
+                    })
+                  setTrendLoading(true)
+                  const months: string[] = []
+                  const [ys, ms] = activeYearMonth.split('-')
+                  let y = Number(ys)
+                  let m = Number(ms)
+                  for (let i = 0; i < 6; i++) {
+                    months.unshift(`${y}-${String(m).padStart(2, '0')}`)
+                    m--
+                    if (m === 0) { m = 12; y-- }
+                  }
+                  Promise.all(
+                    months.map((ym) =>
+                      fetch(`/api/reports/asset-diesel-efficiency?yearMonth=${ym}&assetId=${assetId}`)
+                        .then((r) => r.json())
+                        .then((j) => ({ ym, rows: (j.rows ?? []) as EfficiencyRow[] }))
+                        .catch(() => ({ ym, rows: [] }))
+                    )
+                  )
+                    .then((results) => {
+                      const points: TrendPoint[] = results.map(({ ym, rows }) => {
+                        const r = rows[0]
+                        return {
+                          month: ym.slice(2),
+                          lph: r?.liters_per_hour_trusted ?? null,
+                          lpk: r?.liters_per_km ?? null,
+                          lpm3: r?.liters_per_m3 ?? null,
+                          liters: r?.total_liters ?? 0,
+                          hours_merged: r?.hours_merged ?? 0,
+                          hours_sum_raw: r?.hours_sum_raw ?? 0,
+                          km_merged: r?.kilometers_merged ?? 0,
+                          km_sum_raw: r?.kilometers_sum_raw ?? 0,
+                          km_trusted: r?.kilometers_trusted ?? 0,
+                        }
+                      })
+                      setTrend(points)
+                    })
+                    .finally(() => {
+                      setTrendLoading(false)
+                    })
                   onDataChanged?.()
                 }}
               />
             </TabsContent>
 
             <TabsContent value="quality">
-              <DataQualityTab row={row} />
+              {monthEfficiencyLoading && headerEfficiency == null ? (
+                <div className="space-y-3 py-4">
+                  <div className="h-24 bg-stone-100 rounded animate-pulse" />
+                  <div className="h-32 bg-stone-100 rounded animate-pulse" />
+                </div>
+              ) : headerEfficiency != null ? (
+                <DataQualityTab row={headerEfficiency} />
+              ) : (
+                <div className="py-8 text-center text-sm text-stone-500">
+                  Sin fila de eficiencia para <span className="font-mono">{activeYearMonth}</span>.
+                </div>
+              )}
             </TabsContent>
           </Tabs>
         </div>
@@ -1098,120 +1565,181 @@ export function DrillSheet({ row, yearMonth, open, onOpenChange, onDataChanged }
           <DialogTitle className="text-base">Horas fusionadas — desglose</DialogTitle>
         </DialogHeader>
         {row && (() => {
-          const { from: monthStart, to: monthEnd } = monthIsoRange(activeYearMonth)
-          const monthStartMs = new Date(monthStart).getTime()
-          const monthEndMs = new Date(monthEnd).getTime()
-
-          // Replicate server's buildMergedHoursReadingEventsForAsset pipeline:
-          // 1. Diesel readings with jump filter (same as dieselReadingsFromTxs)
-          const MAX_HPD = 24
-          const dieselRaw = events
-            .filter(ev => ev.source_kind === 'diesel_consumption' && ev.hours_reading != null)
-            .map(ev => ({ ts: new Date(ev.event_at).getTime(), val: ev.hours_reading! }))
-            .sort((a, b) => a.ts - b.ts)
-          const dieselFiltered: { ts: number; val: number }[] = []
-          for (let i = 0; i < dieselRaw.length; i++) {
-            const cur = dieselRaw[i]!
-            if (i === 0) { dieselFiltered.push(cur); continue }
-            const prev = dieselRaw[i - 1]!
-            const days = (cur.ts - prev.ts) / 86400000
-            const delta = cur.val - prev.val
-            const hpd = days > 0 ? delta / days : 0
-            if (delta >= 0 && (days >= 60 || hpd <= MAX_HPD)) dieselFiltered.push(cur)
-          }
-          // 2. Checklist events — band-filtered to ±2× diesel range
-          const chkRaw = events
-            .filter(ev => ev.source_kind !== 'diesel_consumption' && ev.hours_reading != null)
-            .map(ev => ({ ts: new Date(ev.event_at).getTime(), val: ev.hours_reading! }))
-          let merged: { ts: number; val: number }[]
-          if (dieselFiltered.length > 0) {
-            const vals = dieselFiltered.map(e => e.val)
-            const dMin = Math.min(...vals), dMax = Math.max(...vals)
-            const rng = dMax - dMin
-            const allowedMin = dMin - rng * 2, allowedMax = dMax + rng * 2
-            merged = [...dieselFiltered, ...chkRaw.filter(e => e.val >= allowedMin && e.val <= allowedMax)]
-          } else {
-            merged = [...dieselFiltered, ...chkRaw]
-          }
-          // 3. Sort + dedupe (same as mergedHoursFromEvents)
-          merged.sort((a, b) => a.ts - b.ts)
-          const allWithReadings: { ts: number; val: number }[] = []
-          for (const e of merged) {
-            const prev = allWithReadings[allWithReadings.length - 1]
-            if (!prev || prev.ts !== e.ts || prev.val !== e.val) allWithReadings.push(e)
-          }
-
-          const inMonth = allWithReadings.filter(e => e.ts >= monthStartMs && e.ts < monthEndMs)
-          const lastBefore = [...allWithReadings].reverse().find(e => e.ts < monthStartMs) ?? null
-          const firstAfter = allWithReadings.find(e => e.ts >= monthEndMs) ?? null
-          const firstInMonth = inMonth[0] ?? null
-          const lastInMonth = inMonth[inMonth.length - 1] ?? null
-
-          // Prorate start
-          let startVal = firstInMonth?.val ?? null
-          let startTs = firstInMonth?.ts ?? null
-          let startIsProrated = false
-          if (lastBefore && firstInMonth && firstInMonth.val > lastBefore.val && firstInMonth.ts > monthStartMs) {
-            const frac = (monthStartMs - lastBefore.ts) / (firstInMonth.ts - lastBefore.ts)
-            startVal = lastBefore.val + frac * (firstInMonth.val - lastBefore.val)
-            startTs = monthStartMs
-            startIsProrated = true
-          }
-
-          // Prorate end
-          let endVal = lastInMonth?.val ?? null
-          let endTs = lastInMonth?.ts ?? null
-          let endIsProrated = false
-          if (firstAfter && lastInMonth && firstAfter.val > lastInMonth.val && lastInMonth.ts < monthEndMs) {
-            const frac = (monthEndMs - lastInMonth.ts) / (firstAfter.ts - lastInMonth.ts)
-            endVal = lastInMonth.val + frac * (firstAfter.val - lastInMonth.val)
-            endTs = monthEndMs
-            endIsProrated = true
-          }
-
-          const totalAccepted = startVal != null && endVal != null && endVal > startVal ? endVal - startVal : 0
-
-          const fmtTime = (ts: number) => new Date(ts).toLocaleDateString('es-MX', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'America/Mexico_City' })
-          const fmtH = (v: number) => v.toLocaleString('es-MX', { minimumFractionDigits: 1, maximumFractionDigits: 1 })
+          const hw = hoursLiveWindow
+          const fmtTime = (ts: number) =>
+            new Date(ts).toLocaleDateString('es-MX', {
+              month: 'short',
+              day: 'numeric',
+              hour: '2-digit',
+              minute: '2-digit',
+              timeZone: 'America/Mexico_City',
+            })
+          const fmtH = (v: number) =>
+            v.toLocaleString('es-MX', { minimumFractionDigits: 1, maximumFractionDigits: 1 })
 
           return (
             <div className="space-y-4 text-xs">
               <p className="text-stone-500">
-                Diferencia entre primera y última lectura del mes, con interpolación lineal en los límites del mes cuando hay eventos de otro mes que acotan el rango.
+                Curva oficial (cargas diésel + checklist en banda), misma lógica que el recálculo mensual. Diferencia
+                entre primera y última lectura del mes, con interpolación lineal en los límites cuando hay eventos de
+                otro mes que acotan el rango.
               </p>
+              {!hasHoursCurveInputs && !eventsLoading && (
+                <p className="text-amber-800 text-[11px] bg-amber-50 border border-amber-200 rounded-md px-2 py-1.5">
+                  No hay lecturas de horas (diésel o checklist) en la ventana de eventos cargada; si ves 0 h, revisa
+                  la pestaña Eventos o la fila mensual guardada.
+                </p>
+              )}
 
               <div className="grid grid-cols-2 gap-2">
                 <div className="bg-green-50 border border-green-200 rounded-md px-3 py-2">
                   <p className="text-[10px] text-green-700 font-semibold uppercase tracking-widest">H fusionadas</p>
-                  <p className="text-lg font-bold tabular-num text-green-800">{totalAccepted.toFixed(1)} h</p>
+                  <p className="text-lg font-bold tabular-num text-green-800">{hw.hours.toFixed(1)} h</p>
                 </div>
                 <div className="bg-stone-50 border border-stone-200 rounded-md px-3 py-2">
                   <p className="text-[10px] text-stone-500 font-semibold uppercase tracking-widest">Lecturas en mes</p>
-                  <p className="text-lg font-bold tabular-num text-stone-700">{inMonth.length}</p>
+                  <p className="text-lg font-bold tabular-num text-stone-700">{hw.readingsInMonth}</p>
                 </div>
               </div>
 
-              {startVal != null && endVal != null && (
+              {hw.startVal != null && hw.endVal != null && (
                 <div className="space-y-1.5">
                   <p className="text-[10px] font-semibold uppercase tracking-widest text-stone-400">Límites calculados</p>
                   <div className="bg-stone-50 border border-stone-200 rounded-md px-3 py-2 space-y-1.5">
                     <div className="flex items-center justify-between">
                       <div>
-                        <span className="text-stone-400 text-[10px]">Inicio {startIsProrated && <span className="text-blue-500">(prorrateado)</span>}</span>
-                        <div className="text-[10px] text-stone-400">{startTs != null ? fmtTime(startTs) : '—'}</div>
+                        <span className="text-stone-400 text-[10px]">
+                          Inicio {hw.startIsProrated && <span className="text-blue-500">(prorrateado)</span>}
+                        </span>
+                        <div className="text-[10px] text-stone-400">
+                          {hw.startTs != null ? fmtTime(hw.startTs) : '—'}
+                        </div>
                       </div>
-                      <span className="font-mono font-semibold text-stone-700">{fmtH(startVal)} h</span>
+                      <span className="font-mono font-semibold text-stone-700">{fmtH(hw.startVal)} h</span>
                     </div>
                     <div className="flex items-center justify-between pt-1 border-t border-stone-100">
                       <div>
-                        <span className="text-stone-400 text-[10px]">Fin {endIsProrated && <span className="text-blue-500">(prorrateado)</span>}</span>
-                        <div className="text-[10px] text-stone-400">{endTs != null ? fmtTime(endTs) : '—'}</div>
+                        <span className="text-stone-400 text-[10px]">
+                          Fin {hw.endIsProrated && <span className="text-blue-500">(prorrateado)</span>}
+                        </span>
+                        <div className="text-[10px] text-stone-400">
+                          {hw.endTs != null ? fmtTime(hw.endTs) : '—'}
+                        </div>
                       </div>
-                      <span className="font-mono font-semibold text-stone-700">{fmtH(endVal)} h</span>
+                      <span className="font-mono font-semibold text-stone-700">{fmtH(hw.endVal)} h</span>
                     </div>
-                    {lastBefore && startIsProrated && (
+                    {hw.lastBefore && hw.startIsProrated && (
                       <div className="pt-1 border-t border-stone-100 text-[10px] text-stone-400">
-                        Anclado en: {fmtH(lastBefore.val)} h del {fmtTime(lastBefore.ts)}
+                        Anclado en: {fmtH(hw.lastBefore.val)} h del {fmtTime(hw.lastBefore.ts)}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          )
+        })()}
+      </DialogContent>
+    </Dialog>
+
+    {/* KM FUSIONADOS breakdown dialog — same curve logic as server `merged-operating-km` (800 km/día cap) */}
+    <Dialog open={showKmBreakdown} onOpenChange={setShowKmBreakdown}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle className="text-base">Km fusionados — desglose</DialogTitle>
+        </DialogHeader>
+        {row && headerEfficiency && (() => {
+          const kw = kmLiveWindow
+          const fmtTime = (ts: number) =>
+            new Date(ts).toLocaleDateString('es-MX', {
+              month: 'short',
+              day: 'numeric',
+              hour: '2-digit',
+              minute: '2-digit',
+              timeZone: 'America/Mexico_City',
+            })
+          const fmtKm = (v: number) =>
+            v.toLocaleString('es-MX', { minimumFractionDigits: 0, maximumFractionDigits: 0 })
+
+          return (
+            <div className="space-y-4 text-xs">
+              <p className="text-stone-500">
+                Curva oficial (cargas diésel + checklist en banda), misma lógica que el recálculo mensual (tope ~800
+                km/día entre cargas). Interpolación en los límites del mes cuando hay lecturas en meses adyacentes.
+              </p>
+              {!hasKmCurveInputs && !eventsLoading && (
+                <p className="text-amber-800 text-[11px] bg-amber-50 border border-amber-200 rounded-md px-2 py-1.5">
+                  No hay lecturas de km (diésel o checklist) en la ventana de eventos cargada; si ves 0 km, revisa
+                  Eventos o la fila mensual.
+                </p>
+              )}
+
+              <div className="grid grid-cols-2 gap-2">
+                <div className="bg-sky-50 border border-sky-200 rounded-md px-3 py-2">
+                  <p className="text-[10px] text-sky-800 font-semibold uppercase tracking-widest">Km fusionados</p>
+                  <p className="text-lg font-bold tabular-num text-sky-900">{fmtKm(kw.hours)} km</p>
+                </div>
+                <div className="bg-stone-50 border border-stone-200 rounded-md px-3 py-2">
+                  <p className="text-[10px] text-stone-500 font-semibold uppercase tracking-widest">Lecturas en mes</p>
+                  <p className="text-lg font-bold tabular-num text-stone-700">{kw.readingsInMonth}</p>
+                </div>
+              </div>
+
+              <div className="rounded-md border border-stone-200 bg-stone-50 px-3 py-2 space-y-1 text-[10px] text-stone-600">
+                <p className="font-semibold text-stone-700">Mes {activeYearMonth} — último snapshot en tabla mensual</p>
+                <p>
+                  <span className="text-stone-500">km fusionados:</span>{' '}
+                  <span className="font-mono font-medium text-stone-800">
+                    {headerEfficiency.kilometers_merged.toFixed(0)} km
+                  </span>
+                </p>
+                <p>
+                  <span className="text-stone-500">km confiables (L/km):</span>{' '}
+                  <span className="font-mono font-medium text-stone-800">
+                    {headerEfficiency.kilometers_trusted.toFixed(0)} km
+                  </span>
+                </p>
+                <p>
+                  <span className="text-stone-500">Suma TX (diagnóstico):</span>{' '}
+                  <span className="font-mono font-medium text-stone-800">
+                    {headerEfficiency.kilometers_sum_raw.toFixed(0)} km
+                  </span>
+                </p>
+                <p className="text-stone-400 pt-1 border-t border-stone-100">
+                  La cifra principal arriba sigue la misma curva que la ficha y el recálculo; la tabla puede quedar
+                  desfasada unos segundos hasta que termine el POST tras editar eventos.
+                </p>
+              </div>
+
+              {kw.startVal != null && kw.endVal != null && (
+                <div className="space-y-1.5">
+                  <p className="text-[10px] font-semibold uppercase tracking-widest text-stone-400">Límites calculados</p>
+                  <div className="bg-stone-50 border border-stone-200 rounded-md px-3 py-2 space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <span className="text-stone-400 text-[10px]">
+                          Inicio {kw.startIsProrated && <span className="text-blue-500">(prorrateado)</span>}
+                        </span>
+                        <div className="text-[10px] text-stone-400">
+                          {kw.startTs != null ? fmtTime(kw.startTs) : '—'}
+                        </div>
+                      </div>
+                      <span className="font-mono font-semibold text-stone-700">{fmtKm(kw.startVal)} km</span>
+                    </div>
+                    <div className="flex items-center justify-between pt-1 border-t border-stone-100">
+                      <div>
+                        <span className="text-stone-400 text-[10px]">
+                          Fin {kw.endIsProrated && <span className="text-blue-500">(prorrateado)</span>}
+                        </span>
+                        <div className="text-[10px] text-stone-400">
+                          {kw.endTs != null ? fmtTime(kw.endTs) : '—'}
+                        </div>
+                      </div>
+                      <span className="font-mono font-semibold text-stone-700">{fmtKm(kw.endVal)} km</span>
+                    </div>
+                    {kw.lastBefore && kw.startIsProrated && (
+                      <div className="pt-1 border-t border-stone-100 text-[10px] text-stone-400">
+                        Anclado en: {fmtKm(kw.lastBefore.val)} km del {fmtTime(kw.lastBefore.ts)}
                       </div>
                     )}
                   </div>

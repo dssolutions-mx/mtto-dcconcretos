@@ -17,6 +17,7 @@
  */
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { resolveTrustedOperatingHours } from '@/lib/reports/diesel-efficiency-hours-policy'
+import { formatMexicoCityDateOnly } from '@/lib/reports/mexico-city-report-window'
 
 const METER_VIEW_ASSET_CHUNK = 100
 
@@ -38,7 +39,8 @@ export type DieselConsumptionCostRow = {
 
 /**
  * Chunked read of diesel horometer progression from `asset_meter_reading_events`.
- * `eventAtGte` / `eventAtLt` use the same calendar bounds as `diesel_transactions.transaction_date` filters (YYYY-MM-DD strings).
+ * `eventAtGte` / `eventAtLt` should be full ISO-8601 instants so `timestamptz` filters do not
+ * depend on the database session time zone (YYYY-MM-DD-only strings are ambiguous).
  */
 export async function fetchDieselHorometerFromMeterView(
   supabase: SupabaseClient,
@@ -140,6 +142,7 @@ export async function fetchDieselConsumptionCostRowsForAssets(
  * Consumption transactions in the report window for gerencial: FIFO, liters, generated hours/km, and
  * `computeMergedOperatingHoursByAsset` diagnostics. Chunked by `asset_id`; same diesel membership as the
  * meter view diesel branch (diesel warehouse + diesel product, non-transfer consumption).
+ * Prefer full ISO bounds from `mexicoCityMonthWindowFromYm` when bucketing by business month (timestamptz-safe).
  */
 export type DieselPeriodConsumptionTxRow = {
   id: string
@@ -336,6 +339,100 @@ export function buildMergedHoursReadingEventsForAsset(params: {
   return events
 }
 
+/** Proration + in-month stats for UI (diesel efficiency drill); same math as `mergedHoursFromEvents`. */
+export type MergedHoursWindowDetails = {
+  hours: number
+  readingsInMonth: number
+  startVal: number | null
+  endVal: number | null
+  startTs: number | null
+  endTs: number | null
+  startIsProrated: boolean
+  endIsProrated: boolean
+  lastBefore: ReadingEvent | null
+  firstAfter: ReadingEvent | null
+}
+
+/**
+ * Hours from merged horometer + checklist readings inside [startMs, endMs) (end exclusive),
+ * plus interpolation endpoints for breakdown UIs. Does not mutate `events`.
+ */
+export function mergedHoursWindowDetails(
+  events: ReadingEvent[],
+  startMs: number,
+  endMs: number
+): MergedHoursWindowDetails {
+  const empty = (): MergedHoursWindowDetails => ({
+    hours: 0,
+    readingsInMonth: 0,
+    startVal: null,
+    endVal: null,
+    startTs: null,
+    endTs: null,
+    startIsProrated: false,
+    endIsProrated: false,
+    lastBefore: null,
+    firstAfter: null,
+  })
+  if (events.length === 0) return empty()
+
+  const sorted = [...events].sort((a, b) => a.ts - b.ts)
+  const unique: ReadingEvent[] = []
+  for (const e of sorted) {
+    const prev = unique[unique.length - 1]
+    if (!prev || prev.ts !== e.ts || prev.val !== e.val) unique.push(e)
+  }
+
+  const inMonth = unique.filter((e) => e.ts >= startMs && e.ts < endMs)
+  if (inMonth.length === 0) return empty()
+
+  const firstInMonth = inMonth[0]!
+  const lastInMonth = inMonth[inMonth.length - 1]!
+
+  const lastBefore = unique.slice().reverse().find((e) => e.ts < startMs) ?? null
+  let startVal: number
+  let startTs: number
+  let startIsProrated = false
+  if (lastBefore && firstInMonth.ts > startMs && firstInMonth.val > lastBefore.val) {
+    const frac = (startMs - lastBefore.ts) / (firstInMonth.ts - lastBefore.ts)
+    startVal = lastBefore.val + frac * (firstInMonth.val - lastBefore.val)
+    startTs = startMs
+    startIsProrated = true
+  } else {
+    startVal = firstInMonth.val
+    startTs = firstInMonth.ts
+  }
+
+  const firstAfter = unique.find((e) => e.ts >= endMs) ?? null
+  let endVal: number
+  let endTs: number
+  let endIsProrated = false
+  if (firstAfter && lastInMonth.ts < endMs && firstAfter.val > lastInMonth.val) {
+    const frac = (endMs - lastInMonth.ts) / (firstAfter.ts - lastInMonth.ts)
+    endVal = lastInMonth.val + frac * (firstAfter.val - lastInMonth.val)
+    endTs = endMs
+    endIsProrated = true
+  } else {
+    endVal = lastInMonth.val
+    endTs = lastInMonth.ts
+  }
+
+  const delta = endVal - startVal
+  const hours = delta > 0 ? delta : 0
+  return {
+    hours,
+    readingsInMonth: inMonth.length,
+    startVal,
+    endVal,
+    startTs,
+    endTs,
+    startIsProrated,
+    endIsProrated,
+    lastBefore,
+    firstAfter,
+  }
+}
+
 /**
  * Hours from merged horometer + checklist readings inside [startMs, endMs) (end exclusive).
  *
@@ -348,42 +445,7 @@ export function mergedHoursFromEvents(
   startMs: number,
   endMs: number
 ): number {
-  if (events.length === 0) return 0
-  events.sort((a, b) => a.ts - b.ts)
-  const unique: ReadingEvent[] = []
-  for (const e of events) {
-    const prev = unique[unique.length - 1]
-    if (!prev || prev.ts !== e.ts || prev.val !== e.val) unique.push(e)
-  }
-
-  const inMonth = unique.filter(e => e.ts >= startMs && e.ts < endMs)
-  if (inMonth.length === 0) return 0
-
-  const firstInMonth = inMonth[0]!
-  const lastInMonth = inMonth[inMonth.length - 1]!
-
-  // Prorate start: interpolate at startMs between last-before and first-in-month
-  const lastBefore = unique.slice().reverse().find(e => e.ts < startMs) ?? null
-  let startVal: number
-  if (lastBefore && firstInMonth.ts > startMs && firstInMonth.val > lastBefore.val) {
-    const frac = (startMs - lastBefore.ts) / (firstInMonth.ts - lastBefore.ts)
-    startVal = lastBefore.val + frac * (firstInMonth.val - lastBefore.val)
-  } else {
-    startVal = firstInMonth.val
-  }
-
-  // Prorate end: interpolate at endMs between last-in-month and first-after
-  const firstAfter = unique.find(e => e.ts >= endMs) ?? null
-  let endVal: number
-  if (firstAfter && lastInMonth.ts < endMs && firstAfter.val > lastInMonth.val) {
-    const frac = (endMs - lastInMonth.ts) / (firstAfter.ts - lastInMonth.ts)
-    endVal = lastInMonth.val + frac * (firstAfter.val - lastInMonth.val)
-  } else {
-    endVal = lastInMonth.val
-  }
-
-  const delta = endVal - startVal
-  return delta > 0 ? delta : 0
+  return mergedHoursWindowDetails(events, startMs, endMs).hours
 }
 
 export type MergedHoursDiagnostics = {
@@ -471,9 +533,10 @@ export async function computeMergedOperatingHoursByAsset(
     }
   }
 
-  const extendedStart = new Date(dateFromStart)
-  extendedStart.setUTCDate(extendedStart.getUTCDate() - 30)
-  const extendedStartDateStr = extendedStart.toISOString().slice(0, 10)
+  const extendedStartMs = dateFromStart.getTime() - 30 * 24 * 60 * 60 * 1000
+  const extendedStartDateStr = formatMexicoCityDateOnly(extendedStartMs)
+  const eventAtGteIso = new Date(extendedStartMs).toISOString()
+  const eventAtLtIso = dateToExclusive.toISOString()
 
   const { data: hoursData } = await supabase
     .from('completed_checklists')
@@ -485,8 +548,8 @@ export async function computeMergedOperatingHoursByAsset(
 
   const dieselTxsExtended = await fetchDieselHorometerFromMeterView(supabase, {
     assetIds,
-    eventAtGte: extendedStartDateStr,
-    eventAtLt: dateToExclusiveStr,
+    eventAtGte: eventAtGteIso,
+    eventAtLt: eventAtLtIso,
   })
 
   const dieselByAsset = new Map<string, Array<{ transaction_date: string; horometer_reading?: number | null }>>()
