@@ -5,12 +5,24 @@ import {
   fetchDieselPeriodConsumptionTxsForReportAssets,
   type DieselPeriodConsumptionTxRow,
 } from '@/lib/reports/merged-operating-hours'
-import { resolveTrustedOperatingHours, DIESEL_EFFICIENCY_THRESHOLDS_VERSION } from '@/lib/reports/diesel-efficiency-hours-policy'
+import { computeMergedOperatingKmByAsset } from '@/lib/reports/merged-operating-km'
+import {
+  resolveTrustedOperatingHours,
+  resolveTrustedOperatingKilometers,
+  DIESEL_EFFICIENCY_THRESHOLDS_VERSION,
+} from '@/lib/reports/diesel-efficiency-hours-policy'
 import {
   buildMonthlyEfficiencyFlags,
   type EfficiencyBandRow,
 } from '@/lib/reports/diesel-efficiency-anomalies'
-import { aggregateConcreteM3ByAssetId } from '@/lib/reports/fetch-cotizador-asset-concrete-m3'
+import {
+  aggregateConcreteM3ByAssetId,
+  aggregatePlantConcreteM3ByMaintenancePlant,
+} from '@/lib/reports/fetch-cotizador-asset-concrete-m3'
+import {
+  formatMexicoCityDateOnly,
+  mexicoCityMonthWindowFromYm,
+} from '@/lib/reports/mexico-city-report-window'
 
 export type AssetRowForEfficiency = {
   id: string
@@ -19,23 +31,29 @@ export type AssetRowForEfficiency = {
   equipment_models: { category: string | null } | null
 }
 
-function ymBounds(ym: string): { dateFromStr: string; dateToExclusiveStr: string; dateFromStart: Date; dateToExclusive: Date } {
-  const [ys, ms] = ym.split('-')
-  const y = Number(ys)
-  const m = Number(ms)
-  const dateFromStr = `${ys}-${ms}-01`
-  const dateFromStart = new Date(`${dateFromStr}T00:00:00.000Z`)
-  const next = new Date(Date.UTC(y, m, 1))
-  const dateToExclusiveStr = next.toISOString().slice(0, 10)
-  const dateToExclusive = new Date(`${dateToExclusiveStr}T00:00:00.000Z`)
-  return { dateFromStr, dateToExclusiveStr, dateFromStart, dateToExclusive }
+/** Half-open [start,end) month in America/Mexico_City — matches SQL rollups on diesel_transactions. */
+function ymBounds(ym: string): {
+  dateFromStr: string
+  dateToExclusiveStr: string
+  dateFromStart: Date
+  dateToExclusive: Date
+  transactionDateGteIso: string
+  transactionDateLtIso: string
+} {
+  const w = mexicoCityMonthWindowFromYm(ym)
+  return {
+    dateFromStr: formatMexicoCityDateOnly(w.startInclusiveMs),
+    dateToExclusiveStr: formatMexicoCityDateOnly(w.endExclusiveMs),
+    dateFromStart: new Date(w.startInclusiveMs),
+    dateToExclusive: new Date(w.endExclusiveMs),
+    transactionDateGteIso: w.startInclusiveIso,
+    transactionDateLtIso: w.endExclusiveIso,
+  }
 }
 
 function lastDayOfMonthYm(ym: string): string {
-  const { dateToExclusiveStr } = ymBounds(ym)
-  const d = new Date(dateToExclusiveStr)
-  d.setUTCDate(d.getUTCDate() - 1)
-  return d.toISOString().slice(0, 10)
+  const w = mexicoCityMonthWindowFromYm(ym)
+  return formatMexicoCityDateOnly(w.endExclusiveMs - 1)
 }
 
 function bandForCategory(
@@ -49,6 +67,10 @@ function bandForCategory(
 
 /**
  * Computes and upserts `asset_diesel_efficiency_monthly` for the given YYYY-MM list.
+ *
+ * When the schema gains new persisted columns (e.g. `plant_concrete_m3`), run POST
+ * `/api/reports/asset-diesel-efficiency` with `recompute` and the desired `yearMonths`
+ * so historical months backfill.
  */
 export async function computeAssetDieselEfficiencyMonths(
   supabase: SupabaseClient,
@@ -63,6 +85,7 @@ export async function computeAssetDieselEfficiencyMonths(
   const errors: string[] = []
   let upserted = 0
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamic table upsert chain
   const sb = supabase as SupabaseClient & { from: (r: string) => any }
   const { data: bandsRaw } = await sb
     .from('equipment_category_efficiency_bands')
@@ -71,8 +94,9 @@ export async function computeAssetDieselEfficiencyMonths(
     )
     .eq('version', DIESEL_EFFICIENCY_THRESHOLDS_VERSION)
 
-  const bands: EfficiencyBandRow[] = (bandsRaw || []).map((r: any) => ({
-    category_key: r.category_key,
+  const bandRows = (bandsRaw as Record<string, unknown>[] | null) ?? []
+  const bands: EfficiencyBandRow[] = bandRows.map((r) => ({
+    category_key: String(r.category_key),
     reference_liters_per_hour: Number(r.reference_liters_per_hour),
     band_comfort_min: r.band_comfort_min != null ? Number(r.band_comfort_min) : null,
     band_comfort_max: r.band_comfort_max != null ? Number(r.band_comfort_max) : null,
@@ -97,7 +121,7 @@ export async function computeAssetDieselEfficiencyMonths(
     if (p.code) plantCodeToId.set(p.code, p.id)
   }
 
-  let cotizadorPlantToMaintenancePlant = new Map<string, string>()
+  const cotizadorPlantToMaintenancePlant = new Map<string, string>()
   if (
     process.env.COTIZADOR_SUPABASE_URL &&
     process.env.COTIZADOR_SUPABASE_SERVICE_ROLE_KEY
@@ -119,14 +143,21 @@ export async function computeAssetDieselEfficiencyMonths(
   const priorLph = new Map<string, number>()
 
   for (const ym of sortedMonths) {
-    const { dateFromStr, dateToExclusiveStr, dateFromStart, dateToExclusive } = ymBounds(ym)
+    const {
+      dateFromStr,
+      dateToExclusiveStr,
+      dateFromStart,
+      dateToExclusive,
+      transactionDateGteIso,
+      transactionDateLtIso,
+    } = ymBounds(ym)
 
     const dieselTxs: DieselPeriodConsumptionTxRow[] = await fetchDieselPeriodConsumptionTxsForReportAssets(
       supabase,
       {
         assetIds,
-        transactionDateGte: dateFromStr,
-        transactionDateLt: dateToExclusiveStr,
+        transactionDateGte: transactionDateGteIso,
+        transactionDateLt: transactionDateLtIso,
       }
     )
 
@@ -160,7 +191,17 @@ export async function computeAssetDieselEfficiencyMonths(
       periodDieselConsumptionTxs: dieselTxs,
     })
 
+    const { kmByAsset, kmMergedByAsset, kmSumByAsset } = await computeMergedOperatingKmByAsset(supabase, {
+      assetIds,
+      dateFromStart,
+      dateToExclusive,
+      dateToExclusiveStr,
+      dieselConsumedKmByAsset,
+      periodDieselConsumptionTxs: dieselTxs,
+    })
+
     let m3ByAsset = new Map<string, number>()
+    let plantTotalsByMaintenancePlant = new Map<string, number>()
     if (requestBaseUrl) {
       try {
         const dateToInclusive = lastDayOfMonthYm(ym)
@@ -179,6 +220,10 @@ export async function computeAssetDieselEfficiencyMonths(
             asset_name: string | null
             concrete_m3?: number | null
           }>
+          plantTotalsByMaintenancePlant = aggregatePlantConcreteM3ByMaintenancePlant(
+            salesRows,
+            cotizadorPlantToMaintenancePlant
+          )
           m3ByAsset = await aggregateConcreteM3ByAssetId({
             supabase,
             salesRows,
@@ -204,12 +249,20 @@ export async function computeAssetDieselEfficiencyMonths(
       const sumH = hoursSumByAsset.get(asset.id) ?? dieselConsumedHoursByAsset.get(asset.id) ?? 0
       const trusted = resolveTrustedOperatingHours(merged, sumH)
       const trustedH = hoursByAsset.get(asset.id) ?? trusted.trusted
-      const km = dieselConsumedKmByAsset.get(asset.id) ?? 0
+      const mergedKm = kmMergedByAsset.get(asset.id) ?? 0
+      const sumKm = kmSumByAsset.get(asset.id) ?? dieselConsumedKmByAsset.get(asset.id) ?? 0
+      const trustedKmRes = resolveTrustedOperatingKilometers(mergedKm, sumKm)
+      const trustedK = kmByAsset.get(asset.id) ?? trustedKmRes.trusted
+      const kmRaw = dieselConsumedKmByAsset.get(asset.id) ?? 0
 
       const lph = trustedH > 0 && liters > 0 ? liters / trustedH : null
-      const lpk = km > 0 && liters > 0 ? liters / km : null
+      const lpk = trustedK > 0 && liters > 0 ? liters / trustedK : null
       const m3 = m3ByAsset.get(asset.id) ?? null
       const lpm3 = m3 != null && m3 > 0 && liters > 0 ? liters / m3 : null
+      const plantM3 =
+        asset.plant_id != null
+          ? plantTotalsByMaintenancePlant.get(asset.plant_id) ?? null
+          : null
 
       const cat = asset.equipment_models?.category ?? null
       const band = bandForCategory(bands, cat)
@@ -217,6 +270,7 @@ export async function computeAssetDieselEfficiencyMonths(
       const { quality, anomaly } = buildMonthlyEfficiencyFlags({
         txs,
         trusted,
+        trustedKm: trustedKmRes,
         litersPerHour: lph,
         litersPerHourPriorMonth: prior,
         categoryBand: band,
@@ -234,10 +288,13 @@ export async function computeAssetDieselEfficiencyMonths(
         hours_merged: merged,
         hours_sum_raw: sumH,
         hours_trusted: trustedH,
-        kilometers_sum_raw: km,
+        kilometers_sum_raw: kmRaw,
+        kilometers_merged: mergedKm,
+        kilometers_trusted: trustedK,
         liters_per_hour_trusted: lph,
         liters_per_km: lpk,
         concrete_m3: m3,
+        plant_concrete_m3: plantM3,
         liters_per_m3: lpm3,
         equipment_category: cat,
         quality_flags: quality,

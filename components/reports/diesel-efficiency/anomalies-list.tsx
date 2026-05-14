@@ -49,6 +49,15 @@ function getReasons(r: EfficiencyRow): Reason[] {
     })
   }
 
+  if (r.quality_flags.merge_fork_km) {
+    reasons.push({
+      label: 'Divergencia km: curva fusionada vs. transacciones',
+      detail:
+        'Los km de la curva (odómetro + checklist) difieren de la suma de kilometers_consumed en más del 25%. Revisa lecturas de odómetro.',
+      level: 'warning',
+    })
+  }
+
   return reasons
 }
 

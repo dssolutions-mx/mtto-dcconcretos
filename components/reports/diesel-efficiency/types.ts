@@ -6,6 +6,9 @@ export type QualityFlags = {
   null_previous_horometer_count: number
   negative_hours_consumed_count: number
   merge_fork: boolean
+  null_previous_kilometer_count?: number
+  negative_kilometers_consumed_count?: number
+  merge_fork_km?: boolean
 }
 
 export type AnomalyFlags = {
@@ -24,9 +27,13 @@ export type EfficiencyRow = {
   hours_sum_raw: number
   hours_trusted: number
   kilometers_sum_raw: number
+  kilometers_merged: number
+  kilometers_trusted: number
   liters_per_hour_trusted: number | null
   liters_per_km: number | null
   concrete_m3: number | null
+  /** Total Cotizador m³ for the asset's home plant in this month (all units). */
+  plant_concrete_m3: number | null
   liters_per_m3: number | null
   equipment_category: string | null
   quality_flags: QualityFlags

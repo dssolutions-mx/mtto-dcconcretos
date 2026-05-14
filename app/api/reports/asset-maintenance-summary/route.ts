@@ -8,6 +8,7 @@ import {
   meterHorometerRowsInReportWindow,
   type DieselHorometerRowForMerge,
 } from '@/lib/reports/merged-operating-hours'
+import { formatMexicoCityDateOnly } from '@/lib/reports/mexico-city-report-window'
 
 type Body = {
   dateFrom: string
@@ -196,9 +197,8 @@ export async function POST(req: NextRequest) {
 
     // Diesel: horometer curve from `asset_meter_reading_events` (one extended fetch; in-period rows sliced in memory).
     // Liters/cost from `diesel_transactions` (fields not on the view). Same diesel membership: warehouse + product diesel.
-    const extendedStart = new Date(dateFromStart)
-    extendedStart.setUTCDate(extendedStart.getUTCDate() - 30)
-    const extendedStartDateStr = extendedStart.toISOString().slice(0, 10)
+    const extendedStartMs = dateFromStart.getTime() - 30 * 24 * 60 * 60 * 1000
+    const extendedStartDateStr = formatMexicoCityDateOnly(extendedStartMs)
     const periodStartMs = dateFromStart.getTime()
     const periodEndExclusiveMs = dateToExclusive.getTime()
 
@@ -212,8 +212,8 @@ export async function POST(req: NextRequest) {
         .not('equipment_hours_reading', 'is', null),
       fetchDieselHorometerFromMeterView(supabase, {
         assetIds,
-        eventAtGte: extendedStartDateStr,
-        eventAtLt: dateToExclusiveStr,
+        eventAtGte: new Date(extendedStartMs).toISOString(),
+        eventAtLt: dateToExclusive.toISOString(),
       }),
       fetchDieselConsumptionCostRowsForAssets(supabase, {
         assetIds,

@@ -41,9 +41,12 @@ export async function GET(req: NextRequest) {
         hours_sum_raw,
         hours_trusted,
         kilometers_sum_raw,
+        kilometers_merged,
+        kilometers_trusted,
         liters_per_hour_trusted,
         liters_per_km,
         concrete_m3,
+        plant_concrete_m3,
         liters_per_m3,
         equipment_category,
         quality_flags,
@@ -74,6 +77,10 @@ export async function GET(req: NextRequest) {
   }
 }
 
+/**
+ * Recompute upserts monthly rows. After schema changes (e.g. `plant_concrete_m3`,
+ * `kilometers_merged` / `kilometers_trusted`), POST again with the desired `yearMonths` so past months backfill.
+ */
 export async function POST(req: NextRequest) {
   try {
     const supabase = await createServerSupabase()

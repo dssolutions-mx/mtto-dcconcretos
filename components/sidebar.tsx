@@ -817,7 +817,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
               </CollapsibleTrigger>
               <CollapsibleContent className="space-y-1 mt-2 transition-all duration-200 ease-in-out motion-reduce:transition-none">
                 <Button
-                  variant={isPathActive("/reportes") ? "secondary" : "ghost"}
+                  variant={isReportesHubPathActive(pathname) ? "secondary" : "ghost"}
                   className={cn("w-full justify-start pl-8", navItemClasses)}
                   asChild
                   onClick={handleLinkClick}
@@ -1104,6 +1104,13 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
   )
 }
 
+/** Main "Reportes" nav item: /reportes and /reportes/* except eficiencia-diesel (separate sibling link). */
+function isReportesHubPathActive(pathname: string | null): boolean {
+  if (!pathname) return false
+  if (pathname.startsWith("/reportes/eficiencia-diesel")) return false
+  return pathname === "/reportes" || pathname.startsWith("/reportes/")
+}
+
 // Shared navigation config builder - single source of truth for both Sidebar and CollapsedSidebar
 type NavItem = { href: string; icon: React.ComponentType<{ className?: string }>; label: string; active: boolean; badge?: string }
 type NavSection = 
@@ -1221,7 +1228,13 @@ function buildNavigationSections(
       label: "Históricos",
       active: isSectionActive(["/reportes"]),
       items: [
-        { href: "/reportes", icon: BarChart3, label: "Reportes", active: isPathActive("/reportes") },
+        { href: "/reportes", icon: BarChart3, label: "Reportes", active: isReportesHubPathActive(pathname) },
+        {
+          href: "/reportes/eficiencia-diesel",
+          icon: Fuel,
+          label: "Eficiencia de Diesel",
+          active: isPathActive("/reportes/eficiencia-diesel"),
+        },
       ],
     })
   }

@@ -209,7 +209,7 @@ function EficienciaDieselContent() {
   const exportCsv = () => {
     downloadCsv(
       `eficiencia-diesel-${yearMonth}.csv`,
-      ['mes', 'codigo', 'nombre', 'categoria', 'litros', 'L_h', 'L_km', 'm3', 'L_m3', 'h_confiables', 'calidad_datos', 'eficiencia', 'salto_MoM', 'revisar'],
+      ['mes', 'codigo', 'nombre', 'categoria', 'litros', 'L_h', 'L_km', 'km_confiables', 'km_fusionados', 'km_suma_tx', 'm3', 'L_m3', 'h_confiables', 'calidad_datos', 'eficiencia', 'salto_MoM', 'revisar'],
       filteredRows.map((r) => [
         r.year_month,
         r.assets?.asset_id ?? '',
@@ -218,6 +218,9 @@ function EficienciaDieselContent() {
         r.total_liters,
         r.liters_per_hour_trusted ?? '',
         r.liters_per_km ?? '',
+        r.kilometers_trusted ?? '',
+        r.kilometers_merged ?? '',
+        r.kilometers_sum_raw ?? '',
         r.concrete_m3 ?? '',
         r.liters_per_m3 ?? '',
         r.hours_trusted,
@@ -238,7 +241,10 @@ function EficienciaDieselContent() {
   ).length
 
   const qualityIssueCount = filteredRows.filter(
-    (r) => r.anomaly_flags.data_quality_tier !== 'ok' || r.quality_flags.negative_hours_consumed_count > 0
+    (r) =>
+      r.anomaly_flags.data_quality_tier !== 'ok' ||
+      r.quality_flags.negative_hours_consumed_count > 0 ||
+      (r.quality_flags.negative_kilometers_consumed_count ?? 0) > 0
   ).length
 
   return (

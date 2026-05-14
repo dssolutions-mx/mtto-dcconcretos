@@ -16,8 +16,11 @@ function QualityScore(row: EfficiencyRow): number {
   if (a.data_quality_tier === 'severe') score += 100
   if (a.data_quality_tier === 'watch') score += 50
   if (q.negative_hours_consumed_count > 0) score += q.negative_hours_consumed_count * 10
+  if ((q.negative_kilometers_consumed_count ?? 0) > 0) score += (q.negative_kilometers_consumed_count ?? 0) * 10
   if (q.null_previous_horometer_count > 0) score += q.null_previous_horometer_count * 5
+  if ((q.null_previous_kilometer_count ?? 0) > 0) score += (q.null_previous_kilometer_count ?? 0) * 5
   if (q.merge_fork) score += 20
+  if (q.merge_fork_km) score += 20
   return score
 }
 
@@ -26,6 +29,7 @@ function QualityRow({ row, onOpenDrill }: { row: EfficiencyRow; onOpenDrill: (r:
   const a = row.anomaly_flags
   const assetLabel = [row.assets?.asset_id, row.assets?.name].filter(Boolean).join(' — ')
   const nullRatio = q.tx_count > 0 ? q.null_previous_horometer_count / q.tx_count : 0
+  const nullKmRatio = q.tx_count > 0 ? (q.null_previous_kilometer_count ?? 0) / q.tx_count : 0
   const isSevere = a.data_quality_tier === 'severe'
 
   return (
@@ -69,7 +73,25 @@ function QualityRow({ row, onOpenDrill }: { row: EfficiencyRow; onOpenDrill: (r:
           {q.merge_fork && (
             <span className="text-xs text-stone-500 flex items-center gap-1">
               <AlertCircle className="h-3 w-3 text-stone-400 flex-shrink-0" />
-              Divergencia curva vs. suma TX
+              Divergencia horas: curva vs. suma TX
+            </span>
+          )}
+          {(q.null_previous_kilometer_count ?? 0) > 0 && (
+            <span className="text-xs text-stone-500 flex items-center gap-1">
+              <AlertCircle className="h-3 w-3 text-amber-500 flex-shrink-0" />
+              {q.null_previous_kilometer_count}/{q.tx_count} tx sin odómetro previo ({(nullKmRatio * 100).toFixed(0)}%)
+            </span>
+          )}
+          {(q.negative_kilometers_consumed_count ?? 0) > 0 && (
+            <span className="text-xs text-red-600 flex items-center gap-1 font-medium">
+              <AlertCircle className="h-3 w-3 flex-shrink-0" />
+              {q.negative_kilometers_consumed_count} delta(s) km negativos
+            </span>
+          )}
+          {q.merge_fork_km && (
+            <span className="text-xs text-stone-500 flex items-center gap-1">
+              <AlertCircle className="h-3 w-3 text-stone-400 flex-shrink-0" />
+              Divergencia km: curva vs. suma TX
             </span>
           )}
         </div>
@@ -92,7 +114,8 @@ export function DataQualityList({ rows, onOpenDrill }: Props) {
     .filter(
       (r) =>
         r.anomaly_flags.data_quality_tier !== 'ok' ||
-        r.quality_flags.negative_hours_consumed_count > 0
+        r.quality_flags.negative_hours_consumed_count > 0 ||
+        (r.quality_flags.negative_kilometers_consumed_count ?? 0) > 0
     )
     .sort((a, b) => QualityScore(b) - QualityScore(a))
 
@@ -104,7 +127,7 @@ export function DataQualityList({ rows, onOpenDrill }: Props) {
         </div>
         <p className="text-stone-600 font-medium">Datos de calidad confiable</p>
         <p className="text-stone-400 text-sm mt-1">
-          Todos los activos tienen lecturas de horómetro completas para este mes
+          Todos los activos tienen lecturas coherentes de horómetro y odómetro para este mes
         </p>
       </div>
     )

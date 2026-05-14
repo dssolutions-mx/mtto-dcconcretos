@@ -8,8 +8,12 @@ type SalesRow = {
 }
 
 /**
- * Aggregates Cotizador weekly sales rows into concrete m³ per maintenance `asset_id`
+ * Aggregates Cotizador sales rows into concrete m³ per maintenance `asset_id`
  * using `asset_name_mappings` (cotizador) + exact / normalized code match on `assets`.
+ *
+ * Volume is summed across all Cotizador plants where the unit appears: a mixer may
+ * dispatch from several plants while MantenPro keeps a single “home” plant; L/m³ still
+ * uses total diesel for that asset in the month vs total concrete attributed to that unit.
  */
 export async function aggregateConcreteM3ByAssetId(params: {
   supabase: SupabaseClient
@@ -66,10 +70,27 @@ export async function aggregateConcreteM3ByAssetId(params: {
       else if (cands.length === 1) aid = cands[0]
     }
     if (!aid) continue
-    const asset = assets.find((x) => x.id === aid)
-    if (asset?.plant_id && asset.plant_id !== mPlant) continue
     out.set(aid, (out.get(aid) || 0) + m3)
   }
 
   return out
+}
+
+/**
+ * Sums Cotizador `concrete_m3` by maintenance plant for the month (all units / rows),
+ * using Cotizador plant UUID → MantenPro `plants.id` via `cotizadorPlantToMaintenancePlant`.
+ */
+export function aggregatePlantConcreteM3ByMaintenancePlant(
+  salesRows: SalesRow[],
+  cotizadorPlantToMaintenancePlant: Map<string, string>
+): Map<string, number> {
+  const totals = new Map<string, number>()
+  for (const row of salesRows) {
+    const mPlant = cotizadorPlantToMaintenancePlant.get(row.plant_id)
+    if (!mPlant) continue
+    const m3 = Number(row.concrete_m3 ?? 0)
+    if (!Number.isFinite(m3) || m3 < 0) continue
+    totals.set(mPlant, (totals.get(mPlant) || 0) + m3)
+  }
+  return totals
 }

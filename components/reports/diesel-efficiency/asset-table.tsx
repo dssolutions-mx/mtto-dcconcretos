@@ -318,7 +318,12 @@ export function AssetTable({ rows, prevRows = [], onOpenDrill, yearMonth: _yearM
                     <QualityPill tier={qualityTier} />
                     {r.quality_flags.merge_fork && (
                       <span className="text-[9px] font-semibold text-stone-400 border border-stone-200 rounded px-1 py-0.5">
-                        fork
+                        fork h
+                      </span>
+                    )}
+                    {r.quality_flags.merge_fork_km && (
+                      <span className="text-[9px] font-semibold text-stone-400 border border-stone-200 rounded px-1 py-0.5">
+                        fork km
                       </span>
                     )}
                   </div>
