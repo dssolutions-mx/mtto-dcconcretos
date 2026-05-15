@@ -13,6 +13,8 @@ export async function POST(request: Request) {
       asset_id, // optional custom code
       initial_shared_hours,
       initial_shared_kilometers,
+      composite_sync_hours,
+      composite_sync_kilometers,
       asset_id_strategy,
       asset_id_prefix,
     }: {
@@ -23,9 +25,16 @@ export async function POST(request: Request) {
       asset_id?: string
       initial_shared_hours?: number
       initial_shared_kilometers?: number
+      composite_sync_hours?: boolean
+      composite_sync_kilometers?: boolean
       asset_id_strategy?: 'auto' | 'error'
       asset_id_prefix?: string
     } = body
+
+    // Defaults by composite_type: pumping_truck → independent (false); all others → synced (true)
+    const isPumpingTruck = (composite_type ?? 'pumping_truck') === 'pumping_truck'
+    const syncHours = composite_sync_hours ?? (isPumpingTruck ? false : true)
+    const syncKm = composite_sync_kilometers ?? (isPumpingTruck ? false : true)
 
     if (!name || !Array.isArray(component_ids) || component_ids.length < 2) {
       return NextResponse.json(
@@ -69,6 +78,8 @@ export async function POST(request: Request) {
           status: 'operational',
           current_hours: initial_shared_hours ?? undefined,
           current_kilometers: initial_shared_kilometers ?? undefined,
+          composite_sync_hours: syncHours,
+          composite_sync_kilometers: syncKm,
         })
         .select('*')
         .single()

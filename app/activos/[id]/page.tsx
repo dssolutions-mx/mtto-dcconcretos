@@ -20,6 +20,7 @@ import { AssetWithModel, EquipmentModel } from "@/types";
 import { createClient } from "@/lib/supabase";
 import { CreateCompositeAssetDialog } from "@/components/assets/dialogs/create-composite-asset-dialog"
 import { IncidentRegistrationDialog } from "@/components/assets/dialogs/incident-registration-dialog"
+import { CompositeCouplingEditor } from "@/components/assets/composite-coupling-editor"
 import {
   AssetDetailHeader,
   AssetDetailKpis,
@@ -48,7 +49,8 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
   const { asset: rawAsset, loading, error } = useAsset(assetId);
   const { history: maintenanceHistory, loading: maintenanceLoading } = useMaintenanceHistory(assetId);
   const { incidents, loading: incidentsLoading, refetch: refetchIncidents } = useIncidents(assetId);
-  const { ui } = useAuthZustand();
+  const { ui, profile } = useAuthZustand();
+  const canEditCoupling = ['GERENCIA_GENERAL', 'GERENTE_MANTENIMIENTO', 'AREA_ADMINISTRATIVA'].includes(profile?.role ?? '');
   const [activeTab, setActiveTab] = useState("status");
   const [upcomingMaintenances, setUpcomingMaintenances] = useState<any[]>([]);
   const [upcomingLoading, setUpcomingLoading] = useState(true);
@@ -64,7 +66,7 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
   // Aggregated maintenance history when part of a composite
   const [combinedMaintenanceHistory, setCombinedMaintenanceHistory] = useState<any[] | null>(null);
   // Composite context
-  const [compositeContext, setCompositeContext] = useState<{ composite: any | null; components: any[] }>({ composite: null, components: [] });
+  const [compositeContext, setCompositeContext] = useState<{ composite: any | null; components: any[]; sibling_drift: Record<string, { hours_stale: boolean; km_stale: boolean }> }>({ composite: null, components: [], sibling_drift: {} });
   const [compositeLoading, setCompositeLoading] = useState(false);
   const [openCreateComposite, setOpenCreateComposite] = useState(false);
   const [reportIncidentOpen, setReportIncidentOpen] = useState(false);
@@ -133,11 +135,11 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
         // Fetch minimal fields to detect composite
         const { data: a, error: aErr } = await supabase
           .from('assets')
-          .select('id, name, is_composite, component_assets, primary_component_id')
+          .select('id, name, is_composite, component_assets, primary_component_id, composite_sync_hours, composite_sync_kilometers')
           .eq('id', assetId)
           .single();
         if (aErr || !a) {
-          setCompositeContext({ composite: null, components: [] });
+          setCompositeContext({ composite: null, components: [], sibling_drift: {} });
           return;
         }
 
@@ -149,6 +151,7 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
           let aggregatedCompleted: any[] = [];
           let aggregatedMaintenance: any[] = [];
           let aggregatedUpcoming: any[] = [];
+          let siblingDrift: Record<string, { hours_stale: boolean; km_stale: boolean }> = {};
           try {
             const resp = await fetch(`/api/assets/composites/${assetId}/dashboard`);
             if (resp.ok) {
@@ -159,9 +162,10 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
               aggregatedCompleted = json?.data?.completed_checklists || [];
               aggregatedMaintenance = json?.data?.maintenance_history || [];
               aggregatedUpcoming = json?.data?.upcoming_maintenance || [];
+              siblingDrift = json?.data?.sibling_drift || {};
             }
           } catch {}
-          setCompositeContext({ composite: a, components });
+          setCompositeContext({ composite: a, components, sibling_drift: siblingDrift });
           // Overwrite local page states with aggregated data when viewing composite
           try {
             (incidents as any).splice(0, (incidents as any).length, ...aggregatedIncidents);
@@ -205,7 +209,7 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
           .maybeSingle();
 
         if (!rel) {
-          setCompositeContext({ composite: null, components: [] });
+          setCompositeContext({ composite: null, components: [], sibling_drift: {} });
           return;
         }
 
@@ -229,7 +233,7 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
             aggregatedUpcoming = json?.data?.upcoming_maintenance || [];
           }
         } catch {}
-        setCompositeContext({ composite: composite, components });
+        setCompositeContext({ composite: composite, components, sibling_drift: {} });
         // When part of a composite, also surface aggregated lists in page widgets
         try {
           (incidents as any).splice(0, (incidents as any).length, ...aggregatedIncidents);
@@ -260,7 +264,7 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
         } catch {}
       } catch (e) {
         console.error('Error loading composite context', e);
-        setCompositeContext({ composite: null, components: [] });
+        setCompositeContext({ composite: null, components: [], sibling_drift: {} });
       } finally {
         setCompositeLoading(false);
       }
@@ -1042,6 +1046,18 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
               setReportIncidentOpen(false);
             }}
           />
+
+          {/* Coupling editor — only on the composite's own page, not when viewing a component */}
+          {compositeContext.composite?.id === assetId && (
+            <div data-stagger="1.5">
+              <CompositeCouplingEditor
+                compositeId={assetId}
+                syncHours={compositeContext.composite?.composite_sync_hours ?? false}
+                syncKm={compositeContext.composite?.composite_sync_kilometers ?? false}
+                canEdit={canEditCoupling}
+              />
+            </div>
+          )}
 
           <div data-stagger="2">
           <Tabs defaultValue="status" className="w-full" onValueChange={setActiveTab}>

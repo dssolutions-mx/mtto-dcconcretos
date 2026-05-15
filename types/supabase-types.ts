@@ -937,6 +937,8 @@ export type Database = {
         Row: {
           asset_id: string
           component_assets: string[] | null
+          composite_sync_hours: boolean
+          composite_sync_kilometers: boolean
           composite_type: string | null
           created_at: string | null
           created_by: string | null
@@ -976,6 +978,8 @@ export type Database = {
         Insert: {
           asset_id: string
           component_assets?: string[] | null
+          composite_sync_hours?: boolean
+          composite_sync_kilometers?: boolean
           composite_type?: string | null
           created_at?: string | null
           created_by?: string | null
@@ -1015,6 +1019,8 @@ export type Database = {
         Update: {
           asset_id?: string
           component_assets?: string[] | null
+          composite_sync_hours?: boolean
+          composite_sync_kilometers?: boolean
           composite_type?: string | null
           created_at?: string | null
           created_by?: string | null

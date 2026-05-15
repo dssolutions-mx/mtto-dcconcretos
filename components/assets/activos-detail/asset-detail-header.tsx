@@ -4,13 +4,13 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import Link from "next/link"
-import { Calendar, MapPin, Users } from "lucide-react"
+import { Calendar, MapPin, Users, AlertTriangle } from "lucide-react"
 import type { AssetWithModel } from "@/types"
 
 interface AssetDetailHeaderProps {
   asset: AssetWithModel | null
   assetId: string
-  compositeContext: { composite: any | null; components: any[] }
+  compositeContext: { composite: any | null; components: any[]; sibling_drift?: Record<string, { hours_stale: boolean; km_stale: boolean }> }
   formatDate: (dateString: string | null) => string
   getStatusBadge: (status: string) => React.ReactNode
   kpis?: React.ReactNode
@@ -85,16 +85,33 @@ export function AssetDetailHeader({
             </div>
             {compositeContext.components.length > 0 && (
               <div className="mt-2 flex flex-wrap gap-2">
-                {compositeContext.components.map((c: any) => (
-                  <Link key={c.id} href={`/activos/${c.id}`} className="cursor-pointer">
-                    <Badge
-                      variant={c.id === assetId ? "default" : "outline"}
-                      className="cursor-pointer transition-colors duration-200 hover:opacity-90"
-                    >
-                      {c.asset_id || c.name}
-                    </Badge>
-                  </Link>
-                ))}
+                {compositeContext.components.map((c: any) => {
+                  const drift = compositeContext.sibling_drift?.[c.id]
+                  const hasDrift = drift?.hours_stale || drift?.km_stale
+                  return (
+                    <Link key={c.id} href={`/activos/${c.id}`} className="cursor-pointer">
+                      <span className="inline-flex items-center gap-1">
+                        <Badge
+                          variant={c.id === assetId ? "default" : "outline"}
+                          className="cursor-pointer transition-colors duration-200 hover:opacity-90"
+                        >
+                          {c.asset_id || c.name}
+                        </Badge>
+                        {hasDrift && (
+                          <span
+                            title={[
+                              drift?.hours_stale ? 'Horómetro sin actualizar +30d' : '',
+                              drift?.km_stale ? 'Odómetro sin actualizar +30d' : '',
+                            ].filter(Boolean).join(' · ')}
+                            className="inline-flex items-center"
+                          >
+                            <AlertTriangle className="h-3.5 w-3.5 text-amber-500" />
+                          </span>
+                        )}
+                      </span>
+                    </Link>
+                  )
+                })}
               </div>
             )}
           </div>

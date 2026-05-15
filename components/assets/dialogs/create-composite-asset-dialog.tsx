@@ -9,7 +9,8 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { createClient } from "@/lib/supabase";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { AlertTriangle, Search, X, Plus, Link as LinkIcon, RefreshCcw } from "lucide-react";
+import { AlertTriangle, Search, X, Plus, Link as LinkIcon, RefreshCcw, Gauge, MapPin, Info } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
 
 interface CreateCompositeAssetDialogProps {
   open: boolean;
@@ -35,7 +36,11 @@ export function CreateCompositeAssetDialog({ open, onOpenChange, currentAssetId 
 
   const [sharedHours, setSharedHours] = useState<number | "">("");
   const [sharedKm, setSharedKm] = useState<number | "">("");
-  const [syncNow, setSyncNow] = useState<boolean>(true);
+
+  // Coupling flags — default by composite_type
+  const isPumpingTruck = compositeType === "pumping_truck";
+  const [syncHours, setSyncHours] = useState<boolean>(!isPumpingTruck);
+  const [syncKm, setSyncKm] = useState<boolean>(!isPumpingTruck);
 
   const [assetIdStrategy, setAssetIdStrategy] = useState<'auto' | 'error'>('error');
   const [assetIdPrefix, setAssetIdPrefix] = useState<string>('PT-');
@@ -116,6 +121,13 @@ export function CreateCompositeAssetDialog({ open, onOpenChange, currentAssetId 
     }
   }, [preview]);
 
+  // Reset coupling defaults when composite type changes
+  useEffect(() => {
+    const pt = compositeType === "pumping_truck";
+    setSyncHours(!pt);
+    setSyncKm(!pt);
+  }, [compositeType]);
+
   const canProceedStep1 = preview && preview.chosen.length >= 2 && warnings.length === 0;
   const canProceedStep2 = name.trim().length > 1 && assetCode.trim().length > 1;
 
@@ -132,13 +144,14 @@ export function CreateCompositeAssetDialog({ open, onOpenChange, currentAssetId 
         asset_id: assetCode,
         composite_type: compositeType,
         component_ids: components,
+        composite_sync_hours: syncHours,
+        composite_sync_kilometers: syncKm,
         asset_id_strategy: assetIdStrategy,
         asset_id_prefix: assetIdPrefix
       };
-      if (syncNow) {
-        if (sharedHours !== "") payload.initial_shared_hours = Number(sharedHours);
-        if (sharedKm !== "") payload.initial_shared_kilometers = Number(sharedKm);
-      }
+      // Only seed initial readings for dimensions that are synced
+      if (syncHours && sharedHours !== "") payload.initial_shared_hours = Number(sharedHours);
+      if (syncKm && sharedKm !== "") payload.initial_shared_kilometers = Number(sharedKm);
 
       const res = await fetch("/api/assets/composites", {
         method: "POST",
@@ -155,11 +168,12 @@ export function CreateCompositeAssetDialog({ open, onOpenChange, currentAssetId 
         return;
       }
 
-      if (syncNow && (sharedHours !== "" || sharedKm !== "")) {
+      // If any dimension is synced, push initial reading to composite → trigger propagates
+      if ((syncHours && sharedHours !== "") || (syncKm && sharedKm !== "")) {
         const compositeId = json.data.id;
         const update: any = {};
-        if (sharedHours !== "") update.current_hours = Number(sharedHours);
-        if (sharedKm !== "") update.current_kilometers = Number(sharedKm);
+        if (syncHours && sharedHours !== "") update.current_hours = Number(sharedHours);
+        if (syncKm && sharedKm !== "") update.current_kilometers = Number(sharedKm);
         if (Object.keys(update).length > 0) {
           await supabase.from("assets").update(update).eq("id", compositeId);
         }
@@ -180,7 +194,7 @@ export function CreateCompositeAssetDialog({ open, onOpenChange, currentAssetId 
       <Badge variant={step === 2 ? "default" : "outline"}>2</Badge>
       <span>Identidad</span>
       <Badge variant={step === 3 ? "default" : "outline"}>3</Badge>
-      <span>Horas Compartidas</span>
+      <span>Medidores</span>
       <Badge variant={step === 4 ? "default" : "outline"}>4</Badge>
       <span>Impacto</span>
       <Badge variant={step === 5 ? "default" : "outline"}>5</Badge>
@@ -309,30 +323,100 @@ export function CreateCompositeAssetDialog({ open, onOpenChange, currentAssetId 
         )}
 
         {step === 3 && (
-          <div className="space-y-3">
-            <div className="text-sm">Horas/Km compartidos propuestos (máximos de los componentes).</div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <Label>Horas Compartidas</Label>
-                <Input type="number" value={sharedHours} onChange={e => setSharedHours(e.target.value === "" ? "" : Number(e.target.value))} />
+          <div className="space-y-4">
+            {/* Contextual explanation */}
+            {isPumpingTruck ? (
+              <div className="flex gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+                <Info className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>
+                  La bomba tiene su propio horómetro y no acumula kilómetros — ambas dimensiones son
+                  independientes por defecto. Activa el acoplamiento solo si físicamente comparten un
+                  mismo instrumento de medición.
+                </span>
               </div>
-              <div>
-                <Label>Kilómetros Compartidos</Label>
-                <Input type="number" value={sharedKm} onChange={e => setSharedKm(e.target.value === "" ? "" : Number(e.target.value))} />
+            ) : (
+              <div className="flex gap-2 rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800">
+                <Info className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>
+                  Define si los medidores deben sincronizarse entre los componentes. Activa solo las
+                  dimensiones que compartan un instrumento físico real.
+                </span>
+              </div>
+            )}
+
+            {/* Coupling toggles */}
+            <div className="space-y-3">
+              {/* Hours */}
+              <div className="flex items-center justify-between rounded-lg border p-3 min-h-[44px]">
+                <div className="flex items-center gap-2">
+                  <Gauge className="h-4 w-4 text-muted-foreground" />
+                  <div>
+                    <div className="text-sm font-medium">Horómetro compartido</div>
+                    <div className="text-xs text-muted-foreground">
+                      Las horas se sincronizan entre todos los componentes
+                    </div>
+                  </div>
+                </div>
+                <Switch
+                  checked={syncHours}
+                  onCheckedChange={setSyncHours}
+                />
+              </div>
+
+              {/* Kilometers */}
+              <div className="flex items-center justify-between rounded-lg border p-3 min-h-[44px]">
+                <div className="flex items-center gap-2">
+                  <MapPin className="h-4 w-4 text-muted-foreground" />
+                  <div>
+                    <div className="text-sm font-medium">Odómetro compartido</div>
+                    <div className="text-xs text-muted-foreground">
+                      Los kilómetros se sincronizan entre todos los componentes
+                    </div>
+                  </div>
+                </div>
+                <Switch
+                  checked={syncKm}
+                  onCheckedChange={setSyncKm}
+                />
               </div>
             </div>
-            <div className="text-xs text-muted-foreground">
-              Al crear, si activas sincronización, el compuesto se actualizará y el sistema propagará automáticamente estos valores a todos los componentes.
-            </div>
-            <div className="flex items-center gap-2 text-sm">
-              <input id="sync-now" type="checkbox" checked={syncNow} onChange={e => setSyncNow(e.target.checked)} />
-              <Label htmlFor="sync-now">Sincronizar ahora a todos los componentes</Label>
-            </div>
-            <Separator />
-            <div className="text-sm font-medium">Vista Previa</div>
-            <div className="text-xs text-muted-foreground">
-              Se establecerán {typeof sharedHours === 'number' ? sharedHours : preview.maxHours}h y {typeof sharedKm === 'number' ? sharedKm : preview.maxKm}km en todos los componentes.
-            </div>
+
+            {/* Initial reading inputs — only for enabled dimensions */}
+            {(syncHours || syncKm) && (
+              <>
+                <Separator />
+                <div className="text-sm font-medium text-foreground">Lectura inicial</div>
+                <div className="text-xs text-muted-foreground">
+                  Valor de arranque para las dimensiones sincronizadas (se propagará a los componentes al crear).
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {syncHours && (
+                    <div>
+                      <Label>Horas iniciales</Label>
+                      <Input
+                        type="number"
+                        min={0}
+                        value={sharedHours}
+                        onChange={e => setSharedHours(e.target.value === "" ? "" : Number(e.target.value))}
+                        placeholder={String(preview.maxHours || 0)}
+                      />
+                    </div>
+                  )}
+                  {syncKm && (
+                    <div>
+                      <Label>Kilómetros iniciales</Label>
+                      <Input
+                        type="number"
+                        min={0}
+                        value={sharedKm}
+                        onChange={e => setSharedKm(e.target.value === "" ? "" : Number(e.target.value))}
+                        placeholder={String(preview.maxKm || 0)}
+                      />
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
           </div>
         )}
 
@@ -355,7 +439,8 @@ export function CreateCompositeAssetDialog({ open, onOpenChange, currentAssetId 
               <div>Código: <span className="font-semibold">{assetCode}</span></div>
               <div>Tipo: <span className="font-semibold">{compositeType}</span></div>
               <div>Componentes: <span className="font-semibold">{preview?.chosen.length || 0}</span></div>
-              <div>Sincronizar ahora: <span className="font-semibold">{syncNow ? 'Sí' : 'No'}</span></div>
+              <div>Horómetro compartido: <span className="font-semibold">{syncHours ? 'Sí' : 'No (independiente)'}</span></div>
+              <div>Odómetro compartido: <span className="font-semibold">{syncKm ? 'Sí' : 'No (independiente)'}</span></div>
               <div>Estrategia de Código: <span className="font-semibold">{assetIdStrategy}</span></div>
             </div>
             <Alert>

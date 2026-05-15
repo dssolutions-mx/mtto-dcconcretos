@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
+import { loadActorContext } from '@/lib/auth/server-authorization'
 
 export async function GET(
   request: Request,
@@ -40,6 +41,66 @@ export async function GET(
     }
 
     return NextResponse.json({ success: true, data: { composite, components } })
+  } catch (error: any) {
+    return NextResponse.json({ error: error?.message ?? 'Unexpected error' }, { status: 500 })
+  }
+}
+
+export async function PATCH(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await params
+    const body = await request.json()
+    const {
+      composite_sync_hours,
+      composite_sync_kilometers,
+    }: {
+      composite_sync_hours?: boolean
+      composite_sync_kilometers?: boolean
+    } = body
+
+    if (composite_sync_hours === undefined && composite_sync_kilometers === undefined) {
+      return NextResponse.json({ error: 'Nothing to update' }, { status: 400 })
+    }
+
+    const supabase = await createClient()
+
+    const actor = await loadActorContext(supabase)
+    const allowedRoles = ['GERENCIA_GENERAL', 'GERENTE_MANTENIMIENTO', 'AREA_ADMINISTRATIVA']
+    if (!actor || !allowedRoles.includes(actor.profile.role)) {
+      return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
+    }
+
+    // Verify composite exists
+    const { data: existing, error: fetchErr } = await supabase
+      .from('assets')
+      .select('id, is_composite')
+      .eq('id', id)
+      .eq('is_composite', true)
+      .single()
+
+    if (fetchErr || !existing) {
+      return NextResponse.json({ error: 'Composite not found' }, { status: 404 })
+    }
+
+    const patch: Record<string, boolean> = {}
+    if (composite_sync_hours !== undefined) patch.composite_sync_hours = composite_sync_hours
+    if (composite_sync_kilometers !== undefined) patch.composite_sync_kilometers = composite_sync_kilometers
+
+    const { data: updated, error: updateErr } = await supabase
+      .from('assets')
+      .update(patch)
+      .eq('id', id)
+      .select('id, composite_sync_hours, composite_sync_kilometers')
+      .single()
+
+    if (updateErr) {
+      return NextResponse.json({ error: updateErr.message }, { status: 500 })
+    }
+
+    return NextResponse.json({ success: true, data: updated })
   } catch (error: any) {
     return NextResponse.json({ error: error?.message ?? 'Unexpected error' }, { status: 500 })
   }

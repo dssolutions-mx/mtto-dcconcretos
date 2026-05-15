@@ -10,10 +10,10 @@ export async function GET(
     const { id } = await params
     const supabase = await createClient()
 
-    // Fetch composite
+    // Fetch composite (include coupling flags for drift logic)
     const { data: composite, error: compError } = await supabase
       .from('assets')
-      .select('id, name, is_composite, component_assets')
+      .select('id, name, is_composite, component_assets, composite_sync_hours, composite_sync_kilometers, composite_type')
       .eq('id', id)
       .eq('is_composite', true)
       .single()
@@ -222,6 +222,56 @@ export async function GET(
       })
     } catch {}
 
+    // Sibling-drift detection: when coupling is OFF for a dimension, flag components
+    // whose last meter event in that dimension is stale (>30 days older than the freshest sibling).
+    const DRIFT_DAYS = 30
+    let sibling_drift: Record<string, { hours_stale: boolean; km_stale: boolean }> = {}
+
+    const needsHoursDrift = composite.composite_sync_hours === false
+    const needsKmDrift = composite.composite_sync_kilometers === false
+
+    if ((needsHoursDrift || needsKmDrift) && componentIds.length > 1) {
+      try {
+        // Fetch last meter event per component for each relevant dimension
+        const { data: meterEvents } = await supabase
+          .from('asset_meter_reading_events')
+          .select('asset_id, event_at, hours_reading, km_reading')
+          .in('asset_id', componentIds)
+          .order('event_at', { ascending: false })
+
+        // Build last event dates per component per dimension
+        const lastHours: Record<string, Date> = {}
+        const lastKm: Record<string, Date> = {}
+        for (const ev of meterEvents || []) {
+          const dt = new Date(ev.event_at)
+          if (ev.hours_reading != null && !lastHours[ev.asset_id]) lastHours[ev.asset_id] = dt
+          if (ev.km_reading != null && !lastKm[ev.asset_id]) lastKm[ev.asset_id] = dt
+        }
+
+        const msPerDay = 86_400_000
+        const freshestHours = Object.values(lastHours).length > 0
+          ? Math.max(...Object.values(lastHours).map(d => d.getTime()))
+          : 0
+        const freshestKm = Object.values(lastKm).length > 0
+          ? Math.max(...Object.values(lastKm).map(d => d.getTime()))
+          : 0
+
+        for (const cid of componentIds) {
+          const hDate = lastHours[cid]
+          const kDate = lastKm[cid]
+          const hours_stale = needsHoursDrift && freshestHours > 0
+            && (!hDate || (freshestHours - hDate.getTime()) / msPerDay > DRIFT_DAYS)
+          const km_stale = needsKmDrift && freshestKm > 0
+            && (!kDate || (freshestKm - kDate.getTime()) / msPerDay > DRIFT_DAYS)
+          if (hours_stale || km_stale) {
+            sibling_drift[cid] = { hours_stale, km_stale }
+          }
+        }
+      } catch {
+        // Non-blocking: drift is best-effort
+      }
+    }
+
     return NextResponse.json({
       success: true,
       data: {
@@ -231,7 +281,8 @@ export async function GET(
         pending_schedules: pending_schedules || [],
         completed_checklists: completed_checklists || [],
         maintenance_history: maintenance_history || [],
-        upcoming_maintenance
+        upcoming_maintenance,
+        sibling_drift
       }
     })
   } catch (error: any) {
