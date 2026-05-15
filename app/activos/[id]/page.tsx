@@ -1055,6 +1055,7 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
                 syncHours={compositeContext.composite?.composite_sync_hours ?? false}
                 syncKm={compositeContext.composite?.composite_sync_kilometers ?? false}
                 canEdit={canEditCoupling}
+                components={compositeContext.components}
               />
             </div>
           )}
