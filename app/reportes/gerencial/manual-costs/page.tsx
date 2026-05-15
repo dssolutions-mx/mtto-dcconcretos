@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -24,7 +24,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { Plus, Pencil, Trash2, RefreshCw, DollarSign, Building2, Calendar, CheckCircle2 } from 'lucide-react'
+import { Plus, Pencil, Trash2, RefreshCw, DollarSign, Building2, Download } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 import { DistributionMethodToggle } from '@/components/manual-costs/distribution-method-toggle'
 import { DistributionTable } from '@/components/manual-costs/distribution-table'
@@ -108,6 +108,10 @@ export default function ManualCostsAdminPage() {
   })
   const [filterBusinessUnitId, setFilterBusinessUnitId] = useState<string>('')
   const [filterPlantId, setFilterPlantId] = useState<string>('')
+  const [filterCategory, setFilterCategory] = useState<'all' | 'nomina' | 'otros_indirectos'>('all')
+  /** '' = all departments; '__general__' = no department set */
+  const [filterDepartment, setFilterDepartment] = useState<string>('')
+  const [filterCashPayment, setFilterCashPayment] = useState<'all' | 'cash' | 'not_cash'>('all')
 
   // Dialog state
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -527,8 +531,25 @@ export default function ManualCostsAdminPage() {
     ? plants.filter(p => p.business_unit_id === filterBusinessUnitId)
     : plants
 
-  // Aggregate totals by category
-  const totals = adjustments.reduce(
+  const departmentOptions = useMemo(() => {
+    const set = new Set<string>(departments)
+    for (const a of adjustments) {
+      if (a.department?.trim()) set.add(a.department.trim())
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b, 'es'))
+  }, [departments, adjustments])
+
+  const tableAdjustments = adjustments.filter((a) => {
+    if (filterCategory !== 'all' && a.category !== filterCategory) return false
+    if (filterCashPayment === 'cash' && !a.is_cash_payment) return false
+    if (filterCashPayment === 'not_cash' && a.is_cash_payment) return false
+    if (!filterDepartment) return true
+    const d = a.department?.trim() || ''
+    if (filterDepartment === '__general__') return d === ''
+    return d === filterDepartment
+  })
+
+  const totals = tableAdjustments.reduce(
     (acc, adj) => {
       if (adj.category === 'nomina') {
         acc.nomina += Number(adj.amount)
@@ -540,6 +561,140 @@ export default function ManualCostsAdminPage() {
     },
     { nomina: 0, otros_indirectos: 0, total: 0 }
   )
+
+  const filteredNominaCount = tableAdjustments.filter((a) => a.category === 'nomina').length
+  const filteredIndirectCount = tableAdjustments.filter(
+    (a) => a.category === 'otros_indirectos'
+  ).length
+
+  const exportFilteredConceptsToExcel = async () => {
+    if (tableAdjustments.length === 0) {
+      toast({
+        title: 'Sin datos',
+        description: 'No hay registros filtrados para exportar.',
+        variant: 'destructive',
+      })
+      return
+    }
+
+    const ExcelJS = await import('exceljs')
+    const workbook = new ExcelJS.Workbook()
+    const sheet = workbook.addWorksheet('Conceptos', {
+      views: [{ state: 'frozen', ySplit: 5 }],
+    })
+
+    const monthLabel = new Date(`${selectedMonth}-01`).toLocaleDateString('es-MX', {
+      year: 'numeric',
+      month: 'long',
+    })
+    const scopeParts: string[] = []
+    scopeParts.push(
+      filterBusinessUnitId
+        ? `Unidad: ${businessUnits.find((b) => b.id === filterBusinessUnitId)?.name ?? ''}`
+        : 'Unidad: todas'
+    )
+    scopeParts.push(
+      filterPlantId
+        ? `Planta: ${plants.find((p) => p.id === filterPlantId)?.name ?? ''}`
+        : 'Planta: todas'
+    )
+    const tableFilterParts: string[] = []
+    if (filterCategory !== 'all') {
+      tableFilterParts.push(
+        filterCategory === 'nomina' ? 'Tabla: nómina' : 'Tabla: otros indirectos'
+      )
+    }
+    if (filterDepartment) {
+      tableFilterParts.push(
+        filterDepartment === '__general__'
+          ? 'Tabla: dep. general / sin departamento'
+          : `Tabla: dep. ${filterDepartment}`
+      )
+    }
+    if (filterCashPayment !== 'all') {
+      tableFilterParts.push(
+        filterCashPayment === 'cash' ? 'Tabla: pago efectivo' : 'Tabla: pago no efectivo'
+      )
+    }
+    if (tableFilterParts.length === 0) tableFilterParts.push('Tabla: sin filtros (todas las filas del alcance)')
+
+    sheet.addRow(['Costos manuales — conceptos exportados'])
+    sheet.addRow([`Mes: ${monthLabel}`, scopeParts.join(' · ')])
+    sheet.addRow([`Filtros: ${tableFilterParts.join(' · ')}`])
+    sheet.addRow([])
+
+    const headerRow = sheet.addRow([
+      'Categoría',
+      'Planta / unidad',
+      'Departamento',
+      'Subcategoría',
+      'Categoría de gasto',
+      'Subcategoría de gasto',
+      'Descripción',
+      'Bono',
+      'Pago',
+      'Monto (MXN)',
+      'Distribuido',
+      'Método distribución',
+      'Creado por',
+      'Fecha creación',
+      'Notas',
+    ])
+    headerRow.font = { bold: true }
+
+    for (const adj of tableAdjustments) {
+      const catMeta = adj.expense_category ? getExpenseCategoryById(adj.expense_category) : undefined
+      const expenseCatLabel = catMeta
+        ? getExpenseCategoryDisplayName(catMeta)
+        : adj.expense_category || ''
+      const createdBy = adj.created_by_profile
+        ? `${adj.created_by_profile.nombre || ''} ${adj.created_by_profile.apellido || ''}`.trim() ||
+          adj.created_by_profile.email ||
+          ''
+        : ''
+      sheet.addRow([
+        adj.category === 'nomina' ? 'Nómina' : 'Otros indirectos',
+        adj.plant?.name ?? adj.business_unit?.name ?? '',
+        adj.department || '',
+        adj.subcategory || '',
+        expenseCatLabel,
+        adj.expense_subcategory || '',
+        adj.description || '',
+        adj.is_bonus ? 'Sí' : 'No',
+        adj.is_cash_payment ? 'Efectivo' : 'No efectivo',
+        Number(adj.amount),
+        adj.is_distributed ? 'Sí' : 'No',
+        adj.distribution_method === 'volume'
+          ? 'Volumen'
+          : adj.distribution_method === 'percentage'
+            ? 'Porcentaje'
+            : '',
+        createdBy,
+        adj.created_at ? new Date(adj.created_at).toLocaleString('es-MX') : '',
+        adj.notes || '',
+      ])
+    }
+
+    const widths = [16, 24, 18, 16, 24, 20, 40, 8, 14, 14, 12, 18, 26, 22, 36]
+    widths.forEach((w, i) => {
+      sheet.getColumn(i + 1).width = w
+    })
+
+    const buffer = await workbook.xlsx.writeBuffer()
+    const blob = new Blob([buffer], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `costos-manuales-${selectedMonth}-conceptos.xlsx`
+    a.click()
+    URL.revokeObjectURL(url)
+    toast({
+      title: 'Exportación lista',
+      description: `Se exportaron ${tableAdjustments.length} registro(s) a Excel.`,
+    })
+  }
 
   return (
     <div className="container mx-auto py-6 px-4 max-w-7xl space-y-6">
@@ -560,7 +715,7 @@ export default function ManualCostsAdminPage() {
       {/* Filters */}
       <Card>
         <CardContent className="pt-6">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-7 gap-4">
             <div>
               <Label htmlFor="month">Mes</Label>
               <Input
@@ -610,6 +765,63 @@ export default function ManualCostsAdminPage() {
               </Select>
             </div>
 
+            <div>
+              <Label htmlFor="filterCategory">Categoría</Label>
+              <Select
+                value={filterCategory}
+                onValueChange={(val) => setFilterCategory(val as 'all' | 'nomina' | 'otros_indirectos')}
+              >
+                <SelectTrigger id="filterCategory">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todas</SelectItem>
+                  <SelectItem value="nomina">Nómina</SelectItem>
+                  <SelectItem value="otros_indirectos">Otros indirectos</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <Label htmlFor="filterDepartment">Departamento</Label>
+              <Select
+                value={filterDepartment || 'all'}
+                onValueChange={(val) => setFilterDepartment(val === 'all' ? '' : val)}
+              >
+                <SelectTrigger id="filterDepartment">
+                  <SelectValue placeholder="Todos" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos</SelectItem>
+                  <SelectItem value="__general__">General / sin departamento</SelectItem>
+                  {departmentOptions.map((dept) => (
+                    <SelectItem key={dept} value={dept}>
+                      {dept}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <Label htmlFor="filterCashPayment">Pago</Label>
+              <Select
+                value={filterCashPayment}
+                onValueChange={(val) =>
+                  setFilterCashPayment(val as 'all' | 'cash' | 'not_cash')
+                }
+              >
+                <SelectTrigger id="filterCashPayment">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos</SelectItem>
+                  <SelectItem value="cash">Efectivo</SelectItem>
+                  <SelectItem value="not_cash">No efectivo</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
             <div className="flex items-end">
               <Button onClick={loadAdjustments} disabled={loading} className="w-full">
                 <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
@@ -629,7 +841,7 @@ export default function ManualCostsAdminPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{formatCurrency(totals.nomina)}</div>
-            <p className="text-xs text-muted-foreground">{adjustments.filter(a => a.category === 'nomina').length} entradas</p>
+            <p className="text-xs text-muted-foreground">{filteredNominaCount} entradas</p>
           </CardContent>
         </Card>
 
@@ -640,7 +852,7 @@ export default function ManualCostsAdminPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{formatCurrency(totals.otros_indirectos)}</div>
-            <p className="text-xs text-muted-foreground">{adjustments.filter(a => a.category === 'otros_indirectos').length} entradas</p>
+            <p className="text-xs text-muted-foreground">{filteredIndirectCount} entradas</p>
           </CardContent>
         </Card>
 
@@ -651,7 +863,7 @@ export default function ManualCostsAdminPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{formatCurrency(totals.total)}</div>
-            <p className="text-xs text-muted-foreground">{adjustments.length} entradas totales</p>
+            <p className="text-xs text-muted-foreground">{tableAdjustments.length} entradas totales</p>
           </CardContent>
         </Card>
       </div>
@@ -666,11 +878,42 @@ export default function ManualCostsAdminPage() {
         <TabsContent value="all" className="mt-4">
           {/* Adjustments Table */}
           <Card>
-            <CardHeader>
+            <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between space-y-0">
+              <div className="space-y-1.5">
               <CardTitle>Registros de Costos Manuales</CardTitle>
               <CardDescription>
                 Listado de entradas para {selectedMonth}
+                {(filterCategory !== 'all' ||
+                  filterDepartment ||
+                  filterCashPayment !== 'all') && (
+                  <span className="block mt-1 text-muted-foreground">
+                    Filtros de tabla:{' '}
+                    {filterCategory === 'all'
+                      ? 'todas las categorías'
+                      : filterCategory === 'nomina'
+                        ? 'nómina'
+                        : 'otros indirectos'}
+                    {filterDepartment &&
+                      ` · departamento: ${
+                        filterDepartment === '__general__' ? 'general / sin departamento' : filterDepartment
+                      }`}
+                    {filterCashPayment !== 'all' &&
+                      ` · pago: ${filterCashPayment === 'cash' ? 'efectivo' : 'no efectivo'}`}
+                  </span>
+                )}
               </CardDescription>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="shrink-0"
+                disabled={loading || tableAdjustments.length === 0}
+                onClick={() => void exportFilteredConceptsToExcel()}
+              >
+                <Download className="w-4 h-4 mr-2" />
+                Exportar Excel
+              </Button>
             </CardHeader>
             <CardContent>
           <Table>
@@ -695,8 +938,14 @@ export default function ManualCostsAdminPage() {
                     No hay registros para este mes
                   </TableCell>
                 </TableRow>
+              ) : tableAdjustments.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={10} className="text-center text-muted-foreground py-8">
+                    No hay registros que coincidan con los filtros de tabla seleccionados.
+                  </TableCell>
+                </TableRow>
               ) : (
-                adjustments.map(adj => (
+                tableAdjustments.map(adj => (
                   <TableRow key={adj.id}>
                     <TableCell>
                       <div className="flex flex-col gap-1">
