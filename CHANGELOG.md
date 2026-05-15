@@ -12,6 +12,43 @@ Pre-1.0, **each minor (`0.x.0`)** is a **calendar-month milestone on `main`** (A
 ### Added
 - (nothing yet)
 
+## [0.12.0] - 2026-05-15
+
+**Summary:** April–May pushes **diesel and reporting** much further (efficiency rollups, drill sheets, EXIF evidence, coordinador RLS), hardens **work orders** (multi-PO per OT, partial close, parts_used edge cases), expands **fleet and composites** (tree/inspector, meter sync and per-component coupling), and deepens **compras / proveedores** (padrón governance, plant-scoped selectors, workflow polish). **Checklists** get PDF evidence exports and mobile capture fixes; **gerencial** and **ingresos-gastos** gain analysis and export alignment; **Jefe de Planta** can span multiple plants. Foundation work: numeric meter columns, operator incidents, dashboards, and dependency hygiene.
+
+### Added
+- **Diesel:** efficiency reporting (monthly rollups, modular UI, drill sheet, horómetro APIs), EXIF capture vs transaction-time audit, transaction validation and clearer PostgREST errors, local date/time handling in forms.
+- **Reports:** trusted km rollups, Mexico City month windows, manual costs filters/export and gerencial copy updates.
+- **Composites:** configurable meter sync between components; per-component meters in coupling editor.
+- **Work orders:** multiple purchase orders per OT; evidence PDF pipeline for checklists (snapdom); fleet tree, inspector health/detail APIs.
+- **Suppliers / padrón:** governance RLS, APIs, UI; global flag, BU filter via junction, plant-scoped PO selector.
+- **Jefe de Planta:** multi-plant scope via `profile_managed_plants`.
+- **Scripts:** April 2026 indirect expense classify/import pipeline.
+- **Mobile:** separate camera vs gallery in SmartPhotoUpload; diesel evidence gallery pick.
+- **Operator / incidents:** operator incidents, evidence on report problem, instantáneo PDF packaging on incidentes.
+- **Storage:** bucket for asset documents; asset registration modularization; maintenance history classification.
+- **Dosificador / JP:** plant daily readiness table on dashboards.
+
+### Changed
+- **DB:** `numeric(12,2)` meter columns on diesel, checklists, assets; diesel RLS for coordinador scope; PO batch lookup RPC; service_orders id concurrency (sequence-backed OT ids, drop racy triggers).
+- **Auth / nav:** coordinador plant nav, fleet bulk plant gates, Organización entry; Zustand user/profile for policy; reduced auth `getUser` churn; operator registration consolidated on `UserRegistrationTool`.
+- **Compras / quotations:** review step on PO creation; multi-file quotations, coordinator edit flow, provider prefill; approval toasts; PO ready-to-pay notification; scroll in approval dialog.
+- **Gerencial / manual costs:** cost analysis UX, cyclic maintenance fix, ingresos-gastos detail and Excel export alignment with UI.
+- **Dashboards:** refactor with executive components; archive documents/data; dashboard API optimizations.
+- **Theme:** dark mode disabled and theme toggle removed.
+
+### Fixed
+- **Diesel:** duplicate urea/diesel txs when INSERT has no RETURNING row; diesel-efficiency drill sheet aligned with merged-hours curve.
+- **Checklists:** skip EXIF for camera photos and yield after file chooser; integer horómetro parsing and es-MX display.
+- **Work orders / WO:** nested Zod errors; `parts_used` quantity 0; persist preventive task completion and partial close; WO intent dialog; operator incident procurement routes.
+- **Assets / operators:** overdue preventives from earlier meter cycles; operator profiles aligned on plant moves; coordinador/JP scoped asset-operator mutations; composite plant moves and DnD drop targets.
+- **Purchase orders:** quotation plant gate, `WO plant_id`, `approval_amount` sync on quotation select; comprobante receipts API and workflow guard.
+- **Manual adjustments:** Spanish typography in imports and API.
+- **Assignees / composites:** operator bundle conflicts on composite moves.
+
+### Security
+- **Diesel** and **supplier** RLS expansions; **RH reporting** guard; session validation and transaction scope checks on diesel forms.
+
 ## [0.11.0] - 2026-03-31
 
 **Summary:** March hardens the **operational core**: work orders and incidents become first-class surfaces, procurement gets a real **workflow engine** (policy, email stages, batch approvals), and **checklists / activos** gain serious mobile and authoring UX. Security and dependency hygiene catch up with how much surface area you now expose in production.
@@ -180,7 +217,8 @@ Pre-1.0, **each minor (`0.x.0`)** is a **calendar-month milestone on `main`** (A
 ### Removed
 - Some early **restrictions** and **migration** experiments that blocked iteration.
 
-[Unreleased]: https://github.com/dssolutions-mx/mtto-dcconcretos/compare/v0.11.0...HEAD
+[Unreleased]: https://github.com/dssolutions-mx/mtto-dcconcretos/compare/v0.12.0...HEAD
+[0.12.0]: https://github.com/dssolutions-mx/mtto-dcconcretos/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/dssolutions-mx/mtto-dcconcretos/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/dssolutions-mx/mtto-dcconcretos/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/dssolutions-mx/mtto-dcconcretos/compare/v0.8.0...v0.9.0
