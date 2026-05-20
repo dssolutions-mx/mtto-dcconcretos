@@ -39,7 +39,9 @@ import {
   Droplet,
   IdCard,
   Target,
+  TrendingUp,
 } from "lucide-react"
+import { reportsNavItemsForProfile } from '@/lib/reports/reports-catalog'
 import { UserNav } from "@/components/user-nav"
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
@@ -795,7 +797,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
 
 
 
-        {/* Records Section */}
+        {/* Reportes */}
         {ui.shouldShowInNavigation('reports') && (
           <div className="px-4">
             <Collapsible open={recordsOpen} onOpenChange={setRecordsOpen}>
@@ -806,7 +808,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                 >
                   <div className="flex items-center">
                     <FileText className="mr-2 h-4 w-4" />
-                    Históricos
+                    Reportes
                   </div>
                   {recordsOpen ? (
                     <ChevronDown className="h-4 w-4" />
@@ -817,27 +819,49 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
               </CollapsibleTrigger>
               <CollapsibleContent className="space-y-1 mt-2 transition-all duration-200 ease-in-out motion-reduce:transition-none">
                 <Button
-                  variant={isReportesHubPathActive(pathname) ? "secondary" : "ghost"}
-                  className={cn("w-full justify-start pl-8", navItemClasses)}
+                  variant={pathname === '/reportes' ? 'secondary' : 'ghost'}
+                  className={cn('w-full justify-start pl-8', navItemClasses)}
                   asChild
                   onClick={handleLinkClick}
                 >
                   <Link href="/reportes">
                     <BarChart3 className="mr-2 h-4 w-4" />
-                    Reportes
+                    Centro de reportes
                   </Link>
                 </Button>
-                <Button
-                  variant={isPathActive("/reportes/eficiencia-diesel") ? "secondary" : "ghost"}
-                  className={cn("w-full justify-start pl-8", navItemClasses)}
-                  asChild
-                  onClick={handleLinkClick}
-                >
-                  <Link href="/reportes/eficiencia-diesel">
-                    <Fuel className="mr-2 h-4 w-4" />
-                    Eficiencia de Diesel
-                  </Link>
-                </Button>
+                {profile &&
+                  reportsNavItemsForProfile(profile).map((entry) => {
+                    const Icon =
+                      entry.id === 'eficiencia-diesel'
+                        ? Fuel
+                        : entry.id === 'checklists'
+                          ? ClipboardCheck
+                          : entry.id === 'informe-ejecutivo'
+                            ? FileText
+                            : entry.id === 'ingresos-gastos'
+                              ? DollarSign
+                              : entry.id === 'analisis-costos'
+                                ? TrendingUp
+                                : entry.id === 'manual-costs'
+                                  ? Settings
+                                  : BarChart3
+                    const active =
+                      pathname === entry.href || pathname.startsWith(`${entry.href}/`)
+                    return (
+                      <Button
+                        key={entry.id}
+                        variant={active ? 'secondary' : 'ghost'}
+                        className={cn('w-full justify-start pl-8', navItemClasses)}
+                        asChild
+                        onClick={handleLinkClick}
+                      >
+                        <Link href={entry.href}>
+                          <Icon className="mr-2 h-4 w-4" />
+                          {entry.label}
+                        </Link>
+                      </Button>
+                    )
+                  })}
               </CollapsibleContent>
             </Collapsible>
           </div>
@@ -1220,22 +1244,33 @@ function buildNavigationSections(
     })
   }
 
-  // Records (Históricos)
+  // Reportes — gerencial suite + operativo
   if (ui.shouldShowInNavigation('reports')) {
+    const reportNavEntries = reportsNavItemsForProfile(profile)
+    const iconById: Record<string, React.ComponentType<{ className?: string }>> = {
+      gerencial: BarChart3,
+      'informe-ejecutivo': FileText,
+      'ingresos-gastos': DollarSign,
+      'analisis-costos': TrendingUp,
+      'manual-costs': Settings,
+      'eficiencia-diesel': Fuel,
+      checklists: ClipboardCheck,
+    }
+    const reportItems: NavItem[] = [
+      { href: '/reportes', icon: BarChart3, label: 'Centro de reportes', active: pathname === '/reportes' },
+      ...reportNavEntries.map((entry) => ({
+        href: entry.href,
+        icon: iconById[entry.id] ?? BarChart3,
+        label: entry.label,
+        active: pathname === entry.href || pathname.startsWith(`${entry.href}/`),
+      })),
+    ]
     sections.push({
-      id: "records",
+      id: 'records',
       icon: FileText,
-      label: "Históricos",
-      active: isSectionActive(["/reportes"]),
-      items: [
-        { href: "/reportes", icon: BarChart3, label: "Reportes", active: isReportesHubPathActive(pathname) },
-        {
-          href: "/reportes/eficiencia-diesel",
-          icon: Fuel,
-          label: "Eficiencia de Diesel",
-          active: isPathActive("/reportes/eficiencia-diesel"),
-        },
-      ],
+      label: 'Reportes',
+      active: isSectionActive(['/reportes']),
+      items: reportItems,
     })
   }
 

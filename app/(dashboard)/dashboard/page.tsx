@@ -44,6 +44,8 @@ import { DashboardExecutiveLayout } from "@/components/dashboard/dashboard-execu
 import { DashboardModuleLinks } from "@/components/dashboard/dashboard-module-links"
 import { DashboardExecutiveKPIs } from "@/components/dashboard/dashboard-executive-kpis"
 import { DashboardExecutiveHero } from "@/components/dashboard/dashboard-executive-hero"
+import { reportShortcutsForRole } from "@/lib/reports/executive-dashboard-shortcuts"
+import { BarChart3 as BarChart3Icon } from "lucide-react"
 
 function DashboardContent() {
   const { 
@@ -381,25 +383,28 @@ function DashboardContent() {
           userName={`${profile.nombre} ${profile.apellido}`.trim()}
           userRole={getRoleDisplayName(profile.role)}
           authLimit={showAuthLimit ? authorizationLimit : undefined}
-          shortcuts={
-            profile.role === 'GERENCIA_GENERAL'
+          shortcuts={[
+            ...reportShortcutsForRole(profile.role).map((s) => ({
+              label: s.label,
+              href: s.href,
+              icon: <BarChart3Icon className="h-4 w-4" />,
+            })),
+            ...(profile.role === 'GERENCIA_GENERAL'
               ? [
-                  { label: 'Reporte Gerencial', href: '/reportes/gerencial', icon: <BarChart3 className="h-4 w-4" /> },
                   { label: 'Compras Alto Valor', href: '/compras?tab=pending', icon: <ShoppingCart className="h-4 w-4" /> },
                   { label: 'Configuración Sistema', href: '/gestion', icon: <Shield className="h-4 w-4" /> },
                 ]
               : profile.role === 'AREA_ADMINISTRATIVA'
-              ? [
-                  { label: 'Compras Pendientes', href: '/compras?tab=pending', icon: <ShoppingCart className="h-4 w-4" /> },
-                  { label: 'Gestionar Personal', href: '/gestion/personal', icon: <Users className="h-4 w-4" /> },
-                  { label: 'Reportes Administrativos', href: '/reportes?type=admin', icon: <BarChart3 className="h-4 w-4" /> },
-                ]
-              : [
-                  { label: 'Incidentes activos', href: '/incidentes', icon: <AlertTriangle className="h-4 w-4" /> },
-                  { label: 'Activos', href: '/activos', icon: <Package className="h-4 w-4" /> },
-                  { label: 'Plan preventivo', href: '/preventivo', icon: <Wrench className="h-4 w-4" /> },
-                ]
-          }
+                ? [
+                    { label: 'Compras Pendientes', href: '/compras?tab=pending', icon: <ShoppingCart className="h-4 w-4" /> },
+                    { label: 'Gestionar Personal', href: '/gestion/personal', icon: <Users className="h-4 w-4" /> },
+                  ]
+                : profile.role === 'GERENTE_MANTENIMIENTO'
+                  ? [
+                      { label: 'Compras pendientes', href: '/compras?tab=pending', icon: <ShoppingCart className="h-4 w-4" /> },
+                    ]
+                  : []),
+          ]}
           modules={
             <DashboardModuleLinks
               modules={moduleCards.map((c) => ({

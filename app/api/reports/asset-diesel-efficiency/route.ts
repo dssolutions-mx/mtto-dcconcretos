@@ -2,6 +2,10 @@ import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createServerSupabase } from '@/lib/supabase-server'
 import { computeAssetDieselEfficiencyMonths } from '@/lib/reports/compute-asset-diesel-efficiency-monthly'
+import {
+  canRecomputeDieselEfficiency,
+  requireReportsApiAccess,
+} from '@/lib/reports/report-api-auth'
 import type { Database } from '@/types/supabase-types'
 
 type PostBody = {
@@ -13,14 +17,9 @@ type PostBody = {
 
 export async function GET(req: NextRequest) {
   try {
-    const supabase = await createServerSupabase()
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser()
-    if (authError || !user) {
-      return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
-    }
+    const auth = await requireReportsApiAccess()
+    if (!auth.ok) return auth.response
+    const supabase = auth.supabase
 
     const { searchParams } = new URL(req.url)
     const yearMonth = searchParams.get('yearMonth')
@@ -83,13 +82,10 @@ export async function GET(req: NextRequest) {
  */
 export async function POST(req: NextRequest) {
   try {
-    const supabase = await createServerSupabase()
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser()
-    if (authError || !user) {
-      return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
+    const auth = await requireReportsApiAccess()
+    if (!auth.ok) return auth.response
+    if (!canRecomputeDieselEfficiency(auth.actor)) {
+      return NextResponse.json({ error: 'Sin permiso para recalcular eficiencia' }, { status: 403 })
     }
 
     const body = (await req.json()) as PostBody
