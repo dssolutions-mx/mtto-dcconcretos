@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { unstable_cache } from 'next/cache'
 import { createClient as createServerSupabase } from '@/lib/supabase-server'
 import { runCostAnalysis } from '@/lib/reports/cost-analysis-aggregate'
+import { requireReportsApiAccess } from '@/lib/reports/report-api-auth'
 
 export const maxDuration = 120
 
@@ -55,22 +56,20 @@ async function runCostAnalysisCached(params: {
 
 export async function POST(req: NextRequest) {
   try {
+    const auth = await requireReportsApiAccess()
+    if (!auth.ok) return auth.response
+
     const body = await req.json()
     const months: string[] = Array.isArray(body.months) ? body.months : []
     const businessUnitId: string | null = body.businessUnitId || null
     const plantId: string | null = body.plantId || null
-
-    const supabase = await createServerSupabase()
-    const {
-      data: { user },
-    } = await supabase.auth.getUser()
 
     const payload = await runCostAnalysisCached({
       months,
       businessUnitId,
       plantId,
       requestHost: req.headers.get('host'),
-      rollupReadUserKey: user?.id ?? 'anonymous',
+      rollupReadUserKey: auth.actor.userId,
     })
 
     return NextResponse.json(payload)

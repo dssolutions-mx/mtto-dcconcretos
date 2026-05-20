@@ -4,6 +4,7 @@ import Link from "next/link"
 import { Fuel, TrendingDown, TrendingUp, Wrench } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useDashboardMaintenanceCost } from "@/hooks/useDashboardMaintenanceCost"
+import { useAuthZustand } from "@/hooks/use-auth-zustand"
 import { useDashboardApprovalQueue } from "@/hooks/useDashboardApprovalQueue"
 import { DashboardApprovalQueue } from "./dashboard-approval-queue"
 
@@ -138,7 +139,8 @@ function CostAndQueueView({
   queueTitle: string
   hideStageLabel?: boolean
 }) {
-  const { current, lastMonth, isLoading: costLoading } = useDashboardMaintenanceCost()
+  const { profile } = useAuthZustand()
+  const { current, lastMonth, isLoading: costLoading } = useDashboardMaintenanceCost(profile ?? undefined)
   const {
     items,
     approvalContext,

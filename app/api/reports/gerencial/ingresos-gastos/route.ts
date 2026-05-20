@@ -1,20 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient as createServerSupabase } from '@/lib/supabase-server'
 import { runIngresosGastosPost } from '@/lib/reports/ingresos-gastos-compute'
+import { requireIngresosGastosApiAccess } from '@/lib/reports/report-api-auth'
 
 /** Cold full compute can exceed the default 10s function limit on Vercel. */
 export const maxDuration = 120
 
 export async function POST(req: NextRequest) {
   try {
+    const auth = await requireIngresosGastosApiAccess()
+    if (!auth.ok) return auth.response
+
     const body = await req.json()
-    const supabase = await createServerSupabase()
     const {
       data: { user },
-    } = await supabase.auth.getUser()
+    } = await auth.supabase.auth.getUser()
     const payload = await runIngresosGastosPost({
       body,
-      supabase,
+      supabase: auth.supabase,
       requestHost: req.headers.get('host'),
       rollupReadUserKey: user?.id ?? 'anonymous',
     })

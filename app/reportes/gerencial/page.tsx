@@ -26,6 +26,8 @@ import {
   FileText
 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
+import { useAuthZustand } from '@/hooks/use-auth-zustand'
+import { canAccessIngresosGastosReport } from '@/lib/reports/reports-catalog'
 import {
   BarChart,
   Bar,
@@ -142,6 +144,8 @@ type ReportData = {
 
 export default function GerencialReportPage() {
   const router = useRouter()
+  const { profile } = useAuthZustand()
+  const showIngresosGastos = profile ? canAccessIngresosGastosReport(profile) : false
   const [loading, setLoading] = useState(true)
   const [data, setData] = useState<ReportData | null>(null)
   const [dateFrom, setDateFrom] = useState<string>('')
@@ -374,10 +378,12 @@ export default function GerencialReportPage() {
             <TrendingUp className="w-4 h-4 mr-2" />
             Análisis de Costos
           </Button>
-          <Button onClick={() => router.push('/reportes/gerencial/ingresos-gastos')}>
-            <FileText className="w-4 h-4 mr-2" />
-            Ingresos vs Gastos
-          </Button>
+          {showIngresosGastos && (
+            <Button onClick={() => router.push('/reportes/gerencial/ingresos-gastos')}>
+              <FileText className="w-4 h-4 mr-2" />
+              Ingresos vs Gastos
+            </Button>
+          )}
           <Button variant="secondary" onClick={() => router.push('/reportes/eficiencia-diesel')}>
             <Fuel className="w-4 h-4 mr-2" />
             Eficiencia diésel

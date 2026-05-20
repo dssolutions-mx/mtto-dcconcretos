@@ -117,16 +117,14 @@ export function CostAnalysisDashboard() {
   }, [monthPreset])
 
   const refreshFilters = useCallback(async () => {
-    const monthKey = rangeMode === 'month' ? focusMonth : monthTo
     try {
-      const r = await fetch('/api/reports/gerencial/ingresos-gastos', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ month: monthKey, skipPreviousMonth: true }),
-      })
+      const r = await fetch('/api/reports/gerencial/scope-filters')
       const j = await r.json()
-      if (r.ok && j.filters) {
-        setFilterOptions(j.filters as FilterOptions)
+      if (r.ok && j.businessUnits && j.plants) {
+        setFilterOptions({
+          businessUnits: j.businessUnits as FilterOptions['businessUnits'],
+          plants: j.plants as FilterOptions['plants'],
+        })
         filterOptionsLoaded.current = true
       }
     } catch {

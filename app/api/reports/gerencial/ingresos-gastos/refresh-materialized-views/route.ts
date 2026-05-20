@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient as createServerSupabase } from '@/lib/supabase-server'
 import { createClient } from '@supabase/supabase-js'
+import { requireIngresosGastosApiAccess } from '@/lib/reports/report-api-auth'
 
 /**
  * Refresh materialized views in the cotizador database
@@ -17,14 +17,8 @@ import { createClient } from '@supabase/supabase-js'
  */
 export async function POST(req: NextRequest) {
   try {
-    // Check authentication against maintenance-dashboard database
-    // (users don't have profiles in cotizador, so we only check here)
-    const supabase = await createServerSupabase()
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    
-    if (authError || !user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+    const auth = await requireIngresosGastosApiAccess()
+    if (!auth.ok) return auth.response
 
     // Check if COTIZADOR credentials are configured
     if (!process.env.COTIZADOR_SUPABASE_URL || !process.env.COTIZADOR_SUPABASE_SERVICE_ROLE_KEY) {

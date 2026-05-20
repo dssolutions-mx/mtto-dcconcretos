@@ -3,7 +3,11 @@ import { createClient as createServerSupabase } from '@/lib/supabase-server'
 import { effectiveRoleForPermissions } from '@/lib/auth/role-model'
 import { loadActorContext, type ActorContext } from '@/lib/auth/server-authorization'
 import { hasModuleAccess } from '@/lib/auth/role-permissions'
-import { canAccessManualCostsReport, canAccessReportsModule } from '@/lib/reports/reports-catalog'
+import {
+  canAccessIngresosGastosReport,
+  canAccessManualCostsReport,
+  canAccessReportsModule,
+} from '@/lib/reports/reports-catalog'
 
 export type ReportsApiAuthResult =
   | { ok: true; actor: ActorContext; supabase: Awaited<ReturnType<typeof createServerSupabase>> }
@@ -42,6 +46,24 @@ export async function requireReportsApiAccess(): Promise<ReportsApiAuthResult> {
   }
 
   return { ok: true, actor, supabase }
+}
+
+export async function requireIngresosGastosApiAccess(): Promise<ReportsApiAuthResult> {
+  const base = await requireReportsApiAccess()
+  if (!base.ok) return base
+  if (!canAccessIngresosGastosReport(base.actor.profile)) {
+    return {
+      ok: false,
+      response: NextResponse.json(
+        {
+          error:
+            'Ingresos vs gastos solo está disponible para Gerencia General y Jefe de Unidad de Negocio',
+        },
+        { status: 403 }
+      ),
+    }
+  }
+  return base
 }
 
 export async function requireManualCostsApiAccess(): Promise<ReportsApiAuthResult> {

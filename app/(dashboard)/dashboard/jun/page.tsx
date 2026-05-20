@@ -403,7 +403,7 @@ export default function JUNDashboard() {
           </Button>
         }
         shortcuts={[
-          ...reportShortcutsForRole(profile.role).map((s) => ({
+          ...reportShortcutsForRole(profile.role, profile).map((s) => ({
             label: s.label,
             href: s.href,
             icon: <BarChart3 className="h-4 w-4" />,

@@ -87,6 +87,25 @@ const MANUAL_COSTS_ROLES = new Set<LegacyDbRole | FutureBusinessRole>([
   'JEFE_UNIDAD_NEGOCIO',
 ])
 
+/** Ingresos vs gastos P&L — solo dirección general y jefes de unidad de negocio. */
+const INGRESOS_GASTOS_ROLES = new Set<LegacyDbRole | FutureBusinessRole>([
+  'GERENCIA_GENERAL',
+  'JEFE_UNIDAD_NEGOCIO',
+])
+
+export const INGRESOS_GASTOS_PATH_PREFIX = '/reportes/gerencial/ingresos-gastos'
+
+function roleInSet(
+  profile: { role?: string | null; business_role?: string | null },
+  allowed: Set<LegacyDbRole | FutureBusinessRole>
+): boolean {
+  const role = profile.role as LegacyDbRole | undefined
+  const br = profile.business_role as FutureBusinessRole | undefined
+  return (
+    (role != null && allowed.has(role)) || (br != null && allowed.has(br))
+  )
+}
+
 function permissionRoleKey(profile: {
   role?: string | null
   business_role?: string | null
@@ -103,6 +122,14 @@ export function canAccessReportsModule(profile: {
   return key ? hasModuleAccess(key, 'reports') : false
 }
 
+export function canAccessIngresosGastosReport(profile: {
+  role?: string | null
+  business_role?: string | null
+}): boolean {
+  if (!canAccessReportsModule(profile)) return false
+  return roleInSet(profile, INGRESOS_GASTOS_ROLES)
+}
+
 export function canAccessManualCostsReport(profile: {
   role?: string | null
   business_role?: string | null
@@ -111,12 +138,7 @@ export function canAccessManualCostsReport(profile: {
   const key = permissionRoleKey(profile)
   if (!key) return false
   if (hasWriteAccess(key, 'config')) return true
-  const role = profile.role as LegacyDbRole | undefined
-  const br = profile.business_role as FutureBusinessRole | undefined
-  return (
-    (role != null && MANUAL_COSTS_ROLES.has(role)) ||
-    (br != null && MANUAL_COSTS_ROLES.has(br))
-  )
+  return roleInSet(profile, MANUAL_COSTS_ROLES)
 }
 
 export function filterReportsForProfile(profile: {
@@ -126,6 +148,7 @@ export function filterReportsForProfile(profile: {
   if (!canAccessReportsModule(profile)) return []
 
   return REPORT_CATALOG.filter((entry) => {
+    if (entry.id === 'ingresos-gastos') return canAccessIngresosGastosReport(profile)
     if (entry.id === 'manual-costs') return canAccessManualCostsReport(profile)
     if (entry.id === 'legacy-analytics') {
       const key = permissionRoleKey(profile)
@@ -149,6 +172,25 @@ export function reportEntryMatchesPath(entry: ReportCatalogEntry, pathname: stri
     return pathname === '/reportes'
   }
   return pathname === prefix || pathname.startsWith(`${prefix}/`)
+}
+
+/** Report-specific gates on top of module `reports` access (used by RoleProvider). */
+export function canAccessReportPath(
+  profile: { role?: string | null; business_role?: string | null },
+  pathname: string
+): boolean {
+  if (!pathname.startsWith('/reportes')) return true
+  if (!canAccessReportsModule(profile)) return false
+  if (
+    pathname === INGRESOS_GASTOS_PATH_PREFIX ||
+    pathname.startsWith(`${INGRESOS_GASTOS_PATH_PREFIX}/`)
+  ) {
+    return canAccessIngresosGastosReport(profile)
+  }
+  if (pathname.startsWith('/reportes/gerencial/manual-costs')) {
+    return canAccessManualCostsReport(profile)
+  }
+  return true
 }
 
 export function activeReportFromPath(

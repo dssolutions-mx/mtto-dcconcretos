@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient as createServerSupabase } from '@/lib/supabase-server'
 import { runGerencialReport } from '@/lib/reports/run-gerencial-report'
 import {
   aggregateDieselByPlant,
@@ -9,17 +8,13 @@ import {
   type ManttoOperationalDetails,
 } from '@/lib/reports/ingresos-gastos-operational-details'
 import type { AnomalyFlags } from '@/components/reports/diesel-efficiency/types'
+import { requireReportsApiAccess } from '@/lib/reports/report-api-auth'
 
 export async function GET(req: NextRequest) {
   try {
-    const supabase = await createServerSupabase()
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser()
-    if (authError || !user) {
-      return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
-    }
+    const auth = await requireReportsApiAccess()
+    if (!auth.ok) return auth.response
+    const supabase = auth.supabase
 
     const { searchParams } = new URL(req.url)
     const month = searchParams.get('month')

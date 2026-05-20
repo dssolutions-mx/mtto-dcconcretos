@@ -384,7 +384,7 @@ function DashboardContent() {
           userRole={getRoleDisplayName(profile.role)}
           authLimit={showAuthLimit ? authorizationLimit : undefined}
           shortcuts={[
-            ...reportShortcutsForRole(profile.role).map((s) => ({
+            ...reportShortcutsForRole(profile.role, profile).map((s) => ({
               label: s.label,
               href: s.href,
               icon: <BarChart3Icon className="h-4 w-4" />,
