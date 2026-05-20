@@ -99,7 +99,7 @@ export function ExecutiveAnalyticalReportClient() {
   const [dateTo, setDateTo] = useState('')
   const [businessUnitId, setBusinessUnitId] = useState('')
   const [plantId, setPlantId] = useState('')
-  /** Default false: gerencial's "hide zero" drops assets with no diesel/hours even if they have maintenance cost in period. */
+  /** Default false: keep assets with maintenance spend even when diesel/hours are zero. */
   const [hideZero, setHideZero] = useState(false)
   const [loading, setLoading] = useState(false)
   const [raw, setRaw] = useState<GerencialJson | null>(null)
@@ -347,7 +347,7 @@ export function ExecutiveAnalyticalReportClient() {
               onCheckedChange={(c) => setHideZero(c === true)}
             />
             <Label htmlFor="er-hide" className="text-sm font-normal cursor-pointer">
-              Ocultar activos sin actividad
+              Ocultar activos sin diésel, horas ni gasto de mantenimiento
             </Label>
           </div>
         </div>
@@ -382,8 +382,39 @@ export function ExecutiveAnalyticalReportClient() {
           <section className="executive-report-avoid-break space-y-8">
             <div className="flex flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between">
               <h2 className="text-xl font-semibold tracking-tight text-[#111]">Métricas generales</h2>
-              <p className="text-xs text-[#525252]">Totales según reporte gerencial del periodo.</p>
+              <p className="text-xs text-[#525252]">
+                Totales según reporte gerencial. L/h y km operativos: misma política que{' '}
+                <Link href="/reportes/eficiencia-diesel" className="underline text-[#404040]">
+                  Eficiencia diésel
+                </Link>
+                .
+              </p>
             </div>
+            {rollup.unallocated_maintenance > 0.01 && (
+              <div
+                className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950"
+                role="status"
+              >
+                <p className="font-medium">Gasto de mantenimiento sin asignar a activo</p>
+                <p className="mt-1 tabular-nums">
+                  {fmtMoneyFull(rollup.unallocated_maintenance)} no está en el desglose por equipo (POs sin orden de
+                  trabajo o sin activo). Revise compras y asignación.
+                </p>
+              </div>
+            )}
+            {Math.abs(
+              rollup.summary.total_preventive +
+                rollup.summary.total_corrective -
+                rollup.summary.total_maintenance
+            ) > 0.02 && (
+              <div
+                className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950"
+                role="status"
+              >
+                La suma preventivo + correctivo no coincide con el gasto total de mantenimiento; revise POs sin OT o
+                clasificación de órdenes.
+              </div>
+            )}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-x-6 gap-y-8 md:gap-x-10 items-start">
               <Kpi
                 value={shortMoneyK(rollup.summary.total_maintenance)}
@@ -439,8 +470,8 @@ export function ExecutiveAnalyticalReportClient() {
               <div className="rounded-lg border border-[var(--er-border)] bg-white p-6">
                 <h3 className="text-sm font-semibold text-[#111] mb-1">Operación</h3>
                 <p className="text-xs text-[#525252] mb-4">
-                  Horas operativas: horómetro en consumos, checklists completados y/o horas por transacción — el mayor
-                  por activo.
+                  Horas y km confiables: curva fusionada de horómetro diésel y checklist (con topes); si no hay curva, se
+                  usa la suma de hours_consumed / kilometers_consumed por consumo — igual que Eficiencia diésel.
                 </p>
                 <ul className="space-y-3 text-sm text-[#525252]">
                   <li>
@@ -453,10 +484,12 @@ export function ExecutiveAnalyticalReportClient() {
                     Equipos en el análisis:{' '}
                     <span className="text-[#111] font-medium">{rollup.summary.asset_count} unidades</span>
                   </li>
-                  <li title="Indicador pendiente de definición en el sistema">
-                    Cobertura de horas: <span className="text-[#111] font-medium">N/D</span>
-                    <span className="block text-xs mt-1 text-[#737373]">
-                      Métrica por definir (fórmula operativa pendiente).
+                  <li>
+                    Activos con horas &gt; 0:{' '}
+                    <span className="text-[#111] font-medium tabular-nums">
+                      {hoursAttr?.assets_with_positive_hours != null
+                        ? `${hoursAttr.assets_with_positive_hours} / ${rollup.summary.asset_count}`
+                        : '—'}
                     </span>
                   </li>
                 </ul>
@@ -571,10 +604,9 @@ export function ExecutiveAnalyticalReportClient() {
                   Distribución de horas operativas
                 </h2>
                 <p className="text-xs text-[#525252] mt-1 max-w-2xl leading-relaxed">
-                  Por activo se usa el mayor entre: avance de horómetro en consumos de diésel, lecturas de horas en
-                  checklists completados, y la suma de <span className="whitespace-nowrap">hours_consumed</span> por
-                  transacción. Así se alinea con el reporte gerencial y el resumen por activo; no sustituye un odómetro
-                  oficial si faltan lecturas.
+                  Horas y km por activo siguen la política de Eficiencia diésel: curva fusionada horómetro + checklist;
+                  si la curva es cero, suma de <span className="whitespace-nowrap">hours_consumed</span> /{' '}
+                  <span className="whitespace-nowrap">kilometers_consumed</span> en consumos del periodo.
                 </p>
               </div>
               <div className="shrink-0 text-left sm:text-right">
@@ -865,8 +897,12 @@ export function ExecutiveAnalyticalReportClient() {
                     <dd className="font-medium text-right text-[#111]">7 tipos</dd>
                   </div>
                   <div className="flex justify-between gap-4">
-                    <dt className="text-[#525252]">Cobertura horas</dt>
-                    <dd className="font-medium text-right text-[#111]">N/D</dd>
+                    <dt className="text-[#525252]">Activos con horas</dt>
+                    <dd className="font-medium text-right text-[#111] tabular-nums">
+                      {hoursAttr?.assets_with_positive_hours != null
+                        ? `${hoursAttr.assets_with_positive_hours} / ${rollup.summary.asset_count}`
+                        : '—'}
+                    </dd>
                   </div>
                   <div className="flex justify-between gap-4">
                     <dt className="text-[#525252]">Fuente</dt>
@@ -874,8 +910,11 @@ export function ExecutiveAnalyticalReportClient() {
                   </div>
                 </dl>
                 <p className="mt-4 text-xs text-[#737373] leading-relaxed border-t border-[var(--er-border)] pt-3">
-                  Horas y ratios que las usan siguen la misma regla que el reporte gerencial: horómetro, checklist y/o
-                  hours_consumed por consumo.
+                  L/h y L/km en gerencial e informe coinciden con{' '}
+                  <Link href="/reportes/eficiencia-diesel" className="underline">
+                    Eficiencia diésel
+                  </Link>{' '}
+                  (horas/km confiables por activo).
                 </p>
               </div>
             </div>
