@@ -116,12 +116,19 @@ export type CostAnalysisDataFreshness = {
   }
 }
 
+export type CostAnalysisNominaCashSplit = {
+  cash: number
+  nonCash: number
+}
+
 export type CostAnalysisResponse = {
   months: CostAnalysisMonthKey[]
   summary: CostAnalysisSummary
   byCategory: CostAnalysisCategoryRow[]
   byDepartment: CostAnalysisDepartmentRow[]
   byPlant: CostAnalysisPlantRow[]
+  /** Nómina manual adjustments split by is_cash_payment, per month (allocated to scope). */
+  nominaCashSplit: Record<CostAnalysisMonthKey, CostAnalysisNominaCashSplit>
   /** Maintenance cost split by WO type, per month. Independently sourced from PO↔WO join. */
   manttoByType: Record<CostAnalysisMonthKey, CostAnalysisManttoTypeBucket>
   /** Distinct expense_category buckets touched per month (data-quality glance). */
@@ -146,6 +153,27 @@ function toPeriodMonth(monthYm: string): string {
 
 function zeroMap(months: string[]): Record<string, number> {
   return Object.fromEntries(months.map(m => [m, 0])) as Record<string, number>
+}
+
+function emptyNominaCashSplit(months: string[]): Record<string, CostAnalysisNominaCashSplit> {
+  return Object.fromEntries(months.map(m => [m, { cash: 0, nonCash: 0 }]))
+}
+
+const MONTH_FETCH_CONCURRENCY = 4
+
+/** Run async work over items with bounded concurrency. */
+async function runPool<T>(items: T[], limit: number, fn: (item: T) => Promise<void>): Promise<void> {
+  if (items.length === 0) return
+  let next = 0
+  const workerCount = Math.min(limit, items.length)
+  await Promise.all(
+    Array.from({ length: workerCount }, async () => {
+      while (next < items.length) {
+        const i = next++
+        await fn(items[i]!)
+      }
+    })
+  )
 }
 
 function emptyPlantRow(plant: { id: string; code: string | null; name: string | null; business_unit_id: string | null }, months: string[]): CostAnalysisPlantRow {
@@ -300,43 +328,50 @@ async function fetchManttoByType(params: {
 
   const dateFromStr = firstDayOfMonth(sortedMonths[0])
   const dateToStr = lastDayOfMonth(sortedMonths[sortedMonths.length - 1])
+  const plantSet = new Set(targetPlantIds)
 
   try {
-    const { data: purchaseOrders, error: poErr } = await supabase
-      .from('purchase_orders')
-      .select('id, total_amount, actual_amount, created_at, posting_date, purchase_date, work_order_id, status')
-      .neq('status', 'pending_approval')
-      .not('work_order_id', 'is', null)
-
-    if (poErr) {
-      console.error('cost-analysis manttoByType PO query:', poErr)
-      return out
-    }
-
-    const workOrderIds = (purchaseOrders || [])
-      .map((po: any) => po.work_order_id)
-      .filter(Boolean)
-
-    if (workOrderIds.length === 0) return out
-
     const { data: workOrders, error: woErr } = await supabase
       .from('work_orders')
       .select('id, type, completed_at, planned_date, created_at, asset_id, assets(plant_id)')
-      .in('id', workOrderIds)
+      .not('asset_id', 'is', null)
 
     if (woErr) {
       console.error('cost-analysis manttoByType WO query:', woErr)
       return out
     }
 
-    const woById = new Map<string, any>((workOrders || []).map((w: any) => [w.id, w]))
-    const plantSet = new Set(targetPlantIds)
+    const scopedWo = (workOrders || []).filter((w: any) => {
+      const plantId = w?.assets?.plant_id
+      return plantId && plantSet.has(plantId)
+    })
+    const workOrderIds = scopedWo.map((w: any) => w.id).filter(Boolean)
+    if (workOrderIds.length === 0) return out
 
-    for (const po of purchaseOrders || []) {
+    const woById = new Map<string, any>(scopedWo.map((w: any) => [w.id, w]))
+
+    const purchaseOrders: any[] = []
+    const CHUNK = 200
+    for (let i = 0; i < workOrderIds.length; i += CHUNK) {
+      const chunk = workOrderIds.slice(i, i + CHUNK)
+      const { data: pos, error: poErr } = await supabase
+        .from('purchase_orders')
+        .select('id, total_amount, actual_amount, created_at, posting_date, purchase_date, work_order_id, status')
+        .neq('status', 'pending_approval')
+        .in('work_order_id', chunk)
+
+      if (poErr) {
+        console.error('cost-analysis manttoByType PO query:', poErr)
+        continue
+      }
+      purchaseOrders.push(...(pos || []))
+    }
+
+    if (purchaseOrders.length === 0) return out
+
+    for (const po of purchaseOrders) {
       const wo = po.work_order_id ? woById.get(po.work_order_id) : null
       if (!wo) continue
-      const plantId = wo?.assets?.plant_id
-      if (!plantId || !plantSet.has(plantId)) continue
 
       // Date fallback chain (matches ingresos-gastos-compute.ts:951-968)
       let dateStr = ''
@@ -491,6 +526,7 @@ export async function runCostAnalysis(params: {
       byCategory: [],
       byDepartment: [],
       byPlant: [],
+      nominaCashSplit: {},
       manttoByType: {},
       categoryCoverage: {},
       dataFreshness: {
@@ -528,6 +564,7 @@ export async function runCostAnalysis(params: {
       byCategory: [],
       byDepartment: [],
       byPlant: [],
+      nominaCashSplit: emptyNominaCashSplit(sortedMonths),
       manttoByType: Object.fromEntries(sortedMonths.map(m => [m, { corrective: 0, preventive: 0, inspection: 0, other: 0 }])),
       categoryCoverage: zeroMap(sortedMonths),
       dataFreshness: {
@@ -561,6 +598,7 @@ export async function runCostAnalysis(params: {
   const categoryMonthly = new Map<string, Map<string, number>>()
   const subcatMonthly = new Map<string, Map<string, Map<string, number>>>()
   const deptMonthly = new Map<string, Map<string, number>>()
+  const nominaCashSplit = emptyNominaCashSplit(sortedMonths)
 
   const monthYmFromPeriod = (period: string) => period.slice(0, 7)
 
@@ -599,6 +637,15 @@ export async function runCostAnalysis(params: {
       let sumAlloc = 0
       for (const amt of byPlant.values()) sumAlloc += amt
       dm.set(monthKey, (dm.get(monthKey) || 0) + sumAlloc)
+
+      const cashBucket = nominaCashSplit[monthKey]
+      if (cashBucket) {
+        const isCash = Boolean(adj.is_cash_payment)
+        for (const amt of byPlant.values()) {
+          if (isCash) cashBucket.cash += amt
+          else cashBucket.nonCash += amt
+        }
+      }
     }
 
     if (adj.category === 'otros_indirectos') {
@@ -696,7 +743,7 @@ export async function runCostAnalysis(params: {
     byPlantMap.set(p.id, emptyPlantRow(p, sortedMonths))
   }
 
-  for (const monthYm of sortedMonths) {
+  await runPool(sortedMonths, MONTH_FETCH_CONCURRENCY, async monthYm => {
     const payload = await runIngresosGastosPost({
       body: {
         month: monthYm,
@@ -709,15 +756,13 @@ export async function runCostAnalysis(params: {
       rollupReadUserKey: rollupReadUserKey ?? 'anonymous',
     })
 
-    const plantsRow = (payload as any).plants as
-      | Array<Record<string, any>>
-      | undefined
-
-    if (!plantsRow) continue
+    const plantsRow = (payload as { plants?: Array<Record<string, unknown>> }).plants
+    if (!plantsRow) return
 
     for (const row of plantsRow) {
-      if (!plantIdSet.has(row.plant_id)) continue
-      const pr = byPlantMap.get(row.plant_id)
+      const plantIdKey = row.plant_id as string
+      if (!plantIdSet.has(plantIdKey)) continue
+      const pr = byPlantMap.get(plantIdKey)
       const v = (k: string) => Number(row[k] || 0)
       const volume = v('volumen_concreto')
       const fc = v('fc_ponderada')
@@ -762,7 +807,7 @@ export async function runCostAnalysis(params: {
       fcWeighted[monthYm] += fc * volume
       cemWeighted[monthYm] += cem * volume
     }
-  }
+  })
 
   // Derived summary metrics — recompute from totals so rollups stay consistent.
   for (const m of sortedMonths) {
@@ -835,6 +880,7 @@ export async function runCostAnalysis(params: {
     byCategory,
     byDepartment,
     byPlant,
+    nominaCashSplit,
     manttoByType,
     categoryCoverage,
     dataFreshness: {

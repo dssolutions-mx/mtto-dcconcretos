@@ -9,6 +9,7 @@ import { formatCurrency, formatCurrencyCompact, formatMonthShort, formatPercent 
 
 type Props = {
   data: CostAnalysisResponse
+  onMonthClick?: (monthYm: string) => void
 }
 
 type BucketKey = 'corrective' | 'preventive' | 'inspection' | 'other'
@@ -36,7 +37,7 @@ const BUCKET_CONFIG: Record<BucketKey, { label: string; color: string; tone: str
   },
 }
 
-export function ManttoTypeSplit({ data }: Props) {
+export function ManttoTypeSplit({ data, onMonthClick }: Props) {
   const { months, manttoByType } = data
 
   const chartRows = useMemo(() => {
@@ -138,7 +139,16 @@ export function ManttoTypeSplit({ data }: Props) {
       {/* Stacked bar by month */}
       <div className="h-[260px] w-full">
         <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={chartRows} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+          <BarChart
+            data={chartRows}
+            margin={{ top: 10, right: 10, left: 0, bottom: 0 }}
+            className={onMonthClick ? 'cursor-pointer' : undefined}
+            onClick={state => {
+              const i = (state as { activeTooltipIndex?: number })?.activeTooltipIndex
+              const row = chartRows[i]
+              if (row?._ym) onMonthClick?.(row._ym)
+            }}
+          >
             <CartesianGrid strokeDasharray="3 3" vertical={false} className="stroke-border/40" />
             <XAxis dataKey="month" tickLine={false} axisLine={false} className="text-xs" />
             <YAxis

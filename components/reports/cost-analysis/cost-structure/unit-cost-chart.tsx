@@ -6,15 +6,17 @@ import { formatCurrency, formatCurrencyCompact, formatMonthShort } from '../form
 
 type Props = {
   data: CostAnalysisResponse
+  onMonthClick?: (monthYm: string) => void
 }
 
-export function UnitCostChart({ data }: Props) {
+export function UnitCostChart({ data, onMonthClick }: Props) {
   const { months, summary } = data
 
   const rows = months.map(m => {
     const vol = summary.totalVolume[m] || 0
     const safe = (n: number) => (vol > 0 ? n / vol : 0)
     return {
+      _ym: m,
       month: formatMonthShort(m),
       'Materia prima': safe(summary.costoMpTotal[m] || 0),
       Diesel: safe(summary.dieselTotal[m] || 0),
@@ -27,7 +29,15 @@ export function UnitCostChart({ data }: Props) {
   return (
     <div className="h-[300px] w-full">
       <ResponsiveContainer width="100%" height="100%">
-        <BarChart data={rows} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+        <BarChart
+          data={rows}
+          margin={{ top: 10, right: 10, left: 0, bottom: 0 }}
+          className={onMonthClick ? 'cursor-pointer' : undefined}
+          onClick={state => {
+            const i = (state as { activeTooltipIndex?: number })?.activeTooltipIndex
+            if (typeof i === 'number' && rows[i]?._ym) onMonthClick?.(rows[i]._ym)
+          }}
+        >
           <CartesianGrid strokeDasharray="3 3" vertical={false} className="stroke-border/40" />
           <XAxis dataKey="month" tickLine={false} axisLine={false} className="text-xs" />
           <YAxis tickFormatter={formatCurrencyCompact} tickLine={false} axisLine={false} className="text-xs" width={60} />

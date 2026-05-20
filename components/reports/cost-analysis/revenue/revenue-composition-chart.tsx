@@ -6,11 +6,13 @@ import { formatCurrencyCompact, formatCurrency, formatMonthShort } from '../form
 
 type Props = {
   data: CostAnalysisResponse
+  onMonthClick?: (monthYm: string) => void
 }
 
-export function RevenueCompositionChart({ data }: Props) {
+export function RevenueCompositionChart({ data, onMonthClick }: Props) {
   const { months, summary } = data
   const rows = months.map(m => ({
+    _ym: m,
     month: formatMonthShort(m),
     concreto: summary.ventasTotal[m] || 0,
     bombeo: summary.ingresosBombeoTotal[m] || 0,
@@ -20,7 +22,15 @@ export function RevenueCompositionChart({ data }: Props) {
   return (
     <div className="h-[300px] w-full">
       <ResponsiveContainer width="100%" height="100%">
-        <AreaChart data={rows} margin={{ top: 10, right: 16, left: 0, bottom: 0 }}>
+        <AreaChart
+          data={rows}
+          margin={{ top: 10, right: 16, left: 0, bottom: 0 }}
+          className={onMonthClick ? 'cursor-pointer' : undefined}
+          onClick={state => {
+            const i = (state as { activeTooltipIndex?: number })?.activeTooltipIndex
+            if (typeof i === 'number' && rows[i]?._ym) onMonthClick?.(rows[i]._ym)
+          }}
+        >
           <defs>
             <linearGradient id="rev-concreto" x1="0" y1="0" x2="0" y2="1">
               <stop offset="0%" stopColor="hsl(152 60% 42%)" stopOpacity={0.5} />

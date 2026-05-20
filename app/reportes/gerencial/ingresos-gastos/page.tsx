@@ -17,6 +17,17 @@ import {
   isGroupedDetailRedundant,
 } from '@/components/reports/ingresos-gastos/helpers/cost-detail-rows'
 import { IngresosGastosActions } from '@/components/reports/ingresos-gastos/ingresos-gastos-actions'
+import { DieselExpansionRows } from '@/components/reports/ingresos-gastos/diesel-expansion-rows'
+import { ManttoExpansionRows } from '@/components/reports/ingresos-gastos/mantto-expansion-rows'
+import {
+  OPERATIONAL_KEYS,
+  manttoBucketKey,
+  type ManttoBucket,
+  type OperationalCategory,
+  type OperationalDetailsState,
+  isDieselDetails,
+  isManttoDetails,
+} from '@/components/reports/ingresos-gastos/operational-expansion-state'
 
 type PlantData = {
   plant_id: string
@@ -146,6 +157,13 @@ export default function IngresosGastosPage() {
   // State for loading cost details: Map<`${plantId}-${category}`, boolean>
   const [loadingCostDetails, setLoadingCostDetails] = useState<Map<string, boolean>>(new Map())
 
+  const [expandedOperational, setExpandedOperational] = useState<Map<string, boolean>>(new Map())
+  const [expandedManttoBuckets, setExpandedManttoBuckets] = useState<Map<string, boolean>>(new Map())
+  const [operationalDetails, setOperationalDetails] = useState<
+    Map<OperationalCategory, OperationalDetailsState>
+  >(new Map())
+  const [loadingOperational, setLoadingOperational] = useState<Map<string, boolean>>(new Map())
+
   const [volumeStaleCount, setVolumeStaleCount] = useState(0)
   const [volumeSheetOpen, setVolumeSheetOpen] = useState(false)
   const [volumeBannerDismissed, setVolumeBannerDismissed] = useState(false)
@@ -171,6 +189,10 @@ export default function IngresosGastosPage() {
     setExpandedCategoryGroups(new Map())
     setCostDetails(new Map())
     setLoadingCostDetails(new Map())
+    setExpandedOperational(new Map())
+    setExpandedManttoBuckets(new Map())
+    setOperationalDetails(new Map())
+    setLoadingOperational(new Map())
   }, [selectedMonth, businessUnitId, plantId])
 
   useEffect(() => {
@@ -261,6 +283,15 @@ export default function IngresosGastosPage() {
     } finally {
       setRefreshingView(false)
     }
+  }
+
+  const toggleManttoBucket = (bucket: ManttoBucket) => {
+    const key = manttoBucketKey(bucket)
+    setExpandedManttoBuckets(prev => {
+      const next = new Map(prev)
+      next.set(key, !(prev.get(key) || false))
+      return next
+    })
   }
 
   const toggleCostExpansion = async (category: 'nomina' | 'otros_indirectos') => {
@@ -1330,6 +1361,93 @@ export default function IngresosGastosPage() {
     ? Object.keys(groupedPlants).length // Only count BU columns when grouped (not including grand total)
     : plants.length
 
+  const renderGrandTotalPlain = (display: string) => (
+    <td className="sticky right-0 z-10 bg-muted/30 text-right p-3 font-medium min-w-[140px] text-sm">
+      {display}
+    </td>
+  )
+
+  const toggleOperationalExpansion = async (category: OperationalCategory) => {
+    const key = OPERATIONAL_KEYS[category]
+    const isExpanded = expandedOperational.get(key) || false
+
+    if (isExpanded) {
+      setExpandedOperational(prev => new Map(prev).set(key, false))
+      if (category === 'mantto') {
+        setExpandedManttoBuckets(new Map())
+      }
+      return
+    }
+
+    const scopePlantIds = plants.map(p => p.plant_id).filter(Boolean)
+    if (scopePlantIds.length === 0) {
+      toast({
+        variant: 'destructive',
+        title: 'Sin plantas',
+        description: 'No hay plantas visibles para cargar el desglose.',
+      })
+      return
+    }
+
+    if (!operationalDetails.get(category)) {
+      setLoadingOperational(prev => new Map(prev).set(key, true))
+      try {
+        const params = new URLSearchParams({
+          month: selectedMonth,
+          category,
+          scopePlantIds: scopePlantIds.join(','),
+        })
+        if (businessUnitId) params.set('businessUnitId', businessUnitId)
+        if (plantId) params.set('plantId', plantId)
+
+        const resp = await fetch(
+          `/api/reports/gerencial/ingresos-gastos/operational-details?${params.toString()}`
+        )
+        const json = await resp.json()
+        if (!resp.ok) {
+          toast({
+            variant: 'destructive',
+            title: 'Error',
+            description: json.error || 'No se pudo cargar el desglose operativo',
+          })
+          return
+        }
+        if (json.category !== category) {
+          toast({
+            variant: 'destructive',
+            title: 'Error',
+            description: 'Respuesta del servidor inválida.',
+          })
+          return
+        }
+        setOperationalDetails(prev => new Map(prev).set(category, json))
+      } catch (err: unknown) {
+        console.error('operational-details fetch:', err)
+        toast({
+          variant: 'destructive',
+          title: 'Error',
+          description: 'No se pudo cargar el desglose operativo',
+        })
+        return
+      } finally {
+        setLoadingOperational(prev => {
+          const next = new Map(prev)
+          next.delete(key)
+          return next
+        })
+      }
+    }
+
+    setExpandedOperational(prev => new Map(prev).set(key, true))
+  }
+
+  const dieselExpanded = expandedOperational.get(OPERATIONAL_KEYS.diesel) || false
+  const manttoExpanded = expandedOperational.get(OPERATIONAL_KEYS.mantto) || false
+  const dieselDetails = operationalDetails.get('diesel')
+  const manttoDetails = operationalDetails.get('mantto')
+  const dieselLoading = loadingOperational.get(OPERATIONAL_KEYS.diesel) || false
+  const manttoLoading = loadingOperational.get(OPERATIONAL_KEYS.mantto) || false
+
   return (
     <div className="container mx-auto py-6 px-4 max-w-[1600px] space-y-6">
       {/* Header */}
@@ -1704,7 +1822,22 @@ export default function IngresosGastosPage() {
                     </td>
                   </tr>
                   <tr className="border-b hover:bg-muted/30 bg-yellow-50/50 dark:bg-yellow-900/10">
-                    <td className="sticky left-0 z-10 bg-yellow-50 dark:bg-yellow-900/20 p-3 border-r-2 font-semibold">Diesel (Todas las Unidades)</td>
+                    <td className="sticky left-0 z-10 bg-yellow-50 dark:bg-yellow-900/20 p-3 border-r-2 font-semibold">
+                      <button
+                        type="button"
+                        onClick={() => toggleOperationalExpansion('diesel')}
+                        className="flex items-center gap-2 hover:opacity-70 transition-opacity text-left"
+                      >
+                        {dieselLoading ? (
+                          <Loader2 className="w-4 h-4 shrink-0 animate-spin" />
+                        ) : dieselExpanded ? (
+                          <ChevronDown className="w-4 h-4 shrink-0" />
+                        ) : (
+                          <ChevronRight className="w-4 h-4 shrink-0" />
+                        )}
+                        Diesel (Todas las Unidades)
+                      </button>
+                    </td>
                     {renderPlantColumns(p => p.diesel_total, formatCurrency, 'diesel_total', false, true)}
                     {renderGrandTotalCell(
                       calculateGrandTotal(p => p.diesel_total),
@@ -1715,6 +1848,30 @@ export default function IngresosGastosPage() {
                       'diesel_total'
                     )}
                   </tr>
+                  {dieselExpanded && dieselLoading && (
+                    <tr className="bg-muted/10">
+                      <td colSpan={plantColumnCount + 2} className="pl-10 p-3 text-sm text-muted-foreground">
+                        Cargando métricas de diesel…
+                      </td>
+                    </tr>
+                  )}
+                  {dieselExpanded && !dieselLoading && !isDieselDetails(dieselDetails) && (
+                    <tr className="bg-muted/10">
+                      <td colSpan={plantColumnCount + 2} className="pl-10 p-3 text-sm text-muted-foreground">
+                        No se pudieron cargar las métricas de diesel. Intente de nuevo.
+                      </td>
+                    </tr>
+                  )}
+                  {dieselExpanded && !dieselLoading && isDieselDetails(dieselDetails) && (
+                    <DieselExpansionRows
+                      details={dieselDetails}
+                      plants={plants}
+                      groupedPlants={groupedPlants}
+                      groupByBusinessUnit={groupByBusinessUnit}
+                      formatNumber={formatNumber}
+                      renderGrandTotalPlain={renderGrandTotalPlain}
+                    />
+                  )}
                   <tr className="border-b hover:bg-muted/30">
                     <td className="sticky left-0 z-10 bg-background p-3 border-r-2">Diesel Unitario (m3)</td>
                     {renderPlantColumns(p => p.diesel_unitario, formatCurrency, 'diesel_unitario', false, true)}
@@ -1740,7 +1897,22 @@ export default function IngresosGastosPage() {
                     )}
                   </tr>
                   <tr className="border-b hover:bg-muted/30 bg-orange-50/50 dark:bg-orange-900/10">
-                    <td className="sticky left-0 z-10 bg-orange-50 dark:bg-orange-900/20 p-3 border-r-2 font-semibold">MANTTO. (Todas las Unidades)</td>
+                    <td className="sticky left-0 z-10 bg-orange-50 dark:bg-orange-900/20 p-3 border-r-2 font-semibold">
+                      <button
+                        type="button"
+                        onClick={() => toggleOperationalExpansion('mantto')}
+                        className="flex items-center gap-2 hover:opacity-70 transition-opacity text-left"
+                      >
+                        {manttoLoading ? (
+                          <Loader2 className="w-4 h-4 shrink-0 animate-spin" />
+                        ) : manttoExpanded ? (
+                          <ChevronDown className="w-4 h-4 shrink-0" />
+                        ) : (
+                          <ChevronRight className="w-4 h-4 shrink-0" />
+                        )}
+                        MANTTO. (Todas las Unidades)
+                      </button>
+                    </td>
                     {renderPlantColumns(p => p.mantto_total, formatCurrency, 'mantto_total', false, true)}
                     {renderGrandTotalCell(
                       calculateGrandTotal(p => p.mantto_total),
@@ -1751,6 +1923,35 @@ export default function IngresosGastosPage() {
                       'mantto_total'
                     )}
                   </tr>
+                  {manttoExpanded && manttoLoading && (
+                    <tr className="bg-muted/10">
+                      <td colSpan={plantColumnCount + 2} className="pl-10 p-3 text-sm text-muted-foreground">
+                        Cargando desglose de mantenimiento…
+                      </td>
+                    </tr>
+                  )}
+                  {manttoExpanded && !manttoLoading && !isManttoDetails(manttoDetails) && (
+                    <tr className="bg-muted/10">
+                      <td colSpan={plantColumnCount + 2} className="pl-10 p-3 text-sm text-muted-foreground">
+                        No se pudo cargar el desglose de mantenimiento. Intente de nuevo.
+                      </td>
+                    </tr>
+                  )}
+                  {manttoExpanded && !manttoLoading && isManttoDetails(manttoDetails) && (
+                    <ManttoExpansionRows
+                      details={manttoDetails}
+                      plants={plants}
+                      groupedPlants={groupedPlants}
+                      groupByBusinessUnit={groupByBusinessUnit}
+                      plantColumnCount={plantColumnCount}
+                      formatCurrency={formatCurrency}
+                      expandedBuckets={expandedManttoBuckets}
+                      onToggleBucket={toggleManttoBucket}
+                      renderGrandTotalCell={(total, formatFn) =>
+                        renderGrandTotalCell(total, formatFn, false, false)
+                      }
+                    />
+                  )}
                   <tr className="border-b hover:bg-muted/30">
                     <td className="sticky left-0 z-10 bg-background p-3 border-r-2">Mantto. Unitario (m3)</td>
                     {renderPlantColumns(p => p.mantto_unitario, formatCurrency, 'mantto_unitario', false, true)}

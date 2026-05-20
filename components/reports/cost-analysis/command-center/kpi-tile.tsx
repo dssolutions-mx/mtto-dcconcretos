@@ -33,6 +33,7 @@ type Props = {
    * useful when the current month has no manual adjustments yet.
    */
   emptyReason?: 'awaiting-entry' | 'no-data'
+  onDrilldown?: () => void
 }
 
 export function KpiTile({
@@ -46,6 +47,7 @@ export function KpiTile({
   series,
   accent = 'revenue',
   emptyReason,
+  onDrilldown,
 }: Props) {
   const styles = ACCENT_STYLES[accent]
   const hasDelta = delta !== undefined && delta !== 0
@@ -61,8 +63,14 @@ export function KpiTile({
   // almost always reflects missing capture, not a genuine drop.
   const showAwaiting = emptyReason === 'awaiting-entry'
 
-  return (
-    <div className="relative flex min-h-[136px] flex-col overflow-hidden rounded-2xl border border-border/60 bg-card px-4 py-3.5 sm:px-5 sm:py-4">
+  const tileClass = cn(
+    'relative flex min-h-[136px] w-full flex-col overflow-hidden rounded-2xl border border-border/60 bg-card px-4 py-3.5 text-left sm:px-5 sm:py-4',
+    onDrilldown &&
+      'cursor-pointer transition-shadow hover:ring-2 hover:ring-ring/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
+  )
+
+  const content = (
+    <>
       <div className={cn('absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r', styles.bar)} />
 
       <div className="flex items-start justify-between gap-2">
@@ -106,6 +114,16 @@ export function KpiTile({
           </div>
         )}
       </div>
-    </div>
+    </>
   )
+
+  if (onDrilldown) {
+    return (
+      <button type="button" className={tileClass} onClick={onDrilldown} aria-label={`Ver detalle: ${label}`}>
+        {content}
+      </button>
+    )
+  }
+
+  return <div className={tileClass}>{content}</div>
 }

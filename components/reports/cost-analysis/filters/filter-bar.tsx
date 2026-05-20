@@ -6,7 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { Button } from '@/components/ui/button'
 import { Clock, Loader2, RefreshCw } from 'lucide-react'
-import type { RangePreset, ViewMode } from './view-mode'
+import type { MonthPreset, RangeMode, RangePreset, ViewMode } from './view-mode'
 import { VIEW_MODE_LABEL } from './view-mode'
 
 type FilterOptions = {
@@ -15,12 +15,18 @@ type FilterOptions = {
 }
 
 type Props = {
+  rangeMode: RangeMode
+  onRangeModeChange: (mode: RangeMode) => void
   monthFrom: string
   monthTo: string
   onMonthFromChange: (v: string) => void
   onMonthToChange: (v: string) => void
+  focusMonth: string
+  onFocusMonthChange: (v: string) => void
   preset: RangePreset
   onPresetChange: (p: RangePreset) => void
+  monthPreset: MonthPreset
+  onMonthPresetChange: (p: MonthPreset) => void
   businessUnitId: string
   onBusinessUnitChange: (v: string) => void
   plantId: string
@@ -30,8 +36,10 @@ type Props = {
   filterOptions: FilterOptions | null
   loading: boolean
   onRefresh: () => void
-  /** ISO timestamp of most recent manual adjustment capture, for the global "Datos al …" stamp. */
+  onRequestFilterOptions: () => void
   lastUpdatedAt?: string | null
+  displayedRangeLabel?: string | null
+  pendingRangeLabel?: string | null
 }
 
 function formatLastUpdatedStamp(iso: string | null | undefined): string | null {
@@ -39,7 +47,6 @@ function formatLastUpdatedStamp(iso: string | null | undefined): string | null {
   const t = Date.parse(iso)
   if (!Number.isFinite(t)) return null
   const d = new Date(t)
-  // "24 abr" style — compact for the filter bar
   return d.toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' })
 }
 
@@ -47,6 +54,10 @@ export function FilterBar(props: Props) {
   const availablePlants =
     props.filterOptions?.plants.filter(p => !props.businessUnitId || p.business_unit_id === props.businessUnitId) || []
   const lastUpdatedStamp = formatLastUpdatedStamp(props.lastUpdatedAt)
+  const rangeStale =
+    props.pendingRangeLabel &&
+    props.displayedRangeLabel &&
+    props.pendingRangeLabel !== props.displayedRangeLabel
 
   return (
     <div className="sticky top-0 z-30 -mx-4 border-b border-border/60 bg-background/90 px-4 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/70 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
@@ -54,57 +65,117 @@ export function FilterBar(props: Props) {
         <div className="flex flex-wrap items-center gap-2">
           <ToggleGroup
             type="single"
-            value={props.preset}
-            onValueChange={v => v && props.onPresetChange(v as RangePreset)}
+            value={props.rangeMode}
+            onValueChange={v => v && props.onRangeModeChange(v as RangeMode)}
             size="sm"
             className="rounded-lg border border-border/60 bg-muted/40 p-0.5"
           >
-            <ToggleGroupItem value="ytd" className="data-[state=on]:bg-background data-[state=on]:shadow-sm">
-              YTD
+            <ToggleGroupItem value="range" className="data-[state=on]:bg-background data-[state=on]:shadow-sm">
+              Rango
             </ToggleGroupItem>
-            <ToggleGroupItem value="6m" className="data-[state=on]:bg-background data-[state=on]:shadow-sm">
-              6 meses
-            </ToggleGroupItem>
-            <ToggleGroupItem value="12m" className="data-[state=on]:bg-background data-[state=on]:shadow-sm">
-              12 meses
-            </ToggleGroupItem>
-            <ToggleGroupItem value="custom" className="data-[state=on]:bg-background data-[state=on]:shadow-sm">
-              Custom
+            <ToggleGroupItem value="month" className="data-[state=on]:bg-background data-[state=on]:shadow-sm">
+              Mes
             </ToggleGroupItem>
           </ToggleGroup>
 
-          <div className="flex items-center gap-1.5">
-            <Label htmlFor="from" className="text-[11px] uppercase tracking-wide text-muted-foreground">
-              Desde
-            </Label>
-            <Input
-              id="from"
-              type="month"
-              value={props.monthFrom}
-              onChange={e => {
-                props.onMonthFromChange(e.target.value)
-                props.onPresetChange('custom')
-              }}
-              className="h-8 w-[140px] text-sm"
-            />
-          </div>
-          <div className="flex items-center gap-1.5">
-            <Label htmlFor="to" className="text-[11px] uppercase tracking-wide text-muted-foreground">
-              Hasta
-            </Label>
-            <Input
-              id="to"
-              type="month"
-              value={props.monthTo}
-              onChange={e => {
-                props.onMonthToChange(e.target.value)
-                props.onPresetChange('custom')
-              }}
-              className="h-8 w-[140px] text-sm"
-            />
-          </div>
+          {props.rangeMode === 'range' ? (
+            <>
+              <ToggleGroup
+                type="single"
+                value={props.preset}
+                onValueChange={v => v && props.onPresetChange(v as RangePreset)}
+                size="sm"
+                className="rounded-lg border border-border/60 bg-muted/40 p-0.5"
+              >
+                <ToggleGroupItem value="ytd" className="data-[state=on]:bg-background data-[state=on]:shadow-sm">
+                  YTD
+                </ToggleGroupItem>
+                <ToggleGroupItem value="6m" className="data-[state=on]:bg-background data-[state=on]:shadow-sm">
+                  6 meses
+                </ToggleGroupItem>
+                <ToggleGroupItem value="12m" className="data-[state=on]:bg-background data-[state=on]:shadow-sm">
+                  12 meses
+                </ToggleGroupItem>
+                <ToggleGroupItem value="custom" className="data-[state=on]:bg-background data-[state=on]:shadow-sm">
+                  Custom
+                </ToggleGroupItem>
+              </ToggleGroup>
+
+              <div className="flex items-center gap-1.5">
+                <Label htmlFor="from" className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                  Desde
+                </Label>
+                <Input
+                  id="from"
+                  type="month"
+                  value={props.monthFrom}
+                  onChange={e => {
+                    props.onMonthFromChange(e.target.value)
+                    props.onPresetChange('custom')
+                  }}
+                  className="h-8 w-[140px] text-sm"
+                />
+              </div>
+              <div className="flex items-center gap-1.5">
+                <Label htmlFor="to" className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                  Hasta
+                </Label>
+                <Input
+                  id="to"
+                  type="month"
+                  value={props.monthTo}
+                  onChange={e => {
+                    props.onMonthToChange(e.target.value)
+                    props.onPresetChange('custom')
+                  }}
+                  className="h-8 w-[140px] text-sm"
+                />
+              </div>
+            </>
+          ) : (
+            <>
+              <ToggleGroup
+                type="single"
+                value={props.monthPreset}
+                onValueChange={v => v && props.onMonthPresetChange(v as MonthPreset)}
+                size="sm"
+                className="rounded-lg border border-border/60 bg-muted/40 p-0.5"
+              >
+                <ToggleGroupItem value="this_month" className="data-[state=on]:bg-background data-[state=on]:shadow-sm">
+                  Mes actual
+                </ToggleGroupItem>
+                <ToggleGroupItem value="last_month" className="data-[state=on]:bg-background data-[state=on]:shadow-sm">
+                  Mes anterior
+                </ToggleGroupItem>
+                <ToggleGroupItem value="pick_month" className="data-[state=on]:bg-background data-[state=on]:shadow-sm">
+                  Elegir
+                </ToggleGroupItem>
+              </ToggleGroup>
+
+              <div className="flex items-center gap-1.5">
+                <Label htmlFor="focus-month" className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                  Mes
+                </Label>
+                <Input
+                  id="focus-month"
+                  type="month"
+                  value={props.focusMonth}
+                  onChange={e => {
+                    props.onFocusMonthChange(e.target.value)
+                    props.onMonthPresetChange('pick_month')
+                  }}
+                  className="h-8 w-[140px] text-sm"
+                />
+              </div>
+            </>
+          )}
 
           <div className="ml-auto flex items-center gap-2">
+            {props.loading && (
+              <span className="text-[11px] font-medium text-muted-foreground tabular-nums">
+                Actualizando…
+              </span>
+            )}
             <ToggleGroup
               type="single"
               value={props.viewMode}
@@ -129,9 +200,18 @@ export function FilterBar(props: Props) {
           </div>
         </div>
 
+        {rangeStale && (
+          <p className="text-[11px] text-muted-foreground tabular-nums">
+            Mostrando: <span className="font-medium text-foreground">{props.displayedRangeLabel}</span>
+            {' · '}
+            Cargando: <span className="font-medium text-foreground">{props.pendingRangeLabel}</span>
+          </p>
+        )}
+
         <div className="flex flex-wrap items-center gap-2">
           <Select
             value={props.businessUnitId || 'all'}
+            onOpenChange={open => open && props.onRequestFilterOptions()}
             onValueChange={v => {
               props.onBusinessUnitChange(v === 'all' ? '' : v)
               props.onPlantChange('')
@@ -151,7 +231,11 @@ export function FilterBar(props: Props) {
             </SelectContent>
           </Select>
 
-          <Select value={props.plantId || 'all'} onValueChange={v => props.onPlantChange(v === 'all' ? '' : v)}>
+          <Select
+            value={props.plantId || 'all'}
+            onOpenChange={open => open && props.onRequestFilterOptions()}
+            onValueChange={v => props.onPlantChange(v === 'all' ? '' : v)}
+          >
             <SelectTrigger className="h-8 w-[220px] text-sm">
               <span className="text-[11px] uppercase tracking-wide text-muted-foreground">Planta</span>
               <SelectValue placeholder="Todas" />
@@ -167,7 +251,7 @@ export function FilterBar(props: Props) {
           </Select>
 
           {lastUpdatedStamp && (
-            <span className="ml-auto inline-flex items-center gap-1 text-[11px] tabular-num text-muted-foreground">
+            <span className="ml-auto inline-flex items-center gap-1 text-[11px] tabular-nums text-muted-foreground">
               <Clock className="h-3 w-3" />
               Datos al {lastUpdatedStamp}
             </span>

@@ -6,11 +6,13 @@ import { formatCurrency, formatCurrencyCompact, formatMonthShort, formatNumber }
 
 type Props = {
   data: CostAnalysisResponse
+  onMonthClick?: (monthYm: string) => void
 }
 
-export function PriceVolumeChart({ data }: Props) {
+export function PriceVolumeChart({ data, onMonthClick }: Props) {
   const { months, summary } = data
   const rows = months.map(m => ({
+    _ym: m,
     month: formatMonthShort(m),
     volumen: summary.totalVolume[m] || 0,
     precio: summary.pvUnitario[m] || 0,
@@ -19,7 +21,15 @@ export function PriceVolumeChart({ data }: Props) {
   return (
     <div className="h-[300px] w-full">
       <ResponsiveContainer width="100%" height="100%">
-        <ComposedChart data={rows} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+        <ComposedChart
+          data={rows}
+          margin={{ top: 10, right: 10, left: 0, bottom: 0 }}
+          className={onMonthClick ? 'cursor-pointer' : undefined}
+          onClick={state => {
+            const i = (state as { activeTooltipIndex?: number })?.activeTooltipIndex
+            if (typeof i === 'number' && rows[i]?._ym) onMonthClick?.(rows[i]._ym)
+          }}
+        >
           <CartesianGrid strokeDasharray="3 3" vertical={false} className="stroke-border/40" />
           <XAxis dataKey="month" tickLine={false} axisLine={false} className="text-xs" />
           <YAxis

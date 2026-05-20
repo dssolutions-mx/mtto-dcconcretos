@@ -6,6 +6,7 @@ import { formatCurrency, formatCurrencyCompact, formatMonthLabel, formatPercent 
 
 type Props = {
   data: CostAnalysisResponse
+  focusMonth?: string
 }
 
 type Row = {
@@ -28,10 +29,11 @@ const COLORS = {
   total: 'hsl(240 65% 55%)',
 }
 
-export function EbitdaWaterfall({ data }: Props) {
+export function EbitdaWaterfall({ data, focusMonth }: Props) {
   const { months, summary } = data
   if (months.length === 0) return null
-  const m = months[months.length - 1]
+  const focus = focusMonth?.slice(0, 7)
+  const m = focus && months.includes(focus) ? focus : months[months.length - 1]!
 
   const ventas = summary.ventasTotal[m] || 0
   const mp = summary.costoMpTotal[m] || 0

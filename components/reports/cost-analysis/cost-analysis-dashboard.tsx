@@ -1,16 +1,25 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { AlertCircle, CheckCircle2 } from 'lucide-react'
-import { shiftMonthString } from '@/lib/reports/month-utils'
+import { Button } from '@/components/ui/button'
+import { AlertCircle, CheckCircle2, Loader2 } from 'lucide-react'
 import type { CostAnalysisResponse } from '@/lib/reports/cost-analysis-aggregate'
 import { useCostAnalysisData } from './hooks/use-cost-analysis-data'
 import { useToast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
 
 import { FilterBar } from './filters/filter-bar'
-import { computePresetRange, type RangePreset, type ViewMode } from './filters/view-mode'
+import {
+  buildMonthsForApi,
+  computeMonthPreset,
+  computePresetRange,
+  formatRangeLabel,
+  type MonthPreset,
+  type RangeMode,
+  type RangePreset,
+  type ViewMode,
+} from './filters/view-mode'
 import { CommandCenter } from './command-center/command-center'
 import { RevenueCompositionChart } from './revenue/revenue-composition-chart'
 import { PriceVolumeChart } from './revenue/price-volume-chart'
@@ -24,24 +33,13 @@ import { formatCurrency, formatMonthLabel } from './formatters'
 import { EbitdaWaterfall } from './profitability/ebitda-waterfall'
 import { MarginLadderChart } from './profitability/margin-ladder-chart'
 import { PlantMatrix } from './plant-matrix/plant-matrix'
+import { MetricDrilldownSheet } from './drilldown/metric-drilldown-sheet'
+import { useMetricDrilldown } from './drilldown/use-metric-drilldown'
+import type { DrilldownMetric } from './drilldown/drilldown-types'
 
 type FilterOptions = {
   businessUnits: Array<{ id: string; name: string; code: string }>
   plants: Array<{ id: string; name: string; code: string; business_unit_id: string }>
-}
-
-function monthsInclusiveRange(fromYm: string, toYm: string): string[] {
-  let a = fromYm.slice(0, 7)
-  let b = toYm.slice(0, 7)
-  if (a > b) [a, b] = [b, a]
-  const out: string[] = []
-  let cur = a
-  for (let i = 0; i < 120; i++) {
-    out.push(cur)
-    if (cur === b) break
-    cur = shiftMonthString(cur, 1)
-  }
-  return out
 }
 
 function SectionHeader({ eyebrow, title, description }: { eyebrow: string; title: string; description?: string }) {
@@ -63,23 +61,49 @@ function SectionSkeleton({ height = 320 }: { height?: number }) {
   )
 }
 
+function DrillButton({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <Button type="button" variant="ghost" size="sm" className="h-7 text-xs" onClick={onClick}>
+      {label}
+    </Button>
+  )
+}
+
 export function CostAnalysisDashboard() {
   const { toast } = useToast()
   const ytd = computePresetRange('ytd')
+  const thisMonth = computeMonthPreset('this_month')
 
+  const [rangeMode, setRangeMode] = useState<RangeMode>('range')
   const [preset, setPreset] = useState<RangePreset>('ytd')
+  const [monthPreset, setMonthPreset] = useState<MonthPreset>('this_month')
   const [monthFrom, setMonthFrom] = useState(ytd.from)
   const [monthTo, setMonthTo] = useState(ytd.to)
+  const [focusMonth, setFocusMonth] = useState(thisMonth)
   const [businessUnitId, setBusinessUnitId] = useState<string>('')
   const [plantId, setPlantId] = useState<string>('')
   const [viewMode, setViewMode] = useState<ViewMode>('absolute')
   const [filterOptions, setFilterOptions] = useState<FilterOptions | null>(null)
+  const [displayedRangeLabel, setDisplayedRangeLabel] = useState<string | null>(null)
+  const filterOptionsLoaded = useRef(false)
 
-  const { data, loading, error, load } = useCostAnalysisData()
+  const { data, loading, error, load, pendingParams } = useCostAnalysisData()
+  const drill = useMetricDrilldown()
 
-  const months = useMemo(() => monthsInclusiveRange(monthFrom, monthTo), [monthFrom, monthTo])
+  const { apiMonths } = useMemo(
+    () => buildMonthsForApi({ rangeMode, monthFrom, monthTo, focusMonth }),
+    [rangeMode, monthFrom, monthTo, focusMonth]
+  )
 
-  // Apply preset whenever it changes (non-custom)
+  const pendingRangeLabel = useMemo(() => {
+    if (pendingParams?.months?.length) {
+      const sorted = [...pendingParams.months].sort()
+      return formatRangeLabel(sorted[0]!, sorted[sorted.length - 1]!)
+    }
+    if (rangeMode === 'month') return focusMonth.slice(0, 7)
+    return formatRangeLabel(monthFrom, monthTo)
+  }, [pendingParams, rangeMode, focusMonth, monthFrom, monthTo])
+
   useEffect(() => {
     if (preset === 'custom') return
     const r = computePresetRange(preset)
@@ -87,51 +111,100 @@ export function CostAnalysisDashboard() {
     setMonthTo(r.to)
   }, [preset])
 
+  useEffect(() => {
+    if (monthPreset === 'pick_month') return
+    setFocusMonth(computeMonthPreset(monthPreset))
+  }, [monthPreset])
+
   const refreshFilters = useCallback(async () => {
+    const monthKey = rangeMode === 'month' ? focusMonth : monthTo
     try {
       const r = await fetch('/api/reports/gerencial/ingresos-gastos', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ month: monthTo, skipPreviousMonth: true }),
+        body: JSON.stringify({ month: monthKey, skipPreviousMonth: true }),
       })
       const j = await r.json()
-      if (r.ok && j.filters) setFilterOptions(j.filters as FilterOptions)
+      if (r.ok && j.filters) {
+        setFilterOptions(j.filters as FilterOptions)
+        filterOptionsLoaded.current = true
+      }
     } catch {
       /* ignore */
     }
-  }, [monthTo])
+  }, [focusMonth, monthTo, rangeMode])
 
-  useEffect(() => {
-    void refreshFilters()
+  const requestFilterOptions = useCallback(() => {
+    if (!filterOptionsLoaded.current) void refreshFilters()
   }, [refreshFilters])
 
+  const scopePlantIds = useMemo(() => {
+    const plants = filterOptions?.plants || []
+    const filtered = businessUnitId
+      ? plants.filter(p => p.business_unit_id === businessUnitId)
+      : plants
+    if (plantId) return filtered.filter(p => p.id === plantId).map(p => p.id)
+    return filtered.map(p => p.id)
+  }, [filterOptions, businessUnitId, plantId])
+
   const runLoad = useCallback(() => {
-    if (months.length === 0) {
-      toast({ variant: 'destructive', title: 'Rango inválido', description: 'Seleccione mes desde / hasta.' })
+    if (apiMonths.length === 0) {
+      toast({ variant: 'destructive', title: 'Rango inválido', description: 'Seleccione un rango o mes válido.' })
       return
     }
     void load({
-      months,
+      months: apiMonths,
       businessUnitId: businessUnitId || null,
       plantId: plantId || null,
     })
-  }, [load, months, businessUnitId, plantId, toast])
+  }, [load, apiMonths, businessUnitId, plantId, toast])
 
   useEffect(() => {
     runLoad()
   }, [runLoad])
 
+  useEffect(() => {
+    if (data && !loading) {
+      const label =
+        rangeMode === 'month'
+          ? focusMonth.slice(0, 7)
+          : formatRangeLabel(data.months[0] ?? monthFrom, data.months[data.months.length - 1] ?? monthTo)
+      setDisplayedRangeLabel(label)
+      if (data.months.includes(focusMonth.slice(0, 7))) return
+      const last = data.months[data.months.length - 1]
+      if (last) setFocusMonth(last)
+    }
+  }, [data, loading, rangeMode, focusMonth, monthFrom, monthTo])
+
+  const handleDrilldown = useCallback(
+    (metric: DrilldownMetric) => {
+      const month = focusMonth.slice(0, 7)
+      void drill.openDrilldown(metric, month, scopePlantIds)
+    },
+    [drill, focusMonth, scopePlantIds]
+  )
+
   const showLoadingShell = loading && !data
+  const showRefetchOverlay = loading && !!data
 
   return (
     <div className="space-y-8">
       <FilterBar
+        rangeMode={rangeMode}
+        onRangeModeChange={setRangeMode}
         monthFrom={monthFrom}
         monthTo={monthTo}
         onMonthFromChange={setMonthFrom}
         onMonthToChange={setMonthTo}
+        focusMonth={focusMonth}
+        onFocusMonthChange={v => {
+          setFocusMonth(v)
+          setMonthPreset('pick_month')
+        }}
         preset={preset}
         onPresetChange={setPreset}
+        monthPreset={monthPreset}
+        onMonthPresetChange={setMonthPreset}
         businessUnitId={businessUnitId}
         onBusinessUnitChange={setBusinessUnitId}
         plantId={plantId}
@@ -141,8 +214,20 @@ export function CostAnalysisDashboard() {
         filterOptions={filterOptions}
         loading={loading}
         onRefresh={runLoad}
+        onRequestFilterOptions={requestFilterOptions}
         lastUpdatedAt={data?.dataFreshness?.manualAdjustments?.lastUpdatedAt ?? null}
+        displayedRangeLabel={displayedRangeLabel}
+        pendingRangeLabel={loading ? pendingRangeLabel : null}
       />
+
+      {showRefetchOverlay && (
+        <div className="sticky top-[7.5rem] z-20 flex items-center gap-2 rounded-lg border border-border/60 bg-background/95 px-3 py-2 text-sm shadow-sm backdrop-blur">
+          <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+          <span>
+            Cargando datos para <span className="font-medium tabular-nums">{pendingRangeLabel}</span>…
+          </span>
+        </div>
+      )}
 
       {error && (
         <div className="callout-critical">
@@ -164,13 +249,21 @@ export function CostAnalysisDashboard() {
       )}
 
       {data && data.months.length > 0 && (
-        <>
-          {/* §2 Command Center */}
+        <div
+          className={cn(
+            'space-y-8 transition-opacity',
+            showRefetchOverlay && 'pointer-events-none opacity-50'
+          )}
+        >
           <section className="space-y-3">
-            <CommandCenter data={data} viewMode={viewMode} />
+            <CommandCenter
+              data={data}
+              viewMode={viewMode}
+              focusMonth={focusMonth}
+              onDrilldown={handleDrilldown}
+            />
           </section>
 
-          {/* §3 Ingresos */}
           <section className="space-y-4">
             <SectionHeader
               eyebrow="Ingresos"
@@ -184,7 +277,7 @@ export function CostAnalysisDashboard() {
                   <CardDescription className="text-xs">Concreto + bombeo por mes.</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <RevenueCompositionChart data={data} />
+                  <RevenueCompositionChart data={data} onMonthClick={setFocusMonth} />
                 </CardContent>
               </Card>
               <Card>
@@ -193,22 +286,23 @@ export function CostAnalysisDashboard() {
                   <CardDescription className="text-xs">Precio unitario y m³ entregados.</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <PriceVolumeChart data={data} />
+                  <PriceVolumeChart data={data} onMonthClick={setFocusMonth} />
                 </CardContent>
               </Card>
             </div>
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-base">Ranking de plantas · ingresos</CardTitle>
-                <CardDescription className="text-xs">Ordenado por ventas del último mes, con variación vs mes anterior.</CardDescription>
+                <CardDescription className="text-xs">
+                  Mes foco: {formatMonthLabel(focusMonth)}. Click en KPIs para desglose.
+                </CardDescription>
               </CardHeader>
               <CardContent>
-                <PlantRevenueRanking data={data} />
+                <PlantRevenueRanking data={data} focusMonth={focusMonth} />
               </CardContent>
             </Card>
           </section>
 
-          {/* §4 Estructura de costos */}
           <section className="space-y-4">
             <SectionHeader
               eyebrow="Gastos"
@@ -216,45 +310,59 @@ export function CostAnalysisDashboard() {
               description="Composición y evolución de cada componente del costo."
             />
 
-            {data.reconciliation && <ReconciliationCallout reconciliation={data.reconciliation} months={data.months} />}
+            {data.reconciliation && (
+              <ReconciliationCallout reconciliation={data.reconciliation} months={data.months} />
+            )}
 
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
               <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-base">Costos por mes</CardTitle>
-                  <CardDescription className="text-xs">Materia prima + operativos por categoría.</CardDescription>
+                <CardHeader className="flex flex-row items-start justify-between pb-2">
+                  <div>
+                    <CardTitle className="text-base">Costos por mes</CardTitle>
+                    <CardDescription className="text-xs">Materia prima + operativos por categoría.</CardDescription>
+                  </div>
+                  <DrillButton label="Ver detalle" onClick={() => handleDrilldown('costo_op')} />
                 </CardHeader>
                 <CardContent>
-                  <CostStackChart data={data} />
+                  <CostStackChart data={data} onMonthClick={setFocusMonth} />
                 </CardContent>
               </Card>
               <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-base">Costo unitario ($ / m³)</CardTitle>
-                  <CardDescription className="text-xs">Economía por m³ de cada componente.</CardDescription>
+                <CardHeader className="flex flex-row items-start justify-between pb-2">
+                  <div>
+                    <CardTitle className="text-base">Costo unitario ($ / m³)</CardTitle>
+                    <CardDescription className="text-xs">Economía por m³ de cada componente.</CardDescription>
+                  </div>
+                  <DrillButton label="Ver detalle" onClick={() => handleDrilldown('costo_op')} />
                 </CardHeader>
                 <CardContent>
-                  <UnitCostChart data={data} />
+                  <UnitCostChart data={data} onMonthClick={setFocusMonth} />
                 </CardContent>
               </Card>
             </div>
 
             <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-base">Mantenimiento · correctivo vs preventivo</CardTitle>
-                <CardDescription className="text-xs">
-                  Gasto de órdenes de compra vinculadas a órdenes de trabajo, clasificado por tipo (correctivo / preventivo / inspección).
-                </CardDescription>
+              <CardHeader className="flex flex-row items-start justify-between pb-2">
+                <div>
+                  <CardTitle className="text-base">Mantenimiento · correctivo vs preventivo</CardTitle>
+                  <CardDescription className="text-xs">
+                    Gasto clasificado por tipo de orden de trabajo.
+                  </CardDescription>
+                </div>
+                <DrillButton label="Por activo" onClick={() => handleDrilldown('mantto')} />
               </CardHeader>
               <CardContent>
-                <ManttoTypeSplit data={data} />
+                <ManttoTypeSplit data={data} onMonthClick={setFocusMonth} />
               </CardContent>
             </Card>
 
             <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-base">Gasto indirecto · explorador</CardTitle>
-                <CardDescription className="text-xs">Seleccione una categoría para ver su tendencia y subcategorías.</CardDescription>
+              <CardHeader className="flex flex-row items-start justify-between pb-2">
+                <div>
+                  <CardTitle className="text-base">Gasto indirecto · explorador</CardTitle>
+                  <CardDescription className="text-xs">Categorías y subcategorías.</CardDescription>
+                </div>
+                <DrillButton label="Ver detalle" onClick={() => handleDrilldown('otros')} />
               </CardHeader>
               <CardContent>
                 <IndirectExplorer data={data} />
@@ -262,9 +370,12 @@ export function CostAnalysisDashboard() {
             </Card>
 
             <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-base">Nómina · explorador por departamento</CardTitle>
-                <CardDescription className="text-xs">Departamentos ordenados por nómina del último mes.</CardDescription>
+              <CardHeader className="flex flex-row items-start justify-between pb-2">
+                <div>
+                  <CardTitle className="text-base">Nómina · explorador por departamento</CardTitle>
+                  <CardDescription className="text-xs">Efectivo vs no efectivo en el desglose.</CardDescription>
+                </div>
+                <DrillButton label="Efectivo / no efectivo" onClick={() => handleDrilldown('nomina')} />
               </CardHeader>
               <CardContent>
                 <NominaExplorer data={data} />
@@ -272,27 +383,29 @@ export function CostAnalysisDashboard() {
             </Card>
           </section>
 
-          {/* §5 Rentabilidad */}
           <section className="space-y-4">
             <SectionHeader
               eyebrow="Rentabilidad"
               title="De ventas a EBITDA"
-              description="Cómo se convierte cada peso de ventas en margen operativo."
+              description={`Mes foco: ${formatMonthLabel(focusMonth)}.`}
             />
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">
               <Card className="lg:col-span-3">
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-base">Cascada del EBITDA</CardTitle>
-                  <CardDescription className="text-xs">Mes actual. Cada deducción y adición al resultado.</CardDescription>
+                <CardHeader className="flex flex-row items-start justify-between pb-2">
+                  <div>
+                    <CardTitle className="text-base">Cascada del EBITDA</CardTitle>
+                    <CardDescription className="text-xs">{formatMonthLabel(focusMonth)}.</CardDescription>
+                  </div>
+                  <DrillButton label="Ver cascada" onClick={() => handleDrilldown('waterfall')} />
                 </CardHeader>
                 <CardContent>
-                  <EbitdaWaterfall data={data} />
+                  <EbitdaWaterfall data={data} focusMonth={focusMonth} />
                 </CardContent>
               </Card>
               <Card className="lg:col-span-2">
                 <CardHeader className="pb-2">
                   <CardTitle className="text-base">Escalera de márgenes</CardTitle>
-                  <CardDescription className="text-xs">Spread vs EBITDA como % de ventas, por mes.</CardDescription>
+                  <CardDescription className="text-xs">Spread vs EBITDA como % de ventas.</CardDescription>
                 </CardHeader>
                 <CardContent>
                   <MarginLadderChart data={data} />
@@ -301,17 +414,15 @@ export function CostAnalysisDashboard() {
             </div>
           </section>
 
-          {/* §6 Plant Matrix */}
           <section className="space-y-4">
             <SectionHeader
               eyebrow="Investigación"
               title="Matriz de plantas"
               description="Cada planta, cada métrica. Click en una fila para abrir su P&L."
             />
-            <PlantMatrix data={data} />
+            <PlantMatrix data={data} focusMonth={focusMonth} />
           </section>
 
-          {/* Reconciliation footer */}
           {data.reconciliation && (
             <div className="flex flex-wrap items-center gap-4 border-t border-border/50 pt-4 text-xs text-muted-foreground">
               <ReconciliationBadge
@@ -324,7 +435,7 @@ export function CostAnalysisDashboard() {
               />
             </div>
           )}
-        </>
+        </div>
       )}
 
       {data && data.months.length === 0 && !loading && (
@@ -332,6 +443,23 @@ export function CostAnalysisDashboard() {
           <p className="text-sm">No hay meses en el rango seleccionado.</p>
         </div>
       )}
+
+      <MetricDrilldownSheet
+        open={drill.open}
+        metric={drill.metric}
+        focusMonth={drill.focusMonth || focusMonth}
+        onFocusMonthChange={m => {
+          setFocusMonth(m)
+          if (drill.metric) void drill.openDrilldown(drill.metric, m, scopePlantIds)
+        }}
+        data={data}
+        scopePlantIds={scopePlantIds}
+        operationalLoading={drill.operationalLoading}
+        operationalError={drill.operationalError}
+        dieselDetails={drill.dieselDetails}
+        manttoDetails={drill.manttoDetails}
+        onClose={drill.close}
+      />
     </div>
   )
 }
@@ -348,10 +476,6 @@ function ReconciliationBadge({ ok, label }: { ok: boolean; label: string }) {
 
 type ReconciliationShape = CostAnalysisResponse['reconciliation']
 
-/**
- * Promotes a drifted reconciliation state into a prominent amber section-top callout.
- * Only renders when there's a non-zero delta >|$0.02| on any visible month.
- */
 function ReconciliationCallout({
   reconciliation,
   months,
@@ -370,7 +494,6 @@ function ReconciliationCallout({
   }
   if (flagged.length === 0) return null
 
-  // Keep only the 3 most recent offenders to avoid spam
   flagged.sort((a, b) => (a.month < b.month ? 1 : -1))
   const visible = flagged.slice(0, 3)
 
@@ -378,7 +501,7 @@ function ReconciliationCallout({
     <div className="callout-attention">
       <p className="text-sm font-medium">Diferencia detectada entre desglose y total</p>
       <p className="mt-0.5 text-xs opacity-80">
-        Algunas sumas por categoría o departamento no coinciden con el total mensual. Revisar capturas duplicadas o ajustes eliminados.
+        Algunas sumas por categoría o departamento no coinciden con el total mensual.
       </p>
       <ul className="mt-2 space-y-0.5 text-xs tabular-num">
         {visible.map(f => (

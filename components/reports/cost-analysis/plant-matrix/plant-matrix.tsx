@@ -36,11 +36,17 @@ const COLS: Col[] = [
 
 type SortKey = 'plant' | typeof COLS[number]['key']
 
-export function PlantMatrix({ data }: Props) {
+export function PlantMatrix({ data, focusMonth }: Props & { focusMonth?: string }) {
   const { months, byPlant } = data
   const hasMonths = months.length > 0
-  const last = hasMonths ? months[months.length - 1] : ''
-  const prev = months.length > 1 ? months[months.length - 2] : null
+  const focus = focusMonth?.slice(0, 7)
+  const last = hasMonths
+    ? focus && months.includes(focus)
+      ? focus
+      : months[months.length - 1]!
+    : ''
+  const lastIdx = months.indexOf(last)
+  const prev = lastIdx > 0 ? months[lastIdx - 1]! : null
   const [sortKey, setSortKey] = useState<SortKey>('ventas')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
   const [selected, setSelected] = useState<CostAnalysisPlantRow | null>(null)

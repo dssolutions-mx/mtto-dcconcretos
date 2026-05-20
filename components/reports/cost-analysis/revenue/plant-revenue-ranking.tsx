@@ -7,13 +7,16 @@ import { formatCurrency } from '../formatters'
 
 type Props = {
   data: CostAnalysisResponse
+  focusMonth?: string
 }
 
-export function PlantRevenueRanking({ data }: Props) {
+export function PlantRevenueRanking({ data, focusMonth }: Props) {
   const { months, byPlant } = data
   if (months.length === 0) return null
-  const last = months[months.length - 1]
-  const prev = months.length > 1 ? months[months.length - 2] : null
+  const focus = focusMonth?.slice(0, 7)
+  const last = focus && months.includes(focus) ? focus : months[months.length - 1]!
+  const lastIdx = months.indexOf(last)
+  const prev = lastIdx > 0 ? months[lastIdx - 1]! : null
 
   const rows = byPlant
     .map(p => {

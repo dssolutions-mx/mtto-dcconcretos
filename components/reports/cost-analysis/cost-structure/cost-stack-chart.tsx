@@ -10,6 +10,7 @@ type Mode = 'absolute' | 'percent'
 
 type Props = {
   data: CostAnalysisResponse
+  onMonthClick?: (monthYm: string) => void
 }
 
 const COLORS = {
@@ -20,7 +21,7 @@ const COLORS = {
   otros: 'hsl(280 50% 55%)',
 }
 
-export function CostStackChart({ data }: Props) {
+export function CostStackChart({ data, onMonthClick }: Props) {
   const [mode, setMode] = useState<Mode>('absolute')
   const { months, summary } = data
 
@@ -33,6 +34,7 @@ export function CostStackChart({ data }: Props) {
     const total = mp + diesel + mantto + nomina + otros
     if (mode === 'percent' && total > 0) {
       return {
+        _ym: m,
         month: formatMonthShort(m),
         'Materia prima': (mp / total) * 100,
         Diesel: (diesel / total) * 100,
@@ -42,6 +44,7 @@ export function CostStackChart({ data }: Props) {
       }
     }
     return {
+      _ym: m,
       month: formatMonthShort(m),
       'Materia prima': mp,
       Diesel: diesel,
@@ -70,7 +73,15 @@ export function CostStackChart({ data }: Props) {
 
       <div className="h-[340px] w-full">
         <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={rows} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+          <BarChart
+            data={rows}
+            margin={{ top: 10, right: 10, left: 0, bottom: 0 }}
+            className={onMonthClick ? 'cursor-pointer' : undefined}
+            onClick={state => {
+              const i = (state as { activeTooltipIndex?: number })?.activeTooltipIndex
+              if (typeof i === 'number' && rows[i]?._ym) onMonthClick?.(rows[i]._ym)
+            }}
+          >
             <CartesianGrid strokeDasharray="3 3" vertical={false} className="stroke-border/40" />
             <XAxis dataKey="month" tickLine={false} axisLine={false} className="text-xs" />
             <YAxis tickFormatter={tickFmt} tickLine={false} axisLine={false} className="text-xs" width={60} />
