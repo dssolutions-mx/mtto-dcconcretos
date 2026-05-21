@@ -293,13 +293,6 @@ export function QuotationComparisonManager({
         </p>
       )}
 
-      {quotations.length > 0 && !canMutate && isViewerCoordinator && (
-        <p className="text-xs text-muted-foreground rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-amber-900">
-          No puede agregar ni modificar cotizaciones: viabilidad administrativa ya registrada, la orden
-          fuera de su alcance, o estado de la orden no permitido.
-        </p>
-      )}
-
       {/* Add quotation - modal, form only when asked */}
       {showAddQuotation ? (
         <Dialog open={addQuotationOpen} onOpenChange={setAddQuotationOpen}>
@@ -347,9 +340,16 @@ export function QuotationComparisonManager({
               initialQuotation={editingQuotation}
               purchaseOrderId={purchaseOrderId}
               workOrderId={workOrderId}
-              onQuotationUpdated={async () => {
+              onQuotationUpdated={async (updated) => {
                 await loadQuotations()
                 setEditingQuotation(null)
+                if (updated?.status === QuotationStatus.SELECTED) {
+                  window.dispatchEvent(
+                    new CustomEvent('quotationSelected', {
+                      detail: { quotationId: updated.id, purchaseOrderId },
+                    })
+                  )
+                }
                 router.refresh()
               }}
               existingQuotations={quotations}

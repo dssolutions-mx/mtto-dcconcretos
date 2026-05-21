@@ -328,7 +328,11 @@ export function EnhancedQuotationUploader({
         }
         const updated = result.data as PurchaseOrderQuotation
         onQuotationUpdated?.(updated)
-        toast.success("Cotización actualizada")
+        toast.success(
+          initialQuotation.status === "selected"
+            ? "Cotización y montos de la orden actualizados"
+            : "Cotización actualizada"
+        )
         return
       }
 

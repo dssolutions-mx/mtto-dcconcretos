@@ -141,8 +141,6 @@ export async function PATCH(
       return NextResponse.json({ error: 'Cotización no encontrada' }, { status: 404 })
     }
 
-    const wasRejected = quotation.status === QuotationStatus.REJECTED
-
     const { data: po, error: poError } = await supabase
       .from('purchase_orders')
       .select('id, plant_id, viability_state, status')
@@ -197,12 +195,18 @@ export async function PATCH(
       )
     }
 
+    const quotationPatch: Record<string, unknown> = {
+      ...updateData,
+      updated_at: new Date().toISOString(),
+    }
+    if (wasRejected) {
+      quotationPatch.status = QuotationStatus.PENDING
+      quotationPatch.rejection_reason = null
+    }
+
     const { data: updated, error: updError } = await supabase
       .from('purchase_order_quotations')
-      .update({
-        ...updateData,
-        updated_at: new Date().toISOString(),
-      })
+      .update(quotationPatch)
       .eq('id', quotation_id)
       .select()
       .single()
@@ -213,6 +217,41 @@ export async function PATCH(
         { error: updError.message || 'Failed to update quotation' },
         { status: 500 }
       )
+    }
+
+    if (!updated) {
+      return NextResponse.json(
+        { error: 'No se pudo leer la cotización actualizada' },
+        { status: 500 }
+      )
+    }
+
+    const isWinningQuotation =
+      updated.status === QuotationStatus.SELECTED ||
+      po.selected_quotation_id === quotation_id
+
+    if (isWinningQuotation) {
+      try {
+        await syncPurchaseOrderFromSelectedQuotation(supabase, {
+          id: updated.id,
+          purchase_order_id: updated.purchase_order_id,
+          quoted_amount: updated.quoted_amount,
+          supplier_name: updated.supplier_name,
+          supplier_id: updated.supplier_id ?? null,
+          quotation_items: updated.quotation_items,
+        })
+      } catch (syncError) {
+        console.error('Error syncing PO from selected quotation:', syncError)
+        return NextResponse.json(
+          {
+            error:
+              syncError instanceof Error
+                ? syncError.message
+                : 'Cotización actualizada pero no se pudo sincronizar la orden de compra',
+          },
+          { status: 500 }
+        )
+      }
     }
 
     return NextResponse.json({ success: true, data: updated })
