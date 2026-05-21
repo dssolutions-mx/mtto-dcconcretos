@@ -211,14 +211,20 @@ export function QuotationComparisonCard({
           </div>
         )}
 
-        {/* Cotización elegida: solo editar (no eliminar) */}
-        {quotation.status === QuotationStatus.SELECTED && onEdit && (
+        {/* Cotización elegida o rechazada: editar (rechazada vuelve a pendiente al guardar) */}
+        {(quotation.status === QuotationStatus.SELECTED ||
+          quotation.status === QuotationStatus.REJECTED) &&
+          onEdit && (
           <div className="flex flex-wrap gap-2 mt-auto pt-4">
             <Button
               size="sm"
               variant="outline"
               onClick={() => onEdit(quotation.id)}
-              title="Editar cotización seleccionada"
+              title={
+                quotation.status === QuotationStatus.REJECTED
+                  ? "Editar cotización rechazada"
+                  : "Editar cotización seleccionada"
+              }
               className="gap-1"
             >
               <Pencil className="h-4 w-4" />

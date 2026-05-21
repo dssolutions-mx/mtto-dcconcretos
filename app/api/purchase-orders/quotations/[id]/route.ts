@@ -141,6 +141,8 @@ export async function PATCH(
       return NextResponse.json({ error: 'Cotización no encontrada' }, { status: 404 })
     }
 
+    const wasRejected = quotation.status === QuotationStatus.REJECTED
+
     const { data: po, error: poError } = await supabase
       .from('purchase_orders')
       .select('id, plant_id, viability_state, status')

@@ -172,6 +172,14 @@ async function PurchaseOrderDetailsMobileContent({ id }: { id: string }) {
     }
   }
 
+  const { data: auth } = await supabase.auth.getUser()
+  const actor = auth.user ? await loadActorContext(supabase, auth.user.id) : null
+  const coordinatorQuotationUi = computeCoordinatorQuotationUiState(actor, {
+    plant_id: order.plant_id,
+    viability_state: order.viability_state,
+    status: order.status,
+  })
+
   // Get action buttons based on status
   function getActionButtons(order: any): ReactNode {
     if (!order) return null
