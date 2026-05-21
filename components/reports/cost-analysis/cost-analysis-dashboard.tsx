@@ -130,7 +130,7 @@ export function CostAnalysisDashboard() {
     } catch {
       /* ignore */
     }
-  }, [focusMonth, monthTo, rangeMode])
+  }, [])
 
   const requestFilterOptions = useCallback(() => {
     if (!filterOptionsLoaded.current) void refreshFilters()
