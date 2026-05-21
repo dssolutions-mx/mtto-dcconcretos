@@ -31,7 +31,6 @@ import { DashboardExecutiveLayout } from "@/components/dashboard/dashboard-execu
 import { DashboardExecutiveHero } from "@/components/dashboard/dashboard-executive-hero"
 import { reportShortcutsForRole } from "@/lib/reports/executive-dashboard-shortcuts"
 import { DashboardActionStrip } from "@/components/dashboard/dashboard-action-strip"
-import { reportShortcutsForRole } from "@/lib/reports/executive-dashboard-shortcuts"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
