@@ -1399,6 +1399,12 @@ export default function IngresosGastosPage() {
         })
         if (businessUnitId) params.set('businessUnitId', businessUnitId)
         if (plantId) params.set('plantId', plantId)
+        if (category === 'mantto') {
+          const reconcile = plants
+            .map(p => `${p.plant_id}:${p.mantto_total}`)
+            .join('|')
+          if (reconcile) params.set('reconcileTotals', reconcile)
+        }
 
         const resp = await fetch(
           `/api/reports/gerencial/ingresos-gastos/operational-details?${params.toString()}`

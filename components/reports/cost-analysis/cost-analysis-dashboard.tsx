@@ -177,9 +177,20 @@ export function CostAnalysisDashboard() {
   const handleDrilldown = useCallback(
     (metric: DrilldownMetric) => {
       const month = focusMonth.slice(0, 7)
-      void drill.openDrilldown(metric, month, scopePlantIds)
+      const reconcileManttoByPlant =
+        metric === 'mantto' && data
+          ? Object.fromEntries(
+              data.byPlant
+                .filter(
+                  p =>
+                    scopePlantIds.length === 0 || scopePlantIds.includes(p.plantId)
+                )
+                .map(p => [p.plantId, p.manttoTotal[month] ?? 0])
+            )
+          : undefined
+      void drill.openDrilldown(metric, month, scopePlantIds, reconcileManttoByPlant)
     },
-    [drill, focusMonth, scopePlantIds]
+    [drill, data, focusMonth, scopePlantIds]
   )
 
   const showLoadingShell = loading && !data
@@ -448,7 +459,26 @@ export function CostAnalysisDashboard() {
         focusMonth={drill.focusMonth || focusMonth}
         onFocusMonthChange={m => {
           setFocusMonth(m)
-          if (drill.metric) void drill.openDrilldown(drill.metric, m, scopePlantIds)
+          if (!drill.metric) return
+          const monthKey = m.slice(0, 7)
+          const reconcileManttoByPlant =
+            drill.metric === 'mantto' && data
+              ? Object.fromEntries(
+                  data.byPlant
+                    .filter(
+                      p =>
+                        scopePlantIds.length === 0 ||
+                        scopePlantIds.includes(p.plantId)
+                    )
+                    .map(p => [p.plantId, p.manttoTotal[monthKey] ?? 0])
+                )
+              : undefined
+          void drill.openDrilldown(
+            drill.metric,
+            m,
+            scopePlantIds,
+            reconcileManttoByPlant
+          )
         }}
         data={data}
         scopePlantIds={scopePlantIds}

@@ -2,9 +2,11 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/types/supabase-types'
 import { buildAssignmentHistoryMap, resolveAssetPlantAtTimestamp } from '@/lib/reporting/asset-plant-attribution'
 import { shouldIncludePurchaseOrderInExpenseReport } from '@/lib/reports/purchase-order-report-eligibility'
-import type {
-  GerencialAssetLike,
-  GerencialPlantLike,
+import {
+  classifyManttoWoType,
+  type GerencialAssetLike,
+  type GerencialPlantLike,
+  type GerencialPlantOtherLine,
 } from '@/lib/reports/ingresos-gastos-operational-details'
 
 type ManttoSupabase = SupabaseClient<Database>
@@ -74,13 +76,17 @@ export async function fetchManttoOperationalBreakdown(params: {
   scopePlantIds: Set<string>
   businessUnitId?: string | null
   plantId?: string | null
-}): Promise<{ plants: GerencialPlantLike[]; assets: GerencialAssetLike[] }> {
+}): Promise<{
+  plants: GerencialPlantLike[]
+  assets: GerencialAssetLike[]
+  plantOtherLines: GerencialPlantOtherLine[]
+}> {
   const { supabase, dateFromStr, dateToStr, scopePlantIds, businessUnitId, plantId } = params
 
   let scopedPlantIds = Array.from(scopePlantIds)
   if (plantId) scopedPlantIds = scopedPlantIds.filter(id => id === plantId)
   if (scopedPlantIds.length === 0) {
-    return { plants: [], assets: [] }
+    return { plants: [], assets: [], plantOtherLines: [] }
   }
 
   let plantsQuery = supabase
@@ -95,7 +101,7 @@ export async function fetchManttoOperationalBreakdown(params: {
 
   const plantsInScope = (plantsRows || []).filter(p => scopePlantIds.has(p.id))
   const plantIds = plantsInScope.map(p => p.id)
-  if (plantIds.length === 0) return { plants: [], assets: [] }
+  if (plantIds.length === 0) return { plants: [], assets: [], plantOtherLines: [] }
 
   const { data: rawAssets, error: assetsErr } = await supabase
     .from('assets')
@@ -154,6 +160,7 @@ export async function fetchManttoOperationalBreakdown(params: {
       maintenance_cost: 0,
       preventive_cost: 0,
       corrective_cost: 0,
+      other_cost: 0,
     })
   }
 
@@ -226,8 +233,10 @@ export async function fetchManttoOperationalBreakdown(params: {
     if (amount === 0) continue
 
     asset.maintenance_cost += amount
-    if (wo.type === 'preventive') asset.preventive_cost += amount
-    else asset.corrective_cost += amount
+    const bucket = classifyManttoWoType(wo.type)
+    if (bucket === 'preventive') asset.preventive_cost += amount
+    else if (bucket === 'corrective') asset.corrective_cost += amount
+    else asset.other_cost += amount
   }
 
   const plantMap = new Map<
@@ -237,6 +246,7 @@ export async function fetchManttoOperationalBreakdown(params: {
       maintenance_cost: number
       preventive_cost: number
       corrective_cost: number
+      other_cost: number
     }
   >()
 
@@ -246,8 +256,11 @@ export async function fetchManttoOperationalBreakdown(params: {
       maintenance_cost: 0,
       preventive_cost: 0,
       corrective_cost: 0,
+      other_cost: 0,
     })
   }
+
+  const plantOtherLines: GerencialPlantOtherLine[] = []
 
   assetMap.forEach(asset => {
     const plant = plantMap.get(asset.plant_id)
@@ -255,6 +268,7 @@ export async function fetchManttoOperationalBreakdown(params: {
     plant.maintenance_cost += asset.maintenance_cost
     plant.preventive_cost += asset.preventive_cost
     plant.corrective_cost += asset.corrective_cost
+    plant.other_cost += asset.other_cost
   })
 
   for (const po of standalonePOs) {
@@ -269,12 +283,20 @@ export async function fetchManttoOperationalBreakdown(params: {
         maintenance_cost: 0,
         preventive_cost: 0,
         corrective_cost: 0,
+        other_cost: 0,
       }
       plantMap.set(plantId, plant)
     }
     const amount = poAmount(po)
+    if (amount === 0) continue
     plant.maintenance_cost += amount
-    plant.corrective_cost += amount
+    plant.other_cost += amount
+    plantOtherLines.push({
+      plant_id: plantId,
+      id: `po-${po.id}`,
+      label: 'OC sin orden de trabajo',
+      amount,
+    })
   }
 
   const plants: GerencialPlantLike[] = []
@@ -285,6 +307,7 @@ export async function fetchManttoOperationalBreakdown(params: {
       maintenance_cost: p?.maintenance_cost ?? 0,
       preventive_cost: p?.preventive_cost ?? 0,
       corrective_cost: p?.corrective_cost ?? 0,
+      other_cost: p?.other_cost ?? 0,
     })
   }
 
@@ -294,8 +317,9 @@ export async function fetchManttoOperationalBreakdown(params: {
     plant_id: a.plant_id,
     preventive_cost: a.preventive_cost,
     corrective_cost: a.corrective_cost,
+    other_cost: a.other_cost,
     maintenance_cost: a.maintenance_cost,
   }))
 
-  return { plants, assets }
+  return { plants, assets, plantOtherLines }
 }

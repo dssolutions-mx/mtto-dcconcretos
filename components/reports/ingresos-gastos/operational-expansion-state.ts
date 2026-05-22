@@ -4,7 +4,7 @@ import type {
 } from '@/lib/reports/ingresos-gastos-operational-details'
 
 export type OperationalCategory = 'diesel' | 'mantto'
-export type ManttoBucket = 'preventive' | 'corrective'
+export type ManttoBucket = 'preventive' | 'corrective' | 'other'
 
 export const OPERATIONAL_KEYS = {
   diesel: 'all-diesel',

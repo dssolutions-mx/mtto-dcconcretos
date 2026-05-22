@@ -257,18 +257,49 @@ function ManttoPanel({
   const diff = data.reconciliation?.manttoTypeDiffByMonth?.[month] ?? 0
 
   const assets: Array<{ key: string; label: string; value: string; sortAmount: number }> = []
+  let drillPreventive = 0
+  let drillCorrective = 0
+  let drillOther = 0
   if (details) {
     for (const p of plants) {
       const pb = details.byPlantId[p.id]
       if (!pb) continue
+      drillPreventive += pb.preventive_total
+      drillCorrective += pb.corrective_total
+      drillOther += pb.other_total
       for (const a of pb.assets) {
-        const amt = a.preventive_cost + a.corrective_cost
-        if (amt <= 0) continue
+        if (a.preventive_cost > 0) {
+          assets.push({
+            key: `${a.asset_id}-prev`,
+            label: `${a.asset_code} · prev (${p.code})`,
+            value: formatCurrencyCompact(a.preventive_cost),
+            sortAmount: a.preventive_cost,
+          })
+        }
+        if (a.corrective_cost > 0) {
+          assets.push({
+            key: `${a.asset_id}-corr`,
+            label: `${a.asset_code} · corr (${p.code})`,
+            value: formatCurrencyCompact(a.corrective_cost),
+            sortAmount: a.corrective_cost,
+          })
+        }
+        if (a.other_cost > 0) {
+          assets.push({
+            key: `${a.asset_id}-other`,
+            label: `${a.asset_code} · otros (${p.code})`,
+            value: formatCurrencyCompact(a.other_cost),
+            sortAmount: a.other_cost,
+          })
+        }
+      }
+      for (const line of pb.other_lines || []) {
+        if (line.amount <= 0) continue
         assets.push({
-          key: a.asset_id,
-          label: `${a.asset_code} (${p.code})`,
-          value: formatCurrencyCompact(amt),
-          sortAmount: amt,
+          key: line.id,
+          label: `${line.label} (${p.code})`,
+          value: formatCurrencyCompact(line.amount),
+          sortAmount: line.amount,
         })
       }
       if (pb.unallocated_corrective > 0) {
@@ -283,15 +314,37 @@ function ManttoPanel({
     assets.sort((a, b) => b.sortAmount - a.sortAmount)
   }
 
+  const drillSum = drillPreventive + drillCorrective + drillOther
+  const pnlMantto = plants.reduce(
+    (s, p) => s + (data.byPlant.find(bp => bp.plantId === p.id)?.manttoTotal[month] ?? 0),
+    0
+  )
+
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-2 text-sm">
-        <Bucket label="Correctivo" value={bucket.corrective} />
-        <Bucket label="Preventivo" value={bucket.preventive} />
-        <Bucket label="Inspección" value={bucket.inspection} />
-        <Bucket label="Otros" value={bucket.other} />
+        {details ? (
+          <>
+            <Bucket label="Preventivo" value={drillPreventive} />
+            <Bucket label="Correctivo" value={drillCorrective} />
+            <Bucket label="Otros" value={drillOther} />
+            <Bucket label="Total P&L" value={pnlMantto} />
+          </>
+        ) : (
+          <>
+            <Bucket label="Correctivo" value={bucket.corrective} />
+            <Bucket label="Preventivo" value={bucket.preventive} />
+            <Bucket label="Inspección" value={bucket.inspection} />
+            <Bucket label="Otros" value={bucket.other} />
+          </>
+        )}
       </div>
-      {Math.abs(diff) > 0.02 && (
+      {details && Math.abs(drillSum - pnlMantto) > 0.02 && (
+        <p className="text-xs text-amber-600">
+          El desglose no cuadra con el total P&L ({formatCurrency(pnlMantto)}).
+        </p>
+      )}
+      {!details && Math.abs(diff) > 0.02 && (
         <p className="text-xs text-amber-600">
           Δ vs total P&L: {diff > 0 ? '+' : ''}
           {formatCurrency(diff)} (clasificación PO↔OT independiente)

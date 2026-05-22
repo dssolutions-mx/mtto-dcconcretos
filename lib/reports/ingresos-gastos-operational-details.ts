@@ -20,13 +20,34 @@ export type ManttoAssetBreakdown = {
   asset_code: string
   preventive_cost: number
   corrective_cost: number
+  other_cost: number
+}
+
+export type ManttoOtherLine = {
+  id: string
+  label: string
+  amount: number
 }
 
 export type ManttoPlantBreakdown = {
   preventive_total: number
   corrective_total: number
+  /** Residual so preventive + corrective + other = P&L mantto_total */
+  other_total: number
   unallocated_corrective: number
   assets: ManttoAssetBreakdown[]
+  /** Plant-level otros (OC sin OT, balance vs fila MANTTO.) */
+  other_lines: ManttoOtherLine[]
+}
+
+/** WO type → preventive / corrective / other (inspection and unknown → other). */
+export function classifyManttoWoType(
+  type: string | null | undefined
+): 'preventive' | 'corrective' | 'other' {
+  const t = (type ?? '').trim().toLowerCase()
+  if (t === 'preventive' || t === 'preventivo') return 'preventive'
+  if (t === 'corrective' || t === 'correctivo') return 'corrective'
+  return 'other'
 }
 
 export type DieselOperationalDetails = {
@@ -121,18 +142,42 @@ export type GerencialAssetLike = {
   plant_id?: string
   preventive_cost?: number
   corrective_cost?: number
+  other_cost?: number
   maintenance_cost?: number
+}
+
+export type GerencialPlantOtherLine = {
+  plant_id: string
+  id: string
+  label: string
+  amount: number
 }
 
 /** Build mantto breakdown from runGerencialReport output, scoped to plant IDs. */
 export function buildManttoBreakdownFromGerencial(
   plants: GerencialPlantLike[],
   assets: GerencialAssetLike[],
-  scopePlantIds: Set<string>
+  scopePlantIds: Set<string>,
+  options?: {
+    /** P&L mantto_total per plant — breakdown is forced to reconcile. */
+    reconcileManttoTotals?: Record<string, number>
+    plantOtherLines?: GerencialPlantOtherLine[]
+  }
 ): Record<string, ManttoPlantBreakdown> {
   const plantById = new Map<string, GerencialPlantLike>()
   for (const p of plants) {
     if (p.id && scopePlantIds.has(p.id)) plantById.set(p.id, p)
+  }
+
+  const otherLinesByPlant = new Map<string, ManttoOtherLine[]>()
+  for (const line of options?.plantOtherLines || []) {
+    if (!scopePlantIds.has(line.plant_id)) continue
+    if (!otherLinesByPlant.has(line.plant_id)) otherLinesByPlant.set(line.plant_id, [])
+    otherLinesByPlant.get(line.plant_id)!.push({
+      id: line.id,
+      label: line.label,
+      amount: line.amount,
+    })
   }
 
   const assetsByPlant = new Map<string, ManttoAssetBreakdown[]>()
@@ -141,13 +186,15 @@ export function buildManttoBreakdownFromGerencial(
     if (!pid || !scopePlantIds.has(pid)) continue
     const prev = Number(a.preventive_cost || 0)
     const corr = Number(a.corrective_cost || 0)
-    if (prev + corr <= 0) continue
+    const other = Number(a.other_cost || 0)
+    if (prev + corr + other <= 0) continue
     if (!assetsByPlant.has(pid)) assetsByPlant.set(pid, [])
     assetsByPlant.get(pid)!.push({
       asset_id: a.id,
       asset_code: a.asset_code || a.id.slice(0, 8),
       preventive_cost: prev,
       corrective_cost: corr,
+      other_cost: other,
     })
   }
 
@@ -158,37 +205,67 @@ export function buildManttoBreakdownFromGerencial(
     const preventive_total = Number(plant?.preventive_cost ?? 0)
     const corrective_total = Number(plant?.corrective_cost ?? 0)
     const plantAssets = assetsByPlant.get(plantId) || []
-    const assetPrevSum = plantAssets.reduce((s, x) => s + x.preventive_cost, 0)
     const assetCorrSum = plantAssets.reduce((s, x) => s + x.corrective_cost, 0)
-    const maintenance_cost = Number(plant?.maintenance_cost ?? preventive_total + corrective_total)
+    const maintenance_cost = Number(plant?.maintenance_cost ?? 0)
+    const expectedTotal =
+      options?.reconcileManttoTotals?.[plantId] ?? maintenance_cost
+    const other_total = expectedTotal - preventive_total - corrective_total
     const unallocated_corrective = Math.max(0, corrective_total - assetCorrSum)
+
+    const other_lines: ManttoOtherLine[] = [...(otherLinesByPlant.get(plantId) || [])]
+    const classifiedOther =
+      plantAssets.reduce((s, x) => s + x.other_cost, 0) +
+      other_lines.reduce((s, x) => s + x.amount, 0)
+    const balance = other_total - classifiedOther
+    if (Math.abs(balance) > 0.05) {
+      other_lines.push({
+        id: `balance-${plantId}`,
+        label: 'Otros / balance',
+        amount: balance,
+      })
+    }
 
     result[plantId] = {
       preventive_total,
       corrective_total,
+      other_total,
       unallocated_corrective,
+      other_lines,
       assets: plantAssets.sort(
         (a, b) =>
           b.preventive_cost +
-          b.corrective_cost -
-          (a.preventive_cost + a.corrective_cost)
+          b.corrective_cost +
+          b.other_cost -
+          (a.preventive_cost + a.corrective_cost + a.other_cost)
       ),
-    }
-
-    if (process.env.NODE_ENV === 'development') {
-      const sum = preventive_total + corrective_total
-      if (maintenance_cost > 0 && Math.abs(sum - maintenance_cost) > 0.05) {
-        console.warn(
-          `[mantto-operational-details] Plant ${plantId}: prev+corr (${sum}) != maintenance_cost (${maintenance_cost})`
-        )
-      }
-      if (Math.abs(assetPrevSum - preventive_total) > 0.05) {
-        console.warn(
-          `[mantto-operational-details] Plant ${plantId}: asset preventive sum (${assetPrevSum}) != preventive_total (${preventive_total})`
-        )
-      }
     }
   }
 
   return result
+}
+
+/** Serialize P&L mantto totals for operational-details `reconcileTotals` query param. */
+export function encodeReconcileManttoTotals(
+  byPlantId: Record<string, number>
+): string {
+  return Object.entries(byPlantId)
+    .filter(([, amount]) => Number.isFinite(amount) && amount !== 0)
+    .map(([plantId, amount]) => `${plantId}:${amount}`)
+    .join('|')
+}
+
+/** Parse `plantId:amount|plantId:amount` from ingresos-gastos drill-down request. */
+export function parseReconcileManttoTotals(
+  raw: string | null | undefined
+): Record<string, number> | undefined {
+  if (!raw?.trim()) return undefined
+  const out: Record<string, number> = {}
+  for (const part of raw.split('|')) {
+    const sep = part.lastIndexOf(':')
+    if (sep <= 0) continue
+    const plantId = part.slice(0, sep).trim()
+    const amount = Number(part.slice(sep + 1))
+    if (plantId && Number.isFinite(amount)) out[plantId] = amount
+  }
+  return Object.keys(out).length > 0 ? out : undefined
 }

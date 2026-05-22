@@ -5,6 +5,7 @@ import type {
   DieselOperationalDetails,
   ManttoOperationalDetails,
 } from '@/lib/reports/ingresos-gastos-operational-details'
+import { encodeReconcileManttoTotals } from '@/lib/reports/ingresos-gastos-operational-details'
 import type { DrilldownMetric } from './drilldown-types'
 
 export function useMetricDrilldown() {
@@ -25,7 +26,12 @@ export function useMetricDrilldown() {
   }, [])
 
   const openDrilldown = useCallback(
-    async (m: DrilldownMetric, month: string, scopePlantIds: string[]) => {
+    async (
+      m: DrilldownMetric,
+      month: string,
+      scopePlantIds: string[],
+      reconcileManttoByPlant?: Record<string, number>
+    ) => {
       setMetric(m)
       setFocusMonth(month)
       setOpen(true)
@@ -42,8 +48,17 @@ export function useMetricDrilldown() {
       const category = m === 'diesel' ? 'diesel' : 'mantto'
       setOperationalLoading(true)
       try {
+        const params = new URLSearchParams({
+          month,
+          category,
+          scopePlantIds: scopePlantIds.join(','),
+        })
+        if (category === 'mantto' && reconcileManttoByPlant) {
+          const encoded = encodeReconcileManttoTotals(reconcileManttoByPlant)
+          if (encoded) params.set('reconcileTotals', encoded)
+        }
         const resp = await fetch(
-          `/api/reports/gerencial/ingresos-gastos/operational-details?month=${encodeURIComponent(month)}&category=${category}&scopePlantIds=${encodeURIComponent(scopePlantIds.join(','))}`
+          `/api/reports/gerencial/ingresos-gastos/operational-details?${params.toString()}`
         )
         const json = await resp.json()
         if (!resp.ok) throw new Error(json.error || 'Error al cargar desglose')

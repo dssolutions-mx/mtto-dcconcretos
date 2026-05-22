@@ -3,6 +3,7 @@ import {
   aggregateDieselByPlant,
   buildManttoBreakdownFromGerencial,
   getMonthDateRange,
+  parseReconcileManttoTotals,
   type DieselOperationalDetails,
   type ManttoOperationalDetails,
 } from '@/lib/reports/ingresos-gastos-operational-details'
@@ -94,7 +95,10 @@ export async function GET(req: NextRequest) {
     }
 
     const { dateFromStr, dateToStr } = getMonthDateRange(month)
-    const { plants, assets } = await fetchManttoOperationalBreakdown({
+    const reconcileManttoTotals = parseReconcileManttoTotals(
+      searchParams.get('reconcileTotals')
+    )
+    const { plants, assets, plantOtherLines } = await fetchManttoOperationalBreakdown({
       supabase,
       dateFromStr,
       dateToStr,
@@ -103,7 +107,10 @@ export async function GET(req: NextRequest) {
       plantId,
     })
 
-    const byPlantId = buildManttoBreakdownFromGerencial(plants, assets, scopePlantIds)
+    const byPlantId = buildManttoBreakdownFromGerencial(plants, assets, scopePlantIds, {
+      reconcileManttoTotals,
+      plantOtherLines,
+    })
     const payload: ManttoOperationalDetails = { category: 'mantto', byPlantId }
     return NextResponse.json(payload)
   } catch (e: unknown) {

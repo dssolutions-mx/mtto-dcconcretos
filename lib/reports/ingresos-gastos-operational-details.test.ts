@@ -62,7 +62,32 @@ test('buildManttoBreakdownFromGerencial splits prev/corr and unallocated', () =>
   )
   assert.equal(byPlant.pl1.preventive_total, 60)
   assert.equal(byPlant.pl1.corrective_total, 40)
+  assert.equal(byPlant.pl1.other_total, 0)
   assert.equal(byPlant.pl1.unallocated_corrective, 15)
   assert.equal(byPlant.pl1.assets.length, 1)
   assert.equal(byPlant.pl1.assets[0].asset_code, 'CR-15')
+})
+
+test('buildManttoBreakdownFromGerencial otros reconciles to P&L mantto total', () => {
+  const scope = new Set(['pl1'])
+  const byPlant = buildManttoBreakdownFromGerencial(
+    [
+      {
+        id: 'pl1',
+        maintenance_cost: 100,
+        preventive_cost: 60,
+        corrective_cost: 30,
+      },
+    ],
+    [],
+    scope,
+    { reconcileManttoTotals: { pl1: 100 } }
+  )
+  assert.equal(byPlant.pl1.preventive_total, 60)
+  assert.equal(byPlant.pl1.corrective_total, 30)
+  assert.equal(byPlant.pl1.other_total, 10)
+  assert.equal(
+    byPlant.pl1.preventive_total + byPlant.pl1.corrective_total + byPlant.pl1.other_total,
+    100
+  )
 })
