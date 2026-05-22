@@ -5,4 +5,5 @@ export type PlantData = {
   business_unit_id: string
   mantto_total: number
   diesel_total: number
+  volumen_concreto: number
 }

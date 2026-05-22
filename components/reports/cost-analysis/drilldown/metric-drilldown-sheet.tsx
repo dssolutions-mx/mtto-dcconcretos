@@ -106,7 +106,9 @@ function DrilldownBody({
     }))
 
   if (metric === 'diesel' && dieselDetails) {
-    return <DieselPanel month={month} plants={plantRows} details={dieselDetails} />
+    return (
+      <DieselPanel month={month} plants={plantRows} details={dieselDetails} data={data} />
+    )
   }
   if (metric === 'mantto') {
     return (
@@ -196,23 +198,28 @@ function DieselPanel({
   month,
   plants,
   details,
+  data,
 }: {
   month: string
   plants: Array<{ id: string; code: string; name: string }>
   details: DieselOperationalDetails
+  data: CostAnalysisResponse
 }) {
   const rows = plants
     .map(p => {
       const d = details.byPlantId[p.id]
       if (!d || d.total_liters <= 0) return null
+      const volume = data.byPlant.find(bp => bp.plantId === p.id)?.volume[month] ?? 0
+      const lpm3 = volume > 0 ? d.total_liters / volume : null
+      const lpm3Part = lpm3 != null ? `${formatNumber(lpm3, 2)} L/m³` : null
+      const lphPart =
+        d.avg_lph_trusted != null ? `${formatNumber(d.avg_lph_trusted, 1)} L/h` : null
+      const subParts = [lpm3Part, lphPart, `${d.assets_with_data} activos`].filter(Boolean)
       return {
         key: p.id,
         label: `${p.code} · ${p.name}`,
         value: `${formatNumber(d.total_liters, 0)} L`,
-        sub:
-          d.avg_lph_trusted != null
-            ? `${formatNumber(d.avg_lph_trusted, 1)} L/h · ${d.assets_with_data} activos`
-            : `${d.assets_with_data} activos`,
+        sub: subParts.join(' · '),
       }
     })
     .filter(Boolean) as Array<{ key: string; label: string; value: string; sub?: string }>
