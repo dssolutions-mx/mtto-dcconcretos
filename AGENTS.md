@@ -26,6 +26,10 @@ Maintenance Dashboard ("Sistema de Mantenimiento") — an industrial maintenance
 | Lint | `npm run lint` (ESLint 9; pre-existing warnings/errors in the codebase) |
 | E2E tests | `npm run test:e2e` (Playwright; run `npm run test:e2e:install` first to install browsers) |
 
+### Test login
+
+Secrets `TEST_LOGIN_USERNAME` and `TEST_LOGIN_PASSWORD` are injected and can be used to log into the app via the `/login` page for end-to-end testing.
+
 ### Gotchas
 
 - **No `.env.example`** exists in the repo. Secrets must come from environment injection or the Supabase dashboard.
