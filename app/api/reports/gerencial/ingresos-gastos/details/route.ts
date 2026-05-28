@@ -2,10 +2,14 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { createClient as createServerSupabase } from '@/lib/supabase-server'
 import { getExpenseCategoryById, getExpenseCategoryDisplayName } from '@/lib/constants/expense-categories'
+import { requireIngresosGastosApiAccess } from '@/lib/reports/report-api-auth'
 
 // GET: Fetch manual cost details grouped by department
 export async function GET(req: NextRequest) {
   try {
+    const auth = await requireIngresosGastosApiAccess()
+    if (!auth.ok) return auth.response
+
     const { searchParams } = new URL(req.url)
     const month = searchParams.get('month') // YYYY-MM format
     const plantId = searchParams.get('plantId')
@@ -37,7 +41,7 @@ export async function GET(req: NextRequest) {
     const [year, monthNum] = month.split('-').map(Number)
     const periodMonth = `${year}-${String(monthNum).padStart(2, '0')}-01`
 
-    const supabase = await createServerSupabase()
+    const supabase = auth.supabase
 
     // Get plant code for matching
     const { data: plant } = await supabase

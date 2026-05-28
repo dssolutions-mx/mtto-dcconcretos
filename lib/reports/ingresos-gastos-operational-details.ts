@@ -108,14 +108,14 @@ export function aggregateDieselByPlant(
   return result
 }
 
-type GerencialPlantLike = {
+export type GerencialPlantLike = {
   id: string
   maintenance_cost?: number
   preventive_cost?: number
   corrective_cost?: number
 }
 
-type GerencialAssetLike = {
+export type GerencialAssetLike = {
   id: string
   asset_code?: string
   plant_id?: string

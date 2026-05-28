@@ -5,6 +5,7 @@ import { useRouter, usePathname } from "next/navigation"
 import { useAuthZustand } from "@/hooks/use-auth-zustand"
 import { canAccessRoute } from "@/lib/auth/role-permissions"
 import { effectiveRoleForPermissions } from "@/lib/auth/role-model"
+import { canAccessReportPath } from "@/lib/reports/reports-catalog"
 
 /** Routes where we must not require a loaded profile (password recovery, etc.). */
 function isAuthFlowRoute(pathname: string): boolean {
@@ -37,7 +38,11 @@ export function RoleProvider({ children }: { children: React.ReactNode }) {
     const permissionRoleKey =
       effectiveRoleForPermissions(profile) ?? profile.business_role ?? profile.role ?? null
 
-    if (profile && permissionRoleKey && !canAccessRoute(permissionRoleKey, pathname)) {
+    const moduleOk =
+      profile && permissionRoleKey ? canAccessRoute(permissionRoleKey, pathname) : true
+    const reportPathOk = profile ? canAccessReportPath(profile, pathname) : true
+
+    if (profile && permissionRoleKey && (!moduleOk || !reportPathOk)) {
       router.push(`/dashboard?error=access_denied&module=${pathname.split('/')[1]}`)
     }
   }, [pathname, profile, loading, user, router])

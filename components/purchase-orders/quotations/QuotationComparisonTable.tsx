@@ -219,7 +219,8 @@ export function QuotationComparisonTable({
                     )}
                     {onEdit &&
                       (quotation.status === QuotationStatus.PENDING ||
-                        quotation.status === QuotationStatus.SELECTED) && (
+                        quotation.status === QuotationStatus.SELECTED ||
+                        quotation.status === QuotationStatus.REJECTED) && (
                       <Button
                         size="sm"
                         variant="outline"

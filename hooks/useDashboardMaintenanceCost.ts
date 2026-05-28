@@ -2,6 +2,7 @@
 
 import { useMemo } from "react"
 import useSWR from "swr"
+import { canAccessIngresosGastosReport } from "@/lib/reports/reports-catalog"
 
 interface MonthCosts {
   maintenanceCost: number
@@ -54,7 +55,16 @@ function aggregateFromResponse(data: unknown): { current: MonthCosts; lastMonth:
   return { current, lastMonth }
 }
 
-async function fetchDashboardMaintenanceCost(month: string): Promise<{
+function monthBounds(month: string): { dateFrom: string; dateTo: string } {
+  const [yr, mNum] = month.split("-").map(Number)
+  const lastDay = new Date(yr, mNum, 0).getDate()
+  return {
+    dateFrom: `${month}-01`,
+    dateTo: `${month}-${String(lastDay).padStart(2, "0")}`,
+  }
+}
+
+async function fetchFromIngresosGastos(month: string): Promise<{
   current: MonthCosts
   lastMonth: MonthCosts | null
 }> {
@@ -78,15 +88,48 @@ async function fetchDashboardMaintenanceCost(month: string): Promise<{
   return aggregateFromResponse(json)
 }
 
-export function useDashboardMaintenanceCost(): DashboardMaintenanceCostResult {
+async function fetchFromGerencial(month: string): Promise<{
+  current: MonthCosts
+  lastMonth: MonthCosts | null
+}> {
+  const { dateFrom, dateTo } = monthBounds(month)
+  const res = await fetch("/api/reports/gerencial", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ dateFrom, dateTo, hideZeroActivity: false }),
+  })
+  if (!res.ok) {
+    throw new Error(`gerencial KPI: HTTP ${res.status}`)
+  }
+  const json = await res.json()
+  const summary = json.summary as {
+    totalMaintenanceCost?: number
+    totalDieselCost?: number
+  }
+  return {
+    current: {
+      maintenanceCost: Number(summary.totalMaintenanceCost ?? 0),
+      dieselCost: Number(summary.totalDieselCost ?? 0),
+    },
+    lastMonth: null,
+  }
+}
+
+export function useDashboardMaintenanceCost(profile?: {
+  role?: string | null
+  business_role?: string | null
+}): DashboardMaintenanceCostResult {
   const month = useMemo(() => {
     const now = new Date()
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`
   }, [])
 
+  const useIngresos = profile ? canAccessIngresosGastosReport(profile) : false
+
   const { data, isLoading, mutate } = useSWR(
-    ["dashboard-maintenance-cost", month] as const,
-    ([, m]) => fetchDashboardMaintenanceCost(m),
+    ["dashboard-maintenance-cost", month, useIngresos ? "ingresos" : "gerencial"] as const,
+    ([, m, source]) =>
+      source === "ingresos" ? fetchFromIngresosGastos(m) : fetchFromGerencial(m),
     {
       dedupingInterval: 120_000,
       revalidateOnFocus: true,

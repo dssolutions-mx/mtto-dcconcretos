@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createServerSupabase } from '@/lib/supabase-server'
 import { createClient } from '@supabase/supabase-js'
 import { cotizadorUsesFifoFinancialPipeline } from '@/lib/reports/cotizador-financial-unified-view'
+import { requireIngresosGastosApiAccess } from '@/lib/reports/report-api-auth'
 
 /**
  * Refresh historical financial analysis data for a specific month
@@ -22,6 +23,9 @@ type Body = {
 
 export async function POST(req: NextRequest) {
   try {
+    const auth = await requireIngresosGastosApiAccess()
+    if (!auth.ok) return auth.response
+
     const { month } = (await req.json()) as Body
 
     if (!month) {

@@ -26,6 +26,8 @@ import {
   FileText
 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
+import { useAuthZustand } from '@/hooks/use-auth-zustand'
+import { canAccessIngresosGastosReport } from '@/lib/reports/reports-catalog'
 import {
   BarChart,
   Bar,
@@ -142,6 +144,8 @@ type ReportData = {
 
 export default function GerencialReportPage() {
   const router = useRouter()
+  const { profile } = useAuthZustand()
+  const showIngresosGastos = profile ? canAccessIngresosGastosReport(profile) : false
   const [loading, setLoading] = useState(true)
   const [data, setData] = useState<ReportData | null>(null)
   const [dateFrom, setDateFrom] = useState<string>('')
@@ -223,7 +227,8 @@ export default function GerencialReportPage() {
     return list.filter(a =>
       (a.hours_worked || 0) > 0 ||
       (a.kilometers_worked || 0) > 0 ||
-      (a.diesel_liters || 0) > 0
+      (a.diesel_liters || 0) > 0 ||
+      (a.maintenance_cost || 0) > 0
     )
   }, [data?.assets, hideZero])
 
@@ -373,10 +378,12 @@ export default function GerencialReportPage() {
             <TrendingUp className="w-4 h-4 mr-2" />
             Análisis de Costos
           </Button>
-          <Button onClick={() => router.push('/reportes/gerencial/ingresos-gastos')}>
-            <FileText className="w-4 h-4 mr-2" />
-            Ingresos vs Gastos
-          </Button>
+          {showIngresosGastos && (
+            <Button onClick={() => router.push('/reportes/gerencial/ingresos-gastos')}>
+              <FileText className="w-4 h-4 mr-2" />
+              Ingresos vs Gastos
+            </Button>
+          )}
           <Button variant="secondary" onClick={() => router.push('/reportes/eficiencia-diesel')}>
             <Fuel className="w-4 h-4 mr-2" />
             Eficiencia diésel
@@ -458,7 +465,7 @@ export default function GerencialReportPage() {
                   onChange={(e) => setHideZero(e.target.checked)}
                   className="rounded"
                 />
-                <span className="text-sm">Ocultar activos sin horas y sin diésel</span>
+                <span className="text-sm">Ocultar activos sin diésel, horas ni gasto de mantenimiento</span>
               </label>
             </div>
 
@@ -479,7 +486,11 @@ export default function GerencialReportPage() {
                 <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
                 {loading ? 'Cargando...' : 'Actualizar'}
               </Button>
-              <Button variant="outline">
+              <Button
+                variant="outline"
+                title="Informe ejecutivo para imprimir o PDF"
+                onClick={() => router.push('/reportes/gerencial/informe-ejecutivo')}
+              >
                 <Download className="w-4 h-4" />
               </Button>
             </div>
@@ -1090,7 +1101,10 @@ export default function GerencialReportPage() {
                 Análisis Detallado por Activo
               </CardTitle>
               <CardDescription>
-                Rendimiento y costos a nivel de equipo individual - {assetsFiltered.length || 0} activos
+                Rendimiento y costos a nivel de equipo individual — {assetsFiltered.length || 0} activos
+                {hideZero && (data?.assets?.length || 0) > assetsFiltered.length
+                  ? ` (tabla filtrada; totales del periodo incluyen ${data?.assets?.length} activos)`
+                  : ''}
               </CardDescription>
             </CardHeader>
             <CardContent>

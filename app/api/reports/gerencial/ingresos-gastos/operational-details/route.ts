@@ -1,6 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient as createServerSupabase } from '@/lib/supabase-server'
-import { runGerencialReport } from '@/lib/reports/run-gerencial-report'
 import {
   aggregateDieselByPlant,
   buildManttoBreakdownFromGerencial,
@@ -8,18 +6,18 @@ import {
   type DieselOperationalDetails,
   type ManttoOperationalDetails,
 } from '@/lib/reports/ingresos-gastos-operational-details'
+import { fetchManttoOperationalBreakdown } from '@/lib/reports/mantto-operational-fetch'
 import type { AnomalyFlags } from '@/components/reports/diesel-efficiency/types'
+import { requireReportsApiAccess } from '@/lib/reports/report-api-auth'
+
+/** Mantto path runs scoped PO queries; allow headroom on Vercel. */
+export const maxDuration = 120
 
 export async function GET(req: NextRequest) {
   try {
-    const supabase = await createServerSupabase()
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser()
-    if (authError || !user) {
-      return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
-    }
+    const auth = await requireReportsApiAccess()
+    if (!auth.ok) return auth.response
+    const supabase = auth.supabase
 
     const { searchParams } = new URL(req.url)
     const month = searchParams.get('month')
@@ -63,8 +61,6 @@ export async function GET(req: NextRequest) {
       )
     }
 
-    const requestHost = req.headers.get('host')
-
     if (category === 'diesel') {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const sb = supabase as any
@@ -98,31 +94,14 @@ export async function GET(req: NextRequest) {
     }
 
     const { dateFromStr, dateToStr } = getMonthDateRange(month)
-    const gerencialData = await runGerencialReport(
-      {
-        dateFrom: dateFromStr,
-        dateTo: dateToStr,
-        businessUnitId,
-        plantId,
-        hideZeroActivity: false,
-      },
-      { requestHost, supabase }
-    )
-
-    const plants = (gerencialData.plants || []) as Array<{
-      id: string
-      maintenance_cost?: number
-      preventive_cost?: number
-      corrective_cost?: number
-    }>
-    const assets = (gerencialData.assets || []) as Array<{
-      id: string
-      asset_code?: string
-      plant_id?: string
-      preventive_cost?: number
-      corrective_cost?: number
-      maintenance_cost?: number
-    }>
+    const { plants, assets } = await fetchManttoOperationalBreakdown({
+      supabase,
+      dateFromStr,
+      dateToStr,
+      scopePlantIds,
+      businessUnitId,
+      plantId,
+    })
 
     const byPlantId = buildManttoBreakdownFromGerencial(plants, assets, scopePlantIds)
     const payload: ManttoOperationalDetails = { category: 'mantto', byPlantId }

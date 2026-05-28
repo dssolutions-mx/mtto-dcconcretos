@@ -340,9 +340,16 @@ export function QuotationComparisonManager({
               initialQuotation={editingQuotation}
               purchaseOrderId={purchaseOrderId}
               workOrderId={workOrderId}
-              onQuotationUpdated={async () => {
+              onQuotationUpdated={async (updated) => {
                 await loadQuotations()
                 setEditingQuotation(null)
+                if (updated?.status === QuotationStatus.SELECTED) {
+                  window.dispatchEvent(
+                    new CustomEvent('quotationSelected', {
+                      detail: { quotationId: updated.id, purchaseOrderId },
+                    })
+                  )
+                }
                 router.refresh()
               }}
               existingQuotations={quotations}

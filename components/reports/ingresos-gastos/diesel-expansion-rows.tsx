@@ -99,6 +99,24 @@ export function DieselExpansionRows({
         plants.reduce((s, p) => s + (get(p.plant_id)?.total_liters ?? 0), 0),
     },
     {
+      label: '↳ L/m³ concreto',
+      isAverage: false,
+      getPlantValue: pid => {
+        const liters = get(pid)?.total_liters ?? 0
+        const vol = plants.find(p => p.plant_id === pid)?.volumen_concreto ?? 0
+        return vol > 0 ? liters / vol : null
+      },
+      formatFn: v => (v != null ? `${formatNumber(v, 2)} L/m³` : '—'),
+      aggregateGrand: () => {
+        const totalLiters = plants.reduce(
+          (s, p) => s + (get(p.plant_id)?.total_liters ?? 0),
+          0
+        )
+        const totalVol = plants.reduce((s, p) => s + (p.volumen_concreto ?? 0), 0)
+        return totalVol > 0 ? totalLiters / totalVol : null
+      },
+    },
+    {
       label: '↳ L/h promedio flota',
       isAverage: true,
       getPlantValue: pid => get(pid)?.avg_lph_trusted ?? null,

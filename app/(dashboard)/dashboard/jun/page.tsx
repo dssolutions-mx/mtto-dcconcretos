@@ -29,6 +29,7 @@ import { cn } from "@/lib/utils"
 import { DashboardModuleLinks } from "@/components/dashboard/dashboard-module-links"
 import { DashboardExecutiveLayout } from "@/components/dashboard/dashboard-executive-layout"
 import { DashboardExecutiveHero } from "@/components/dashboard/dashboard-executive-hero"
+import { reportShortcutsForRole } from "@/lib/reports/executive-dashboard-shortcuts"
 import { DashboardActionStrip } from "@/components/dashboard/dashboard-action-strip"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -401,6 +402,11 @@ export default function JUNDashboard() {
           </Button>
         }
         shortcuts={[
+          ...reportShortcutsForRole(profile.role, profile).map((s) => ({
+            label: s.label,
+            href: s.href,
+            icon: <BarChart3 className="h-4 w-4" />,
+          })),
           { label: "Gestión de personal", href: "/gestion/personal", icon: <Users className="h-4 w-4" /> },
           { label: "Registrar usuario", href: "/gestion/personal?registrar=1", icon: <UserPlus className="h-4 w-4" /> },
           { label: "Asignaciones organizacionales", href: "/gestion/asignaciones", icon: <Target className="h-4 w-4" /> },

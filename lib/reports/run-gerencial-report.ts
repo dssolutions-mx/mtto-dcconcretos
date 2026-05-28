@@ -10,6 +10,7 @@ import {
   computeMergedOperatingHoursByAsset,
   fetchDieselPeriodConsumptionTxsForReportAssets,
 } from '@/lib/reports/merged-operating-hours'
+import { computeMergedOperatingKmByAsset } from '@/lib/reports/merged-operating-km'
 
 export type GerencialReportBody = {
   dateFrom: string
@@ -538,6 +539,9 @@ export async function runGerencialReport(
         hours_merge_fork: false,
         liters_per_hour: 0,
         kilometers_worked: 0,
+        kilometers_worked_diesel_consumed: 0,
+        kilometers_worked_merged: 0,
+        km_merge_fork: false,
         liters_per_km: 0,
         maintenance_cost: 0,
         preventive_cost: 0,
@@ -584,18 +588,18 @@ export async function runGerencialReport(
       asset.diesel_cost += cost
     })
 
-    // Efficiency: use diesel-only SUM of generated columns (matches breakdown modal)
+    // Row-level sums for trusted hours/km (same policy as eficiencia diésel)
     const dieselConsumedHoursByAsset = new Map<string, number>()
+    const dieselConsumedKmByAsset = new Map<string, number>()
     dieselByAsset.forEach((txs, assetId) => {
       const asset = assetMap.get(assetId)
       if (!asset) return
       const hours_consumed_sum = txs.reduce((sum: number, t: any) => sum + Number(t.hours_consumed || 0), 0)
-      const kilometers_worked = txs.reduce((sum: number, t: any) => sum + Number(t.kilometers_consumed || 0), 0)
+      const km_consumed_sum = txs.reduce((sum: number, t: any) => sum + Number(t.kilometers_consumed || 0), 0)
       asset.hours_worked_diesel_consumed = hours_consumed_sum
+      asset.kilometers_worked_diesel_consumed = km_consumed_sum
       dieselConsumedHoursByAsset.set(assetId, hours_consumed_sum)
-      asset.kilometers_worked = kilometers_worked
-      asset.liters_per_km =
-        kilometers_worked > 0 && asset.diesel_liters > 0 ? asset.diesel_liters / kilometers_worked : 0
+      dieselConsumedKmByAsset.set(assetId, km_consumed_sum)
     })
 
     const realAssetIds = [...assetMap.keys()].filter((id) => !String(id).startsWith('unmatched_'))
@@ -618,6 +622,24 @@ export async function runGerencialReport(
       }>,
     })
 
+    const {
+      kmByAsset: mergedKmByAsset,
+      kmMergedByAsset,
+      mergeForkKmByAsset,
+      diagnostics: kmMergeDiagnostics,
+    } = await computeMergedOperatingKmByAsset(supabase as unknown as SupabaseClient, {
+      assetIds: realAssetIds,
+      dateFromStart,
+      dateToExclusive,
+      dateToExclusiveStr,
+      dieselConsumedKmByAsset,
+      periodDieselConsumptionTxs: dieselTxs as Array<{
+        asset_id: string | null
+        kilometers_consumed?: number | null
+        transaction_type?: string | null
+      }>,
+    })
+
     mergedHoursByAsset.forEach((hours, assetId) => {
       const asset = assetMap.get(assetId)
       if (!asset) return
@@ -633,6 +655,23 @@ export async function runGerencialReport(
       asset.hours_worked_merged = hoursMergedByAsset.get(id) ?? 0
       asset.hours_merge_fork = mergeForkByAsset.get(id) ?? false
       asset.liters_per_hour = 0
+    })
+
+    mergedKmByAsset.forEach((km, assetId) => {
+      const asset = assetMap.get(assetId)
+      if (!asset) return
+      asset.kilometers_worked = km
+      asset.kilometers_worked_merged = kmMergedByAsset.get(assetId) ?? 0
+      asset.km_merge_fork = mergeForkKmByAsset.get(assetId) ?? false
+      asset.liters_per_km = km > 0 && asset.diesel_liters > 0 ? asset.diesel_liters / km : 0
+    })
+    assetMap.forEach((asset, id) => {
+      if (String(id).startsWith('unmatched_')) return
+      if (mergedKmByAsset.has(id)) return
+      asset.kilometers_worked = 0
+      asset.kilometers_worked_merged = kmMergedByAsset.get(id) ?? 0
+      asset.km_merge_fork = mergeForkKmByAsset.get(assetId) ?? false
+      asset.liters_per_km = 0
     })
 
     // Separate POs by purpose to track cash vs inventory expenses
@@ -1171,7 +1210,13 @@ export async function runGerencialReport(
     // Build assets array for response; optionally hide zero-activity assets
     const assetsArrayAll = Array.from(assetMap.values())
     const assetsArray = hideZeroActivity
-      ? assetsArrayAll.filter((a: any) => (a.hours_worked || 0) > 0 || (a.diesel_liters || 0) > 0)
+      ? assetsArrayAll.filter(
+          (a: any) =>
+            (a.hours_worked || 0) > 0 ||
+            (a.kilometers_worked || 0) > 0 ||
+            (a.diesel_liters || 0) > 0 ||
+            (a.maintenance_cost || 0) > 0
+        )
       : assetsArrayAll
 
     // Calculate cash flow summary
@@ -1204,7 +1249,10 @@ export async function runGerencialReport(
         hours_attribution: {
           ...hoursMergeDiagnostics,
           method:
-            'Por activo: max(horas por avance de horómetro diésel + lecturas de checklist en el periodo, suma de hours_consumed en consumos).',
+            'Horas y km confiables: curva fusionada horómetro diésel + checklist (con topes); si no hay curva, suma de hours_consumed / kilometers_consumed. Misma política que Eficiencia diésel.',
+        },
+        km_attribution: {
+          ...kmMergeDiagnostics,
         },
       },
       businessUnits: Array.from(buMap.values()),
