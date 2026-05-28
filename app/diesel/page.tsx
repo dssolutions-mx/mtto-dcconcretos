@@ -10,6 +10,13 @@ import { DashboardHeader } from "@/components/dashboard/dashboard-header"
 import { DashboardShell } from "@/components/dashboard/dashboard-shell"
 import { getDieselPlantScope } from "@/lib/diesel-analytics-scope"
 import {
+  canCreateFuelWarehouse,
+  dieselHubEmptyMessage,
+  getDieselHubEmptyReason,
+  type DieselHubEmptyReason,
+} from "@/lib/diesel/load-organizational-scope"
+import { useAuthZustand } from "@/hooks/use-auth-zustand"
+import {
   Fuel,
   TruckIcon,
   TrendingDown,
@@ -55,11 +62,16 @@ interface RecentTransaction {
 
 export default function DieselDashboardPage() {
   const router = useRouter()
+  const { profile } = useAuthZustand()
   const [loading, setLoading] = useState(true)
   const [warehouses, setWarehouses] = useState<WarehouseSummary[]>([])
   const [recentTransactions, setRecentTransactions] = useState<RecentTransaction[]>([])
   const [totalInventory, setTotalInventory] = useState(0)
   const [createDialogOpen, setCreateDialogOpen] = useState(false)
+  const [hubEmptyReason, setHubEmptyReason] = useState<DieselHubEmptyReason>(null)
+  const [warehouseLoadError, setWarehouseLoadError] = useState<string | null>(null)
+
+  const showCreateWarehouse = canCreateFuelWarehouse(profile?.role)
 
   const supabase = createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -79,11 +91,14 @@ export default function DieselDashboardPage() {
       if (!user) return
 
       const scope = await getDieselPlantScope(supabase)
+      setWarehouseLoadError(null)
+      setHubEmptyReason(null)
 
       if (scope.plantIds !== null && scope.plantIds.length === 0) {
         setWarehouses([])
         setTotalInventory(0)
         setRecentTransactions([])
+        setHubEmptyReason('no_plant')
         return
       }
 
@@ -113,6 +128,9 @@ export default function DieselDashboardPage() {
 
       if (warehousesError) {
         console.error('Error loading warehouses:', warehousesError)
+        setWarehouseLoadError(warehousesError.message)
+        setWarehouses([])
+        setTotalInventory(0)
       } else {
         const formattedWarehouses = warehousesData?.map((w: any) => ({
           ...w,
@@ -123,6 +141,9 @@ export default function DieselDashboardPage() {
         
         const total = formattedWarehouses.reduce((sum, w) => sum + (w.current_inventory || 0), 0)
         setTotalInventory(total)
+        setHubEmptyReason(
+          getDieselHubEmptyReason(scope.plantIds, formattedWarehouses.length)
+        )
       }
 
       // Load recent transactions - ONLY DIESEL product transactions
@@ -347,11 +368,24 @@ export default function DieselDashboardPage() {
             <Fuel className="h-6 w-6" />
             Almacenes
           </h2>
-          <Button onClick={() => setCreateDialogOpen(true)}>
-            <Plus className="h-4 w-4 mr-2" />
-            Nuevo Almacén
-          </Button>
+          {showCreateWarehouse && (
+            <Button onClick={() => setCreateDialogOpen(true)}>
+              <Plus className="h-4 w-4 mr-2" />
+              Nuevo Almacén
+            </Button>
+          )}
         </div>
+
+        {(hubEmptyReason || warehouseLoadError) && (
+          <Alert variant={warehouseLoadError ? 'destructive' : 'default'} className="mb-4">
+            <Info className="h-4 w-4" />
+            <AlertDescription>
+              {warehouseLoadError ??
+                dieselHubEmptyMessage(hubEmptyReason) ??
+                'No se encontraron almacenes.'}
+            </AlertDescription>
+          </Alert>
+        )}
         
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {warehouses.map((warehouse) => {
@@ -506,13 +540,15 @@ export default function DieselDashboardPage() {
         </CardContent>
       </Card>
 
-      <CreateDieselWarehouseDialog
-        open={createDialogOpen}
-        onOpenChange={setCreateDialogOpen}
-        onCreated={() => {
-          loadDashboardData()
-        }}
-      />
+      {showCreateWarehouse && (
+        <CreateDieselWarehouseDialog
+          open={createDialogOpen}
+          onOpenChange={setCreateDialogOpen}
+          onCreated={() => {
+            loadDashboardData()
+          }}
+        />
+      )}
     </DashboardShell>
   )
 }

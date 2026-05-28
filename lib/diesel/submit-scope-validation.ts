@@ -78,5 +78,19 @@ export async function validateDieselTransactionScope(
     }
   }
 
+  if (profile.role === 'DOSIFICADOR') {
+    if (!profile.plant_id) {
+      return {
+        error:
+          'Tu usuario no tiene planta asignada. Contacta a tu jefe de planta antes de registrar movimientos.',
+      }
+    }
+    if (effectivePlantId !== profile.plant_id) {
+      return {
+        error: 'Solo puedes registrar movimientos en el almacén de tu planta asignada.',
+      }
+    }
+  }
+
   return null
 }

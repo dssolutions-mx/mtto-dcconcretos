@@ -40,6 +40,7 @@ import {
   isPostgresUnicodeJsonError,
 } from "@/lib/diesel/diesel-save-error-message"
 import { dieselInsertReturnedNoRowDescription } from "@/lib/diesel/insert-transaction-no-row-message"
+import { loadDieselOrganizationalScope } from "@/lib/diesel/load-organizational-scope"
 
 interface ConsumptionEntryFormProps {
   productType: 'diesel' | 'urea'
@@ -192,7 +193,6 @@ export function ConsumptionEntryForm({
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
 
-      // Get user profile to determine their access level
       const { data: profile } = await supabase
         .from('profiles')
         .select('plant_id, business_unit_id, role')
@@ -201,44 +201,21 @@ export function ConsumptionEntryForm({
 
       if (!profile) return
 
-      setAccessProfile({
-        business_unit_id: profile.business_unit_id ?? null,
-        plant_id: profile.plant_id ?? null
-      })
+      const loaded = await loadDieselOrganizationalScope(supabase, profile, productType)
 
-      // Load business units
-      const { data: busUnits } = await supabase
-        .from('business_units')
-        .select('*')
-        .order('name')
-
-      setBusinessUnits(busUnits || [])
-
-      // Auto-select based on user context
-      if (profile.business_unit_id) {
-        setSelectedBusinessUnit(profile.business_unit_id)
-        await loadPlantsForBusinessUnit(profile.business_unit_id)
-
-        if (profile.plant_id) {
-          setSelectedPlant(profile.plant_id)
-          setAllBuWarehouses([])
-          await loadWarehousesForPlant(profile.plant_id)
-        } else {
-          // Jefe de Unidad (unidad scope, sin planta fija): todos los almacenes de la unidad
-          setSelectedPlant(null)
-          await loadWarehousesForBusinessUnit(profile.business_unit_id)
-        }
-      } else if (!profile.plant_id && !profile.business_unit_id) {
-        // Global user - load all plants
-        setAllBuWarehouses([])
-        const { data: allPlants } = await supabase
-          .from('plants')
-          .select('*')
-          .order('name')
-        setPlants(allPlants || [])
+      setAccessProfile(loaded.accessProfile)
+      setBusinessUnits(loaded.businessUnits)
+      setPlants(loaded.plants)
+      setWarehouses(loaded.warehouses)
+      setAllBuWarehouses(loaded.allBuWarehouses)
+      setSelectedBusinessUnit(loaded.selectedBusinessUnit)
+      setSelectedPlant(loaded.selectedPlant)
+      if (loaded.selectedWarehouse) {
+        setSelectedWarehouse(loaded.selectedWarehouse)
       }
     } catch (error) {
       console.error('Error loading organizational structure:', error)
+      toast.error('Error al cargar plantas y almacenes')
     }
   }
 
@@ -878,7 +855,7 @@ export function ConsumptionEntryForm({
                   id="plant"
                   value={selectedPlant || ''}
                   onChange={(e) => handlePlantChange(e.target.value)}
-                  disabled={loading || !selectedBusinessUnit}
+                  disabled={loading || (!selectedBusinessUnit && !accessProfile?.plant_id)}
                   className="w-full h-12 px-3 border border-gray-300 rounded-md text-base"
                 >
                   <option value="">

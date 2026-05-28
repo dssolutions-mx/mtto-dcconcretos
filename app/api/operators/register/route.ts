@@ -131,11 +131,23 @@ export async function POST(request: NextRequest) {
       plantBusinessUnitId = plantRow?.business_unit_id ?? null
     }
 
+    const plantScopedRolesNeedingBuFromPlant = [
+      'DOSIFICADOR',
+      'OPERADOR',
+      'JEFE_PLANTA',
+      'COORDINADOR_MANTENIMIENTO',
+      'MECANICO',
+      'ENCARGADO_MANTENIMIENTO',
+    ] as const
+
     const effectiveBusinessUnitId =
-      actor.profile.role === 'JEFE_UNIDAD_NEGOCIO' &&
       validatedPlantId &&
       plantBusinessUnitId &&
-      !validatedBusinessUnitId
+      !validatedBusinessUnitId &&
+      (actor.profile.role === 'JEFE_UNIDAD_NEGOCIO' ||
+        plantScopedRolesNeedingBuFromPlant.includes(
+          normalizedRole.role as (typeof plantScopedRolesNeedingBuFromPlant)[number]
+        ))
         ? plantBusinessUnitId
         : validatedBusinessUnitId
 

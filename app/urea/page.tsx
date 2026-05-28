@@ -24,6 +24,14 @@ import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { DieselOfflineStatus } from "@/components/diesel-inventory/diesel-offline-status"
 import { CreateDieselWarehouseDialog } from "@/components/diesel/dialogs/create-warehouse-dialog"
+import { getDieselPlantScope } from "@/lib/diesel-analytics-scope"
+import {
+  canCreateFuelWarehouse,
+  dieselHubEmptyMessage,
+  getDieselHubEmptyReason,
+  type DieselHubEmptyReason,
+} from "@/lib/diesel/load-organizational-scope"
+import { useAuthZustand } from "@/hooks/use-auth-zustand"
 
 interface WarehouseSummary {
   id: string
@@ -51,12 +59,17 @@ interface RecentTransaction {
 
 export default function UreaDashboardPage() {
   const router = useRouter()
+  const { profile: authProfile } = useAuthZustand()
   const [loading, setLoading] = useState(true)
   const [warehouses, setWarehouses] = useState<WarehouseSummary[]>([])
   const [recentTransactions, setRecentTransactions] = useState<RecentTransaction[]>([])
   const [totalInventory, setTotalInventory] = useState(0)
   const [userProfile, setUserProfile] = useState<any>(null)
   const [createDialogOpen, setCreateDialogOpen] = useState(false)
+  const [hubEmptyReason, setHubEmptyReason] = useState<DieselHubEmptyReason>(null)
+  const [warehouseLoadError, setWarehouseLoadError] = useState<string | null>(null)
+
+  const showCreateWarehouse = canCreateFuelWarehouse(authProfile?.role)
 
   const supabase = createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -83,7 +96,18 @@ export default function UreaDashboardPage() {
 
       setUserProfile(profile)
 
-      // Load warehouses with filtering - ONLY UREA warehouses
+      const scope = await getDieselPlantScope(supabase)
+      setWarehouseLoadError(null)
+      setHubEmptyReason(null)
+
+      if (scope.plantIds !== null && scope.plantIds.length === 0) {
+        setWarehouses([])
+        setTotalInventory(0)
+        setRecentTransactions([])
+        setHubEmptyReason('no_plant')
+        return
+      }
+
       let warehouseQuery = supabase
         .from('diesel_warehouses')
         .select(`
@@ -101,15 +125,17 @@ export default function UreaDashboardPage() {
         .eq('product_type', 'urea')
         .order('name')
 
-      // Apply business unit filtering if user has one
-      if (profile?.business_unit_id) {
-        warehouseQuery = warehouseQuery.eq('plants.business_unit_id', profile.business_unit_id)
+      if (scope.plantIds !== null) {
+        warehouseQuery = warehouseQuery.in('plant_id', scope.plantIds)
       }
 
       const { data: warehousesData, error: warehousesError } = await warehouseQuery
 
       if (warehousesError) {
         console.error('Error loading warehouses:', warehousesError)
+        setWarehouseLoadError(warehousesError.message)
+        setWarehouses([])
+        setTotalInventory(0)
       } else {
         const formattedWarehouses = warehousesData?.map((w: any) => ({
           ...w,
@@ -120,6 +146,9 @@ export default function UreaDashboardPage() {
         
         const total = formattedWarehouses.reduce((sum, w) => sum + (w.current_inventory || 0), 0)
         setTotalInventory(total)
+        setHubEmptyReason(
+          getDieselHubEmptyReason(scope.plantIds, formattedWarehouses.length)
+        )
       }
 
       // Load recent transactions - ONLY UREA product transactions
@@ -142,9 +171,8 @@ export default function UreaDashboardPage() {
         .order('transaction_date', { ascending: false })
         .limit(10)
 
-      // Apply business unit filtering if user has one
-      if (profile?.plant_id) {
-        transactionsQuery = transactionsQuery.eq('diesel_warehouses.plant_id', profile.plant_id)
+      if (scope.plantIds !== null) {
+        transactionsQuery = transactionsQuery.in('diesel_warehouses.plant_id', scope.plantIds)
       }
 
       const { data: transactionsData, error: transactionsError } = await transactionsQuery
@@ -323,11 +351,24 @@ export default function UreaDashboardPage() {
             <Fuel className="h-6 w-6" />
             Almacenes
           </h2>
-          <Button onClick={() => setCreateDialogOpen(true)}>
-            <Plus className="h-4 w-4 mr-2" />
-            Nuevo Almacén
-          </Button>
+          {showCreateWarehouse && (
+            <Button onClick={() => setCreateDialogOpen(true)}>
+              <Plus className="h-4 w-4 mr-2" />
+              Nuevo Almacén
+            </Button>
+          )}
         </div>
+
+        {(hubEmptyReason || warehouseLoadError) && (
+          <Alert className="mb-4">
+            <Info className="h-4 w-4" />
+            <AlertDescription>
+              {warehouseLoadError ??
+                dieselHubEmptyMessage(hubEmptyReason) ??
+                'No se encontraron almacenes.'}
+            </AlertDescription>
+          </Alert>
+        )}
         
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {warehouses.map((warehouse) => {
@@ -482,14 +523,16 @@ export default function UreaDashboardPage() {
         </CardContent>
       </Card>
 
-      <CreateDieselWarehouseDialog
-        open={createDialogOpen}
-        onOpenChange={setCreateDialogOpen}
-        onCreated={() => {
-          loadDashboardData()
-        }}
-        defaultProductType="urea"
-      />
+      {showCreateWarehouse && (
+        <CreateDieselWarehouseDialog
+          open={createDialogOpen}
+          onOpenChange={setCreateDialogOpen}
+          onCreated={() => {
+            loadDashboardData()
+          }}
+          defaultProductType="urea"
+        />
+      )}
     </div>
   )
 }

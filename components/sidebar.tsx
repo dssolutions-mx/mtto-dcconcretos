@@ -37,6 +37,7 @@ import {
   Shield,
   Fuel,
   Droplet,
+  History,
   IdCard,
   Target,
   TrendingUp,
@@ -156,6 +157,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
 
   // Check if user is an operator (or dosificador — shared checklist/incident nav)
   const isOperator = profile?.role && ['OPERADOR', 'DOSIFICADOR'].includes(profile.role)
+  const isDosificador = profile?.role === 'DOSIFICADOR'
 
   // Return loading state if no profile yet
   if (!profile) {
@@ -280,6 +282,32 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                       Incidentes del equipo
                     </Link>
                   </Button>
+                  {isDosificador && (
+                    <>
+                      <Button
+                        variant={isPathActive("/diesel") && !isPathActive("/diesel/historial") ? "secondary" : "ghost"}
+                        className={cn("w-full justify-start pl-8", navItemClasses)}
+                        asChild
+                        onClick={handleLinkClick}
+                      >
+                        <Link href="/diesel">
+                          <Fuel className="mr-2 h-4 w-4" />
+                          Gestión de Diesel
+                        </Link>
+                      </Button>
+                      <Button
+                        variant={isPathActive("/diesel/historial") ? "secondary" : "ghost"}
+                        className={cn("w-full justify-start pl-8", navItemClasses)}
+                        asChild
+                        onClick={handleLinkClick}
+                      >
+                        <Link href="/diesel/historial">
+                          <History className="mr-2 h-4 w-4" />
+                          Historial de Diesel
+                        </Link>
+                      </Button>
+                    </>
+                  )}
                 </CollapsibleContent>
               </Collapsible>
             </div>
@@ -1391,6 +1419,7 @@ export function CollapsedSidebar({ className, onLinkClick }: SidebarProps) {
   }
 
   const isOperator = profile.role && ['OPERADOR', 'DOSIFICADOR'].includes(profile.role)
+  const isDosificador = profile.role === 'DOSIFICADOR'
 
   // Build navigation from shared config with ui filtering
   let navigationSections: NavSection[]
@@ -1404,6 +1433,24 @@ export function CollapsedSidebar({ className, onLinkClick }: SidebarProps) {
         href: "/dashboard/operator/incidentes?estado=abiertos",
         active: isPathActive("/dashboard/operator/incidentes"),
       },
+      ...(isDosificador
+        ? [
+            {
+              id: "diesel",
+              icon: Fuel,
+              label: "Gestión de Diesel",
+              href: "/diesel",
+              active: isPathActive("/diesel") && !isPathActive("/diesel/historial"),
+            },
+            {
+              id: "diesel-historial",
+              icon: History,
+              label: "Historial de Diesel",
+              href: "/diesel/historial",
+              active: isPathActive("/diesel/historial"),
+            },
+          ]
+        : []),
     ]
   } else if (profile.role === 'AREA_ADMINISTRATIVA') {
     navigationSections = buildNavigationSections(profile, ui, pathname, isPathActive, isSectionActive, isComplianceSystemEnabled)
