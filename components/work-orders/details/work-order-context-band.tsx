@@ -6,6 +6,8 @@ import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import type { WorkOrderOriginData } from "@/lib/work-orders/build-origin-data"
 import { WorkOrderOriginSection } from "@/components/work-orders/details/work-order-origin-section"
+import { parseMaintenanceUnitString } from "@/lib/utils/cyclic-maintenance"
+import { formatMeterValue } from "@/lib/utils/maintenance-units"
 
 interface WorkOrderContextBandProps {
   origin: WorkOrderOriginData
@@ -17,6 +19,8 @@ interface WorkOrderContextBandProps {
         name?: string | null
         location?: string | null
         current_hours?: number | null
+        current_kilometers?: number | null
+        maintenance_unit?: string | null
       }
     | null
 }
@@ -68,9 +72,18 @@ export function WorkOrderContextBand({
 
               <div className="space-y-1">
                 <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  Horas actuales
+                  {parseMaintenanceUnitString(asset.maintenance_unit) === "kilometers"
+                    ? "Kilómetros actuales"
+                    : "Horas actuales"}
                 </p>
-                <p className="text-sm">{Number(asset.current_hours) || 0} hrs</p>
+                <p className="text-sm">
+                  {formatMeterValue(
+                    parseMaintenanceUnitString(asset.maintenance_unit) === "kilometers"
+                      ? asset.current_kilometers
+                      : asset.current_hours,
+                    parseMaintenanceUnitString(asset.maintenance_unit)
+                  )}
+                </p>
               </div>
 
               <div className="xl:col-span-4">

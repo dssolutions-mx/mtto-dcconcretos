@@ -13,6 +13,7 @@ import {
   MaintenancePart
 } from '../types';
 import type { Json } from '@/types/supabase-types';
+import { meterTypeForMaintenanceInterval } from '@/lib/utils/maintenance-units';
 
 // Use authenticated browser client
 const supabase = createClient();
@@ -243,7 +244,7 @@ export const modelsApi = {
       interval_value: inv.hours,
       name: inv.name,
       description: inv.description || null,
-      type: 'Preventivo',
+      type: meterTypeForMaintenanceInterval(modelData.maintenance_unit),
       estimated_duration: inv.tasks.reduce((sum, t) => sum + (t.estimatedTime || 0), 0),
     }));
 

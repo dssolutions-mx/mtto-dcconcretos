@@ -515,6 +515,23 @@ export function ConsumptionEntryForm({
       return
     }
 
+    if (assetType === 'formal' && selectedAsset?.id) {
+      try {
+        const validateRes = await fetch(
+          `/api/diesel/validate-consumption-asset?asset_id=${encodeURIComponent(selectedAsset.id)}`
+        )
+        const validateJson = await validateRes.json().catch(() => ({}))
+        if (!validateRes.ok || validateJson.ok === false) {
+          toast.error(validateJson.error || 'El equipo seleccionado no puede recibir combustible.')
+          return
+        }
+      } catch (validateErr) {
+        console.error('Consumption asset validation failed', validateErr)
+        toast.error('No se pudo validar el equipo. Intenta de nuevo.')
+        return
+      }
+    }
+
     // Pre-submit policy warning for out-of-order/backdated entries
     try {
       if (selectedWarehouse) {
@@ -972,6 +989,7 @@ export function ConsumptionEntryForm({
                 <div className="space-y-2">
                   <Label className="text-base">3. Seleccionar Equipo</Label>
                   <AssetSelectorMobile
+                    mode="consumption"
                     onSelect={setSelectedAsset}
                     selectedAssetId={selectedAsset?.id}
                     plantFilter={selectedPlant}

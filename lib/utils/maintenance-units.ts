@@ -199,3 +199,46 @@ export function getPrimaryReadingField(
   const fields = getTrackedReadingFieldsForModelUnit(raw);
   return fields[0] ?? null;
 }
+
+/** Display value with unit suffix, e.g. `1500 h` or `21000 km`. */
+export function formatMeterValue(
+  value: number | null | undefined,
+  unit: MaintenanceUnit,
+  options?: { locale?: string; decimals?: number }
+): string {
+  const n = Number(value);
+  if (value == null || Number.isNaN(n)) return "—";
+  const formatted =
+    options?.decimals != null
+      ? n.toLocaleString(options.locale ?? "es-MX", {
+          maximumFractionDigits: options.decimals,
+          minimumFractionDigits: options.decimals,
+        })
+      : n.toLocaleString(options.locale ?? "es-MX");
+  return `${formatted} ${getUnitLabel(unit)}`;
+}
+
+/** Interval label for UI — uses model maintenance unit, not legacy `interval.type`. */
+export function formatIntervalLabel(
+  interval: {
+    name?: string | null;
+    description?: string | null;
+    interval_value?: number | null;
+    type?: string | null;
+  },
+  modelUnit: MaintenanceUnit
+): string {
+  const base = interval.name || interval.description || "";
+  if (base) return base;
+  const value = Number(interval.interval_value) || 0;
+  if (value > 0) return `${value}${getUnitLabel(modelUnit)}`;
+  return "—";
+}
+
+/** DB `maintenance_intervals.type` for new rows from model maintenance_unit. */
+export function meterTypeForMaintenanceInterval(
+  modelMaintenanceUnit: string | null | undefined
+): "hours" | "kilometers" {
+  const u = (modelMaintenanceUnit ?? "hours").toLowerCase();
+  return u === "kilometers" || u === "kilometres" ? "kilometers" : "hours";
+}

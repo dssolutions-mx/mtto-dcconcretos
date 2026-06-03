@@ -1,10 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Switch } from "@/components/ui/switch";
-import { Gauge, MapPin, Loader2, Link as LinkIcon } from "lucide-react";
+import { Gauge, MapPin, Loader2, Link as LinkIcon, Fuel } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
+import { Label } from "@/components/ui/label";
 import Link from "next/link";
+import { toast } from "sonner";
 
 interface ComponentRow {
   id: string;
@@ -18,6 +20,7 @@ interface Props {
   compositeId: string;
   syncHours: boolean;
   syncKm: boolean;
+  primaryComponentId?: string | null;
   canEdit: boolean;
   components?: ComponentRow[];
 }
@@ -26,26 +29,58 @@ export function CompositeCouplingEditor({
   compositeId,
   syncHours: initialH,
   syncKm: initialKm,
+  primaryComponentId: initialPrimaryId = null,
   canEdit,
   components = [],
 }: Props) {
   const [syncHours, setSyncHours] = useState(initialH);
   const [syncKm, setSyncKm] = useState(initialKm);
+  const [primaryComponentId, setPrimaryComponentId] = useState(initialPrimaryId ?? "");
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    setPrimaryComponentId(initialPrimaryId ?? "");
+  }, [initialPrimaryId]);
+
+  const patchComposite = async (body: Record<string, boolean | string | null>) => {
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/assets/composites/${compositeId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}));
+        throw new Error(json.error || "Error al guardar");
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Error al guardar");
+      throw e;
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const patch = async (
     field: "composite_sync_hours" | "composite_sync_kilometers",
     value: boolean
   ) => {
-    setSaving(true);
     try {
-      await fetch(`/api/assets/composites/${compositeId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ [field]: value }),
-      });
-    } finally {
-      setSaving(false);
+      await patchComposite({ [field]: value });
+    } catch {
+      /* toast shown */
+    }
+  };
+
+  const handlePrimaryChange = async (componentId: string) => {
+    const prev = primaryComponentId;
+    setPrimaryComponentId(componentId);
+    try {
+      await patchComposite({ primary_component_id: componentId });
+      toast.success("Componente de combustible actualizado");
+    } catch {
+      setPrimaryComponentId(prev);
     }
   };
 
@@ -124,6 +159,28 @@ export function CompositeCouplingEditor({
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {components.length > 0 && (
+        <div className="space-y-2">
+          <Label className="text-xs text-muted-foreground flex items-center gap-1.5">
+            <Fuel className="h-3.5 w-3.5" />
+            Componente para diésel / urea
+          </Label>
+          <select
+            className="border rounded-md h-9 px-2 text-sm w-full"
+            value={primaryComponentId}
+            onChange={(e) => void handlePrimaryChange(e.target.value)}
+            disabled={!canEdit || saving || components.length === 0}
+          >
+            <option value="">Sin definir</option>
+            {components.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.asset_id || c.name}
+              </option>
+            ))}
+          </select>
         </div>
       )}
 

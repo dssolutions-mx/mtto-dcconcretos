@@ -44,6 +44,7 @@ export function CreateCompositeAssetDialog({ open, onOpenChange, currentAssetId 
 
   const [assetIdStrategy, setAssetIdStrategy] = useState<'auto' | 'error'>('error');
   const [assetIdPrefix, setAssetIdPrefix] = useState<string>('PT-');
+  const [primaryComponentId, setPrimaryComponentId] = useState<string>("");
 
   const [warnings, setWarnings] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState<boolean>(false);
@@ -128,8 +129,27 @@ export function CreateCompositeAssetDialog({ open, onOpenChange, currentAssetId 
     setSyncKm(!pt);
   }, [compositeType]);
 
+  const componentChoices = useMemo(() => {
+    const chosen = preview?.chosen ?? [];
+    return chosen.length > 0 ? chosen : currentAsset ? [currentAsset] : [];
+  }, [preview, currentAsset]);
+
+  useEffect(() => {
+    if (componentChoices.length === 0) return;
+    if (primaryComponentId && componentChoices.some((c) => c.id === primaryComponentId)) {
+      return;
+    }
+    const preferred =
+      componentChoices.find((c) => c.id === currentAssetId) ?? componentChoices[0];
+    setPrimaryComponentId(preferred.id);
+  }, [componentChoices, currentAssetId, primaryComponentId]);
+
   const canProceedStep1 = preview && preview.chosen.length >= 2 && warnings.length === 0;
-  const canProceedStep2 = name.trim().length > 1 && assetCode.trim().length > 1;
+  const canProceedStep2 =
+    name.trim().length > 1 &&
+    assetCode.trim().length > 1 &&
+    !!primaryComponentId &&
+    componentChoices.some((c) => c.id === primaryComponentId);
 
   const removeSelected = (id: string) => setSelectedIds(prev => prev.filter(x => x !== id || x === currentAssetId));
 
@@ -144,6 +164,7 @@ export function CreateCompositeAssetDialog({ open, onOpenChange, currentAssetId 
         asset_id: assetCode,
         composite_type: compositeType,
         component_ids: components,
+        primary_component_id: primaryComponentId,
         composite_sync_hours: syncHours,
         composite_sync_kilometers: syncKm,
         asset_id_strategy: assetIdStrategy,
@@ -316,8 +337,23 @@ export function CreateCompositeAssetDialog({ open, onOpenChange, currentAssetId 
                 </div>
               )}
             </div>
-            <div className="text-xs text-muted-foreground">
-              Roles de componentes omitidos para evitar complejidad innecesaria.
+            <div>
+              <Label>Componente para combustible y horómetro de carga</Label>
+              <select
+                className="border rounded-md h-9 px-2 text-sm w-full mt-1"
+                value={primaryComponentId}
+                onChange={(e) => setPrimaryComponentId(e.target.value)}
+              >
+                <option value="">Seleccionar...</option>
+                {componentChoices.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.asset_id || c.name}
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-muted-foreground mt-1">
+                Las cargas de diésel y urea se registran solo en este componente (no en el compuesto ni en las demás partes).
+              </p>
             </div>
           </div>
         )}
@@ -439,6 +475,11 @@ export function CreateCompositeAssetDialog({ open, onOpenChange, currentAssetId 
               <div>Código: <span className="font-semibold">{assetCode}</span></div>
               <div>Tipo: <span className="font-semibold">{compositeType}</span></div>
               <div>Componentes: <span className="font-semibold">{preview?.chosen.length || 0}</span></div>
+              <div>Combustible / horómetro: <span className="font-semibold">
+                {componentChoices.find((c) => c.id === primaryComponentId)?.asset_id ||
+                  componentChoices.find((c) => c.id === primaryComponentId)?.name ||
+                  "—"}
+              </span></div>
               <div>Horómetro compartido: <span className="font-semibold">{syncHours ? 'Sí' : 'No (independiente)'}</span></div>
               <div>Odómetro compartido: <span className="font-semibold">{syncKm ? 'Sí' : 'No (independiente)'}</span></div>
               <div>Estrategia de Código: <span className="font-semibold">{assetIdStrategy}</span></div>

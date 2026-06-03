@@ -22,6 +22,7 @@ import {
   Calendar as CalendarIcon,
 } from "lucide-react"
 import {
+  formatIntervalLabel,
   getMaintenanceValue,
   getUnitLabel,
   getUnitDisplayName,
@@ -51,19 +52,15 @@ const DESCRIPTION_MAX = 100
 
 function getIntervalLabelForMaintenance(
   maintenance: any,
-  maintenanceIntervals: any[]
+  maintenanceIntervals: any[],
+  maintenanceUnit: MaintenanceUnit
 ): string | null {
   try {
     const planId = maintenance?.maintenance_plan_id
     if (!planId) return null
     const interval = maintenanceIntervals.find((i: any) => i.id === planId)
     if (!interval) return null
-    const unit = interval.type === "kilometers" ? "km" : "h"
-    const base = interval.name || interval.description || ""
-    if (base) return base
-    const value = Number(interval.interval_value) || 0
-    if (value > 0) return `${value}${unit}`
-    return null
+    return formatIntervalLabel(interval, maintenanceUnit)
   } catch {
     return null
   }
@@ -71,21 +68,18 @@ function getIntervalLabelForMaintenance(
 
 function getIntervalInfoForMaintenance(
   maintenance: any,
-  maintenanceIntervals: any[]
+  maintenanceIntervals: any[],
+  maintenanceUnit: MaintenanceUnit
 ): { title: string; description: string | null } | null {
   try {
     const planId = maintenance?.maintenance_plan_id
     if (!planId) return null
     const interval = maintenanceIntervals.find((i: any) => i.id === planId)
     if (!interval) return null
-    const unit = interval.type === "kilometers" ? "km" : "h"
-    const title = interval.name || interval.description || ""
-    const description = interval.description && interval.description !== title
-      ? interval.description
-      : null
-    if (title) return { title, description }
-    const value = Number(interval.interval_value) || 0
-    if (value > 0) return { title: `${value}${unit}`, description: null }
+    const title = formatIntervalLabel(interval, maintenanceUnit)
+    const description =
+      interval.description && interval.description !== title ? interval.description : null
+    if (title && title !== "—") return { title, description }
     return null
   } catch {
     return null
@@ -266,7 +260,7 @@ export function StatusMaintenanceTab({
                         <CalendarIcon className="h-4 w-4 flex-shrink-0" />
                         <span className="break-words">
                           {maintenance.status === "overdue"
-                            ? `Vencido - debió realizarse antes de las ${maintenance.targetValue}h`
+                            ? `Vencido - debió realizarse antes de ${maintenance.targetValue} ${getUnitLabel(maintenance.unit === "kilometers" ? "kilometers" : "hours")}`
                             : maintenance.status === "covered"
                               ? "Cubierto por mantenimiento posterior"
                               : maintenance.valueRemaining > 0
@@ -400,7 +394,8 @@ export function StatusMaintenanceTab({
                           {(() => {
                             const intervalInfo = getIntervalInfoForMaintenance(
                               maintenance,
-                              maintenanceIntervals
+                              maintenanceIntervals,
+                              maintenanceUnit
                             )
                             if (!intervalInfo) return null
                             const { title, description } = intervalInfo

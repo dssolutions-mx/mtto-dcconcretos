@@ -9,6 +9,11 @@ import {
   type DieselHorometerRowForMerge,
 } from '@/lib/reports/merged-operating-hours'
 import { formatMexicoCityDateOnly } from '@/lib/reports/mexico-city-report-window'
+import {
+  computeCyclicIntervalResults,
+  parseMaintenanceUnitString,
+  selectCyclicSummaryInterval,
+} from '@/lib/utils/cyclic-maintenance'
 
 type Body = {
   dateFrom: string
@@ -549,8 +554,11 @@ export async function POST(req: NextRequest) {
       // Get all maintenance history for this asset (not just by plan)
       const assetMaintenanceHistory = (maintenanceHistory || []).filter(mh => mh.asset_id === asset.id)
 
-      const maintenanceUnit = asset.maintenance_unit || 'hours'
-      const currentValue = maintenanceUnit === 'hours' ? asset.current_hours : asset.current_kilometers
+      const maintenanceUnit = parseMaintenanceUnitString(asset.maintenance_unit)
+      const currentValue =
+        maintenanceUnit === 'hours'
+          ? Number(asset.current_hours) || 0
+          : Number(asset.current_kilometers) || 0
 
       let selectedInterval: any = null
       let lastServiceDate: string | null = null
@@ -560,422 +568,36 @@ export async function POST(req: NextRequest) {
       let kilometersOverdue: number | undefined = undefined
       let hoursRemaining: number | undefined = undefined
       let kilometersRemaining: number | undefined = undefined
+      let selectedIntervalDueValue: number | null = null
 
-      if (intervals.length > 0 && maintenanceUnit === 'hours') {
-        // Calculate cycle length (highest interval value)
-        const maxInterval = Math.max(...intervals.map(i => i.interval_value || 0))
-        if (maxInterval === 0) {
-          // No valid intervals, skip
+      if (intervals.length > 0) {
+        const intervalResults = computeCyclicIntervalResults({
+          intervals,
+          history: assetMaintenanceHistory,
+          currentValue,
+          unit: maintenanceUnit,
+        })
+        const selection = selectCyclicSummaryInterval({
+          intervalResults,
+          history: assetMaintenanceHistory,
+          intervals,
+          currentValue,
+          unit: maintenanceUnit,
+        })
+        selectedInterval = selection.selectedInterval
+        lastServiceDate = selection.lastServiceDate
+        lastServiceValue = selection.lastServiceValue
+        lastServiceIntervalValue = selection.lastServiceIntervalValue
+        selectedIntervalDueValue = selection.selectedIntervalDueValue
+        if (maintenanceUnit === 'hours') {
+          hoursOverdue = selection.overdue
+          hoursRemaining = selection.remaining
         } else {
-          // Calculate current cycle
-          const currentCycle = Math.floor(currentValue / maxInterval) + 1
-          const currentCycleStartHour = (currentCycle - 1) * maxInterval
-          const currentCycleEndHour = currentCycle * maxInterval
-
-          // Use preventive, plan-linked entries only for coverage/completion
-          // CRITICAL: Only consider maintenance_history entries where maintenance_plan_id matches an actual interval
-          // This excludes work orders and service orders NOT linked to cycle intervals
-          const preventiveHistory = assetMaintenanceHistory.filter(m => {
-            // Check for 'preventive' (English) or 'preventivo' (Spanish) - handle both languages and cases
-            const typeLower = m?.type?.toLowerCase();
-            const isPreventive = typeLower === 'preventive' || typeLower === 'preventivo';
-            if (!isPreventive || !m?.maintenance_plan_id) return false
-            // Verify maintenance_plan_id exists in the intervals array
-            return intervals.some(interval => interval.id === m.maintenance_plan_id)
-          })
-          
-          // Filter maintenance history to current cycle
-          // CRITICAL: Only include maintenance performed in the CURRENT cycle for completion/coverage checks
-          // Maintenance from previous cycles doesn't cover current cycle intervals
-          // Example: A 2700h service performed at 3568h (cycle 1) does NOT cover 300h service due at 3900h (cycle 2)
-          const currentCycleMaintenances = preventiveHistory.filter(m => {
-            const mHours = Number(m.hours) || 0
-            // Only include maintenance performed AFTER the current cycle started
-            // This matches the asset detail page logic exactly
-            return mHours > currentCycleStartHour && mHours < currentCycleEndHour
-          })
-
-          // Process each interval to determine status
-          const intervalStatuses = intervals.map(interval => {
-            const intervalHours = interval.interval_value || 0
-            const isRecurring = (interval as any).is_recurring !== false // Default to true
-            const isFirstCycleOnly = (interval as any).is_first_cycle_only === true // Default to false
-
-            if (isFirstCycleOnly && currentCycle !== 1) {
-              return { interval, status: 'not_applicable', nextDueHour: null }
-            }
-
-            // Calculate next due hour for current cycle
-            let nextDueHour = ((currentCycle - 1) * maxInterval) + intervalHours
-            let cycleForService = currentCycle
-
-            // Special case: if nextDueHour exceeds the current cycle end, calculate for next cycle
-            if (nextDueHour > currentCycleEndHour) {
-              // This service belongs to next cycle
-              cycleForService = currentCycle + 1
-              nextDueHour = (currentCycle * maxInterval) + intervalHours
-              
-              // Only show next cycle services if they're within reasonable range (e.g., 1000 hours)
-              if (nextDueHour - currentValue > 1000) {
-                // Skip this interval if too far in the future
-                return { interval, status: 'not_applicable', nextDueHour: null }
-              }
-            }
-
-            // Check if this specific interval was performed in current cycle
-            // CRITICAL: maintenance_plan_id IS the interval ID
-            const wasPerformedInCurrentCycle = cycleForService === currentCycle && 
-              currentCycleMaintenances.some(m => {
-                // maintenance_plan_id IS the interval ID
-                return m.maintenance_plan_id === interval.id
-              })
-
-            if (wasPerformedInCurrentCycle) {
-              return { interval, status: 'completed', nextDueHour }
-            }
-
-            // Check if covered by higher service in same cycle
-            // CRITICAL: Coverage requires BOTH interval value comparison AND timing check
-            // CRITICAL: maintenance_plan_id IS the interval ID
-            const isCoveredByHigher = cycleForService === currentCycle && 
-              currentCycleMaintenances.some((m: any) => {
-                // maintenance_plan_id IS the interval ID
-                const performedInterval = intervals.find((i: any) => i.id === m.maintenance_plan_id)
-                if (!performedInterval) return false
-                
-                // Verify same unit and category
-                const sameUnit = performedInterval.type === interval.type
-                const sameCategory = (performedInterval as any).maintenance_category === (interval as any).maintenance_category
-                const categoryOk = (performedInterval as any).maintenance_category && (interval as any).maintenance_category 
-                  ? sameCategory 
-                  : true
-                
-                // CRITICAL: Coverage requires interval value >= due interval value
-                const higherOrEqual = Number(performedInterval.interval_value) >= Number(interval.interval_value)
-                
-                // CRITICAL: Also check timing - the performed service must be done AFTER the due hour
-                // This prevents a 1500h service at 5145h from covering a 1800h interval due at 5400h
-                const performedAtHour = Number(m.hours) || 0
-                const performedAfterDue = performedAtHour >= nextDueHour
-                
-                return sameUnit && categoryOk && higherOrEqual && performedAfterDue
-              })
-
-            if (isCoveredByHigher) {
-              return { interval, status: 'covered', nextDueHour }
-            }
-
-            // Determine if overdue, upcoming, or scheduled
-            if (cycleForService === currentCycle) {
-              // Current cycle logic
-              if (currentValue >= nextDueHour) {
-                return { interval, status: 'overdue', nextDueHour }
-              } else if (currentValue >= nextDueHour - 100) {
-                return { interval, status: 'upcoming', nextDueHour }
-              } else {
-                return { interval, status: 'scheduled', nextDueHour }
-              }
-            } else {
-              // Next cycle service
-              return { interval, status: 'scheduled', nextDueHour }
-            }
-          })
-
-          // Filter out not_applicable, completed, and covered intervals
-          const actionableIntervals = intervalStatuses.filter(
-            s => s.status !== 'not_applicable' && s.status !== 'completed' && s.status !== 'covered'
-          )
-
-          // Find last service from ANY preventive maintenance FIRST (regardless of actionable intervals)
-          // This ensures we show last service even when all intervals are completed/covered
-          if (preventiveHistory.length > 0) {
-            const allPreventiveMaintenance = preventiveHistory
-              .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-            
-            // Use the most recent preventive maintenance as default
-            if (allPreventiveMaintenance.length > 0) {
-              lastServiceDate = allPreventiveMaintenance[0].date
-              lastServiceValue = allPreventiveMaintenance[0].hours
-              // Find the interval value for this last service
-              const lastServiceInterval = intervals.find(i => i.id === allPreventiveMaintenance[0].maintenance_plan_id)
-              lastServiceIntervalValue = lastServiceInterval?.interval_value || null
-            }
-          }
-
-          if (actionableIntervals.length > 0) {
-            // Find most overdue (highest overdue amount) or next upcoming
-            // CRITICAL: Select the FIRST overdue interval (lowest interval_value that's overdue)
-            // This matches the asset detail page logic which shows intervals sorted by priority
-            const overdueIntervals = actionableIntervals.filter(s => s.status === 'overdue')
-            
-            if (overdueIntervals.length > 0) {
-              // FIX: Select the FIRST overdue interval (lowest interval_value), not the one with highest overdue amount
-              // This ensures we show the most critical overdue interval that should be done first
-              selectedInterval = overdueIntervals.reduce((first, item) => {
-                // Prefer lowest interval_value (first service that should be done)
-                // If tied, prefer the one with highest overdue amount
-                if (item.interval.interval_value < first.interval.interval_value) {
-                  return item
-                } else if (item.interval.interval_value === first.interval.interval_value) {
-                  const overdue = currentValue - (item.nextDueHour || 0)
-                  const firstOverdue = currentValue - (first.nextDueHour || 0)
-                  return overdue > firstOverdue ? item : first
-                }
-                return first
-              }).interval
-
-              const overdueItem = overdueIntervals.find(item => item.interval.id === selectedInterval.id)
-              const overdue = currentValue - (overdueItem?.nextDueHour || 0)
-              hoursOverdue = overdue
-
-              // Update last service to be specific to this selected interval (if it exists AND is more recent)
-              // CRITICAL: maintenance_plan_id IS the interval ID
-              // Only update if the interval-specific service is more recent than the overall last service
-              const lastServiceForInterval = assetMaintenanceHistory
-                .filter(m => m.maintenance_plan_id === selectedInterval.id)
-                .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0]
-              
-              if (lastServiceForInterval) {
-                const lastServiceForIntervalDate = new Date(lastServiceForInterval.date).getTime()
-                const currentLastServiceDate = lastServiceDate ? new Date(lastServiceDate).getTime() : 0
-                
-                // Only update if this interval's last service is more recent than the overall last service
-                if (lastServiceForIntervalDate >= currentLastServiceDate) {
-                  lastServiceDate = lastServiceForInterval.date
-                  lastServiceValue = lastServiceForInterval.hours
-                  // The interval value is from the selectedInterval (which is the interval we're checking)
-                  lastServiceIntervalValue = selectedInterval.interval_value || null
-                }
-                // Otherwise keep the more recent overall service - DO NOT change lastServiceIntervalValue
-                // lastServiceIntervalValue should always reflect the interval of the actual last service performed
-              }
-            } else {
-              // Find next upcoming interval
-              const upcomingIntervals = actionableIntervals.filter(s => s.status === 'upcoming' || s.status === 'scheduled')
-              
-              if (upcomingIntervals.length > 0) {
-                // Select the one with lowest nextDueHour (next due)
-                selectedInterval = upcomingIntervals.reduce((min, item) => {
-                  return (item.nextDueHour || Infinity) < (min.nextDueHour || Infinity) ? item : min
-                }).interval
-
-                const upcomingItem = upcomingIntervals.find(item => item.interval.id === selectedInterval.id)
-                const remaining = (upcomingItem?.nextDueHour || 0) - currentValue
-                hoursRemaining = remaining
-
-                // Update last service to be specific to this selected interval (if it exists AND is more recent)
-                // CRITICAL: maintenance_plan_id IS the interval ID
-                // Only update if the interval-specific service is more recent than the overall last service
-                const lastServiceForInterval = assetMaintenanceHistory
-                  .filter(m => m.maintenance_plan_id === selectedInterval.id)
-                  .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0]
-                
-                if (lastServiceForInterval) {
-                  const lastServiceForIntervalDate = new Date(lastServiceForInterval.date).getTime()
-                  const currentLastServiceDate = lastServiceDate ? new Date(lastServiceDate).getTime() : 0
-                  
-                  // Only update if this interval's last service is more recent than the overall last service
-                  if (lastServiceForIntervalDate >= currentLastServiceDate) {
-                    lastServiceDate = lastServiceForInterval.date
-                    lastServiceValue = lastServiceForInterval.hours
-                    lastServiceIntervalValue = selectedInterval.interval_value || null
-                  }
-                  // Otherwise keep the more recent overall service - DO NOT change lastServiceIntervalValue
-                  // lastServiceIntervalValue should always reflect the interval of the actual last service performed
-                }
-              }
-            }
-          }
-        }
-      } else if (intervals.length > 0 && maintenanceUnit === 'kilometers') {
-        // Similar logic for kilometers (simplified - cycles work the same way)
-        const maxInterval = Math.max(...intervals.map(i => i.interval_value || 0))
-        if (maxInterval > 0) {
-          const currentCycle = Math.floor(currentValue / maxInterval) + 1
-          const currentCycleStartKm = (currentCycle - 1) * maxInterval
-          const currentCycleEndKm = currentCycle * maxInterval
-
-          // Use preventive, plan-linked entries only for coverage/completion
-          // maintenance_history.maintenance_plan_id = maintenance_intervals.id
-          const preventiveHistory = assetMaintenanceHistory.filter(m => {
-            // Check for 'preventive' (English) or 'preventivo' (Spanish) - handle both languages and cases
-            const typeLower = m?.type?.toLowerCase();
-            const isPreventive = typeLower === 'preventive' || typeLower === 'preventivo';
-            if (!isPreventive || !m?.maintenance_plan_id) return false
-            // maintenance_plan_id should match an interval.id (it stores interval_id values)
-            return intervals.some(interval => interval.id === m.maintenance_plan_id)
-          })
-
-          const currentCycleMaintenances = preventiveHistory.filter(m => {
-            const mKm = Number(m.kilometers) || 0
-            // Include maintenance in current cycle (between cycle start and end)
-            // Also include maintenance from previous cycle that's close to boundary (within 200km)
-            return (mKm > currentCycleStartKm && mKm < currentCycleEndKm) ||
-                   (mKm <= currentCycleStartKm && mKm >= currentCycleStartKm - 200)
-          })
-
-          const intervalStatuses = intervals.map(interval => {
-            const intervalKm = interval.interval_value || 0
-            const isRecurring = (interval as any).is_recurring !== false
-            const isFirstCycleOnly = (interval as any).is_first_cycle_only === true
-
-            if (isFirstCycleOnly && currentCycle !== 1) {
-              return { interval, status: 'not_applicable', nextDueKm: null }
-            }
-
-            let nextDueKm = ((currentCycle - 1) * maxInterval) + intervalKm
-            let cycleForService = currentCycle
-            
-            if (nextDueKm > currentCycleEndKm) {
-              cycleForService = currentCycle + 1
-              nextDueKm = (currentCycle * maxInterval) + intervalKm
-              
-              if (nextDueKm - currentValue > 1000) {
-                return { interval, status: 'not_applicable', nextDueKm: null }
-              }
-            }
-
-            // Check if this specific interval was performed in current cycle
-            // CRITICAL: maintenance_plan_id IS the interval ID
-            const wasPerformedInCurrentCycle = cycleForService === currentCycle && 
-              currentCycleMaintenances.some(m => {
-                return m.maintenance_plan_id === interval.id
-              })
-
-            if (wasPerformedInCurrentCycle) {
-              return { interval, status: 'completed', nextDueKm }
-            }
-
-            // CRITICAL: Coverage is based SOLELY on interval value comparison
-            // CRITICAL: maintenance_plan_id IS the interval ID
-            const isCoveredByHigher = cycleForService === currentCycle && 
-              currentCycleMaintenances.some((m: any) => {
-                // maintenance_plan_id IS the interval ID
-                const performedInterval = intervals.find((i: any) => i.id === m.maintenance_plan_id)
-                if (!performedInterval) return false
-                
-                // Verify same unit and category
-                const sameUnit = performedInterval.type === interval.type
-                const sameCategory = (performedInterval as any).maintenance_category === (interval as any).maintenance_category
-                const categoryOk = (performedInterval as any).maintenance_category && (interval as any).maintenance_category 
-                  ? sameCategory 
-                  : true
-                
-                // CRITICAL: Coverage based SOLELY on interval value comparison
-                // If performed interval value >= due interval value, it covers it
-                // Works forward: performing 1500h covers all intervals <= 1500h, even future ones
-                const higherOrEqual = Number(performedInterval.interval_value) >= Number(interval.interval_value)
-                
-                return sameUnit && categoryOk && higherOrEqual
-              })
-
-            if (isCoveredByHigher) {
-              return { interval, status: 'covered', nextDueKm }
-            }
-
-            if (cycleForService === currentCycle) {
-              if (currentValue >= nextDueKm) {
-                return { interval, status: 'overdue', nextDueKm }
-              } else if (currentValue >= nextDueKm - 100) {
-                return { interval, status: 'upcoming', nextDueKm }
-              } else {
-                return { interval, status: 'scheduled', nextDueKm }
-              }
-            } else {
-              return { interval, status: 'scheduled', nextDueKm }
-            }
-          })
-
-          const actionableIntervals = intervalStatuses.filter(
-            s => s.status !== 'not_applicable' && s.status !== 'completed' && s.status !== 'covered'
-          )
-
-          // Find last service from ANY preventive maintenance FIRST (regardless of actionable intervals)
-          // This ensures we show last service even when all intervals are completed/covered
-          if (preventiveHistory.length > 0) {
-            const allPreventiveMaintenance = preventiveHistory
-              .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-            
-            // Use the most recent preventive maintenance as default
-            if (allPreventiveMaintenance.length > 0) {
-              lastServiceDate = allPreventiveMaintenance[0].date
-              lastServiceValue = allPreventiveMaintenance[0].kilometers
-              // Find the interval value for this last service
-              const lastServiceInterval = intervals.find(i => i.id === allPreventiveMaintenance[0].maintenance_plan_id)
-              lastServiceIntervalValue = lastServiceInterval?.interval_value || null
-            }
-          }
-
-          if (actionableIntervals.length > 0) {
-            const overdueIntervals = actionableIntervals.filter(s => s.status === 'overdue')
-            
-            if (overdueIntervals.length > 0) {
-              selectedInterval = overdueIntervals.reduce((max, item) => {
-                const overdue = currentValue - ((item as any).nextDueKm || 0)
-                const maxOverdue = currentValue - ((max as any).nextDueKm || 0)
-                return overdue > maxOverdue ? item : max
-              }).interval
-
-              const overdueItem = overdueIntervals.find(item => item.interval.id === selectedInterval.id)
-              const overdue = currentValue - ((overdueItem as any).nextDueKm || 0)
-              kilometersOverdue = overdue
-
-              // Update last service to be specific to this selected interval (if it exists)
-              // CRITICAL: maintenance_plan_id IS the interval ID
-              const lastServiceForInterval = assetMaintenanceHistory
-                .filter(m => m.maintenance_plan_id === selectedInterval.id)
-                .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0]
-              
-              if (lastServiceForInterval) {
-                const lastServiceForIntervalDate = new Date(lastServiceForInterval.date).getTime()
-                const currentLastServiceDate = lastServiceDate ? new Date(lastServiceDate).getTime() : 0
-                
-                // Only update if this interval's last service is more recent than the overall last service
-                if (lastServiceForIntervalDate >= currentLastServiceDate) {
-                  lastServiceDate = lastServiceForInterval.date
-                  lastServiceValue = lastServiceForInterval.kilometers
-                  // The interval value is from the selectedInterval (which is the interval we're checking)
-                  lastServiceIntervalValue = selectedInterval.interval_value || null
-                }
-                // Otherwise keep the more recent overall service - DO NOT change lastServiceIntervalValue
-                // lastServiceIntervalValue should always reflect the interval of the actual last service performed
-              }
-            } else {
-              const upcomingIntervals = actionableIntervals.filter(s => s.status === 'upcoming' || s.status === 'scheduled')
-              
-              if (upcomingIntervals.length > 0) {
-                selectedInterval = upcomingIntervals.reduce((min, item) => {
-                  return ((item as any).nextDueKm || Infinity) < ((min as any).nextDueKm || Infinity) ? item : min
-                }).interval
-
-                const upcomingItem = upcomingIntervals.find(item => item.interval.id === selectedInterval.id)
-                const remaining = ((upcomingItem as any).nextDueKm || 0) - currentValue
-                kilometersRemaining = remaining
-
-                // Update last service to be specific to this selected interval (if it exists)
-                // CRITICAL: maintenance_plan_id IS the interval ID
-                const lastServiceForInterval = assetMaintenanceHistory
-                  .filter(m => m.maintenance_plan_id === selectedInterval.id)
-                  .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0]
-                
-                if (lastServiceForInterval) {
-                  const lastServiceForIntervalDate = new Date(lastServiceForInterval.date).getTime()
-                  const currentLastServiceDate = lastServiceDate ? new Date(lastServiceDate).getTime() : 0
-                  
-                  // Only update if this interval's last service is more recent than the overall last service
-                  if (lastServiceForIntervalDate >= currentLastServiceDate) {
-                    lastServiceDate = lastServiceForInterval.date
-                    lastServiceValue = lastServiceForInterval.kilometers
-                    lastServiceIntervalValue = selectedInterval.interval_value || null
-                  }
-                  // Otherwise keep the more recent overall service - DO NOT change lastServiceIntervalValue
-                  // lastServiceIntervalValue should always reflect the interval of the actual last service performed
-                }
-              }
-            }
-          }
+          kilometersOverdue = selection.overdue
+          kilometersRemaining = selection.remaining
         }
       }
+
 
       // Get gerencial data for this asset
       // The gerencial API uses sophisticated logic combining checklist events and diesel transactions
@@ -989,27 +611,6 @@ export async function POST(req: NextRequest) {
         hours_worked: 0,
         remisiones_count: 0,
         concrete_m3: 0
-      }
-
-      // Get the nextDueHour/km for the selected interval to show cycle information
-      let selectedIntervalDueValue: number | null = null
-      if (selectedInterval) {
-        const intervals = intervalsByModel.get(asset.model_id || '') || []
-        const maxInterval = Math.max(...intervals.map(i => i.interval_value || 0))
-        const currentValue = maintenanceUnit === 'hours' ? (asset.current_hours || 0) : (asset.current_kilometers || 0)
-        
-        if (maxInterval > 0) {
-          // If it's overdue, calculate the actual due hour
-          if (maintenanceUnit === 'hours' && hoursOverdue !== undefined && hoursOverdue > 0) {
-            selectedIntervalDueValue = currentValue - hoursOverdue
-          } else if (maintenanceUnit === 'hours' && hoursRemaining !== undefined) {
-            selectedIntervalDueValue = currentValue + hoursRemaining
-          } else if (maintenanceUnit === 'kilometers' && kilometersOverdue !== undefined && kilometersOverdue > 0) {
-            selectedIntervalDueValue = currentValue - kilometersOverdue
-          } else if (maintenanceUnit === 'kilometers' && kilometersRemaining !== undefined) {
-            selectedIntervalDueValue = currentValue + kilometersRemaining
-          }
-        }
       }
 
       return {

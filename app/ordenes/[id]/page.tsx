@@ -95,7 +95,7 @@ export default async function WorkOrderDetailsPage({
     .from("work_orders")
     .select(`
       *,
-      asset:assets (*),
+      asset:assets (*, equipment_models ( maintenance_unit )),
       purchase_order:purchase_orders!work_orders_purchase_order_id_fkey (*)
     `)
     .eq("id", id)
@@ -502,6 +502,13 @@ export default async function WorkOrderDetailsPage({
                     extendedWorkOrder.asset.current_hours != null
                       ? Number(extendedWorkOrder.asset.current_hours)
                       : null,
+                  current_kilometers:
+                    extendedWorkOrder.asset.current_kilometers != null
+                      ? Number(extendedWorkOrder.asset.current_kilometers)
+                      : null,
+                  maintenance_unit:
+                    (extendedWorkOrder.asset as { equipment_models?: { maintenance_unit?: string } })
+                      .equipment_models?.maintenance_unit ?? null,
                 }
               : null
           }

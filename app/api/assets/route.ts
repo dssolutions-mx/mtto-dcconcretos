@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase-server'
 import { NextRequest, NextResponse } from 'next/server'
+import { fetchConsumptionEligibleAssets } from '@/lib/assets/fetch-consumption-eligible-assets'
 
 export async function GET(request: NextRequest) {
   try {
@@ -7,7 +8,19 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const plantId = searchParams.get('plant_id')
     const status = searchParams.get('status')
+    const eligibleFor = searchParams.get('eligible_for')
     const excludeComponents = searchParams.get('exclude_components') === 'true'
+
+    if (eligibleFor === 'consumption') {
+      const { data, error } = await fetchConsumptionEligibleAssets(supabase, {
+        plantId,
+        status: status ?? 'operational',
+      })
+      if (error) {
+        return NextResponse.json({ error }, { status: 500 })
+      }
+      return NextResponse.json(data)
+    }
     
     if (excludeComponents) {
       // Exclude assets that are active components of a composite to avoid incorrect assignment

@@ -15,6 +15,7 @@ import { format } from "date-fns"
 import { es } from "date-fns/locale"
 import { useState, useEffect } from "react"
 import { useToast } from "@/components/ui/use-toast"
+import { getMaintenanceUnit, getMaintenanceValue, formatMeterValue } from "@/lib/utils/maintenance-units"
 
 interface MaintenanceDetailsProps {
   maintenance: any
@@ -206,14 +207,20 @@ export function MaintenanceDetails({
                   <CheckCircle2 className="h-5 w-5 text-green-600" />
                   <span className="font-medium">Mantenimiento completado como parte del intervalo programado</span>
                 </div>
-                {maintenance.hours && (
+                {(getMaintenanceValue(maintenance, getMaintenanceUnit(asset)) > 0 ||
+                  maintenance.hours ||
+                  maintenance.kilometers) && (
                   <Badge className="bg-blue-600" variant="secondary">
-                    Horómetro: {maintenance.hours}h
+                    {getMaintenanceUnit(asset) === "kilometers" ? "Odómetro" : "Horómetro"}:{" "}
+                    {formatMeterValue(
+                      getMaintenanceValue(maintenance, getMaintenanceUnit(asset)),
+                      getMaintenanceUnit(asset)
+                    )}
                   </Badge>
                 )}
               </div>
               <div className="mt-2 text-sm">
-                <p>Este registro cumple con el checkpoint de mantenimiento <strong>{maintenancePlan.type} {maintenancePlan.interval_value}h</strong> definido en el plan de mantenimiento preventivo del equipo. {maintenancePlan.maintenance_tasks?.length > 0 && `Incluye ${maintenancePlan.maintenance_tasks.length} tareas de mantenimiento programadas.`}</p>
+                <p>Este registro cumple con el checkpoint de mantenimiento <strong>{maintenancePlan.name || `${maintenancePlan.interval_value} ${getMaintenanceUnit(asset) === "kilometers" ? "km" : "h"}`}</strong> definido en el plan de mantenimiento preventivo del equipo. {maintenancePlan.maintenance_tasks?.length > 0 && `Incluye ${maintenancePlan.maintenance_tasks.length} tareas de mantenimiento programadas.`}</p>
               </div>
             </div>
           </CardContent>

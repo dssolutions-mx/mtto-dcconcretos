@@ -8,6 +8,7 @@ import { useRouter } from "next/navigation"
 import jsPDF from "jspdf"
 import { snapdom } from "@zumer/snapdom"
 import type { WorkOrderOriginData } from "@/lib/work-orders/build-origin-data"
+import { getMaintenanceUnit, formatMeterValue } from "@/lib/utils/maintenance-units"
 
 const NAVY = "#1B365D"
 const GREEN = "#00A64F"
@@ -370,13 +371,20 @@ export function WorkOrderPrintDocument({
                     <td className="py-1 align-top">{asset.location}</td>
                   </tr>
                 )}
-                {asset.current_hours != null && (
+                {(asset.current_hours != null || asset.current_kilometers != null) && (
                   <tr>
                     <td className="font-medium py-1 pr-4 align-top">
-                      Horas actuales:
+                      {getMaintenanceUnit(asset) === "kilometers"
+                        ? "Kilómetros actuales:"
+                        : "Horas actuales:"}
                     </td>
                     <td className="py-1 align-top font-bold">
-                      {Number(asset.current_hours).toLocaleString()} hrs
+                      {formatMeterValue(
+                        getMaintenanceUnit(asset) === "kilometers"
+                          ? asset.current_kilometers
+                          : asset.current_hours,
+                        getMaintenanceUnit(asset)
+                      )}
                     </td>
                   </tr>
                 )}

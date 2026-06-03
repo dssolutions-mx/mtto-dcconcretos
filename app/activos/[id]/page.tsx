@@ -21,6 +21,7 @@ import { createClient } from "@/lib/supabase";
 import { CreateCompositeAssetDialog } from "@/components/assets/dialogs/create-composite-asset-dialog"
 import { IncidentRegistrationDialog } from "@/components/assets/dialogs/incident-registration-dialog"
 import { CompositeCouplingEditor } from "@/components/assets/composite-coupling-editor"
+import { CompositeFuelSummary } from "@/components/assets/composite-fuel-summary"
 import {
   AssetDetailHeader,
   AssetDetailKpis,
@@ -33,12 +34,10 @@ import { DocumentationTab } from "@/components/assets/activos-detail/tabs/docume
 import { 
   getMaintenanceUnit, 
   getCurrentValue, 
-  getMaintenanceValue, 
-  getUnitLabel, 
-  getUnitDisplayName,
+  formatIntervalLabel,
   type MaintenanceUnit 
 } from "@/lib/utils/maintenance-units";
-import { findEarliestUnpaidPreventiveDue } from "@/lib/utils/cyclic-preventive-due";
+import { computeCyclicIntervalResults, cyclicResultsToUpcomingUi } from "@/lib/utils/cyclic-maintenance";
 import { expandAssetIdsForOperatorChecklists } from "@/lib/composite-operator-scope";
 
 export default function AssetDetailsPage({ params }: { params: Promise<{ id: string }> }) {
@@ -67,6 +66,11 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
   const [combinedMaintenanceHistory, setCombinedMaintenanceHistory] = useState<any[] | null>(null);
   // Composite context
   const [compositeContext, setCompositeContext] = useState<{ composite: any | null; components: any[]; sibling_drift: Record<string, { hours_stale: boolean; km_stale: boolean }> }>({ composite: null, components: [], sibling_drift: {} });
+  const [compositeFuelSummary, setCompositeFuelSummary] = useState<{
+    diesel_liters_30d: number;
+    urea_liters_30d: number;
+    recent_transactions: any[];
+  } | null>(null);
   const [compositeLoading, setCompositeLoading] = useState(false);
   const [openCreateComposite, setOpenCreateComposite] = useState(false);
   const [reportIncidentOpen, setReportIncidentOpen] = useState(false);
@@ -163,6 +167,16 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
               aggregatedMaintenance = json?.data?.maintenance_history || [];
               aggregatedUpcoming = json?.data?.upcoming_maintenance || [];
               siblingDrift = json?.data?.sibling_drift || {};
+              const fs = json?.data?.fuel_summary;
+              if (fs) {
+                setCompositeFuelSummary({
+                  diesel_liters_30d: Number(fs.diesel_liters_30d ?? 0),
+                  urea_liters_30d: Number(fs.urea_liters_30d ?? 0),
+                  recent_transactions: fs.recent_transactions ?? [],
+                });
+              } else {
+                setCompositeFuelSummary(null);
+              }
             }
           } catch {}
           setCompositeContext({ composite: a, components, sibling_drift: siblingDrift });
@@ -293,297 +307,17 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
         if (!asset) return;
         
         const currentValue = getCurrentValue(asset, maintenanceUnit);
-        
-        // Calculate cycle length (highest interval - same as maintenance page)
-        const maxInterval = Math.max(...maintenanceIntervals.map(i => i.interval_value));
-        const currentCycle = Math.floor(currentValue / maxInterval) + 1;
-        
-        // CRITICAL: Fetch maintenance_plans to map maintenance_plan_id to interval_id
-        const supabase = createClient();
-        const { data: maintenancePlans } = await supabase
-          .from('maintenance_plans')
-          .select('id, interval_id')
-          .eq('asset_id', assetId);
-        
-        console.log(`[ASSET ${assetId}] Fetched maintenance_plans:`, maintenancePlans);
-        
-        // Create mapping: maintenance_plan_id -> interval_id
-        const planToIntervalMap = new Map<string, string>();
-        (maintenancePlans || []).forEach(plan => {
-          if (plan.id && plan.interval_id) {
-            planToIntervalMap.set(plan.id, plan.interval_id);
-          }
-        });
-        
-        console.log(`[ASSET ${assetId}] Plan to Interval Map:`, Array.from(planToIntervalMap.entries()));
-        console.log(`[ASSET ${assetId}] Available intervals:`, maintenanceIntervals.map((i: any) => ({
-          id: i.id,
-          value: i.interval_value,
-          type: i.type
-        })));
-        
-        // Find the value of the last preventive maintenance performed (plan-linked)
-        const effectiveMaintenanceHistory = combinedMaintenanceHistory ?? maintenanceHistory
-        
-        console.log(`[ASSET ${assetId}] Total maintenance history:`, effectiveMaintenanceHistory.length);
-        console.log(`[ASSET ${assetId}] Sample history entries:`, effectiveMaintenanceHistory.slice(0, 3).map((m: any) => ({
-          date: m.date,
-          type: m.type,
-          maintenance_plan_id: m.maintenance_plan_id,
-          value: maintenanceUnit === 'kilometers' ? m.kilometers : m.hours
-        })));
-        
-        // CRITICAL: maintenance_history.maintenance_plan_id DIRECTLY stores maintenance_intervals.id!
-        // The field name is misleading - it should be called interval_id
-        // Direct reference: maintenance_history.maintenance_plan_id → maintenance_intervals.id
-        const preventiveHistory = effectiveMaintenanceHistory.filter((m: any) => {
-          // Check for 'preventive' (English) or 'preventivo' (Spanish) - handle both languages and cases
-          const typeLower = m?.type?.toLowerCase();
-          const isPreventive = typeLower === 'preventive' || typeLower === 'preventivo';
-          if (!isPreventive || !m?.maintenance_plan_id) {
-            console.log(`[ASSET ${assetId}] Skipping non-preventive or null plan: type=${m?.type}, plan_id=${m?.maintenance_plan_id}`);
-            return false;
-          }
-          
-          // maintenance_plan_id IS the interval.id - check directly
-          const found = maintenanceIntervals.some((interval: any) => interval.id === m.maintenance_plan_id);
-          
-          if (found) {
-            console.log(`[ASSET ${assetId}] ✓ Found interval for maintenance_plan_id ${m.maintenance_plan_id}`);
-          } else {
-            console.log(`[ASSET ${assetId}] ❌ Interval ${m.maintenance_plan_id} NOT found in intervals array`);
-          }
-          return found;
-        });
-        
-        console.log(`[ASSET ${assetId}] Preventive history after filtering:`, preventiveHistory.length);
-        console.log(`[ASSET ${assetId}] Preventive history details:`, preventiveHistory.map((m: any) => {
-          // maintenance_plan_id is actually the interval_id from maintenance_plans
-          const interval = maintenanceIntervals.find(i => i.id === m.maintenance_plan_id);
-          return {
-            date: m.date,
-            maintenance_plan_id: m.maintenance_plan_id,
-            interval_id: m.maintenance_plan_id,
-            interval_value: interval?.interval_value,
-            value: getMaintenanceValue(m, maintenanceUnit)
-          };
-        }));
-      const allMaintenanceValues = preventiveHistory
-        .map(m => getMaintenanceValue(m, maintenanceUnit))
-        .filter(v => v > 0)
-        .sort((a, b) => b - a); // Sort from highest to lowest
-      
-      const lastMaintenanceValue = allMaintenanceValues.length > 0 ? allMaintenanceValues[0] : 0;
-      
-      // Find the highest maintenance performed in current cycle (for "covered" logic)
-      const currentCycleStartValue = (currentCycle - 1) * maxInterval;
-      const currentCycleEndValue = currentCycle * maxInterval;
-      
-        const currentCycleMaintenances = preventiveHistory.filter((m: any) => {
-          const mValue = getMaintenanceValue(m, maintenanceUnit);
-          return mValue > currentCycleStartValue && mValue < currentCycleEndValue;
-        });
-        
-        console.log(`[ASSET ${assetId}] Current cycle: ${currentCycle}, Range: ${currentCycleStartValue}${getUnitLabel(maintenanceUnit)} - ${currentCycleEndValue}${getUnitLabel(maintenanceUnit)}`);
-        console.log(`[ASSET ${assetId}] Current cycle maintenances:`, currentCycleMaintenances.length);
-        console.log(`[ASSET ${assetId}] Current cycle details:`, currentCycleMaintenances.map((m: any) => ({
-          date: m.date,
-          maintenance_plan_id: m.maintenance_plan_id,
-          value: getMaintenanceValue(m, maintenanceUnit),
-          interval_value: maintenanceIntervals.find(i => i.id === m.maintenance_plan_id)?.interval_value
-        })));
-        
-        const highestMaintenanceInCycle = currentCycleMaintenances.length > 0 
-          ? Math.max(...currentCycleMaintenances.map(m => getMaintenanceValue(m, maintenanceUnit)))
-          : 0;
-        
-        const upcomingList = maintenanceIntervals.map(interval => {
-        const intervalValue = interval.interval_value || 0;
-        
-        // Handle new fields with fallbacks for backward compatibility
-        const isRecurring = (interval as any).is_recurring !== false; // Default to true
-        const isFirstCycleOnly = (interval as any).is_first_cycle_only === true; // Default to false
+        const effectiveMaintenanceHistory = combinedMaintenanceHistory ?? maintenanceHistory;
 
-        const earliestUnpaid = findEarliestUnpaidPreventiveDue(
-          { id: String(interval.id), interval_value: interval.interval_value, type: interval.type },
-          {
-            currentValue,
-            maxInterval,
-            currentCycle,
-            preventiveHistory,
-            maintenanceIntervals,
-            maintenanceUnit,
-            isRecurring,
-            isFirstCycleOnly,
-          }
-        );
-        
-        // Calculate next due value for current cycle (unit-agnostic, same logic as maintenance page)
-        let nextDueValue: number | null = null;
-        let status = 'not_applicable';
-        let cycleForService = currentCycle;
-        
-        if (!isFirstCycleOnly || currentCycle === 1) {
-          // Calculate the due value and keep as non-null local number
-          let computedDue = ((currentCycle - 1) * maxInterval) + intervalValue;
-          
-          // Special case: if computedDue exceeds the current cycle end, calculate for next cycle
-          if (computedDue > currentCycleEndValue) {
-            cycleForService = currentCycle + 1;
-            computedDue = (currentCycle * maxInterval) + intervalValue;
-            
-            // Only show next cycle services if they're within reasonable range
-            if (computedDue - currentValue <= 1000) {
-              status = 'scheduled';
-            } else {
-              status = 'not_applicable';
-            }
-          } else {
-            // Current cycle logic - check if this specific interval was performed
-            if (computedDue !== null) {
-              const dueValue = computedDue; // Non-null variable for comparisons
-               
-              const wasPerformedInCurrentCycle = currentCycleMaintenances.some(m => {
-                // CRITICAL: m.maintenance_plan_id contains the interval_id value from maintenance_plans
-                // This interval_id IS the actual interval.id we're looking for
-                const matches = m.maintenance_plan_id === interval.id;
-                if (interval.interval_value === 1500 || matches) {
-                  console.log(`[ASSET ${assetId}] Checking ${interval.interval_value}${getUnitLabel(maintenanceUnit)} completion:`, {
-                    maintenance_plan_id: m.maintenance_plan_id,
-                    target_interval_id: interval.id,
-                    matches
-                  });
-                }
-                return matches;
-              });
-               
-               if (wasPerformedInCurrentCycle) {
-                 status = 'completed';
-              } else {
-                 // Plan-aware coverage: a higher/equal preventive interval in same unit/category covers lower ones
-                // CRITICAL: Coverage requires BOTH interval value comparison AND timing check
-                // CRITICAL: Match via interval_id from maintenance_plans mapping
-                const isCoveredByHigher = currentCycleMaintenances.some((m: any) => {
-                  // CRITICAL: maintenance_plan_id IS the interval ID
-                  const performedInterval = (maintenanceIntervals || []).find((i: any) => i.id === m.maintenance_plan_id);
-                  const dueInterval = interval;
-                  if (!performedInterval || !dueInterval) return false;
-                  const sameUnit = performedInterval.type === dueInterval.type;
-                  const higherOrEqual = Number(performedInterval.interval_value) >= Number(dueInterval.interval_value);
-                  const performedAtValue = getMaintenanceValue(m, maintenanceUnit);
-                  const performedAfterDue = performedAtValue >= dueValue;
-                  const covers = sameUnit && higherOrEqual && performedAfterDue;
-                  
-                  if (interval.interval_value <= 1500 && covers) {
-                    console.log(`[ASSET ${assetId}] ${interval.interval_value}${getUnitLabel(maintenanceUnit)} covered by ${performedInterval.interval_value}${getUnitLabel(maintenanceUnit)} (performed at ${performedAtValue}${getUnitLabel(maintenanceUnit)}, due at ${dueValue}${getUnitLabel(maintenanceUnit)})`);
-                  }
-                  
-                  return covers;
-                });
-                if (isCoveredByHigher) {
-                  status = 'covered';
-                } else if (currentValue >= dueValue) {
-                  status = 'overdue';
-                } else if (currentValue >= dueValue - 100) {
-                  status = 'upcoming';
-                } else {
-                  status = 'scheduled';
-                }
-              }
-             }
-          }
-          // Persist computed due value to nullable variable for downstream UI calculations
-          nextDueValue = computedDue;
-        }
-        
-        // Calculate additional properties
-        let progress = 0;
-        let urgency = 'low';
-        let valueRemaining = 0;
-        let wasPerformed = false;
-        let lastMaintenanceDate = null;
-        
-        if (nextDueValue !== null) {
-          if (status === 'completed') {
-            progress = 100;
-            urgency = 'low';
-            valueRemaining = 0;
-            wasPerformed = true;
-            
-            // Find the last maintenance of this type
-            // CRITICAL: maintenance_plan_id IS the interval ID
-            const lastMaintenanceOfType = currentCycleMaintenances.find(m => 
-              m.maintenance_plan_id === interval.id
-            );
-            lastMaintenanceDate = lastMaintenanceOfType?.date || null;
-          } else if (status === 'covered') {
-            progress = 100;
-            urgency = 'low';
-            valueRemaining = 0;
-                     } else if (status === 'overdue' && nextDueValue !== null) {
-             progress = 100;
-             const valueOverdue = currentValue - nextDueValue;
-             valueRemaining = -valueOverdue;
-             
-             if (valueOverdue > intervalValue * 0.5) {
-               urgency = 'high';
-             } else {
-               urgency = 'medium';
-             }
-          } else if (status === 'upcoming') {
-            const safeDue = Number((nextDueValue ?? intervalValue) || 0);
-            progress = safeDue > 0 ? Math.round((currentValue / safeDue) * 100) : 0;
-            const valueRemainingCalc = safeDue - currentValue;
-             valueRemaining = valueRemainingCalc;
-             
-             if (valueRemainingCalc <= 50) {
-               urgency = 'high';
-             } else {
-               urgency = 'medium';
-             }
-          } else if (status === 'scheduled') {
-            const safeDue = Number((nextDueValue ?? intervalValue) || 0);
-            progress = safeDue > 0 ? Math.round((currentValue / safeDue) * 100) : 0;
-            const valueRemainingCalc = safeDue - currentValue;
-             valueRemaining = valueRemainingCalc;
-             urgency = 'low';
-           }
-        }
+        const intervalResults = computeCyclicIntervalResults({
+          intervals: maintenanceIntervals,
+          history: effectiveMaintenanceHistory,
+          currentValue,
+          unit: maintenanceUnit,
+          options: { applyEarliestUnpaid: true },
+        });
+        const upcomingList = cyclicResultsToUpcomingUi(intervalResults, maintenanceUnit);
 
-        if (earliestUnpaid !== null && earliestUnpaid.due <= currentValue) {
-          status = 'overdue';
-          nextDueValue = earliestUnpaid.due;
-          cycleForService = earliestUnpaid.cycle;
-          const valueOverdue = currentValue - earliestUnpaid.due;
-          valueRemaining = -valueOverdue;
-          progress = 100;
-          wasPerformed = false;
-          lastMaintenanceDate = null;
-          const iv = intervalValue || 1;
-          urgency = valueOverdue > iv * 0.5 ? 'high' : 'medium';
-        }
-        
-        return {
-          intervalId: interval.id,
-          intervalName: interval.name || interval.description || `${interval.type} ${interval.interval_value}${getUnitLabel(maintenanceUnit)}`,
-          intervalDescription: interval.description,
-          type: interval.type,
-          intervalValue: interval.interval_value,
-          currentValue: currentValue,
-          targetValue: nextDueValue || intervalValue,
-          valueRemaining,
-          status,
-          urgency,
-          progress,
-          unit: maintenanceUnit === 'kilometers' ? 'kilometers' : 'hours',
-          estimatedDate: new Date().toISOString(),
-          lastMaintenanceDate,
-          wasPerformed,
-          cycleForService,
-          cycleLength: maxInterval
-        };
-      });
-      
       // Filter to show only relevant maintenances (same logic as maintenance page)
       const filteredUpcoming = upcomingList.filter(maintenance => {
         // Show: overdue, upcoming, covered, scheduled
@@ -889,12 +623,7 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
       if (!planId) return null;
       const interval = (maintenanceIntervals || []).find((i: any) => i.id === planId);
       if (!interval) return null;
-      const unit = interval.type === 'kilometers' ? 'km' : 'h';
-      const base = interval.description || interval.name || '';
-      if (base) return base;
-      const value = Number(interval.interval_value) || 0;
-      if (value > 0) return `${value}${unit}`;
-      return null;
+      return formatIntervalLabel(interval, maintenanceUnit);
     } catch {
       return null;
     }
@@ -1049,11 +778,19 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
 
           {/* Coupling editor — only on the composite's own page, not when viewing a component */}
           {compositeContext.composite?.id === assetId && (
-            <div data-stagger="1.5">
+            <div data-stagger="1.5" className="space-y-4">
+              {compositeFuelSummary && (
+                <CompositeFuelSummary
+                  dieselLiters30d={compositeFuelSummary.diesel_liters_30d}
+                  ureaLiters30d={compositeFuelSummary.urea_liters_30d}
+                  recentTransactions={compositeFuelSummary.recent_transactions}
+                />
+              )}
               <CompositeCouplingEditor
                 compositeId={assetId}
                 syncHours={compositeContext.composite?.composite_sync_hours ?? false}
                 syncKm={compositeContext.composite?.composite_sync_kilometers ?? false}
+                primaryComponentId={compositeContext.composite?.primary_component_id ?? null}
                 canEdit={canEditCoupling}
                 components={compositeContext.components}
               />

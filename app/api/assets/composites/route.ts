@@ -43,6 +43,16 @@ export async function POST(request: Request) {
       )
     }
 
+    if (!primary_component_id || !component_ids.includes(primary_component_id)) {
+      return NextResponse.json(
+        {
+          error:
+            'primary_component_id is required and must be one of the selected component_ids (fuel / horometer carrier)',
+        },
+        { status: 400 }
+      )
+    }
+
     const supabase = await createClient()
 
     // Ensure none of the components are already part of another composite (active)

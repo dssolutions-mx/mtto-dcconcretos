@@ -10,6 +10,12 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Card, CardContent } from "@/components/ui/card"
 import { toast } from "sonner"
 import { formatIntegerMeterReading } from "@/lib/utils/meter-integer-input"
+import {
+  filterConsumptionEligibleAssets,
+  type CompositeDisplay,
+  type CompositeParentRow,
+  type CompositeRelationshipRow,
+} from "@/lib/assets/consumption-eligible-assets"
 
 interface Asset {
   id: string
@@ -19,6 +25,8 @@ interface Asset {
   current_hours: number | null
   current_kilometers: number | null
   plant_id: string
+  is_composite?: boolean | null
+  composite_display?: CompositeDisplay
   equipment_models: {
     name: string
     manufacturer: string
@@ -33,15 +41,18 @@ interface Asset {
 interface AssetSelectorMobileProps {
   onSelect: (asset: Asset | null) => void
   selectedAssetId?: string | null
-  plantFilter?: string | null // Optional plant filter
-  businessUnitFilter?: boolean // Auto-filter by user's business unit
+  plantFilter?: string | null
+  businessUnitFilter?: boolean
+  /** When 'consumption', hides composite parents and non-primary components. */
+  mode?: "default" | "consumption"
 }
 
 export function AssetSelectorMobile({
   onSelect,
   selectedAssetId,
   plantFilter,
-  businessUnitFilter = true
+  businessUnitFilter = true,
+  mode = "default",
 }: AssetSelectorMobileProps) {
   const [assets, setAssets] = useState<Asset[]>([])
   const [recentAssets, setRecentAssets] = useState<string[]>([])
@@ -54,41 +65,39 @@ export function AssetSelectorMobile({
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
   )
 
-  // Load recent assets from localStorage
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const recent = localStorage.getItem('diesel-recent-assets')
+    if (typeof window !== "undefined") {
+      const recent = localStorage.getItem("diesel-recent-assets")
       if (recent) {
         try {
           setRecentAssets(JSON.parse(recent))
         } catch (error) {
-          console.error('Error loading recent assets:', error)
+          console.error("Error loading recent assets:", error)
         }
       }
     }
   }, [])
 
-  // Load assets with business unit filtering
   useEffect(() => {
     loadAssets()
-  }, [plantFilter])
+  }, [plantFilter, mode])
 
   const loadAssets = async () => {
     try {
       setLoading(true)
 
-      // Get current user's context
-      const { data: { user } } = await supabase.auth.getUser()
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
       if (!user) {
         toast.error("No hay sesión de usuario")
         return
       }
 
-      // Get user profile to determine filtering
       const { data: profile } = await supabase
-        .from('profiles')
-        .select('plant_id, business_unit_id, role')
-        .eq('id', user.id)
+        .from("profiles")
+        .select("plant_id, business_unit_id, role")
+        .eq("id", user.id)
         .single()
 
       if (!profile) {
@@ -96,10 +105,10 @@ export function AssetSelectorMobile({
         return
       }
 
-      // Build query with hierarchical filtering
       let query = supabase
-        .from('assets')
-        .select(`
+        .from("assets")
+        .select(
+          `
           id,
           asset_id,
           name,
@@ -107,6 +116,7 @@ export function AssetSelectorMobile({
           current_hours,
           current_kilometers,
           plant_id,
+          is_composite,
           equipment_models (
             name,
             manufacturer,
@@ -116,84 +126,118 @@ export function AssetSelectorMobile({
             name,
             code
           )
-        `)
-        .eq('status', 'operational')
-        .order('name')
+        `
+        )
+        .eq("status", "operational")
+        .order("name")
 
-      // Apply business unit filtering if enabled
       if (businessUnitFilter) {
         if (profile.plant_id && !profile.business_unit_id) {
-          // Plant-level user: only their plant
-          query = query.eq('plant_id', profile.plant_id)
+          query = query.eq("plant_id", profile.plant_id)
         } else if (profile.business_unit_id && !profile.plant_id) {
-          // Business unit user: all plants in their BU
           const { data: plants } = await supabase
-            .from('plants')
-            .select('id')
-            .eq('business_unit_id', profile.business_unit_id)
-          
+            .from("plants")
+            .select("id")
+            .eq("business_unit_id", profile.business_unit_id)
+
           if (plants && plants.length > 0) {
-            const plantIds = plants.map(p => p.id)
-            query = query.in('plant_id', plantIds)
+            const plantIds = plants.map((p) => p.id)
+            query = query.in("plant_id", plantIds)
           }
         }
-        // Global users (no plant_id, no business_unit_id) see all assets
       }
 
-      // Apply explicit plant filter if provided
       if (plantFilter) {
-        query = query.eq('plant_id', plantFilter)
+        query = query.eq("plant_id", plantFilter)
       }
 
       const { data, error } = await query
 
       if (error) throw error
 
-      setAssets(data || [])
+      let list = (data || []) as Asset[]
 
-      // Load selected asset if provided
+      if (mode === "consumption") {
+        const { data: relationships, error: relError } = await supabase
+          .from("asset_composite_relationships")
+          .select("composite_asset_id, component_asset_id, status")
+          .eq("status", "active")
+
+        if (relError) throw relError
+
+        const compositeIds = [
+          ...new Set(
+            ((relationships || []) as CompositeRelationshipRow[]).map(
+              (r) => r.composite_asset_id
+            )
+          ),
+        ]
+
+        let composites: CompositeParentRow[] = []
+        if (compositeIds.length > 0) {
+          const { data: compositeRows, error: compError } = await supabase
+            .from("assets")
+            .select("id, name, asset_id, primary_component_id, is_composite")
+            .in("id", compositeIds)
+            .eq("is_composite", true)
+
+          if (compError) throw compError
+          composites = (compositeRows || []) as CompositeParentRow[]
+        }
+
+        list = filterConsumptionEligibleAssets(
+          list,
+          (relationships || []) as CompositeRelationshipRow[],
+          composites
+        ) as Asset[]
+      }
+
+      setAssets(list)
+
       if (selectedAssetId) {
-        const selected = (data || []).find(a => a.id === selectedAssetId)
+        const selected = list.find((a) => a.id === selectedAssetId)
         if (selected) {
           setSelectedAsset(selected)
         }
       }
     } catch (error) {
-      console.error('Error loading assets:', error)
+      console.error("Error loading assets:", error)
       toast.error("Error al cargar los activos")
     } finally {
       setLoading(false)
     }
   }
 
-  // Filter assets based on search term
   const filteredAssets = useMemo(() => {
     if (!searchTerm.trim()) {
-      // Show recent assets first when no search
-      const recent = assets.filter(a => recentAssets.includes(a.id))
-      const others = assets.filter(a => !recentAssets.includes(a.id))
+      const recent = assets.filter((a) => recentAssets.includes(a.id))
+      const others = assets.filter((a) => !recentAssets.includes(a.id))
       return [...recent, ...others]
     }
 
     const term = searchTerm.toLowerCase()
-    return assets.filter(asset => 
-      asset.asset_id.toLowerCase().includes(term) ||
-      asset.name.toLowerCase().includes(term) ||
-      asset.equipment_models?.name.toLowerCase().includes(term) ||
-      asset.equipment_models?.manufacturer.toLowerCase().includes(term) ||
-      asset.plants?.name.toLowerCase().includes(term)
-    )
+    return assets.filter((asset) => {
+      const composite = asset.composite_display
+      return (
+        asset.asset_id.toLowerCase().includes(term) ||
+        asset.name.toLowerCase().includes(term) ||
+        asset.equipment_models?.name.toLowerCase().includes(term) ||
+        asset.equipment_models?.manufacturer.toLowerCase().includes(term) ||
+        asset.plants?.name.toLowerCase().includes(term) ||
+        (composite?.name?.toLowerCase().includes(term) ?? false) ||
+        (composite?.asset_id?.toLowerCase().includes(term) ?? false)
+      )
+    })
   }, [assets, searchTerm, recentAssets])
 
   const handleSelect = (asset: Asset) => {
     setSelectedAsset(asset)
     onSelect(asset)
-    
-    // Save to recent assets
-    if (typeof window !== 'undefined') {
-      const recent = [asset.id, ...recentAssets.filter(id => id !== asset.id)].slice(0, 5)
+
+    if (typeof window !== "undefined") {
+      const recent = [asset.id, ...recentAssets.filter((id) => id !== asset.id)].slice(0, 5)
       setRecentAssets(recent)
-      localStorage.setItem('diesel-recent-assets', JSON.stringify(recent))
+      localStorage.setItem("diesel-recent-assets", JSON.stringify(recent))
     }
   }
 
@@ -202,6 +246,16 @@ export function AssetSelectorMobile({
     setSearchTerm("")
     onSelect(null)
   }
+
+  const compositeSubtitle = (asset: Asset) =>
+    asset.composite_display ? (
+      <div className="text-xs text-blue-700/80">
+        Parte de: {asset.composite_display.name}
+        {asset.composite_display.asset_id
+          ? ` (${asset.composite_display.asset_id})`
+          : ""}
+      </div>
+    ) : null
 
   if (loading) {
     return (
@@ -212,7 +266,6 @@ export function AssetSelectorMobile({
     )
   }
 
-  // Selected asset display (compact)
   if (selectedAsset) {
     return (
       <Card className="border-blue-200 bg-blue-50">
@@ -224,14 +277,17 @@ export function AssetSelectorMobile({
                 <span className="font-semibold text-sm">{selectedAsset.name}</span>
               </div>
               <div className="text-xs text-muted-foreground space-y-1">
+                {compositeSubtitle(selectedAsset)}
                 <div>ID: {selectedAsset.asset_id}</div>
                 {selectedAsset.equipment_models && (
-                  <div>{selectedAsset.equipment_models.manufacturer} {selectedAsset.equipment_models.name}</div>
+                  <div>
+                    {selectedAsset.equipment_models.manufacturer}{" "}
+                    {selectedAsset.equipment_models.name}
+                  </div>
                 )}
-                {selectedAsset.plants && (
-                  <div>📍 {selectedAsset.plants.name}</div>
-                )}
-                {(selectedAsset.current_hours !== null || selectedAsset.current_kilometers !== null) && (
+                {selectedAsset.plants && <div>📍 {selectedAsset.plants.name}</div>}
+                {(selectedAsset.current_hours !== null ||
+                  selectedAsset.current_kilometers !== null) && (
                   <div className="flex gap-3 mt-2">
                     {selectedAsset.current_hours !== null && (
                       <Badge variant="outline" className="text-xs">
@@ -247,12 +303,7 @@ export function AssetSelectorMobile({
                 )}
               </div>
             </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleClear}
-              className="h-8 w-8 p-0"
-            >
+            <Button variant="ghost" size="sm" onClick={handleClear} className="h-8 w-8 p-0">
               <X className="h-4 w-4" />
             </Button>
           </div>
@@ -261,15 +312,17 @@ export function AssetSelectorMobile({
     )
   }
 
-  // Asset selection view
   return (
     <div className="space-y-3">
-      {/* Search input */}
       <div className="relative">
         <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
         <Input
           type="text"
-          placeholder="Buscar por ID, nombre, modelo..."
+          placeholder={
+            mode === "consumption"
+              ? "Buscar por ID, nombre, compuesto..."
+              : "Buscar por ID, nombre, modelo..."
+          }
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
           className="pl-10 h-12 text-base"
@@ -287,7 +340,6 @@ export function AssetSelectorMobile({
         )}
       </div>
 
-      {/* Recent assets hint */}
       {!searchTerm && recentAssets.length > 0 && (
         <div className="flex items-center gap-2 text-xs text-muted-foreground px-1">
           <Clock className="h-3 w-3" />
@@ -295,7 +347,6 @@ export function AssetSelectorMobile({
         </div>
       )}
 
-      {/* Assets list */}
       <ScrollArea className="h-[400px] w-full rounded-md border">
         {filteredAssets.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 text-center px-4">
@@ -304,28 +355,27 @@ export function AssetSelectorMobile({
               No se encontraron activos
             </p>
             <p className="text-xs text-muted-foreground">
-              {searchTerm 
-                ? "Intenta con otro término de búsqueda" 
+              {searchTerm
+                ? "Intenta con otro término de búsqueda"
                 : "No hay activos disponibles en tu planta"}
             </p>
           </div>
         ) : (
           <div className="p-2 space-y-2">
-            {filteredAssets.map((asset, index) => {
+            {filteredAssets.map((asset) => {
               const isRecent = recentAssets.includes(asset.id)
-              
+
               return (
                 <Card
                   key={asset.id}
                   className={`cursor-pointer transition-all hover:shadow-md hover:border-blue-300 ${
-                    isRecent ? 'border-blue-200 bg-blue-50/30' : ''
+                    isRecent ? "border-blue-200 bg-blue-50/30" : ""
                   }`}
                   onClick={() => handleSelect(asset)}
                 >
                   <CardContent className="p-3">
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex-1 min-w-0">
-                        {/* Asset name and recent badge */}
                         <div className="flex items-center gap-2 mb-1">
                           <Truck className="h-4 w-4 text-blue-600 flex-shrink-0" />
                           <span className="font-semibold text-sm truncate">{asset.name}</span>
@@ -336,16 +386,17 @@ export function AssetSelectorMobile({
                           )}
                         </div>
 
-                        {/* Asset details */}
                         <div className="text-xs text-muted-foreground space-y-1 ml-6">
+                          {compositeSubtitle(asset)}
                           <div className="font-mono">ID: {asset.asset_id}</div>
-                          
+
                           {asset.equipment_models && (
                             <div>
-                              {asset.equipment_models.manufacturer} {asset.equipment_models.name}
+                              {asset.equipment_models.manufacturer}{" "}
+                              {asset.equipment_models.name}
                             </div>
                           )}
-                          
+
                           {asset.plants && (
                             <div className="flex items-center gap-1">
                               <span>📍</span>
@@ -353,8 +404,8 @@ export function AssetSelectorMobile({
                             </div>
                           )}
 
-                          {/* Current readings */}
-                          {(asset.current_hours !== null || asset.current_kilometers !== null) && (
+                          {(asset.current_hours !== null ||
+                            asset.current_kilometers !== null) && (
                             <div className="flex gap-2 mt-1.5">
                               {asset.current_hours !== null && (
                                 <Badge variant="outline" className="text-xs px-1.5 py-0">
@@ -379,13 +430,12 @@ export function AssetSelectorMobile({
         )}
       </ScrollArea>
 
-      {/* Results count */}
       {filteredAssets.length > 0 && (
         <div className="text-xs text-muted-foreground text-center">
-          {filteredAssets.length} activo{filteredAssets.length !== 1 ? 's' : ''} encontrado{filteredAssets.length !== 1 ? 's' : ''}
+          {filteredAssets.length} activo{filteredAssets.length !== 1 ? "s" : ""} encontrado
+          {filteredAssets.length !== 1 ? "s" : ""}
         </div>
       )}
     </div>
   )
 }
-

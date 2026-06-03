@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
+import { assertConsumptionAssetValid } from '@/lib/assets/consumption-eligible-assets'
 import { PlantBatch, MeterConflict, MeterReconciliationPreferences } from '@/types/diesel'
 
 export async function POST(request: NextRequest) {
@@ -408,6 +409,24 @@ export async function POST(request: NextRequest) {
           } else {
             // Fallback
             assetCategory = assetIdForTransaction ? 'formal' : 'general'
+          }
+        }
+
+        if (
+          transactionType === 'consumption' &&
+          assetCategory === 'formal' &&
+          assetIdForTransaction
+        ) {
+          const consumptionAssetError = await assertConsumptionAssetValid(
+            supabase,
+            assetIdForTransaction
+          )
+          if (consumptionAssetError) {
+            errors.push({
+              row: row.original_row_index,
+              error: `${consumptionAssetError} (unidad: ${row.unidad})`,
+            })
+            continue
           }
         }
 

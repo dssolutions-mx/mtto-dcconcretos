@@ -56,12 +56,18 @@ export async function PATCH(
     const {
       composite_sync_hours,
       composite_sync_kilometers,
+      primary_component_id,
     }: {
       composite_sync_hours?: boolean
       composite_sync_kilometers?: boolean
+      primary_component_id?: string | null
     } = body
 
-    if (composite_sync_hours === undefined && composite_sync_kilometers === undefined) {
+    if (
+      composite_sync_hours === undefined &&
+      composite_sync_kilometers === undefined &&
+      primary_component_id === undefined
+    ) {
       return NextResponse.json({ error: 'Nothing to update' }, { status: 400 })
     }
 
@@ -76,7 +82,7 @@ export async function PATCH(
     // Verify composite exists
     const { data: existing, error: fetchErr } = await supabase
       .from('assets')
-      .select('id, is_composite')
+      .select('id, is_composite, component_assets')
       .eq('id', id)
       .eq('is_composite', true)
       .single()
@@ -85,15 +91,31 @@ export async function PATCH(
       return NextResponse.json({ error: 'Composite not found' }, { status: 404 })
     }
 
-    const patch: Record<string, boolean> = {}
+    if (primary_component_id !== undefined) {
+      const componentIds: string[] = Array.isArray(existing.component_assets)
+        ? existing.component_assets
+        : []
+      if (
+        primary_component_id != null &&
+        !componentIds.includes(primary_component_id)
+      ) {
+        return NextResponse.json(
+          { error: 'primary_component_id must be an active component of this composite' },
+          { status: 400 }
+        )
+      }
+    }
+
+    const patch: Record<string, boolean | string | null> = {}
     if (composite_sync_hours !== undefined) patch.composite_sync_hours = composite_sync_hours
     if (composite_sync_kilometers !== undefined) patch.composite_sync_kilometers = composite_sync_kilometers
+    if (primary_component_id !== undefined) patch.primary_component_id = primary_component_id
 
     const { data: updated, error: updateErr } = await supabase
       .from('assets')
       .update(patch)
       .eq('id', id)
-      .select('id, composite_sync_hours, composite_sync_kilometers')
+      .select('id, composite_sync_hours, composite_sync_kilometers, primary_component_id')
       .single()
 
     if (updateErr) {

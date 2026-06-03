@@ -1,6 +1,11 @@
 import { createClient } from '@/lib/supabase-server'
 import { NextResponse } from 'next/server'
-import { getMaintenanceUnit, getCurrentValue, getMaintenanceValue } from '@/lib/utils/maintenance-units'
+import { getMaintenanceUnit, getCurrentValue } from '@/lib/utils/maintenance-units'
+import {
+  computeCyclicIntervalResults,
+  filterRelevantCyclicResults,
+} from '@/lib/utils/cyclic-maintenance'
+import { formatIntervalLabel } from '@/lib/utils/maintenance-units'
 
 export async function GET(
   request: Request,
@@ -13,7 +18,7 @@ export async function GET(
     // Fetch composite (include coupling flags for drift logic)
     const { data: composite, error: compError } = await supabase
       .from('assets')
-      .select('id, name, is_composite, component_assets, composite_sync_hours, composite_sync_kilometers, composite_type')
+      .select('id, name, is_composite, component_assets, primary_component_id, composite_sync_hours, composite_sync_kilometers, composite_type')
       .eq('id', id)
       .eq('is_composite', true)
       .single()
@@ -138,73 +143,31 @@ export async function GET(
 
         const unit = getMaintenanceUnit(c)
         const currentValue = getCurrentValue(c, unit)
-        const maxInterval = Math.max(...modelIntervals.map((i: any) => Number(i.interval_value || 0)))
-        if (!isFinite(maxInterval) || maxInterval <= 0) continue
+        const componentHistory = historyByAsset[c.id] || []
 
-        const currentCycle = Math.floor(currentValue / maxInterval) + 1
-        const cycleStart = (currentCycle - 1) * maxInterval
-        const cycleEnd = currentCycle * maxInterval
-
-        // Preventive history: maintenance_plan_id matches an interval (IS the interval id)
-        const preventiveHistory = (historyByAsset[c.id] || []).filter((m: any) => {
-          const typeLower = m?.type?.toLowerCase()
-          const isPreventive = typeLower === 'preventive' || typeLower === 'preventivo'
-          return isPreventive && m?.maintenance_plan_id && intervalIds.has(m.maintenance_plan_id)
+        const intervalResults = computeCyclicIntervalResults({
+          intervals: modelIntervals,
+          history: componentHistory,
+          currentValue,
+          unit,
+          options: { applyEarliestUnpaid: true },
         })
 
-        const currentCycleMaintenances = preventiveHistory.filter((m: any) => {
-          const mValue = getMaintenanceValue(m, unit)
-          return mValue > cycleStart && mValue < cycleEnd
-        })
-
-        const intervalById = new Map(modelIntervals.map((i: any) => [i.id, i]))
-
-        for (const interval of modelIntervals) {
-          const intervalValue = Number(interval.interval_value || 0)
-          const isFirstCycleOnly = Boolean((interval as any).is_first_cycle_only)
-          if (isFirstCycleOnly && currentCycle !== 1) continue
-
-          let due = ((currentCycle - 1) * maxInterval) + intervalValue
-          if (due > cycleEnd) {
-            due = (currentCycle * maxInterval) + intervalValue
-            if (due - currentValue > 1000) continue
-          }
-
-          const wasPerformed = currentCycleMaintenances.some((m: any) => m.maintenance_plan_id === interval.id)
-          const isCovered = !wasPerformed && currentCycleMaintenances.some((m: any) => {
-            const performed = intervalById.get(m.maintenance_plan_id)
-            if (!performed) return false
-            return performed.type === interval.type &&
-              Number(performed.interval_value || 0) >= intervalValue
-          })
-
-          let status = 'scheduled'
-          if (wasPerformed) status = 'completed'
-          else if (isCovered) status = 'covered'
-          else if (currentValue >= due) status = 'overdue'
-          else if (currentValue >= due - 100) status = 'upcoming'
-
-          // Exclude completed from aggregate list (no action needed)
-          if (status === 'completed') continue
-
-          let urgency = 'low'
-          if (status === 'upcoming') {
-            const remaining = due - currentValue
-            urgency = remaining <= 50 ? 'high' : 'medium'
-          } else if (status === 'overdue') urgency = 'high'
+        for (const r of filterRelevantCyclicResults(intervalResults)) {
+          if (r.status === 'completed') continue
 
           upcoming_maintenance.push({
             asset_id: c.id,
             asset_name: c.name,
-            interval_id: interval.id,
-            interval_name: interval.name || interval.description || `${interval.type} ${interval.interval_value}${unit === 'kilometers' ? 'km' : 'h'}`,
-            interval_description: interval.description,
-            type: interval.type,
-            interval_value: interval.interval_value,
-            current_value: currentValue,
-            target_value: due,
-            status,
-            urgency
+            interval_id: r.intervalId,
+            interval_name: formatIntervalLabel(r.interval, unit),
+            interval_description: r.interval.description,
+            type: r.interval.type,
+            interval_value: r.interval.interval_value,
+            current_value: r.currentValue,
+            target_value: r.nextDueValue ?? r.interval.interval_value,
+            status: r.status,
+            urgency: r.urgency,
           })
         }
       }
@@ -272,6 +235,51 @@ export async function GET(
       }
     }
 
+    const fuelTargetIds =
+      composite.primary_component_id &&
+      componentIds.includes(composite.primary_component_id)
+        ? [composite.primary_component_id]
+        : componentIds
+
+    const since = new Date()
+    since.setDate(since.getDate() - 30)
+    const sinceIso = since.toISOString()
+
+    let diesel_liters_30d = 0
+    let urea_liters_30d = 0
+    let recent_fuel_transactions: unknown[] = []
+
+    if (fuelTargetIds.length > 0) {
+      const { data: fuelTxs } = await supabase
+        .from('diesel_transactions')
+        .select(
+          `
+          id,
+          asset_id,
+          quantity_liters,
+          transaction_date,
+          transaction_type,
+          diesel_products!inner(product_type),
+          assets:asset_id ( id, name, asset_id )
+        `
+        )
+        .in('asset_id', fuelTargetIds)
+        .eq('transaction_type', 'consumption')
+        .eq('is_transfer', false)
+        .gte('transaction_date', sinceIso)
+        .order('transaction_date', { ascending: false })
+        .limit(100)
+
+      for (const tx of fuelTxs ?? []) {
+        const liters = Number((tx as { quantity_liters?: number }).quantity_liters ?? 0)
+        const pt = (tx as { diesel_products?: { product_type?: string } }).diesel_products
+          ?.product_type
+        if (pt === 'urea') urea_liters_30d += liters
+        else diesel_liters_30d += liters
+      }
+      recent_fuel_transactions = (fuelTxs ?? []).slice(0, 15)
+    }
+
     return NextResponse.json({
       success: true,
       data: {
@@ -282,7 +290,13 @@ export async function GET(
         completed_checklists: completed_checklists || [],
         maintenance_history: maintenance_history || [],
         upcoming_maintenance,
-        sibling_drift
+        sibling_drift,
+        fuel_summary: {
+          diesel_liters_30d,
+          urea_liters_30d,
+          target_component_ids: fuelTargetIds,
+          recent_transactions: recent_fuel_transactions,
+        },
       }
     })
   } catch (error: any) {

@@ -130,7 +130,8 @@ export function GeneralInfoTab({
                     <div className="mt-1 space-y-1">
                       {selectedModel.maintenanceIntervals.slice(0, 3).map((interval: any, index: number) => (
                         <div key={index} className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">
-                          {interval.description || interval.type} - {interval.interval_value}h
+                          {interval.description || interval.type} - {interval.interval_value}
+                          {selectedModel?.maintenance_unit === "kilometers" ? " km" : " h"}
                         </div>
                       ))}
                       {selectedModel.maintenanceIntervals.length > 3 && (

@@ -23,6 +23,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge"
 import { Plus, Save, Trash, Edit, FileText, Loader2, Download, Copy } from "lucide-react"
 import { useEquipmentModel } from "@/hooks/useSupabase"
+import { meterTypeForMaintenanceInterval } from "@/lib/utils/maintenance-units"
 
 // Interfaz para las tareas de mantenimiento
 interface MaintenanceTask {
@@ -241,7 +242,7 @@ export function EquipmentModelEditForm({ modelId }: EquipmentModelEditFormProps)
           interval_value: newInterval.hours,
           name: newInterval.name,
           description: newInterval.description || null,
-          type: "Preventivo",
+          type: meterTypeForMaintenanceInterval(maintenanceUnit),
           estimated_duration: 0, // Se actualizará al agregar tareas
         });
         
@@ -313,7 +314,7 @@ export function EquipmentModelEditForm({ modelId }: EquipmentModelEditFormProps)
         interval_value: sourceInterval.hours,
         name: `${sourceInterval.name} (Copia)`,
         description: sourceInterval.description || null,
-        type: "Preventivo",
+        type: meterTypeForMaintenanceInterval(maintenanceUnit),
         estimated_duration: 0,
       };
       

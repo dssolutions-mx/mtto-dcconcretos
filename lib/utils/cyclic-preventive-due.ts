@@ -2,7 +2,7 @@ import {
   getMaintenanceValue,
   type MaintenanceHistoryMeterRow,
   type MaintenanceUnit,
-} from "@/lib/utils/maintenance-units";
+} from "./maintenance-units";
 
 /** Interval row fields needed for cross-cycle unpaid detection. */
 export type CyclicIntervalForDue = {

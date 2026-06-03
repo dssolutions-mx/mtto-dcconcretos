@@ -106,7 +106,8 @@ function QualityIcon({ event }: { event: MeterEvent }) {
 type EditState = {
   txId: string
   sourceKind: 'diesel_consumption' | 'checklist_completion'
-  /** Event date is before the report month — hours do not count toward this month’s total */
+  meterType: 'hours' | 'km'
+  /** Event date is before the report month — hours/km do not count toward this month’s total */
   isPriorMonthContext: boolean
   currentReading: number | null
   prevReading: number | null
@@ -147,6 +148,10 @@ function EventsTab({
   const hasKmEvents = events.some(ev => ev.km_reading != null || ev.previous_km != null)
   const [meterMode, setMeterMode] = useState<'hours' | 'km'>('hours')
 
+  useEffect(() => {
+    setEditing(null)
+  }, [meterMode])
+
   const fmt = (n: number | null | undefined, d = 2) =>
     n == null || !Number.isFinite(Number(n))
       ? '—'
@@ -157,14 +162,16 @@ function EventsTab({
   const monthBoundaryDate = new Date(monthStart)
 
   const openEdit = (ev: MeterEvent) => {
+    const isKm = meterMode === 'km'
     setEditing({
       txId: ev.source_id,
       sourceKind: ev.source_kind as 'diesel_consumption' | 'checklist_completion',
+      meterType: isKm ? 'km' : 'hours',
       isPriorMonthContext: new Date(ev.event_at) < monthBoundaryDate,
-      currentReading: ev.hours_reading,
-      prevReading: ev.previous_hours,
-      newReading: String(ev.hours_reading ?? ''),
-      newPrevReading: String(ev.previous_hours ?? ''),
+      currentReading: isKm ? (ev.km_reading ?? null) : (ev.hours_reading ?? null),
+      prevReading: isKm ? (ev.previous_km ?? null) : (ev.previous_hours ?? null),
+      newReading: String(isKm ? (ev.km_reading ?? '') : (ev.hours_reading ?? '')),
+      newPrevReading: String(isKm ? (ev.previous_km ?? '') : (ev.previous_hours ?? '')),
       safeMaxPrev: null,
       safeMin: null,
       safeMax: null,
@@ -175,14 +182,15 @@ function EventsTab({
 
   const saveEdit = async () => {
     if (!editing) return
+    const isKm = editing.meterType === 'km'
     const val = parseFloat(editing.newReading)
     if (!Number.isFinite(val) || val < 0) {
-      setEditing(e => e ? { ...e, error: 'Lectura de horómetro inválida' } : null)
+      setEditing(e => e ? { ...e, error: isKm ? 'Lectura de odómetro inválida' : 'Lectura de horómetro inválida' } : null)
       return
     }
     const prevVal = editing.newPrevReading.trim() === '' ? null : parseFloat(editing.newPrevReading)
     if (prevVal !== null && !Number.isFinite(prevVal)) {
-      setEditing(e => e ? { ...e, error: 'Horómetro previo inválido' } : null)
+      setEditing(e => e ? { ...e, error: isKm ? 'Odómetro previo inválido' : 'Horómetro previo inválido' } : null)
       return
     }
     setEditing(e => e ? { ...e, saving: true, error: null } : null)
@@ -192,8 +200,16 @@ function EventsTab({
         reason: 'Corrección manual desde reporte de eficiencia',
       }
       if (isDiesel) {
-        body.horometer_reading = val
-        if (prevVal !== null) body.previous_horometer = prevVal
+        if (isKm) {
+          body.kilometer_reading = val
+          if (prevVal !== null) body.previous_kilometer = prevVal
+        } else {
+          body.horometer_reading = val
+          if (prevVal !== null) body.previous_horometer = prevVal
+        }
+      } else if (isKm) {
+        body.equipment_kilometers_reading = val
+        if (prevVal !== null) body.previous_kilometers = prevVal
       } else {
         body.hours_reading = val
         if (prevVal !== null) body.previous_hours = prevVal
@@ -298,28 +314,36 @@ function EventsTab({
 
       {/* Edit panel */}
       {editing && (() => {
+        const isKm = editing.meterType === 'km'
+        const unit = isKm ? 'km' : 'h'
+        const maxFrac = isKm ? 0 : 1
+        const step = isKm ? '1' : '0.1'
+        const fmtReading = (n: number | null) =>
+          n != null ? n.toLocaleString('es-MX', { maximumFractionDigits: maxFrac }) : '—'
         const newR = parseFloat(editing.newReading)
         const newP = editing.newPrevReading.trim() === '' ? null : parseFloat(editing.newPrevReading)
-        const deltaH = Number.isFinite(newR) && newP != null && Number.isFinite(newP) ? newR - newP : null
-        const deltaOk = deltaH == null || deltaH >= 0
+        const delta = Number.isFinite(newR) && newP != null && Number.isFinite(newP) ? newR - newP : null
+        const deltaOk = delta == null || delta >= 0
         return (
           <div className="border border-amber-200 bg-amber-50 rounded-lg p-4 space-y-3">
             <div className="flex items-start justify-between">
               <div>
-                <p className="text-sm font-semibold text-stone-800">Corregir transacción de horómetro</p>
+                <p className="text-sm font-semibold text-stone-800">
+                  {isKm ? 'Corregir transacción de odómetro' : 'Corregir transacción de horómetro'}
+                </p>
                 {editing.isPriorMonthContext && (
                   <p className="text-[11px] text-amber-800/90 mt-1.5 leading-snug max-w-md">
-                    Fecha anterior al mes de este reporte (contexto). Puedes corregir el horómetro; las horas de este evento no suman al total del mes mostrado, pero sí afectan meses y cargas vinculadas.
+                    Fecha anterior al mes de este reporte (contexto). Puedes corregir el {isKm ? 'odómetro' : 'horómetro'}; los {isKm ? 'km' : 'horas'} de este evento no suman al total del mes mostrado, pero sí afectan meses y cargas vinculadas.
                   </p>
                 )}
                 <p className="text-xs text-stone-500 mt-0.5">
                   Valores originales — previo:&nbsp;
                   <span className="font-mono font-medium">
-                    {editing.prevReading != null ? editing.prevReading.toLocaleString('es-MX', { maximumFractionDigits: 1 }) : '—'} h
+                    {fmtReading(editing.prevReading)} {unit}
                   </span>
                   {' · '}lectura:&nbsp;
                   <span className="font-mono font-medium text-red-600">
-                    {editing.currentReading != null ? editing.currentReading.toLocaleString('es-MX', { maximumFractionDigits: 1 }) : '—'} h
+                    {fmtReading(editing.currentReading)} {unit}
                   </span>
                 </p>
               </div>
@@ -331,11 +355,11 @@ function EventsTab({
             <div className="grid grid-cols-2 gap-2">
               <div>
                 <label className="text-[10px] font-semibold uppercase tracking-widest text-stone-400 block mb-1">
-                  Horómetro previo (h)
+                  {isKm ? 'Odómetro previo (km)' : 'Horómetro previo (h)'}
                 </label>
                 <input
                   type="number"
-                  step="0.1"
+                  step={step}
                   placeholder="Vacío = sin cambio"
                   value={editing.newPrevReading}
                   onChange={e => setEditing(s => s ? { ...s, newPrevReading: e.target.value, error: null, safeMaxPrev: null } : null)}
@@ -344,22 +368,22 @@ function EventsTab({
                 />
                 {editing.safeMaxPrev != null && (
                   <p className="text-[10px] text-red-600 mt-1">
-                    Máx. permitido: <span className="font-mono font-semibold">{editing.safeMaxPrev.toLocaleString('es-MX', { maximumFractionDigits: 1 })} h</span>
+                    Máx. permitido: <span className="font-mono font-semibold">{editing.safeMaxPrev.toLocaleString('es-MX', { maximumFractionDigits: maxFrac })} {unit}</span>
                   </p>
                 )}
                 {editing.safeMin != null && (
                   <p className="text-[10px] text-amber-600 mt-1">
-                    Mín. sugerido: <span className="font-mono font-semibold">{editing.safeMin.toLocaleString('es-MX', { maximumFractionDigits: 1 })} h</span>
+                    Mín. sugerido: <span className="font-mono font-semibold">{editing.safeMin.toLocaleString('es-MX', { maximumFractionDigits: maxFrac })} {unit}</span>
                   </p>
                 )}
               </div>
               <div>
                 <label className="text-[10px] font-semibold uppercase tracking-widest text-stone-400 block mb-1">
-                  Lectura actual (h)
+                  {isKm ? 'Lectura actual (km)' : 'Lectura actual (h)'}
                 </label>
                 <input
                   type="number"
-                  step="0.1"
+                  step={step}
                   value={editing.newReading}
                   onChange={e => setEditing(s => s ? { ...s, newReading: e.target.value, error: null, safeMax: null, safeMin: null } : null)}
                   className={`w-full h-8 px-3 text-sm font-mono border rounded-md bg-white focus:outline-none focus:ring-2 focus:border-transparent ${editing.safeMax != null ? 'border-red-300 focus:ring-red-400' : 'border-stone-200 focus:ring-amber-500'}`}
@@ -369,16 +393,16 @@ function EventsTab({
                 />
                 {editing.safeMax != null && (
                   <p className="text-[10px] text-red-600 mt-1">
-                    Máx. permitido: <span className="font-mono font-semibold">{editing.safeMax.toLocaleString('es-MX', { maximumFractionDigits: 1 })} h</span>
+                    Máx. permitido: <span className="font-mono font-semibold">{editing.safeMax.toLocaleString('es-MX', { maximumFractionDigits: maxFrac })} {unit}</span>
                   </p>
                 )}
               </div>
             </div>
 
             {/* Live delta preview */}
-            <div className={`flex items-center gap-2 rounded-md px-3 py-2 text-xs font-mono ${deltaH == null ? 'bg-stone-100 text-stone-400' : deltaOk ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-600 border border-red-200'}`}>
-              <span className="font-semibold">Δh =</span>
-              <span>{deltaH == null ? '—' : `${deltaH.toLocaleString('es-MX', { maximumFractionDigits: 1 })} h`}</span>
+            <div className={`flex items-center gap-2 rounded-md px-3 py-2 text-xs font-mono ${delta == null ? 'bg-stone-100 text-stone-400' : deltaOk ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-600 border border-red-200'}`}>
+              <span className="font-semibold">{isKm ? 'Δkm =' : 'Δh ='}</span>
+              <span>{delta == null ? '—' : `${delta.toLocaleString('es-MX', { maximumFractionDigits: maxFrac })} ${unit}`}</span>
               {!deltaOk && <span className="ml-1">— delta negativo, corrige los valores</span>}
             </div>
 
@@ -496,8 +520,11 @@ function EventsTab({
                   const ev = row.ev
                   const isDieselLoad = ev.source_kind === 'diesel_consumption'
                   const isSuspicious =
-                    (ev.hours_consumed != null && (ev.hours_consumed < 0 || ev.hours_consumed > 1000)) ||
-                    (ev.hours_reading != null && ev.previous_hours != null && ev.hours_reading - ev.previous_hours > 1000)
+                    meterMode === 'km'
+                      ? (ev.km_consumed != null && (ev.km_consumed < 0 || ev.km_consumed > 50000)) ||
+                        (ev.km_reading != null && ev.previous_km != null && ev.km_reading - ev.previous_km > 50000)
+                      : (ev.hours_consumed != null && (ev.hours_consumed < 0 || ev.hours_consumed > 1000)) ||
+                        (ev.hours_reading != null && ev.previous_hours != null && ev.hours_reading - ev.previous_hours > 1000)
                   const isEditing = editing?.txId === ev.source_id
                   const canEdit =
                     ev.source_kind === 'diesel_consumption' || ev.source_kind === 'checklist_completion'
@@ -548,7 +575,15 @@ function EventsTab({
                           ? (ev.km_reading != null ? fmt(ev.km_reading, 0) : '—')
                           : (ev.hours_reading != null ? fmt(ev.hours_reading, 1) : '—')}
                       </td>
-                      <td className={`py-1.5 pr-3 text-right font-mono tabular-num ${ev.hours_consumed != null && ev.hours_consumed < 0 ? 'text-red-600 font-bold' : 'text-stone-500'}`}>
+                      <td className={`py-1.5 pr-3 text-right font-mono tabular-num ${
+                        meterMode === 'km'
+                          ? ev.km_consumed != null && ev.km_consumed < 0
+                            ? 'text-red-600 font-bold'
+                            : 'text-stone-500'
+                          : ev.hours_consumed != null && ev.hours_consumed < 0
+                            ? 'text-red-600 font-bold'
+                            : 'text-stone-500'
+                      }`}>
                         {meterMode === 'km'
                           ? (ev.km_consumed != null ? fmt(ev.km_consumed, 0) : '—')
                           : (ev.hours_consumed != null ? fmt(ev.hours_consumed, 1) : '—')}
@@ -567,8 +602,12 @@ function EventsTab({
                             className={`p-1 rounded hover:bg-stone-200 transition-colors ${isSuspicious ? 'text-red-400' : 'text-stone-300 hover:text-stone-600'}`}
                             title={
                               row.isPrior
-                                ? 'Corregir horómetro (fecha en mes anterior al del reporte)'
-                                : 'Corregir lectura'
+                                ? meterMode === 'km'
+                                  ? 'Corregir odómetro (fecha en mes anterior al del reporte)'
+                                  : 'Corregir horómetro (fecha en mes anterior al del reporte)'
+                                : meterMode === 'km'
+                                  ? 'Corregir odómetro'
+                                  : 'Corregir lectura'
                             }
                           >
                             <Pencil className="h-3 w-3" />
