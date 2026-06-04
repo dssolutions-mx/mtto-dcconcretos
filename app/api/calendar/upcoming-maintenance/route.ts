@@ -149,7 +149,7 @@ export async function GET(request: Request) {
         if (r.status === 'completed' || r.status === 'not_applicable') continue
         if (!statusesToInclude.includes(r.status)) continue
 
-        const targetValue = r.nextDueValue ?? Number(r.interval.interval_value) || 0
+        const targetValue = r.nextDueValue ?? (Number(r.interval.interval_value) || 0)
         const valueRemaining = r.valueRemaining
         const estimatedDate =
           r.status === 'covered'
