@@ -201,7 +201,7 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
               status: m.status,
               urgency: m.urgency,
               progress: m.target_value > 0 ? Math.round((m.current_value / m.target_value) * 100) : 0,
-              unit: 'hours',
+              unit: maintenanceUnit,
               estimatedDate: new Date().toISOString(),
               lastMaintenanceDate: null,
               wasPerformed: false,
@@ -267,7 +267,7 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
             status: m.status,
             urgency: m.urgency,
             progress: m.target_value > 0 ? Math.round((m.current_value / m.target_value) * 100) : 0,
-            unit: 'hours',
+            unit: maintenanceUnit,
             estimatedDate: new Date().toISOString(),
             lastMaintenanceDate: null,
             wasPerformed: false,
@@ -361,7 +361,7 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
     }
     
     calculateUpcoming();
-  }, [maintenanceIntervals, asset, maintenanceHistory, assetId, combinedMaintenanceHistory]);
+  }, [maintenanceIntervals, asset, maintenanceHistory, assetId, combinedMaintenanceHistory, maintenanceUnit, compositeContext.composite]);
   
   // Add a new effect to fetch completed checklists
   useEffect(() => {

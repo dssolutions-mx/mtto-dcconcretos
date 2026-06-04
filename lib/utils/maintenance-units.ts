@@ -149,7 +149,8 @@ export function getMaintenanceValue(
   unit: MaintenanceUnit
 ): number {
   if (unit === "kilometers") {
-    return Number(maintenance?.kilometers) || 0;
+    const km = Number(maintenance?.kilometers) || 0;
+    return km > 0 ? km : Number(maintenance?.hours) || 0;
   }
   return Number(maintenance?.hours) || 0;
 }

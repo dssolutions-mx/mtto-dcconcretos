@@ -247,11 +247,11 @@ export function StatusMaintenanceTab({
                       <div className="flex items-center gap-2">
                         <Clock className="h-4 w-4 flex-shrink-0" />
                         <span className="break-words">
-                          {`${maintenance.currentValue}/${maintenance.targetValue} ${getUnitDisplayName(maintenance.unit === "kilometers" ? "kilometers" : "hours")}`}
+                          {`${maintenance.currentValue}/${maintenance.targetValue} ${getUnitDisplayName(maintenanceUnit)}`}
                           {maintenance.status === "overdue" && maintenance.valueRemaining < 0 && (
                             <span className="font-medium text-red-600 ml-2">
                               (Excedido por {Math.abs(maintenance.valueRemaining)}{" "}
-                              {getUnitLabel(maintenance.unit === "kilometers" ? "kilometers" : "hours")})
+                              {getUnitLabel(maintenanceUnit)})
                             </span>
                           )}
                         </span>
@@ -260,11 +260,11 @@ export function StatusMaintenanceTab({
                         <CalendarIcon className="h-4 w-4 flex-shrink-0" />
                         <span className="break-words">
                           {maintenance.status === "overdue"
-                            ? `Vencido - debió realizarse antes de ${maintenance.targetValue} ${getUnitLabel(maintenance.unit === "kilometers" ? "kilometers" : "hours")}`
+                            ? `Vencido - debió realizarse antes de ${maintenance.targetValue} ${getUnitLabel(maintenanceUnit)}`
                             : maintenance.status === "covered"
                               ? "Cubierto por mantenimiento posterior"
                               : maintenance.valueRemaining > 0
-                                ? `Próximo en ${maintenance.valueRemaining} ${maintenance.unit === "hours" ? "horas" : "km"}`
+                                ? `Próximo en ${maintenance.valueRemaining} ${getUnitLabel(maintenanceUnit)}`
                                 : "Programado para el futuro"}
                         </span>
                       </div>

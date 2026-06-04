@@ -172,7 +172,8 @@ export function MaintenanceDetails({
                 className="ml-2 whitespace-nowrap"
               >
                 {maintenancePlan.type}
-                {maintenancePlan.interval_value && ` ${maintenancePlan.interval_value}h`}
+                {maintenancePlan.interval_value &&
+                  ` ${maintenancePlan.interval_value}${getMaintenanceUnit(asset) === "kilometers" ? " km" : " h"}`}
               </Badge>
             </CardTitle>
             <CardDescription>
@@ -273,18 +274,33 @@ export function MaintenanceDetails({
                 )}
               </div>
               <div>
-                <h4 className="text-sm font-medium text-muted-foreground mb-1">Horas del Equipo</h4>
+                <h4 className="text-sm font-medium text-muted-foreground mb-1">
+                  {getMaintenanceUnit(asset) === "kilometers" ? "Kilómetros del equipo" : "Horas del equipo"}
+                </h4>
                 {isEditMode ? (
                   <Input
                     type="number"
-                    value={editedMaintenance.hours || ""}
-                    onChange={(e) => setEditedMaintenance({ ...editedMaintenance, hours: e.target.value })}
-                    placeholder="Horas"
+                    value={getMaintenanceValue(editedMaintenance, getMaintenanceUnit(asset)) || ""}
+                    onChange={(e) => {
+                      const unit = getMaintenanceUnit(asset)
+                      const v = e.target.value
+                      setEditedMaintenance({
+                        ...editedMaintenance,
+                        hours: unit === "hours" ? v : null,
+                        kilometers: unit === "kilometers" ? v : null,
+                      })
+                    }}
+                    placeholder={getMaintenanceUnit(asset) === "kilometers" ? "Kilómetros" : "Horas"}
                   />
                 ) : (
                   <div className="flex items-center">
                     <Clock className="h-4 w-4 mr-1 text-muted-foreground" />
-                    <span>{displayMaintenance.hours} horas</span>
+                    <span>
+                      {formatMeterValue(
+                        getMaintenanceValue(displayMaintenance, getMaintenanceUnit(asset)),
+                        getMaintenanceUnit(asset)
+                      )}
+                    </span>
                   </div>
                 )}
               </div>

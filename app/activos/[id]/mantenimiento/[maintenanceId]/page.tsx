@@ -4,6 +4,7 @@ import { MaintenanceDetails } from "@/components/assets/maintenance-details"
 import { useRouter } from "next/navigation"
 import { useEffect, useState, use } from "react"
 import { createClient } from "@/lib/supabase"
+import { getMaintenanceUnit } from "@/lib/utils/maintenance-units"
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
 import { DashboardHeader } from "@/components/dashboard/dashboard-header";
 import { BreadcrumbSetter } from "@/components/navigation/breadcrumb-setter";
@@ -78,7 +79,7 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
         // Fetch asset data
         const { data: assetData, error: assetError } = await supabase
           .from("assets")
-          .select("*")
+          .select("*, equipment_models (maintenance_unit)")
           .eq("id", id)
           .single();
           
@@ -139,12 +140,19 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
     try {
       const supabase = createClient();
       
+      const unit = getMaintenanceUnit(asset)
+      const meter =
+        unit === "kilometers"
+          ? Number(updatedMaintenance.kilometers ?? updatedMaintenance.hours) || null
+          : Number(updatedMaintenance.hours) || null
+
       const { data, error } = await supabase
         .from("maintenance_history")
         .update({
           date: updatedMaintenance.date,
           type: updatedMaintenance.type,
-          hours: updatedMaintenance.hours,
+          hours: unit === "hours" ? meter : null,
+          kilometers: unit === "kilometers" ? meter : null,
           description: updatedMaintenance.description,
           findings: updatedMaintenance.findings,
           actions: updatedMaintenance.actions,

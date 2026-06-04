@@ -196,7 +196,7 @@ export function WorkOrderCompletionForm({ workOrderId, initialData }: WorkOrderC
           .from("work_orders")
           .select(`
             *,
-            asset:assets (*),
+            asset:assets (*, equipment_models (maintenance_unit)),
             purchase_orders!purchase_order_id (
               id,
               status
