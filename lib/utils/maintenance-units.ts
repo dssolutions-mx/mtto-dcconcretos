@@ -211,11 +211,11 @@ export function formatMeterValue(
   if (value == null || Number.isNaN(n)) return "—";
   const formatted =
     options?.decimals != null
-      ? n.toLocaleString(options.locale ?? "es-MX", {
+      ? n.toLocaleString(options?.locale ?? "es-MX", {
           maximumFractionDigits: options.decimals,
           minimumFractionDigits: options.decimals,
         })
-      : n.toLocaleString(options.locale ?? "es-MX");
+      : n.toLocaleString(options?.locale ?? "es-MX");
   return `${formatted} ${getUnitLabel(unit)}`;
 }
 
