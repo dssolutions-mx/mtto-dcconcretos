@@ -56,25 +56,29 @@ export function findEarliestUnpaidPreventiveDue(
     const due = (cycleIdx - 1) * maxInterval + intervalValue;
     if (due > currentValue) continue;
 
-    const cycleStart = (cycleIdx - 1) * maxInterval;
-    const cycleEnd = cycleIdx * maxInterval;
-    const cycleSlice = preventiveHistory.filter((m) => {
+    // A due at meter value `due` is satisfied by any qualifying preventive performed
+    // from the due point up to the next time the same milestone recurs (one cycle later).
+    // Using this window instead of the cycle [start, end) slice recognizes services done
+    // late: e.g. a cycle-closing (max-interval) service logged just past the cycle boundary
+    // still clears the lower-tier dues it covers, instead of leaving them flagged overdue.
+    const coverageWindowEnd = due + maxInterval;
+    const satisfyingHistory = preventiveHistory.filter((m) => {
       const mValue = getMaintenanceValue(m, maintenanceUnit);
-      return mValue > cycleStart && mValue < cycleEnd;
+      return mValue >= due && mValue < coverageWindowEnd;
     });
 
-    const wasPerformedInCycle = cycleSlice.some((m) => m.maintenance_plan_id === interval.id);
+    const wasPerformedInCycle = satisfyingHistory.some(
+      (m) => m.maintenance_plan_id === interval.id
+    );
     let isCoveredInCycle = false;
     if (!wasPerformedInCycle) {
-      isCoveredInCycle = cycleSlice.some((m) => {
+      isCoveredInCycle = satisfyingHistory.some((m) => {
         const performedInterval = maintenanceIntervals.find((i) => i.id === m.maintenance_plan_id);
         if (!performedInterval) return false;
         const sameUnit = performedInterval.type === interval.type;
         const higherOrEqual =
           Number(performedInterval.interval_value) >= Number(interval.interval_value);
-        const performedAtValue = getMaintenanceValue(m, maintenanceUnit);
-        const performedAfterDue = performedAtValue >= due;
-        return Boolean(sameUnit && higherOrEqual && performedAfterDue);
+        return Boolean(sameUnit && higherOrEqual);
       });
     }
 

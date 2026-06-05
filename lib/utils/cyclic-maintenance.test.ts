@@ -93,6 +93,39 @@ test("selectCyclicSummaryInterval picks lowest overdue interval", () => {
   assert.ok(summary.overdue != null && summary.overdue > 0);
 });
 
+test("cycle-closing service logged late covers lower tiers in prior cycle (CR-24)", () => {
+  // maxInterval 3600; asset at 3749 → cycle 2. The 3600 "Ultra Completo" was
+  // performed at 3749 (just past the cycle boundary). It must clear the cycle-1
+  // 3000/3300 dues it covers instead of flagging them overdue.
+  const intervals = [300, 600, 900, 1200, 1500, 1800, 2100, 2400, 2700, 3000, 3300, 3600].map(
+    (v) => ({
+      id: `int-${v}`,
+      interval_value: v,
+      type: "hours",
+      name: `${v}h`,
+      is_recurring: true,
+      is_first_cycle_only: false,
+    })
+  );
+  const history = [
+    { type: "preventivo", maintenance_plan_id: "int-1500", hours: 1697, kilometers: null, date: "2025-07-10" },
+    { type: "preventivo", maintenance_plan_id: "int-2700", hours: 2728, kilometers: null, date: "2025-12-01" },
+    { type: "preventivo", maintenance_plan_id: "int-3600", hours: 3749, kilometers: null, date: "2026-06-02" },
+  ];
+  const results = computeCyclicIntervalResults({
+    intervals,
+    history,
+    currentValue: 3749,
+    unit: "hours",
+    options: { applyEarliestUnpaid: true },
+  });
+  const threeK = results.find((r) => r.intervalId === "int-3000");
+  const threeThreeK = results.find((r) => r.intervalId === "int-3300");
+  assert.ok(threeK && threeThreeK);
+  assert.notEqual(threeK!.status, "overdue");
+  assert.notEqual(threeThreeK!.status, "overdue");
+});
+
 test("hours and km share same cycle formula", () => {
   const hourIntervals = kmIntervals.map((i) => ({ ...i, type: "hours" }));
   const kmResults = computeCyclicIntervalResults({
