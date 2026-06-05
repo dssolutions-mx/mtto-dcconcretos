@@ -7,6 +7,16 @@ import { X, Printer, FileDown } from "lucide-react"
 import { useState, useEffect } from "react"
 import jsPDF from "jspdf"
 import { snapdom } from "@zumer/snapdom"
+import {
+  formatIntervalLabel,
+  formatMeterValue,
+  getCurrentValue,
+  getMaintenanceUnit,
+  getMaintenanceValue,
+  getUnitDisplayName,
+  getUnitLabel,
+  type MaintenanceUnit,
+} from "@/lib/utils/maintenance-units"
 
 // DC Concretos brand colors (policy_template.js scheme)
 const NAVY = "#1B365D"
@@ -23,6 +33,32 @@ function getHealthBand(score: number): { band: string; color: string } {
   if (score >= 80) return { band: "Alto", color: "text-gray-800" }
   if (score >= 50) return { band: "Medio", color: "text-gray-700" }
   return { band: "Bajo", color: "text-gray-700" }
+}
+
+function normalizeMaintenanceParts(parts: unknown): unknown[] {
+  if (!parts) return []
+  if (Array.isArray(parts)) return parts
+  if (typeof parts === "string") {
+    try {
+      const parsed = JSON.parse(parts)
+      return Array.isArray(parsed) ? parsed : []
+    } catch {
+      return []
+    }
+  }
+  return []
+}
+
+function getIntervalLabelForMaintenance(
+  maintenance: { maintenance_plan_id?: string | null },
+  maintenanceIntervals: Array<{ id?: string; name?: string; description?: string; interval_value?: number }>,
+  unit: MaintenanceUnit
+): string | null {
+  const planId = maintenance?.maintenance_plan_id
+  if (!planId) return null
+  const interval = maintenanceIntervals.find((i) => i.id === planId)
+  if (!interval) return null
+  return formatIntervalLabel(interval, unit)
 }
 
 interface AssetProductionReportProps {
@@ -81,18 +117,16 @@ export function AssetProductionReport({ assetId, onClose }: AssetProductionRepor
     }).format(numAmount)
   }
 
-  const formatParts = (parts: any) => {
-    if (!parts) return <span className="text-gray-500">No especificados</span>
+  const formatParts = (parts: unknown) => {
+    const partsData = normalizeMaintenanceParts(parts)
+    if (!partsData.length) return <span className="text-gray-500">No especificados</span>
     
     try {
-      // Si ya es un objeto, úsalo directamente
-      const partsData = typeof parts === 'string' ? JSON.parse(parts) : parts
       
-      // Si es un array de repuestos
       if (Array.isArray(partsData)) {
         return (
           <div className="space-y-1">
-            {partsData.slice(0, 5).map((part: any, index: number) => (
+            {partsData.slice(0, 5).map((part: Record<string, unknown>, index: number) => (
               <div key={index} className="text-xs bg-gray-50 p-2 rounded border-l-2 border-gray-300">
                 <div className="font-medium text-gray-800">{part.name || part.part_name || 'Repuesto sin nombre'}</div>
                 <div className="flex flex-wrap gap-2 text-gray-600 text-xs mt-1">
@@ -244,7 +278,21 @@ export function AssetProductionReport({ assetId, onClose }: AssetProductionRepor
     return null
   }
 
-  const { asset, summary, completedChecklists, incidents, maintenanceHistory, workOrders, maintenancePlans, maintenanceIntervals, intervalAnalysis } = reportData
+  const {
+    asset,
+    summary,
+    completedChecklists,
+    incidents,
+    maintenanceHistory,
+    workOrders,
+    maintenanceIntervals,
+    intervalAnalysis,
+    reportMeta,
+  } = reportData
+
+  const maintenanceUnit = getMaintenanceUnit(asset)
+  const isCompositeReport = Boolean(reportMeta?.isComposite)
+  const currentMeterValue = getCurrentValue(asset, maintenanceUnit)
 
   // Key metrics for executive summary
   const isResolved = (s: string) => (s || "").toLowerCase() === "resuelto" || (s || "").toLowerCase() === "resolved"
@@ -488,263 +536,272 @@ export function AssetProductionReport({ assetId, onClose }: AssetProductionRepor
         </div>
 
         {/* Maintenance Intervals Analysis */}
-        {intervalAnalysis && intervalAnalysis.length > 0 && (
+        {intervalAnalysis && intervalAnalysis.length > 0 && (() => {
+          const rowUnit = (interval: { analysis?: { unit?: MaintenanceUnit } }) =>
+            interval.analysis?.unit ?? maintenanceUnit
+          const renderIntervalRow = (interval: Record<string, unknown>, index: number) => {
+            const analysis = interval.analysis as Record<string, unknown>
+            const unit = rowUnit(interval as { analysis?: { unit?: MaintenanceUnit } })
+            const unitLabel = getUnitLabel(unit)
+            const rowKey = `${interval.component_id ?? "asset"}-${interval.id}-${index}`
+            const valueRemaining = Number(analysis.valueRemaining ?? 0)
+            const overdueAmount = Number(analysis.hoursOverdue ?? 0)
+
+            return (
+              <tr
+                key={rowKey}
+                className={`border-t border-gray-200 ${
+                  analysis.status === "overdue"
+                    ? "bg-gray-100"
+                    : analysis.status === "upcoming"
+                      ? "bg-gray-50"
+                      : analysis.status === "covered"
+                        ? "bg-gray-50"
+                        : analysis.status === "completed"
+                          ? "bg-gray-50"
+                          : "bg-white"
+                }`}
+              >
+                <td className="px-3 py-3 border-r border-gray-200 w-32">
+                  <div className="space-y-1">
+                    <div className="font-medium">{String(interval.type ?? "")}</div>
+                    <div className="text-xs bg-gray-100 px-2 py-1 rounded">
+                      Cada {interval.interval_value} {getUnitDisplayName(unit)}
+                    </div>
+                  </div>
+                </td>
+                <td className="px-3 py-3 border-r border-gray-200 w-48">
+                  <div className="font-medium mb-1">
+                    {formatIntervalLabel(
+                      {
+                        name: interval.name as string,
+                        description: interval.description as string,
+                        interval_value: interval.interval_value as number,
+                      },
+                      unit
+                    )}
+                  </div>
+                  {Array.isArray(interval.maintenance_tasks) && interval.maintenance_tasks.length > 0 && (
+                    <div className="text-xs text-gray-600">
+                      {interval.maintenance_tasks.length} tareas programadas
+                    </div>
+                  )}
+                </td>
+                <td className="px-3 py-3 text-center border-r border-gray-200 w-28">
+                  <div className="space-y-2">
+                    <span
+                      className={`px-2 py-1 rounded text-xs font-medium border ${getStatusBadgeClass(String(analysis.status))}`}
+                    >
+                      {getStatusText(String(analysis.status))}
+                    </span>
+                    {analysis.urgencyLevel === "high" && (
+                      <div className="text-xs text-gray-700 font-medium">URGENTE</div>
+                    )}
+                    {analysis.urgencyLevel === "medium" && (
+                      <div className="text-xs text-gray-700 font-medium">ATENCIÓN</div>
+                    )}
+                  </div>
+                </td>
+                <td className="px-3 py-3 text-center border-r border-gray-200 w-20">
+                  <div className="space-y-2">
+                    <div className="w-full bg-gray-200 rounded-full h-2">
+                      <div
+                        className="h-2 rounded-full bg-gray-500"
+                        style={{ width: `${Math.min(Number(analysis.progress) || 0, 100)}%` }}
+                      />
+                    </div>
+                    <div className="text-xs font-medium">{analysis.progress}%</div>
+                    {overdueAmount > 0 && (
+                      <div className="text-xs text-gray-700 font-medium">
+                        +{overdueAmount.toLocaleString()}
+                        {unitLabel} vencido
+                      </div>
+                    )}
+                  </div>
+                </td>
+                <td className="px-3 py-3 border-r border-gray-200 w-40">
+                  {analysis.wasPerformed && analysis.lastMaintenance ? (
+                    <div className="space-y-1">
+                      <div className="text-sm font-medium">
+                        {formatDate((analysis.lastMaintenance as { date?: string }).date)}
+                      </div>
+                      <div className="text-xs text-gray-600">
+                        A las{" "}
+                        {formatMeterValue(
+                          Number((analysis.lastMaintenance as { hours?: number }).hours) || 0,
+                          unit
+                        )}{" "}
+                        del equipo
+                      </div>
+                      <div className="text-xs text-gray-600">
+                        Por: {(analysis.lastMaintenance as { technician?: string }).technician}
+                      </div>
+                      <div className="text-xs text-gray-700 font-medium">Completado</div>
+                    </div>
+                  ) : (
+                    <div className="space-y-1">
+                      {analysis.status !== "covered" && analysis.status !== "completed" && (
+                        <div className="text-sm text-orange-600 font-medium">Nunca realizado</div>
+                      )}
+                      {analysis.status === "covered" && (
+                        <div className="text-xs text-gray-600">Cubierto por mantenimiento posterior</div>
+                      )}
+                      {analysis.status === "overdue" && (
+                        <div className="text-xs text-gray-700 font-medium">
+                          Vencido - Requiere atención inmediata
+                        </div>
+                      )}
+                      {analysis.status === "upcoming" && (
+                        <div className="text-xs text-gray-600 font-medium">
+                          Próximo en {Math.max(0, valueRemaining).toLocaleString()} {unitLabel}
+                        </div>
+                      )}
+                      {analysis.status === "scheduled" && (
+                        <div className="text-xs text-gray-600">Programado para el futuro</div>
+                      )}
+                    </div>
+                  )}
+                </td>
+                <td className="px-3 py-3 border-r border-gray-200 w-32">
+                  <div className="space-y-1">
+                    {analysis.wasPerformed ? (
+                      <>
+                        <div className="text-sm font-medium text-gray-700">Completado</div>
+                        <div className="text-xs text-gray-600">
+                          Intervalo: {Number(interval.interval_value)?.toLocaleString()}{" "}
+                          {getUnitDisplayName(unit)}
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="text-sm font-medium">
+                          {Number(interval.interval_value)?.toLocaleString()}{" "}
+                          {getUnitDisplayName(unit)}
+                        </div>
+                        {analysis.status === "overdue" && overdueAmount > 0 && (
+                          <div className="text-xs text-gray-700 font-medium">
+                            Vencido por {overdueAmount.toLocaleString()} {unitLabel}
+                          </div>
+                        )}
+                        {(analysis.status === "upcoming" || analysis.status === "scheduled") &&
+                          valueRemaining > 0 && (
+                            <div className="text-xs text-gray-600">
+                              En {valueRemaining.toLocaleString()} {unitLabel}
+                            </div>
+                          )}
+                      </>
+                    )}
+                  </div>
+                </td>
+                <td className="px-3 py-3">
+                  {Array.isArray(interval.maintenance_tasks) && interval.maintenance_tasks.length > 0 ? (
+                    <div className="text-xs text-gray-600">
+                      {interval.maintenance_tasks.length} tarea(s) definida(s)
+                    </div>
+                  ) : (
+                    <div className="text-xs text-gray-500 italic">Sin tareas específicas definidas</div>
+                  )}
+                </td>
+              </tr>
+            )
+          }
+
+          const groupedIntervals: Array<{ key: string; label: string; rows: unknown[] }> = []
+          if (isCompositeReport) {
+            const map = new Map<string, { label: string; rows: unknown[] }>()
+            for (const row of intervalAnalysis) {
+              const r = row as Record<string, unknown>
+              const key = String(r.component_id ?? "unknown")
+              const label = r.component_asset_id
+                ? `${r.component_asset_id} — ${r.component_name}`
+                : String(r.component_name ?? "Componente")
+              if (!map.has(key)) map.set(key, { label, rows: [] })
+              map.get(key)!.rows.push(row)
+            }
+            groupedIntervals.push(...Array.from(map.entries()).map(([key, g]) => ({ key, ...g })))
+          } else {
+            groupedIntervals.push({ key: "single", label: "", rows: intervalAnalysis })
+          }
+
+          return (
           <div className="mb-8 maintenance-intervals-section">
             <div className="py-2 px-3 mb-4 rounded" style={{ backgroundColor: NAVY }}>
               <h3 className="text-base font-bold text-white">Análisis de Intervalos de Mantenimiento Programados</h3>
             </div>
             <div className="bg-gray-50 rounded p-4 mb-4 border-l-4 border-gray-400">
               <p className="text-sm text-gray-700">
-                <strong>Estado de Intervalos:</strong> Análisis detallado del cumplimiento de cada intervalo de mantenimiento preventivo 
-                definido para el modelo {asset.equipment_models?.name || 'del equipo'}. 
-                Horas actuales del equipo: <strong>{asset.current_hours?.toLocaleString() || 0} horas</strong>
+                <strong>Estado de Intervalos:</strong>{" "}
+                {isCompositeReport
+                  ? `Análisis por componente del activo compuesto (${reportMeta?.components?.length ?? 0} componente(s)).`
+                  : `Cumplimiento de intervalos preventivos del modelo ${asset.equipment_models?.name || "del equipo"}.`}{" "}
+                {!isCompositeReport && (
+                  <>
+                    Lectura actual:{" "}
+                    <strong>{formatMeterValue(currentMeterValue, maintenanceUnit)}</strong>
+                  </>
+                )}
               </p>
             </div>
-            
-            <div className="overflow-hidden border border-gray-200 rounded">
-              <table className="w-full text-sm">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-3 py-3 text-left font-medium text-gray-600 border-b w-32">Intervalo</th>
-                    <th className="px-3 py-3 text-left font-medium text-gray-600 border-b w-48">Descripción</th>
-                    <th className="px-3 py-3 text-center font-medium text-gray-600 border-b w-28">Estado</th>
-                    <th className="px-3 py-3 text-center font-medium text-gray-600 border-b w-20">Progreso</th>
-                    <th className="px-3 py-3 text-left font-medium text-gray-600 border-b w-40">Último Realizado</th>
-                    <th className="px-3 py-3 text-left font-medium text-gray-600 border-b w-32">Próximo Due</th>
-                    <th className="px-3 py-3 text-left font-medium text-gray-600 border-b">Tareas</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {intervalAnalysis.map((interval: any, index: number) => (
-                    <tr key={interval.id} className={`border-t border-gray-200 ${
-                      interval.analysis.status === 'overdue' ? 'bg-gray-100' :
-                      interval.analysis.status === 'upcoming' ? 'bg-gray-50' :
-                      interval.analysis.status === 'covered' ? 'bg-gray-50' :
-                      interval.analysis.status === 'completed' ? 'bg-gray-50' : 'bg-white'
-                    }`}>
-                      <td className="px-3 py-3 border-r border-gray-200 w-32">
-                        <div className="space-y-1">
-                          <div className="font-medium">{interval.type}</div>
-                          <div className="text-xs bg-gray-100 px-2 py-1 rounded">
-                            Cada {interval.interval_value} horas
-                          </div>
-                          <div className="text-xs text-gray-500">
-                            ID: {interval.id.substring(0, 8)}...
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-3 py-3 border-r border-gray-200 w-48">
-                        <div className="font-medium mb-1">{interval.description || interval.name}</div>
-                        {interval.maintenance_tasks && interval.maintenance_tasks.length > 0 && (
-                          <div className="text-xs text-gray-600">
-                            {interval.maintenance_tasks.length} tareas programadas
-                          </div>
-                        )}
-                        {interval.estimated_duration && (
-                          <div className="text-xs text-gray-600">
-                            Duración estimada: {interval.estimated_duration}h
-                          </div>
-                        )}
-                      </td>
-                      <td className="px-3 py-3 text-center border-r border-gray-200 w-28">
-                        <div className="space-y-2">
-                          <span className={`px-2 py-1 rounded text-xs font-medium border ${getStatusBadgeClass(interval.analysis.status)}`}>
-                            {getStatusText(interval.analysis.status)}
-                          </span>
-                          {interval.analysis.urgencyLevel === 'high' && (
-                            <div className="text-xs text-gray-700 font-medium">URGENTE</div>
-                          )}
-                          {interval.analysis.urgencyLevel === 'medium' && (
-                            <div className="text-xs text-gray-700 font-medium">ATENCIÓN</div>
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-3 py-3 text-center border-r border-gray-200 w-20">
-                        <div className="space-y-2">
-                          <div className="w-full bg-gray-200 rounded-full h-2">
-                            <div 
-                              className={`h-2 rounded-full ${
-                                interval.analysis.status === 'overdue' ? 'bg-gray-600' :
-                                interval.analysis.status === 'upcoming' ? 'bg-gray-500' :
-                                interval.analysis.status === 'covered' ? 'bg-gray-400' : 'bg-gray-500'
-                              }`}
-                              style={{ width: `${Math.min(interval.analysis.progress, 100)}%` }}
-                            ></div>
-                          </div>
-                          <div className="text-xs font-medium">
-                            {interval.analysis.progress}%
-                          </div>
-                          {interval.analysis.hoursOverdue > 0 && (
-                            <div className="text-xs text-gray-700 font-medium">
-                              +{interval.analysis.hoursOverdue}h vencido
-                            </div>
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-3 py-3 border-r border-gray-200 w-40">
-                        {interval.analysis.wasPerformed && interval.analysis.lastMaintenance ? (
-                          <div className="space-y-1">
-                            <div className="text-sm font-medium">
-                              {formatDate(interval.analysis.lastMaintenance.date)}
-                            </div>
-                            <div className="text-xs text-gray-600">
-                              A las {Number(interval.analysis?.lastMaintenance?.hours)?.toLocaleString() || 'N/A'} horas del equipo
-                            </div>
-                            <div className="text-xs text-gray-600">
-                              Por: {interval.analysis.lastMaintenance.technician}
-                            </div>
-                            <div className="text-xs text-gray-700 font-medium">
-                              Completado
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="space-y-1">
-                            <div className="text-sm text-orange-600 font-medium">
-                              Nunca realizado
-                            </div>
-                            {interval.analysis.status === 'covered' && (
-                              <div className="text-xs text-gray-600">
-                                Cubierto por mantenimiento posterior
-                              </div>
-                            )}
-                            {interval.analysis.status === 'overdue' && (
-                              <div className="text-xs text-gray-700 font-medium">
-                                Vencido - Requiere atención inmediata
-                              </div>
-                            )}
-                            {interval.analysis.status === 'upcoming' && interval.analysis.urgencyLevel === 'high' && (
-                              <div className="text-xs text-gray-700 font-medium">
-                                Urgente - Próximo en ≤100h
-                              </div>
-                            )}
-                            {interval.analysis.status === 'upcoming' && interval.analysis.urgencyLevel === 'medium' && (
-                              <div className="text-xs text-gray-600 font-medium">
-                                Próximo - En ≤200h
-                              </div>
-                            )}
-                            {interval.analysis.status === 'scheduled' && (
-                              <div className="text-xs text-gray-600">
-                                Programado para el futuro
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </td>
-                      <td className="px-3 py-3 border-r border-gray-200 w-32">
-                        <div className="space-y-1">
-                          {interval.analysis.wasPerformed ? (
-                            <>
-                              <div className="text-sm font-medium text-gray-700">
-                                Completado
-                              </div>
-                              <div className="text-xs text-gray-600">
-                                Intervalo: {interval.interval_value?.toLocaleString() || 'N/A'} horas
-                              </div>
-                              <div className="text-xs text-gray-600">
-                                Mantenimiento realizado
-                              </div>
-                            </>
-                          ) : (
-                            <>
-                              <div className="text-sm font-medium">
-                                {interval.interval_value?.toLocaleString() || 'N/A'} horas
-                              </div>
-                              <div className="text-xs text-gray-600">
-                                Intervalo programado
-                              </div>
-                              {interval.analysis.status === 'overdue' && (
-                                <div className="text-xs text-gray-700 font-medium">
-                                  Vencido por {interval.analysis.hoursOverdue || 0} horas
-                                </div>
-                              )}
-                              {interval.analysis.status === 'upcoming' && (
-                                <div className="text-xs text-gray-600 font-medium">
-                                  En {Math.max(0, (interval.interval_value || 0) - (asset.current_hours || 0))} horas
-                                </div>
-                              )}
-                              {interval.analysis.status === 'scheduled' && (
-                                <div className="text-xs text-gray-600">
-                                  En {Math.max(0, (interval.interval_value || 0) - (asset.current_hours || 0))} horas
-                                </div>
-                              )}
-                              {interval.analysis.status === 'covered' && (
-                                <div className="text-xs text-gray-600">
-                                  Cubierto por mantenimiento posterior
-                                </div>
-                              )}
-                            </>
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-3 py-3">
-                        {interval.maintenance_tasks && interval.maintenance_tasks.length > 0 ? (
-                          <div className="space-y-1">
-                            {interval.maintenance_tasks.slice(0, 2).map((task: any, taskIndex: number) => (
-                              <div key={task.id} className="text-xs bg-gray-50 p-2 rounded border-l-2 border-gray-300">
-                                <div className="font-medium text-gray-800 mb-1">
-                                  {task.description}
-                                </div>
-                                {task.task_parts && task.task_parts.length > 0 && (
-                                  <div className="text-xs text-gray-600">
-                                    {task.task_parts.length} repuesto(s): {task.task_parts.map((part: any) => part.part_name || part.name).join(', ').substring(0, 50)}{task.task_parts.map((part: any) => part.part_name || part.name).join(', ').length > 50 ? '...' : ''}
-                                  </div>
-                                )}
-                                {task.estimated_duration && (
-                                  <div className="text-xs text-gray-600">
-                                    Duración: {task.estimated_duration}h
-                                  </div>
-                                )}
-                              </div>
-                            ))}
-                            {interval.maintenance_tasks.length > 2 && (
-                              <div className="text-xs text-gray-500 italic bg-gray-100 p-1 rounded">
-                                {interval.maintenance_tasks.length - 2} tarea(s) adicional(es)
-                              </div>
-                            )}
-                            <div className="text-xs text-gray-500 font-medium mt-2">
-                              Total: {interval.maintenance_tasks.length} tarea(s)
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="text-xs text-gray-500 italic">
-                            Sin tareas específicas definidas
-                          </div>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+
+            {groupedIntervals.map((group) => (
+              <div key={group.key} className="mb-6">
+                {group.label && (
+                  <h4 className="text-sm font-semibold text-gray-800 mb-2 py-2 px-3 bg-gray-100 rounded">
+                    Componente: {group.label}
+                  </h4>
+                )}
+                <div className="overflow-hidden border border-gray-200 rounded">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-3 py-3 text-left font-medium text-gray-600 border-b w-32">Intervalo</th>
+                        <th className="px-3 py-3 text-left font-medium text-gray-600 border-b w-48">Descripción</th>
+                        <th className="px-3 py-3 text-center font-medium text-gray-600 border-b w-28">Estado</th>
+                        <th className="px-3 py-3 text-center font-medium text-gray-600 border-b w-20">Progreso</th>
+                        <th className="px-3 py-3 text-left font-medium text-gray-600 border-b w-40">Último Realizado</th>
+                        <th className="px-3 py-3 text-left font-medium text-gray-600 border-b w-32">Próximo Due</th>
+                        <th className="px-3 py-3 text-left font-medium text-gray-600 border-b">Tareas</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {group.rows.map((interval, index) =>
+                        renderIntervalRow(interval as Record<string, unknown>, index)
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ))}
             
             <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
               <div className="bg-white border rounded p-3">
-              <div className="font-medium text-gray-800">
-                {intervalAnalysis.filter((i: any) => i.analysis.status === 'overdue').length}
+                <div className="font-medium text-gray-800">
+                  {intervalAnalysis.filter((i: { analysis?: { status?: string } }) => i.analysis?.status === "overdue").length}
+                </div>
+                <div className="text-xs text-gray-600">Intervalos Vencidos</div>
               </div>
-              <div className="text-xs text-gray-600">Intervalos Vencidos</div>
-            </div>
-            <div className="bg-white border rounded p-3">
-              <div className="font-medium text-gray-800">
-                {intervalAnalysis.filter((i: any) => i.analysis.status === 'upcoming').length}
+              <div className="bg-white border rounded p-3">
+                <div className="font-medium text-gray-800">
+                  {intervalAnalysis.filter((i: { analysis?: { status?: string } }) => i.analysis?.status === "upcoming").length}
+                </div>
+                <div className="text-xs text-gray-600">Próximos a Vencer</div>
               </div>
-              <div className="text-xs text-gray-600">Próximos a Vencer</div>
-            </div>
-            <div className="bg-white border rounded p-3">
-              <div className="font-medium text-gray-800">
-                {intervalAnalysis.filter((i: any) => i.analysis.status === 'covered').length}
+              <div className="bg-white border rounded p-3">
+                <div className="font-medium text-gray-800">
+                  {intervalAnalysis.filter((i: { analysis?: { status?: string } }) => i.analysis?.status === "covered").length}
+                </div>
+                <div className="text-xs text-gray-600">Cubiertos</div>
               </div>
-              <div className="text-xs text-gray-600">Cubiertos</div>
-            </div>
-            <div className="bg-white border rounded p-3">
-              <div className="font-medium text-gray-800">
-                {intervalAnalysis.filter((i: any) => i.analysis.status === 'scheduled').length}
-              </div>
+              <div className="bg-white border rounded p-3">
+                <div className="font-medium text-gray-800">
+                  {intervalAnalysis.filter((i: { analysis?: { status?: string } }) => i.analysis?.status === "scheduled").length}
+                </div>
                 <div className="text-xs text-gray-600">Programados</div>
               </div>
             </div>
           </div>
-        )}
+          )
+        })()}
 
         {/* Completed Checklists */}
         {completedChecklists.length > 0 && (
@@ -804,45 +861,66 @@ export function AssetProductionReport({ assetId, onClose }: AssetProductionRepor
             <div className="py-2 px-3 mb-4 rounded" style={{ backgroundColor: NAVY }}>
               <h3 className="text-base font-bold text-white">Historial de Mantenimiento Detallado</h3>
             </div>
-            {maintenanceHistory.slice(0, 10).map((maintenance: any, index: number) => {
+            {maintenanceHistory.slice(0, 10).map((maintenance: Record<string, unknown>, index: number) => {
               const maintenanceType = getMaintenanceType(maintenance)
-              
+              const rowUnit = maintenanceUnit
+              const meterReading = getMaintenanceValue(maintenance, rowUnit)
+              const findingsText = (maintenance.findings || maintenance.technician_notes) as string | undefined
+              const actionsText = (maintenance.actions || maintenance.resolution_details) as string | undefined
+              const intervalLabel = getIntervalLabelForMaintenance(
+                maintenance as { maintenance_plan_id?: string | null },
+                maintenanceIntervals || [],
+                rowUnit
+              )
+              const partsList = normalizeMaintenanceParts(maintenance.parts)
+              const assetRow = maintenance.assets as { asset_id?: string; name?: string } | undefined
+              const showComponentLabel =
+                isCompositeReport && assetRow?.asset_id && assetRow.asset_id !== asset.asset_id
+
               return (
-              <div key={index} className="border border-gray-200 rounded mb-4 p-4">
+              <div key={String(maintenance.id ?? index)} className="border border-gray-200 rounded mb-4 p-4">
+                {showComponentLabel && (
+                  <p className="text-xs text-gray-600 mb-2">
+                    <strong>Activo:</strong> {assetRow.asset_id} — {assetRow.name}
+                  </p>
+                )}
                 <div className="grid grid-cols-3 gap-4 mb-3">
                   <div>
-                    <p className="text-sm"><strong>Fecha:</strong> {formatDate(maintenance.date)}</p>
+                    <p className="text-sm"><strong>Fecha:</strong> {formatDate(maintenance.date as string)}</p>
                     <p className="text-sm"><strong>Tipo:</strong> <span className={`font-medium ${maintenanceType.colorClass}`}>{maintenanceType.displayText}</span></p>
-                    {maintenance.maintenance_plan_id && (
-                      <p className="text-xs text-gray-600 mt-1">Asociado a plan de mantenimiento</p>
+                    {intervalLabel && (
+                      <p className="text-xs text-gray-600 mt-1">Intervalo: {intervalLabel}</p>
                     )}
                   </div>
                   <div>
-                    <p className="text-sm"><strong>Técnico:</strong> {maintenance.technician}</p>
-                    <p className="text-sm"><strong>Horas de Trabajo:</strong> {maintenance.labor_hours || 0} hrs</p>
+                    <p className="text-sm"><strong>Técnico:</strong> {String(maintenance.technician || "No asignado")}</p>
+                    <p className="text-sm"><strong>Horas de Trabajo:</strong> {Number(maintenance.labor_hours) || 0} hrs</p>
                   </div>
                   <div>
-                    <p className="text-sm"><strong>Costo Total:</strong> {formatCurrency(maintenance.total_cost)}</p>
-                    <p className="text-sm"><strong>Horas del Equipo:</strong> {maintenance.hours?.toLocaleString() || 'N/A'}</p>
+                    <p className="text-sm"><strong>Costo Total:</strong> {formatCurrency(maintenance.total_cost as string | number)}</p>
+                    <p className="text-sm">
+                      <strong>Lectura del equipo:</strong>{" "}
+                      {meterReading > 0 ? formatMeterValue(meterReading, rowUnit) : "N/A"}
+                    </p>
                   </div>
                 </div>
                 <div className="mb-3">
                   <p className="text-sm font-medium mb-1">Descripción:</p>
-                  <p className="text-sm text-gray-700">{maintenance.description}</p>
+                  <p className="text-sm text-gray-700">{String(maintenance.description || "")}</p>
                 </div>
-                {maintenance.findings && (
+                {findingsText && (
                   <div className="mb-3">
                     <p className="text-sm font-medium mb-1">Hallazgos:</p>
-                    <p className="text-sm text-gray-700 bg-gray-50 p-2 rounded border border-gray-200">{maintenance.findings}</p>
+                    <p className="text-sm text-gray-700 bg-gray-50 p-2 rounded border border-gray-200">{findingsText}</p>
                   </div>
                 )}
-                {maintenance.actions && (
+                {actionsText && (
                   <div className="mb-3">
                     <p className="text-sm font-medium mb-1">Acciones Realizadas:</p>
-                    <p className="text-sm text-gray-700 bg-gray-50 p-2 rounded border border-gray-200">{maintenance.actions}</p>
+                    <p className="text-sm text-gray-700 bg-gray-50 p-2 rounded border border-gray-200">{actionsText}</p>
                   </div>
                 )}
-                {maintenance.parts && (
+                {partsList.length > 0 && (
                   <div>
                     <p className="text-sm font-medium mb-1">Repuestos Utilizados:</p>
                     <div className="text-sm text-gray-700 bg-gray-50 p-2 rounded">
