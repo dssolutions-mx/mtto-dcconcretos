@@ -20,6 +20,23 @@ import type {
 let initPromise: Promise<void> | null = null
 const STORAGE_PERSIST_FLAG = "offline_v2_storage_persist_requested"
 
+/** Static shell route — always precached; schedule id passed as query param. */
+export function getOfflineExecutionUrl(scheduleId: string): string {
+  return `/checklists/offline-ejecutar?id=${encodeURIComponent(scheduleId)}`
+}
+
+const OFFLINE_SHELL_URLS = ["/checklists/offline-ejecutar", "/checklists"] as const
+
+async function waitForServiceWorker(): Promise<ServiceWorker | null> {
+  if (typeof window === "undefined" || !("serviceWorker" in navigator)) return null
+  try {
+    const registration = await navigator.serviceWorker.ready
+    return registration.active
+  } catch {
+    return null
+  }
+}
+
 async function requestStoragePersistIfNeeded(): Promise<void> {
   if (typeof window === "undefined") return
   if (localStorage.getItem(STORAGE_PERSIST_FLAG) === "true") return
@@ -130,17 +147,40 @@ class OfflineClient {
     }
 
     await this.cacheSchedules(schedules, "pendiente")
+    await this.precacheOfflineShell()
     return cached
   }
 
   async precacheExecutionRoutes(scheduleIds: string[]): Promise<void> {
-    if (typeof window === "undefined" || scheduleIds.length === 0) return
+    if (typeof window === "undefined") return
 
-    const controller = navigator.serviceWorker?.controller
-    if (!controller) return
+    await this.precacheOfflineShell()
 
-    const urls = scheduleIds.map((id) => `/checklists/ejecutar/${id}`)
-    controller.postMessage({ type: "PRECACHE", urls })
+    const worker = await waitForServiceWorker()
+    if (!worker) return
+
+    const urls = scheduleIds.map((id) => getOfflineExecutionUrl(id))
+    worker.postMessage({ type: "PRECACHE", urls, cacheName: "offline-shell-pages" })
+  }
+
+  /** Warm SW + HTTP cache for static offline shell pages (same URL for every checklist). */
+  async precacheOfflineShell(): Promise<void> {
+    if (typeof window === "undefined" || !navigator.onLine) return
+
+    const worker = await waitForServiceWorker()
+    if (worker) {
+      worker.postMessage({
+        type: "PRECACHE",
+        urls: [...OFFLINE_SHELL_URLS],
+        cacheName: "offline-shell-pages",
+      })
+    }
+
+    await Promise.all(
+      OFFLINE_SHELL_URLS.map((url) =>
+        fetch(url, { credentials: "same-origin", cache: "reload" }).catch(() => undefined)
+      )
+    )
   }
   async enqueueChecklistComplete(payload: unknown, id?: string): Promise<string> {
     await this.ensureReady()

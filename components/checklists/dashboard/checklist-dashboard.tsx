@@ -110,8 +110,7 @@ export function ChecklistDashboard() {
       let cached = 0
 
       cached = await offlineClient.prepareOfflineChecklists()
-      const scheduleIds = schedules.map((schedule) => schedule.id)
-      await offlineClient.precacheExecutionRoutes(scheduleIds)
+      await offlineClient.precacheOfflineShell()
       setCachedOfflineCount(await offlineClient.getCachedTemplateCount())
 
       toast.success(`Preparado para uso offline: ${cached} checklists descargados`)

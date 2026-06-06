@@ -19,6 +19,8 @@ const withSerwist = withSerwistInit({
   additionalPrecacheEntries: [
     { url: '/~offline', revision },
     { url: '/', revision },
+    { url: '/checklists', revision },
+    { url: '/checklists/offline-ejecutar', revision },
   ],
 })
 

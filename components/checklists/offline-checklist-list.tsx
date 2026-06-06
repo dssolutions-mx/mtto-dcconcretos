@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { AlertTriangle, Clock, WifiOff, CheckCircle } from "lucide-react"
-import { offlineClient } from "@/lib/offline/offline-client"
+import { offlineClient, getOfflineExecutionUrl } from "@/lib/offline/offline-client"
 
 interface OfflineChecklistItem {
   id: string
@@ -54,8 +54,8 @@ export function OfflineChecklistList({ className = "" }: OfflineChecklistListPro
   }, [loadAvailableChecklists])
 
   const openChecklist = (scheduleId: string) => {
-    // Full document navigation so the service worker serves cached HTML (client Link needs RSC cache).
-    window.location.assign(`/checklists/ejecutar/${scheduleId}`)
+    // Static offline shell (precached) + checklist data from Dexie via ?id=
+    window.location.assign(getOfflineExecutionUrl(scheduleId))
   }
 
   const formatLastUpdate = (timestamp: number) => {

@@ -1,8 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import Link from "next/link"
-import { offlineClient } from "@/lib/offline/offline-client"
+import { getOfflineExecutionUrl, offlineClient } from "@/lib/offline/offline-client"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 
@@ -48,7 +47,7 @@ export default function OfflineFallbackPage() {
                 {schedules.slice(0, 10).map((schedule) => (
                   <li key={schedule.id}>
                     <a
-                      href={`/checklists/ejecutar/${schedule.id}`}
+                      href={getOfflineExecutionUrl(schedule.id)}
                       className="text-primary underline-offset-4 hover:underline"
                     >
                       {schedule.label}
@@ -63,7 +62,7 @@ export default function OfflineFallbackPage() {
             </p>
           )}
           <Button asChild className="w-full min-h-[44px]">
-            <Link href="/checklists">Ir a checklists</Link>
+            <a href="/checklists">Ir a checklists</a>
           </Button>
         </CardContent>
       </Card>
