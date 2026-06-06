@@ -21,8 +21,8 @@ import {
 import { toast } from "sonner"
 import { useOfflineSync } from "@/hooks/useOfflineSync"
 
-// Import offline service
-let offlineChecklistService: any = null
+// Import offline client (unified offline stack)
+let offlineClientRef: any = null
 
 interface SyncStats {
   pendingChecklists: number
@@ -40,21 +40,21 @@ export function OfflineDebugConsole() {
 
   // Initialize offline service
   useEffect(() => {
-    if (typeof window !== 'undefined' && !offlineChecklistService) {
-      import('@/lib/services/offline-checklist-service').then(module => {
-        offlineChecklistService = module.offlineChecklistService
+    if (typeof window !== 'undefined' && !offlineClientRef) {
+      import('@/lib/offline/offline-client').then(module => {
+        offlineClientRef = module.offlineClient
         loadSyncStats()
       })
-    } else if (offlineChecklistService) {
+    } else if (offlineClientRef) {
       loadSyncStats()
     }
   }, [])
 
   const loadSyncStats = async () => {
-    if (!offlineChecklistService) return
+    if (!offlineClientRef) return
 
     try {
-      const stats = await offlineChecklistService.getSyncStats()
+      const stats = await offlineClientRef.getOfflineDebugStats()
       setSyncStats(stats)
     } catch (error) {
       console.error('Error loading sync stats:', error)
@@ -65,11 +65,11 @@ export function OfflineDebugConsole() {
     setIsProcessing(true)
     
     try {
-      if (!offlineChecklistService) {
+      if (!offlineClientRef) {
         throw new Error('Offline service not available')
       }
 
-      const result = await offlineChecklistService.cleanCorruptedData()
+      const result = await offlineClientRef.cleanCorruptedData()
       setLastCleanup(result)
 
       const totalCleaned = result.indexedDB + result.localStorage
@@ -104,7 +104,7 @@ export function OfflineDebugConsole() {
     setIsProcessing(true)
     
     try {
-      if (!offlineChecklistService) {
+      if (!offlineClientRef) {
         throw new Error('Offline service not available')
       }
 
@@ -112,10 +112,10 @@ export function OfflineDebugConsole() {
         duration: 3000
       })
 
-      const result = await offlineChecklistService.syncAll()
-      
-      toast.success("✅ Sincronización completada", {
-        description: `Checklists: ${result.checklistsSuccess}/${result.checklistsTotal}, Work Orders: ${result.workOrdersSuccess}/${result.workOrdersTotal}`,
+      await offlineClientRef.requestSync()
+
+      toast.success("✅ Sincronización iniciada", {
+        description: "Los elementos pendientes se sincronizarán en segundo plano",
         duration: 5000
       })
 
@@ -141,12 +141,12 @@ export function OfflineDebugConsole() {
     setIsProcessing(true)
     
     try {
-      if (!offlineChecklistService) {
+      if (!offlineClientRef) {
         throw new Error('Offline service not available')
       }
 
       // Clean all offline data
-      await offlineChecklistService.cleanOldData()
+      await offlineClientRef.cleanOldData()
       
       // Also clean localStorage items
       const keys = Object.keys(localStorage).filter(key => 
@@ -343,8 +343,8 @@ export function OfflineDebugConsole() {
             <div>// Comandos disponibles en la consola del navegador:</div>
             <div className="mt-1 space-y-1">
               <div>cleanCorruptedData() // Limpiar datos corruptos</div>
-              <div>offlineChecklistService.syncAll() // Sincronizar todo</div>
-              <div>offlineChecklistService.getSyncStats() // Ver estadísticas</div>
+              <div>offlineClient.requestSync() // Sincronizar todo</div>
+              <div>offlineClient.getOfflineDebugStats() // Ver estadísticas</div>
             </div>
           </div>
         </div>

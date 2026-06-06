@@ -11,8 +11,8 @@ import { toast } from "sonner"
 if (typeof window !== 'undefined') {
   (window as any).cleanCorruptedData = async () => {
     try {
-      const { offlineChecklistService } = await import('@/lib/services/offline-checklist-service')
-      const result = await offlineChecklistService.cleanCorruptedData()
+      const { offlineClient } = await import('@/lib/offline/offline-client')
+      const result = await offlineClient.cleanCorruptedData()
       console.log('🧹 Manual cleanup completed:', result)
       return result
     } catch (error) {
@@ -41,11 +41,11 @@ export function CorruptedDataCleanup({
     setCleaning(true)
     
     try {
-      // Import the offline service dynamically
-      const { offlineChecklistService } = await import('@/lib/services/offline-checklist-service')
-      
+      // Import the offline client dynamically
+      const { offlineClient } = await import('@/lib/offline/offline-client')
+
       // Clean corrupted data
-      const result = await offlineChecklistService.cleanCorruptedData()
+      const result = await offlineClient.cleanCorruptedData()
       
       setLastCleanup(result)
       

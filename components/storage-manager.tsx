@@ -79,22 +79,16 @@ async function runRoutineCleanup() {
 
   // Lazy-import services to avoid pulling them into the server bundle
   const [
-    { offlineChecklistService },
-    { getOfflineDieselService },
-    { offlineAssetService },
+    { offlineClient },
     { photoStorageService },
   ] = await Promise.all([
-    import('@/lib/services/offline-checklist-service'),
-    import('@/lib/services/offline-diesel-service'),
-    import('@/lib/services/offline-asset-service'),
+    import('@/lib/offline/offline-client'),
     import('@/lib/services/photo-storage-service'),
   ])
 
   await Promise.allSettled([
-    offlineChecklistService.cleanOldData(),
-    offlineChecklistService.cleanCorruptedData(),
-    getOfflineDieselService().cleanup(),
-    offlineAssetService.cleanOldData(),
+    offlineClient.cleanOldData(),
+    offlineClient.cleanCorruptedData(),
     photoStorageService.cleanupOldPhotos(),
   ])
 

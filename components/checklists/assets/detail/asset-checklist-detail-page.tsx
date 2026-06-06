@@ -11,7 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { AlertTriangle, ArrowLeft, ClipboardCheck, FileText, Truck } from "lucide-react"
 import { toast } from "sonner"
 import { OfflineStatus } from "@/components/checklists/offline-status"
-import { offlineChecklistService } from "@/lib/services/offline-checklist-service"
+import { offlineClient } from "@/lib/offline/offline-client"
 import { categorizeSchedulesByDate, getRelativeDateDescription } from "@/lib/utils/date-utils"
 import { AssetDetailHeader } from "./asset-detail-header"
 import { AssetDetailKpiCard } from "./asset-detail-kpi-card"
@@ -99,7 +99,7 @@ export function AssetChecklistDetailPage({
         const json = await res.json()
         if (json?.data?.asset) {
           try {
-            await offlineChecklistService.cacheAssetData(assetId, json.data.asset)
+            await offlineClient.cacheAssetData(assetId, json.data.asset)
           } catch {
             /* non-fatal */
           }
@@ -107,10 +107,10 @@ export function AssetChecklistDetailPage({
         return json
       } catch (err) {
         if (!navigator.onLine) {
-          const cachedAsset = await offlineChecklistService.getCachedAssetData(assetId)
+          const cachedAsset = await offlineClient.getCachedAssetData(assetId)
           if (cachedAsset) {
             const cachedSchedules =
-              await offlineChecklistService.getCachedChecklistSchedules("pendiente")
+              await offlineClient.getCachedSchedules("pendiente")
             const ca = cachedAsset as Asset & { is_composite?: boolean; component_assets?: string[] }
             const scopeIds =
               ca.is_composite && Array.isArray(ca.component_assets) && ca.component_assets.length > 0

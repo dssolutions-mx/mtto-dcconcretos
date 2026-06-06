@@ -22,6 +22,7 @@ import { toast } from "sonner"
 import { SimilarIssuesSection } from "./similar-issues-section"
 import { DeduplicationResultsDialog } from "./deduplication-results-dialog"
 import { useOfflineSync } from "@/hooks/useOfflineSync"
+import { offlineClient } from "@/lib/offline/offline-client"
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card"
 import React from "react"
 
@@ -232,38 +233,31 @@ export function CorrectiveWorkOrderDialog({
       }
 
       if (!isOnline) {
-        // Save offline using both localStorage and IndexedDB for redundancy
-        const offlineId = `work-orders-${checklist.id}-${Date.now()}`
-        
-        // Save to localStorage (existing method)
-        localStorage.setItem(`offline-work-orders-${checklist.id}`, JSON.stringify(submissionData))
-        
-        // Also save to IndexedDB using offline service
+        // Enqueue on the unified offline outbox; the sync worker posts it to
+        // /generate-corrective-work-order-enhanced when connectivity returns.
         try {
-          // Import offline service dynamically
-          const { offlineChecklistService } = await import('@/lib/services/offline-checklist-service')
-          
-          // Save using offline service with proper structure
-          await offlineChecklistService.saveOfflineWorkOrder({
+          await offlineClient.enqueueCorrectiveWorkOrder({
             checklistId: checklist.id,
             issues: itemsWithPriorities,
             priority: globalPriority,
             description: description || generateDefaultDescription(),
-            asset_id: checklist.assetId
+            asset_id: submissionData.asset_id,
+            asset_name: submissionData.asset_name,
           })
-          
-          console.log('✅ Offline work order saved to both localStorage and IndexedDB')
+
+          setOfflineWorkOrderData(submissionData)
+
+          toast.success("Órdenes de trabajo guardadas offline", {
+            description: "Se procesarán con deduplicación inteligente cuando vuelva la conexión"
+          })
+
+          onOpenChange(false)
         } catch (error) {
-          console.error('❌ Error saving to IndexedDB, using localStorage only:', error)
+          console.error('❌ Error enqueueing offline work order:', error)
+          toast.error("No se pudo guardar la orden offline", {
+            description: error instanceof Error ? error.message : "Intente nuevamente"
+          })
         }
-        
-        setOfflineWorkOrderData(submissionData)
-        
-        toast.success("Órdenes de trabajo guardadas offline", {
-          description: "Se procesarán con deduplicación inteligente cuando vuelva la conexión"
-        })
-        
-        onOpenChange(false)
         return
       }
 

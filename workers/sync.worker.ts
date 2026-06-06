@@ -3,6 +3,7 @@
 import { db } from "../lib/offline/db"
 import { syncAssetCreate, drainPendingAssetFiles } from "../lib/offline/sync-handlers/asset"
 import { syncChecklistComplete } from "../lib/offline/sync-handlers/checklist"
+import { syncCorrectiveWorkOrder } from "../lib/offline/sync-handlers/work-order"
 import {
   drainPendingDieselPhotos,
   syncDieselTransaction,
@@ -29,7 +30,9 @@ let currentAccessToken: string | undefined
 async function getStats(): Promise<SyncStats> {
   const [pending, failed, inFlight] = await Promise.all([
     db.outbox.where("status").equals("pending").count(),
-    db.outbox.where("status").equals("failed").count(),
+    // Fold dead_letter into "failed" so exhausted entries stay visible to the user
+    // instead of silently disappearing from every badge.
+    db.outbox.where("status").anyOf(["failed", "dead_letter"]).count(),
     db.outbox.where("status").equals("in_flight").count(),
   ])
   return { pending, failed, inFlight }
@@ -45,6 +48,10 @@ async function processOutboxEntry(entry: OutboxEntry): Promise<void> {
     await syncChecklistComplete(entry, currentAccessToken)
     return
   }
+  if (entry.domain === "checklist" && entry.operation === "work_order") {
+    await syncCorrectiveWorkOrder(entry, currentAccessToken)
+    return
+  }
   if (entry.domain === "diesel" && entry.operation === "transaction") {
     await syncDieselTransaction(entry, currentAccessToken)
     return
@@ -58,13 +65,17 @@ async function processOutboxEntry(entry: OutboxEntry): Promise<void> {
 
 async function drainOutbox(): Promise<void> {
   const now = Date.now()
-  const pending = await db.outbox
+  // Drain "failed" alongside "pending": scheduleOutboxRetry flips an entry to
+  // "failed" at attempt 3, but it's still mid-retry (cap is MAX_SYNC_ATTEMPTS).
+  // If we only drained "pending", failed entries would be stuck forever — never
+  // retried by auto-sync or the manual "Sincronizar ahora" button.
+  const retryable = await db.outbox
     .where("status")
-    .equals("pending")
+    .anyOf(["pending", "failed"])
     .filter((entry) => entry.nextAttemptAt <= now)
     .sortBy("createdAt")
 
-  for (const entry of pending) {
+  for (const entry of retryable) {
     await db.outbox.update(entry.id, { status: "in_flight" })
 
     try {

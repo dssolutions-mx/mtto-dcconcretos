@@ -12,8 +12,8 @@ import { toast } from "sonner"
 import { CorrectiveWorkOrderDialog } from "./corrective-work-order-dialog"
 import { useOfflineSync } from "@/hooks/useOfflineSync"
 
-// Import offline service
-let offlineChecklistService: any = null
+// Import offline client (unified offline stack)
+let offlineClientRef: any = null
 
 interface UnresolvedIssue {
   id: string
@@ -54,12 +54,12 @@ export function UnresolvedIssuesTracker() {
 
   // Initialize offline service
   useEffect(() => {
-    if (typeof window !== 'undefined' && !offlineChecklistService) {
-      import('@/lib/services/offline-checklist-service').then(module => {
-        offlineChecklistService = module.offlineChecklistService
+    if (typeof window !== 'undefined' && !offlineClientRef) {
+      import('@/lib/offline/offline-client').then(module => {
+        offlineClientRef = module.offlineClient
         loadUnresolvedIssues()
       })
-    } else if (offlineChecklistService) {
+    } else if (offlineClientRef) {
       loadUnresolvedIssues()
     }
   }, [])
@@ -70,8 +70,8 @@ export function UnresolvedIssuesTracker() {
       let databaseIssues: UnresolvedIssue[] = []
 
       // Get local issues (existing functionality)
-      if (offlineChecklistService) {
-        localIssues = await offlineChecklistService.getUnresolvedIssues()
+      if (offlineClientRef) {
+        localIssues = await offlineClientRef.getUnresolvedIssues()
       } else {
         // Fallback to localStorage for backward compatibility
         const allUnresolvedKey = 'all-unresolved-issues'
@@ -176,8 +176,8 @@ export function UnresolvedIssuesTracker() {
         }
       } else {
         // Local storage/offline service issues
-        if (offlineChecklistService) {
-          const details = await offlineChecklistService.getUnresolvedIssueDetails(unresolvedId)
+        if (offlineClientRef) {
+          const details = await offlineClientRef.getUnresolvedIssueDetails(unresolvedId)
           if (details) {
             return {
               checklistId: details.checklistId,
@@ -241,8 +241,8 @@ export function UnresolvedIssuesTracker() {
 
   const removeResolvedIssue = async (unresolvedId: string) => {
     try {
-      if (offlineChecklistService) {
-        await offlineChecklistService.markIssuesResolved(unresolvedId)
+      if (offlineClientRef) {
+        await offlineClientRef.markIssuesResolved(unresolvedId)
       } else {
         // Fallback to localStorage
         const unresolvedKey = `unresolved-issues-${unresolvedId}`
@@ -273,8 +273,8 @@ export function UnresolvedIssuesTracker() {
 
   const dismissIssue = async (unresolvedId: string) => {
     try {
-      if (offlineChecklistService) {
-        await offlineChecklistService.removeUnresolvedIssues(unresolvedId)
+      if (offlineClientRef) {
+        await offlineClientRef.removeUnresolvedIssues(unresolvedId)
       } else {
         // Fallback to localStorage
         const unresolvedKey = `unresolved-issues-${unresolvedId}`
@@ -298,10 +298,10 @@ export function UnresolvedIssuesTracker() {
   const clearAllIssues = async () => {
     if (confirm("¿Está seguro de que desea limpiar TODOS los problemas no resueltos? Esta acción no se puede deshacer.")) {
       try {
-        if (offlineChecklistService) {
-          // Remove all unresolved issues using offline service
+        if (offlineClientRef) {
+          // Remove all unresolved issues using offline client
           for (const issue of unresolvedIssues) {
-            await offlineChecklistService.removeUnresolvedIssues(issue.id)
+            await offlineClientRef.removeUnresolvedIssues(issue.id)
           }
         } else {
           // Fallback to localStorage

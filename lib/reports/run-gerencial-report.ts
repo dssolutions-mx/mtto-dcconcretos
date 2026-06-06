@@ -670,7 +670,7 @@ export async function runGerencialReport(
       if (mergedKmByAsset.has(id)) return
       asset.kilometers_worked = 0
       asset.kilometers_worked_merged = kmMergedByAsset.get(id) ?? 0
-      asset.km_merge_fork = mergeForkKmByAsset.get(assetId) ?? false
+      asset.km_merge_fork = mergeForkKmByAsset.get(id) ?? false
       asset.liters_per_km = 0
     })
 

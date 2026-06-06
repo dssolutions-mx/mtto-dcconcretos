@@ -1,10 +1,9 @@
 import { defaultCache } from "@serwist/next/worker"
 import type { PrecacheEntry, SerwistGlobalConfig } from "serwist"
-import { CacheFirst, ExpirationPlugin, NetworkFirst, Serwist } from "serwist"
+import { ExpirationPlugin, NetworkFirst, Serwist } from "serwist"
 
 /** Must match PRECACHE handler below — defaultCache uses its own page caches. */
 const CHECKLIST_EXECUTION_CACHE = "checklist-execution-pages"
-const OFFLINE_SHELL_CACHE = "offline-shell-pages"
 
 declare global {
   interface WorkerGlobalScope extends SerwistGlobalConfig {
@@ -20,33 +19,10 @@ const serwist = new Serwist({
   clientsClaim: true,
   navigationPreload: false,
   runtimeCaching: [
-    {
-      matcher: ({ request, url }) =>
-        request.destination === "document" &&
-        url.pathname === "/checklists/offline-ejecutar",
-      handler: new CacheFirst({
-        cacheName: OFFLINE_SHELL_CACHE,
-        plugins: [
-          new ExpirationPlugin({
-            maxEntries: 4,
-            maxAgeSeconds: 7 * 24 * 60 * 60,
-          }),
-        ],
-      }),
-    },
-    {
-      matcher: ({ request, url }) =>
-        request.destination === "document" && url.pathname === "/checklists",
-      handler: new CacheFirst({
-        cacheName: OFFLINE_SHELL_CACHE,
-        plugins: [
-          new ExpirationPlugin({
-            maxEntries: 4,
-            maxAgeSeconds: 7 * 24 * 60 * 60,
-          }),
-        ],
-      }),
-    },
+    // NOTE: /checklists and /checklists/offline-ejecutar are served offline by the
+    // precache route (they're in additionalPrecacheEntries in next.config.mjs), which
+    // is registered before runtimeCaching and wins. We intentionally do NOT add
+    // CacheFirst routes for them here — those were dead code that never got hit.
     {
       matcher: ({ request, url }) =>
         request.destination === "document" &&

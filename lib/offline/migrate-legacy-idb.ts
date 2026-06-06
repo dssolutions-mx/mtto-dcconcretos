@@ -9,13 +9,18 @@ import type {
   DieselTransactionPayload,
   OutboxEntry,
   PhotoEntry,
+  UnresolvedIssueEntry,
 } from "./types"
 
 const MIGRATION_FLAG = "offline_v2_migrated"
 
-async function tryOpenLegacyDb(name: string, version: number): Promise<IDBPDatabase | null> {
+async function tryOpenLegacyDb(name: string): Promise<IDBPDatabase | null> {
   try {
-    return await openDB(name, version)
+    // Open at the EXISTING version (no version arg, no upgrade callback). Forcing a
+    // version here used to create an empty DB at that version before the legacy
+    // service had created its object stores — which broke the legacy service. We only
+    // ever read here, so we must never trigger a schema upgrade.
+    return await openDB(name)
   } catch (error) {
     console.warn(`Could not open legacy DB "${name}":`, error)
     return null
@@ -23,7 +28,7 @@ async function tryOpenLegacyDb(name: string, version: number): Promise<IDBPDatab
 }
 
 async function migrateChecklistsOffline(): Promise<void> {
-  const legacyDb = await tryOpenLegacyDb("checklists-offline", 6)
+  const legacyDb = await tryOpenLegacyDb("checklists-offline")
   if (!legacyDb) return
 
   try {
@@ -98,13 +103,34 @@ async function migrateChecklistsOffline(): Promise<void> {
         await db.photos.put(entry)
       }
     }
+
+    if (legacyDb.objectStoreNames.contains("unresolved-issues")) {
+      const issues = (await legacyDb.getAll("unresolved-issues")).filter(
+        (item: { workOrdersCreated?: boolean }) => !item.workOrdersCreated
+      )
+
+      for (const item of issues) {
+        const entry: UnresolvedIssueEntry = {
+          id: item.id,
+          tempChecklistId: item.tempChecklistId,
+          checklistId: item.checklistId,
+          assetId: item.assetId,
+          assetName: item.assetName,
+          issues: item.issues ?? [],
+          timestamp: item.timestamp ?? Date.now(),
+          synced: item.synced ?? false,
+          workOrdersCreated: item.workOrdersCreated ?? false,
+        }
+        await db.unresolved_issues.put(entry)
+      }
+    }
   } finally {
     legacyDb.close()
   }
 }
 
 async function migrateDieselOffline(): Promise<void> {
-  const legacyDb = await tryOpenLegacyDb("diesel-offline", 1)
+  const legacyDb = await tryOpenLegacyDb("diesel-offline")
   if (!legacyDb) return
 
   try {
@@ -180,7 +206,7 @@ async function migrateDieselOffline(): Promise<void> {
 }
 
 async function migrateAssetsOffline(): Promise<void> {
-  const legacyDb = await tryOpenLegacyDb("assets-offline", 1)
+  const legacyDb = await tryOpenLegacyDb("assets-offline")
   if (!legacyDb) return
 
   try {

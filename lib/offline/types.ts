@@ -118,3 +118,32 @@ export interface AssetCreatePayload {
   photoIds: string[]
   documentIds: string[]
 }
+
+export interface CorrectiveWorkOrderPayload {
+  checklist_id: string
+  asset_id: string
+  asset_name?: string
+  items_with_issues: unknown[]
+  priority: string
+  description: string
+}
+
+export interface UnresolvedIssueEntry {
+  id: string
+  checklistId: string
+  tempChecklistId?: string
+  assetId: string
+  assetName: string
+  issues: Array<{
+    id: string
+    description: string
+    notes: string
+    photo: string | null
+    status: "flag" | "fail"
+    sectionTitle?: string
+    sectionType?: string
+  }>
+  timestamp: number
+  synced: boolean
+  workOrdersCreated: boolean
+}

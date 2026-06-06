@@ -30,13 +30,21 @@ function publishStats(stats: SyncStats): void {
   getBroadcastChannel().postMessage({ type: "STATS", stats } satisfies StatsMessage)
 }
 
-function getWorker(): Worker {
+function getWorker(): Worker | null {
   if (!worker) {
-    worker = new Worker(new URL("../../workers/sync.worker.ts", import.meta.url))
-    worker.onmessage = (event: MessageEvent<StatsMessage>) => {
-      if (event.data?.type === "STATS") {
-        publishStats(event.data.stats)
+    try {
+      worker = new Worker(new URL("../../workers/sync.worker.ts", import.meta.url))
+      worker.onmessage = (event: MessageEvent<StatsMessage>) => {
+        if (event.data?.type === "STATS") {
+          publishStats(event.data.stats)
+        }
       }
+      worker.onerror = (event) => {
+        console.warn("[offline-v2] sync worker error:", event.message)
+      }
+    } catch (error) {
+      console.warn("[offline-v2] could not start sync worker:", error)
+      worker = null
     }
   }
   return worker
@@ -91,9 +99,11 @@ export async function requestSync(): Promise<void> {
   assertClient()
 
   initSyncBridge()
+  const activeWorker = getWorker()
+  if (!activeWorker) return
   const accessToken = await resolveAccessToken()
   const message: DrainMessage = { type: "DRAIN", accessToken }
-  getWorker().postMessage(message)
+  activeWorker.postMessage(message)
 }
 
 export function getLatestSyncStats(): SyncStats {

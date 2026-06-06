@@ -28,6 +28,8 @@ async function probeHealth(): Promise<boolean> {
 }
 
 export function useConnectivity(): ConnectivityState {
+  // Start "online" to keep SSR/hydration stable; the effect below immediately
+  // re-evaluates against navigator.onLine + a health probe on mount.
   const [state, setState] = useState<ConnectivityState>("online")
 
   const evaluate = useCallback(async () => {

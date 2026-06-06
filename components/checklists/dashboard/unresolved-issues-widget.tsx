@@ -9,34 +9,23 @@ export function UnresolvedIssuesWidget() {
   const [unresolvedCount, setUnresolvedCount] = useState(0)
 
   useEffect(() => {
-    let svc: { on: (e: string, h: () => void) => void; off: (e: string, h: () => void) => void } | null = null
+    let cancelled = false
 
     const loadUnresolvedCount = async () => {
       try {
-        const mod = await import("@/lib/services/offline-checklist-service").catch(() => null)
-        const service = mod?.offlineChecklistService
-        if (service) {
-          svc = service
-          const issues = await service.getUnresolvedIssues()
-          setUnresolvedCount(issues.length)
-        } else {
-          const stored = typeof window !== "undefined" ? localStorage?.getItem("all-unresolved-issues") : null
-          setUnresolvedCount(stored ? JSON.parse(stored).length : 0)
-        }
+        const { offlineClient } = await import("@/lib/offline/offline-client")
+        const issues = await offlineClient.getUnresolvedIssues()
+        if (!cancelled) setUnresolvedCount(issues.length)
       } catch {
         const stored = typeof window !== "undefined" ? localStorage?.getItem("all-unresolved-issues") : null
-        setUnresolvedCount(stored ? JSON.parse(stored).length : 0)
+        if (!cancelled) setUnresolvedCount(stored ? JSON.parse(stored).length : 0)
       }
     }
 
-    loadUnresolvedCount().then(() => {
-      if (svc) {
-        svc.on("stats-update", loadUnresolvedCount)
-      }
-    })
+    void loadUnresolvedCount()
 
     return () => {
-      svc?.off("stats-update", loadUnresolvedCount)
+      cancelled = true
     }
   }, [])
 

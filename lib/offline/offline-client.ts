@@ -9,12 +9,14 @@ import type {
   CachedDieselEntry,
   CachedSchedule,
   CachedTemplate,
+  CorrectiveWorkOrderPayload,
   DieselPhotoEntry,
   DieselTransactionPayload,
   DraftEntry,
   OutboxEntry,
   PhotoEntry,
   SyncStats,
+  UnresolvedIssueEntry,
 } from "./types"
 
 let initPromise: Promise<void> | null = null
@@ -64,16 +66,6 @@ export async function prefetchChecklistExecutionModule(): Promise<void> {
 
 const OFFLINE_SHELL_URLS = ["/checklists/offline-ejecutar", "/checklists"] as const
 
-async function waitForServiceWorker(): Promise<ServiceWorker | null> {
-  if (typeof window === "undefined" || !("serviceWorker" in navigator)) return null
-  try {
-    const registration = await navigator.serviceWorker.ready
-    return registration.active
-  } catch {
-    return null
-  }
-}
-
 async function requestStoragePersistIfNeeded(): Promise<void> {
   if (typeof window === "undefined") return
   if (localStorage.getItem(STORAGE_PERSIST_FLAG) === "true") return
@@ -96,9 +88,21 @@ export function initOfflineClient(): Promise<void> {
   }
 
   if (!initPromise) {
+    // Init must ALWAYS resolve. Cache reads (getCachedTemplate, etc.) await this
+    // promise via ensureReady(); if migration or the sync worker throws and we let
+    // the promise reject, it stays cached as a rejected promise and every future
+    // offline read fails — which is exactly what broke "open checklist offline".
     initPromise = (async () => {
-      await migrateLegacyIdbIfNeeded()
-      initSyncBridge()
+      try {
+        await migrateLegacyIdbIfNeeded()
+      } catch (error) {
+        console.warn("[offline-v2] legacy migration failed (continuing):", error)
+      }
+      try {
+        initSyncBridge()
+      } catch (error) {
+        console.warn("[offline-v2] sync bridge init failed (continuing):", error)
+      }
     })()
   }
 
@@ -108,6 +112,305 @@ export function initOfflineClient(): Promise<void> {
 class OfflineClient {
   private async ensureReady(): Promise<void> {
     await initOfflineClient()
+  }
+
+  // ---------------------------------------------------------------------------
+  // Corrective work orders (offline enqueue → /generate-corrective-work-order)
+  // ---------------------------------------------------------------------------
+
+  async enqueueCorrectiveWorkOrder(
+    workOrder: {
+      checklistId: string
+      issues: unknown[]
+      priority: string
+      description: string
+      asset_id?: string
+      asset_name?: string
+    },
+    id?: string
+  ): Promise<string> {
+    await this.ensureReady()
+
+    if (!workOrder.checklistId) {
+      throw new Error("Invalid checklistId: cannot enqueue offline work order")
+    }
+    if (!Array.isArray(workOrder.issues) || workOrder.issues.length === 0) {
+      throw new Error("Invalid issues: cannot enqueue offline work order")
+    }
+    if (!workOrder.asset_id) {
+      throw new Error("Invalid asset_id: cannot enqueue offline work order")
+    }
+
+    const entryId = id ?? crypto.randomUUID()
+    const payload: CorrectiveWorkOrderPayload = {
+      checklist_id: workOrder.checklistId,
+      asset_id: workOrder.asset_id,
+      asset_name: workOrder.asset_name,
+      items_with_issues: workOrder.issues,
+      priority: workOrder.priority,
+      description: workOrder.description,
+    }
+    const entry: OutboxEntry = {
+      id: entryId,
+      domain: "checklist",
+      operation: "work_order",
+      payload,
+      status: "pending",
+      attemptCount: 0,
+      nextAttemptAt: Date.now(),
+      createdAt: Date.now(),
+    }
+    await db.outbox.put(entry)
+    void requestStoragePersistIfNeeded()
+    void bridgeRequestSync()
+    return entryId
+  }
+
+  // ---------------------------------------------------------------------------
+  // Single-asset cache (offline asset detail page)
+  // ---------------------------------------------------------------------------
+
+  async cacheAssetData(assetId: string, assetData: unknown): Promise<void> {
+    await this.ensureReady()
+    await db.cache_assets.put({
+      id: `data:${assetId}`,
+      assets: [assetData],
+      lastUpdated: Date.now(),
+    })
+    void requestStoragePersistIfNeeded()
+  }
+
+  async getCachedAssetData(assetId: string): Promise<unknown | null> {
+    await this.ensureReady()
+    const cached = await db.cache_assets.get(`data:${assetId}`)
+    if (!cached || Date.now() - cached.lastUpdated > 4 * 60 * 60 * 1000) return null
+    return cached.assets[0] ?? null
+  }
+
+  // ---------------------------------------------------------------------------
+  // Unresolved issues (offline-first)
+  // ---------------------------------------------------------------------------
+
+  async saveUnresolvedIssues(
+    checklistId: string,
+    issues: UnresolvedIssueEntry["issues"],
+    assetData: { id: string; name: string },
+    tempChecklistId?: string
+  ): Promise<void> {
+    await this.ensureReady()
+    const entry: UnresolvedIssueEntry = {
+      id: `issues-${checklistId}-${Date.now()}`,
+      tempChecklistId,
+      checklistId,
+      assetId: assetData.id,
+      assetName: assetData.name,
+      issues,
+      timestamp: Date.now(),
+      synced: false,
+      workOrdersCreated: false,
+    }
+    await db.unresolved_issues.put(entry)
+  }
+
+  async getUnresolvedIssues(): Promise<
+    Array<{
+      id: string
+      checklistId: string
+      tempChecklistId?: string
+      assetId: string
+      assetName: string
+      issueCount: number
+      timestamp: number
+      synced: boolean
+    }>
+  > {
+    await this.ensureReady()
+    const issues = await db.unresolved_issues.toArray()
+    return issues
+      .filter((issue) => !issue.workOrdersCreated)
+      .sort((a, b) => b.timestamp - a.timestamp)
+      .map((issue) => ({
+        id: issue.id,
+        checklistId: issue.checklistId,
+        tempChecklistId: issue.tempChecklistId,
+        assetId: issue.assetId,
+        assetName: issue.assetName,
+        issueCount: issue.issues.length,
+        timestamp: issue.timestamp,
+        synced: issue.synced,
+      }))
+  }
+
+  async getUnresolvedIssueDetails(
+    unresolvedId: string
+  ): Promise<UnresolvedIssueEntry | undefined> {
+    await this.ensureReady()
+    return db.unresolved_issues.get(unresolvedId)
+  }
+
+  async markIssuesResolved(unresolvedId: string): Promise<void> {
+    await this.ensureReady()
+    await db.unresolved_issues.update(unresolvedId, { workOrdersCreated: true })
+  }
+
+  async removeUnresolvedIssues(unresolvedId: string): Promise<void> {
+    await this.ensureReady()
+    await db.unresolved_issues.delete(unresolvedId)
+  }
+
+  // ---------------------------------------------------------------------------
+  // Maintenance: cleanup + debug stats
+  // ---------------------------------------------------------------------------
+
+  /** Remove orphaned files, dead-letter outbox entries, and corrupted localStorage keys. */
+  async cleanCorruptedData(): Promise<{ indexedDB: number; localStorage: number }> {
+    await this.ensureReady()
+    let indexedDB = 0
+
+    // Dead-letter outbox entries can no longer be retried — drop them.
+    const deadLetters = await db.outbox.where("status").equals("dead_letter").toArray()
+    for (const entry of deadLetters) {
+      await db.outbox.delete(entry.id)
+      indexedDB++
+    }
+
+    // Orphaned blobs whose owning outbox entry is gone.
+    const liveOutboxIds = new Set((await db.outbox.toArray()).map((e) => e.id))
+
+    const dieselPhotos = await db.diesel_photos.toArray()
+    for (const photo of dieselPhotos) {
+      if (!liveOutboxIds.has(photo.outboxId)) {
+        await db.diesel_photos.delete(photo.id)
+        indexedDB++
+      }
+    }
+
+    const assetFiles = await db.asset_files.toArray()
+    for (const file of assetFiles) {
+      if (!liveOutboxIds.has(file.outboxId)) {
+        await db.asset_files.delete(file.id)
+        indexedDB++
+      }
+    }
+
+    const checklistPhotos = await db.photos.toArray()
+    for (const photo of checklistPhotos) {
+      if (!photo.checklistId || !photo.itemId) {
+        await db.photos.delete(photo.id)
+        indexedDB++
+      }
+    }
+
+    let localStorageCleaned = 0
+    if (typeof window !== "undefined") {
+      const keys = Object.keys(localStorage).filter(
+        (key) =>
+          key.startsWith("offline-work-orders-") ||
+          key.startsWith("checklist-draft-") ||
+          key.startsWith("unresolved-issues-")
+      )
+      for (const key of keys) {
+        try {
+          const data = JSON.parse(localStorage.getItem(key) || "{}")
+          if (!data || Object.keys(data).length === 0) {
+            localStorage.removeItem(key)
+            localStorageCleaned++
+          }
+        } catch {
+          localStorage.removeItem(key)
+          localStorageCleaned++
+        }
+      }
+    }
+
+    return { indexedDB, localStorage: localStorageCleaned }
+  }
+
+  /** Prune stale caches and synced blobs older than 30 days. Returns items removed. */
+  async cleanOldData(): Promise<number> {
+    await this.ensureReady()
+    const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000
+    let cleaned = 0
+
+    const pruneCache = async (
+      table: { toArray: () => Promise<Array<{ id: string; lastUpdated: number }>>; delete: (id: string) => Promise<void> }
+    ) => {
+      const rows = await table.toArray()
+      for (const row of rows) {
+        if (row.lastUpdated < cutoff) {
+          await table.delete(row.id)
+          cleaned++
+        }
+      }
+    }
+
+    await pruneCache(db.cache_templates)
+    await pruneCache(db.cache_schedules)
+    await pruneCache(db.cache_diesel)
+    await pruneCache(db.cache_assets)
+
+    // Uploaded blobs that have already synced are safe to discard.
+    const uploadedPhotos = await db.photos.filter((p) => p.uploaded).toArray()
+    for (const photo of uploadedPhotos) {
+      await db.photos.delete(photo.id)
+      cleaned++
+    }
+
+    // Resolved unresolved-issue records.
+    const resolved = await db.unresolved_issues.filter((i) => i.workOrdersCreated).toArray()
+    for (const issue of resolved) {
+      await db.unresolved_issues.delete(issue.id)
+      cleaned++
+    }
+
+    return cleaned
+  }
+
+  /** Aggregated counts for the offline debug console. */
+  async getOfflineDebugStats(): Promise<{
+    pendingChecklists: number
+    pendingPhotos: number
+    pendingWorkOrders: number
+    failedItems: number
+    totalCacheSize: number
+  }> {
+    await this.ensureReady()
+    const outbox = await db.outbox.toArray()
+    const isActive = (s: OutboxEntry["status"]) => s === "pending" || s === "in_flight"
+
+    const pendingChecklists = outbox.filter(
+      (e) => e.domain === "checklist" && e.operation === "complete" && isActive(e.status)
+    ).length
+    const pendingWorkOrders = outbox.filter(
+      (e) => e.domain === "checklist" && e.operation === "work_order" && isActive(e.status)
+    ).length
+    const failedItems = outbox.filter(
+      (e) => e.status === "failed" || e.status === "dead_letter"
+    ).length
+
+    const [checklistPhotos, dieselPhotos, assetFiles] = await Promise.all([
+      db.photos.filter((p) => !p.uploaded).count(),
+      db.diesel_photos.filter((p) => !p.uploaded).count(),
+      db.asset_files.filter((f) => !f.uploaded).count(),
+    ])
+
+    let totalCacheSize = 0
+    if (typeof navigator !== "undefined" && navigator.storage?.estimate) {
+      try {
+        const { usage = 0 } = await navigator.storage.estimate()
+        totalCacheSize = usage
+      } catch {
+        /* estimate unsupported */
+      }
+    }
+
+    return {
+      pendingChecklists,
+      pendingPhotos: checklistPhotos + dieselPhotos + assetFiles,
+      pendingWorkOrders,
+      failedItems,
+      totalCacheSize,
+    }
   }
 
   async cacheSchedules(schedules: unknown[], filters = "all"): Promise<void> {
@@ -193,18 +496,14 @@ class OfflineClient {
     await this.precacheOfflineShell()
   }
 
-  /** Warm SW + HTTP cache for static offline shell pages (same URL for every checklist). */
+  /**
+   * Verify the static offline shell pages are reachable while online. These URLs are
+   * served offline by the service worker's precache route (additionalPrecacheEntries),
+   * so we only fetch them here to confirm they're warm and report status to the user —
+   * we no longer push them into a separate runtime cache.
+   */
   async precacheOfflineShell(): Promise<boolean> {
     if (typeof window === "undefined" || !navigator.onLine) return false
-
-    const worker = await waitForServiceWorker()
-    if (worker) {
-      worker.postMessage({
-        type: "PRECACHE",
-        urls: [...OFFLINE_SHELL_URLS],
-        cacheName: "offline-shell-pages",
-      })
-    }
 
     const results = await Promise.all(
       OFFLINE_SHELL_URLS.map(async (url) => {
@@ -318,7 +617,9 @@ class OfflineClient {
     await this.ensureReady()
     const [pending, failed, inFlight] = await Promise.all([
       db.outbox.where("status").equals("pending").count(),
-      db.outbox.where("status").equals("failed").count(),
+      // Fold dead_letter into "failed" so exhausted entries stay visible to the
+      // user instead of silently disappearing from every badge.
+      db.outbox.where("status").anyOf(["failed", "dead_letter"]).count(),
       db.outbox.where("status").equals("in_flight").count(),
     ])
     return { pending, failed, inFlight }
@@ -326,6 +627,37 @@ class OfflineClient {
 
   async requestSync(): Promise<void> {
     await bridgeRequestSync()
+  }
+
+  /**
+   * Revive entries the automatic retry loop has given up on. "failed" entries are
+   * still drained on their backoff schedule, but "dead_letter" entries (>= MAX_SYNC_ATTEMPTS)
+   * are terminal and the worker never touches them again. This resets both back to a
+   * clean "pending" state (attempts cleared, backoff cleared) and kicks off a sync,
+   * giving operators a manual recovery path instead of a permanently stuck badge.
+   * Returns the number of entries revived.
+   */
+  async retryFailedSyncs(): Promise<number> {
+    await this.ensureReady()
+    const stuck = await db.outbox.where("status").anyOf(["failed", "dead_letter"]).toArray()
+    if (stuck.length === 0) {
+      void bridgeRequestSync()
+      return 0
+    }
+
+    const now = Date.now()
+    await db.outbox.bulkPut(
+      stuck.map((entry) => ({
+        ...entry,
+        status: "pending" as const,
+        attemptCount: 0,
+        nextAttemptAt: now,
+        lastError: undefined,
+      }))
+    )
+
+    void bridgeRequestSync()
+    return stuck.length
   }
 
   async cacheDieselWarehouse(warehouseId: string, warehouseData: unknown): Promise<void> {
