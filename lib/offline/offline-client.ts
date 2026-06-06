@@ -20,9 +20,46 @@ import type {
 let initPromise: Promise<void> | null = null
 const STORAGE_PERSIST_FLAG = "offline_v2_storage_persist_requested"
 
-/** Static shell route — always precached; schedule id passed as query param. */
-export function getOfflineExecutionUrl(scheduleId: string): string {
-  return `/checklists/offline-ejecutar?id=${encodeURIComponent(scheduleId)}`
+export const OFFLINE_CHECKLIST_ID_KEY = "offline_checklist_id"
+export const OFFLINE_SHELL_PATH = "/checklists/offline-ejecutar"
+
+/** Static shell URL (precached). Pass schedule id via sessionStorage before navigating. */
+export function getOfflineExecutionUrl(_scheduleId?: string): string {
+  return OFFLINE_SHELL_PATH
+}
+
+export function setOfflineChecklistId(scheduleId: string): void {
+  if (typeof window === "undefined") return
+  try {
+    sessionStorage.setItem(OFFLINE_CHECKLIST_ID_KEY, scheduleId)
+  } catch {
+    /* ignore quota / private mode */
+  }
+}
+
+export function getOfflineChecklistId(): string | null {
+  if (typeof window === "undefined") return null
+  try {
+    return sessionStorage.getItem(OFFLINE_CHECKLIST_ID_KEY)
+  } catch {
+    return null
+  }
+}
+
+/** Full navigation to precached shell (fallback when not already on /checklists). */
+export function openOfflineChecklistShell(scheduleId: string): void {
+  setOfflineChecklistId(scheduleId)
+  window.location.assign(OFFLINE_SHELL_PATH)
+}
+
+/** Prefetch heavy execution UI chunk while still online. */
+export async function prefetchChecklistExecutionModule(): Promise<void> {
+  if (typeof window === "undefined") return
+  try {
+    await import("@/components/checklists/checklist-execution")
+  } catch {
+    /* non-fatal */
+  }
 }
 
 const OFFLINE_SHELL_URLS = ["/checklists/offline-ejecutar", "/checklists"] as const
@@ -147,25 +184,18 @@ class OfflineClient {
     }
 
     await this.cacheSchedules(schedules, "pendiente")
+    await prefetchChecklistExecutionModule()
     await this.precacheOfflineShell()
     return cached
   }
 
-  async precacheExecutionRoutes(scheduleIds: string[]): Promise<void> {
-    if (typeof window === "undefined") return
-
+  async precacheExecutionRoutes(_scheduleIds: string[]): Promise<void> {
     await this.precacheOfflineShell()
-
-    const worker = await waitForServiceWorker()
-    if (!worker) return
-
-    const urls = scheduleIds.map((id) => getOfflineExecutionUrl(id))
-    worker.postMessage({ type: "PRECACHE", urls, cacheName: "offline-shell-pages" })
   }
 
   /** Warm SW + HTTP cache for static offline shell pages (same URL for every checklist). */
-  async precacheOfflineShell(): Promise<void> {
-    if (typeof window === "undefined" || !navigator.onLine) return
+  async precacheOfflineShell(): Promise<boolean> {
+    if (typeof window === "undefined" || !navigator.onLine) return false
 
     const worker = await waitForServiceWorker()
     if (worker) {
@@ -176,11 +206,17 @@ class OfflineClient {
       })
     }
 
-    await Promise.all(
-      OFFLINE_SHELL_URLS.map((url) =>
-        fetch(url, { credentials: "same-origin", cache: "reload" }).catch(() => undefined)
-      )
+    const results = await Promise.all(
+      OFFLINE_SHELL_URLS.map(async (url) => {
+        try {
+          const response = await fetch(url, { credentials: "same-origin", cache: "reload" })
+          return response.ok
+        } catch {
+          return false
+        }
+      })
     )
+    return results.every(Boolean)
   }
   async enqueueChecklistComplete(payload: unknown, id?: string): Promise<string> {
     await this.ensureReady()

@@ -686,7 +686,7 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
             return
           } else {
             toast.error("Este checklist no está disponible offline. Use «Preparar offline» con conexión.")
-            router.back()
+            setLoading(false)
             return
           }
         }

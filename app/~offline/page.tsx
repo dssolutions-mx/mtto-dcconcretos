@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { getOfflineExecutionUrl, offlineClient } from "@/lib/offline/offline-client"
+import { openOfflineChecklistShell, offlineClient } from "@/lib/offline/offline-client"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 
@@ -46,12 +46,13 @@ export default function OfflineFallbackPage() {
               <ul className="max-h-48 space-y-1 overflow-y-auto text-sm">
                 {schedules.slice(0, 10).map((schedule) => (
                   <li key={schedule.id}>
-                    <a
-                      href={getOfflineExecutionUrl(schedule.id)}
-                      className="text-primary underline-offset-4 hover:underline"
+                    <button
+                      type="button"
+                      onClick={() => openOfflineChecklistShell(schedule.id)}
+                      className="text-primary underline-offset-4 hover:underline text-left"
                     >
                       {schedule.label}
-                    </a>
+                    </button>
                   </li>
                 ))}
               </ul>

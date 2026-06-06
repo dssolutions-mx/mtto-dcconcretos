@@ -5,7 +5,9 @@ import { DashboardShell } from "@/components/dashboard/dashboard-shell"
 import { DashboardHeader } from "@/components/dashboard/dashboard-header"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Truck, WifiOff } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { ArrowLeft, Truck, WifiOff } from "lucide-react"
+import { ChecklistExecution } from "@/components/checklists/checklist-execution"
 import { useAuthZustand } from "@/hooks/use-auth-zustand"
 import { UnifiedOfflineStatus } from "@/components/offline/unified-offline-status"
 import { OfflinePrepareBanner } from "@/components/offline/offline-prepare-banner"
@@ -24,6 +26,7 @@ export function ChecklistDashboard() {
   const { schedules, fetchSchedules } = useChecklistSchedules()
   const [preparingOffline, setPreparingOffline] = useState(false)
   const [cachedOfflineCount, setCachedOfflineCount] = useState(0)
+  const [offlineExecutingId, setOfflineExecutingId] = useState<string | null>(null)
   const connectivity = useConnectivity()
   const isOnline = connectivity === "offline" ? false : connectivity === "online" || connectivity === "degraded" ? true : undefined
   const [stats, setStats] = useState({
@@ -110,10 +113,18 @@ export function ChecklistDashboard() {
       let cached = 0
 
       cached = await offlineClient.prepareOfflineChecklists()
-      await offlineClient.precacheOfflineShell()
+      const shellCached = await offlineClient.precacheOfflineShell()
       setCachedOfflineCount(await offlineClient.getCachedTemplateCount())
 
       toast.success(`Preparado para uso offline: ${cached} checklists descargados`)
+      if (cached === 0) {
+        toast.warning("No se descargaron checklists. Verifique su conexión e intente de nuevo.")
+      }
+      if (!shellCached && process.env.NODE_ENV === "production") {
+        toast.warning(
+          "Las páginas offline no se guardaron en caché. Recargue la app una vez con conexión."
+        )
+      }
     } catch (err: unknown) {
       toast.error(`Error al preparar modo offline: ${err instanceof Error ? err.message : "Error desconocido"}`)
     } finally {
@@ -202,8 +213,21 @@ export function ChecklistDashboard() {
           </Card>
         )}
 
-        {isOnline === false ? (
-          <OfflineChecklistList />
+        {isOnline === false && offlineExecutingId ? (
+          <div className="mt-6 space-y-4">
+            <Button
+              type="button"
+              variant="outline"
+              className="min-h-[44px]"
+              onClick={() => setOfflineExecutingId(null)}
+            >
+              <ArrowLeft className="mr-2 h-4 w-4" />
+              Volver a la lista offline
+            </Button>
+            <ChecklistExecution id={offlineExecutingId} />
+          </div>
+        ) : isOnline === false ? (
+          <OfflineChecklistList onOpenChecklist={setOfflineExecutingId} />
         ) : (
           <div className="space-y-6 mt-6">
             <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">

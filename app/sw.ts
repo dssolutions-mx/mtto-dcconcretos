@@ -1,6 +1,6 @@
 import { defaultCache } from "@serwist/next/worker"
 import type { PrecacheEntry, SerwistGlobalConfig } from "serwist"
-import { ExpirationPlugin, NetworkFirst, Serwist } from "serwist"
+import { CacheFirst, ExpirationPlugin, NetworkFirst, Serwist } from "serwist"
 
 /** Must match PRECACHE handler below — defaultCache uses its own page caches. */
 const CHECKLIST_EXECUTION_CACHE = "checklist-execution-pages"
@@ -18,15 +18,14 @@ const serwist = new Serwist({
   precacheEntries: self.__SW_MANIFEST,
   skipWaiting: true,
   clientsClaim: true,
-  navigationPreload: true,
+  navigationPreload: false,
   runtimeCaching: [
     {
       matcher: ({ request, url }) =>
         request.destination === "document" &&
         url.pathname === "/checklists/offline-ejecutar",
-      handler: new NetworkFirst({
+      handler: new CacheFirst({
         cacheName: OFFLINE_SHELL_CACHE,
-        networkTimeoutSeconds: 3,
         plugins: [
           new ExpirationPlugin({
             maxEntries: 4,
@@ -38,9 +37,8 @@ const serwist = new Serwist({
     {
       matcher: ({ request, url }) =>
         request.destination === "document" && url.pathname === "/checklists",
-      handler: new NetworkFirst({
+      handler: new CacheFirst({
         cacheName: OFFLINE_SHELL_CACHE,
-        networkTimeoutSeconds: 3,
         plugins: [
           new ExpirationPlugin({
             maxEntries: 4,
@@ -91,9 +89,16 @@ self.addEventListener("message", (event) => {
   event.waitUntil(
     caches.open(cacheName).then((cache) =>
       Promise.all(
-        data.urls!.map((url) =>
-          cache.add(new Request(url, { credentials: "same-origin" })).catch(() => undefined)
-        )
+        data.urls!.map(async (url) => {
+          try {
+            const response = await fetch(new Request(url, { credentials: "same-origin" }))
+            if (response.ok || response.type === "opaque") {
+              await cache.put(url, response)
+            }
+          } catch {
+            /* ignore per-url failures */
+          }
+        })
       )
     )
   )

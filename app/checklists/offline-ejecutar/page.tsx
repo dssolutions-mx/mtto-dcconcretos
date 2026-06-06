@@ -1,16 +1,23 @@
 "use client"
 
-import { Suspense } from "react"
+import { Suspense, useEffect, useState } from "react"
 import { useSearchParams } from "next/navigation"
 import { DashboardShell } from "@/components/dashboard/dashboard-shell"
 import { DashboardHeader } from "@/components/dashboard/dashboard-header"
 import { ChecklistExecution } from "@/components/checklists/checklist-execution"
 import { Button } from "@/components/ui/button"
 import { ArrowLeft, Loader2 } from "lucide-react"
+import { getOfflineChecklistId } from "@/lib/offline/offline-client"
 
 function OfflineExecuteContent() {
   const searchParams = useSearchParams()
-  const id = searchParams.get("id")
+  const [id, setId] = useState<string | null>(null)
+
+  useEffect(() => {
+    const fromQuery = searchParams.get("id")
+    const fromSession = getOfflineChecklistId()
+    setId(fromQuery ?? fromSession)
+  }, [searchParams])
 
   if (!id) {
     return (
