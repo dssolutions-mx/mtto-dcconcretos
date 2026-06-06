@@ -68,15 +68,13 @@ import {
 import { ChecklistCompletionOverlay } from "@/components/checklists/checklist-completion-overlay"
 import { createBrowserClient } from '@supabase/ssr'
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { initOfflineClient, offlineClient } from "@/lib/offline/offline-client"
 
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible"
-
-// Importación dinámica del servicio offline para evitar problemas de SSR
-let offlineChecklistService: any = null
 
 interface ChecklistExecutionProps {
   id: string
@@ -158,16 +156,9 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
 
   // Remove this useEffect that was causing the infinite loop
 
-  // Inicializar servicio offline solo cuando sea necesario
   useEffect(() => {
-    if (typeof window !== 'undefined' && !offlineChecklistService) {
-      import('@/lib/services/offline-checklist-service').then(module => {
-        offlineChecklistService = module.offlineChecklistService
-        console.log('✅ Offline checklist service initialized')
-      }).catch(error => {
-        console.error('❌ Failed to load offline checklist service:', error)
-      })
-    }
+    if (typeof window === 'undefined') return
+    void initOfflineClient()
   }, [])
 
   // Auto-guardar cambios cada 30 segundos si hay cambios no guardados
@@ -466,105 +457,77 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
       timestamp: Date.now()
     }
     
-    try {
-      localStorage.setItem(`checklist-draft-${id}`, JSON.stringify(saveData))
-    } catch (e: any) {
-      if (e?.name === 'QuotaExceededError' || e?.code === 22) {
-        console.warn('localStorage quota exceeded — saving draft without evidence')
-        saveData.evidenceData = {}
-        try {
-          localStorage.setItem(`checklist-draft-${id}`, JSON.stringify(saveData))
-        } catch { /* give up silently */ }
-      }
-    }
+    void offlineClient.saveDraft(id, saveData)
     setHasUnsavedChanges(false)
     hasUnsavedChangesRef.current = false
     setLastSaved(new Date())
     toast.success("Borrador guardado localmente", { duration: 2000 })
   }, [checklist, itemStatus, itemNotes, itemPhotos, notes, technician, signature, selectedItem, equipmentReadings, evidenceData, sectionCollapsed, id])
 
-  // Enhanced localStorage recovery with better error handling and progress preservation
-  const loadFromLocalStorage = useCallback(() => {
-    if (typeof window === 'undefined') return false
-    
-    const saved = localStorage.getItem(`checklist-draft-${id}`)
-    if (!saved) return false
-    
-    try {
-      const data = JSON.parse(saved)
-      
-      // Enhanced validation - check if data is valid and recent (48 hours instead of 24)
-      const isRecent = Date.now() - data.timestamp < 48 * 60 * 60 * 1000
-      const hasValidData = data.itemStatus || data.notes || data.technician || data.signature
-      
-      if (!isRecent) {
-        console.log('📅 Local draft expired, cleaning up')
-        localStorage.removeItem(`checklist-draft-${id}`)
-        return false
-      }
-      
-      if (!hasValidData) {
-        console.log('🔍 No significant data in local draft')
-        return false
-      }
-      
-      console.log('📂 Restoring checklist progress from localStorage:', {
-        itemsCompleted: Object.keys(data.itemStatus || {}).length,
-        hasNotes: !!data.notes,
-        hasTechnician: !!data.technician,
-        hasSignature: !!data.signature,
-        hasEquipmentReadings: !!(data.equipmentReadings?.hours_reading || data.equipmentReadings?.kilometers_reading),
-        evidenceSections: Object.keys(data.evidenceData || {}).length
-      })
-      
-      setIsLoadingFromStorage(true)
-      
-      // Batch all state updates in a single microtask to prevent conflicts
-      Promise.resolve().then(() => {
-        // Restore all checklist progress
-        setItemStatus(data.itemStatus || {})
-        setItemNotes(data.itemNotes || {})
-        setItemPhotos(data.itemPhotos || {})
-        setNotes(data.notes || "")
-        setTechnician(data.technician || "")
-        setSignature(data.signature || null)
-        setSelectedItem(data.selectedItem || null)
-        setEquipmentReadings(data.equipmentReadings || {})
-        setEvidenceData(data.evidenceData || {})
-        setSectionCollapsed(data.sectionCollapsed || {})
-        
-        // Reset loading and unsaved flags
-        setHasUnsavedChanges(false)
-        hasUnsavedChangesRef.current = false
-        setIsLoadingFromStorage(false)
-        
-        // Show restoration success
-        const completedItems = Object.keys(data.itemStatus || {}).length
-        toast.success("📋 Progreso restaurado", {
-          description: `${completedItems} items completados, notas y firma preservados`,
-          duration: 4000
-        })
-      })
-      
-      return true
-    } catch (error) {
-      console.error("❌ Error loading saved checklist data:", error)
-      
-      // Clean up corrupted data
-      try {
-        localStorage.removeItem(`checklist-draft-${id}`)
-      } catch (cleanupError) {
-        console.error("Failed to cleanup corrupted localStorage data:", cleanupError)
-      }
-      
-      toast.error("Error al restaurar el borrador guardado", {
-        description: "Los datos locales estaban corruptos",
-        duration: 3000
-      })
-      
+  const restoreDraftData = useCallback((data: Record<string, any>) => {
+    const isRecent = Date.now() - (data.timestamp || 0) < 48 * 60 * 60 * 1000
+    const hasValidData = data.itemStatus || data.notes || data.technician || data.signature
+
+    if (!isRecent) {
+      console.log('📅 Local draft expired, cleaning up')
+      void offlineClient.clearDraft(id)
       return false
     }
+
+    if (!hasValidData) {
+      console.log('🔍 No significant data in local draft')
+      return false
+    }
+
+    console.log('📂 Restoring checklist progress from draft:', {
+      itemsCompleted: Object.keys(data.itemStatus || {}).length,
+      hasNotes: !!data.notes,
+      hasTechnician: !!data.technician,
+      hasSignature: !!data.signature,
+      hasEquipmentReadings: !!(data.equipmentReadings?.hours_reading || data.equipmentReadings?.kilometers_reading),
+      evidenceSections: Object.keys(data.evidenceData || {}).length
+    })
+
+    setIsLoadingFromStorage(true)
+
+    Promise.resolve().then(() => {
+      setItemStatus(data.itemStatus || {})
+      setItemNotes(data.itemNotes || {})
+      setItemPhotos(data.itemPhotos || {})
+      setNotes(data.notes || "")
+      setTechnician(data.technician || "")
+      setSignature(data.signature || null)
+      setSelectedItem(data.selectedItem || null)
+      setEquipmentReadings(data.equipmentReadings || {})
+      setEvidenceData(data.evidenceData || {})
+      setSectionCollapsed(data.sectionCollapsed || {})
+      setHasUnsavedChanges(false)
+      hasUnsavedChangesRef.current = false
+      setIsLoadingFromStorage(false)
+
+      const completedItems = Object.keys(data.itemStatus || {}).length
+      toast.success("📋 Progreso restaurado", {
+        description: `${completedItems} items completados, notas y firma preservados`,
+        duration: 4000
+      })
+    })
+
+    return true
   }, [id])
+
+  const loadFromLocalStorage = useCallback(async () => {
+    if (typeof window === 'undefined') return false
+
+    try {
+      const draft = await offlineClient.getDraft(id)
+      if (draft?.data && typeof draft.data === 'object') {
+        return restoreDraftData(draft.data as Record<string, any>)
+      }
+    } catch (error) {
+      console.error('Error loading Dexie draft:', error)
+    }
+    return false
+  }, [id, restoreDraftData])
 
   // Moved after markAsUnsaved declaration
 
@@ -660,17 +623,10 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
         // Determine initial connectivity state
         const currentlyOnline = navigator.onLine
         
-        // Cache proactivo inmediato si hay conexión
-        if (currentlyOnline && offlineChecklistService) {
-          const cacheAttempt = await offlineChecklistService.proactivelyCacheChecklist(id)
-          if (cacheAttempt) {
-            console.log('✅ Cache proactivo exitoso')
-          }
-        }
-        
         // Intentar cargar desde cache si estamos offline
-        if (!currentlyOnline && offlineChecklistService) {
-          const cached = await offlineChecklistService.getCachedChecklistTemplate(id)
+        if (!currentlyOnline) {
+          const cached = await offlineClient.getCachedTemplate(id)
+
           if (cached) {
             // Ordenar secciones e items del cache también
             const cachedSections = cached.template.checklists?.checklist_sections || []
@@ -815,9 +771,11 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
           }
           
           setChecklist(checklistData)
+
+          await offlineClient.cacheTemplate(id, data, data.assets)
           
           // Intentar cargar datos guardados in the next tick
-          setTimeout(() => loadFromLocalStorage(), 0)
+          setTimeout(() => void loadFromLocalStorage(), 0)
         }
       } catch (error: any) {
         console.error('Error loading checklist data:', error)
@@ -850,10 +808,11 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
         
         // Also try to reload any saved progress that might have been lost
         setTimeout(() => {
-          const hasProgress = loadFromLocalStorage()
-          if (hasProgress) {
-            console.log('📂 Restored progress after reconnection')
-          }
+          void loadFromLocalStorage().then((hasProgress) => {
+            if (hasProgress) {
+              console.log('📂 Restored progress after reconnection')
+            }
+          })
         }, 500) // Small delay to ensure state is stable
         
         // Show online status
@@ -1649,84 +1608,29 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
       } else {
         // Guardar offline si no hay conexión
         try {
-          // Ensure offline service is loaded
-          if (!offlineChecklistService) {
-            console.log('🔄 Loading offline service dynamically...')
-            const module = await import('@/lib/services/offline-checklist-service')
-            offlineChecklistService = module.offlineChecklistService
-            console.log('✅ Offline service loaded successfully')
-          }
-          
-          if (offlineChecklistService) {
-            const offlineId = `checklist-${id}-${Date.now()}`
-            
-            // Generate a proper completed checklist ID for offline use
-            const completedChecklistId = `checklist-offline-${id}-${Date.now()}`
-            
-            // Ensure we include the schedule_id in the submission data for offline storage
-            const offlineSubmissionData = {
-              ...submissionData,
-              schedule_id: id, // Add the schedule ID explicitly
-              scheduleId: id,   // Also add as alias for compatibility
-              completed_checklist_id: completedChecklistId // Store the generated ID
-            }
-            
-            console.log('💾 Saving offline checklist with data:', {
-              offlineId,
-              scheduleId: id,
-              completedChecklistId,
-              technicianName: offlineSubmissionData.technician,
-              itemsCount: offlineSubmissionData.completed_items?.length || 0
-            })
-            
-            await offlineChecklistService.saveOfflineChecklist(offlineId, offlineSubmissionData)
-            
-            // Limpiar datos locales
-            localStorage.removeItem(`checklist-draft-${id}`)
-            
-            toast.success("📱 Checklist guardado sin conexión", {
-              description: "Se sincronizará automáticamente cuando vuelva la conexión",
-              duration: 4000
-            })
-            
-            // Return the generated completed checklist ID
-            return completedChecklistId
-          } else {
-            throw new Error('No se pudo cargar el servicio offline')
-          }
-        } catch (offlineError) {
-          console.error('❌ Error saving offline checklist:', offlineError)
-          
-          // Fallback: save to localStorage directly
-          console.log('🔄 Fallback: saving to localStorage directly')
-          const fallbackId = `checklist-offline-fallback-${id}-${Date.now()}`
-          const fallbackData = {
+          const completedChecklistId = `checklist-offline-${id}-${Date.now()}`
+          const offlineSubmissionData = {
             ...submissionData,
             schedule_id: id,
             scheduleId: id,
-            completed_checklist_id: fallbackId,
-            timestamp: Date.now(),
-            fallback: true
+            completed_checklist_id: completedChecklistId,
           }
-          
-          try {
-            localStorage.setItem(`offline-checklist-${fallbackId}`, JSON.stringify(fallbackData))
-            localStorage.removeItem(`checklist-draft-${id}`)
-            
-            toast.success("📱 Checklist guardado localmente", {
-              description: "Se enviará cuando vuelva la conexión",
-              duration: 4000
-            })
-            
-            return fallbackId
-          } catch (storageError) {
-            console.error('❌ Failed to save to localStorage:', storageError)
-            toast.error("Error al guardar offline", {
-              description: "No se pudo guardar el checklist",
-              duration: 5000
-            })
-            throw new Error('No se pudo guardar offline')
-          }
+
+          const offlineId = `checklist-${id}-${Date.now()}`
+          await offlineClient.enqueueChecklistComplete(offlineSubmissionData, offlineId)
+          await offlineClient.clearDraft(id)
+          toast.success("📱 Checklist guardado sin conexión", {
+            description: "Se sincronizará automáticamente cuando vuelva la conexión",
+            duration: 4000
+          })
+          return completedChecklistId
+        } catch (offlineError) {
+          console.error('❌ Error saving offline checklist:', offlineError)
+          toast.error("Error al guardar offline", {
+            description: "No se pudo guardar el checklist",
+            duration: 5000
+          })
+          throw new Error('No se pudo guardar offline')
         }
       }
     } catch (error) {
@@ -1744,80 +1648,34 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
       // Si falla, guardar offline como respaldo
       if (isOnline) {
         try {
-          // Ensure offline service is loaded for fallback
-          if (!offlineChecklistService) {
-            const module = await import('@/lib/services/offline-checklist-service')
-            offlineChecklistService = module.offlineChecklistService
+          const completedChecklistId = `checklist-offline-fallback-${id}-${Date.now()}`
+          const fallbackSubmissionData = {
+            schedule_id: id,
+            scheduleId: id,
+            completed_checklist_id: completedChecklistId,
+            technician: technician || 'Técnico',
+            notes,
+            signature,
+            completed_items: Object.keys(itemStatus).map(itemId => ({
+              item_id: itemId,
+              status: itemStatus[itemId],
+              notes: itemNotes[itemId] || null,
+              photo_url: itemPhotos[itemId] || null
+            })),
+            hours_reading: hoursOut,
+            kilometers_reading: kmOut,
+            evidence_data: evidenceData,
+            security_data: Object.keys(securityData).length > 0 ? securityData : undefined
           }
-          
-          if (offlineChecklistService) {
-            const offlineId = `checklist-${id}-${Date.now()}`
-            
-            // Generate a proper completed checklist ID for fallback offline save
-            const completedChecklistId = `checklist-offline-fallback-${id}-${Date.now()}`
-            
-            const fallbackSubmissionData = {
-              schedule_id: id,     // Use schedule_id for validation
-              scheduleId: id,      // Keep alias for compatibility
-              completed_checklist_id: completedChecklistId, // Store the generated ID
-              technician: technician || 'Técnico',
-              notes,
-              signature,
-              completed_items: Object.keys(itemStatus).map(itemId => ({
-                item_id: itemId,
-                status: itemStatus[itemId],
-                notes: itemNotes[itemId] || null,
-                photo_url: itemPhotos[itemId] || null
-              })),
-              hours_reading: hoursOut,
-              kilometers_reading: kmOut,
-              evidence_data: evidenceData,
-              security_data: Object.keys(securityData).length > 0 ? securityData : undefined
-            }
-            
-            console.log('💾 Saving backup offline checklist with data:', {
-              offlineId,
-              scheduleId: id,
-              completedChecklistId,
-              technicianName: fallbackSubmissionData.technician,
-              itemsCount: fallbackSubmissionData.completed_items?.length || 0
-            })
-            
-            await offlineChecklistService.saveOfflineChecklist(offlineId, fallbackSubmissionData)
-            toast.success("Checklist guardado localmente como respaldo", {
-              description: "Se sincronizará cuando vuelva la conexión",
-              duration: 5000
-            })
-          } else {
-            // Direct localStorage fallback
-            const fallbackId = `checklist-offline-fallback-${id}-${Date.now()}`
-            const fallbackData = {
-              schedule_id: id,
-              scheduleId: id,
-              completed_checklist_id: fallbackId,
-              technician: technician || 'Técnico',
-              notes,
-              signature,
-              completed_items: Object.keys(itemStatus).map(itemId => ({
-                item_id: itemId,
-                status: itemStatus[itemId],
-                notes: itemNotes[itemId] || null,
-                photo_url: itemPhotos[itemId] || null
-              })),
-              hours_reading: hoursOut,
-              kilometers_reading: kmOut,
-              evidence_data: evidenceData,
-              security_data: Object.keys(securityData).length > 0 ? securityData : undefined,
-              timestamp: Date.now(),
-              fallback: true
-            }
-            
-            localStorage.setItem(`offline-checklist-${fallbackId}`, JSON.stringify(fallbackData))
-            toast.success("Checklist guardado localmente como respaldo", {
-              description: "Se sincronizará cuando vuelva la conexión",
-              duration: 5000
-            })
-          }
+
+          const offlineId = `checklist-${id}-${Date.now()}`
+          await offlineClient.enqueueChecklistComplete(fallbackSubmissionData, offlineId)
+          await offlineClient.clearDraft(id)
+          toast.success("Checklist guardado localmente como respaldo", {
+            description: "Se sincronizará cuando vuelva la conexión",
+            duration: 5000
+          })
+          return null
         } catch (offlineError) {
           console.error('Error saving offline backup:', offlineError)
           toast.error("No se pudo guardar respaldo local")

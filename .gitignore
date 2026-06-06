@@ -41,3 +41,7 @@ scripts/output/
 
 # macOS
 .DS_Store
+
+# Serwist
+public/sw*
+public/swe-worker*

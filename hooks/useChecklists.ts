@@ -1,4 +1,5 @@
 import { useCallback, useState } from 'react'
+import { offlineClient } from '@/lib/offline/offline-client'
 
 export interface Checklist {
   id: string
@@ -208,6 +209,9 @@ export function useChecklistSchedules() {
       }
       
       setSchedules(schedulesData)
+
+      const filterKey = [status, type].filter(Boolean).join(':') || 'all'
+      void offlineClient.cacheSchedules(schedulesData, filterKey)
     } catch (err) {
       console.error('Error fetching checklist schedules:', err)
       setError(err instanceof Error ? err.message : 'Unknown error occurred')

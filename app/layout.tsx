@@ -12,6 +12,7 @@ import { Toaster as SonnerToaster } from "@/components/ui/sonner"
 import { CacheConsoleLoader } from "@/components/cache-console-loader"
 import { StorageManager } from "@/components/storage-manager"
 import { Analytics } from "@vercel/analytics/next"
+import { AppSerwistProvider } from "@/app/serwist-provider"
 
 export const metadata: Metadata = {
   title: "Sistema de Mantenimiento",
@@ -27,19 +28,21 @@ export default function RootLayout({
   return (
     <html lang="es" suppressHydrationWarning className="light">
       <body className="font-sans">
-        <AuthInitializer />
-        <SessionMonitor />
-        <RoleProvider>
-          <OnboardingProvider>
-            <ProductTour />
-            <SidebarWrapper>{children}</SidebarWrapper>
-          </OnboardingProvider>
-        </RoleProvider>
-        <Toaster />
-        <SonnerToaster />
-        <CacheConsoleLoader />
-        <StorageManager />
-        <Analytics />
+        <AppSerwistProvider>
+          <AuthInitializer />
+          <SessionMonitor />
+          <RoleProvider>
+            <OnboardingProvider>
+              <ProductTour />
+              <SidebarWrapper>{children}</SidebarWrapper>
+            </OnboardingProvider>
+          </RoleProvider>
+          <Toaster />
+          <SonnerToaster />
+          <CacheConsoleLoader />
+          <StorageManager />
+          <Analytics />
+        </AppSerwistProvider>
       </body>
     </html>
   )

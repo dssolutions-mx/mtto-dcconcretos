@@ -9,87 +9,59 @@ import {
   Wifi, 
   WifiOff, 
   RefreshCw, 
-  CheckCircle, 
   AlertTriangle,
   Loader2,
   Database
 } from "lucide-react"
-import { getOfflineDieselService } from "@/lib/services/offline-diesel-service"
+import { initOfflineClient, offlineClient } from "@/lib/offline/offline-client"
+import { subscribeSyncStats } from "@/lib/offline/sync-bridge"
+import { useConnectivity } from "@/lib/offline/use-connectivity"
 
 export function DieselOfflineStatus() {
-  const [isOnline, setIsOnline] = useState(typeof window !== 'undefined' ? navigator.onLine : true)
-  const [syncStatus, setSyncStatus] = useState<any>(null)
+  const connectivity = useConnectivity()
+  const isOnline = connectivity !== "offline"
   const [isSyncing, setIsSyncing] = useState(false)
-
-  useEffect(() => {
-    const handleOnline = () => setIsOnline(true)
-    const handleOffline = () => setIsOnline(false)
-    
-    window.addEventListener('online', handleOnline)
-    window.addEventListener('offline', handleOffline)
-    
-    // Load sync status
-    loadSyncStatus()
-    
-    // Set up event listeners
-    const service = getOfflineDieselService()
-    
-    const handleSyncStart = () => {
-      setIsSyncing(true)
-    }
-    
-    const handleSyncComplete = () => {
-      setIsSyncing(false)
-      loadSyncStatus()
-    }
-    
-    const handleSyncError = () => {
-      setIsSyncing(false)
-      loadSyncStatus()
-    }
-    
-    service.on('sync-start', handleSyncStart)
-    service.on('sync-complete', handleSyncComplete)
-    service.on('sync-error', handleSyncError)
-    
-    // Refresh status every 10 seconds
-    const interval = setInterval(loadSyncStatus, 10000)
-    
-    return () => {
-      window.removeEventListener('online', handleOnline)
-      window.removeEventListener('offline', handleOffline)
-      service.off('sync-start', handleSyncStart)
-      service.off('sync-complete', handleSyncComplete)
-      service.off('sync-error', handleSyncError)
-      clearInterval(interval)
-    }
-  }, [])
+  const [v2Pending, setV2Pending] = useState(0)
 
   const loadSyncStatus = async () => {
     try {
-      const service = getOfflineDieselService()
-      const status = await service.getSyncStatus()
-      setSyncStatus(status)
+      await initOfflineClient()
+      const stats = await offlineClient.getDomainSyncStats("diesel")
+      setV2Pending(stats.pending + stats.failed)
     } catch (error) {
       console.error('Error loading diesel sync status:', error)
     }
   }
 
+  useEffect(() => {
+    void loadSyncStatus()
+
+    void initOfflineClient()
+    const unsubscribe = subscribeSyncStats(() => {
+      void loadSyncStatus()
+    })
+    const interval = setInterval(() => void loadSyncStatus(), 10000)
+    return () => {
+      unsubscribe()
+      clearInterval(interval)
+    }
+  }, [])
+
   const handleManualSync = async () => {
     try {
       setIsSyncing(true)
-      const service = getOfflineDieselService()
-      await service.syncAllPending()
+      await offlineClient.requestSync()
     } catch (error) {
       console.error('Error syncing diesel data:', error)
     } finally {
       setIsSyncing(false)
-      loadSyncStatus()
+      void loadSyncStatus()
     }
   }
 
-  if (!syncStatus || syncStatus.total === 0) {
-    // No pending data - show simple online/offline status
+  const totalPending = v2Pending
+
+  if (totalPending === 0) {
     return (
       <Badge variant={isOnline ? "outline" : "secondary"} className="gap-1">
         {isOnline ? (
@@ -107,7 +79,6 @@ export function DieselOfflineStatus() {
     )
   }
 
-  // Show detailed sync status when there's pending data
   return (
     <Alert className={isOnline ? "border-blue-200 bg-blue-50" : "border-orange-200 bg-orange-50"}>
       <div className="flex items-start justify-between">
@@ -122,27 +93,17 @@ export function DieselOfflineStatus() {
               {isOnline ? 'Sincronizando' : 'Datos pendientes de sincronización'}
             </span>
             <Badge variant="secondary" className="text-xs">
-              {syncStatus.total} {syncStatus.total === 1 ? 'elemento' : 'elementos'}
+              {totalPending} {totalPending === 1 ? 'elemento' : 'elementos'}
             </Badge>
           </div>
 
           <AlertDescription className="text-xs space-y-2">
-            {syncStatus.transactions.length > 0 && (
-              <div className="flex items-center gap-2">
-                <Database className="h-3 w-3" />
-                <span>
-                  {syncStatus.transactions.length} {syncStatus.transactions.length === 1 ? 'transacción' : 'transacciones'}
-                </span>
-              </div>
-            )}
-            {syncStatus.photos.length > 0 && (
-              <div className="flex items-center gap-2">
-                <Database className="h-3 w-3" />
-                <span>
-                  {syncStatus.photos.length} {syncStatus.photos.length === 1 ? 'foto' : 'fotos'}
-                </span>
-              </div>
-            )}
+            <div className="flex items-center gap-2">
+              <Database className="h-3 w-3" />
+              <span>
+                {totalPending} movimiento(s) de diesel pendiente(s)
+              </span>
+            </div>
 
             {isSyncing && (
               <div className="space-y-1 mt-2">
@@ -167,7 +128,7 @@ export function DieselOfflineStatus() {
           <Button 
             variant="outline" 
             size="sm" 
-            onClick={handleManualSync}
+            onClick={() => void handleManualSync()}
             className="ml-2"
           >
             <RefreshCw className="h-3 w-3 mr-1" />
@@ -178,4 +139,3 @@ export function DieselOfflineStatus() {
     </Alert>
   )
 }
-

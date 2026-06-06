@@ -29,6 +29,60 @@ import {
   HardDrive
 } from "lucide-react"
 import { toast } from "sonner"
+import { initOfflineClient, offlineClient } from "@/lib/offline/offline-client"
+import { db } from "@/lib/offline/db"
+
+async function compressEvidencePhoto(
+  file: File,
+  quality = 0.8,
+  maxWidth = 1920,
+  maxHeight = 1080
+): Promise<{ blob: Blob; preview: string; compressedSize: number }> {
+  return new Promise((resolve, reject) => {
+    const canvas = document.createElement("canvas")
+    const ctx = canvas.getContext("2d")
+    const img = new Image()
+    const objectUrl = URL.createObjectURL(file)
+
+    img.onload = () => {
+      URL.revokeObjectURL(objectUrl)
+      let { width, height } = img
+      if (width > maxWidth || height > maxHeight) {
+        const ratio = Math.min(maxWidth / width, maxHeight / height)
+        width *= ratio
+        height *= ratio
+      }
+      canvas.width = width
+      canvas.height = height
+      ctx?.drawImage(img, 0, 0, width, height)
+
+      const previewCanvas = document.createElement("canvas")
+      const previewCtx = previewCanvas.getContext("2d")
+      previewCanvas.width = 200
+      previewCanvas.height = Math.round((200 * height) / width)
+      previewCtx?.drawImage(img, 0, 0, previewCanvas.width, previewCanvas.height)
+      const preview = previewCanvas.toDataURL("image/jpeg", 0.6)
+
+      canvas.toBlob(
+        (blob) => {
+          if (!blob) {
+            reject(new Error("Failed to compress image"))
+            return
+          }
+          resolve({ blob, preview, compressedSize: blob.size })
+        },
+        "image/jpeg",
+        quality
+      )
+    }
+
+    img.onerror = () => {
+      URL.revokeObjectURL(objectUrl)
+      reject(new Error("Failed to load image"))
+    }
+    img.src = objectUrl
+  })
+}
 
 interface EvidenceConfig {
   min_photos: number
@@ -79,25 +133,17 @@ export function EvidenceCaptureSection({
   const [uploading, setUploading] = useState(false)
   const [isOnline, setIsOnline] = useState(typeof window !== 'undefined' ? navigator.onLine : true)
   
-  // Enhanced photo service handling
-  const [photoService, setPhotoService] = useState<any>(null)
   const [serviceReady, setServiceReady] = useState(false)
   
   // Local storage key for persistence
   const storageKey = `evidence-${checklistId}-${sectionId}`
   
-  // Initialize photo service
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      import('@/lib/services/simple-photo-service').then(module => {
-        setPhotoService(module.simplePhotoService)
-        setServiceReady(true)
-        console.log('📸 Evidence photo service initialized')
-      }).catch(error => {
-        console.error('Failed to initialize photo service:', error)
-        toast.error('Error al inicializar el servicio de fotos')
-      })
-    }
+    if (typeof window === 'undefined') return
+
+    void initOfflineClient().then(() => {
+      setServiceReady(true)
+    })
   }, [])
 
   // Enhanced online/offline monitoring
@@ -118,11 +164,10 @@ export function EvidenceCaptureSection({
     const handleOnline = () => {
       setIsOnline(true)
       console.log('🌐 Evidence section back online - checking for pending uploads')
-      
-      // Trigger upload retry when back online
-      if (photoService && serviceReady) {
+
+      if (serviceReady) {
         setTimeout(() => {
-          photoService.retryFailedUploads()
+          void offlineClient.requestSync()
           toast.success("Conexión restaurada - reintentando subidas de evidencias")
         }, 1000)
       }
@@ -141,7 +186,7 @@ export function EvidenceCaptureSection({
       window.removeEventListener('online', handleOnline)
       window.removeEventListener('offline', handleOffline)
     }
-  }, [photoService, serviceReady])
+  }, [serviceReady])
 
   // Enhanced upload status listener with better error handling
   useEffect(() => {
@@ -263,7 +308,7 @@ export function EvidenceCaptureSection({
 
   // Enhanced photo upload with better error handling and feedback
   const handlePhotoUpload = async (file: File) => {
-    if (!serviceReady || !photoService) {
+    if (!serviceReady) {
       toast.error('📸 Servicio de fotos no disponible - intente nuevamente')
       return
     }
@@ -292,25 +337,28 @@ export function EvidenceCaptureSection({
 
     setUploading(true)
     const originalSize = file.size
+    const itemId = `${sectionId}_${selectedCategory}_${Date.now()}`
     
     try {
-      // Enhanced photo service call with progress tracking
-      const result = await photoService.storePhoto(
+      const photoId = `photo_${checklistId}_${itemId}_${Math.random().toString(36).slice(2, 9)}`
+      const { blob, preview, compressedSize } = await compressEvidencePhoto(file)
+      await offlineClient.savePhoto({
+        id: photoId,
         checklistId,
-        `${sectionId}_${selectedCategory}_${Date.now()}`,
-        file,
-        {
-          quality: 0.8,
-          maxWidth: 1920,
-          maxHeight: 1080,
-          immediate: true,
-          category: selectedCategory,
-          captureSource: "camera",
-        }
-      )
+        itemId,
+        blob,
+        fileName: file.name,
+      })
+      const result = {
+        id: photoId,
+        preview,
+        url: preview,
+        status: navigator.onLine ? "uploading" as const : "stored" as const,
+        compressedSize,
+      }
       
-      const compressedSize = result.compressedSize || originalSize
-      const compressionRatio = originalSize > 0 ? Math.round((1 - compressedSize / originalSize) * 100) : 0
+      const finalCompressedSize = result.compressedSize || originalSize
+      const compressionRatio = originalSize > 0 ? Math.round((1 - finalCompressedSize / originalSize) * 100) : 0
       
       const newEvidence: SmartEvidence = {
         id: `evidence_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
@@ -323,7 +371,7 @@ export function EvidenceCaptureSection({
         status: result.status,
         photoId: result.id,
         originalSize,
-        compressedSize,
+        compressedSize: finalCompressedSize,
         compressionRatio,
         timestamp: Date.now()
       }
@@ -358,9 +406,9 @@ export function EvidenceCaptureSection({
   const removeEvidence = async (evidenceId: string) => {
     const evidence = evidences.find(e => e.id === evidenceId)
     
-    if (evidence?.photoId && photoService) {
+    if (evidence?.photoId) {
       try {
-        await photoService.deletePhoto(evidence.photoId)
+        await db.photos.delete(evidence.photoId)
         console.log(`🗑️ Deleted photo ${evidence.photoId} from storage`)
       } catch (error) {
         console.error('Error deleting photo from storage:', error)
@@ -388,22 +436,12 @@ export function EvidenceCaptureSection({
   }
 
   // Enhanced retry functionality
-  const retryUpload = async (evidenceId?: string) => {
-    if (!photoService) return
-    
+  const retryUpload = async (_evidenceId?: string) => {
+    if (!serviceReady) return
+
     try {
-      if (evidenceId) {
-        // Retry specific evidence
-        const evidence = evidences.find(e => e.id === evidenceId)
-        if (evidence?.photoId) {
-          await photoService.retrySpecificUpload(evidence.photoId)
-          toast.info(`🔄 Reintentando subida de evidencia específica...`)
-        }
-      } else {
-        // Retry all failed uploads
-        await photoService.retryFailedUploads()
-        toast.info("🔄 Reintentando todas las subidas fallidas...")
-      }
+      await offlineClient.requestSync()
+      toast.info("🔄 Reintentando subidas de evidencias...")
     } catch (error) {
       console.error('Error retrying uploads:', error)
       toast.error("❌ Error al reintentar subida")

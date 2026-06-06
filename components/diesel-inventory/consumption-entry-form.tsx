@@ -41,6 +41,7 @@ import {
 } from "@/lib/diesel/diesel-save-error-message"
 import { dieselInsertReturnedNoRowDescription } from "@/lib/diesel/insert-transaction-no-row-message"
 import { loadDieselOrganizationalScope } from "@/lib/diesel/load-organizational-scope"
+import { initOfflineClient, offlineClient } from "@/lib/offline/offline-client"
 
 interface ConsumptionEntryFormProps {
   productType: 'diesel' | 'urea'
@@ -120,6 +121,10 @@ export function ConsumptionEntryForm({
       window.removeEventListener('online', handleOnline)
       window.removeEventListener('offline', handleOffline)
     }
+  }, [])
+
+  useEffect(() => {
+    void initOfflineClient()
   }, [])
 
   // Load organizational structure and product on mount
@@ -512,6 +517,98 @@ export function ConsumptionEntryForm({
     })
     if (scopeErr) {
       toast.error(scopeErr.error)
+      return
+    }
+
+    if (!isOnline) {
+      const plantIdForTx = resolveDieselTransactionPlantId(
+        selectedPlant,
+        selectedWarehouse,
+        warehouses,
+        allBuWarehouses
+      )
+      if (!plantIdForTx) {
+        toast.error('No se pudo determinar la planta del almacén. Vuelve a seleccionar el almacén.')
+        return
+      }
+
+      const transactionData: Record<string, unknown> = {
+        plant_id: plantIdForTx,
+        warehouse_id: selectedWarehouse,
+        product_id: productId,
+        transaction_type: 'consumption',
+        asset_category: assetType,
+        quantity_liters: parseFloat(quantityLiters),
+        cuenta_litros: cuentaLitros ? parseFloat(cuentaLitros) : null,
+        operator_id: user.id,
+        transaction_date: new Date(transactionDate + 'T' + transactionTime + ':00').toISOString(),
+        notes: notes || null,
+        requires_validation: previousCuentaLitros !== null && cuentaLitrosValid === false,
+        validation_notes: previousCuentaLitros !== null && cuentaLitrosValid === false
+          ? `Varianza cuenta litros: ${cuentaLitrosVariance?.toFixed(1)}L`
+          : null,
+        created_by: user.id,
+        source_system: 'web_app',
+      }
+
+      if (assetType === 'formal' && selectedAsset) {
+        transactionData.asset_id = selectedAsset.id
+        transactionData.horometer_reading = readings.hours_reading || null
+        transactionData.kilometer_reading = readings.kilometers_reading || null
+        transactionData.previous_horometer = null
+        transactionData.previous_kilometer = null
+      } else if (assetType === 'exception') {
+        transactionData.asset_id = null
+        transactionData.exception_asset_name = exceptionAssetName.trim()
+        transactionData.horometer_reading = null
+        transactionData.kilometer_reading = null
+        transactionData.previous_horometer = null
+        transactionData.previous_kilometer = null
+      }
+
+      let photoBlob: Blob | undefined
+      if (machinePhoto) {
+        try {
+          const photoResponse = await fetch(machinePhoto)
+          photoBlob = await photoResponse.blob()
+        } catch (photoError) {
+          console.error('Could not read offline diesel photo:', photoError)
+          toast.error('No se pudo leer la foto para guardar sin conexión')
+          return
+        }
+      }
+
+      const assetName = assetType === 'formal'
+        ? selectedAsset?.name
+        : exceptionAssetName
+
+      await offlineClient.enqueueDieselTransaction(transactionData, {
+        photoBlob,
+        evidenceType: 'consumption',
+        category: 'machine_display',
+        description: `Display de la máquina - ${quantityLiters}L | Cuenta litros: ${cuentaLitros}L`,
+        metadata: machineEvidenceMetadata
+          ? sanitizeValueForPostgresJsonb(machineEvidenceMetadata)
+          : undefined,
+      })
+
+      toast.success("Consumo guardado sin conexión", {
+        description: `${quantityLiters}L para ${assetName} — se sincronizará al volver en línea`,
+        duration: 5000,
+      })
+
+      setSelectedAsset(null)
+      setExceptionAssetName("")
+      setQuantityLiters("")
+      setCuentaLitros("")
+      setCuentaLitrosManuallyEdited(false)
+      setMachinePhoto(null)
+      setMachineEvidenceMetadata(null)
+      setNotes("")
+      setReadings({})
+      setPreviousCuentaLitros(null)
+      setTransactionDate(getLocalDateString())
+      setTransactionTime(getLocalTimeString())
       return
     }
 

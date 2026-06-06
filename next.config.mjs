@@ -1,7 +1,26 @@
 import path from 'path'
 import { fileURLToPath } from 'url'
+import { spawnSync } from 'node:child_process'
+import crypto from 'node:crypto'
+import withSerwistInit from '@serwist/next'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
+
+const revision =
+  spawnSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf-8' }).stdout?.trim() ||
+  crypto.randomUUID()
+
+const withSerwist = withSerwistInit({
+  swSrc: 'app/sw.ts',
+  swDest: 'public/sw.js',
+  disable: process.env.NODE_ENV === 'development',
+  cacheOnNavigation: true,
+  reloadOnOnline: false,
+  additionalPrecacheEntries: [
+    { url: '/~offline', revision },
+    { url: '/', revision },
+  ],
+})
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
@@ -23,6 +42,10 @@ const nextConfig = {
   async headers() {
     return [
       {
+        source: '/sw.js',
+        headers: [{ key: 'Cache-Control', value: 'no-cache' }],
+      },
+      {
         source: '/:path*',
         headers: [
           { key: 'X-Frame-Options', value: 'DENY' },
@@ -36,4 +59,4 @@ const nextConfig = {
   },
 }
 
-export default nextConfig
+export default withSerwist(nextConfig)

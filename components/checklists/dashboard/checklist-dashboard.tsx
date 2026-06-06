@@ -7,20 +7,23 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Truck, WifiOff } from "lucide-react"
 import { useAuthZustand } from "@/hooks/use-auth-zustand"
-import { OfflineStatus } from "@/components/checklists/offline-status"
+import { UnifiedOfflineStatus } from "@/components/offline/unified-offline-status"
 import { OfflineChecklistList } from "@/components/checklists/offline-checklist-list"
 import { DaySummarySection } from "./day-summary-section"
 import { QuickActionsSection } from "./quick-actions-section"
 import { UnresolvedIssuesWidget } from "./unresolved-issues-widget"
 import { AssetGridView } from "./asset-grid-view"
 import { useChecklistSchedules } from "@/hooks/useChecklists"
+import { offlineClient } from "@/lib/offline/offline-client"
+import { useConnectivity } from "@/lib/offline/use-connectivity"
 import { toast } from "sonner"
 
 export function ChecklistDashboard() {
   const { profile, ui } = useAuthZustand()
   const { schedules, fetchSchedules } = useChecklistSchedules()
   const [preparingOffline, setPreparingOffline] = useState(false)
-  const [isOnline, setIsOnline] = useState<boolean | undefined>(undefined)
+  const connectivity = useConnectivity()
+  const isOnline = connectivity === "offline" ? false : connectivity === "online" || connectivity === "degraded" ? true : undefined
   const [stats, setStats] = useState({
     daily: { total: 0, pending: 0, overdue: 0 },
     weekly: { total: 0, pending: 0, overdue: 0 },
@@ -32,20 +35,6 @@ export function ChecklistDashboard() {
   const isOperator = profile?.role && ["OPERADOR", "DOSIFICADOR"].includes(profile.role)
   const canCreateChecklists = ui?.canShowCreateButton("checklists") ?? false
   const canScheduleChecklists = ui?.canShowEditButton("checklists") ?? false
-
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      setIsOnline(navigator.onLine)
-      const on = () => setIsOnline(true)
-      const off = () => setIsOnline(false)
-      window.addEventListener("online", on)
-      window.addEventListener("offline", off)
-      return () => {
-        window.removeEventListener("online", on)
-        window.removeEventListener("offline", off)
-      }
-    }
-  }, [])
 
   useEffect(() => {
     fetchSchedules("pendiente")
@@ -109,10 +98,13 @@ export function ChecklistDashboard() {
 
   const handlePrepareOffline = async () => {
     try {
-      const mod = await import("@/lib/services/offline-checklist-service")
-      const svc = mod.offlineChecklistService
       setPreparingOffline(true)
-      const cached = await svc.massiveCachePreparation()
+      let cached = 0
+
+      cached = await offlineClient.prepareOfflineChecklists()
+      const scheduleIds = schedules.map((schedule) => schedule.id)
+      await offlineClient.precacheExecutionRoutes(scheduleIds)
+
       toast.success(`Preparado para uso offline: ${cached} checklists descargados`)
     } catch (err: unknown) {
       toast.error(`Error al preparar modo offline: ${err instanceof Error ? err.message : "Error desconocido"}`)
@@ -170,10 +162,10 @@ export function ChecklistDashboard() {
               />
             </div>
             <div className="hidden sm:block">
-              <OfflineStatus onSyncComplete={handleSyncComplete} />
+              <UnifiedOfflineStatus onSyncComplete={handleSyncComplete} />
             </div>
             <div className="sm:hidden">
-              <OfflineStatus showDetails={false} onSyncComplete={handleSyncComplete} />
+              <UnifiedOfflineStatus showDetails={false} onSyncComplete={handleSyncComplete} />
             </div>
           </div>
         </div>
