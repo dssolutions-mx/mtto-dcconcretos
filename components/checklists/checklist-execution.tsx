@@ -90,6 +90,58 @@ interface SectionProgress {
   isCollapsed: boolean
 }
 
+function checklistStateFromCache(cached: import("@/lib/offline/types").CachedTemplate) {
+  const schedule = cached.template as Record<string, any>
+  const asset = cached.asset as Record<string, any> | undefined
+  const cachedSections = schedule.checklists?.checklist_sections || []
+  const orderedCachedSections = cachedSections
+    .sort((a: { order_index: number }, b: { order_index: number }) => a.order_index - b.order_index)
+    .map((section: { checklist_items?: { order_index: number }[]; order_index: number }) => ({
+      ...section,
+      checklist_items: (section.checklist_items || []).sort(
+        (a: { order_index: number }, b: { order_index: number }) => a.order_index - b.order_index
+      ),
+    }))
+
+  const offlineMuRaw = schedule.checklists?.equipment_models?.maintenance_unit ?? null
+  const offlineCat = schedule.checklists?.equipment_models?.category ?? null
+  const offlineVisible = computeVisibleMeters(offlineMuRaw, offlineCat)
+  const offlineMaintenanceUnit: "hours" | "kilometers" | null =
+    offlineVisible === "kilometers"
+      ? "kilometers"
+      : offlineVisible === "none"
+        ? null
+        : offlineVisible === "both"
+          ? null
+          : "hours"
+
+  return {
+    id: schedule.id,
+    name: schedule.checklists?.name || "",
+    assetId: asset?.id || "",
+    assetCode: asset?.asset_id || "",
+    asset: asset?.name || "",
+    assetLocation: asset?.location || "",
+    modelId: schedule.checklists?.model_id || "",
+    model: schedule.checklists?.equipment_models?.name || "N/A",
+    manufacturer: schedule.checklists?.equipment_models?.manufacturer || "N/A",
+    frequency: schedule.checklists?.frequency || "",
+    sections: orderedCachedSections,
+    scheduledDate: schedule.scheduled_date || "",
+    technicianId: schedule.assigned_to || "",
+    technician: schedule.profiles
+      ? `${schedule.profiles.nombre} ${schedule.profiles.apellido}`
+      : "",
+    maintenance_plan_id: schedule.maintenance_plan_id || null,
+    currentHours: asset?.current_hours || 0,
+    currentKilometers: asset?.current_kilometers || 0,
+    maintenanceUnitRaw: offlineMuRaw,
+    modelCategory: offlineCat,
+    visibleMeters: offlineVisible,
+    maintenanceUnit: offlineMaintenanceUnit,
+  }
+}
+
 export function ChecklistExecution({ id }: ChecklistExecutionProps) {
   const router = useRouter()
   const [loading, setLoading] = useState(true)
@@ -628,57 +680,12 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
           const cached = await offlineClient.getCachedTemplate(id)
 
           if (cached) {
-            // Ordenar secciones e items del cache también
-            const cachedSections = cached.template.checklists?.checklist_sections || []
-            const orderedCachedSections = cachedSections
-              .sort((a: any, b: any) => a.order_index - b.order_index)
-              .map((section: any) => ({
-                ...section,
-                checklist_items: (section.checklist_items || []).sort((a: any, b: any) => a.order_index - b.order_index)
-              }))
-            
-            const offlineMuRaw = cached.template.checklists?.equipment_models?.maintenance_unit ?? null
-            const offlineCat = cached.template.checklists?.equipment_models?.category ?? null
-            const offlineVisible = computeVisibleMeters(offlineMuRaw, offlineCat)
-            const offlineMaintenanceUnit: "hours" | "kilometers" | null =
-              offlineVisible === "kilometers"
-                ? "kilometers"
-                : offlineVisible === "none"
-                  ? null
-                  : offlineVisible === "both"
-                    ? null
-                    : "hours"
-            setChecklist({
-              id: cached.template.id,
-              name: cached.template.checklists?.name || '',
-              assetId: cached.asset?.id || '',
-              assetCode: cached.asset?.asset_id || '',
-              asset: cached.asset?.name || '',
-              assetLocation: cached.asset?.location || '',
-              modelId: cached.template.checklists?.model_id || '',
-              model: cached.template.checklists?.equipment_models?.name || 'N/A',
-              manufacturer: cached.template.checklists?.equipment_models?.manufacturer || 'N/A',
-              frequency: cached.template.checklists?.frequency || '',
-              sections: orderedCachedSections,
-              scheduledDate: cached.template.scheduled_date || '',
-              technicianId: cached.template.assigned_to || '',
-              technician: cached.template.profiles ? `${cached.template.profiles.nombre} ${cached.template.profiles.apellido}` : '',
-              maintenance_plan_id: cached.template.maintenance_plan_id || null,
-              // Información del activo para lecturas
-              currentHours: cached.asset?.current_hours || 0,
-              currentKilometers: cached.asset?.current_kilometers || 0,
-              maintenanceUnitRaw: offlineMuRaw,
-              modelCategory: offlineCat,
-              visibleMeters: offlineVisible,
-              maintenanceUnit: offlineMaintenanceUnit,
-            })
+            setChecklist(checklistStateFromCache(cached))
             setLoading(false)
-            // Call loadFromLocalStorage in the next tick to avoid interference
             setTimeout(() => loadFromLocalStorage(), 0)
-            console.log('📱 Checklist cargado desde cache offline')
             return
           } else {
-            toast.error("Este checklist no está disponible offline")
+            toast.error("Este checklist no está disponible offline. Use «Preparar offline» con conexión.")
             router.back()
             return
           }
@@ -777,9 +784,16 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
           // Intentar cargar datos guardados in the next tick
           setTimeout(() => void loadFromLocalStorage(), 0)
         }
-      } catch (error: any) {
-        console.error('Error loading checklist data:', error)
-        toast.error('Error al cargar el checklist: ' + error.message)
+      } catch (error: unknown) {
+        console.error("Error loading checklist data:", error)
+        const cached = await offlineClient.getCachedTemplate(id)
+        if (cached) {
+          setChecklist(checklistStateFromCache(cached))
+          setTimeout(() => loadFromLocalStorage(), 0)
+          return
+        }
+        const message = error instanceof Error ? error.message : "Error desconocido"
+        toast.error("Error al cargar el checklist: " + message)
         router.back()
       } finally {
         setLoading(false)

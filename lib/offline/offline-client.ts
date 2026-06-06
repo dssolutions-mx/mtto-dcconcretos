@@ -76,6 +76,9 @@ class OfflineClient {
       lastUpdated: Date.now(),
     }
     await db.cache_templates.put(entry)
+    if (navigator.onLine) {
+      void this.precacheExecutionRoutes([scheduleId])
+    }
   }
 
   async prepareOfflineChecklists(limit = 20): Promise<number> {
@@ -195,6 +198,36 @@ class OfflineClient {
     await this.ensureReady()
     const cached = await db.cache_templates.get(scheduleId)
     return cached ?? null
+  }
+
+  async getAvailableOfflineChecklists(): Promise<
+    Array<{
+      id: string
+      template: unknown
+      asset: unknown
+      lastUpdated: number
+      isRecent: boolean
+    }>
+  > {
+    await this.ensureReady()
+    const cached = await db.cache_templates.toArray()
+    return cached
+      .filter((item) => {
+        const schedule = item.template as { status?: string; checklists?: unknown } | null
+        return schedule?.checklists && schedule.status !== "completed" && schedule.status !== "cancelado"
+      })
+      .map((item) => ({
+        id: item.id,
+        template: item.template,
+        asset: item.asset,
+        lastUpdated: item.lastUpdated,
+        isRecent: Date.now() - item.lastUpdated < 24 * 60 * 60 * 1000,
+      }))
+  }
+
+  async getCachedTemplateCount(): Promise<number> {
+    await this.ensureReady()
+    return db.cache_templates.count()
   }
 
   async getCachedSchedules(filters = "pendiente"): Promise<unknown[] | null> {

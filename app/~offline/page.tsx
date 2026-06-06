@@ -2,23 +2,30 @@
 
 import { useEffect, useState } from "react"
 import Link from "next/link"
-import { offlineChecklistService } from "@/lib/services/offline-checklist-service"
+import { offlineClient } from "@/lib/offline/offline-client"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 
-type CachedSchedule = {
-  id: string
-  asset?: { name?: string }
-  template?: { name?: string }
-}
-
 export default function OfflineFallbackPage() {
-  const [schedules, setSchedules] = useState<CachedSchedule[] | null>(null)
+  const [schedules, setSchedules] = useState<Array<{ id: string; label: string }> | null>(null)
 
   useEffect(() => {
-    offlineChecklistService
-      .getCachedChecklistSchedules("pendiente")
-      .then((cached) => setSchedules(cached ?? []))
+    offlineClient
+      .getAvailableOfflineChecklists()
+      .then((items) =>
+        setSchedules(
+          items.map((item) => {
+            const t = item.template as {
+              checklists?: { name?: string }
+            }
+            const a = item.asset as { name?: string } | null
+            return {
+              id: item.id,
+              label: a?.name ?? t?.checklists?.name ?? item.id,
+            }
+          })
+        )
+      )
       .catch(() => setSchedules([]))
   }, [])
 
@@ -28,31 +35,34 @@ export default function OfflineFallbackPage() {
         <CardHeader>
           <CardTitle>Sin conexión</CardTitle>
           <CardDescription>
-            No hay conexión a internet. Las páginas visitadas recientemente pueden seguir
-            disponibles.
+            Esta página no está en caché. Si descargó checklists, puede abrirlos desde el listado.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           {schedules === null ? (
-            <p className="text-sm text-muted-foreground">Buscando checklists guardados...</p>
+            <p className="text-sm text-muted-foreground">Buscando checklists guardados…</p>
           ) : schedules.length > 0 ? (
             <div className="space-y-2">
-              <p className="text-sm font-medium">Checklists en caché ({schedules.length})</p>
-              <ul className="max-h-48 space-y-1 overflow-y-auto text-sm text-muted-foreground">
+              <p className="text-sm font-medium">Checklists descargados ({schedules.length})</p>
+              <ul className="max-h-48 space-y-1 overflow-y-auto text-sm">
                 {schedules.slice(0, 10).map((schedule) => (
                   <li key={schedule.id}>
-                    {schedule.asset?.name ?? schedule.template?.name ?? schedule.id}
+                    <a
+                      href={`/checklists/ejecutar/${schedule.id}`}
+                      className="text-primary underline-offset-4 hover:underline"
+                    >
+                      {schedule.label}
+                    </a>
                   </li>
                 ))}
               </ul>
             </div>
           ) : (
             <p className="text-sm text-muted-foreground">
-              No hay checklists en caché. Visite checklists con conexión para preparar el modo
-              offline.
+              No hay checklists descargados. Con conexión, use «Preparar offline» en checklists.
             </p>
           )}
-          <Button asChild className="w-full">
+          <Button asChild className="w-full min-h-[44px]">
             <Link href="/checklists">Ir a checklists</Link>
           </Button>
         </CardContent>

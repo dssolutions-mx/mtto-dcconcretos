@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge"
 import { Truck, WifiOff } from "lucide-react"
 import { useAuthZustand } from "@/hooks/use-auth-zustand"
 import { UnifiedOfflineStatus } from "@/components/offline/unified-offline-status"
+import { OfflinePrepareBanner } from "@/components/offline/offline-prepare-banner"
 import { OfflineChecklistList } from "@/components/checklists/offline-checklist-list"
 import { DaySummarySection } from "./day-summary-section"
 import { QuickActionsSection } from "./quick-actions-section"
@@ -22,6 +23,7 @@ export function ChecklistDashboard() {
   const { profile, ui } = useAuthZustand()
   const { schedules, fetchSchedules } = useChecklistSchedules()
   const [preparingOffline, setPreparingOffline] = useState(false)
+  const [cachedOfflineCount, setCachedOfflineCount] = useState(0)
   const connectivity = useConnectivity()
   const isOnline = connectivity === "offline" ? false : connectivity === "online" || connectivity === "degraded" ? true : undefined
   const [stats, setStats] = useState({
@@ -39,6 +41,12 @@ export function ChecklistDashboard() {
   useEffect(() => {
     fetchSchedules("pendiente")
   }, [fetchSchedules])
+
+  useEffect(() => {
+    if (isOnline !== false) {
+      void offlineClient.getCachedTemplateCount().then(setCachedOfflineCount)
+    }
+  }, [isOnline, preparingOffline])
 
   useEffect(() => {
     if (schedules.length > 0) {
@@ -104,6 +112,7 @@ export function ChecklistDashboard() {
       cached = await offlineClient.prepareOfflineChecklists()
       const scheduleIds = schedules.map((schedule) => schedule.id)
       await offlineClient.precacheExecutionRoutes(scheduleIds)
+      setCachedOfflineCount(await offlineClient.getCachedTemplateCount())
 
       toast.success(`Preparado para uso offline: ${cached} checklists descargados`)
     } catch (err: unknown) {
@@ -170,15 +179,23 @@ export function ChecklistDashboard() {
           </div>
         </div>
 
+        {isOnline !== false && (
+          <OfflinePrepareBanner
+            onPrepare={handlePrepareOffline}
+            preparing={preparingOffline}
+            cachedCount={cachedOfflineCount}
+          />
+        )}
+
         {isOnline === false && (
           <Card className="mb-6 border-orange-200 dark:border-orange-900/50 bg-orange-50 dark:bg-orange-950/20">
             <CardContent className="pt-6">
               <div className="flex items-center gap-3">
                 <WifiOff className="h-5 w-5 text-orange-600 dark:text-orange-400" />
                 <div>
-                  <p className="font-medium text-orange-800 dark:text-orange-200">Modo Offline Activo</p>
+                  <p className="font-medium text-orange-800 dark:text-orange-200">Modo offline activo</p>
                   <p className="text-sm text-orange-700 dark:text-orange-300">
-                    Solo puedes acceder a checklists visitados previamente con conexión.
+                    Solo puede abrir checklists que descargó antes con &quot;Preparar offline&quot;.
                   </p>
                 </div>
               </div>

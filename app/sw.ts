@@ -1,6 +1,9 @@
 import { defaultCache } from "@serwist/next/worker"
 import type { PrecacheEntry, SerwistGlobalConfig } from "serwist"
-import { Serwist } from "serwist"
+import { ExpirationPlugin, NetworkFirst, Serwist } from "serwist"
+
+/** Must match PRECACHE handler below — defaultCache uses its own page caches. */
+const CHECKLIST_EXECUTION_CACHE = "checklist-execution-pages"
 
 declare global {
   interface WorkerGlobalScope extends SerwistGlobalConfig {
@@ -15,7 +18,24 @@ const serwist = new Serwist({
   skipWaiting: true,
   clientsClaim: true,
   navigationPreload: true,
-  runtimeCaching: defaultCache,
+  runtimeCaching: [
+    {
+      matcher: ({ request, url }) =>
+        request.destination === "document" &&
+        url.pathname.startsWith("/checklists/ejecutar/"),
+      handler: new NetworkFirst({
+        cacheName: CHECKLIST_EXECUTION_CACHE,
+        networkTimeoutSeconds: 4,
+        plugins: [
+          new ExpirationPlugin({
+            maxEntries: 48,
+            maxAgeSeconds: 7 * 24 * 60 * 60,
+          }),
+        ],
+      }),
+    },
+    ...defaultCache,
+  ],
   fallbacks: {
     entries: [
       {
@@ -30,8 +50,6 @@ const serwist = new Serwist({
 
 serwist.addEventListeners()
 
-const ROUTE_PRECACHE = "offline-route-precache"
-
 self.addEventListener("message", (event) => {
   const data = event.data as { type?: string; urls?: string[] } | undefined
   if (data?.type !== "PRECACHE" || !Array.isArray(data.urls) || data.urls.length === 0) {
@@ -39,7 +57,7 @@ self.addEventListener("message", (event) => {
   }
 
   event.waitUntil(
-    caches.open(ROUTE_PRECACHE).then((cache) =>
+    caches.open(CHECKLIST_EXECUTION_CACHE).then((cache) =>
       Promise.all(
         data.urls!.map((url) =>
           cache.add(new Request(url, { credentials: "same-origin" })).catch(() => undefined)

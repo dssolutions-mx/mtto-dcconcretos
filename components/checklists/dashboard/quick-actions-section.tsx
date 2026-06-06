@@ -65,7 +65,7 @@ export function QuickActionsSection({
           size="default"
           onClick={onPrepareOffline}
           disabled={preparingOffline || isOnline === false}
-          className="hidden lg:inline-flex min-h-[44px] cursor-pointer"
+          className="inline-flex min-h-[44px] cursor-pointer w-full sm:w-auto"
         >
           {preparingOffline ? (
             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
