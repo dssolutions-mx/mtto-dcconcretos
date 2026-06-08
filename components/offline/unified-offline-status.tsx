@@ -36,6 +36,9 @@ export function UnifiedOfflineStatus({
 
   useEffect(() => {
     void initOfflineClient()
+    // Accurate snapshot on mount: the broadcast channel only emits after a drain,
+    // so without this the badge reads 0 until something triggers a sync.
+    void offlineClient.getSyncStats().then(setStats).catch(() => {})
     return subscribeSyncStats((nextStats) => {
       setStats(nextStats)
       if (nextStats.inFlight === 0 && nextStats.pending === 0) {

@@ -10,6 +10,7 @@ import {
 } from "../lib/offline/sync-handlers/diesel"
 import { drainPendingPhotos } from "../lib/offline/sync-handlers/photos"
 import { scheduleOutboxRetry } from "../lib/offline/sync-scheduler"
+import { collectSyncStats } from "../lib/offline/stats"
 import type { OutboxEntry, SyncStats } from "../lib/offline/types"
 
 type WorkerInboundMessage = {
@@ -28,14 +29,7 @@ let draining = false
 let currentAccessToken: string | undefined
 
 async function getStats(): Promise<SyncStats> {
-  const [pending, failed, inFlight] = await Promise.all([
-    db.outbox.where("status").equals("pending").count(),
-    // Fold dead_letter into "failed" so exhausted entries stay visible to the user
-    // instead of silently disappearing from every badge.
-    db.outbox.where("status").anyOf(["failed", "dead_letter"]).count(),
-    db.outbox.where("status").equals("in_flight").count(),
-  ])
-  return { pending, failed, inFlight }
+  return collectSyncStats()
 }
 
 function postStats(stats: SyncStats): void {

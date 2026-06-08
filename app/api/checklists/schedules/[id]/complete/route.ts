@@ -170,51 +170,13 @@ export async function POST(
 
     const asset = scheduleData.assets as any
 
-    // 🛡️ PROTECCIÓN ANTI-DUPLICADOS: Verificar si este checklist ya fue completado recientemente
-    console.log('🔍 Checking for recent completions to prevent duplicates...')
-    const { data: recentCompletions, error: recentError } = await supabase
-      .from('completed_checklists')
-      .select('id, completion_date, technician, notes')
-      .eq('checklist_id', scheduleData.template_id)
-      .eq('asset_id', scheduleData.asset_id)
-      .gte('completion_date', new Date(Date.now() - 60 * 60 * 1000).toISOString()) // Within last hour
-      .order('completion_date', { ascending: false })
-
-    if (!recentError && recentCompletions && recentCompletions.length > 0) {
-      for (const completion of recentCompletions) {
-        const completionTime = new Date(completion.completion_date).getTime()
-        const now = Date.now()
-        const timeDiffMinutes = (now - completionTime) / (1000 * 60)
-        
-        // If completed within last 10 minutes by same technician, likely duplicate from offline sync
-        if (timeDiffMinutes < 10 && completion.technician === technician) {
-          console.log(`⚠️ DUPLICATE PREVENTION: Found recent completion by same technician`, {
-            existingId: completion.id,
-            existingTime: completion.completion_date,
-            technician: completion.technician,
-            timeDiffMinutes: Math.round(timeDiffMinutes * 100) / 100
-          })
-          
-          return NextResponse.json({
-            success: true,
-            message: 'Checklist ya fue completado recientemente - evitando duplicado',
-            data: {
-              completed_id: completion.id,
-              is_duplicate_prevented: true,
-              original_completion_date: completion.completion_date,
-              time_difference_minutes: Math.round(timeDiffMinutes * 100) / 100
-            }
-          })
-        }
-      }
-      
-      // Log all recent completions for debugging
-      console.log(`📊 Found ${recentCompletions.length} recent completions for this asset/template:`)
-      recentCompletions.forEach((comp, index) => {
-        const timeDiff = (Date.now() - new Date(comp.completion_date).getTime()) / (1000 * 60)
-        console.log(`  ${index + 1}. ID: ${comp.id}, Technician: ${comp.technician}, ${Math.round(timeDiff)} min ago`)
-      })
-    }
+    // De-duplication is handled deterministically inside complete_checklist_with_readings,
+    // which is idempotent per schedule_id (returns the existing completion instead of
+    // inserting a second one). The previous heuristic here keyed on template + asset +
+    // technician within a 10-minute window, which both MISSED real duplicates (retries
+    // that span more than 10 min) and, worse, DISCARDED legitimate completions when an
+    // operator synced several days' worth of the same daily checklist for one asset at
+    // once. That is why it was removed.
 
     // Validar lecturas si se proporcionaron
     if (hours_reading !== null || kilometers_reading !== null) {

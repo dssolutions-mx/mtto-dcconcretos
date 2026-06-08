@@ -87,6 +87,16 @@ function bindListeners(): void {
       void requestSync()
     }
   }, FOREGROUND_SYNC_INTERVAL_MS)
+
+  // Bootstrap drain on startup. The interval above only fires once latestStats
+  // shows work, but latestStats stays {0,0,0} until a drain runs — and the
+  // online/visibilitychange listeners only fire on a *transition*, not on a fresh
+  // load that's already online. Without this, items queued in a previous session
+  // wouldn't sync until the user toggled connectivity or enqueued something new.
+  // Deferred so it runs after listenersBound is set (no recursion via requestSync).
+  setTimeout(() => {
+    void requestSync()
+  }, 0)
 }
 
 export function initSyncBridge(): void {

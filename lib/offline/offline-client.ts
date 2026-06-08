@@ -1,6 +1,7 @@
 import { createBrowserClient } from "@supabase/ssr"
 import { db } from "./db"
 import { migrateLegacyIdbIfNeeded } from "./migrate-legacy-idb"
+import { collectSyncStats, MAX_FILE_RETRIES } from "./stats"
 import { initSyncBridge, requestSync as bridgeRequestSync } from "./sync-bridge"
 import type {
   AssetCreatePayload,
@@ -531,6 +532,21 @@ class OfflineClient {
       createdAt: Date.now(),
     }
     await db.outbox.put(entry)
+
+    // Drop the cached blank template + draft for this schedule so a checklist
+    // completed offline can't reappear in the offline list and be submitted a
+    // second time (which would enqueue a duplicate completion with a different
+    // idempotency key). The submission itself lives safely in the outbox.
+    const scheduleId =
+      payload && typeof payload === "object"
+        ? (payload as { schedule_id?: string; scheduleId?: string }).schedule_id ??
+          (payload as { scheduleId?: string }).scheduleId
+        : undefined
+    if (scheduleId) {
+      await db.cache_templates.delete(scheduleId)
+      await db.drafts.delete(scheduleId)
+    }
+
     void bridgeRequestSync()
     return entryId
   }
@@ -615,14 +631,7 @@ class OfflineClient {
 
   async getSyncStats(): Promise<SyncStats> {
     await this.ensureReady()
-    const [pending, failed, inFlight] = await Promise.all([
-      db.outbox.where("status").equals("pending").count(),
-      // Fold dead_letter into "failed" so exhausted entries stay visible to the
-      // user instead of silently disappearing from every badge.
-      db.outbox.where("status").anyOf(["failed", "dead_letter"]).count(),
-      db.outbox.where("status").equals("in_flight").count(),
-    ])
-    return { pending, failed, inFlight }
+    return collectSyncStats()
   }
 
   async requestSync(): Promise<void> {
@@ -639,25 +648,27 @@ class OfflineClient {
    */
   async retryFailedSyncs(): Promise<number> {
     await this.ensureReady()
-    const stuck = await db.outbox.where("status").anyOf(["failed", "dead_letter"]).toArray()
-    if (stuck.length === 0) {
-      void bridgeRequestSync()
-      return 0
+    const now = Date.now()
+
+    const revivedOutbox = await db.outbox
+      .where("status")
+      .anyOf(["failed", "dead_letter"])
+      .modify({ status: "pending", attemptCount: 0, nextAttemptAt: now, lastError: undefined })
+
+    // Also revive file uploads that exhausted their retry cap, otherwise the
+    // failed photos/documents folded into the badge would be unreachable.
+    let revivedFiles = 0
+    for (const table of [db.photos, db.diesel_photos, db.asset_files]) {
+      revivedFiles += await table
+        .filter((entry) => {
+          const e = entry as unknown as { uploaded: boolean; retryCount?: number }
+          return !e.uploaded && (e.retryCount ?? 0) >= MAX_FILE_RETRIES
+        })
+        .modify({ retryCount: 0, uploadError: undefined })
     }
 
-    const now = Date.now()
-    await db.outbox.bulkPut(
-      stuck.map((entry) => ({
-        ...entry,
-        status: "pending" as const,
-        attemptCount: 0,
-        nextAttemptAt: now,
-        lastError: undefined,
-      }))
-    )
-
     void bridgeRequestSync()
-    return stuck.length
+    return revivedOutbox + revivedFiles
   }
 
   async cacheDieselWarehouse(warehouseId: string, warehouseData: unknown): Promise<void> {

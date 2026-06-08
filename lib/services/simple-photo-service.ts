@@ -25,6 +25,9 @@ export interface PhotoUploadResult {
   progress?: number
   error?: string
   url?: string
+  /** Compressed bytes — returned so offline callers can persist the blob to the
+   *  durable offline photo queue (this service keeps photos only in memory). */
+  compressedBlob?: Blob
   /** EXIF etc. from original file (before compression); same payload sent on upload-complete event */
   evidenceImageMetadata?: DieselEvidenceImageMetadata | null
 }
@@ -203,6 +206,7 @@ class SimplePhotoService {
         id: photoId,
         preview,
         status: navigator.onLine ? 'uploading' : 'stored',
+        compressedBlob: compressed,
         evidenceImageMetadata
       }
     } catch (error) {

@@ -25,6 +25,7 @@ interface PhotoUploadResult {
   progress?: number
   error?: string
   url?: string
+  compressedBlob?: Blob
   evidenceImageMetadata?: DieselEvidenceImageMetadata | null
 }
 
@@ -151,10 +152,29 @@ export function SmartPhotoUpload({
       )
       
       setPhoto(result)
-      
+
       // If we got an immediate upload URL, update parent
       if (result.url) {
         onPhotoChange(result.url, result.id, result.evidenceImageMetadata ?? null)
+      } else if (typeof navigator !== 'undefined' && !navigator.onLine && result.compressedBlob) {
+        // Offline: simple-photo-service only keeps the blob in memory (lost on reload
+        // and never attached to the completion). Persist it to the durable offline
+        // photo queue (db.photos) keyed by itemId, and record the preview so the item
+        // shows a photo and it's saved in the draft. On sync, syncChecklistComplete
+        // resolves photo_url from the uploaded blob by matching itemId.
+        try {
+          const { offlineClient } = await import('@/lib/offline/offline-client')
+          await offlineClient.savePhoto({
+            id: result.id,
+            checklistId,
+            itemId,
+            blob: result.compressedBlob,
+            fileName: file.name,
+          })
+        } catch (persistError) {
+          console.warn('Could not persist offline item photo:', persistError)
+        }
+        onPhotoChange(result.preview, result.id, result.evidenceImageMetadata ?? null)
       }
       
       // Show appropriate feedback

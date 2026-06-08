@@ -396,8 +396,31 @@ async function processChecklistCompletion(
     // Continuar sin template_version_id - el sistema seguirá funcionando
   }
 
+  // Idempotencia por instancia de programación (consistente con
+  // complete_checklist_with_readings): si esta programación ya tiene un completado,
+  // devolverlo en vez de insertar un duplicado. El índice único parcial sobre
+  // completed_checklists(schedule_id) respalda esto ante carreras.
+  const { data: existingCompletion } = await supabase
+    .from('completed_checklists')
+    .select('id')
+    .eq('schedule_id', schedule_id)
+    .limit(1)
+    .maybeSingle()
+
+  if (existingCompletion) {
+    return NextResponse.json({
+      success: true,
+      data: {
+        completed_id: existingCompletion.id,
+        has_issues: hasIssues,
+        is_duplicate_prevented: true
+      }
+    })
+  }
+
   // 5. Crear el registro de checklist completado (CON VERSIONING)
   const insertData: any = {
+    schedule_id: schedule_id,
     checklist_id: scheduleData.template_id,
     asset_id: assetUuid,
     completed_items: completed_items,
