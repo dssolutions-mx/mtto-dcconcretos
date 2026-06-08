@@ -499,9 +499,8 @@ class OfflineClient {
 
   /**
    * Verify the static offline shell pages are reachable while online. These URLs are
-   * served offline by the service worker's precache route (additionalPrecacheEntries),
-   * so we only fetch them here to confirm they're warm and report status to the user —
-   * we no longer push them into a separate runtime cache.
+   * warmed by the service worker at install (handleRequest) and by client fetch here —
+   * we only confirm they're reachable and report status to the user.
    */
   async precacheOfflineShell(): Promise<boolean> {
     if (typeof window === "undefined" || !navigator.onLine) return false

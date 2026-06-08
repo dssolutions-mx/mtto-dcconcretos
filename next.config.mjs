@@ -14,14 +14,9 @@ const withSerwist = withSerwistInit({
   swSrc: 'app/sw.ts',
   swDest: 'public/sw.js',
   disable: process.env.NODE_ENV === 'development',
-  cacheOnNavigation: true,
+  cacheOnNavigation: false,
   reloadOnOnline: false,
-  additionalPrecacheEntries: [
-    { url: '/~offline', revision },
-    { url: '/', revision },
-    { url: '/checklists', revision },
-    { url: '/checklists/offline-ejecutar', revision },
-  ],
+  additionalPrecacheEntries: [{ url: '/~offline', revision }],
 })
 
 /** @type {import('next').NextConfig} */
@@ -45,7 +40,9 @@ const nextConfig = {
     return [
       {
         source: '/sw.js',
-        headers: [{ key: 'Cache-Control', value: 'no-cache' }],
+        headers: [
+          { key: 'Cache-Control', value: 'no-cache, no-store, must-revalidate' },
+        ],
       },
       {
         source: '/:path*',

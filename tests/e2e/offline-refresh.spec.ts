@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test'
+import { test, expect, devices } from '@playwright/test'
 
 /**
  * Offline refresh smoke test (Track G).
@@ -9,6 +9,25 @@ import { test, expect } from '@playwright/test'
  *
  * Skipped when TEST_LOGIN_USERNAME / TEST_LOGIN_PASSWORD are not set.
  */
+
+async function assertPageIsStyled(page: import('@playwright/test').Page) {
+  const styled = await page.evaluate(() => {
+    const font = getComputedStyle(document.body).fontFamily.toLowerCase()
+    const sheetCount = document.querySelectorAll('link[rel="stylesheet"]').length
+    const hasTailwindLayout =
+      getComputedStyle(document.body).display !== 'inline' ||
+      document.querySelector('[class*="flex"]') !== null
+
+    const isDefaultSerif =
+      font.includes('times new roman') ||
+      (font.includes('times') && !font.includes('system-ui'))
+
+    return sheetCount > 0 && !isDefaultSerif && hasTailwindLayout
+  })
+
+  expect(styled).toBe(true)
+}
+
 test.describe('Offline refresh', () => {
   test('checklists page survives offline refresh without browser error', async ({
     page,
@@ -25,10 +44,13 @@ test.describe('Offline refresh', () => {
 
     await page.waitForURL(/\/(dashboard|checklists)/, { timeout: 30_000 })
     await page.goto('/checklists')
+    await page.waitForLoadState('networkidle')
 
     await expect(page.locator('body')).not.toContainText(
       /no hay conexión a internet|dinosaur|ERR_INTERNET_DISCONNECTED/i
     )
+
+    await assertPageIsStyled(page)
 
     await context.setOffline(true)
     await page.reload({ waitUntil: 'domcontentloaded' })
@@ -37,6 +59,7 @@ test.describe('Offline refresh', () => {
     expect(bodyText).not.toMatch(/no hay conexión a internet|dinosaur/i)
 
     await expect(page.locator('body')).toBeVisible()
+    await assertPageIsStyled(page)
   })
 
   test('downloaded checklist can be opened offline (no redirect/error)', async ({
@@ -55,10 +78,13 @@ test.describe('Offline refresh', () => {
 
     // Prepare offline while online: downloads pending checklists into Dexie + warms SW.
     await page.goto('/checklists')
+    await page.waitForLoadState('networkidle')
     const prepare = page.getByRole('button', { name: /preparar offline/i })
     await prepare.click()
     // Wait for the prepare toast (success or "nothing downloaded") to settle.
     await page.waitForTimeout(4000)
+
+    await assertPageIsStyled(page)
 
     // Go offline and reload so connectivity flips to offline on first paint.
     await context.setOffline(true)
@@ -69,6 +95,8 @@ test.describe('Offline refresh', () => {
     // surface downloaded checklists at all.
     const offlineList = page.getByText(/checklists disponibles offline/i)
     await expect(offlineList).toBeVisible({ timeout: 15_000 })
+
+    await assertPageIsStyled(page)
 
     // If at least one checklist was downloaded, opening it must render the execution
     // view inline (the original "opening a checklist offline does not work" bug:
@@ -84,6 +112,37 @@ test.describe('Offline refresh', () => {
 
       const body = await page.locator('body').innerText()
       expect(body).not.toMatch(/no está disponible offline|no hay conexión a internet|dinosaur/i)
+
+      await assertPageIsStyled(page)
     }
+  })
+})
+
+test.describe('Offline refresh (iPad Pro emulation)', () => {
+  test.use({ ...devices['iPad Pro'] })
+
+  test('checklists page keeps styles after offline reload on tablet viewport', async ({
+    page,
+    context,
+  }) => {
+    const username = process.env.TEST_LOGIN_USERNAME
+    const password = process.env.TEST_LOGIN_PASSWORD
+    test.skip(!username || !password, 'TEST_LOGIN_USERNAME / TEST_LOGIN_PASSWORD not set')
+
+    await page.goto('/login')
+    await page.getByLabel(/usuario|email|correo/i).fill(username!)
+    await page.getByLabel(/contraseña|password/i).fill(password!)
+    await page.getByRole('button', { name: /iniciar|entrar|login/i }).click()
+
+    await page.waitForURL(/\/(dashboard|checklists)/, { timeout: 30_000 })
+    await page.goto('/checklists')
+    await page.waitForLoadState('networkidle')
+
+    await assertPageIsStyled(page)
+
+    await context.setOffline(true)
+    await page.reload({ waitUntil: 'domcontentloaded' })
+
+    await assertPageIsStyled(page)
   })
 })
