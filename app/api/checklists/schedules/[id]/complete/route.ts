@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase-server'
+import { enrichEquipmentReadingsValidation } from '@/lib/checklist/equipment-readings-validation'
 import { createServerClient } from '@supabase/ssr'
 import { NextRequest, NextResponse } from 'next/server'
 
@@ -196,11 +197,19 @@ export async function POST(
       }
 
       if (!validationResult?.valid) {
+        const enriched = enrichEquipmentReadingsValidation(validationResult, {
+          hours_reading,
+          kilometers_reading,
+        })
+
         return NextResponse.json(
-          { 
+          {
             error: 'Lecturas del equipo inválidas',
-            validation_errors: validationResult?.errors || [],
-            validation_warnings: validationResult?.warnings || []
+            validation_errors: enriched?.errors || validationResult?.errors || [],
+            validation_warnings: enriched?.warnings || validationResult?.warnings || [],
+            validation_hints: enriched?.hints || [],
+            current_hours: enriched?.current_hours ?? validationResult?.current_hours,
+            current_kilometers: enriched?.current_kilometers ?? validationResult?.current_kilometers,
           },
           { status: 400 }
         )

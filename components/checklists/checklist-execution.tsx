@@ -51,7 +51,15 @@ import {
 } from "lucide-react"
 import { SignatureCanvas } from "@/components/checklists/signature-canvas"
 import { EnhancedOfflineStatus } from "@/components/checklists/enhanced-offline-status"
-import { EquipmentReadingsForm } from "@/components/checklists/equipment-readings-form"
+import {
+  EquipmentReadingsForm,
+  type EquipmentReadingsValidation,
+} from "@/components/checklists/equipment-readings-form"
+import {
+  enrichEquipmentReadingsValidation,
+  formatSubmissionReadingErrors,
+  validateReadingsPresence,
+} from "@/lib/checklist/equipment-readings-validation"
 import { EvidenceCaptureSection } from "@/components/checklists/evidence-capture-section"
 import { SecurityTalkSection } from "@/components/checklists/security-talk-section"
 import { CorrectiveWorkOrderDialog } from "@/components/checklists/corrective-work-order-dialog"
@@ -169,6 +177,9 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
     hours_reading?: number | null
     kilometers_reading?: number | null
   }>({})
+  const [equipmentReadingsValidation, setEquipmentReadingsValidation] =
+    useState<EquipmentReadingsValidation | null>(null)
+  const [readingsFormKey, setReadingsFormKey] = useState(0)
   
   // Estados para evidencias fotográficas
   const [evidenceData, setEvidenceData] = useState<Record<string, any[]>>({})
@@ -551,6 +562,8 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
       setSignature(data.signature || null)
       setSelectedItem(data.selectedItem || null)
       setEquipmentReadings(data.equipmentReadings || {})
+      setEquipmentReadingsValidation(null)
+      setReadingsFormKey((key) => key + 1)
       setEvidenceData(data.evidenceData || {})
       setSectionCollapsed(data.sectionCollapsed || {})
       setHasUnsavedChanges(false)
@@ -942,6 +955,13 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
     markAsUnsaved()
   }, [markAsUnsaved])
 
+  const handleEquipmentReadingsValidationChange = useCallback(
+    (validation: EquipmentReadingsValidation | null) => {
+      setEquipmentReadingsValidation(validation)
+    },
+    []
+  )
+
   const handleNotesChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setNotes(e.target.value)
     markAsUnsaved()
@@ -1070,27 +1090,28 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
       return { isValid: true, errors, warnings }
     }
 
-    const checkHours = vm === "hours" || vm === "both"
-    const checkKm = vm === "kilometers" || vm === "both"
+    errors.push(...validateReadingsPresence(vm, equipmentReadings))
 
-    if (checkHours && equipmentReadings.hours_reading !== undefined && equipmentReadings.hours_reading !== null) {
-      if (equipmentReadings.hours_reading <= 0) {
-        errors.push("⏱️ Lectura de horas inválida (debe ser mayor a 0)")
-      } else if (equipmentReadings.hours_reading <= checklist.currentHours) {
-        warnings.push(
-          `⚠️ Lectura de horas (${equipmentReadings.hours_reading}) no mayor a la actual (${checklist.currentHours})`
-        )
-      }
+    if (errors.length > 0) {
+      return { isValid: false, errors, warnings }
     }
 
-    if (checkKm && equipmentReadings.kilometers_reading !== undefined && equipmentReadings.kilometers_reading !== null) {
-      if (equipmentReadings.kilometers_reading <= 0) {
-        errors.push("📏 Lectura de kilómetros inválida (debe ser mayor a 0)")
-      } else if (equipmentReadings.kilometers_reading <= checklist.currentKilometers) {
-        warnings.push(
-          `⚠️ Lectura de kilómetros (${equipmentReadings.kilometers_reading}) no mayor a la actual (${checklist.currentKilometers})`
-        )
+    if (equipmentReadingsValidation) {
+      if (!equipmentReadingsValidation.valid) {
+        errors.push("⏱️ Lecturas del equipo inválidas")
+        errors.push(...equipmentReadingsValidation.errors)
+        warnings.push(...equipmentReadingsValidation.warnings)
+        warnings.push(...equipmentReadingsValidation.hints)
+      } else {
+        warnings.push(...equipmentReadingsValidation.warnings)
+        warnings.push(...equipmentReadingsValidation.hints)
       }
+    } else if (
+      equipmentReadings.hours_reading != null ||
+      equipmentReadings.kilometers_reading != null
+    ) {
+      warnings.push("Espere a que termine la validación de lecturas antes de enviar")
+      errors.push("⏱️ Validando lecturas del equipo…")
     }
 
     const result = { isValid: errors.length === 0, errors, warnings }
@@ -1159,7 +1180,7 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
     if (!readings.isValid) {
       issues.push({
         id: "readings",
-        label: "Lecturas inválidas",
+        label: equipmentReadingsValidation?.valid === false ? "Lecturas inválidas" : "Faltan lecturas",
         targetId: "checklist-field-equipment-readings",
       })
     }
@@ -1171,6 +1192,7 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
     signature,
     evidenceData,
     equipmentReadings,
+    equipmentReadingsValidation,
     firstIncompleteSectionDomId,
     resolvedVisibleMeters,
   ])
@@ -1604,15 +1626,33 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
           }
           
           if (errorData.validation_errors || errorData.validation_warnings) {
-            toast.error('Error en las validaciones')
-            if (errorData.validation_errors?.length > 0) {
-              console.error('Validation errors:', errorData.validation_errors)
-              errorData.validation_errors.forEach((error: string) => toast.error(error))
-            }
-            if (errorData.validation_warnings?.length > 0) {
-              console.error('Validation warnings:', errorData.validation_warnings)
-              errorData.validation_warnings.forEach((warning: string) => toast.warning(warning))
-            }
+            const enriched = enrichEquipmentReadingsValidation(
+              {
+                valid: false,
+                errors: errorData.validation_errors || [],
+                warnings: errorData.validation_warnings || [],
+                hints: errorData.validation_hints || [],
+                current_hours: errorData.current_hours,
+                current_kilometers: errorData.current_kilometers,
+              },
+              {
+                hours_reading: hoursOut,
+                kilometers_reading: kmOut,
+              }
+            )
+            const { errors: readingErrors, hints } = formatSubmissionReadingErrors(enriched)
+
+            toast.error("No se pudo completar el checklist: lecturas inválidas", {
+              description: readingErrors[0],
+              duration: 10000,
+            })
+            readingErrors.slice(1).forEach((error: string, index: number) => {
+              setTimeout(() => toast.error(error, { duration: 9000 }), (index + 1) * 400)
+            })
+            hints.forEach((hint: string, index: number) => {
+              setTimeout(() => toast.warning(hint, { duration: 10000 }), (readingErrors.length + index + 1) * 400)
+            })
+            scrollToFieldById("checklist-field-equipment-readings")
           } else {
             console.error('General error:', errorData.error || errorData.details)
             toast.error(errorData.error || errorData.details || 'Error al enviar el checklist')
@@ -2634,12 +2674,15 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
 
       {/* Componente de lecturas de equipo */}
       <EquipmentReadingsForm
+        key={readingsFormKey}
         assetId={checklist.assetId}
         assetName={checklist.asset}
         visibleMeters={resolvedVisibleMeters}
         currentHours={checklist.currentHours}
         currentKilometers={checklist.currentKilometers}
+        initialReadings={equipmentReadings}
         onReadingsChange={handleEquipmentReadingsChange}
+        onValidationChange={handleEquipmentReadingsValidationChange}
         disabled={submitting}
       />
 

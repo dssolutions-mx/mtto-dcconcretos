@@ -6,36 +6,9 @@ import {
   normalizeIssueItemPhotoUrl,
 } from '@/lib/checklist/collect-checklist-issue-evidence'
 
-// Add function to verify database functions exist
-async function verifyDatabaseFunctions(supabase: any) {
-  try {
-    // Test if the improved functions exist by calling them
-    const { data: testId, error: testError } = await supabase
-      .rpc('generate_unique_work_order_id')
-
-    if (testError) {
-      console.warn('⚠️ Database functions may not be updated yet:', testError.message)
-      return false
-    }
-
-    console.log('✅ Database functions verified, test ID:', testId)
-    return true
-  } catch (error) {
-    console.warn('⚠️ Could not verify database functions:', error)
-    return false
-  }
-}
-
 export async function POST(request: NextRequest) {
   try {
     const supabase = await createClient()
-
-    // Verify database functions exist and are working
-    const functionsVerified = await verifyDatabaseFunctions(supabase)
-
-    if (!functionsVerified) {
-      console.warn('⚠️ Database functions may not be up to date. Enhanced error handling will be used as fallback.')
-    }
 
     // Get the current user
     const { data: { user }, error: userError } = await supabase.auth.getUser()

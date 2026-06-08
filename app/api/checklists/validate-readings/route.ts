@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase-server'
+import { enrichEquipmentReadingsValidation } from '@/lib/checklist/equipment-readings-validation'
 import { NextResponse } from 'next/server'
 
 function toIntOrNull(value: unknown): number | null {
@@ -41,7 +42,12 @@ export async function POST(request: Request) {
       )
     }
 
-    return NextResponse.json(validationResult)
+    const enriched = enrichEquipmentReadingsValidation(validationResult, {
+      hours_reading: toIntOrNull(hours_reading),
+      kilometers_reading: toIntOrNull(kilometers_reading),
+    })
+
+    return NextResponse.json(enriched ?? validationResult)
     
   } catch (error: unknown) {
     console.error('Error in readings validation:', error)
