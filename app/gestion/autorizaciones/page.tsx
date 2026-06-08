@@ -21,7 +21,6 @@ import { getRoleDisplayName } from '@/lib/auth/role-permissions'
 import { canManageUserAuthorizationClient, jefePlantaClientPlantScope } from '@/lib/auth/client-authorization'
 import { createClient } from '@/lib/supabase'
 import { resolveClientPlantIds } from '@/lib/auth/client-plant-scope'
-import { createClient } from '@/lib/supabase'
 
 interface BusinessUnit {
   id: string
