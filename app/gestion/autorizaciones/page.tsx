@@ -20,6 +20,8 @@ import { useAuthZustand } from '@/hooks/use-auth-zustand'
 import { getRoleDisplayName } from '@/lib/auth/role-permissions'
 import { canManageUserAuthorizationClient, jefePlantaClientPlantScope } from '@/lib/auth/client-authorization'
 import { createClient } from '@/lib/supabase'
+import { resolveClientPlantIds } from '@/lib/auth/client-plant-scope'
+import { createClient } from '@/lib/supabase'
 
 interface BusinessUnit {
   id: string
@@ -206,13 +208,16 @@ export default function AuthorizationManagementPage() {
         if (profile?.role === 'JEFE_UNIDAD_NEGOCIO' && profile?.business_unit_id) {
           // JEFE_UNIDAD_NEGOCIO can only see plants in their business unit
           plantsData = plantsData.filter((plant: Plant) => plant.business_unit_id === profile.business_unit_id)
-        } else if (profile?.role === 'JEFE_PLANTA') {
-          // Jefe de Planta: primary plant + profile_managed_plants (auth store)
-          const jpPlants = jefePlantaClientPlantScope(profile)
+        } else if (profile?.role === 'JEFE_PLANTA' && profile?.id) {
+          const supabase = createClient()
+          const jpPlants = await resolveClientPlantIds(supabase, profile)
           if (jpPlants.length > 0) {
             plantsData = plantsData.filter((plant: Plant) => jpPlants.includes(plant.id))
           } else {
-            plantsData = []
+            const syncScope = jefePlantaClientPlantScope(profile)
+            plantsData = syncScope.length
+              ? plantsData.filter((plant: Plant) => syncScope.includes(plant.id))
+              : []
           }
         }
         // GERENCIA_GENERAL and AREA_ADMINISTRATIVA can see all plants

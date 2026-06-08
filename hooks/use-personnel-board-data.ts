@@ -3,6 +3,10 @@
 import { useState, useEffect, useCallback } from 'react'
 import { toast } from 'react-hot-toast'
 import { createClient } from '@/lib/supabase'
+import {
+  fetchPlantsForScope,
+  resolveClientPlantIds,
+} from '@/lib/auth/client-plant-scope'
 
 export interface PersonnelBoardProfile {
   id: string
@@ -53,6 +57,7 @@ export function usePersonnelBoardData(profile: {
   role?: string | null
   business_unit_id?: string | null
   plant_id?: string | null
+  managed_plant_ids?: string[] | null
 } | null) {
   const [operators, setOperators] = useState<PersonnelBoardProfile[]>([])
   const [plants, setPlants] = useState<PersonnelBoardPlant[]>([])
@@ -99,20 +104,28 @@ export function usePersonnelBoardData(profile: {
             filteredPlants.some((p: PersonnelBoardPlant) => p.id === op.plant_id) ||
             (!op.plant_id && !op.business_unit_id)
         )
-      } else if (profile?.role === 'JEFE_PLANTA' && profile?.id) {
+      } else if (
+        (profile?.role === 'JEFE_PLANTA' || profile?.role === 'ENCARGADO_MANTENIMIENTO') &&
+        profile?.id
+      ) {
         const supabase = createClient()
-        const { data: managedIds } = await supabase.rpc('profile_scoped_plant_ids', {
-          p_user_id: profile.id,
-        })
-        const plantIds: string[] =
-          Array.isArray(managedIds) && managedIds.length > 0
-            ? managedIds
-            : profile.plant_id
-              ? [profile.plant_id]
-              : []
+        const plantIds = await resolveClientPlantIds(supabase, profile)
         if (plantIds.length > 0) {
           const plantSet = new Set(plantIds)
           filteredPlants = rawPlants.filter((p: PersonnelBoardPlant) => plantSet.has(p.id))
+
+          // `/api/plants` can lag behind scope; load scoped plants directly when needed.
+          if (filteredPlants.length === 0) {
+            const scopedRows = await fetchPlantsForScope(supabase, plantIds)
+            filteredPlants = scopedRows.map((p) => ({
+              id: p.id,
+              name: p.name,
+              code: p.code ?? '',
+              business_unit_id: p.business_unit_id ?? '',
+              status: 'active',
+            }))
+          }
+
           const buIds = [
             ...new Set(
               filteredPlants.map((p: PersonnelBoardPlant) => p.business_unit_id).filter(Boolean)
@@ -121,9 +134,20 @@ export function usePersonnelBoardData(profile: {
           filteredBusinessUnits = rawBusinessUnits.filter((bu: PersonnelBoardBusinessUnit) =>
             buIds.includes(bu.id)
           )
+          if (filteredBusinessUnits.length === 0 && buIds.length > 0) {
+            const { data: buRows } = await supabase
+              .from('business_units')
+              .select('id, name, code')
+              .in('id', buIds)
+            filteredBusinessUnits = (buRows ?? []) as PersonnelBoardBusinessUnit[]
+          }
           filteredOperators = rawOperators.filter(
             (op: PersonnelBoardProfile) => op.plant_id != null && plantSet.has(op.plant_id)
           )
+        } else {
+          filteredPlants = []
+          filteredBusinessUnits = []
+          filteredOperators = []
         }
       }
 
@@ -136,7 +160,7 @@ export function usePersonnelBoardData(profile: {
     } finally {
       setLoading(false)
     }
-  }, [profile])
+  }, [profile?.id, profile?.role, profile?.plant_id, profile?.business_unit_id, profile?.managed_plant_ids])
 
   useEffect(() => {
     refetch()

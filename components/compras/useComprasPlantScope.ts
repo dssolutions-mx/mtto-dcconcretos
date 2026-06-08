@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react"
 import { createClient } from "@/lib/supabase"
 import { useAuthZustand } from "@/hooks/use-auth-zustand"
+import { resolveClientPlantIds } from "@/lib/auth/client-plant-scope"
 
 /**
  * Plant IDs the current user may see in Compras (matches asset-selector / personnel scoping).
@@ -30,6 +31,18 @@ export function useComprasPlantScope(): {
 
     if (!profile?.id) {
       finish(null)
+      return () => {
+        cancelled = true
+      }
+    }
+
+    if (profile.role === "JEFE_PLANTA" || profile.role === "ENCARGADO_MANTENIMIENTO") {
+      setResolving(true)
+      const supabase = createClient()
+      void resolveClientPlantIds(supabase, profile).then((ids) => {
+        if (cancelled) return
+        finish(ids.length > 0 ? new Set(ids) : new Set())
+      })
       return () => {
         cancelled = true
       }
@@ -66,7 +79,7 @@ export function useComprasPlantScope(): {
     return () => {
       cancelled = true
     }
-  }, [profile?.id, profile?.plant_id, profile?.business_unit_id])
+  }, [profile?.id, profile?.role, profile?.plant_id, profile?.business_unit_id, profile?.managed_plant_ids])
 
   return { allowedPlantIds, resolving }
 }

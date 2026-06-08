@@ -47,20 +47,30 @@ export async function GET() {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 })
     }
 
-    if (!profile.plant_id) {
+    let plantIds: string[] = []
+    if (profile.role === "JEFE_PLANTA") {
+      const { data: scoped } = await supabase.rpc("profile_scoped_plant_ids", {
+        p_user_id: user.id,
+      })
+      plantIds = Array.isArray(scoped) ? (scoped as string[]).filter(Boolean) : []
+    }
+    if (plantIds.length === 0 && profile.plant_id) {
+      plantIds = [profile.plant_id]
+    }
+    if (plantIds.length === 0) {
       return NextResponse.json(
         { error: "Tu perfil no tiene planta asignada. Contacta a tu supervisor." },
         { status: 403 }
       )
     }
 
-    const plantId = profile.plant_id
+    const plantId = plantIds[0]
     const todayKey = formatUTCDateKey(getUTCToday())
 
     const { data: plantAssets, error: assetsError } = await supabase
       .from("assets")
-      .select("id, name, asset_id")
-      .eq("plant_id", plantId)
+      .select("id, name, asset_id, plant_id")
+      .in("plant_id", plantIds)
       .eq("status", "operational")
 
     if (assetsError) {
@@ -133,7 +143,7 @@ export async function GET() {
       .from("asset_operators_full")
       .select("asset_uuid, assignment_type, operator_nombre, operator_apellido")
       .eq("status", "active")
-      .eq("asset_plant_id", plantId)
+      .in("asset_plant_id", plantIds)
 
     if (opErr) {
       console.error("[plant-daily-readiness] asset_operators_full", opErr)

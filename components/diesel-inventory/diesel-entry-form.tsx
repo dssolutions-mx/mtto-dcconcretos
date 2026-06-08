@@ -165,7 +165,7 @@ export function DieselEntryForm({
 
       const { data: profile } = await supabase
         .from('profiles')
-        .select('plant_id, business_unit_id, role')
+        .select('id, plant_id, business_unit_id, role')
         .eq('id', user.id)
         .single()
 

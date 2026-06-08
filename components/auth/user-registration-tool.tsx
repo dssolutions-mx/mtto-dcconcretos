@@ -15,7 +15,10 @@ import { useAuthZustand } from '@/hooks/use-auth-zustand'
 import {
   canRegisterOperatorsClient,
   isFullPersonnelRegistrationClient,
+  jefePlantaClientPlantScope,
 } from '@/lib/auth/client-authorization'
+import { createClient } from '@/lib/supabase'
+import { fetchPlantsForScope, resolveClientPlantIds } from '@/lib/auth/client-plant-scope'
 
 interface BusinessUnit {
   id: string
@@ -163,8 +166,8 @@ export function UserRegistrationTool({
   // Load data on component mount
   useEffect(() => {
     loadBusinessUnits()
-    loadPlants()
-  }, [])
+    void loadPlants()
+  }, [profile?.id, profile?.role, profile?.managed_plant_ids])
 
   // Filter plants when business unit changes
   useEffect(() => {
@@ -276,7 +279,28 @@ export function UserRegistrationTool({
     try {
       const response = await fetch('/api/plants')
       const data = await response.json()
-      setPlants(data.plants || [])
+      let list: Plant[] = data.plants || []
+
+      if (profile?.role === 'JEFE_PLANTA' && profile.id) {
+        const supabase = createClient()
+        const scopeIds = await resolveClientPlantIds(supabase, profile)
+        if (scopeIds.length > 0) {
+          const scoped = list.filter((p) => scopeIds.includes(p.id))
+          if (scoped.length > 0) {
+            list = scoped
+          } else {
+            const rows = await fetchPlantsForScope(supabase, scopeIds)
+            list = rows.map((p) => ({
+              id: p.id,
+              name: p.name,
+              code: p.code ?? '',
+              business_unit_id: p.business_unit_id ?? '',
+            }))
+          }
+        }
+      }
+
+      setPlants(list)
     } catch (error) {
       console.error('Error loading plants:', error)
       toast.error('Error cargando plantas')
@@ -440,7 +464,9 @@ export function UserRegistrationTool({
 
   const selectedRole = roleOptions.find((role) => role.value === formData.role)
   const lockBusinessUnit = profile?.role === 'JEFE_UNIDAD_NEGOCIO'
-  const lockPlant = profile?.role === 'JEFE_PLANTA'
+  const jpPlantScope =
+    profile?.role === 'JEFE_PLANTA' ? jefePlantaClientPlantScope(profile) : []
+  const lockPlant = profile?.role === 'JEFE_PLANTA' && jpPlantScope.length <= 1
 
   if (!canManageUsers) {
     return null

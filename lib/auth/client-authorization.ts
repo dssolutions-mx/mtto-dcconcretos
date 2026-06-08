@@ -1,4 +1,5 @@
 import { isRHOwnerRole } from '@/lib/auth/role-model'
+import { plantIdsFromProfile } from '@/lib/auth/client-plant-scope'
 
 /** RRHH / GG: full registration (any role, any BU/plant). Mirrors server-side RH ownership. */
 export function isFullPersonnelRegistrationClient(profile: {
@@ -54,10 +55,7 @@ export function jefePlantaClientPlantScope(profile: {
   managed_plant_ids?: string[] | null
 } | null): string[] {
   if (profile?.role !== 'JEFE_PLANTA') return []
-  const m = profile.managed_plant_ids
-  if (m && m.length > 0) return m
-  if (profile.plant_id) return [profile.plant_id]
-  return []
+  return plantIdsFromProfile(profile)
 }
 
 export function canManageUserAuthorizationClient(profile: {

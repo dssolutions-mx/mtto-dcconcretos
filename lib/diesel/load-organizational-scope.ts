@@ -1,9 +1,15 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import {
+  fetchPlantsForScope,
+  resolveClientPlantIds,
+} from '@/lib/auth/client-plant-scope'
 
 export type DieselOrgProfile = {
+  id?: string | null
   plant_id: string | null
   business_unit_id: string | null
   role?: string | null
+  managed_plant_ids?: string[] | null
 }
 
 export type DieselWarehouseOption = {
@@ -93,6 +99,28 @@ function autoSelectWarehouse(
  * Loads BU/plant/warehouse options for diesel forms from the current user's profile.
  * Handles plant-only profiles (plant_id without business_unit_id).
  */
+async function fetchDieselWarehousesForPlants(
+  supabase: SupabaseClient,
+  plantIds: string[],
+  productType: 'diesel' | 'urea'
+): Promise<DieselWarehouseOption[]> {
+  if (plantIds.length === 0) return []
+
+  const { data, error } = await supabase
+    .from('diesel_warehouses')
+    .select(WAREHOUSE_SELECT)
+    .in('plant_id', plantIds)
+    .eq('product_type', productType)
+    .order('name')
+
+  if (error) {
+    console.error('Error loading warehouses for scoped plants:', error)
+    throw error
+  }
+
+  return (data ?? []) as DieselWarehouseOption[]
+}
+
 export async function loadDieselOrganizationalScope(
   supabase: SupabaseClient,
   profile: DieselOrgProfile,
@@ -114,6 +142,34 @@ export async function loadDieselOrganizationalScope(
     selectedBusinessUnit: null,
     selectedPlant: null,
     selectedWarehouse: null,
+  }
+
+  const scopedPlantIds =
+    profile.id && (profile.role === 'JEFE_PLANTA' || profile.role === 'ENCARGADO_MANTENIMIENTO')
+      ? await resolveClientPlantIds(supabase, profile)
+      : []
+
+  if (
+    scopedPlantIds.length > 0 &&
+    (profile.role === 'JEFE_PLANTA' || profile.role === 'ENCARGADO_MANTENIMIENTO')
+  ) {
+    const scopedPlants = await fetchPlantsForScope(supabase, scopedPlantIds)
+    const scopedWarehouses = await fetchDieselWarehousesForPlants(
+      supabase,
+      scopedPlantIds,
+      productType
+    )
+    const primaryPlant = profile.plant_id ?? scopedPlantIds[0] ?? null
+
+    return {
+      ...empty,
+      plants: scopedPlants as DieselOrganizationalLoadResult['plants'],
+      warehouses: scopedWarehouses,
+      allBuWarehouses: scopedWarehouses,
+      selectedBusinessUnit: profile.business_unit_id ?? scopedPlants[0]?.business_unit_id ?? null,
+      selectedPlant: primaryPlant,
+      selectedWarehouse: autoSelectWarehouse(scopedWarehouses),
+    }
   }
 
   if (profile.business_unit_id) {
