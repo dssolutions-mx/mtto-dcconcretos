@@ -620,7 +620,6 @@ ORIGEN:
         total_similar_found: similarIssuesFound.length,
         consolidation_window_days: consolidation_window_days
       },
-      database_functions_verified: functionsVerified,
       message: message
     })
 
