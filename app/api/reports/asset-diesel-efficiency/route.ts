@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createServerSupabase } from '@/lib/supabase-server'
 import { computeAssetDieselEfficiencyMonths } from '@/lib/reports/compute-asset-diesel-efficiency-monthly'
+import { dieselEfficiencyReportMonths } from '@/lib/reports/month-utils'
 import {
   canRecomputeDieselEfficiency,
   requireReportsApiAccess,
@@ -92,7 +93,7 @@ export async function POST(req: NextRequest) {
     const yearMonths =
       body.yearMonths && body.yearMonths.length > 0
         ? body.yearMonths
-        : ['2026-01', '2026-02', '2026-03', '2026-04']
+        : dieselEfficiencyReportMonths()
 
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL
     const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY

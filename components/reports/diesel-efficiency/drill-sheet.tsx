@@ -41,6 +41,7 @@ import {
 } from '@/lib/reports/merged-operating-hours'
 import { buildMergedKmReadingEventsForAsset } from '@/lib/reports/merged-operating-km'
 import { mexicoCityMonthWindowFromYm } from '@/lib/reports/mexico-city-report-window'
+import { mexicoCityYearMonth, shiftMonthString } from '@/lib/reports/month-utils'
 
 type TrendPoint = {
   month: string
@@ -1044,20 +1045,6 @@ type RemisionRow = {
   cancelled_reason: string | null
 }
 
-function prevMonth(ym: string): string {
-  const [ys, ms] = ym.split('-')
-  let y = Number(ys), m = Number(ms) - 1
-  if (m === 0) { m = 12; y-- }
-  return `${y}-${String(m).padStart(2, '0')}`
-}
-
-function nextMonth(ym: string): string {
-  const [ys, ms] = ym.split('-')
-  let y = Number(ys), m = Number(ms) + 1
-  if (m === 13) { m = 1; y++ }
-  return `${y}-${String(m).padStart(2, '0')}`
-}
-
 export function DrillSheet({ row, yearMonth, open, onOpenChange, onDataChanged }: Props) {
   const [activeYearMonth, setActiveYearMonth] = useState(yearMonth)
   const [events, setEvents] = useState<MeterEvent[]>([])
@@ -1416,7 +1403,7 @@ export function DrillSheet({ row, yearMonth, open, onOpenChange, onDataChanged }
 
   const assetLabel = [row.assets?.asset_id, row.assets?.name].filter(Boolean).join(' — ')
   const isCurrentMonth = activeYearMonth === yearMonth
-  const isFutureMonth = activeYearMonth > new Date().toISOString().slice(0, 7)
+  const isFutureMonth = activeYearMonth > mexicoCityYearMonth()
 
   return (
     <>
@@ -1434,7 +1421,7 @@ export function DrillSheet({ row, yearMonth, open, onOpenChange, onDataChanged }
                 {/* Month navigator */}
                 <div className="flex items-center gap-1">
                   <button
-                    onClick={() => setActiveYearMonth(prevMonth(activeYearMonth))}
+                    onClick={() => setActiveYearMonth(shiftMonthString(activeYearMonth, -1))}
                     className="p-0.5 rounded hover:bg-stone-200 text-stone-400 hover:text-stone-700 transition-colors"
                     title="Mes anterior"
                   >
@@ -1444,7 +1431,7 @@ export function DrillSheet({ row, yearMonth, open, onOpenChange, onDataChanged }
                     {activeYearMonth}
                   </span>
                   <button
-                    onClick={() => setActiveYearMonth(nextMonth(activeYearMonth))}
+                    onClick={() => setActiveYearMonth(shiftMonthString(activeYearMonth, 1))}
                     disabled={isFutureMonth}
                     className="p-0.5 rounded hover:bg-stone-200 text-stone-400 hover:text-stone-700 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
                     title="Mes siguiente"
