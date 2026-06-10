@@ -16,6 +16,7 @@ import {
   type DieselHubEmptyReason,
 } from "@/lib/diesel/load-organizational-scope"
 import { useAuthZustand } from "@/hooks/use-auth-zustand"
+import { canAccessEficienciaDieselReport } from "@/lib/reports/reports-catalog"
 import {
   Fuel,
   TruckIcon,
@@ -72,6 +73,7 @@ export default function DieselDashboardPage() {
   const [warehouseLoadError, setWarehouseLoadError] = useState<string | null>(null)
 
   const showCreateWarehouse = canCreateFuelWarehouse(profile?.role)
+  const showEficienciaDieselReport = canAccessEficienciaDieselReport(profile ?? {})
 
   const supabase = createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -340,6 +342,17 @@ export default function DieselDashboardPage() {
             <ClipboardList className="h-5 w-5 mr-2" />
             Validación horómetro
           </Button>
+
+          {showEficienciaDieselReport && (
+            <Button
+              onClick={() => router.push('/reportes/eficiencia-diesel')}
+              className="h-16"
+              variant="outline"
+            >
+              <Fuel className="h-5 w-5 mr-2" />
+              Eficiencia diésel
+            </Button>
+          )}
         </div>
       </div>
 

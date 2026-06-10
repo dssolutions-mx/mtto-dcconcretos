@@ -27,6 +27,7 @@ const BASE_BY_ROLE: Partial<Record<LegacyDbRole, DashboardReportShortcut[]>> = {
     { label: 'Reporte gerencial', href: '/reportes/gerencial' },
     { label: 'Eficiencia diésel', href: '/reportes/eficiencia-diesel' },
   ],
+  DOSIFICADOR: [{ label: 'Eficiencia diésel', href: '/reportes/eficiencia-diesel' }],
   AREA_ADMINISTRATIVA: [
     { label: 'Centro de mando', href: '/reportes/gerencial/analisis-costos' },
     { label: 'Reporte gerencial', href: '/reportes/gerencial' },

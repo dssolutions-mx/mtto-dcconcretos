@@ -5,6 +5,7 @@ import { computeAssetDieselEfficiencyMonths } from '@/lib/reports/compute-asset-
 import { dieselEfficiencyReportMonths } from '@/lib/reports/month-utils'
 import {
   canRecomputeDieselEfficiency,
+  requireEficienciaDieselApiAccess,
   requireReportsApiAccess,
 } from '@/lib/reports/report-api-auth'
 import type { Database } from '@/types/supabase-types'
@@ -18,7 +19,7 @@ type PostBody = {
 
 export async function GET(req: NextRequest) {
   try {
-    const auth = await requireReportsApiAccess()
+    const auth = await requireEficienciaDieselApiAccess()
     if (!auth.ok) return auth.response
     const supabase = auth.supabase
 
