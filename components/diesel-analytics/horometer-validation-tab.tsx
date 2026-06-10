@@ -22,6 +22,11 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Info, Loader2 } from "lucide-react"
+import {
+  dieselEfficiencyReportMonths,
+  formatYearMonthLabelEs,
+  mexicoCityYearMonth,
+} from "@/lib/reports/month-utils"
 
 export type WarehouseOpt = { id: string; name: string }
 
@@ -65,11 +70,6 @@ type TrustedEffRow = {
   liters_per_hour_trusted: number | null
 }
 
-function defaultYearMonth(): string {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`
-}
-
 function parseAssetSelection(value: string): { assetId: string | null; exceptionName: string | null } {
   if (value.startsWith("asset:")) return { assetId: value.slice(6), exceptionName: null }
   if (value.startsWith("ext:")) return { assetId: null, exceptionName: decodeURIComponent(value.slice(4)) }
@@ -77,7 +77,8 @@ function parseAssetSelection(value: string): { assetId: string | null; exception
 }
 
 export function HorometerValidationTab({ warehouses }: { warehouses: WarehouseOpt[] }) {
-  const [yearMonth, setYearMonth] = useState(defaultYearMonth)
+  const reportMonths = useMemo(() => dieselEfficiencyReportMonths(), [])
+  const [yearMonth, setYearMonth] = useState(mexicoCityYearMonth)
   const [warehouseId, setWarehouseId] = useState<string>(warehouses[0]?.id ?? "")
   const [assetValue, setAssetValue] = useState<string>("")
 
@@ -253,9 +254,9 @@ export function HorometerValidationTab({ warehouses }: { warehouses: WarehouseOp
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {["2026-01", "2026-02", "2026-03", "2026-04", "2026-05", "2026-06"].map((ym) => (
+                {reportMonths.map((ym) => (
                   <SelectItem key={ym} value={ym}>
-                    {ym}
+                    {formatYearMonthLabelEs(ym)}
                   </SelectItem>
                 ))}
               </SelectContent>

@@ -24,22 +24,18 @@ import { DrillSheet } from '@/components/reports/diesel-efficiency/drill-sheet'
 import { AnomaliesList } from '@/components/reports/diesel-efficiency/anomalies-list'
 import { DataQualityList } from '@/components/reports/diesel-efficiency/data-quality-list'
 import type { EfficiencyRow, ViewMode } from '@/components/reports/diesel-efficiency/types'
+import {
+  dieselEfficiencyReportMonths,
+  formatYearMonthLabelEs,
+  formatYearMonthRangeLabelEs,
+  mexicoCityYearMonth,
+  shiftMonthString,
+} from '@/lib/reports/month-utils'
 
-const MONTHS = ['2026-05', '2026-04', '2026-03', '2026-02', '2026-01']
-const MONTHS_LABEL: Record<string, string> = {
-  '2026-05': 'Mayo 2026',
-  '2026-04': 'Abril 2026',
-  '2026-03': 'Marzo 2026',
-  '2026-02': 'Febrero 2026',
-  '2026-01': 'Enero 2026',
-}
-
-function prevMonth(ym: string): string {
-  const [ys, ms] = ym.split('-')
-  let y = Number(ys)
-  let m = Number(ms) - 1
-  if (m === 0) { m = 12; y-- }
-  return `${y}-${String(m).padStart(2, '0')}`
+function resolveInitialYearMonth(searchMonth: string | null): string {
+  const available = dieselEfficiencyReportMonths()
+  if (searchMonth && available.includes(searchMonth)) return searchMonth
+  return mexicoCityYearMonth()
 }
 
 function downloadCsv(filename: string, header: string[], lines: (string | number | null | undefined)[][]) {
@@ -66,7 +62,13 @@ function EficienciaDieselContent() {
   const searchParams = useSearchParams()
   const router = useRouter()
 
-  const [yearMonth, setYearMonth] = useState(() => searchParams.get('mes') ?? '2026-05')
+  const reportMonths = useMemo(() => dieselEfficiencyReportMonths(), [])
+  const recomputeRangeLabel = useMemo(
+    () => formatYearMonthRangeLabelEs(reportMonths[reportMonths.length - 1]!, reportMonths[0]!),
+    [reportMonths]
+  )
+
+  const [yearMonth, setYearMonth] = useState(() => resolveInitialYearMonth(searchParams.get('mes')))
   const [selectedBu, setSelectedBu] = useState<string | null>(null)
   const [selectedPlant, setSelectedPlant] = useState<string | null>(null)
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
@@ -122,7 +124,7 @@ function EficienciaDieselContent() {
     try {
       const [curr, prev] = await Promise.all([
         loadRows(yearMonth),
-        loadRows(prevMonth(yearMonth)),
+        loadRows(shiftMonthString(yearMonth, -1)),
       ])
       setRows(curr)
       setPrevRows(prev)
@@ -149,7 +151,7 @@ function EficienciaDieselContent() {
       const r = await fetch('/api/reports/asset-diesel-efficiency', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ yearMonths: MONTHS, recompute: true }),
+        body: JSON.stringify({ yearMonths: reportMonths, recompute: true }),
       })
       const j = await r.json()
       if (!r.ok) throw new Error(j.error || 'Error al recalcular')
@@ -296,7 +298,7 @@ function EficienciaDieselContent() {
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="text-sm">
                 <DropdownMenuItem onClick={() => void onRecompute()} disabled={recomputing}>
-                  {recomputing ? 'Recalculando…' : 'Recalcular Ene–May 2026'}
+                  {recomputing ? 'Recalculando…' : `Recalcular ${recomputeRangeLabel}`}
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -323,8 +325,8 @@ function EficienciaDieselContent() {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {MONTHS.map((m) => (
-                <SelectItem key={m} value={m} className="text-xs">{MONTHS_LABEL[m] ?? m}</SelectItem>
+              {reportMonths.map((m) => (
+                <SelectItem key={m} value={m} className="text-xs">{formatYearMonthLabelEs(m)}</SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -466,7 +468,7 @@ function EficienciaDieselContent() {
                   <Fuel className="h-5 w-5 text-stone-400" />
                 </div>
                 <div>
-                  <p className="font-semibold text-stone-700">Sin datos para {MONTHS_LABEL[yearMonth] ?? yearMonth}</p>
+                  <p className="font-semibold text-stone-700">Sin datos para {formatYearMonthLabelEs(yearMonth)}</p>
                   <p className="text-sm text-stone-400 mt-1 max-w-md">
                     Primero aplica la migración en Supabase, luego ejecuta el backfill o usa
                     «Recalcular» en el menú ⋯ para calcular las métricas de este mes.
