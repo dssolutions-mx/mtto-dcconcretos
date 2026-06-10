@@ -14,6 +14,7 @@ import { Switch } from "@/components/ui/switch"
 import { ModelSelector } from "../model-selector"
 import { PlantSelectorField } from "@/components/ui/plant-selector"
 import { DepartmentSelectorField } from "@/components/ui/department-selector"
+import Link from "next/link"
 import { cn } from "@/lib/utils"
 import { EquipmentModelWithIntervals } from "@/types"
 
@@ -40,6 +41,8 @@ interface GeneralInfoTabProps {
   onModelSelect: (model: EquipmentModelWithIntervals | null) => void
   isNewEquipment: boolean
   setIsNewEquipment: (isNew: boolean) => void
+  disablePlantChange?: boolean
+  currentPlantName?: string
 }
 
 export function GeneralInfoTab({
@@ -48,6 +51,8 @@ export function GeneralInfoTab({
   onModelSelect,
   isNewEquipment,
   setIsNewEquipment,
+  disablePlantChange = false,
+  currentPlantName,
 }: GeneralInfoTabProps) {
   // Watch plantId to pass it to department selector
   const plantId = useWatch({ control, name: "plantId" })
@@ -192,8 +197,24 @@ export function GeneralInfoTab({
                     description=""
                     required={true}
                     placeholder="Seleccionar planta"
+                    disabled={disablePlantChange}
                   />
                 </FormControl>
+                {disablePlantChange && (
+                  <FormDescription>
+                    {currentPlantName
+                      ? `Planta actual: ${currentPlantName}. `
+                      : "La planta no se puede cambiar desde aquí. "}
+                    Para mover el activo a otra planta, use{" "}
+                    <Link
+                      href="/gestion/activos/asignacion-plantas"
+                      className="font-medium text-primary underline-offset-4 hover:underline"
+                    >
+                      Activos a Plantas
+                    </Link>
+                    .
+                  </FormDescription>
+                )}
                 <FormMessage />
               </FormItem>
             )}

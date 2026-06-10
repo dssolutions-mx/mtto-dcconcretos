@@ -191,6 +191,8 @@ export function AssetEditForm({ assetId }: AssetEditFormProps) {
   const { toast } = useToast()
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
+  const [originalPlantId, setOriginalPlantId] = useState<string | null>(null)
+  const [currentPlantName, setCurrentPlantName] = useState<string | null>(null)
   
   // Estados para el manejo de fotos
   const [uploadedPhotos, setUploadedPhotos] = useState<EvidencePhoto[]>([])
@@ -364,6 +366,9 @@ export function AssetEditForm({ assetId }: AssetEditFormProps) {
         }
 
         if (asset) {
+          setOriginalPlantId(asset.plant_id || null)
+          setCurrentPlantName((asset.plants as { name?: string } | null)?.name || null)
+
           form.reset({
             assetId: asset.asset_id || "",
             name: asset.name || "",
@@ -983,7 +988,7 @@ export function AssetEditForm({ assetId }: AssetEditFormProps) {
         name: data.name,
         status: data.status,
         serial_number: data.serialNumber,
-        plant_id: data.plantId,
+        plant_id: originalPlantId ?? data.plantId,
         department_id: data.departmentId,
         purchase_date: data.purchaseDate.toISOString(),
         installation_date: data.installationDate?.toISOString(),
@@ -1086,6 +1091,8 @@ export function AssetEditForm({ assetId }: AssetEditFormProps) {
             <GeneralInfoTab
               control={form.control}
               selectedModel={selectedModel}
+              disablePlantChange
+              currentPlantName={currentPlantName ?? undefined}
               onModelSelect={(model) => {
                 setSelectedModel(model);
                 

@@ -17,6 +17,7 @@ interface PlantSelectorProps {
   required?: boolean
   className?: string
   includeBusinessUnit?: boolean
+  disabled?: boolean
 }
 
 export function PlantSelector({
@@ -27,7 +28,8 @@ export function PlantSelector({
   description,
   required = false,
   className,
-  includeBusinessUnit = true
+  includeBusinessUnit = true,
+  disabled = false,
 }: PlantSelectorProps) {
   const [plants, setPlants] = useState<(Plant & { business_unit?: BusinessUnit })[]>([])
   const [loading, setLoading] = useState(true)
@@ -115,7 +117,7 @@ export function PlantSelector({
           {required && <span className="text-red-500 ml-1">*</span>}
         </Label>
       )}
-      <Select value={value} onValueChange={onValueChange}>
+      <Select value={value} onValueChange={onValueChange} disabled={disabled}>
         <SelectTrigger className={className}>
           <SelectValue placeholder={placeholder} />
         </SelectTrigger>
@@ -174,6 +176,7 @@ interface PlantSelectorFieldProps {
   required?: boolean
   className?: string
   includeBusinessUnit?: boolean
+  disabled?: boolean
 }
 
 export function PlantSelectorField({
@@ -184,7 +187,8 @@ export function PlantSelectorField({
   placeholder = "Seleccionar planta",
   required = false,
   className,
-  includeBusinessUnit = true
+  includeBusinessUnit = true,
+  disabled = false,
 }: PlantSelectorFieldProps) {
   return (
     <FormField
@@ -203,6 +207,7 @@ export function PlantSelectorField({
               placeholder={placeholder}
               className={className}
               includeBusinessUnit={includeBusinessUnit}
+              disabled={disabled}
             />
           </FormControl>
           {description && <FormDescription>{description}</FormDescription>}
