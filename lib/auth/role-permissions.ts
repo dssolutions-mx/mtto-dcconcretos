@@ -630,6 +630,13 @@ export function canAccessRoute(userRole: string, pathname: string): boolean {
   if (pathname === '/credencial' || pathname.startsWith('/credencial/')) {
     return true
   }
+  if (
+    userRole === 'DOSIFICADOR' &&
+    (pathname === '/reportes/eficiencia-diesel' ||
+      pathname.startsWith('/reportes/eficiencia-diesel/'))
+  ) {
+    return true
+  }
 
   for (const [prefix, module] of ROUTE_MODULE_RULES) {
     if (pathMatchesRoute(pathname, prefix)) {

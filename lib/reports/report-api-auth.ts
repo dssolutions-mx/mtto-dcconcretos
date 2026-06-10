@@ -4,6 +4,7 @@ import { effectiveRoleForPermissions } from '@/lib/auth/role-model'
 import { loadActorContext, type ActorContext } from '@/lib/auth/server-authorization'
 import { hasModuleAccess } from '@/lib/auth/role-permissions'
 import {
+  canAccessEficienciaDieselReport,
   canAccessIngresosGastosReport,
   canAccessManualCostsReport,
   canAccessReportsModule,
@@ -40,6 +41,41 @@ export async function requireReportsApiAccess(): Promise<ReportsApiAuthResult> {
       ok: false,
       response: NextResponse.json(
         { error: 'Sin permiso para módulo de reportes' },
+        { status: 403 }
+      ),
+    }
+  }
+
+  return { ok: true, actor, supabase }
+}
+
+export async function requireEficienciaDieselApiAccess(): Promise<ReportsApiAuthResult> {
+  const supabase = await createServerSupabase()
+  const {
+    data: { user },
+    error: authError,
+  } = await supabase.auth.getUser()
+
+  if (authError || !user) {
+    return {
+      ok: false,
+      response: NextResponse.json({ error: 'No autenticado' }, { status: 401 }),
+    }
+  }
+
+  const actor = await loadActorContext(supabase, user.id)
+  if (!actor) {
+    return {
+      ok: false,
+      response: NextResponse.json({ error: 'Perfil no encontrado' }, { status: 403 }),
+    }
+  }
+
+  if (!canAccessEficienciaDieselReport(actor.profile)) {
+    return {
+      ok: false,
+      response: NextResponse.json(
+        { error: 'Sin permiso para el reporte de eficiencia diésel' },
         { status: 403 }
       ),
     }

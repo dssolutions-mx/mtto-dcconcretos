@@ -306,6 +306,17 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                           Historial de Diesel
                         </Link>
                       </Button>
+                      <Button
+                        variant={isPathActive("/reportes/eficiencia-diesel") ? "secondary" : "ghost"}
+                        className={cn("w-full justify-start pl-8", navItemClasses)}
+                        asChild
+                        onClick={handleLinkClick}
+                      >
+                        <Link href="/reportes/eficiencia-diesel">
+                          <BarChart3 className="mr-2 h-4 w-4" />
+                          Eficiencia diésel
+                        </Link>
+                      </Button>
                     </>
                   )}
                 </CollapsibleContent>
@@ -1448,6 +1459,13 @@ export function CollapsedSidebar({ className, onLinkClick }: SidebarProps) {
               label: "Historial de Diesel",
               href: "/diesel/historial",
               active: isPathActive("/diesel/historial"),
+            },
+            {
+              id: "eficiencia-diesel",
+              icon: BarChart3,
+              label: "Eficiencia diésel",
+              href: "/reportes/eficiencia-diesel",
+              active: isPathActive("/reportes/eficiencia-diesel"),
             },
           ]
         : []),

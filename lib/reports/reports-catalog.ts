@@ -94,6 +94,9 @@ const INGRESOS_GASTOS_ROLES = new Set<LegacyDbRole | FutureBusinessRole>([
 ])
 
 export const INGRESOS_GASTOS_PATH_PREFIX = '/reportes/gerencial/ingresos-gastos'
+export const EFICIENCIA_DIESEL_PATH_PREFIX = '/reportes/eficiencia-diesel'
+
+const EFICIENCIA_DIESEL_ROLES = new Set<LegacyDbRole | FutureBusinessRole>(['DOSIFICADOR'])
 
 function roleInSet(
   profile: { role?: string | null; business_role?: string | null },
@@ -122,6 +125,22 @@ export function canAccessReportsModule(profile: {
   return key ? hasModuleAccess(key, 'reports') : false
 }
 
+/** Eficiencia diésel — full reports module or Dosificador (plant-scoped via RLS). */
+export function canAccessEficienciaDieselReport(profile: {
+  role?: string | null
+  business_role?: string | null
+}): boolean {
+  if (roleInSet(profile, EFICIENCIA_DIESEL_ROLES)) return true
+  return canAccessReportsModule(profile)
+}
+
+function isEficienciaDieselPath(pathname: string): boolean {
+  return (
+    pathname === EFICIENCIA_DIESEL_PATH_PREFIX ||
+    pathname.startsWith(`${EFICIENCIA_DIESEL_PATH_PREFIX}/`)
+  )
+}
+
 export function canAccessIngresosGastosReport(profile: {
   role?: string | null
   business_role?: string | null
@@ -145,7 +164,10 @@ export function filterReportsForProfile(profile: {
   role?: string | null
   business_role?: string | null
 }): ReportCatalogEntry[] {
-  if (!canAccessReportsModule(profile)) return []
+  if (!canAccessReportsModule(profile)) {
+    if (!canAccessEficienciaDieselReport(profile)) return []
+    return REPORT_CATALOG.filter((entry) => entry.id === 'eficiencia-diesel')
+  }
 
   return REPORT_CATALOG.filter((entry) => {
     if (entry.id === 'ingresos-gastos') return canAccessIngresosGastosReport(profile)
@@ -180,6 +202,9 @@ export function canAccessReportPath(
   pathname: string
 ): boolean {
   if (!pathname.startsWith('/reportes')) return true
+  if (isEficienciaDieselPath(pathname)) {
+    return canAccessEficienciaDieselReport(profile)
+  }
   if (!canAccessReportsModule(profile)) return false
   if (
     pathname === INGRESOS_GASTOS_PATH_PREFIX ||

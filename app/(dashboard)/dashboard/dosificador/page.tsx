@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { AlertTriangle, ClipboardList, Fuel, Loader2, RefreshCw } from "lucide-react"
+import { AlertTriangle, BarChart3, ClipboardList, Fuel, Loader2, RefreshCw } from "lucide-react"
+import { reportShortcutsForRole } from "@/lib/reports/executive-dashboard-shortcuts"
 import { Button } from "@/components/ui/button"
 import { PullToRefresh } from "@/components/ui/pull-to-refresh"
 import { useAuthZustand } from "@/hooks/use-auth-zustand"
@@ -84,9 +85,18 @@ export default function DosificadorDashboard() {
     [payload?.assetsForIncidents]
   )
 
+  const reportShortcuts =
+    profile?.role === "DOSIFICADOR" ? reportShortcutsForRole(profile.role, profile) : []
+
   const moduleCards = [
     { title: "Diésel", href: "/diesel", icon: Fuel, module: "inventory" as const },
     { title: "Checklists", href: "/checklists", icon: ClipboardList, module: "checklists" as const },
+    ...reportShortcuts.map((s) => ({
+      title: s.label,
+      href: s.href,
+      icon: BarChart3,
+      module: "inventory" as const,
+    })),
   ]
 
   if (!isInitialized || (authLoading && !profile)) {
@@ -150,6 +160,11 @@ export default function DosificadorDashboard() {
             href: "/dashboard/operator/incidentes?estado=abiertos",
             icon: <AlertTriangle className="h-4 w-4" />,
           },
+          ...reportShortcuts.map((s) => ({
+            label: s.label,
+            href: s.href,
+            icon: <BarChart3 className="h-4 w-4" />,
+          })),
         ]}
         kpis={
           <div className="space-y-5">
@@ -178,6 +193,14 @@ export default function DosificadorDashboard() {
                   Checklists
                 </Link>
               </Button>
+              {reportShortcuts.map((s) => (
+                <Button key={s.href} size="lg" variant="outline" className="min-h-[48px] gap-2" asChild>
+                  <Link href={s.href}>
+                    <BarChart3 className="h-5 w-5" />
+                    {s.label}
+                  </Link>
+                </Button>
+              ))}
               <Button
                 type="button"
                 size="lg"
