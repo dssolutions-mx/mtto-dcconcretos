@@ -339,8 +339,11 @@ test("null-meter preventive row excluded without crash", () => {
   assert.ok(results.length > 0);
 });
 
-test("past-cycle covered rows hidden from schedule view", () => {
+test("schedule view hides covered; debug mode can include current-cycle covered", () => {
   assert.equal(isActionableCyclicScheduleRow("covered", 1, 2), false);
-  assert.equal(isActionableCyclicScheduleRow("covered", 2, 2), true);
+  assert.equal(isActionableCyclicScheduleRow("covered", 2, 2), false);
+  assert.equal(isActionableCyclicScheduleRow("covered", 2, 2, { includeCovered: true }), true);
+  assert.equal(isActionableCyclicScheduleRow("covered", 1, 2, { includeCovered: true }), false);
+  assert.equal(isActionableCyclicScheduleRow("scheduled", 2, 2), true);
   assert.equal(isActionableCyclicScheduleRow("overdue", 1, 2), true);
 });

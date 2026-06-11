@@ -118,7 +118,7 @@ export function StatusMaintenanceTab({
               Próximos Mantenimientos
             </CardTitle>
             <CardDescription>
-              Preventivos programados y vencidos (incluye cuotas no hechas en ciclos anteriores cuando el medidor ya avanzó).
+              Vencidos y próximos por venir. Los servicios ya cubiertos por un checkpoint no se listan aquí.
             </CardDescription>
           </CardHeader>
           <CardContent>

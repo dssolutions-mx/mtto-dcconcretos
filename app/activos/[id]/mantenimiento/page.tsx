@@ -229,7 +229,9 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
               });
 
               const filtered = processedIntervals.filter((i) =>
-                isActionableCyclicScheduleRow(i.status, i.current_cycle, currentCycleNum)
+                isActionableCyclicScheduleRow(i.status, i.current_cycle, currentCycleNum, {
+                  includeCovered: debugCycles,
+                })
               );
 
               const sorted = filtered.sort((a, b) => {
@@ -243,13 +245,15 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
                 if (a.status === 'overdue' && b.status === 'overdue') {
                   return (Number(a.next_due_value) || 0) - (Number(b.next_due_value) || 0);
                 }
+
+                if (a.status !== 'overdue' && b.status !== 'overdue') {
+                  return (Number(a.next_due_value) || 0) - (Number(b.next_due_value) || 0);
+                }
                 
-                // Then by cycle (older cycles first for overdue items)
                 if (a.current_cycle !== b.current_cycle) {
                   return a.current_cycle - b.current_cycle;
                 }
 
-                // Finally by interval value
                 return a.interval_value - b.interval_value;
               });
 
@@ -297,27 +301,30 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
             );
 
             const filtered = processedIntervals.filter((i) =>
-              isActionableCyclicScheduleRow(i.status, i.current_cycle, currentCycleNum)
+              isActionableCyclicScheduleRow(i.status, i.current_cycle, currentCycleNum, {
+                includeCovered: debugCycles,
+              })
             );
 
             const sorted = filtered.sort((a, b) => {
-              // First sort by status priority (overdue first)
-              const statusOrder = { 'overdue': 4, 'upcoming': 3, 'scheduled': 2, 'covered': 1 };
+              const statusOrder = { overdue: 4, upcoming: 3, scheduled: 2, covered: 1 };
               const statusA = statusOrder[a.status as keyof typeof statusOrder] || 0;
               const statusB = statusOrder[b.status as keyof typeof statusOrder] || 0;
 
               if (statusA !== statusB) return statusB - statusA;
 
-              if (a.status === 'overdue' && b.status === 'overdue') {
+              if (a.status === "overdue" && b.status === "overdue") {
                 return (Number(a.next_due_value) || 0) - (Number(b.next_due_value) || 0);
               }
-              
-              // Then by cycle (older cycles first for overdue items)
+
+              if (a.status !== "overdue" && b.status !== "overdue") {
+                return (Number(a.next_due_value) || 0) - (Number(b.next_due_value) || 0);
+              }
+
               if (a.current_cycle !== b.current_cycle) {
                 return a.current_cycle - b.current_cycle;
               }
 
-              // Finally by interval value
               return a.interval_value - b.interval_value;
             });
 
@@ -342,7 +349,7 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
     if ((isComposite || asset?.model_id) && !historyLoading) {
       fetchCyclicMaintenanceIntervals();
     }
-  }, [asset, maintenanceHistory, historyLoading, isComposite]);
+  }, [asset, maintenanceHistory, historyLoading, isComposite, debugCycles]);
 
   const formatDate = (dateString: string | null) => {
     if (!dateString) return "No disponible";
@@ -631,10 +638,12 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
                    <div className="h-3 w-3 rounded-full bg-green-500"></div>
                    <span>Programado</span>
                  </div>
-                 <div className="flex items-center gap-2 text-xs">
-                   <div className="h-3 w-3 rounded-full bg-blue-400"></div>
-                   <span>Cubierto</span>
-                 </div>
+                 {debugCycles && (
+                   <div className="flex items-center gap-2 text-xs">
+                     <div className="h-3 w-3 rounded-full bg-blue-400"></div>
+                     <span>Cubierto (debug)</span>
+                   </div>
+                 )}
                  <div className="flex items-center gap-2 text-xs">
                    <div className="h-3 w-3 rounded-full bg-gray-400"></div>
                    <span>No aplicable</span>

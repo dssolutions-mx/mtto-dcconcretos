@@ -323,15 +323,20 @@ export function filterRelevantCyclicResults(
 }
 
 /**
- * Mantenimiento / asset-detail schedule view: hide past-cycle rows already settled.
+ * Mantenimiento / asset-detail schedule view: overdue, upcoming, and scheduled only.
+ * Covered rows are settled checkpoints — omit from the default list (use debugCycles=1 to audit).
  */
 export function isActionableCyclicScheduleRow(
   status: CyclicMaintenanceStatus,
   cycleForService: number,
-  currentCycle: number
+  currentCycle: number,
+  options?: { includeCovered?: boolean }
 ): boolean {
   if (!["overdue", "upcoming", "scheduled", "covered"].includes(status)) return false;
-  if (status === "covered" && cycleForService < currentCycle) return false;
+  if (status === "covered") {
+    if (!options?.includeCovered) return false;
+    if (cycleForService < currentCycle) return false;
+  }
   return true;
 }
 
