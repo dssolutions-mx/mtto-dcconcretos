@@ -29,6 +29,7 @@ import {
   computeCyclicIntervalResults,
   computeCyclicIntervalResultsForAsset,
   cyclicResultsToMantenimientoRows,
+  isActionableCyclicScheduleRow,
 } from "@/lib/utils/cyclic-maintenance";
 
 interface MaintenancePageProps {
@@ -227,12 +228,9 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
                 );
               });
 
-              // Filter and sort - show relevant intervals for current cycle and near future
-              const filtered = processedIntervals.filter(i => {
-                // Show: overdue, upcoming, scheduled, covered
-                // Don't show: not_applicable, completed (already done)
-                return ['overdue', 'upcoming', 'scheduled', 'covered'].includes(i.status);
-              });
+              const filtered = processedIntervals.filter((i) =>
+                isActionableCyclicScheduleRow(i.status, i.current_cycle, currentCycleNum)
+              );
 
               const sorted = filtered.sort((a, b) => {
                 // First sort by status priority (overdue first)
@@ -298,11 +296,9 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
               intervalResults
             );
 
-            const filtered = processedIntervals.filter(i => {
-              // Show: overdue, upcoming, scheduled, covered
-              // Don't show: not_applicable, completed (already done)
-              return ['overdue', 'upcoming', 'scheduled', 'covered'].includes(i.status);
-            });
+            const filtered = processedIntervals.filter((i) =>
+              isActionableCyclicScheduleRow(i.status, i.current_cycle, currentCycleNum)
+            );
 
             const sorted = filtered.sort((a, b) => {
               // First sort by status priority (overdue first)
@@ -692,8 +688,10 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
                                 {interval.type} {interval.interval_value}{unitLabel}
                               </Badge>
                               <div className="text-xs font-medium">Categoría: {interval.maintenance_category}</div>
-                              {interval.current_cycle < currentCycle && (
-                                <Badge variant="destructive" className="text-xs mt-1">Ciclo {interval.current_cycle} - ¡ATRASADO!</Badge>
+                              {isOverdue && interval.current_cycle < currentCycle && (
+                                <Badge variant="destructive" className="text-xs mt-1">
+                                  Ciclo {interval.current_cycle} pendiente
+                                </Badge>
                               )}
                               {interval.is_first_cycle_only && (
                                 <div className="text-xs text-orange-600">Solo primer ciclo</div>
@@ -765,7 +763,7 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
                             {interval.status === "not_applicable" ? (
                               <Button size="sm" variant="outline" disabled className="opacity-50">No aplicable</Button>
                             ) : interval.status === "covered" ? (
-                              <Button size="sm" variant="outline" disabled className="opacity-50">Cubierto</Button>
+                              <span className="text-xs text-muted-foreground">—</span>
                             ) : (
                               <Button size="sm" variant={isOverdue ? "destructive" : "default"} asChild>
                                 <Link href={`/activos/${isComposite ? (interval as { component_id?: string }).component_id : assetId}/mantenimiento/nuevo?planId=${interval.interval_id}&cycleHour=${interval.next_due_value || interval.next_due_hour || 0}`}>

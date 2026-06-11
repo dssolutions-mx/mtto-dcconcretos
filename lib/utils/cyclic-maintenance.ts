@@ -322,6 +322,19 @@ export function filterRelevantCyclicResults(
   return results.filter((r) => statuses.includes(r.status));
 }
 
+/**
+ * Mantenimiento / asset-detail schedule view: hide past-cycle rows already settled.
+ */
+export function isActionableCyclicScheduleRow(
+  status: CyclicMaintenanceStatus,
+  cycleForService: number,
+  currentCycle: number
+): boolean {
+  if (!["overdue", "upcoming", "scheduled", "covered"].includes(status)) return false;
+  if (status === "covered" && cycleForService < currentCycle) return false;
+  return true;
+}
+
 /** Aggregate flags for asset grid badges. */
 export function cyclicResultsToListFlags(
   results: CyclicIntervalResult[],

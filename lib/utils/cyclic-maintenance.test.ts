@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   computeCyclicIntervalResults,
+  isActionableCyclicScheduleRow,
   selectCyclicSummaryInterval,
 } from "./cyclic-maintenance";
 
@@ -336,4 +337,10 @@ test("null-meter preventive row excluded without crash", () => {
     unit: "hours",
   });
   assert.ok(results.length > 0);
+});
+
+test("past-cycle covered rows hidden from schedule view", () => {
+  assert.equal(isActionableCyclicScheduleRow("covered", 1, 2), false);
+  assert.equal(isActionableCyclicScheduleRow("covered", 2, 2), true);
+  assert.equal(isActionableCyclicScheduleRow("overdue", 1, 2), true);
 });

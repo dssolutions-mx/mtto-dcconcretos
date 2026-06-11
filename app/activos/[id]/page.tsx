@@ -42,8 +42,56 @@ import {
   computeCyclicIntervalResults,
   computeCyclicIntervalResultsForAsset,
   cyclicResultsToUpcomingUi,
+  isActionableCyclicScheduleRow,
+  type CyclicMaintenanceStatus,
 } from "@/lib/utils/cyclic-maintenance";
 import { expandAssetIdsForOperatorChecklists } from "@/lib/composite-operator-scope";
+
+function sortUpcomingMaintenances(list: Array<{
+  status: string;
+  urgency?: string;
+  targetValue?: number | null;
+  intervalValue?: number | null;
+}>) {
+  const statusPriority = { overdue: 4, upcoming: 3, scheduled: 2, covered: 1 };
+  const urgencyPriority = { high: 3, medium: 2, low: 1 };
+  return [...list].sort((a, b) => {
+    const priorityA = statusPriority[a.status as keyof typeof statusPriority] || 0;
+    const priorityB = statusPriority[b.status as keyof typeof statusPriority] || 0;
+    if (priorityA !== priorityB) return priorityB - priorityA;
+    const urgencyA = urgencyPriority[a.urgency as keyof typeof urgencyPriority] || 0;
+    const urgencyB = urgencyPriority[b.urgency as keyof typeof urgencyPriority] || 0;
+    if (urgencyA !== urgencyB) return urgencyB - urgencyA;
+    if (a.status === "overdue" && b.status === "overdue") {
+      return (Number(a.targetValue) || 0) - (Number(b.targetValue) || 0);
+    }
+    return (Number(a.intervalValue) || 0) - (Number(b.intervalValue) || 0);
+  });
+}
+
+function mapCompositeUpcomingRow(m: Record<string, unknown>, maintenanceUnit: MaintenanceUnit) {
+  const target = Number(m.target_value) || 0;
+  const current = Number(m.current_value) || 0;
+  return {
+    intervalId: m.interval_id,
+    intervalName: m.interval_name,
+    intervalDescription: m.interval_description,
+    type: m.type,
+    intervalValue: m.interval_value,
+    currentValue: current,
+    targetValue: target,
+    valueRemaining: target - current,
+    status: m.status,
+    urgency: m.urgency,
+    progress: target > 0 ? Math.round((current / target) * 100) : 0,
+    unit: maintenanceUnit,
+    estimatedDate: new Date().toISOString(),
+    lastMaintenanceDate: null,
+    wasPerformed: false,
+    cycleForService: 0,
+    cycleLength: 0,
+  };
+}
 
 export default function AssetDetailsPage({ params }: { params: Promise<{ id: string }> }) {
   // Unwrap params using React.use()
@@ -194,26 +242,10 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
           setCombinedMaintenanceHistory(aggregatedMaintenance);
           try {
             // Transform aggregated upcoming to page format if necessary
-            const transformed = (aggregatedUpcoming || []).map((m: any) => ({
-              intervalId: m.interval_id,
-              intervalName: m.interval_name,
-              intervalDescription: m.interval_description,
-              type: m.type,
-              intervalValue: m.interval_value,
-              currentValue: m.current_value,
-              targetValue: m.target_value,
-              valueRemaining: (m.target_value - m.current_value),
-              status: m.status,
-              urgency: m.urgency,
-              progress: m.target_value > 0 ? Math.round((m.current_value / m.target_value) * 100) : 0,
-              unit: maintenanceUnit,
-              estimatedDate: new Date().toISOString(),
-              lastMaintenanceDate: null,
-              wasPerformed: false,
-              cycleForService: 0,
-              cycleLength: 0
-            }))
-            setUpcomingMaintenances(transformed)
+            const transformed = (aggregatedUpcoming || []).map((m: Record<string, unknown>) =>
+              mapCompositeUpcomingRow(m, maintenanceUnit)
+            );
+            setUpcomingMaintenances(sortUpcomingMaintenances(transformed));
           } catch {}
           return;
         }
@@ -229,6 +261,7 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
 
         if (!rel) {
           setCompositeContext({ composite: null, components: [], sibling_drift: {} });
+          setCombinedMaintenanceHistory(null);
           return;
         }
 
@@ -258,29 +291,8 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
           (incidents as any).splice(0, (incidents as any).length, ...aggregatedIncidents);
         } catch {}
         // Pending/completed checklists: loaded via effects (expanded composite scope)
+        // Aggregated history for the history tab only — upcoming stays per-asset (ledger below).
         setCombinedMaintenanceHistory(aggregatedMaintenance);
-        try {
-          const transformed = (aggregatedUpcoming || []).map((m: any) => ({
-            intervalId: m.interval_id,
-            intervalName: m.interval_name,
-            intervalDescription: m.interval_description,
-            type: m.type,
-            intervalValue: m.interval_value,
-            currentValue: m.current_value,
-            targetValue: m.target_value,
-            valueRemaining: (m.target_value - m.current_value),
-            status: m.status,
-            urgency: m.urgency,
-            progress: m.target_value > 0 ? Math.round((m.current_value / m.target_value) * 100) : 0,
-            unit: maintenanceUnit,
-            estimatedDate: new Date().toISOString(),
-            lastMaintenanceDate: null,
-            wasPerformed: false,
-            cycleForService: 0,
-            cycleLength: 0
-          }))
-          setUpcomingMaintenances(transformed)
-        } catch {}
       } catch (e) {
         console.error('Error loading composite context', e);
         setCompositeContext({ composite: null, components: [], sibling_drift: {} });
@@ -292,90 +304,75 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
     fetchCompositeContext();
   }, [assetId]);
 
-  // Process and calculate upcoming maintenances with proper CYCLIC logic
+  // Upcoming maintenances: one ledger path per asset (composite parent uses dashboard API only).
   useEffect(() => {
-    // If this is a composite view, upcoming is driven by aggregated API
-    if (compositeContext.composite) {
-      setUpcomingLoading(false);
+    const isCompositeParentView = Boolean((asset as { is_composite?: boolean })?.is_composite);
+
+    if (isCompositeParentView) {
+      setUpcomingLoading(compositeLoading);
       return;
     }
-    if (!maintenanceIntervals.length || !asset) {
-      setUpcomingMaintenances([]);
-      setUpcomingLoading(false);
-      return;
-    }
-    
-    async function calculateUpcoming() {
-      try {
-        setUpcomingLoading(true);
-        
-        if (!asset) return;
-        
-        const currentValue = getCurrentValue(asset, maintenanceUnit);
-        const effectiveMaintenanceHistory = combinedMaintenanceHistory ?? maintenanceHistory;
-        const rawUnit = getRawModelMaintenanceUnit(asset);
 
-        const intervalResults =
-          rawUnit === "both"
-            ? computeCyclicIntervalResultsForAsset({
-                intervals: maintenanceIntervals,
-                history: effectiveMaintenanceHistory,
-                currentHours: Number(asset.current_hours) || 0,
-                currentKilometers: Number(asset.current_kilometers) || 0,
-                rawMaintenanceUnit: rawUnit,
-              })
-            : computeCyclicIntervalResults({
-                intervals: maintenanceIntervals,
-                history: effectiveMaintenanceHistory,
-                currentValue,
-                unit: maintenanceUnit,
-              });
-        const upcomingList = cyclicResultsToUpcomingUi(intervalResults, maintenanceUnit);
-
-      // Filter to show only relevant maintenances (same logic as maintenance page)
-      const filteredUpcoming = upcomingList.filter(maintenance => {
-        // Show: overdue, upcoming, covered, scheduled
-        // Don't show: not_applicable, completed (already done)
-        return ['overdue', 'upcoming', 'covered', 'scheduled'].includes(maintenance.status);
-      });
-      
-      // Sort by priority: overdue first, then upcoming, then by urgency
-      const sorted = filteredUpcoming.sort((a, b) => {
-        const statusPriority = { 'overdue': 4, 'upcoming': 3, 'scheduled': 2, 'covered': 1 };
-        const urgencyPriority = { 'high': 3, 'medium': 2, 'low': 1 };
-        
-        const priorityA = statusPriority[a.status as keyof typeof statusPriority] || 0;
-        const priorityB = statusPriority[b.status as keyof typeof statusPriority] || 0;
-        
-        if (priorityA !== priorityB) {
-          return priorityB - priorityA;
-        }
-        
-        const urgencyA = urgencyPriority[a.urgency as keyof typeof urgencyPriority] || 0;
-        const urgencyB = urgencyPriority[b.urgency as keyof typeof urgencyPriority] || 0;
-        
-        if (urgencyA !== urgencyB) {
-          return urgencyB - urgencyA;
-        }
-
-        if (a.status === 'overdue' && b.status === 'overdue') {
-          return (Number(a.targetValue) || 0) - (Number(b.targetValue) || 0);
-        }
-
-        return a.intervalValue - b.intervalValue;
-        });
-        
-        setUpcomingMaintenances(sorted);
-      } catch (error) {
-        console.error('Error calculating upcoming maintenances:', error);
+    if (maintenanceLoading || !maintenanceIntervals.length || !asset) {
+      if (!maintenanceLoading) {
         setUpcomingMaintenances([]);
-      } finally {
-        setUpcomingLoading(false);
       }
+      setUpcomingLoading(maintenanceLoading || !asset);
+      return;
     }
-    
-    calculateUpcoming();
-  }, [maintenanceIntervals, asset, maintenanceHistory, assetId, combinedMaintenanceHistory, maintenanceUnit, compositeContext.composite]);
+
+    try {
+      setUpcomingLoading(true);
+
+      const currentValue = getCurrentValue(asset, maintenanceUnit);
+      const rawUnit = getRawModelMaintenanceUnit(asset);
+
+      const intervalResults =
+        rawUnit === "both"
+          ? computeCyclicIntervalResultsForAsset({
+              intervals: maintenanceIntervals,
+              history: maintenanceHistory,
+              currentHours: Number(asset.current_hours) || 0,
+              currentKilometers: Number(asset.current_kilometers) || 0,
+              rawMaintenanceUnit: rawUnit,
+            })
+          : computeCyclicIntervalResults({
+              intervals: maintenanceIntervals,
+              history: maintenanceHistory,
+              currentValue,
+              unit: maintenanceUnit,
+            });
+
+      const upcomingList = cyclicResultsToUpcomingUi(intervalResults, maintenanceUnit);
+      const cycleLength = Math.max(
+        ...maintenanceIntervals.map((i) => Number(i.interval_value) || 0),
+        1
+      );
+      const currentCycleNum = Math.floor(currentValue / cycleLength) + 1;
+
+      const filteredUpcoming = upcomingList.filter((maintenance) =>
+        isActionableCyclicScheduleRow(
+          maintenance.status as CyclicMaintenanceStatus,
+          maintenance.cycleForService ?? 1,
+          currentCycleNum
+        )
+      );
+
+      setUpcomingMaintenances(sortUpcomingMaintenances(filteredUpcoming));
+    } catch (error) {
+      console.error("Error calculating upcoming maintenances:", error);
+      setUpcomingMaintenances([]);
+    } finally {
+      setUpcomingLoading(false);
+    }
+  }, [
+    maintenanceIntervals,
+    asset,
+    maintenanceHistory,
+    maintenanceLoading,
+    maintenanceUnit,
+    compositeLoading,
+  ]);
   
   // Add a new effect to fetch completed checklists
   useEffect(() => {
@@ -709,7 +706,11 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
                 asset={asset}
                 maintenanceUnit={maintenanceUnit}
                 maintenanceHistory={maintenanceHistory}
-                combinedMaintenanceHistory={combinedMaintenanceHistory}
+                combinedMaintenanceHistory={
+                  (asset as { is_composite?: boolean }).is_composite
+                    ? combinedMaintenanceHistory
+                    : null
+                }
                 maintenanceIntervals={maintenanceIntervals}
                 pendingTasksCount={
                   pendingIncidentsCount +
