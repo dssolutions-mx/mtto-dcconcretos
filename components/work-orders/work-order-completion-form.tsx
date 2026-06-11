@@ -27,7 +27,14 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { EvidenceUpload, type EvidencePhoto } from "@/components/ui/evidence-upload"
 import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { getMaintenanceUnit, getCurrentValue, getUnitLabel, getUnitDisplayName, type MaintenanceUnit } from "@/lib/utils/maintenance-units"
+import {
+  getMaintenanceUnit,
+  getRawModelMaintenanceUnit,
+  getCurrentValue,
+  getUnitLabel,
+  getUnitDisplayName,
+  type MaintenanceUnit,
+} from "@/lib/utils/maintenance-units"
 import { taskKeyFromRequiredTask, type TaskCompletionRow } from "@/lib/work-orders/parse-completed-tasks"
 
 // Date picker component
@@ -159,6 +166,10 @@ export function WorkOrderCompletionForm({ workOrderId, initialData }: WorkOrderC
   const [requiredTasks, setRequiredTasks] = useState<any[]>([])
   const [completedTasks, setCompletedTasks] = useState<Record<string, boolean>>({})
   const [maintenanceUnit, setMaintenanceUnit] = useState<MaintenanceUnit>('hours')
+  const [rawMaintenanceUnit, setRawMaintenanceUnit] = useState<string>('hours')
+  const [absorptionPreview, setAbsorptionPreview] = useState<
+  Array<{ intervalValue: number; due: number; cycle: number }>
+  >([])
 
   // Default form values
   const defaultValues: Partial<WorkOrderCompletionFormValues> = {
@@ -231,6 +242,9 @@ export function WorkOrderCompletionForm({ workOrderId, initialData }: WorkOrderC
         // Detect maintenance unit from asset model
         const unit = getMaintenanceUnit(orderData.asset || {})
         setMaintenanceUnit(unit)
+        setRawMaintenanceUnit(
+          getRawModelMaintenanceUnit(orderData.asset?.equipment_models ?? orderData.asset) ?? "hours"
+        )
         
         // Set equipment value (hours or kilometers) from asset based on unit
         if (orderData.asset) {
@@ -239,6 +253,14 @@ export function WorkOrderCompletionForm({ workOrderId, initialData }: WorkOrderC
             form.setValue('equipment_kilometers', currentValue)
           } else {
             form.setValue('equipment_hours', currentValue)
+          }
+          if (
+            getRawModelMaintenanceUnit(orderData.asset?.equipment_models ?? orderData.asset) === "both"
+          ) {
+            form.setValue(
+              "equipment_kilometers",
+              Number(orderData.asset.current_kilometers) || 0
+            )
           }
         }
         
@@ -383,6 +405,59 @@ export function WorkOrderCompletionForm({ workOrderId, initialData }: WorkOrderC
 
     loadWorkOrder()
   }, [workOrderId, form])
+
+  const equipmentHours = form.watch("equipment_hours")
+  const equipmentKilometers = form.watch("equipment_kilometers")
+
+  const isPreventiveOrder =
+    workOrder?.type === MaintenanceType.PREVENTIVE ||
+    String(workOrder?.type ?? "").toLowerCase() === "preventivo"
+
+  useEffect(() => {
+    if (!workOrder?.asset?.id || !isPreventiveOrder || !workOrder.maintenance_plan_id) {
+      setAbsorptionPreview([])
+      return
+    }
+    const meterValue =
+      maintenanceUnit === "kilometers"
+        ? Number(equipmentKilometers) || 0
+        : Number(equipmentHours) || 0
+    if (meterValue <= 0) {
+      setAbsorptionPreview([])
+      return
+    }
+
+    const controller = new AbortController()
+    const load = async () => {
+      try {
+        const res = await fetch("/api/maintenance/absorption-preview", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            assetId: workOrder.asset.id,
+            maintenancePlanId: workOrder.maintenance_plan_id,
+            meterValue,
+            unit: maintenanceUnit,
+          }),
+          signal: controller.signal,
+        })
+        if (!res.ok) return
+        const data = await res.json()
+        setAbsorptionPreview(data.absorbed ?? [])
+      } catch {
+        /* abort / network */
+      }
+    }
+    void load()
+    return () => controller.abort()
+  }, [
+    workOrder?.asset?.id,
+    workOrder?.maintenance_plan_id,
+    isPreventiveOrder,
+    equipmentHours,
+    equipmentKilometers,
+    maintenanceUnit,
+  ])
 
   // Update total cost when labor cost or additional expenses change
   useEffect(() => {
@@ -581,8 +656,18 @@ export function WorkOrderCompletionForm({ workOrderId, initialData }: WorkOrderC
           completionData: {
             resolution_details: updatedData.resolution_details,
             technician_notes: updatedData.technician_notes || '',
-            equipment_hours: maintenanceUnit === 'hours' ? (updatedData.equipment_hours || getCurrentValue(workOrder?.asset || {}, maintenanceUnit) || null) : null,
-            equipment_kilometers: maintenanceUnit === 'kilometers' ? (updatedData.equipment_kilometers || getCurrentValue(workOrder?.asset || {}, maintenanceUnit) || null) : null,
+            equipment_hours:
+              maintenanceUnit === "hours" || rawMaintenanceUnit === "both"
+                ? updatedData.equipment_hours ||
+                  getCurrentValue(workOrder?.asset || {}, "hours") ||
+                  null
+                : null,
+            equipment_kilometers:
+              maintenanceUnit === "kilometers" || rawMaintenanceUnit === "both"
+                ? updatedData.equipment_kilometers ||
+                  getCurrentValue(workOrder?.asset || {}, "kilometers") ||
+                  null
+                : null,
             downtime_hours: updatedData.downtime_hours || 0,
             labor_hours: updatedData.labor_hours || 0,
             labor_cost: updatedData.labor_cost || 0,
@@ -602,8 +687,18 @@ export function WorkOrderCompletionForm({ workOrderId, initialData }: WorkOrderC
           asset_id: workOrder.asset.id,
           date: updatedData.completion_date.toISOString(),
           type: workOrder.type,
-          hours: maintenanceUnit === 'hours' ? (updatedData.equipment_hours || getCurrentValue(workOrder.asset, maintenanceUnit) || null) : null,
-          kilometers: maintenanceUnit === 'kilometers' ? (updatedData.equipment_kilometers || getCurrentValue(workOrder.asset, maintenanceUnit) || null) : null,
+          hours:
+            maintenanceUnit === "hours" || rawMaintenanceUnit === "both"
+              ? updatedData.equipment_hours ||
+                getCurrentValue(workOrder.asset, "hours") ||
+                null
+              : null,
+          kilometers:
+            maintenanceUnit === "kilometers" || rawMaintenanceUnit === "both"
+              ? updatedData.equipment_kilometers ||
+                getCurrentValue(workOrder.asset, "kilometers") ||
+                null
+              : null,
           description: workOrder.description,
           technician_id: workOrder.assigned_to,
           labor_hours: updatedData.labor_hours,
@@ -1054,32 +1149,7 @@ export function WorkOrderCompletionForm({ workOrderId, initialData }: WorkOrderC
             <Separator />
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              {maintenanceUnit === 'kilometers' ? (
-                <FormField
-                  control={form.control}
-                  name="equipment_kilometers"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Kilómetros del equipo</FormLabel>
-                      <FormControl>
-                        <Input 
-                          type="number" 
-                          min="0" 
-                          step="1" 
-                          placeholder="Ej: 50000"
-                          {...field} 
-                          value={field.value || ''}
-                          onChange={(e) => field.onChange(e.target.value ? Number(e.target.value) : undefined)}
-                        />
-                      </FormControl>
-                      <FormDescription className="text-xs">
-                        Kilómetros registrados en el odómetro
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              ) : (
+              {(maintenanceUnit === "hours" || rawMaintenanceUnit === "both") && (
                 <FormField
                   control={form.control}
                   name="equipment_hours"
@@ -1087,14 +1157,16 @@ export function WorkOrderCompletionForm({ workOrderId, initialData }: WorkOrderC
                     <FormItem>
                       <FormLabel>Horas del equipo</FormLabel>
                       <FormControl>
-                        <Input 
-                          type="number" 
-                          min="0" 
-                          step="1" 
+                        <Input
+                          type="number"
+                          min="0"
+                          step="1"
                           placeholder="Ej: 1500"
-                          {...field} 
-                          value={field.value || ''}
-                          onChange={(e) => field.onChange(e.target.value ? Number(e.target.value) : undefined)}
+                          {...field}
+                          value={field.value || ""}
+                          onChange={(e) =>
+                            field.onChange(e.target.value ? Number(e.target.value) : undefined)
+                          }
                         />
                       </FormControl>
                       <FormDescription className="text-xs">
@@ -1104,6 +1176,54 @@ export function WorkOrderCompletionForm({ workOrderId, initialData }: WorkOrderC
                     </FormItem>
                   )}
                 />
+              )}
+
+              {(maintenanceUnit === "kilometers" || rawMaintenanceUnit === "both") && (
+                <FormField
+                  control={form.control}
+                  name="equipment_kilometers"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Kilómetros del equipo</FormLabel>
+                      <FormControl>
+                        <Input
+                          type="number"
+                          min="0"
+                          step="1"
+                          placeholder="Ej: 50000"
+                          {...field}
+                          value={field.value || ""}
+                          onChange={(e) =>
+                            field.onChange(e.target.value ? Number(e.target.value) : undefined)
+                          }
+                        />
+                      </FormControl>
+                      <FormDescription className="text-xs">
+                        {rawMaintenanceUnit === "both"
+                          ? "Modelo con horas y kilómetros — registre ambos"
+                          : "Kilómetros registrados en el odómetro"}
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
+
+              {isPreventiveOrder && absorptionPreview.length > 0 && (
+                <div className="md:col-span-2 lg:col-span-4">
+                  <Alert>
+                    <AlertTitle>Servicios que cubrirá este checkpoint</AlertTitle>
+                    <AlertDescription>
+                      Este servicio cubrirá:{" "}
+                      {absorptionPreview
+                        .map(
+                          (a) =>
+                            `${a.intervalValue}${maintenanceUnit === "kilometers" ? " km" : "h"} (ciclo ${a.cycle}, vencía ${a.due})`
+                        )
+                        .join(", ")}
+                    </AlertDescription>
+                  </Alert>
+                </div>
               )}
 
               <FormField

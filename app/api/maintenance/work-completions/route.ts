@@ -4,6 +4,8 @@ import { NextResponse } from "next/server"
 import { SupabaseClient } from "@supabase/supabase-js"
 import { cookies } from "next/headers"
 import { createServerClient } from "@supabase/ssr"
+import { previewCheckpointAbsorption } from "@/lib/maintenance/due-engine"
+import { parseMaintenanceUnitString } from "@/lib/utils/cyclic-maintenance"
 
 // Define a type for any table access to bypass TypeScript checking
 interface AnyTable {
@@ -98,7 +100,7 @@ export async function POST(request: Request) {
     // Verificar que la orden existe y no está ya completada
     const { data: existingOrder, error: checkError } = await supabase
       .from("work_orders")
-      .select("id, status, asset_id, maintenance_plan_id, purchase_order_id, description, assigned_to")
+      .select("id, status, type, asset_id, maintenance_plan_id, purchase_order_id, description, assigned_to")
       .eq("id", workOrderId)
       .single()
       
@@ -268,9 +270,25 @@ export async function POST(request: Request) {
         .eq('id', existingOrder.asset_id)
         .single();
       
-      const maintenanceUnit = (assetData as any)?.equipment_models?.maintenance_unit || 'hours';
-      const isKilometers = maintenanceUnit === 'kilometers' || maintenanceUnit === 'kilometres';
-      
+      const rawMaintenanceUnit = (assetData as any)?.equipment_models?.maintenance_unit || 'hours';
+      const isKilometers = rawMaintenanceUnit === 'kilometers' || rawMaintenanceUnit === 'kilometres';
+      const isBoth = rawMaintenanceUnit === 'both';
+      const ledgerUnit = parseMaintenanceUnitString(rawMaintenanceUnit);
+
+      const equipmentHours =
+        completionData.equipment_hours ?? maintenanceHistoryData?.hours ?? null;
+      const equipmentKilometers =
+        completionData.equipment_kilometers ?? maintenanceHistoryData?.kilometers ?? null;
+
+      const meterValue =
+        ledgerUnit === 'kilometers'
+          ? Number(equipmentKilometers) || 0
+          : Number(equipmentHours) || 0;
+
+      const orderType = String(existingOrder.type ?? '').toLowerCase();
+      const isPreventive =
+        orderType === 'preventive' || orderType === 'preventivo';
+
       // Ensure all completion data is stored in the maintenance history
       const enhancedHistoryData: any = {
         ...maintenanceHistoryData,
@@ -278,9 +296,8 @@ export async function POST(request: Request) {
         downtime_hours: completionData.downtime_hours || 0,
         technician_notes: completionData.technician_notes || '',
         resolution_details: completionData.resolution_details,
-        // Override hours/kilometers with equipment_hours/equipment_kilometers from completionData if available
-        hours: isKilometers ? null : (completionData.equipment_hours || maintenanceHistoryData?.hours || null),
-        kilometers: isKilometers ? (completionData.equipment_kilometers || maintenanceHistoryData?.kilometers || null) : null,
+        hours: isKilometers && !isBoth ? null : equipmentHours,
+        kilometers: isKilometers || isBoth ? equipmentKilometers : null,
         // Completed tasks from preventive work orders (full per-task list with completed: true/false)
         completed_tasks:
           completionData.completed_tasks !== undefined && completionData.completed_tasks !== null
@@ -337,6 +354,23 @@ export async function POST(request: Request) {
         }
         if (planForHistory?.interval_id) {
           enhancedHistoryData.maintenance_plan_id = planForHistory.interval_id;
+
+          const { data: intervalRow } = await supabase
+            .from("maintenance_intervals")
+            .select("interval_value")
+            .eq("id", planForHistory.interval_id)
+            .maybeSingle();
+          if (intervalRow?.interval_value != null) {
+            enhancedHistoryData.interval_value_snapshot = intervalRow.interval_value;
+          }
+        } else if (isPreventive) {
+          return NextResponse.json(
+            {
+              error:
+                "El plan de mantenimiento no tiene interval_id vinculado. No se puede registrar el servicio preventivo.",
+            },
+            { status: 400 }
+          );
         } else {
           enhancedHistoryData.maintenance_plan_id = null;
           console.warn(
@@ -344,12 +378,84 @@ export async function POST(request: Request) {
           );
         }
       }
+
+      if (isPreventive) {
+        if (!enhancedHistoryData.maintenance_plan_id) {
+          return NextResponse.json(
+            { error: "Servicio preventivo sin intervalo vinculado." },
+            { status: 400 }
+          );
+        }
+        if (meterValue <= 0) {
+          return NextResponse.json(
+            {
+              error: `Se requiere lectura de ${ledgerUnit === 'kilometers' ? 'kilómetros' : 'horas'} para completar el servicio preventivo.`,
+            },
+            { status: 400 }
+          );
+        }
+
+        const { data: modelIntervals } = await supabase
+          .from("maintenance_intervals")
+          .select(
+            "id, interval_value, name, type, maintenance_category, is_recurring, is_first_cycle_only"
+          )
+          .eq(
+            "model_id",
+            (
+              await supabase
+                .from("assets")
+                .select("model_id")
+                .eq("id", existingOrder.asset_id)
+                .single()
+            ).data?.model_id ?? ""
+          );
+
+        const { data: priorHistory } = await supabase
+          .from("maintenance_history")
+          .select("id, maintenance_plan_id, hours, kilometers, date, type")
+          .eq("asset_id", existingOrder.asset_id);
+
+        const { data: assetMeters } = await supabase
+          .from("assets")
+          .select("current_hours, current_kilometers")
+          .eq("id", existingOrder.asset_id)
+          .single();
+
+        const currentValue = Math.max(
+          ledgerUnit === "kilometers"
+            ? Number(assetMeters?.current_kilometers) || 0
+            : Number(assetMeters?.current_hours) || 0,
+          meterValue
+        );
+
+        const absorbed = previewCheckpointAbsorption({
+          intervals: modelIntervals ?? [],
+          history: priorHistory ?? [],
+          currentValue,
+          unit: ledgerUnit,
+          hypothetical: {
+            maintenance_plan_id: enhancedHistoryData.maintenance_plan_id,
+            meterValue,
+            date: enhancedHistoryData.date,
+          },
+        });
+
+        if (absorbed.length > 0) {
+          enhancedHistoryData.absorbed_services = absorbed.map((a) => ({
+            intervalId: a.intervalId,
+            intervalValue: a.intervalValue,
+            due: a.due,
+            cycle: a.cycle,
+          }));
+        }
+      }
       
       console.log("API: Guardando datos en maintenance_history:", JSON.stringify({
         asset_id: enhancedHistoryData.asset_id,
         date: enhancedHistoryData.date,
         type: enhancedHistoryData.type,
-        maintenance_unit: maintenanceUnit,
+        maintenance_unit: rawMaintenanceUnit,
         hours: enhancedHistoryData.hours || (isKilometers ? 'null (using kilometers)' : 'no_hours_provided'),
         kilometers: enhancedHistoryData.kilometers || (isKilometers ? 'no_kilometers_provided' : 'null (using hours)'),
         labor_hours: enhancedHistoryData.labor_hours,

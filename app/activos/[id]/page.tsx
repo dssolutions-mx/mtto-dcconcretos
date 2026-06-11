@@ -32,12 +32,17 @@ import { IncidentsChecklistsTab } from "@/components/assets/activos-detail/tabs/
 import { TechnicalInfoTab } from "@/components/assets/activos-detail/tabs/technical-info-tab"
 import { DocumentationTab } from "@/components/assets/activos-detail/tabs/documentation-tab"
 import { 
-  getMaintenanceUnit, 
+  getMaintenanceUnit,
+  getRawModelMaintenanceUnit,
   getCurrentValue, 
   formatIntervalLabel,
   type MaintenanceUnit 
 } from "@/lib/utils/maintenance-units";
-import { computeCyclicIntervalResults, cyclicResultsToUpcomingUi } from "@/lib/utils/cyclic-maintenance";
+import {
+  computeCyclicIntervalResults,
+  computeCyclicIntervalResultsForAsset,
+  cyclicResultsToUpcomingUi,
+} from "@/lib/utils/cyclic-maintenance";
 import { expandAssetIdsForOperatorChecklists } from "@/lib/composite-operator-scope";
 
 export default function AssetDetailsPage({ params }: { params: Promise<{ id: string }> }) {
@@ -308,14 +313,23 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
         
         const currentValue = getCurrentValue(asset, maintenanceUnit);
         const effectiveMaintenanceHistory = combinedMaintenanceHistory ?? maintenanceHistory;
+        const rawUnit = getRawModelMaintenanceUnit(asset);
 
-        const intervalResults = computeCyclicIntervalResults({
-          intervals: maintenanceIntervals,
-          history: effectiveMaintenanceHistory,
-          currentValue,
-          unit: maintenanceUnit,
-          options: { applyEarliestUnpaid: true },
-        });
+        const intervalResults =
+          rawUnit === "both"
+            ? computeCyclicIntervalResultsForAsset({
+                intervals: maintenanceIntervals,
+                history: effectiveMaintenanceHistory,
+                currentHours: Number(asset.current_hours) || 0,
+                currentKilometers: Number(asset.current_kilometers) || 0,
+                rawMaintenanceUnit: rawUnit,
+              })
+            : computeCyclicIntervalResults({
+                intervals: maintenanceIntervals,
+                history: effectiveMaintenanceHistory,
+                currentValue,
+                unit: maintenanceUnit,
+              });
         const upcomingList = cyclicResultsToUpcomingUi(intervalResults, maintenanceUnit);
 
       // Filter to show only relevant maintenances (same logic as maintenance page)

@@ -32,7 +32,7 @@ import {
   getUnitDisplayName,
   type MaintenanceUnit 
 } from "@/lib/utils/maintenance-units";
-import { findEarliestUnpaidPreventiveDue } from "@/lib/utils/cyclic-preventive-due";
+import { computeCyclicIntervalResults } from "@/lib/utils/cyclic-maintenance";
 import { PartAutocomplete, type PartSuggestion } from "@/components/inventory/part-autocomplete";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 
@@ -533,97 +533,58 @@ export default function NewMaintenancePage({ params }: NewMaintenancePageProps) 
           return;
         }
 
-        const maxInterval = Math.max(...intervals.map((i) => i.interval_value));
-        const currentCycleNum = Math.floor(currentValue / maxInterval) + 1;
-        const currentCycleStartValue = (currentCycleNum - 1) * maxInterval;
-        const currentCycleEndValue = currentCycleNum * maxInterval;
+        const planIdToIntervalId: Record<string, string> = {};
+        if (plans?.length) {
+          for (const p of plans) {
+            if (p.id && p.interval_id) planIdToIntervalId[p.id] = p.interval_id;
+          }
+        }
 
-        const preventiveHistory = maintenanceHistory.filter((m: any) => {
-          const typeLower = m?.type?.toLowerCase?.() ?? "";
-          const isPreventive = typeLower === "preventive" || typeLower === "preventivo";
-          if (!isPreventive || !m?.maintenance_plan_id) return false;
-          return intervals.some((i) => i.intervalId === m.maintenance_plan_id);
-        });
-        const currentCycleMaintenances = preventiveHistory.filter((m: any) => {
-          const mValue = getMaintenanceValue(m, unit);
-          return mValue > currentCycleStartValue && mValue < currentCycleEndValue;
-        });
-
-        const catalogForCyclic = intervals.map((i) => ({
-          id: i.intervalId,
-          interval_value: i.interval_value,
-          type: i.type,
+        const engineIntervals = intervals.map((interval) => ({
+          id: interval.intervalId,
+          interval_value: interval.interval_value,
+          name: interval.name,
+          type: interval.type,
+          is_recurring: interval.is_recurring,
+          is_first_cycle_only: interval.is_first_cycle_only,
         }));
 
-        const processed: CycleOption[] = intervals.map((interval) => {
-          const earliestUnpaid = findEarliestUnpaidPreventiveDue(
-            {
-              id: String(interval.intervalId),
-              interval_value: interval.interval_value,
-              type: interval.type,
-            },
-            {
-              currentValue,
-              maxInterval,
-              currentCycle: currentCycleNum,
-              preventiveHistory,
-              maintenanceIntervals: catalogForCyclic,
-              maintenanceUnit: unit,
-              isRecurring: interval.is_recurring,
-              isFirstCycleOnly: interval.is_first_cycle_only,
-            }
-          );
+        const intervalResults = computeCyclicIntervalResults({
+          intervals: engineIntervals,
+          history: maintenanceHistory,
+          currentValue,
+          unit,
+          options: { planIdToIntervalId },
+        });
 
-          let nextDueValue = (currentCycleNum - 1) * maxInterval + interval.interval_value;
-          let status: CycleOption["status"] = "scheduled";
+        const planIdByIntervalId = new Map(
+          intervals.map((i) => [i.intervalId, i.id])
+        );
+
+        const processed: CycleOption[] = intervalResults.map((result) => {
+          const interval = intervals.find((i) => i.intervalId === result.intervalId);
+          const label =
+            interval?.name ||
+            `${result.interval.interval_value}${getUnitLabel(unit)}`;
           let overdueBy: number | undefined;
           let dueIn: number | undefined;
-
-          if (nextDueValue > currentCycleEndValue) {
-            nextDueValue = currentCycleNum * maxInterval + interval.interval_value;
-            if (nextDueValue - currentValue > 1000) status = "not_applicable";
-          } else {
-            const wasPerformed = currentCycleMaintenances.some((m: any) => m.maintenance_plan_id === interval.intervalId);
-            if (wasPerformed) {
-              status = "completed";
-            } else {
-              const dueVal = Number(nextDueValue);
-              const isCovered = currentCycleMaintenances.some((m: any) => {
-                const performed = intervals.find((i) => i.intervalId === m.maintenance_plan_id);
-                if (!performed) return false;
-                const sameUnit = performed.type === interval.type;
-                const higherOrEqual = performed.interval_value >= interval.interval_value;
-                const performedAtValue = getMaintenanceValue(m, unit);
-                return sameUnit && higherOrEqual && performedAtValue >= dueVal;
-              });
-              if (isCovered) status = "covered";
-              else if (currentValue >= nextDueValue) {
-                status = "overdue";
-                overdueBy = Math.round(currentValue - nextDueValue);
-              } else if (currentValue >= nextDueValue - 100) {
-                status = "upcoming";
-                dueIn = Math.round(nextDueValue - currentValue);
-              }
-            }
+          if (result.status === "overdue" && result.nextDueValue != null) {
+            overdueBy = Math.round(currentValue - result.nextDueValue);
+          } else if (
+            (result.status === "upcoming" || result.status === "scheduled") &&
+            result.nextDueValue != null
+          ) {
+            dueIn = Math.round(result.nextDueValue - currentValue);
           }
-
-          if (earliestUnpaid !== null && earliestUnpaid.due <= currentValue) {
-            status = "overdue";
-            nextDueValue = earliestUnpaid.due;
-            overdueBy = Math.round(currentValue - earliestUnpaid.due);
-            dueIn = undefined;
-          }
-
-          const label = interval.name || `${interval.interval_value}${getUnitLabel(unit)}`;
           return {
-            id: interval.id,
+            id: planIdByIntervalId.get(result.intervalId) ?? result.intervalId,
             label,
-            interval_value: interval.interval_value,
-            status,
-            nextDueValue,
+            interval_value: Number(result.interval.interval_value) || 0,
+            status: result.status as CycleOption["status"],
+            nextDueValue: result.nextDueValue ?? undefined,
             overdueBy,
             dueIn,
-            isRecommended: false
+            isRecommended: false,
           };
         });
 

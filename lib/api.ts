@@ -317,13 +317,17 @@ export const modelsApi = {
   },
   
   // Actualizar un intervalo de mantenimiento
-  updateMaintenanceInterval: async (id: string, updates: {
-    interval_value?: number;
-    name?: string;
-    description?: string | null;
-    type?: string;
-    estimated_duration?: number | null;
-  }): Promise<any> => {
+  updateMaintenanceInterval: async (
+    id: string,
+    updates: {
+      interval_value?: number;
+      name?: string;
+      description?: string | null;
+      type?: string;
+      estimated_duration?: number | null;
+    },
+    audit?: { modelId: string; previousIntervalValue?: number }
+  ): Promise<any> => {
     const { data, error } = await supabase
       .from('maintenance_intervals')
       .update(updates)
@@ -332,6 +336,26 @@ export const modelsApi = {
       .single();
     
     if (error) throw error;
+
+    if (
+      audit?.modelId &&
+      updates.interval_value != null &&
+      audit.previousIntervalValue != null &&
+      updates.interval_value !== audit.previousIntervalValue
+    ) {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      await supabase.from("maintenance_interval_changes").insert({
+        interval_id: id,
+        model_id: audit.modelId,
+        changed_by: user?.id ?? null,
+        field_name: "interval_value",
+        old_value: String(audit.previousIntervalValue),
+        new_value: String(updates.interval_value),
+      });
+    }
+
     return data;
   },
   

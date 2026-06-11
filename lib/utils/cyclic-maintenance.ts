@@ -1,4 +1,9 @@
-import { findEarliestUnpaidPreventiveDue } from "./cyclic-preventive-due";
+import {
+  buildDueLedger,
+  type DueLedgerResult,
+  type LedgerReasons,
+} from "@/lib/maintenance/due-engine";
+import { buildLedgersForAsset } from "@/lib/maintenance/dual-meter";
 import {
   filterPreventiveHistoryForIntervals,
   formatIntervalLabel,
@@ -28,6 +33,7 @@ export type CyclicMaintenanceInterval = {
 };
 
 export type CyclicMaintenanceHistoryRow = MaintenanceHistoryMeterRow & {
+  id?: string;
   maintenance_plan_id?: string | null;
   date?: string | null;
   type?: string | null;
@@ -48,6 +54,7 @@ export type CyclicIntervalResult = {
   progress: number;
   wasPerformed: boolean;
   lastMaintenanceDate: string | null;
+  reasons?: LedgerReasons;
 };
 
 export type CyclicComputeOptions = {
@@ -55,45 +62,16 @@ export type CyclicComputeOptions = {
   upcomingThreshold?: number;
   /** Max distance into next cycle to still show scheduled (default 1000). */
   nextCycleMaxDistance?: number;
-  /** Apply cross-cycle unpaid detection (asset detail / list). */
+  /** @deprecated Ledger always accounts for past cycles; flag is ignored. */
   applyEarliestUnpaid?: boolean;
+  /** Legacy plan-id → interval-id remap for history preprocessing. */
+  planIdToIntervalId?: Record<string, string>;
   /** Statuses to include in returned list (default: actionable + covered). */
   includeStatuses?: CyclicMaintenanceStatus[];
 };
 
 const DEFAULT_UPCOMING_THRESHOLD = 100;
 const DEFAULT_NEXT_CYCLE_MAX = 1000;
-
-function meterTypeFromIntervalType(type: string | null | undefined): "hours" | "kilometers" | null {
-  const t = (type ?? "").toLowerCase();
-  if (t === "hours" || t === "hour") return "hours";
-  if (t === "kilometers" || t === "kilometres" || t === "km") return "kilometers";
-  return null;
-}
-
-/** Coverage: same explicit meter type, or legacy Preventivo rows on one model. */
-function intervalsCompatibleForCoverage(
-  performed: CyclicMaintenanceInterval,
-  due: CyclicMaintenanceInterval,
-  modelUnit: MaintenanceUnit
-): boolean {
-  const pMeter = meterTypeFromIntervalType(performed.type ?? null);
-  const dMeter = meterTypeFromIntervalType(due.type ?? null);
-  if (pMeter && dMeter) return pMeter === dMeter;
-  if (pMeter) return pMeter === modelUnit;
-  if (dMeter) return dMeter === modelUnit;
-  return true;
-}
-
-function categoryCompatible(
-  performed: CyclicMaintenanceInterval,
-  due: CyclicMaintenanceInterval
-): boolean {
-  const pCat = performed.maintenance_category;
-  const dCat = due.maintenance_category;
-  if (pCat && dCat) return pCat === dCat;
-  return true;
-}
 
 function computeUrgency(
   status: CyclicMaintenanceStatus,
@@ -123,9 +101,64 @@ function computeProgress(
   return Math.min(100, Math.round((currentValue / safeDue) * 100));
 }
 
+function mapLedgerToResults(ledger: DueLedgerResult): CyclicIntervalResult[] {
+  return ledger.byInterval.map((row) => {
+    const intervalValue = Number(row.interval.interval_value) || 0;
+    const status = row.status as CyclicMaintenanceStatus;
+    const urgency = computeUrgency(status, row.valueRemaining, intervalValue);
+    const progress = computeProgress(
+      status,
+      row.currentValue,
+      row.nextDueValue,
+      intervalValue
+    );
+
+    return {
+      intervalId: row.intervalId,
+      interval: row.interval,
+      status,
+      nextDueValue: row.nextDueValue,
+      cycleForService: row.cycleForService,
+      cycleLength: row.cycleLength,
+      currentValue: row.currentValue,
+      valueRemaining: row.valueRemaining,
+      urgency,
+      progress,
+      wasPerformed: row.wasPerformed,
+      lastMaintenanceDate: row.lastMaintenanceDate,
+      reasons: row.reasons,
+    };
+  });
+}
+
+/**
+ * Run due ledger for single- or dual-meter assets (hours, km, or both).
+ */
+export function computeCyclicIntervalResultsForAsset(params: {
+  intervals: CyclicMaintenanceInterval[];
+  history: CyclicMaintenanceHistoryRow[];
+  currentHours: number;
+  currentKilometers: number;
+  rawMaintenanceUnit?: string | null;
+  options?: CyclicComputeOptions;
+}): CyclicIntervalResult[] {
+  const ledgers = buildLedgersForAsset({
+    intervals: params.intervals,
+    history: params.history,
+    currentHours: params.currentHours,
+    currentKilometers: params.currentKilometers,
+    rawMaintenanceUnit: params.rawMaintenanceUnit,
+  });
+
+  const results: CyclicIntervalResult[] = [];
+  if (ledgers.hours) results.push(...mapLedgerToResults(ledgers.hours));
+  if (ledgers.kilometers) results.push(...mapLedgerToResults(ledgers.kilometers));
+  return results;
+}
+
 /**
  * Canonical cyclic preventive status per model interval.
- * Unit-agnostic: pass current hours or km and `unit` from equipment_models.maintenance_unit.
+ * Delegates to the due-ledger engine (checkpoint absorption semantics).
  */
 export function computeCyclicIntervalResults(params: {
   intervals: CyclicMaintenanceInterval[];
@@ -135,146 +168,20 @@ export function computeCyclicIntervalResults(params: {
   options?: CyclicComputeOptions;
 }): CyclicIntervalResult[] {
   const { intervals, history, currentValue, unit, options } = params;
-  const upcomingThreshold = options?.upcomingThreshold ?? DEFAULT_UPCOMING_THRESHOLD;
-  const nextCycleMaxDistance = options?.nextCycleMaxDistance ?? DEFAULT_NEXT_CYCLE_MAX;
-  const applyEarliestUnpaid = options?.applyEarliestUnpaid ?? false;
 
-  if (!intervals.length) return [];
-
-  const maxInterval = Math.max(...intervals.map((i) => Number(i.interval_value) || 0));
-  if (maxInterval <= 0) return [];
-
-  const currentCycle = Math.floor(currentValue / maxInterval) + 1;
-  const cycleStart = (currentCycle - 1) * maxInterval;
-  const cycleEnd = currentCycle * maxInterval;
-
-  const preventiveHistory = filterPreventiveHistoryForIntervals(history, intervals);
-
-  const currentCycleMaintenances = preventiveHistory.filter((m) => {
-    const mValue = getMaintenanceValue(m, unit);
-    return mValue > cycleStart && mValue < cycleEnd;
+  const ledger = buildDueLedger({
+    intervals,
+    history,
+    currentValue,
+    unit,
+    options: {
+      upcomingThreshold: options?.upcomingThreshold ?? DEFAULT_UPCOMING_THRESHOLD,
+      nextCycleMaxDistance: options?.nextCycleMaxDistance ?? DEFAULT_NEXT_CYCLE_MAX,
+      planIdToIntervalId: options?.planIdToIntervalId,
+    },
   });
 
-  const results: CyclicIntervalResult[] = [];
-
-  for (const interval of intervals) {
-    const intervalValue = Number(interval.interval_value) || 0;
-    const isRecurring = interval.is_recurring !== false;
-    const isFirstCycleOnly = interval.is_first_cycle_only === true;
-
-    let status: CyclicMaintenanceStatus = "not_applicable";
-    let nextDueValue: number | null = null;
-    let cycleForService = currentCycle;
-    let wasPerformed = false;
-    let lastMaintenanceDate: string | null = null;
-
-    if (!isFirstCycleOnly || currentCycle === 1) {
-      let computedDue = (currentCycle - 1) * maxInterval + intervalValue;
-
-      if (computedDue > cycleEnd) {
-        cycleForService = currentCycle + 1;
-        computedDue = currentCycle * maxInterval + intervalValue;
-        if (computedDue - currentValue > nextCycleMaxDistance) {
-          status = "not_applicable";
-        } else {
-          status = "scheduled";
-          nextDueValue = computedDue;
-        }
-      } else {
-        const dueValue = computedDue;
-        const wasPerformedInCurrentCycle = currentCycleMaintenances.some(
-          (m) => m.maintenance_plan_id === interval.id
-        );
-
-        if (wasPerformedInCurrentCycle) {
-          status = "completed";
-          wasPerformed = true;
-          const lastOfType = currentCycleMaintenances.find(
-            (m) => m.maintenance_plan_id === interval.id
-          );
-          lastMaintenanceDate = lastOfType?.date ?? null;
-        } else {
-          const isCoveredByHigher = currentCycleMaintenances.some((m) => {
-            const performedInterval = intervals.find((i) => i.id === m.maintenance_plan_id);
-            if (!performedInterval) return false;
-            if (!intervalsCompatibleForCoverage(performedInterval, interval, unit)) return false;
-            if (!categoryCompatible(performedInterval, interval)) return false;
-            const higherOrEqual =
-              Number(performedInterval.interval_value) >= Number(interval.interval_value);
-            const performedAtValue = getMaintenanceValue(m, unit);
-            const performedAfterDue = performedAtValue >= dueValue;
-            return higherOrEqual && performedAfterDue;
-          });
-
-          if (isCoveredByHigher) {
-            status = "covered";
-          } else if (currentValue >= dueValue) {
-            status = "overdue";
-          } else if (currentValue >= dueValue - upcomingThreshold) {
-            status = "upcoming";
-          } else {
-            status = "scheduled";
-          }
-        }
-        nextDueValue = computedDue;
-      }
-    }
-
-    let valueRemaining = 0;
-    if (nextDueValue !== null && status !== "not_applicable") {
-      if (status === "completed" || status === "covered") {
-        valueRemaining = 0;
-      } else if (status === "overdue") {
-        valueRemaining = -(currentValue - nextDueValue);
-      } else {
-        valueRemaining = nextDueValue - currentValue;
-      }
-    }
-
-    if (applyEarliestUnpaid && status !== "not_applicable" && status !== "completed" && status !== "covered") {
-      const earliestUnpaid = findEarliestUnpaidPreventiveDue(
-        { id: interval.id, interval_value: interval.interval_value, type: interval.type },
-        {
-          currentValue,
-          maxInterval,
-          currentCycle,
-          preventiveHistory,
-          maintenanceIntervals: intervals,
-          maintenanceUnit: unit,
-          isRecurring,
-          isFirstCycleOnly,
-        }
-      );
-      if (earliestUnpaid !== null && earliestUnpaid.due <= currentValue) {
-        status = "overdue";
-        nextDueValue = earliestUnpaid.due;
-        cycleForService = earliestUnpaid.cycle;
-        valueRemaining = -(currentValue - earliestUnpaid.due);
-        wasPerformed = false;
-        lastMaintenanceDate = null;
-      }
-    }
-
-    const urgency = computeUrgency(status, valueRemaining, intervalValue);
-    const progress = computeProgress(status, currentValue, nextDueValue, intervalValue);
-
-    results.push({
-      intervalId: interval.id,
-      interval,
-      status,
-      nextDueValue,
-      cycleForService,
-      cycleLength: maxInterval,
-      currentValue,
-      valueRemaining,
-      urgency,
-      progress,
-      wasPerformed,
-      lastMaintenanceDate,
-    });
-  }
-
-  return results;
+  return mapLedgerToResults(ledger);
 }
 
 export type CyclicSummarySelection = {
@@ -465,6 +372,7 @@ export type CyclicMantenimientoRow = {
   component_name?: string;
   component_value?: number;
   component_unit?: MaintenanceUnit;
+  reasons?: LedgerReasons;
 };
 
 export function cyclicResultsToMantenimientoRows(
@@ -485,6 +393,7 @@ export function cyclicResultsToMantenimientoRows(
     next_due_value: r.nextDueValue ?? 0,
     status: r.status,
     cycle_length: r.cycleLength,
+    reasons: r.reasons,
     ...extras,
   }));
 }
@@ -511,5 +420,6 @@ export function cyclicResultsToUpcomingUi(
     wasPerformed: r.wasPerformed,
     cycleForService: r.cycleForService,
     cycleLength: r.cycleLength,
+    reasons: r.reasons,
   }));
 }

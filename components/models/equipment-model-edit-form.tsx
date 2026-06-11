@@ -140,6 +140,17 @@ export function EquipmentModelEditForm({ modelId }: EquipmentModelEditFormProps)
   // Estado para el diálogo de edición de intervalos
   const [isIntervalDialogOpen, setIsIntervalDialogOpen] = useState(false)
   const [currentInterval, setCurrentInterval] = useState<MaintenanceInterval | null>(null)
+  const [originalIntervalHours, setOriginalIntervalHours] = useState<number | null>(null)
+  const [intervalImpact, setIntervalImpact] = useState<{
+    currentMax: number
+    proposedMaxInterval: number
+    affectedAssets: Array<{
+      asset_code: string
+      asset_name: string
+      before_overdue: number[]
+      after_overdue: number[]
+    }>
+  } | null>(null)
 
   // Usar el hook personalizado para obtener los intervalos de mantenimiento
   const { maintenanceIntervals: fetchedIntervals } = useEquipmentModel(modelId);
@@ -686,8 +697,63 @@ export function EquipmentModelEditForm({ modelId }: EquipmentModelEditFormProps)
   const openIntervalDialog = (interval: MaintenanceInterval, index: number) => {
     setCurrentInterval(interval);
     setCurrentIntervalIndex(index);
+    setOriginalIntervalHours(interval.hours);
+    setIntervalImpact(null);
     setIsIntervalDialogOpen(true);
   };
+
+  useEffect(() => {
+    if (!isIntervalDialogOpen || !currentInterval || maintenanceIntervals.length === 0) {
+      setIntervalImpact(null);
+      return;
+    }
+    const currentMax = Math.max(...maintenanceIntervals.map((i) => i.hours));
+    const wasCycleDefining = originalIntervalHours === currentMax;
+    const willBeCycleDefining = currentInterval.hours >= currentMax;
+    if (
+      currentInterval.hours === originalIntervalHours ||
+      (!wasCycleDefining && !willBeCycleDefining)
+    ) {
+      setIntervalImpact(null);
+      return;
+    }
+
+    const controller = new AbortController();
+    const load = async () => {
+      try {
+        const res = await fetch(
+          `/api/models/${modelId}/maintenance-intervals/impact-preview`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ proposedMaxInterval: currentInterval.hours }),
+            signal: controller.signal,
+          }
+        );
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!data.changed) {
+          setIntervalImpact(null);
+          return;
+        }
+        setIntervalImpact({
+          currentMax: data.currentMax,
+          proposedMaxInterval: data.proposedMaxInterval,
+          affectedAssets: data.assets ?? [],
+        });
+      } catch {
+        /* ignore */
+      }
+    };
+    void load();
+    return () => controller.abort();
+  }, [
+    isIntervalDialogOpen,
+    currentInterval?.hours,
+    originalIntervalHours,
+    maintenanceIntervals,
+    modelId,
+  ]);
 
   // Función para guardar los cambios en un intervalo de mantenimiento
   const updateMaintenanceInterval = async () => {
@@ -695,11 +761,18 @@ export function EquipmentModelEditForm({ modelId }: EquipmentModelEditFormProps)
     
     try {
       // Actualizar en la base de datos
-      await modelsApi.updateMaintenanceInterval(currentInterval.id, {
-        name: currentInterval.name,
-        description: currentInterval.description,
-        interval_value: currentInterval.hours
-      });
+      await modelsApi.updateMaintenanceInterval(
+        currentInterval.id,
+        {
+          name: currentInterval.name,
+          description: currentInterval.description,
+          interval_value: currentInterval.hours,
+        },
+        {
+          modelId,
+          previousIntervalValue: originalIntervalHours ?? undefined,
+        }
+      );
       
       // Actualizar en el estado local
       const updatedIntervals = [...maintenanceIntervals];
@@ -1590,6 +1663,16 @@ export function EquipmentModelEditForm({ modelId }: EquipmentModelEditFormProps)
                 )}
               />
             </div>
+            {intervalImpact && (
+              <Alert variant="destructive">
+                <AlertDescription>
+                  Cambio de ciclo: {intervalImpact.currentMax} →{" "}
+                  {intervalImpact.proposedMaxInterval}.{" "}
+                  {intervalImpact.affectedAssets.length} activo(s) cambiarán su estado de
+                  vencidos. Revise antes de guardar.
+                </AlertDescription>
+              </Alert>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsIntervalDialogOpen(false)}>

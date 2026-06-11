@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, use } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { DashboardHeader } from "@/components/dashboard/dashboard-header";
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
 import { Button } from "@/components/ui/button";
@@ -15,7 +16,8 @@ import { createClient } from "@/lib/supabase";
 import { format, differenceInDays } from "date-fns";
 import { es } from "date-fns/locale";
 import { 
-  getMaintenanceUnit, 
+  getMaintenanceUnit,
+  getRawModelMaintenanceUnit,
   getCurrentValue, 
   getMaintenanceValue, 
   getUnitLabel, 
@@ -25,6 +27,7 @@ import {
 } from "@/lib/utils/maintenance-units";
 import {
   computeCyclicIntervalResults,
+  computeCyclicIntervalResultsForAsset,
   cyclicResultsToMantenimientoRows,
 } from "@/lib/utils/cyclic-maintenance";
 
@@ -53,11 +56,18 @@ interface CyclicMaintenanceInterval {
   component_hours?: number;
   component_value?: number; // Unit-agnostic current value
   component_unit?: MaintenanceUnit; // Unit for this component
+  reasons?: {
+    paidBy?: { meterValue: number; date: string | null; intervalValue: number };
+    absorbedBy?: { meterValue: number; date: string | null; intervalValue: number };
+    unpaidDue?: { due: number; cycle: number };
+  };
 }
 
 export default function MaintenancePage({ params }: MaintenancePageProps) {
   const resolvedParams = use(params);
   const assetId = resolvedParams.id;
+  const searchParams = useSearchParams();
+  const debugCycles = searchParams.get('debugCycles') === '1';
   
   const { asset, loading: assetLoading, error: assetError } = useAsset(assetId);
   const { history: maintenanceHistory, loading: historyLoading, error: historyError } = useMaintenanceHistory(assetId);
@@ -267,14 +277,23 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
             const currentValue = getCurrentValue(asset!, maintenanceUnit);
             const currentCycleNum = Math.floor(currentValue / maxInterval) + 1;
             setCurrentCycle(currentCycleNum);
+            const rawUnit = getRawModelMaintenanceUnit(asset!);
 
-            const intervalResults = computeCyclicIntervalResults({
-              intervals,
-              history: maintenanceHistory,
-              currentValue,
-              unit: maintenanceUnit,
-              options: { applyEarliestUnpaid: true },
-            });
+            const intervalResults =
+              rawUnit === "both"
+                ? computeCyclicIntervalResultsForAsset({
+                    intervals,
+                    history: maintenanceHistory,
+                    currentHours: Number(asset!.current_hours) || 0,
+                    currentKilometers: Number(asset!.current_kilometers) || 0,
+                    rawMaintenanceUnit: rawUnit,
+                  })
+                : computeCyclicIntervalResults({
+                    intervals,
+                    history: maintenanceHistory,
+                    currentValue,
+                    unit: maintenanceUnit,
+                  });
             const processedIntervals: CyclicMaintenanceInterval[] = cyclicResultsToMantenimientoRows(
               intervalResults
             );
@@ -589,8 +608,13 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
                    será a las {cycleLength + (cyclicIntervals[0]?.interval_value || 0)}{getUnitLabel(maintenanceUnit)}.
                  </p>
                  <p className="mt-1">
-                   <span className="font-medium">Lógica de Cobertura:</span> Un mantenimiento de intervalo mayor cubre los menores del mismo tipo en el ciclo vigente cuando se registró en horas/km en o después del vencimiento de cada menor (misma lógica que la ficha del activo).
+                   <span className="font-medium">Lógica de Cobertura:</span> Cada servicio preventivo completado actúa como punto de control: liquida todos los vencimientos en o por debajo de sus horas/km registrados. Solo pueden estar vencidos los servicios posteriores al último punto de control.
                  </p>
+                 {debugCycles && (
+                   <p className="mt-1 text-amber-700">
+                     <span className="font-medium">Modo depuración activo</span> — columna de razones visible por intervalo.
+                   </p>
+                 )}
                  {isComposite && (
                    <p className="mt-1">
                      <span className="font-medium">Vista Compuesta:</span> Esta tabla muestra los intervalos de mantenimiento agregados de todos los componentes del activo compuesto.
@@ -638,6 +662,7 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
                       <TableHead>Intervalo Original</TableHead>
                       <TableHead>Estado</TableHead>
                       <TableHead>{getTableHeaderLabel(maintenanceUnit)}</TableHead>
+                      {debugCycles && <TableHead>Razones (debug)</TableHead>}
                       <TableHead>Acciones</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -723,6 +748,19 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
                               <div className="text-sm text-muted-foreground">No aplicable</div>
                             )}
                           </TableCell>
+                          {debugCycles && (
+                            <TableCell className="max-w-xs">
+                              <pre className="text-[10px] whitespace-pre-wrap text-muted-foreground">
+                                {interval.reasons?.paidBy
+                                  ? `paidBy: ${interval.reasons.paidBy.intervalValue}h @ ${interval.reasons.paidBy.meterValue}`
+                                  : interval.reasons?.absorbedBy
+                                    ? `absorbedBy: ${interval.reasons.absorbedBy.intervalValue}h @ ${interval.reasons.absorbedBy.meterValue}`
+                                    : interval.reasons?.unpaidDue
+                                      ? `unpaidDue: ${interval.reasons.unpaidDue.due} (ciclo ${interval.reasons.unpaidDue.cycle})`
+                                      : "—"}
+                              </pre>
+                            </TableCell>
+                          )}
                           <TableCell>
                             {interval.status === "not_applicable" ? (
                               <Button size="sm" variant="outline" disabled className="opacity-50">No aplicable</Button>

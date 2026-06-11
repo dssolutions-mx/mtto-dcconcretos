@@ -75,6 +75,19 @@ const managementModules = [
       'Reportes de eficiencia',
       'Dashboards interactivos'
     ]
+  },
+  {
+    title: 'Diagnósticos de mantenimiento',
+    description: 'Calidad de datos preventivos y estados vencidos en toda la flota',
+    href: '/gestion/mantenimiento/diagnosticos',
+    icon: TrendingUp,
+    color: 'bg-amber-500',
+    features: [
+      'Historial excluido por activo',
+      'Intervalos vencidos (ledger)',
+      'Enlace a vista debug por activo',
+      'Motor due-engine unificado'
+    ]
   }
 ]
 

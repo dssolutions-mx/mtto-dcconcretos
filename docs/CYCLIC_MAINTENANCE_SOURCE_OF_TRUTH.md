@@ -1,123 +1,75 @@
-# Cyclic Maintenance — Source of Truth Analysis
+# Cyclic maintenance — source of truth
 
-## Canonical Implementation
+## Canonical engine
 
-**The asset-maintenance-summary API** ([`app/api/reports/asset-maintenance-summary/route.ts`](../app/api/reports/asset-maintenance-summary/route.ts)) is the implementation that works correctly. It is also used by the maintenance alerts email (Supabase edge function mirrors this logic).
+All cyclic preventive logic lives in **`lib/maintenance/due-engine.ts`** (`buildDueLedger`).
 
-**Reference asset:** `f6c24547-3403-47fd-9d2f-e41f9c249745` (CR-12 / 00equipo de pruebas)
+Public adapter for UI and reports: **`lib/utils/cyclic-maintenance.ts`** (`computeCyclicIntervalResults`, `computeCyclicIntervalResultsForAsset`).
 
----
+Do not reimplement cycle windows, category gates, or earliest-unpaid overrides elsewhere.
 
-## Data Structure (from Supabase)
+## Core invariant (checkpoint semantics)
 
-### Asset
-| Field | Value |
-|-------|-------|
-| current_hours | 2100 |
-| current_kilometers | 42 |
-| model | C7H 360HP 6X4 (MANUAL) |
-| maintenance_unit | hours |
+> A due can only be **overdue** if it falls strictly after the latest preventive service meter value.
 
-### Model Intervals (13 total for Sitrak)
-| interval_value | name | is_first_cycle_only | maintenance_category |
-|----------------|------|---------------------|----------------------|
-| 100 | SERVICIO 100–300 HORAS (ASENTAMIENTO) | true | break_in |
-| 300 | SERVICIO 300 HORAS... | false | standard |
-| 600, 900, 1200, 1500, 1800, 2100... | ... | false | standard/intermediate/major |
-| 3600 | SERVICIO 3,600 HORAS (ULTRA COMPLETO) | false | overhaul |
+A completed preventive service is a **checkpoint** that settles every unperformed due at or below its meter reading. Dues are:
 
-**Cycle length** = max(interval_value) = 3600h
+- **`paid`** — exact interval match (one history row → one due)
+- **`absorbed`** — settled by a later checkpoint without exact tier match
+- **`unpaid`** — only these can become **overdue** when current meter is past the due
 
-### Maintenance History
-| hours | maintenance_plan_id → interval | date |
-|-------|------------------------------|------|
-| 1650 | 1500h interval (babc0d5c...) | 2025-10-20 |
-| 323 | 300h interval (504e757a...) | 2025-07-31 |
+Overdue ⊆ `(lastServiceMeter, currentValue]`.
 
-**Key:** `maintenance_history.maintenance_plan_id` is always **`maintenance_intervals.id`**.  
-The asset’s scheduled plan row is `maintenance_plans`; work orders use `work_orders.maintenance_plan_id` → `maintenance_plans.id`. On WO completion, the API resolves `maintenance_plans.interval_id` into `maintenance_history.maintenance_plan_id`. Legacy rows that stored plan ids are backfilled via migration.
+## Policies
 
----
+| ID | Rule |
+|----|------|
+| **P1** | `maintenance_category` is display metadata only — never a coverage gate. |
+| **P2** | Checkpoint absorption as above. Completions store `absorbed_services` on `maintenance_history` (see migration `20260611100000`). |
+| **P3** | `both`-unit models: hour-typed / legacy `"Preventivo"` intervals use hours; km-typed intervals use km (`lib/maintenance/dual-meter.ts`). |
 
-## Core Logic (Summary API)
+## Status per interval
 
-### 1. Cycle Calculation
-```
-currentCycle = floor(currentValue / maxInterval) + 1
-cycleStart = (currentCycle - 1) * maxInterval
-cycleEnd = currentCycle * maxInterval
-```
+| Status | Meaning |
+|--------|---------|
+| `completed` | Current-cycle due paid by exact match |
+| `covered` | Current-cycle due absorbed by a checkpoint |
+| `overdue` | Earliest unpaid due in `(lastServiceMeter, currentValue]` |
+| `upcoming` / `scheduled` | Next due above current meter (thresholds: 100 / 1000) |
+| `not_applicable` | First-cycle-only beyond cycle 1, non-recurring, or beyond horizon |
 
-For 2100h: cycle 1, range [0, 3600).
+## History preprocessing
 
-### 2. Current-Cycle Maintenance Filter
-```typescript
-mValue > cycleStart && mValue < cycleEnd  // Exclusive end
-```
-Maintenance at exact boundary (e.g. 3600h) is excluded.
+`lib/maintenance/history-preprocess.ts` — before the ledger runs:
 
-### 3. Preventive History Filter
-- `type` = preventive / Preventivo / preventivo (case-insensitive)
-- `maintenance_plan_id` matches an interval in the model's intervals
-- `maintenance_plan_id` IS `maintenance_intervals.id` (not `maintenance_plans.id`)
+- Remap legacy `maintenance_plans.id` → `maintenance_intervals.id`
+- Resolve dead interval ids when catalog provided
+- Emit `excludedHistory` with reasons (`null_meter`, `dead_interval_id`, …) — never silent drops
 
-### 4. Completion
-Exact interval performed in current cycle:  
-`currentCycleMaintenances.some(m => m.maintenance_plan_id === interval.id)`
+## Write path
 
-### 5. Coverage (Hours Path)
-Requires **all** of:
-- `performedInterval.interval_value >= dueInterval.interval_value`
-- `performedAtValue >= nextDueHour` (timing check)
-- Same `type` (unit)
+`app/api/maintenance/work-completions/route.ts`:
 
-**Category:** `maintenance_category` is NOT a coverage gate. A 1500h "standard" service covers 600h "intermediate" — category is metadata for display, not coverage logic.
+- Preventive completions require meter value and linked `interval_id`
+- Writes `interval_value_snapshot` and `absorbed_services`
+- `both` models keep both `hours` and `kilometers` on history rows
 
-**Timing check:** Prevents 1500h service at 5145h from covering 1800h due at 5400h.
+## Interval definition changes
 
-### 6. Coverage (Kilometers Path)
-**Inconsistency:** Kilometers path uses interval-only (no `performedAfterDue`).  
-Both units should use the same rule.
+- Ledger always recomputes from **current** `maintenance_intervals` (recompute-from-current).
+- `interval_value_snapshot` preserves what each service meant at completion time.
+- Model editor shows impact preview when cycle-defining interval changes (`impact-preview` API).
+- Changes audited in `maintenance_interval_changes`.
 
-### 7. First Overdue Selection
-Select **lowest** `interval_value` among overdue intervals (the one that should be done first).
+## Observability
 
----
+- Asset mantenimiento tab: `?debugCycles=1` — reasons trail per interval
+- Fleet diagnostics: `/gestion/mantenimiento/diagnosticos` (API: `/api/maintenance/fleet-diagnostics`)
 
-## Gaps in Current Implementation
+## Tests
 
-| Gap | Location | Fix |
-|-----|----------|-----|
-| ~~Category blocked coverage~~ | **FIXED** | Removed category requirement—coverage is interval-value + timing (hours) or interval-only (km) |
-| Kilometers coverage lacks timing | Summary API km path | Add `performedAtKm >= nextDueKm` for consistency |
-| Kilometers cycle filter includes prev cycle | Lines 997–1004 | Remove `(mKm >= cycleStart - 200)`; use same as hours |
-| Duplication | 7+ files | Extract shared utility from summary API |
-
----
-
-## Shared Utility Design (From Summary API)
-
-```typescript
-// lib/utils/cyclic-maintenance.ts
-
-type ComputeParams = {
-  intervals: Array<{ id: string; interval_value: number; type: string; maintenance_category?: string }>
-  history: Array<{ maintenance_plan_id: string; hours: number | null; kilometers: number | null }>
-  currentValue: number
-  unit: 'hours' | 'kilometers'
-  tolerance?: number  // default 200 for "next cycle window"
-}
-
-// Returns status per interval: overdue | upcoming | scheduled | covered | completed | not_applicable
+```bash
+npm run test:unit
 ```
 
-**Use summary API logic as the spec.** The asset page and maintenance page should delegate to this utility (or call the summary API) instead of reimplementing.
-
----
-
-## Efficient Implementation Notes
-
-1. **Set for valid plan IDs:** `validPlanIds = new Set(intervals.map(i => i.id))` → O(H) filter instead of O(H×n)
-2. **Map for interval lookup:** `intervalById = new Map(intervals.map(i => [i.id, i]))` → O(1) in coverage check instead of O(n)
-3. **Single preventive filter:** One pass over history
-4. **Batch history fetch:** Calendar API should batch by asset_id (fix N+1)
+BP-01 replay (`135b269a-b9a5-4f96-872e-83628f9186bd` @ 5130h) is the regression anchor.
