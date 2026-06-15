@@ -58,8 +58,7 @@ export function IncidentThreadHistory({
 
   const label =
     coreItemLabel ??
-    normalizeIssueCoreItem(items[0]?.description ?? "") ||
-    "Ítem de checklist"
+    (normalizeIssueCoreItem(items[0]?.description ?? "") || "Ítem de checklist")
 
   const sorted = [...items].sort((a, b) => {
     const ta = new Date(String(a.date ?? a.created_at ?? "")).getTime()

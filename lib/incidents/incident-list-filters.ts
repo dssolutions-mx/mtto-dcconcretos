@@ -1,7 +1,6 @@
 import { getAssetName, getAssetFullName, getReporterName } from "@/components/incidents/incidents-list-utils"
 import { isIncidentResolvedForDashboard } from "@/lib/incident-dashboard-metrics"
 import {
-  incidentObservedMs,
   resolveDatePresetBounds,
   type DateRangeBounds,
   type IncidentDatePreset,
