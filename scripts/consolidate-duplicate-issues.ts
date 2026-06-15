@@ -2,6 +2,7 @@
  * Merge duplicate open incidents / work orders sharing the same canonical issue key.
  * Only consolidates groups with Pendiente work orders — never reopens Completada WOs.
  * Skips any WO that already has a purchase order (OC); those incidents stay untouched.
+ * Redundant Pendiente WOs are hard-deleted (not cancelled) after relinking references.
  *
  * Run:
  *   npx tsx scripts/consolidate-duplicate-issues.ts
@@ -122,6 +123,62 @@ async function findDuplicateGroups(): Promise<DuplicateGroup[]> {
   return duplicates
 }
 
+async function detachWorkOrderReferences(
+  woId: string,
+  canonicalWoId: string | null,
+): Promise<string | null> {
+  const relinkOrNull = canonicalWoId ?? null
+
+  const relinkTables = ["incident_history", "checklist_issues"] as const
+  for (const table of relinkTables) {
+    const { error } = await supabase
+      .from(table)
+      .update({ work_order_id: relinkOrNull })
+      .eq("work_order_id", woId)
+
+    if (error) return `${table}: ${error.message}`
+  }
+
+  const nullTables = [
+    "maintenance_checklists",
+    "maintenance_history",
+    "inventory_movements",
+    "additional_expenses",
+    "diesel_transactions",
+    "service_orders",
+    "supplier_performance_history",
+    "supplier_work_history",
+  ] as const
+
+  for (const table of nullTables) {
+    const { error } = await supabase.from(table).update({ work_order_id: null }).eq("work_order_id", woId)
+    if (error) return `${table}: ${error.message}`
+  }
+
+  return null
+}
+
+async function deleteRedundantWorkOrder(
+  woId: string,
+  canonicalWoId: string | null,
+): Promise<string | null> {
+  const { count: poCount, error: poError } = await supabase
+    .from("purchase_orders")
+    .select("id", { count: "exact", head: true })
+    .eq("work_order_id", woId)
+
+  if (poError) return poError.message
+  if ((poCount ?? 0) > 0) return "has linked purchase order"
+
+  const detachError = await detachWorkOrderReferences(woId, canonicalWoId)
+  if (detachError) return detachError
+
+  const { error } = await supabase.from("work_orders").delete().eq("id", woId).eq("status", "Pendiente")
+  if (error) return error.message
+
+  return null
+}
+
 async function mergeGroup(group: DuplicateGroup): Promise<void> {
   const extras = group.mergeable_incident_ids.filter((id) => id !== group.canonical_incident_id)
   const extraWos = group.work_order_ids.filter((id) => id !== group.canonical_wo_id)
@@ -152,17 +209,8 @@ async function mergeGroup(group: DuplicateGroup): Promise<void> {
   }
 
   for (const woId of extraWos) {
-    const { error } = await supabase
-      .from("work_orders")
-      .update({
-        status: "Cancelada",
-        description: `[CONSOLIDADA] Duplicado absorbido en OT canónica`,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", woId)
-      .eq("status", "Pendiente")
-
-    if (error) console.warn(`WO ${woId} cancel:`, error.message)
+    const deleteError = await deleteRedundantWorkOrder(woId, group.canonical_wo_id || null)
+    if (deleteError) console.warn(`WO ${woId} delete:`, deleteError)
   }
 }
 
@@ -173,13 +221,13 @@ async function main() {
   console.log(`Found ${groups.length} duplicate open issue groups\n`)
 
   let mergedIncidents = 0
-  let cancelledWos = 0
+  let deletedWos = 0
 
   for (const group of groups) {
     const extraIncidents = group.mergeable_incident_ids.length - 1
     const extraWos = group.work_order_ids.length - (group.canonical_wo_id ? 1 : 0)
     mergedIncidents += extraIncidents
-    cancelledWos += extraWos
+    deletedWos += extraWos
 
     console.log(`• ${group.canonical_issue_key.split("_").slice(1).join("_")}`)
     console.log(
@@ -196,7 +244,9 @@ async function main() {
     }
   }
 
-  console.log(`\nSummary: ${mergedIncidents} incidents to consolidate, ${cancelledWos} redundant Pendiente WOs`)
+  console.log(
+    `\nSummary: ${mergedIncidents} incidents to consolidate, ${deletedWos} redundant Pendiente WOs to delete`,
+  )
   if (!apply) console.log("\nRe-run with --apply to execute merges.")
 }
 
