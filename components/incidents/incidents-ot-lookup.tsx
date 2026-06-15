@@ -10,6 +10,7 @@ import { useState, useMemo, useEffect } from "react"
 import { getReporterName } from "./incidents-list-utils"
 import { getDaysSinceCreated, getStatusInfo, normalizeStatus, getPriorityInfo } from "./incidents-status-utils"
 import { groupIncidentsForIncidentesLookup } from "@/lib/incidents/incident-snapshot-grouping"
+import { groupIncidentsIntoThreads } from "@/lib/incidents/incident-thread-grouping"
 import { cn } from "@/lib/utils"
 import { Badge } from "@/components/ui/badge"
 
@@ -78,6 +79,7 @@ interface IncidentsOTLookupProps {
 export function IncidentsOTLookup({ incidents, assets }: IncidentsOTLookupProps) {
   const router = useRouter()
   const [collapsedAssets, setCollapsedAssets] = useState<Set<string>>(new Set())
+  const [expandedThreads, setExpandedThreads] = useState<Set<string>>(new Set())
   const [allCollapsed, setAllCollapsed] = useState(false)
 
   const grouped = useMemo(
@@ -112,6 +114,14 @@ export function IncidentsOTLookup({ incidents, assets }: IncidentsOTLookupProps)
       setCollapsedAssets(new Set(grouped.map((g) => g.assetId ?? "__no_asset__")))
       setAllCollapsed(true)
     }
+  }
+
+  const toggleThread = (threadKey: string) => {
+    setExpandedThreads((prev) => {
+      const next = new Set(prev)
+      next.has(threadKey) ? next.delete(threadKey) : next.add(threadKey)
+      return next
+    })
   }
 
   if (incidents.length === 0) {
@@ -203,98 +213,136 @@ export function IncidentsOTLookup({ incidents, assets }: IncidentsOTLookupProps)
                 <div className="hidden sm:flex items-center gap-4 px-4 py-1.5 bg-muted/30 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
                   <span className="w-20 shrink-0">Fecha</span>
                   <span className="w-[9.5rem] shrink-0">Estado</span>
-                  <span className="flex-1 min-w-0">Descripción</span>
+                  <span className="flex-1 min-w-0">Problema</span>
                   <span className="w-32 shrink-0 text-right hidden md:block">Reportante</span>
                   <span className="w-28 shrink-0 text-right">OT</span>
                 </div>
-                {group.incidents.map((incident, idx) => {
-                  const incidentId = typeof incident.id === "string" ? incident.id : null
-                  const workOrderId = typeof incident.work_order_id === "string" ? incident.work_order_id : null
-                  const dateStr = (incident.date ?? incident.created_at) as string | undefined
-                  const status = String(incident.status ?? "")
-                  const resolved = isResolved(status)
-                  const days = getDaysSinceCreated(dateStr ?? "")
-                  const statusLabel = getStatusInfo(status).label
-                  const priority = getPriorityInfo(status, days)
-                  const PriorityIcon = priority.icon
+                {groupIncidentsIntoThreads(group.incidents).map((thread) => {
+                  const threadKey = `${key}:${thread.canonicalKey}`
+                  const isThreadExpanded = expandedThreads.has(threadKey)
+                  const rows = isThreadExpanded ? thread.incidents : [thread.primaryIncident]
 
                   return (
-                    <div
-                      key={incidentId ?? `i-${idx}`}
-                      className={cn(
-                        "flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4 px-4 py-2.5 cursor-pointer transition-colors hover:bg-muted/40",
-                        rowSurfaceClass(resolved, days),
-                      )}
-                      onClick={() => incidentId && router.push(`/incidentes/${incidentId}`)}
-                    >
-                      <div className="flex items-center gap-2 sm:contents">
-                        <span className="shrink-0 text-xs text-muted-foreground w-20 whitespace-nowrap">
-                          {formatDate(dateStr)}
-                        </span>
-                        <div className="flex flex-wrap items-center gap-1.5 sm:w-[9.5rem] sm:shrink-0">
-                          <Badge
-                            variant="outline"
+                    <div key={threadKey} className="border-b border-border/20 last:border-b-0">
+                      {rows.map((incident, idx) => {
+                        const incidentId = typeof incident.id === "string" ? incident.id : null
+                        const workOrderId =
+                          typeof incident.work_order_id === "string"
+                            ? incident.work_order_id
+                            : thread.workOrderId
+                        const dateStr = (incident.date ?? incident.created_at) as string | undefined
+                        const status = String(incident.status ?? "")
+                        const resolved = isResolved(status)
+                        const days = getDaysSinceCreated(dateStr ?? "")
+                        const statusLabel = getStatusInfo(status).label
+                        const priority = getPriorityInfo(status, days)
+                        const PriorityIcon = priority.icon
+                        const isPrimaryRow = idx === 0 && !isThreadExpanded
+
+                        return (
+                          <div
+                            key={incidentId ?? `t-${idx}`}
                             className={cn(
-                              "text-[10px] font-semibold px-2 py-0 h-5 border",
-                              statusBadgeClass(status),
+                              "flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4 px-4 py-2.5 cursor-pointer transition-colors hover:bg-muted/40",
+                              rowSurfaceClass(resolved, days),
+                              !isPrimaryRow && "bg-muted/10 pl-8",
                             )}
+                            onClick={() => incidentId && router.push(`/incidentes/${incidentId}`)}
                           >
-                            {statusLabel}
-                          </Badge>
-                          {!resolved && (
-                            <Badge
-                              variant="outline"
+                            <div className="flex items-center gap-2 sm:contents">
+                              <span className="shrink-0 text-xs text-muted-foreground w-20 whitespace-nowrap">
+                                {formatDate(dateStr)}
+                              </span>
+                              <div className="flex flex-wrap items-center gap-1.5 sm:w-[9.5rem] sm:shrink-0">
+                                <Badge
+                                  variant="outline"
+                                  className={cn(
+                                    "text-[10px] font-semibold px-2 py-0 h-5 border",
+                                    statusBadgeClass(status),
+                                  )}
+                                >
+                                  {statusLabel}
+                                </Badge>
+                                {!resolved && (
+                                  <Badge
+                                    variant="outline"
+                                    className={cn(
+                                      "text-[10px] font-semibold px-2 py-0 h-5 border gap-0.5",
+                                      urgencyBadgeClass(priority.level),
+                                    )}
+                                  >
+                                    <PriorityIcon className="h-2.5 w-2.5" aria-hidden />
+                                    {priority.label}
+                                  </Badge>
+                                )}
+                                {isPrimaryRow && thread.occurrenceCount > 1 && (
+                                  <button
+                                    type="button"
+                                    className="text-[10px] font-medium text-primary hover:underline"
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      toggleThread(threadKey)
+                                    }}
+                                  >
+                                    {thread.occurrenceCount} ocurrencias
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+
+                            <p
                               className={cn(
-                                "text-[10px] font-semibold px-2 py-0 h-5 border gap-0.5",
-                                urgencyBadgeClass(priority.level),
+                                "flex-1 text-sm leading-snug line-clamp-2 sm:line-clamp-1 min-w-0",
+                                resolved ? "text-muted-foreground" : "text-foreground font-medium",
                               )}
+                              title={String(incident.description ?? "")}
                             >
-                              <PriorityIcon className="h-2.5 w-2.5" aria-hidden />
-                              {priority.label}
-                            </Badge>
-                          )}
-                        </div>
-                      </div>
+                              {isPrimaryRow
+                                ? thread.coreItemLabel
+                                : String(incident.description ?? "—")}
+                            </p>
 
-                      <p
-                        className={cn(
-                          "flex-1 text-sm leading-snug line-clamp-2 sm:line-clamp-1 min-w-0",
-                          resolved ? "text-muted-foreground" : "text-foreground font-medium",
-                        )}
-                        title={String(incident.description ?? "")}
-                      >
-                        {String(incident.description ?? "—")}
-                      </p>
+                            <span className="shrink-0 hidden md:block text-xs text-muted-foreground w-32 truncate text-right">
+                              {getReporterName(incident)}
+                            </span>
 
-                      <span className="shrink-0 hidden md:block text-xs text-muted-foreground w-32 truncate text-right">
-                        {getReporterName(incident)}
-                      </span>
-
-                      <div
-                        className="shrink-0 w-full sm:w-28 flex justify-start sm:justify-end"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        {workOrderId ? (
-                          <Button
-                            asChild
-                            size="sm"
-                            variant={resolved ? "ghost" : "outline"}
-                            className={cn(
-                              "h-7 text-xs cursor-pointer",
-                              resolved && "text-muted-foreground border border-border/60",
-                            )}
-                          >
-                            <Link href={`/ordenes/${workOrderId}`}>
-                              <Wrench className="mr-1 h-3 w-3" />
-                              {incident.work_order_order_id
-                                ? `OT #${incident.work_order_order_id}`
-                                : "Ver OT"}
-                            </Link>
-                          </Button>
-                        ) : (
-                          <span className="text-xs text-muted-foreground">—</span>
-                        )}
-                      </div>
+                            <div
+                              className="shrink-0 w-full sm:w-28 flex justify-start sm:justify-end"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              {workOrderId ? (
+                                <Button
+                                  asChild
+                                  size="sm"
+                                  variant={resolved ? "ghost" : "outline"}
+                                  className={cn(
+                                    "h-7 text-xs cursor-pointer",
+                                    resolved && "text-muted-foreground border border-border/60",
+                                  )}
+                                >
+                                  <Link href={`/ordenes/${workOrderId}`}>
+                                    <Wrench className="mr-1 h-3 w-3" />
+                                    {(incident.work_order_order_id ?? thread.workOrderOrderId)
+                                      ? `OT #${incident.work_order_order_id ?? thread.workOrderOrderId}`
+                                      : "Ver OT"}
+                                  </Link>
+                                </Button>
+                              ) : (
+                                <span className="text-xs text-muted-foreground">—</span>
+                              )}
+                            </div>
+                          </div>
+                        )
+                      })}
+                      {isThreadExpanded && (
+                        <button
+                          type="button"
+                          className="w-full px-4 py-1 text-left text-[10px] text-muted-foreground hover:text-foreground"
+                          onClick={() => toggleThread(threadKey)}
+                        >
+                          Ocultar historial de ocurrencias
+                        </button>
+                      )}
                     </div>
                   )
                 })}

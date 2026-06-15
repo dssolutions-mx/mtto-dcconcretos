@@ -223,6 +223,10 @@ export async function POST(request: Request) {
       
       console.log("API: Orden de trabajo actualizada correctamente");
 
+      await supabase.rpc('resolve_issues_for_completed_work_order', {
+        p_work_order_id: workOrderId,
+      })
+
       // Update maintenance_plans.next_due when completing a preventive WO
       if (existingOrder.maintenance_plan_id && existingOrder.asset_id) {
         try {

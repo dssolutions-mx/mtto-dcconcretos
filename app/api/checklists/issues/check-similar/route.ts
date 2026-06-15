@@ -5,7 +5,6 @@ export async function POST(request: NextRequest) {
   try {
     const supabase = await createClient()
     
-    // Get the current user
     const { data: { user }, error: userError } = await supabase.auth.getUser()
     if (userError || !user) {
       return NextResponse.json(
@@ -15,7 +14,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { asset_id, items, consolidation_window_days = 30 } = body
+    const { asset_id, items, consolidation_window_days = 90 } = body
 
     if (!asset_id || !items || !Array.isArray(items)) {
       return NextResponse.json(
@@ -26,34 +25,28 @@ export async function POST(request: NextRequest) {
 
     const similarIssuesResults = []
 
-    // Check each item for similar issues
     for (const item of items) {
       try {
-        // Generate fingerprint for this issue
-        const { data: fingerprint, error: fingerprintError } = await supabase
-          .rpc('generate_issue_fingerprint', {
+        const { data: canonicalKey, error: canonicalKeyError } = await supabase
+          .rpc('generate_canonical_issue_key', {
             p_asset_id: asset_id,
-            p_item_description: item.description,
-            p_status: item.status,
-            p_notes: item.notes || ''
+            p_description: item.description,
           })
 
-        if (fingerprintError || !fingerprint) {
-          console.error('Error generating fingerprint:', fingerprintError)
+        if (canonicalKeyError || !canonicalKey) {
+          console.error('Error generating canonical key:', canonicalKeyError)
           continue
         }
 
-        // Find similar open issues
-        const { data: similarIssues, error: similarError } = await supabase
-          .rpc('find_similar_open_issues', {
-            p_fingerprint: fingerprint,
+        const { data: activeThreads, error: threadError } = await supabase
+          .rpc('find_active_issue_thread', {
             p_asset_id: asset_id,
-            p_consolidation_window: `${consolidation_window_days} days`
+            p_canonical_key: canonicalKey,
           })
 
-        if (!similarError && similarIssues && similarIssues.length > 0) {
-          // Get work order details for the similar issues
-          const workOrderIds = [...new Set(similarIssues.map((issue: any) => issue.work_order_id))]
+        if (!threadError && activeThreads && activeThreads.length > 0) {
+          const thread = activeThreads[0]
+          const workOrderIds = thread.work_order_id ? [thread.work_order_id] : []
           
           const { data: workOrders, error: woError } = await supabase
             .from('work_orders')
@@ -69,40 +62,35 @@ export async function POST(request: NextRequest) {
             .in('id', workOrderIds)
 
           if (!woError && workOrders) {
-            const enrichedSimilarIssues = similarIssues.map((issue: any) => {
-              const workOrder = workOrders.find(wo => wo.id === issue.work_order_id)
-              return {
-                ...issue,
-                work_order: workOrder,
-                assignee_name: 'Sin asignar' // Simplificado por ahora
-              }
-            })
-
+            const workOrder = workOrders.find(wo => wo.id === thread.work_order_id)
             similarIssuesResults.push({
               item: item,
-              fingerprint: fingerprint,
-              similar_issues: enrichedSimilarIssues,
+              fingerprint: canonicalKey,
+              similar_issues: [{
+                ...thread,
+                issue_id: thread.issue_id,
+                work_order: workOrder,
+                assignee_name: 'Sin asignar',
+              }],
               consolidation_recommended: true,
-              recurrence_count: enrichedSimilarIssues[0]?.recurrence_count + 1 || 2
+              recurrence_count: (thread.recurrence_count ?? 1) + 1,
             })
           } else {
-            // Still add the result but without work order details
             similarIssuesResults.push({
               item: item,
-              fingerprint: fingerprint,
-              similar_issues: similarIssues || [],
+              fingerprint: canonicalKey,
+              similar_issues: [thread],
               consolidation_recommended: true,
-              recurrence_count: (similarIssues && similarIssues[0]?.recurrence_count) ? similarIssues[0].recurrence_count + 1 : 2
+              recurrence_count: (thread.recurrence_count ?? 1) + 1,
             })
           }
         } else {
-          // No similar issues found
           similarIssuesResults.push({
             item: item,
-            fingerprint: fingerprint,
+            fingerprint: canonicalKey,
             similar_issues: [],
             consolidation_recommended: false,
-            recurrence_count: 1
+            recurrence_count: 1,
           })
         }
       } catch (itemError) {
@@ -131,4 +119,4 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     )
   }
-} 
+}

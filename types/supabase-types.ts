@@ -1753,6 +1753,7 @@ export type Database = {
       }
       checklist_issues: {
         Row: {
+          canonical_issue_key: string | null
           checklist_id: string | null
           consolidation_window: string | null
           created_at: string | null
@@ -3975,6 +3976,7 @@ export type Database = {
       incident_history: {
         Row: {
           asset_id: string | null
+          canonical_issue_key: string | null
           checklist_id: string | null
           created_at: string | null
           created_by: string | null
@@ -3984,6 +3986,7 @@ export type Database = {
           downtime: number | null
           id: string
           impact: string | null
+          merged_into_id: string | null
           labor_cost: number | null
           labor_hours: number | null
           parts: Json | null
@@ -10945,6 +10948,25 @@ export type Database = {
         Args: { po_order_id: string }
         Returns: string
       }
+      find_active_issue_thread: {
+        Args: { p_asset_id: string; p_canonical_key: string }
+        Returns: {
+          created_at: string
+          incident_id: string | null
+          issue_id: string | null
+          item_description: string
+          notes: string | null
+          priority: string
+          recurrence_count: number
+          should_reopen: boolean
+          wo_status: string
+          work_order_id: string | null
+        }[]
+      }
+      generate_canonical_issue_key: {
+        Args: { p_asset_id: string; p_description: string }
+        Returns: string
+      }
       generate_issue_fingerprint: {
         Args: {
           p_asset_id: string
@@ -10953,6 +10975,10 @@ export type Database = {
           p_status?: string
         }
         Returns: string
+      }
+      resolve_issues_for_completed_work_order: {
+        Args: { p_work_order_id: string }
+        Returns: undefined
       }
       generate_maintenance_plans: {
         Args: { p_asset_id: string }

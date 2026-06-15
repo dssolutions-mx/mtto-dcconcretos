@@ -27,7 +27,7 @@ export async function POST(request: NextRequest) {
       description = '',
       asset_id,
       enable_smart_deduplication = true,
-      consolidation_window_days = 30,
+      consolidation_window_days = 90,
       allow_manual_override = false,
       consolidation_choices = {}
     } = body
@@ -124,24 +124,25 @@ export async function POST(request: NextRequest) {
           savedIssue = newIssue
         }
 
-        // Generate fingerprint for this issue
-        const { data: fingerprint, error: fingerprintError } = await supabase
-          .rpc('generate_issue_fingerprint', {
+        // Canonical issue key (same defect across weekly/monthly/daily checklists)
+        const { data: canonicalKey, error: canonicalKeyError } = await supabase
+          .rpc('generate_canonical_issue_key', {
             p_asset_id: asset_id,
-            p_item_description: issue.description,
-            p_status: issue.status,
-            p_notes: issue.notes
+            p_description: issue.description,
           })
 
-        if (fingerprintError) {
-          console.error('Error generating fingerprint:', fingerprintError)
-          // Continue without deduplication
+        if (canonicalKeyError) {
+          console.error('Error generating canonical issue key:', canonicalKeyError)
         }
 
-        // Update the saved issue with fingerprint
+        const fingerprint = canonicalKey
+
         await supabase
           .from('checklist_issues')
-          .update({ issue_fingerprint: fingerprint })
+          .update({
+            issue_fingerprint: fingerprint,
+            canonical_issue_key: fingerprint,
+          })
           .eq('id', savedIssue.id)
 
         let workOrderCreated = false
@@ -158,14 +159,12 @@ export async function POST(request: NextRequest) {
         
         if (shouldCheckSimilar) {
           const { data: similarIssues, error: similarError } = await supabase
-            .rpc('find_similar_open_issues', {
-              p_fingerprint: fingerprint,
+            .rpc('find_active_issue_thread', {
               p_asset_id: asset_id,
-              p_consolidation_window: `${consolidation_window_days} days`
+              p_canonical_key: fingerprint,
             })
 
           if (!similarError && similarIssues && similarIssues.length > 0) {
-            // Found similar open issues
             const existingIssue = similarIssues[0]
             console.log('🔗 Found similar issue, user choice is:', userChoice)
             console.log('📋 Existing work order ID:', existingIssue.work_order_id)
@@ -330,13 +329,26 @@ ${issue.photo_url ? '• Evidencia fotográfica disponible' : ''}`
               
                 if (!updateError) {
                   // Link the new issue to the existing work order
+                  const issueUpdate: Record<string, unknown> = {
+                    work_order_id: existingIssue.work_order_id,
+                    parent_issue_id: existingIssue.issue_id ?? undefined,
+                  }
+                  if (existingIssue.incident_id) {
+                    issueUpdate.incident_id = existingIssue.incident_id
+                  }
                   await supabase
                     .from('checklist_issues')
-                    .update({ 
-                      work_order_id: existingIssue.work_order_id,
-                      parent_issue_id: existingIssue.issue_id
-                    })
+                    .update(issueUpdate)
                     .eq('id', savedIssue.id)
+
+                  if (existingIssue.issue_id) {
+                    await supabase
+                      .from('checklist_issues')
+                      .update({
+                        recurrence_count: (existingIssue.recurrence_count ?? 1) + 1,
+                      })
+                      .eq('id', existingIssue.issue_id)
+                  }
 
                   console.log('🎉 Successfully consolidated issue with updates')
                   consolidatedIssues.push({
@@ -361,12 +373,16 @@ ${issue.photo_url ? '• Evidencia fotográfica disponible' : ''}`
               } else {
                 // No changes needed, just link the issue
                 console.log('ℹ️ No changes needed - issue already consolidated (duplicate)')
+                const linkUpdate: Record<string, unknown> = {
+                  work_order_id: existingIssue.work_order_id,
+                  parent_issue_id: existingIssue.issue_id ?? undefined,
+                }
+                if (existingIssue.incident_id) {
+                  linkUpdate.incident_id = existingIssue.incident_id
+                }
                 await supabase
                   .from('checklist_issues')
-                  .update({ 
-                    work_order_id: existingIssue.work_order_id,
-                    parent_issue_id: existingIssue.issue_id
-                  })
+                  .update(linkUpdate)
                   .eq('id', savedIssue.id)
 
                 consolidatedIssues.push({
@@ -566,6 +582,7 @@ ORIGEN:
               created_by: user.id,
               work_order_id: workOrder.id,
               documents: mergedDocUrls.length > 0 ? mergedDocUrls : null,
+              canonical_issue_key: fingerprint ?? null,
               created_at: new Date().toISOString()
             })
             .select('id')

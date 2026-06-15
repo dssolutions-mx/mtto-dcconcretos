@@ -507,6 +507,14 @@ async function processChecklistCompletion(
       
       for (const issue of issues || []) {
         try {
+          const { data: issueRow } = await supabase
+            .from('checklist_issues')
+            .select('incident_id')
+            .eq('id', issue.id)
+            .maybeSingle()
+
+          if (issueRow?.incident_id) continue
+
           await supabase.rpc('create_incident_from_checklist_issue', {
             p_checklist_issue_id: issue.id
           })

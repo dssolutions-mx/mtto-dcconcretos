@@ -27,6 +27,7 @@ export function filterIncidentsForIncidentesPage(
   return incidents.filter((incident) => {
     if (f.assetIdFromUrl && incident.asset_id !== f.assetIdFromUrl) return false
     if (f.plantFilter !== "all" && incidentAssetPlantId(incident) !== f.plantFilter) return false
+    if (String(incident.status ?? "") === "Consolidado") return false
     if (f.lifecycleFilter === "open" && isIncidentResolvedForDashboard(String(incident.status ?? ""))) return false
     if (f.lifecycleFilter === "resolved" && !isIncidentResolvedForDashboard(String(incident.status ?? ""))) return false
     if (f.statusFilter !== "all" && String(incident.status ?? "") !== f.statusFilter) return false
