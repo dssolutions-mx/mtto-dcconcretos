@@ -277,6 +277,18 @@ export default function CoordinadorDashboard() {
               )}
             </Button>
           </Link>
+          <Link href="/ordenes/planificacion?cohort=june_2026_inspection">
+            <Button size="sm" variant="outline" className="min-h-[44px] gap-1.5">
+              <Wrench className="h-3.5 w-3.5" />
+              Planificar atención
+            </Button>
+          </Link>
+          <Link href="/incidentes?cohort=june_2026_inspection">
+            <Button size="sm" variant="outline" className="min-h-[44px] gap-1.5">
+              <AlertTriangle className="h-3.5 w-3.5" />
+              Revisión Jun 2026
+            </Button>
+          </Link>
         </div>
 
         {/* Main grid: OTs + Incidents */}

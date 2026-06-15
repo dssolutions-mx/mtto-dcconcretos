@@ -23,6 +23,9 @@ const BASE_BY_ROLE: Partial<Record<LegacyDbRole, DashboardReportShortcut[]>> = {
     { label: 'Eficiencia diésel', href: '/reportes/eficiencia-diesel' },
   ],
   GERENTE_MANTENIMIENTO: [
+    { label: 'Planificar atención', href: '/ordenes/planificacion?cohort=june_2026_inspection' },
+    { label: 'Hallazgos revisión Jun 2026', href: '/incidentes?cohort=june_2026_inspection' },
+    { label: 'Campañas de mantenimiento', href: '/ordenes/campanas' },
     { label: 'Informe ejecutivo', href: '/reportes/gerencial/informe-ejecutivo' },
     { label: 'Reporte gerencial', href: '/reportes/gerencial' },
     { label: 'Eficiencia diésel', href: '/reportes/eficiencia-diesel' },

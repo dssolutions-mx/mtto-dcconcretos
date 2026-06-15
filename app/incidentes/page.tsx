@@ -2,60 +2,61 @@
 
 import { Suspense, useState, useEffect, useMemo, useRef, useCallback } from "react"
 import { createPortal } from "react-dom"
-import { useSearchParams, useRouter } from "next/navigation"
+import { useSearchParams } from "next/navigation"
 import { DashboardHeader } from "@/components/dashboard/dashboard-header"
 import { DashboardShell } from "@/components/dashboard/dashboard-shell"
 import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Input } from "@/components/ui/input"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Plus, Search, X, FileDown, Loader2 } from "lucide-react"
+import { Plus, Loader2 } from "lucide-react"
 import Link from "next/link"
 import { IncidentsOTLookup } from "@/components/incidents/incidents-ot-lookup"
 import { IncidentSnapshotPrintDocument } from "@/components/incidents/incident-snapshot-print-document"
+import { IncidentsPeriodBar } from "@/components/incidents/IncidentsPeriodBar"
+import { IncidentsPeriodRibbon } from "@/components/incidents/IncidentsPeriodRibbon"
+import { IncidentsFilterBar } from "@/components/incidents/incidents-filter-bar"
 import { useToast } from "@/hooks/use-toast"
-import {
-  filterIncidentsForIncidentesPage,
-  buildIncidentesFilterSummary,
-} from "@/lib/incidents/incident-list-filters"
+import { buildIncidentesFilterSummary } from "@/lib/incidents/incident-list-filters"
 import { generateIncidentSnapshotPdf } from "@/lib/incidents/generate-incident-snapshot-pdf"
 import { aggregateIncidentDashboardStats } from "@/lib/incident-dashboard-metrics"
+import { useIncidentFilters } from "@/hooks/useIncidentFilters"
 
 function IncidentsPageContent() {
-  const router = useRouter()
   const searchParams = useSearchParams()
   const { toast } = useToast()
-  const assetIdFromUrl = searchParams.get("assetId")
   const assetFromUrl = searchParams.get("asset")
-  const plantIdFromUrl = searchParams.get("plantId")
-  const plantFilter = plantIdFromUrl ?? "all"
+
+  const {
+    filters,
+    searchTerm,
+    setSearchTerm,
+    setFilters,
+    clearAllFilters,
+    hasActiveFilters,
+    activeFilterCount,
+    dateBounds,
+    filterIncidentsForIncidentesPage,
+  } = useIncidentFilters()
 
   const [incidents, setIncidents] = useState<Record<string, unknown>[]>([])
   const [assets, setAssets] = useState<Record<string, unknown>[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [searchTerm, setSearchTerm] = useState("")
-  const [statusFilter, setStatusFilter] = useState("all")
-  const [typeFilter, setTypeFilter] = useState("all")
-  const [lifecycleFilter, setLifecycleFilter] = useState<"all" | "open" | "resolved">("all")
   const [snapshotOpen, setSnapshotOpen] = useState(false)
   const [snapshotAt, setSnapshotAt] = useState(() => new Date())
   const snapshotRef = useRef<HTMLDivElement>(null)
 
-  // Initialize search from ?asset= param (used by coordinator dashboard)
   useEffect(() => {
     if (assetFromUrl && !searchTerm) {
       setSearchTerm(assetFromUrl)
     }
-  }, [assetFromUrl])
+  }, [assetFromUrl, searchTerm, setSearchTerm])
 
   useEffect(() => {
     const fetchIncidents = async () => {
       try {
         const res = await fetch("/api/incidents")
         if (res.ok) {
-          const data = await res.json()
-          setIncidents(data)
+          setIncidents(await res.json())
         } else {
           setError("Error al cargar los incidentes")
         }
@@ -68,10 +69,7 @@ function IncidentsPageContent() {
     const fetchAssets = async () => {
       try {
         const res = await fetch("/api/assets")
-        if (res.ok) {
-          const data = await res.json()
-          setAssets(data)
-        }
+        if (res.ok) setAssets(await res.json())
       } catch {
         // ignore
       }
@@ -98,19 +96,6 @@ function IncidentsPageContent() {
     return Array.from(seen).sort()
   }, [incidents])
 
-  const stats = useMemo(() => {
-    const a = aggregateIncidentDashboardStats(
-      incidents as { status?: string | null; date?: string | null; created_at?: string | null }[],
-    )
-    return { open: a.open, critical: a.openOver7Days, resolved: a.resolved, total: a.total }
-  }, [incidents])
-
-  const prefilledAssetName = useMemo(() => {
-    if (!assetIdFromUrl || assets.length === 0) return null
-    const asset = assets.find((a: Record<string, unknown>) => a.id === assetIdFromUrl) as Record<string, unknown> | undefined
-    return asset ? String(asset.name ?? asset.asset_id ?? "Activo") : "Activo"
-  }, [assetIdFromUrl, assets])
-
   const plantOptions = useMemo(() => {
     const map = new Map<string, string>()
     assets.forEach((raw) => {
@@ -126,62 +111,46 @@ function IncidentsPageContent() {
       .sort((x, y) => x.label.localeCompare(y.label, "es"))
   }, [assets])
 
+  const prefilledAssetName = useMemo(() => {
+    if (!filters.assetIdFromUrl || assets.length === 0) return null
+    const asset = assets.find(
+      (a: Record<string, unknown>) => a.id === filters.assetIdFromUrl,
+    ) as Record<string, unknown> | undefined
+    return asset ? String(asset.name ?? asset.asset_id ?? "Activo") : "Activo"
+  }, [filters.assetIdFromUrl, assets])
+
   const prefilledPlantName = useMemo(() => {
-    if (plantFilter === "all") return null
-    return plantOptions.find((p) => p.id === plantFilter)?.label ?? "Planta"
-  }, [plantFilter, plantOptions])
-
-  const setPlantQuery = useCallback(
-    (value: string) => {
-      const p = new URLSearchParams(searchParams.toString())
-      if (value === "all") p.delete("plantId")
-      else p.set("plantId", value)
-      const qs = p.toString()
-      router.replace(qs ? `/incidentes?${qs}` : "/incidentes")
-    },
-    [router, searchParams],
-  )
-
-  const incidentesFilters = useMemo(
-    () => ({
-      assetIdFromUrl,
-      plantFilter,
-      lifecycleFilter,
-      statusFilter,
-      typeFilter,
-      searchTerm,
-    }),
-    [assetIdFromUrl, plantFilter, lifecycleFilter, statusFilter, typeFilter, searchTerm],
-  )
+    if (filters.plantFilter === "all") return null
+    return plantOptions.find((p) => p.id === filters.plantFilter)?.label ?? "Planta"
+  }, [filters.plantFilter, plantOptions])
 
   const filteredIncidents = useMemo(
-    () => filterIncidentsForIncidentesPage(incidents, assets, incidentesFilters),
-    [incidents, assets, incidentesFilters],
+    () =>
+      filterIncidentsForIncidentesPage(incidents, assets, {
+        ...filters,
+        searchTerm,
+      }),
+    [incidents, assets, filters, searchTerm, filterIncidentsForIncidentesPage],
   )
+
+  const stats = useMemo(() => {
+    const a = aggregateIncidentDashboardStats(
+      filteredIncidents as {
+        status?: string | null
+        date?: string | null
+        created_at?: string | null
+      }[],
+    )
+    return { open: a.open, critical: a.openOver7Days, resolved: a.resolved, total: a.total }
+  }, [filteredIncidents])
 
   const filterSummaryLine = useMemo(
     () =>
       buildIncidentesFilterSummary(
-        {
-          assetIdFromUrl,
-          plantFilter,
-          lifecycleFilter,
-          statusFilter,
-          typeFilter,
-          searchTerm,
-        },
+        { ...filters, searchTerm },
         { assetLabel: prefilledAssetName, plantLabel: prefilledPlantName },
       ),
-    [
-      assetIdFromUrl,
-      plantFilter,
-      lifecycleFilter,
-      statusFilter,
-      typeFilter,
-      searchTerm,
-      prefilledAssetName,
-      prefilledPlantName,
-    ],
+    [filters, searchTerm, prefilledAssetName, prefilledPlantName],
   )
 
   const handleSnapshotPdfReady = useCallback(
@@ -228,16 +197,6 @@ function IncidentsPageContent() {
     setSnapshotOpen(true)
   }
 
-  const clearFilters = () => {
-    setSearchTerm("")
-    setStatusFilter("all")
-    setTypeFilter("all")
-    setLifecycleFilter("all")
-    if (assetIdFromUrl || assetFromUrl || plantIdFromUrl) {
-      router.replace("/incidentes")
-    }
-  }
-
   if (loading) {
     return (
       <DashboardShell>
@@ -267,9 +226,6 @@ function IncidentsPageContent() {
           <div className="mx-4 flex max-w-sm flex-col items-center gap-3 rounded-lg border bg-card px-6 py-5 text-center shadow-lg">
             <Loader2 className="h-9 w-9 animate-spin text-primary" aria-hidden />
             <p className="text-sm font-semibold text-foreground">Generando instantáneo PDF</p>
-            <p className="text-xs text-muted-foreground leading-relaxed">
-              Midiendo el listado y capturando el documento. Suele tardar unos segundos si hay muchas fotos.
-            </p>
           </div>
         </div>
         <div className="pointer-events-none fixed left-0 top-0 z-[40] h-0 w-0 overflow-visible" aria-hidden>
@@ -297,30 +253,13 @@ function IncidentsPageContent() {
         heading="Incidentes"
         text="Vista de incidentes activos agrupados por activo"
       >
-        <div className="flex flex-wrap items-center gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            className="min-w-[9rem] cursor-pointer"
-            disabled={snapshotOpen}
-            onClick={handleInstantaneoPdf}
-          >
-            {snapshotOpen ? (
-              <Loader2 className="mr-2 h-4 w-4 shrink-0 animate-spin" aria-hidden />
-            ) : (
-              <FileDown className="mr-2 h-4 w-4 shrink-0" aria-hidden />
-            )}
-            <span className="hidden sm:inline">{snapshotOpen ? "Generando…" : "Instantáneo PDF"}</span>
-            <span className="sm:hidden">{snapshotOpen ? "…" : "PDF"}</span>
-          </Button>
-          <Button asChild className="cursor-pointer">
-            <Link href="/activos">
-              <Plus className="mr-2 h-4 w-4" />
-              <span className="hidden sm:inline">Reportar Incidente</span>
-              <span className="sm:hidden">Nuevo</span>
-            </Link>
-          </Button>
-        </div>
+        <Button asChild className="cursor-pointer">
+          <Link href="/activos">
+            <Plus className="mr-2 h-4 w-4" />
+            <span className="hidden sm:inline">Reportar Incidente</span>
+            <span className="sm:hidden">Nuevo</span>
+          </Link>
+        </Button>
       </DashboardHeader>
 
       {error && (
@@ -330,123 +269,76 @@ function IncidentsPageContent() {
       )}
 
       <div className="space-y-4">
-        {/* Métricas de resumen — texto plano, sin color */}
         <div className="flex items-center gap-6 text-sm">
-          <span><span className="font-semibold text-foreground">{stats.total}</span> <span className="text-muted-foreground">total</span></span>
-          <span><span className="font-semibold text-foreground">{stats.open}</span> <span className="text-muted-foreground">abiertos</span></span>
-          {stats.critical > 0 && (
-            <span><span className="font-semibold text-red-600">{stats.critical}</span> <span className="text-muted-foreground">sin resolver +7 días</span></span>
-          )}
-          <span><span className="font-semibold text-foreground">{stats.resolved}</span> <span className="text-muted-foreground">resueltos</span></span>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground w-full sm:w-auto sm:mr-1">
-            Vista rápida
+          <span>
+            <span className="font-semibold text-foreground">{stats.total}</span>{" "}
+            <span className="text-muted-foreground">en vista</span>
           </span>
-          {(["all", "open", "resolved"] as const).map((key) => {
-            const labels = { all: "Todos", open: "Solo abiertos", resolved: "Solo resueltos" } as const
-            return (
-              <Button
-                key={key}
-                type="button"
-                variant={lifecycleFilter === key ? "default" : "outline"}
-                size="sm"
-                className="h-8 text-xs cursor-pointer"
-                onClick={() => setLifecycleFilter(key)}
-              >
-                {labels[key]}
-              </Button>
-            )
-          })}
+          <span>
+            <span className="font-semibold text-foreground">{stats.open}</span>{" "}
+            <span className="text-muted-foreground">abiertos</span>
+          </span>
+          {stats.critical > 0 && (
+            <span>
+              <span className="font-semibold text-red-600">{stats.critical}</span>{" "}
+              <span className="text-muted-foreground">+7 días</span>
+            </span>
+          )}
         </div>
 
-        {/* Filtros */}
-        <div className="flex flex-col sm:flex-row gap-2">
-          <div className="relative flex-1 max-w-lg">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              type="search"
-              placeholder="Buscar por activo, descripción, reportante u OT..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-9"
-            />
-          </div>
-          <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="w-full sm:w-[150px]">
-              <SelectValue placeholder="Estado" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Todos los estados</SelectItem>
-              {uniqueStatuses.map((s) => (
-                <SelectItem key={s} value={s}>{s}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select value={typeFilter} onValueChange={setTypeFilter}>
-            <SelectTrigger className="w-full sm:w-[150px]">
-              <SelectValue placeholder="Tipo" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Todos los tipos</SelectItem>
-              {uniqueTypes.map((t) => (
-                <SelectItem key={t} value={t}>{t}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select value={plantFilter} onValueChange={setPlantQuery}>
-            <SelectTrigger className="w-full sm:w-[180px]">
-              <SelectValue placeholder="Planta" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Todas las plantas</SelectItem>
-              {plantOptions.map((pl) => (
-                <SelectItem key={pl.id} value={pl.id}>
-                  {pl.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          {(searchTerm || statusFilter !== "all" || typeFilter !== "all" || lifecycleFilter !== "all" || assetIdFromUrl || assetFromUrl || plantIdFromUrl) && (
+        <IncidentsPeriodBar filters={filters} onFiltersChange={setFilters} />
+
+        <IncidentsPeriodRibbon
+          incidents={incidents}
+          bounds={dateBounds}
+          filters={filters}
+          onFiltersChange={setFilters}
+          onExportPdf={handleInstantaneoPdf}
+          exportDisabled={snapshotOpen}
+        />
+
+        <IncidentsFilterBar
+          searchTerm={searchTerm}
+          onSearchChange={setSearchTerm}
+          statusFilter={filters.statusFilter}
+          onStatusChange={(v) => setFilters({ statusFilter: v })}
+          typeFilter={filters.typeFilter}
+          onTypeChange={(v) => setFilters({ typeFilter: v })}
+          priorityFilter={filters.priorityFilter}
+          onPriorityChange={(v) => setFilters({ priorityFilter: v })}
+          workOrderFilter={filters.workOrderFilter}
+          onWorkOrderChange={(v) => setFilters({ workOrderFilter: v })}
+          plantFilter={filters.plantFilter}
+          onPlantChange={(v) => setFilters({ plantFilter: v })}
+          lifecycleFilter={filters.lifecycleFilter}
+          onLifecycleChange={(v) => setFilters({ lifecycleFilter: v })}
+          plantOptions={plantOptions}
+          onClearAll={clearAllFilters}
+          activeFilterCount={activeFilterCount}
+          uniqueStatuses={uniqueStatuses}
+          uniqueTypes={uniqueTypes}
+        />
+
+        <IncidentsOTLookup
+          incidents={filteredIncidents}
+          assets={assets}
+          dateBounds={dateBounds}
+          dateField={filters.dateField}
+          threadDateMode={filters.threadDateMode}
+        />
+
+        {hasActiveFilters && filteredIncidents.length === 0 && (
+          <p className="text-sm text-muted-foreground text-center py-4">
+            No hay incidentes con los filtros actuales.{" "}
             <button
               type="button"
-              onClick={clearFilters}
-              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer whitespace-nowrap"
+              className="underline cursor-pointer"
+              onClick={clearAllFilters}
             >
-              <X className="h-3 w-3" />
-              Limpiar
+              Limpiar filtros
             </button>
-          )}
-        </div>
-
-        {(prefilledAssetName || prefilledPlantName) && (
-          <div className="flex flex-wrap items-center gap-2">
-            {prefilledAssetName && (
-              <button
-                type="button"
-                onClick={clearFilters}
-                className="inline-flex items-center gap-1 rounded-md border px-2.5 py-0.5 text-xs font-medium transition-colors hover:bg-muted cursor-pointer"
-              >
-                Filtro por activo: {prefilledAssetName}
-                <X className="h-3 w-3" />
-              </button>
-            )}
-            {prefilledPlantName && (
-              <button
-                type="button"
-                onClick={() => setPlantQuery("all")}
-                className="inline-flex items-center gap-1 rounded-md border px-2.5 py-0.5 text-xs font-medium transition-colors hover:bg-muted cursor-pointer"
-              >
-                Planta: {prefilledPlantName}
-                <X className="h-3 w-3" />
-              </button>
-            )}
-          </div>
+          </p>
         )}
-
-        {/* Lista agrupada por activo */}
-        <IncidentsOTLookup incidents={filteredIncidents} assets={assets} />
       </div>
     </DashboardShell>
   )
@@ -460,9 +352,6 @@ export default function IncidentsPage() {
           <DashboardHeader heading="Incidentes" text="" />
           <div className="space-y-3">
             <div className="h-10 w-full max-w-xl rounded-lg bg-muted animate-pulse" />
-            {[...Array(6)].map((_, i) => (
-              <div key={i} className="h-12 rounded-lg bg-muted animate-pulse" />
-            ))}
           </div>
         </DashboardShell>
       }

@@ -15,7 +15,7 @@ export type IncidentThread = {
   workOrderOrderId: string | null
 }
 
-function incidentCanonicalKey(incident: Record<string, unknown>): string {
+export function incidentCanonicalKey(incident: Record<string, unknown>): string {
   const stored = incident.canonical_issue_key
   if (typeof stored === "string" && stored.length > 0) return stored
 

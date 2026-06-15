@@ -11,6 +11,13 @@ import { getReporterName } from "./incidents-list-utils"
 import { getDaysSinceCreated, getStatusInfo, normalizeStatus, getPriorityInfo } from "./incidents-status-utils"
 import { groupIncidentsForIncidentesLookup } from "@/lib/incidents/incident-snapshot-grouping"
 import { groupIncidentsIntoThreads } from "@/lib/incidents/incident-thread-grouping"
+import {
+  classifyThreadPlanning,
+  filterThreadOccurrencesForDisplay,
+  isOccurrenceInBounds,
+} from "@/lib/incidents/incident-planning-class"
+import type { DateRangeBounds, IncidentDateField } from "@/lib/incidents/incident-date-filter"
+import type { ThreadDateMode } from "@/lib/incidents/incident-list-filters"
 import { cn } from "@/lib/utils"
 import { Badge } from "@/components/ui/badge"
 
@@ -74,9 +81,18 @@ function rowSurfaceClass(resolved: boolean, days: number): string {
 interface IncidentsOTLookupProps {
   incidents: Record<string, unknown>[]
   assets: Record<string, unknown>[]
+  dateBounds?: DateRangeBounds | null
+  dateField?: IncidentDateField
+  threadDateMode?: ThreadDateMode
 }
 
-export function IncidentsOTLookup({ incidents, assets }: IncidentsOTLookupProps) {
+export function IncidentsOTLookup({
+  incidents,
+  assets,
+  dateBounds = null,
+  dateField = "event",
+  threadDateMode = "thread_in_period",
+}: IncidentsOTLookupProps) {
   const router = useRouter()
   const [collapsedAssets, setCollapsedAssets] = useState<Set<string>>(new Set())
   const [expandedThreads, setExpandedThreads] = useState<Set<string>>(new Set())
@@ -220,7 +236,20 @@ export function IncidentsOTLookup({ incidents, assets }: IncidentsOTLookupProps)
                 {groupIncidentsIntoThreads(group.incidents).map((thread) => {
                   const threadKey = `${key}:${thread.canonicalKey}`
                   const isThreadExpanded = expandedThreads.has(threadKey)
-                  const rows = isThreadExpanded ? thread.incidents : [thread.primaryIncident]
+                  const planningInfo = classifyThreadPlanning(
+                    thread.incidents,
+                    dateBounds,
+                    dateField,
+                  )
+                  const displayIncidents = isThreadExpanded
+                    ? filterThreadOccurrencesForDisplay(
+                        thread.incidents,
+                        dateBounds,
+                        dateField,
+                        threadDateMode,
+                      )
+                    : [thread.primaryIncident]
+                  const rows = displayIncidents.length > 0 ? displayIncidents : [thread.primaryIncident]
 
                   return (
                     <div key={threadKey} className="border-b border-border/20 last:border-b-0">
@@ -231,6 +260,8 @@ export function IncidentsOTLookup({ incidents, assets }: IncidentsOTLookupProps)
                             ? incident.work_order_id
                             : thread.workOrderId
                         const dateStr = (incident.date ?? incident.created_at) as string | undefined
+                        const createdAtStr = incident.created_at as string | undefined
+                        const inBounds = isOccurrenceInBounds(incident, dateBounds, dateField)
                         const status = String(incident.status ?? "")
                         const resolved = isResolved(status)
                         const days = getDaysSinceCreated(dateStr ?? "")
@@ -246,12 +277,26 @@ export function IncidentsOTLookup({ incidents, assets }: IncidentsOTLookupProps)
                               "flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4 px-4 py-2.5 cursor-pointer transition-colors hover:bg-muted/40",
                               rowSurfaceClass(resolved, days),
                               !isPrimaryRow && "bg-muted/10 pl-8",
+                              dateBounds && !inBounds && isThreadExpanded && "opacity-60",
                             )}
                             onClick={() => incidentId && router.push(`/incidentes/${incidentId}`)}
                           >
                             <div className="flex items-center gap-2 sm:contents">
                               <span className="shrink-0 text-xs text-muted-foreground w-20 whitespace-nowrap">
-                                {formatDate(dateStr)}
+                                <span className={cn(inBounds && dateBounds && "font-medium text-foreground")}>
+                                  {formatDate(dateStr)}
+                                </span>
+                                {createdAtStr &&
+                                  incident.date &&
+                                  Math.abs(
+                                    new Date(createdAtStr).getTime() -
+                                      new Date(String(incident.date)).getTime(),
+                                  ) >
+                                    24 * 60 * 60 * 1000 && (
+                                    <span className="block text-[10px] text-muted-foreground/80">
+                                      Reg: {formatDate(createdAtStr)}
+                                    </span>
+                                  )}
                               </span>
                               <div className="flex flex-wrap items-center gap-1.5 sm:w-[9.5rem] sm:shrink-0">
                                 <Badge
@@ -284,9 +329,29 @@ export function IncidentsOTLookup({ incidents, assets }: IncidentsOTLookupProps)
                                       toggleThread(threadKey)
                                     }}
                                   >
-                                    {thread.occurrenceCount} ocurrencias
+                                    {dateBounds && planningInfo.inCohortCount > 0
+                                      ? `${planningInfo.inCohortCount} en revisión · ${thread.occurrenceCount} total`
+                                      : `${thread.occurrenceCount} ocurrencias`}
                                   </button>
                                 )}
+                                {isPrimaryRow &&
+                                  dateBounds &&
+                                  planningInfo.planningClass !== "none" && (
+                                    <Badge
+                                      variant="outline"
+                                      className={cn(
+                                        "text-[10px] font-medium px-1.5 py-0 h-5",
+                                        planningInfo.planningClass === "nuevo" &&
+                                          "border-emerald-300 bg-emerald-50 text-emerald-800",
+                                        planningInfo.planningClass === "reincidente" &&
+                                          "border-violet-300 bg-violet-50 text-violet-800",
+                                        planningInfo.planningClass === "mixto" &&
+                                          "border-amber-300 bg-amber-50 text-amber-800",
+                                      )}
+                                    >
+                                      {planningInfo.label}
+                                    </Badge>
+                                  )}
                               </div>
                             </div>
 

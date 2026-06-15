@@ -10,6 +10,9 @@ import {
 } from "@/components/ui/select"
 import { Search } from "lucide-react"
 import { getStatusInfo } from "./incidents-status-utils"
+import type { LifecycleFilter, WorkOrderFilter } from "@/lib/incidents/incident-list-filters"
+
+type PlantOption = { id: string; label: string }
 
 interface IncidentsFilterBarProps {
   searchTerm: string
@@ -20,8 +23,13 @@ interface IncidentsFilterBarProps {
   onTypeChange: (value: string) => void
   priorityFilter: string
   onPriorityChange: (value: string) => void
-  workOrderFilter: string
-  onWorkOrderChange: (value: string) => void
+  workOrderFilter: WorkOrderFilter
+  onWorkOrderChange: (value: WorkOrderFilter) => void
+  plantFilter: string
+  onPlantChange: (value: string) => void
+  lifecycleFilter: LifecycleFilter
+  onLifecycleChange: (value: LifecycleFilter) => void
+  plantOptions: PlantOption[]
   onClearAll: () => void
   activeFilterCount: number
   uniqueStatuses: string[]
@@ -39,13 +47,18 @@ export function IncidentsFilterBar({
   onPriorityChange,
   workOrderFilter,
   onWorkOrderChange,
+  plantFilter,
+  onPlantChange,
+  lifecycleFilter,
+  onLifecycleChange,
+  plantOptions,
   onClearAll,
   activeFilterCount,
   uniqueStatuses,
   uniqueTypes,
 }: IncidentsFilterBarProps) {
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-3">
       <div className="relative">
         <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
         <Input
@@ -55,6 +68,27 @@ export function IncidentsFilterBar({
           className="pl-8"
         />
       </div>
+
+      <div className="flex flex-wrap gap-2">
+        {(["all", "open", "resolved"] as const).map((key) => {
+          const labels = { all: "Todos", open: "Abiertos", resolved: "Resueltos" }
+          return (
+            <button
+              key={key}
+              type="button"
+              onClick={() => onLifecycleChange(key)}
+              className={`rounded-md border px-2.5 py-1 text-xs cursor-pointer transition-colors ${
+                lifecycleFilter === key
+                  ? "border-primary bg-primary text-primary-foreground"
+                  : "border-border text-muted-foreground hover:bg-muted"
+              }`}
+            >
+              {labels[key]}
+            </button>
+          )
+        })}
+      </div>
+
       <div className="flex gap-2 flex-wrap">
         <Select value={statusFilter} onValueChange={onStatusChange}>
           <SelectTrigger className="flex-1 min-w-[120px]">
@@ -76,7 +110,7 @@ export function IncidentsFilterBar({
           <SelectContent>
             <SelectItem value="all">Todos los tipos</SelectItem>
             {uniqueTypes.map((type) => (
-              <SelectItem key={type} value={type.toLowerCase()}>
+              <SelectItem key={type} value={type}>
                 {type}
               </SelectItem>
             ))}
@@ -88,13 +122,16 @@ export function IncidentsFilterBar({
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Todas las prioridades</SelectItem>
-            <SelectItem value="critical">Crítico</SelectItem>
-            <SelectItem value="high">Alto</SelectItem>
+            <SelectItem value="critical">Crítico (+7d)</SelectItem>
+            <SelectItem value="high">Alto (+3d)</SelectItem>
             <SelectItem value="medium">Medio</SelectItem>
             <SelectItem value="low">Nuevo</SelectItem>
           </SelectContent>
         </Select>
-        <Select value={workOrderFilter} onValueChange={onWorkOrderChange}>
+        <Select
+          value={workOrderFilter}
+          onValueChange={(v) => onWorkOrderChange(v as WorkOrderFilter)}
+        >
           <SelectTrigger className="flex-1 min-w-[140px]">
             <SelectValue placeholder="OT" />
           </SelectTrigger>
@@ -104,11 +141,26 @@ export function IncidentsFilterBar({
             <SelectItem value="with">Con OT</SelectItem>
           </SelectContent>
         </Select>
+        <Select value={plantFilter} onValueChange={onPlantChange}>
+          <SelectTrigger className="flex-1 min-w-[150px]">
+            <SelectValue placeholder="Planta" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Todas las plantas</SelectItem>
+            {plantOptions.map((pl) => (
+              <SelectItem key={pl.id} value={pl.id}>
+                {pl.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
+
       {activeFilterCount > 0 && (
         <div className="flex items-center justify-between gap-3 rounded-xl border border-border/60 bg-muted/30 px-3 py-2">
           <p className="text-sm text-muted-foreground">
-            {activeFilterCount} filtro{activeFilterCount === 1 ? "" : "s"} activo{activeFilterCount === 1 ? "" : "s"}
+            {activeFilterCount} filtro{activeFilterCount === 1 ? "" : "s"} activo
+            {activeFilterCount === 1 ? "" : "s"}
           </p>
           <button
             type="button"

@@ -412,6 +412,9 @@ export default function JUNDashboard() {
           { label: "Asignaciones organizacionales", href: "/gestion/asignaciones", icon: <Target className="h-4 w-4" /> },
           { label: "Operador → activo", href: "/organizacion/asignacion-activos", icon: <UserCheck className="h-4 w-4" /> },
           { label: "Preventivos pendientes", href: "/ordenes", icon: <Wrench className="h-4 w-4" /> },
+          { label: "Planificar atención — Revisión Jun 2026", href: "/ordenes/planificacion?cohort=june_2026_inspection", icon: <Target className="h-4 w-4" /> },
+          { label: "Hallazgos de revisión", href: "/incidentes?cohort=june_2026_inspection", icon: <AlertTriangle className="h-4 w-4" /> },
+          { label: "Campañas de mantenimiento", href: "/ordenes/campanas", icon: <ClipboardList className="h-4 w-4" /> },
           { label: "Cumplimiento checklist/diésel", href: "/compliance", icon: <ClipboardList className="h-4 w-4" /> },
         ]}
         kpis={
